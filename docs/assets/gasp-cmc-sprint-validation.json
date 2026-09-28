@@ -1,0 +1,1022 @@
+{
+  "schemaVersion": 1,
+  "task": "GASP-07",
+  "updatedUtc": "2026-09-28T20:10:30.919428+00:00",
+  "branch": "codex/gasp-07-cmc-gas-sprint",
+  "baseCommit": "c357ddb1108b841ea2c088e548594690c65655ff",
+  "basePullRequest": 160,
+  "merged": false,
+  "userVisualAcceptance": "pending",
+  "tuning": {
+    "normalCmPerSecond": 375,
+    "sprintCmPerSecond": 585,
+    "sprintMinimumInput": 0.7,
+    "staminaDrainPerSecond": 15,
+    "minimumStartStamina": 5,
+    "regenerationPerSecond": 12,
+    "regenerationDelaySeconds": 2
+  },
+  "sourceAudit": "docs/assets/gasp-cmc-sprint-source-audit.json",
+  "nativeTypesAdded": [
+    "URpgAbilityTask_Sprint",
+    "URpgAbilityTask_StaminaRegen"
+  ],
+  "builds": [
+    {
+      "target": "Editor",
+      "configuration": "Win64 Development",
+      "result": "Succeeded",
+      "evidence": "Saved\\GaspCmcSprint20260928\\build-editor-20260928-215852.log",
+      "sha256": "f3dc5420919bdb401fe89a4bdca20e75ed18f74583213c4f7dcc04283bea8292"
+    },
+    {
+      "target": "Game",
+      "configuration": "Win64 Development",
+      "result": "Succeeded",
+      "evidence": "Saved\\GaspCmcSprint20260928\\build-game-20260928-215110.log",
+      "sha256": "436f97c8df1bb9db00ed683fa61d8e19282284fb7aee43188aa281bafa06714e"
+    }
+  ],
+  "tests": [
+    {
+      "evidence": "Saved\\GaspCmcSprint20260928\\sprint-final-results.json",
+      "sha256": "89c0d509fea5fd6f08f90fc5fc36ae9f71cf8b40a56dedfb68f3132b795efaba",
+      "passed": 13,
+      "total": 13,
+      "errors": 0,
+      "warnings": 268,
+      "warningCategories": {
+        "AdvancedFriendsInterfaceLog": 24,
+        "LogNetPackageMap": 244
+      },
+      "cases": [
+        {
+          "name": "SurvivalRpg.GASP.CMC.Sprint.CmcSprintPIE.AuthoritativeCorrectionReplaysAuthorizedSprintHistory",
+          "state": "Success",
+          "seconds": 5.73583984375,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.GASP.CMC.Sprint.CmcSprintPIE.ExhaustionAndDelayedAuthorityEndConsumeTheHoldUntilRelease",
+          "state": "Success",
+          "seconds": 13.833304405212402,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.GASP.CMC.Sprint.CmcSprintPIE.LateJoinReceivesEffectiveSprintWithoutOwningTheAbility",
+          "state": "Success",
+          "seconds": 5.5042595863342285,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.GASP.CMC.Sprint.CmcSprintPIE.RealKeysDrainOnlyMovingSprintAndResumeAfterIdleAndBlock",
+          "state": "Success",
+          "seconds": 8.425411224365234,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.GASP.CMC.Sprint.AssetDefinitions",
+          "state": "Success",
+          "seconds": 0.0047561004757881165,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.GASP.CMC.Sprint.InputCompositionAndLocalDependencies",
+          "state": "Success",
+          "seconds": 0.007695898413658142,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.Movement.CMC.Sprint.AuthorityTaskDrainsOnlyEffectiveDisplacementAndCleansUp",
+          "state": "Success",
+          "seconds": 0.05467969924211502,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.Movement.CMC.Sprint.CompressedDesireNeedsAuthorityLeaseAndYieldsToBlock",
+          "state": "Success",
+          "seconds": 0.0372236967086792,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.Movement.CMC.Sprint.ExhaustionStopsTaskAndRejectsInsufficientRestart",
+          "state": "Success",
+          "seconds": 0.04025690257549286,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.Movement.CMC.Sprint.LeaseSnapshotsSpeedAndRejectsRetiredOwnership",
+          "state": "Success",
+          "seconds": 0.036993902176618576,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.Movement.CMC.Sprint.RegenDelayRestartsForOtherCostsAndStopsWithOwner",
+          "state": "Success",
+          "seconds": 0.4428403079509735,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.Movement.CMC.Sprint.RegenTuningWaitsForAttributesAndRemovesOnlyItsOwnEffect",
+          "state": "Success",
+          "seconds": 0.3859217166900635,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.Movement.CMC.Sprint.RepeatedSavedMoveReplayKeepsHistoricalAuthorizationAndSpeed",
+          "state": "Success",
+          "seconds": 0.0402631014585495,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        }
+      ]
+    },
+    {
+      "evidence": "Saved\\GaspCmcSprint20260928\\regression-01-results.json",
+      "sha256": "f9c425ad24b7efa33b2ff370773b4e801d748061ab6a3064af20a4ea3bef9abc",
+      "passed": 9,
+      "total": 9,
+      "errors": 0,
+      "warnings": 277,
+      "warningCategories": {
+        "AdvancedFriendsInterfaceLog": 22,
+        "LogNetPackageMap": 250,
+        "LogPoseSearch": 1,
+        "LogNetworkPrediction": 3,
+        "LogBlueprint": 1
+      },
+      "cases": [
+        {
+          "name": "SurvivalRpg.Combat.Block.Lifecycle.CancelledHoldRequiresPhysicalRelease",
+          "state": "Success",
+          "seconds": 0.009123802185058594,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.Combat.Block.Prediction.CMCRepeatedReplayPreservesOriginalControlYaw",
+          "state": "Success",
+          "seconds": 0.00909389927983284,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.Combat.BlockLocomotion.BlockLocomotionPIE.CMCActivationSnapshotsCapAndZeroCapPreservesNormalSpeed",
+          "state": "Success",
+          "seconds": 15.790630340576172,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.Combat.BlockLocomotion.BlockLocomotionPIE.MoverBlockPreventsSprintInBothInputOrdersAndResumesHeldSprintOnRelease",
+          "state": "Success",
+          "seconds": 39.4287223815918,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.GASP.CMC.GaspCMCExperiencePIE.RemoteMovementLateJoinAndEquipmentMontage",
+          "state": "Success",
+          "seconds": 12.680580139160156,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.GASP.CMC.AssetComposition",
+          "state": "Success",
+          "seconds": 0.005239300429821014,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mantle.GaspMantleExperiencePIE.AuthoritativeValidationRootMotionLateJoinAndLifecycle",
+          "state": "Success",
+          "seconds": 15.932084083557129,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mantle.AssetComposition",
+          "state": "Success",
+          "seconds": 0.00505489856004715,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.Health.Lifecycle.RetiredAvatarCannotChangeReplacementDeathTags",
+          "state": "Success",
+          "seconds": 0.008977700024843216,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        }
+      ]
+    }
+  ],
+  "priorRuns": [
+    {
+      "evidence": "Saved\\GaspCmcSprint20260928\\sprint-focus-01-results.json",
+      "sha256": "0b624d358cc436f4de8435fc79361e9b24085b36d81e283bc9b0c11a68f75116",
+      "passed": 6,
+      "total": 12,
+      "errors": 7685,
+      "warnings": 606,
+      "warningCategories": {
+        "AdvancedFriendsInterfaceLog": 22,
+        "LogNetPackageMap": 200,
+        "LogOutputDevice": 384
+      },
+      "cases": [
+        {
+          "name": "SurvivalRpg.GASP.CMC.Sprint.CmcSprintPIE.AuthoritativeCorrectionReplaysAuthorizedSprintHistory",
+          "state": "Fail",
+          "seconds": 9.334813117980957,
+          "errorCount": 1,
+          "firstErrorExcerpts": [
+            "Expected condition to be true."
+          ]
+        },
+        {
+          "name": "SurvivalRpg.GASP.CMC.Sprint.CmcSprintPIE.ExhaustionAndDelayedAuthorityEndConsumeTheHoldUntilRelease",
+          "state": "Fail",
+          "seconds": 2.0786824226379395,
+          "errorCount": 1,
+          "firstErrorExcerpts": [
+            "Expected condition to be true."
+          ]
+        },
+        {
+          "name": "SurvivalRpg.GASP.CMC.Sprint.CmcSprintPIE.LateJoinReceivesEffectiveSprintWithoutOwningTheAbility",
+          "state": "Fail",
+          "seconds": 1.6940935850143433,
+          "errorCount": 1,
+          "firstErrorExcerpts": [
+            "Expected condition to be true."
+          ]
+        },
+        {
+          "name": "SurvivalRpg.GASP.CMC.Sprint.CmcSprintPIE.RealKeysDrainOnlyMovingSprintAndResumeAfterIdleAndBlock",
+          "state": "Fail",
+          "seconds": 2.4542627334594727,
+          "errorCount": 1,
+          "firstErrorExcerpts": [
+            "Expected condition to be true."
+          ]
+        },
+        {
+          "name": "SurvivalRpg.GASP.CMC.Sprint.AssetDefinitions",
+          "state": "Success",
+          "seconds": 0.006561797112226486,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.GASP.CMC.Sprint.InputCompositionAndLocalDependencies",
+          "state": "Success",
+          "seconds": 0.00884530320763588,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.Movement.CMC.Sprint.AuthorityTaskDrainsOnlyEffectiveDisplacementAndCleansUp",
+          "state": "Success",
+          "seconds": 0.2094424068927765,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.Movement.CMC.Sprint.CompressedDesireNeedsAuthorityLeaseAndYieldsToBlock",
+          "state": "Fail",
+          "seconds": 0.563936710357666,
+          "errorCount": 1,
+          "firstErrorExcerpts": [
+            "Expected 'Crouching yields effective sprint' to be false."
+          ]
+        },
+        {
+          "name": "SurvivalRpg.Movement.CMC.Sprint.ExhaustionStopsTaskAndRejectsInsufficientRestart",
+          "state": "Success",
+          "seconds": 0.012441899627447128,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.Movement.CMC.Sprint.LeaseSnapshotsSpeedAndRejectsRetiredOwnership",
+          "state": "Success",
+          "seconds": 0.012642599642276764,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.Movement.CMC.Sprint.RegenDelayRestartsForOtherCostsAndStopsWithOwner",
+          "state": "Fail",
+          "seconds": 26.912654876708984,
+          "errorCount": 7680,
+          "firstErrorExcerpts": [
+            "LogOutputDevice: === Handled ensure: ===",
+            "LogOutputDevice: ",
+            "LogOutputDevice: Ensure condition failed: false  [File:D:\\build\\++UE5\\Sync\\Engine\\Plugins\\EnhancedInput\\Source\\EnhancedInput\\Private\\EnhancedInputSubsystems.cpp] [Line: 317] "
+          ]
+        },
+        {
+          "name": "SurvivalRpg.Movement.CMC.Sprint.RepeatedSavedMoveReplayKeepsHistoricalAuthorizationAndSpeed",
+          "state": "Success",
+          "seconds": 0.04807090014219284,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        }
+      ]
+    },
+    {
+      "evidence": "Saved\\GaspCmcSprint20260928\\sprint-focus-02-results.json",
+      "sha256": "6954bd7d7b8e6512d06e0682e66e9f462d813b5be4eebfa7907d1c372777c4a9",
+      "passed": 8,
+      "total": 12,
+      "errors": 4,
+      "warnings": 222,
+      "warningCategories": {
+        "AdvancedFriendsInterfaceLog": 22,
+        "LogNetPackageMap": 200
+      },
+      "cases": [
+        {
+          "name": "SurvivalRpg.GASP.CMC.Sprint.CmcSprintPIE.AuthoritativeCorrectionReplaysAuthorizedSprintHistory",
+          "state": "Fail",
+          "seconds": 12.597947120666504,
+          "errorCount": 1,
+          "firstErrorExcerpts": [
+            "Expected 'Authority receives the authored regen rate 12 (actual 0.0000)' to be true."
+          ]
+        },
+        {
+          "name": "SurvivalRpg.GASP.CMC.Sprint.CmcSprintPIE.ExhaustionAndDelayedAuthorityEndConsumeTheHoldUntilRelease",
+          "state": "Fail",
+          "seconds": 1.988035798072815,
+          "errorCount": 1,
+          "firstErrorExcerpts": [
+            "Expected 'Authority receives the authored regen rate 12 (actual 0.0000)' to be true."
+          ]
+        },
+        {
+          "name": "SurvivalRpg.GASP.CMC.Sprint.CmcSprintPIE.LateJoinReceivesEffectiveSprintWithoutOwningTheAbility",
+          "state": "Fail",
+          "seconds": 1.5468430519104004,
+          "errorCount": 1,
+          "firstErrorExcerpts": [
+            "Expected 'Authority receives the authored regen rate 12 (actual 0.0000)' to be true."
+          ]
+        },
+        {
+          "name": "SurvivalRpg.GASP.CMC.Sprint.CmcSprintPIE.RealKeysDrainOnlyMovingSprintAndResumeAfterIdleAndBlock",
+          "state": "Fail",
+          "seconds": 1.8847551345825195,
+          "errorCount": 1,
+          "firstErrorExcerpts": [
+            "Expected 'Authority receives the authored regen rate 12 (actual 0.0000)' to be true."
+          ]
+        },
+        {
+          "name": "SurvivalRpg.GASP.CMC.Sprint.AssetDefinitions",
+          "state": "Success",
+          "seconds": 0.004877902567386627,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.GASP.CMC.Sprint.InputCompositionAndLocalDependencies",
+          "state": "Success",
+          "seconds": 0.008549898862838745,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.Movement.CMC.Sprint.AuthorityTaskDrainsOnlyEffectiveDisplacementAndCleansUp",
+          "state": "Success",
+          "seconds": 0.05614209920167923,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.Movement.CMC.Sprint.CompressedDesireNeedsAuthorityLeaseAndYieldsToBlock",
+          "state": "Success",
+          "seconds": 0.038105398416519165,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.Movement.CMC.Sprint.ExhaustionStopsTaskAndRejectsInsufficientRestart",
+          "state": "Success",
+          "seconds": 0.03885200247168541,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.Movement.CMC.Sprint.LeaseSnapshotsSpeedAndRejectsRetiredOwnership",
+          "state": "Success",
+          "seconds": 0.03773129731416702,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.Movement.CMC.Sprint.RegenDelayRestartsForOtherCostsAndStopsWithOwner",
+          "state": "Success",
+          "seconds": 0.446510910987854,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.Movement.CMC.Sprint.RepeatedSavedMoveReplayKeepsHistoricalAuthorizationAndSpeed",
+          "state": "Success",
+          "seconds": 0.04506869986653328,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        }
+      ]
+    },
+    {
+      "evidence": "Saved\\GaspCmcSprint20260928\\sprint-focus-03-results.json",
+      "sha256": "d3df0adb99fa72ff9936632080d519c90254c5bc1dc88ee785ab1210251f9921",
+      "passed": 12,
+      "total": 13,
+      "errors": 1,
+      "warnings": 268,
+      "warningCategories": {
+        "AdvancedFriendsInterfaceLog": 24,
+        "LogNetPackageMap": 244
+      },
+      "cases": [
+        {
+          "name": "SurvivalRpg.GASP.CMC.Sprint.CmcSprintPIE.AuthoritativeCorrectionReplaysAuthorizedSprintHistory",
+          "state": "Fail",
+          "seconds": 44.61368179321289,
+          "errorCount": 1,
+          "firstErrorExcerpts": [
+            "Timed out waiting for Real server correction replays an unchanged timestamp and removes the injected error after 35018 milliseconds"
+          ]
+        },
+        {
+          "name": "SurvivalRpg.GASP.CMC.Sprint.CmcSprintPIE.ExhaustionAndDelayedAuthorityEndConsumeTheHoldUntilRelease",
+          "state": "Success",
+          "seconds": 13.981317520141602,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.GASP.CMC.Sprint.CmcSprintPIE.LateJoinReceivesEffectiveSprintWithoutOwningTheAbility",
+          "state": "Success",
+          "seconds": 5.557711124420166,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.GASP.CMC.Sprint.CmcSprintPIE.RealKeysDrainOnlyMovingSprintAndResumeAfterIdleAndBlock",
+          "state": "Success",
+          "seconds": 8.56407642364502,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.GASP.CMC.Sprint.AssetDefinitions",
+          "state": "Success",
+          "seconds": 0.005424100905656815,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.GASP.CMC.Sprint.InputCompositionAndLocalDependencies",
+          "state": "Success",
+          "seconds": 0.007624402642250061,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.Movement.CMC.Sprint.AuthorityTaskDrainsOnlyEffectiveDisplacementAndCleansUp",
+          "state": "Success",
+          "seconds": 0.06433060020208359,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.Movement.CMC.Sprint.CompressedDesireNeedsAuthorityLeaseAndYieldsToBlock",
+          "state": "Success",
+          "seconds": 0.05596660077571869,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.Movement.CMC.Sprint.ExhaustionStopsTaskAndRejectsInsufficientRestart",
+          "state": "Success",
+          "seconds": 0.055309999734163284,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.Movement.CMC.Sprint.LeaseSnapshotsSpeedAndRejectsRetiredOwnership",
+          "state": "Success",
+          "seconds": 0.061468299478292465,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.Movement.CMC.Sprint.RegenDelayRestartsForOtherCostsAndStopsWithOwner",
+          "state": "Success",
+          "seconds": 0.46347498893737793,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.Movement.CMC.Sprint.RegenTuningWaitsForAttributesAndRemovesOnlyItsOwnEffect",
+          "state": "Success",
+          "seconds": 0.43122899532318115,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        },
+        {
+          "name": "SurvivalRpg.Movement.CMC.Sprint.RepeatedSavedMoveReplayKeepsHistoricalAuthorizationAndSpeed",
+          "state": "Success",
+          "seconds": 0.05716169998049736,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        }
+      ]
+    },
+    {
+      "evidence": "Saved\\GaspCmcSprint20260928\\correction-04-results.json",
+      "sha256": "35ca72ffdbb78c5d60aefb58cb7811c4c6069c1832d8c4a04c950400157c4abd",
+      "passed": 1,
+      "total": 1,
+      "errors": 0,
+      "warnings": 70,
+      "warningCategories": {
+        "AdvancedFriendsInterfaceLog": 6,
+        "LogPoseSearch": 3,
+        "LogNetPackageMap": 61
+      },
+      "cases": [
+        {
+          "name": "SurvivalRpg.GASP.CMC.Sprint.CmcSprintPIE.AuthoritativeCorrectionReplaysAuthorizedSprintHistory",
+          "state": "Success",
+          "seconds": 11.845223426818848,
+          "errorCount": 0,
+          "firstErrorExcerpts": []
+        }
+      ]
+    }
+  ],
+  "correctionWitness": {
+    "injectedOffsetCm": 50,
+    "measuredCorrectionCm": 50,
+    "isolatedPairedMoves": 8,
+    "finalPairedMoves": 9,
+    "incomingDelayMs": 200,
+    "evidence": "Saved/GaspCmcSprint20260928/editor-20260928-215920.log",
+    "scope": "One real server correction and immutable sprint saved-move policy; not a general packet-loss qualification."
+  },
+  "visual": {
+    "evidence": "Saved/GaspCmcSprint20260928/visual-final",
+    "report": {
+      "phases": [
+        {
+          "name": "normal",
+          "job_id": "27c561f1-853a-4b4b-a76b-a005fbcd853e",
+          "pages": 2,
+          "sample_count": 137,
+          "state": "complete",
+          "error": null,
+          "cleanup_errors": [],
+          "look_zero_sent": false,
+          "before": {
+            "MaxStamina": 100,
+            "Stamina": 100,
+            "StaminaRegen": 12
+          },
+          "after": {
+            "MaxStamina": 100,
+            "Stamina": 100,
+            "StaminaRegen": 12
+          }
+        },
+        {
+          "name": "sprint",
+          "job_id": "b42e6396-6bdf-4f57-964f-b83e8e30bb87",
+          "pages": 2,
+          "sample_count": 138,
+          "state": "complete",
+          "error": null,
+          "cleanup_errors": [],
+          "look_zero_sent": false,
+          "before": {
+            "MaxStamina": 100,
+            "Stamina": 91.62376403808594,
+            "StaminaRegen": 12
+          },
+          "after": {
+            "MaxStamina": 100,
+            "Stamina": 55.89662551879883,
+            "StaminaRegen": 12
+          }
+        },
+        {
+          "name": "block",
+          "job_id": "49966be1-eb0b-4d57-894a-5b26e2011cfa",
+          "pages": 2,
+          "sample_count": 136,
+          "state": "complete",
+          "error": null,
+          "cleanup_errors": [],
+          "look_zero_sent": false,
+          "before": {
+            "MaxStamina": 100,
+            "Stamina": 55.5030632019043,
+            "StaminaRegen": 12
+          },
+          "after": {
+            "MaxStamina": 100,
+            "Stamina": 66.34187316894531,
+            "StaminaRegen": 12
+          }
+        },
+        {
+          "name": "resumed",
+          "job_id": "78cc3d00-fb3f-4734-8546-dcee689cdbea",
+          "pages": 2,
+          "sample_count": 138,
+          "state": "complete",
+          "error": null,
+          "cleanup_errors": [],
+          "look_zero_sent": false,
+          "before": {
+            "MaxStamina": 100,
+            "Stamina": 58.071895599365234,
+            "StaminaRegen": 12
+          },
+          "after": {
+            "MaxStamina": 100,
+            "Stamina": 22.532737731933594,
+            "StaminaRegen": 12
+          }
+        },
+        {
+          "name": "released",
+          "job_id": "ab1a62b3-000d-4131-b4bc-7cf54590520d",
+          "pages": 2,
+          "sample_count": 137,
+          "state": "complete",
+          "error": null,
+          "cleanup_errors": [],
+          "look_zero_sent": false,
+          "before": {
+            "MaxStamina": 100,
+            "Stamina": 22.013853073120117,
+            "StaminaRegen": 12
+          },
+          "after": {
+            "MaxStamina": 100,
+            "Stamina": 33.63406753540039,
+            "StaminaRegen": 12
+          }
+        }
+      ],
+      "input_returns": [
+        {
+          "key": "A",
+          "pressed": true,
+          "handled": true
+        },
+        {
+          "key": "A",
+          "pressed": false,
+          "handled": true
+        },
+        {
+          "key": "D",
+          "pressed": true,
+          "handled": true
+        },
+        {
+          "key": "LeftShift",
+          "pressed": true,
+          "handled": true
+        },
+        {
+          "key": "D",
+          "pressed": false,
+          "handled": true
+        },
+        {
+          "key": "A",
+          "pressed": true,
+          "handled": true
+        },
+        {
+          "key": "RightMouseButton",
+          "pressed": true,
+          "handled": true
+        },
+        {
+          "key": "A",
+          "pressed": false,
+          "handled": true
+        },
+        {
+          "key": "D",
+          "pressed": true,
+          "handled": true
+        },
+        {
+          "key": "RightMouseButton",
+          "pressed": false,
+          "handled": true
+        },
+        {
+          "key": "LeftShift",
+          "pressed": false,
+          "handled": false
+        },
+        {
+          "key": "D",
+          "pressed": false,
+          "handled": true
+        },
+        {
+          "key": "A",
+          "pressed": false,
+          "handled": true
+        },
+        {
+          "key": "D",
+          "pressed": false,
+          "handled": true
+        },
+        {
+          "key": "LeftShift",
+          "pressed": false,
+          "handled": false
+        },
+        {
+          "key": "RightMouseButton",
+          "pressed": false,
+          "handled": true
+        }
+      ],
+      "error": null,
+      "cleanup_errors": []
+    },
+    "metrics": [
+      {
+        "phase": "block-samples",
+        "samples": 136,
+        "speedMin": 157.0,
+        "speedMax": 157.00000000000335,
+        "gaits": [
+          "<E_Gait.RUN: 1>"
+        ],
+        "timeAdvanced": true,
+        "firstTime": 9.800447594374418,
+        "lastTime": 11.386391799896955,
+        "firstPos": [
+          -1600.0,
+          -146.73600444958763,
+          92.2125015258789
+        ],
+        "lastPos": [
+          -1600.0,
+          -395.7292476409789,
+          92.2125015258789
+        ]
+      },
+      {
+        "phase": "normal-samples",
+        "samples": 137,
+        "speedMin": 375.0,
+        "speedMax": 375.00000000001364,
+        "gaits": [
+          "<E_Gait.RUN: 1>"
+        ],
+        "timeAdvanced": true,
+        "firstTime": 3.841535195708275,
+        "lastTime": 5.432204395532608,
+        "firstPos": [
+          -1600.0,
+          -776.1365196900264,
+          92.2125015258789
+        ],
+        "lastPos": [
+          -1600.0,
+          -1372.6374780060546,
+          92.2125015258789
+        ]
+      },
+      {
+        "phase": "released-samples",
+        "samples": 137,
+        "speedMin": 0.0,
+        "speedMax": 0.0,
+        "gaits": [
+          "<E_Gait.RUN: 1>"
+        ],
+        "timeAdvanced": true,
+        "firstTime": 15.76113761588931,
+        "lastTime": 17.350955922156572,
+        "firstPos": [
+          -1600.0,
+          1111.3332810753332,
+          92.2125015258789
+        ],
+        "lastPos": [
+          -1600.0,
+          1111.3332810753332,
+          92.2125015258789
+        ]
+      },
+      {
+        "phase": "resumed-samples",
+        "samples": 138,
+        "speedMin": 584.9999999999932,
+        "speedMax": 585.0,
+        "gaits": [
+          "<E_Gait.SPRINT: 2>"
+        ],
+        "timeAdvanced": true,
+        "firstTime": 12.778475899249315,
+        "lastTime": 14.363803014159203,
+        "firstPos": [
+          -1600.0,
+          -321.4894150782838,
+          92.2125015258789
+        ],
+        "lastPos": [
+          -1600.0,
+          605.9269602197692,
+          92.2125015258789
+        ]
+      },
+      {
+        "phase": "sprint-samples",
+        "samples": 138,
+        "speedMin": 585.0,
+        "speedMax": 585.0,
+        "gaits": [
+          "<E_Gait.SPRINT: 2>"
+        ],
+        "timeAdvanced": true,
+        "firstTime": 6.812154896557331,
+        "lastTime": 8.402471594512463,
+        "firstPos": [
+          -1600.0,
+          -1503.1293572021812,
+          92.2125015258789
+        ],
+        "lastPos": [
+          -1600.0,
+          -572.7940758226603,
+          92.2125015258789
+        ]
+      }
+    ],
+    "captures": [
+      {
+        "file": "Saved\\GaspCmcSprint20260928\\visual-final\\block-a.png",
+        "sha256": "84a7325a038ad82e2956a1e034ef354826db7c53f3266574c44544572201cd2d"
+      },
+      {
+        "file": "Saved\\GaspCmcSprint20260928\\visual-final\\block-b.png",
+        "sha256": "77f116a1dbde50beab25caf4cc26b59fb42d493d1af3e251f1d78b142d65200d"
+      },
+      {
+        "file": "Saved\\GaspCmcSprint20260928\\visual-final\\normal-a.png",
+        "sha256": "72822b9967691a57d0bd530d05513eaed87eef9e0a871f855485a7a6b8dd9f66"
+      },
+      {
+        "file": "Saved\\GaspCmcSprint20260928\\visual-final\\normal-b.png",
+        "sha256": "877108195c797b50ba3c56820991206c33313ad9574fbdcdeced0e254c87c2da"
+      },
+      {
+        "file": "Saved\\GaspCmcSprint20260928\\visual-final\\released-a.png",
+        "sha256": "48b0fb344dbf8dfc5aa73993cee0ea8841d4d8d8041a579b11e0296acf945044"
+      },
+      {
+        "file": "Saved\\GaspCmcSprint20260928\\visual-final\\released-b.png",
+        "sha256": "663bebeeebb3e608409f09a1d85e57517bb99cfaabe8595f63bc2cc30eb3b1d1"
+      },
+      {
+        "file": "Saved\\GaspCmcSprint20260928\\visual-final\\resumed-a.png",
+        "sha256": "a06093258557c97cb004aa3a886cb29c056fa820ea456ad619043f7b60934c16"
+      },
+      {
+        "file": "Saved\\GaspCmcSprint20260928\\visual-final\\resumed-b.png",
+        "sha256": "647ce109c541f9ca66fe1fae86508d0c9af5332948d20af66882aebde7895a09"
+      },
+      {
+        "file": "Saved\\GaspCmcSprint20260928\\visual-final\\sprint-a.png",
+        "sha256": "cfda35c129410568387e1e7780bb41ad82bcbf46be293e026586200f46ea81a3"
+      },
+      {
+        "file": "Saved\\GaspCmcSprint20260928\\visual-final\\sprint-b.png",
+        "sha256": "b0304d2e8aae72e2fefd6e251697704f4172b5a77c4acc94f51b47cbfb8b991c"
+      }
+    ],
+    "limitations": [
+      "Editor-camera screenshots and sequential pose telemetry are not atomic frames or a continuous video.",
+      "No new audio, complete combat-pack or Mover resource-system acceptance.",
+      "visual-01 stopped on InputKey consumed-return interpretation; visual-02 reached a wall and obscured the final capture. Final finite route completed and cleanup was confirmed."
+    ]
+  },
+  "assets": [
+    {
+      "file": "Content/SurvivalRpg/Characters/GASP/CMC/RPG/BP_RpgGasp_CMC.uasset",
+      "sha256": "f8165e80f2c7b7b69482b5b1333e97b3d3ac02c6ce5c9ae0c1c4e61c96504fd7"
+    },
+    {
+      "file": "Content/SurvivalRpg/Characters/GASP/CMC/RPG/DA_PawnData_GaspCMC.uasset",
+      "sha256": "f396b6fbc40035db1faea628007136a648d1051e18bfdbc453569f6645777b71"
+    },
+    {
+      "file": "Content/SurvivalRpg/Characters/GASP/CMC/RPG/Sprint/AS_RpgGasp_CMCSprint.uasset",
+      "sha256": "d0df256242bb538934930b39c081bfab0abbd7904dd8276571c23804ff5bd160"
+    },
+    {
+      "file": "Content/SurvivalRpg/Characters/GASP/CMC/RPG/Sprint/DA_InputConfig_GaspCMC.uasset",
+      "sha256": "fa58c0afc41b1d218c3e521300afc9f8efedcea13135398e7ad255c3d9736210"
+    },
+    {
+      "file": "Content/SurvivalRpg/Characters/GASP/CMC/RPG/Sprint/GA_RpgGasp_CMCSprint.uasset",
+      "sha256": "bf07111a1ed7384c806ed7abcc90a1a899a5fe8975af006c4f4fceab74e5c90c"
+    },
+    {
+      "file": "Content/SurvivalRpg/Characters/GASP/CMC/RPG/Sprint/GA_RpgGasp_StaminaRegen.uasset",
+      "sha256": "29cf921bfdc154fc6b17190b259d4ee926a864144f4891734a6b2ba7574c21c4"
+    },
+    {
+      "file": "Content/SurvivalRpg/Characters/GASP/CMC/RPG/Sprint/GE_RpgGasp_StaminaDefaults.uasset",
+      "sha256": "a4b9e008e3e32e36455185b4e44a1797910d5b8a8af9eb7b0170cb9cabbed52d"
+    },
+    {
+      "file": "Content/SurvivalRpg/Characters/GASP/CMC/RPG/Sprint/GE_RpgGasp_StaminaDelta.uasset",
+      "sha256": "5e92e27ec74b7cd2707807834033c2d65e3cac82f5d9a6e82f8096ca0095e59c"
+    },
+    {
+      "file": "Content/SurvivalRpg/Characters/GASP/CMC/RPG/Sprint/IA_RpgGasp_CMCSprint.uasset",
+      "sha256": "323def84e7984b8a540928791759d3bcb027b07f8495b7502cfc3ca480328957"
+    },
+    {
+      "file": "Content/SurvivalRpg/Characters/GASP/CMC/RPG/Sprint/IMC_RpgGasp_CMC.uasset",
+      "sha256": "ed2758f74c4d69e5e573e3b4893294ebec373476d459a8cc22c57e359f178930"
+    },
+    {
+      "file": "Content/SurvivalRpg/Characters/GASP/CMC/RPG/Traversal/BP_RpgGasp_MantleCharacter.uasset",
+      "sha256": "e72523f724f81efb92b0f1c9695fb892225b7cb4debc51cd50564ba14590eec2"
+    },
+    {
+      "file": "Content/SurvivalRpg/Characters/GASP/CMC/RPG/Traversal/DA_PawnData_GaspMantle.uasset",
+      "sha256": "e3d66e648227791bd500915b591096ea1db8dbd22caa027083b0d1c7dc412918"
+    }
+  ],
+  "reviews": [
+    "Independent runtime/lifecycle/prediction review; no outstanding must-fix findings.",
+    "Independent original-source and four unchanged Mover-asset hash checks.",
+    "Independent engine-source review of final real-correction witness."
+  ],
+  "limitations": [
+    "Raw Saved evidence is ignored and local to this checkout.",
+    "Standalone and single-process listen-server PIE; no new packaged dedicated-server or multi-machine acceptance.",
+    "Two known automation-registration Condition failed startup diagnostics remain outside the successful selected test results.",
+    "A historical CMC graph comment still describes sprint as future work; current graph, native APIs and this report define the actual state."
+  ],
+  "cook": {
+    "seconds": 104.6472874,
+    "exit_code": 0,
+    "target": "Windows",
+    "maps": 5,
+    "evidence": "Saved/GaspCmcSprint20260928/cook-final.log",
+    "sha256": "4bea0cc2bc948341c7f8ddabdccde22a945d44b3885cdb73ec4ae2e852755e6c",
+    "summaryLines": [
+      "[2026.09.28-20.06.02:114][  0]LogCook: Display: Cooked packages 1261 Packages Remain 1916 Total 3177",
+      "[2026.09.28-20.06.04:470][  0]LogCook: Display: Cooked packages 1277 Packages Remain 1900 Total 3177",
+      "[2026.09.28-20.06.08:653][  0]LogCook: Display: Cooked packages 1293 Packages Remain 1884 Total 3177",
+      "[2026.09.28-20.06.12:358][  0]LogCook: Display: Cooked packages 1309 Packages Remain 1868 Total 3177",
+      "[2026.09.28-20.06.16:323][  0]LogCook: Display: Cooked packages 1597 Packages Remain 1580 Total 3177",
+      "[2026.09.28-20.06.18:967][  0]LogCook: Display: Cooked packages 1624 Packages Remain 1553 Total 3177",
+      "[2026.09.28-20.06.21:324][  0]LogCook: Display: Cooked packages 1741 Packages Remain 1436 Total 3177",
+      "[2026.09.28-20.06.23:459][  0]LogCook: Display: Cooked packages 2258 Packages Remain 920 Total 3178",
+      "[2026.09.28-20.06.25:540][  0]LogCook: Display: Cooked packages 2847 Packages Remain 331 Total 3178",
+      "[2026.09.28-20.06.27:737][  0]LogCook: Display: Cooked packages 3101 Packages Remain 77 Total 3178",
+      "[2026.09.28-20.06.30:495][  0]LogCook: Display: Cooked packages 3170 Packages Remain 8 Total 3178",
+      "[2026.09.28-20.06.30:507][  0]LogCook: Display: Cooked packages 3178 Packages Remain 0 Total 3178",
+      "[2026.09.28-20.06.37:157][  0]LogCook: Display: Packages Cooked: 3171, Packages Incrementally Skipped: 0, Packages Skipped by Platform: 7, Total Packages: 3178",
+      "[2026.09.28-20.06.37:185][  0]LogInit: Display: Warning/Error Summary (Unique only)",
+      "[2026.09.28-20.06.37:185][  0]LogInit: Display: Success - 0 error(s), 3 warning(s)"
+    ]
+  }
+}

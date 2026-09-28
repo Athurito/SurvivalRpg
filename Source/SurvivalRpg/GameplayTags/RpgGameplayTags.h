@@ -37,6 +37,12 @@ namespace RpgGameplayTags
 	extern SURVIVALRPG_API FNativeGameplayTag InputTag_Ability_Interact;
 	/** Contextual traversal attempt on jump; granted only by Experiences that support prepared obstacles. */
 	extern SURVIVALRPG_API FNativeGameplayTag InputTag_Ability_Traversal;
+	/** Held sprint request routed through the Experience-granted GAS ability. */
+	extern SURVIVALRPG_API FNativeGameplayTag InputTag_Ability_Sprint;
+	/** Semantic identifier for the replaceable sprint ability asset. */
+	extern SURVIVALRPG_API FNativeGameplayTag Ability_Movement_Sprint;
+	/** Signed stamina units supplied by authority to an instantaneous resource effect. */
+	extern SURVIVALRPG_API FNativeGameplayTag Data_StaminaDelta;
 	/** Opt-in living-ragdoll input granted by a supporting Experience; press again to request getup. */
 	extern SURVIVALRPG_API FNativeGameplayTag InputTag_Ability_Ragdoll;
 	/** GAS-owned living-ragdoll/getup activation; separate from the terminal health/death lifecycle. */

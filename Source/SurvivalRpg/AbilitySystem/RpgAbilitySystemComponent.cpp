@@ -13,6 +13,7 @@
 #include "SurvivalRpg/SurvivalRpg.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterMoverComponent.h"
+#include "SurvivalRpg/Core/Character/RpgCharacterMovementComponent.h"
 #include "SurvivalRpg/Core/Character/RpgMoverRagdollComponent.h"
 #include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
@@ -52,6 +53,7 @@ URpgAbilitySystemComponent::URpgAbilitySystemComponent(const FObjectInitializer&
 
 void URpgAbilitySystemComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	ResetSprintMovement();
 	ResetBlockMovement();
 	ResetSimulatedMoverTraversalPresentation();
 	if (AActor* Avatar = GetAvatarActor())
@@ -87,6 +89,7 @@ void URpgAbilitySystemComponent::InitAbilityActorInfo(AActor* InOwnerActor, AAct
 	const bool bHasNewPawnAvatar = Cast<APawn>(InAvatarActor) && (InAvatarActor != ActorInfo->AvatarActor);
 	if (ActorInfo->AvatarActor.Get() != InAvatarActor)
 	{
+		ResetSprintMovement();
 		ResetBlockMovement();
 		InputSuppressedUntilReleaseSpecHandles.Reset();
 	}
@@ -172,6 +175,7 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 void URpgAbilitySystemComponent::ClearActorInfo()
 {
 	InputSuppressedUntilReleaseSpecHandles.Reset();
+	ResetSprintMovement();
 	ResetBlockMovement();
 	ResetSimulatedMoverTraversalPresentation();
 	InitializedAnimInstance.Reset();
@@ -275,6 +279,69 @@ float URpgAbilitySystemComponent::GetBlockMovementSpeedLimit() const
 	const AActor* Avatar = GetAvatarActor();
 	return Avatar && Avatar->GetLocalRole() >= ROLE_AutonomousProxy && BlockMovementLease && IsBlockMovementActive()
 		? BlockMovementSpeedLimit : 0.f;
+}
+
+uint32 URpgAbilitySystemComponent::BeginSprintMovement(UGameplayAbility* Ability, float SprintSpeed)
+{
+	AActor* Avatar = GetAvatarActor();
+	if (!IsValid(Avatar) || Avatar->GetLocalRole() < ROLE_AutonomousProxy || !IsValid(Ability) || !Ability->IsActive()
+		|| Ability->GetAbilitySystemComponentFromActorInfo() != this || Ability->GetAvatarActorFromActorInfo() != Avatar
+		|| !FindAbilitySpecFromHandle(Ability->GetCurrentAbilitySpecHandle()) || !FMath::IsFinite(SprintSpeed) || SprintSpeed <= 0.f)
+	{
+		return 0;
+	}
+	if (SprintMovementLease && IsSprintMovementActive())
+	{
+		return SprintMovementAbility.Get() == Ability ? SprintMovementLease : 0;
+	}
+	SprintMovementAbility = Ability;
+	SprintMovementAvatar = Avatar;
+	SprintMovementSpecHandle = Ability->GetCurrentAbilitySpecHandle();
+	SprintMovementActivationKey = Ability->GetCurrentActivationInfo().GetActivationPredictionKey();
+	SprintMovementSpeed = SprintSpeed;
+	if (++LastSprintMovementLease == 0) { ++LastSprintMovementLease; }
+	SprintMovementLease = LastSprintMovementLease;
+	return SprintMovementLease;
+}
+
+void URpgAbilitySystemComponent::EndSprintMovement(UGameplayAbility* Ability, uint32 Lease)
+{
+	if (Lease && Lease == SprintMovementLease && SprintMovementAbility.Get() == Ability) { ResetSprintMovement(); }
+}
+
+bool URpgAbilitySystemComponent::IsSprintMovementActive() const
+{
+	const AActor* Avatar = GetAvatarActor();
+	const UGameplayAbility* Ability = SprintMovementAbility.Get();
+	return IsValid(Avatar) && Avatar->GetLocalRole() >= ROLE_AutonomousProxy && SprintMovementLease
+		&& SprintMovementAvatar.Get() == Avatar && Ability && Ability->IsActive()
+		&& Ability->GetAbilitySystemComponentFromActorInfo() == this && Ability->GetAvatarActorFromActorInfo() == Avatar
+		&& Ability->GetCurrentAbilitySpecHandle() == SprintMovementSpecHandle
+		&& Ability->GetCurrentActivationInfo().GetActivationPredictionKey() == SprintMovementActivationKey;
+}
+
+float URpgAbilitySystemComponent::GetSprintMovementSpeed() const
+{
+	return IsSprintMovementActive() ? SprintMovementSpeed : 0.f;
+}
+
+void URpgAbilitySystemComponent::ResetSprintMovement()
+{
+	AActor* PreviousAvatar = SprintMovementAvatar.Get();
+	SprintMovementLease = 0;
+	SprintMovementSpeed = 0.f;
+	SprintMovementAbility.Reset();
+	SprintMovementAvatar.Reset();
+	SprintMovementSpecHandle = FGameplayAbilitySpecHandle{};
+	SprintMovementActivationKey = FPredictionKey{};
+	// Clear presentation even when death/teardown has disabled the movement tick. Saved moves remain immutable.
+	if (IsValid(PreviousAvatar))
+	{
+		if (URpgCharacterMovementComponent* Movement = PreviousAvatar->FindComponentByClass<URpgCharacterMovementComponent>())
+		{
+			Movement->RefreshSprintState();
+		}
+	}
 }
 
 bool URpgAbilitySystemComponent::IsSimulatedMoverTraversalMontage(const UAnimMontage* Montage) const
@@ -826,6 +893,7 @@ void URpgAbilitySystemComponent::SuppressAbilityInputUntilRelease(FGameplayAbili
 void URpgAbilitySystemComponent::OnRemoveAbility(FGameplayAbilitySpec& AbilitySpec)
 {
 	const FGameplayAbilitySpecHandle Handle = AbilitySpec.Handle;
+	if (SprintMovementSpecHandle == Handle) { ResetSprintMovement(); }
 	Super::OnRemoveAbility(AbilitySpec);
 	// Super may cancel the active instance; retire suppression after its cancellation callback.
 	InputSuppressedUntilReleaseSpecHandles.Remove(Handle);
@@ -876,6 +944,12 @@ void URpgAbilitySystemComponent::NotifyAbilityFailed(const FGameplayAbilitySpecH
 void URpgAbilitySystemComponent::NotifyAbilityEnded(FGameplayAbilitySpecHandle Handle, UGameplayAbility* Ability,
 	bool bWasCancelled)
 {
+	// Retire before external callbacks can activate the same instanced ability again.
+	if (SprintMovementAbility.Get() == Ability && SprintMovementSpecHandle == Handle
+		&& Ability && Ability->GetCurrentActivationInfo().GetActivationPredictionKey() == SprintMovementActivationKey)
+	{
+		ResetSprintMovement();
+	}
 	Super::NotifyAbilityEnded(Handle, Ability, bWasCancelled);
 	
 	if (URpgGameplayAbility* RpgAbility = Cast<URpgGameplayAbility>(Ability))

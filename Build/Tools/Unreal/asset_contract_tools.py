@@ -38,6 +38,35 @@ def _status():
 class AssetContractTools(unreal.ToolsetDefinition):
     @toolset_registry.tool_call
     @staticmethod
+    def editable_blueprint_component(blueprint_path: str, component_name: str) -> unreal.ActorComponent:
+        """Resolve one editable component for this Blueprint, creating an inherited override when necessary.
+
+        Standard ActorTools exposes the ancestor SCS template. This uses the editor's
+        SubobjectData API to author a child-only override instead. No values, compile,
+        or save are performed; callers use ObjectTools and BlueprintTools afterwards.
+        """
+        _guard()
+        blueprint = _asset(blueprint_path)
+        if not isinstance(blueprint, unreal.Blueprint):
+            raise ValueError('Expected an actor Blueprint')
+        subsystem = unreal.get_engine_subsystem(unreal.SubobjectDataSubsystem)
+        library = unreal.SubobjectDataBlueprintFunctionLibrary
+        matches = []
+        for handle in subsystem.k2_gather_subobject_data_for_blueprint(blueprint):
+            data = library.get_data(handle)
+            obj = library.get_associated_object(data)
+            if isinstance(obj, unreal.ActorComponent) and obj.get_name() == component_name:
+                matches.append(data)
+        if len(matches) != 1:
+            raise ValueError('Expected exactly one named component; found ' + str(len(matches)))
+        blueprint.modify()
+        result = library.get_object_for_blueprint(matches[0], blueprint)
+        if not isinstance(result, unreal.ActorComponent) or result.get_outermost() != blueprint.get_outermost():
+            raise RuntimeError('Editor did not provide a component owned by the requested Blueprint')
+        return result
+
+    @toolset_registry.tool_call
+    @staticmethod
     def set_pie_view_rotation(controller_path: str, pitch: float, yaw: float) -> bool:
         """Aim a local PIE player's view for gameplay inspection; no actor teleport or asset edit."""
         controller = unreal.find_object(None, controller_path)

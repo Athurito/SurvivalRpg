@@ -33,6 +33,9 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_StopJump, "InputTag.StopJump", "StopJump input.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Ability_Interact, "InputTag.Ability.Interact", "Activate the currently focused world interaction.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Ability_Traversal, "InputTag.Ability.Traversal", "Try prepared traversal before the ordinary jump fallback.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Ability_Sprint, "InputTag.Ability.Sprint", "Held Experience-granted GAS sprint request.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Movement_Sprint, "Ability.Movement.Sprint", "Semantic identifier for the configured sprint ability.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_StaminaDelta, "Data.StaminaDelta", "Authority-authored signed stamina change in resource units.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_UI_Inventory, "InputTag.UI.Inventory", "Open the owning player's inventory screen.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_UI_QuickAccessRadial_Hold, "InputTag.UI.QuickAccessRadial.Hold", "Hold to open the owning player's quick-access radial.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_UI_QuickAccessRadial_Select, "InputTag.UI.QuickAccessRadial.Select", "Select a quick-access radial segment with the right stick.");
