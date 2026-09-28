@@ -37,6 +37,7 @@ public class SurvivalRpg : ModuleRules
 			new string[]
 			{
 				"AnimationWarpingRuntime",
+				"Chooser",
 				"CommonInput",
 				"DeveloperSettings",
 				"EnhancedInput",

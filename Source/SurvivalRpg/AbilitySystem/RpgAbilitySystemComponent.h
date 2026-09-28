@@ -51,6 +51,21 @@ public:
 
 	void ProcessAbilityInput(float DeltaTime, bool bGamePaused);
 	void ClearAbilityInput();
+	/** Opt-in local cancellation policy: ignores this spec's held/Triggered input until a real release, without sending a release event. */
+	void SuppressAbilityInputUntilRelease(FGameplayAbilitySpecHandle Handle);
+
+	/** Acquires movement policy for this exact local-predicted/authority activation. Limit is cm/s; zero adds no speed cap. */
+	uint32 BeginBlockMovement(UGameplayAbility* Ability, float MovementSpeedLimit = 0.f);
+	/** Retires only the matching activation lease; delayed cleanup cannot clear a replacement block. */
+	void EndBlockMovement(UGameplayAbility* Ability, uint32 Lease);
+	/** Confirms an authoritative block reaction to its predicting owner; sends identity/tag only, never montage or damage choices. */
+	void ConfirmBlockReaction(UGameplayAbility* Ability, uint32 Lease, FGameplayTag ReactionTag);
+	/** Game-thread read model: live activation on owner/authority, replicated blocking tag on simulated proxies. */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Block")
+	bool IsBlockMovementActive() const;
+	/** Immutable activation speed cap in cm/s, or zero without a local lease. Proxies use their movement snapshot. */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Block")
+	float GetBlockMovementSpeedLimit() const;
 	
 	
 	bool IsActivationGroupBlocked(ERpgAbilityActivationGroup Group) const;
@@ -87,11 +102,17 @@ public:
 	void TryActivateAbilitiesOnSpawn();
 
 protected:
+	/** Delivers only Block/PerfectBlock to the same still-active local activation; stale avatar/spec/prediction identities are discarded. */
+	UFUNCTION(Client, Reliable)
+	void ClientConfirmBlockReaction(AActor* Avatar, FGameplayAbilitySpecHandle AbilityHandle,
+		FPredictionKey ActivationPredictionKey, FGameplayTag ReactionTag);
+
 	/** Configured Mover traversal montages are presented from movement history, preventing an earlier GAS receipt clock. */
 	virtual void OnRep_ReplicatedAnimMontage() override;
 	virtual bool IsReadyForReplicatedMontage() override;
 	virtual void AbilitySpecInputPressed(FGameplayAbilitySpec& Spec) override;
 	virtual void AbilitySpecInputReleased(FGameplayAbilitySpec& Spec) override;
+	virtual void OnRemoveAbility(FGameplayAbilitySpec& AbilitySpec) override;
 	
 	
 	virtual void NotifyAbilityActivated(const FGameplayAbilitySpecHandle Handle, UGameplayAbility* Ability) override;
@@ -119,6 +140,10 @@ protected:
 
 	// Handles to abilities that have their input held.
 	TArray<FGameplayAbilitySpecHandle> InputHeldSpecHandles;
+
+	// Local input policy only. A cancelled hold cannot reactivate while interruption tags are still in transit.
+	// Temporary input blocking preserves this set; physical release, spec removal or avatar replacement retires it.
+	TSet<FGameplayAbilitySpecHandle> InputSuppressedUntilReleaseSpecHandles;
 
 	// Number of abilities running in each activation group.
 	int32 ActivationGroupCounts[static_cast<uint8>(ERpgAbilityActivationGroup::MAX)];
@@ -196,6 +221,15 @@ protected:
 	TArray<FGameplayAbilitySpec> LastActiveAbilities;
 	
 private:
+	void ResetBlockMovement();
+	TWeakObjectPtr<UGameplayAbility> BlockMovementAbility;
+	TWeakObjectPtr<AActor> BlockMovementAvatar;
+	FPredictionKey BlockMovementActivationKey;
+	// Local ownership tokens are never network authority; movement records the sampled policy in its own history.
+	uint32 BlockMovementLease = 0;
+	uint32 LastBlockMovementLease = 0;
+	float BlockMovementSpeedLimit = 0.f;
+
 	bool IsSimulatedMoverTraversalMontage(const UAnimMontage* Montage) const;
 	void StopPresentedMoverTraversal(const TCHAR* Reason = TEXT("reset"), const FMontageBlendSettings* BlendSettings = nullptr);
 	void SetPresentedMoverTraversalPosition(FAnimMontageInstance& Instance, float Position);

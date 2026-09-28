@@ -13,6 +13,9 @@
 class URpgAbilitySystemComponent;
 class URpgEquipmentDefinition;
 class URpgEquipmentInstance;
+class URpgPawnExtensionComponent;
+class UAnimInstance;
+class USkeletalMeshComponent;
 struct FNetDeltaSerializeInfo;
 
 /**
@@ -79,6 +82,7 @@ struct SURVIVALRPG_API FRpgEquipmentList : public FFastArraySerializer
 	void PreReplicatedRemove(const TArrayView<int32> RemovedIndices, int32 FinalSize);
 	void PostReplicatedAdd(const TArrayView<int32> AddedIndices, int32 FinalSize);
 	void PostReplicatedChange(const TArrayView<int32> ChangedIndices, int32 FinalSize);
+	void PostReplicatedReceive(const FFastArraySerializer::FPostReplicatedReceiveParameters& Parameters);
 
 	bool NetDeltaSerialize(FNetDeltaSerializeInfo& DeltaParms)
 	{
@@ -153,6 +157,14 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Equipment")
 	bool IsEquipmentInstanceActiveForInputTag(const URpgEquipmentInstance* EquipmentInstance, FGameplayTag InputTag) const;
 
+	/** Active blocking item using the same offhand-first rule as GAS grants; null while its replicated instance is unresolved. */
+	UFUNCTION(BlueprintPure, Category = "Equipment|Block")
+	URpgEquipmentInstance* GetActiveBlockSource() const;
+
+	/** Current equipment-owned linked instance on the gameplay mesh, or null until local presentation is ready. Game thread only. */
+	UFUNCTION(BlueprintPure, Category = "Equipment|Block")
+	UAnimInstance* GetBlockLocomotionLayerInstance() const;
+
 	template <typename T>
 	T* GetFirstInstanceOfType() const
 	{
@@ -164,13 +176,30 @@ public:
 	virtual void InitializeComponent() override;
 	virtual void UninitializeComponent() override;
 	virtual void ReadyForReplication() override;
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 private:
+	friend struct FRpgEquipmentList;
+	void RefreshBlockLocomotionLayer();
+	void ClearBlockLocomotionLayer();
+	void HandleBlockAvatarInitialized();
+	void HandleBlockAvatarUninitialized();
+	UFUNCTION()
+	void HandleBlockAnimationInitialized();
+	TWeakObjectPtr<URpgPawnExtensionComponent> BlockPawnExtension;
+	TWeakObjectPtr<USkeletalMeshComponent> BlockGameplayMesh;
+	TWeakObjectPtr<UAnimInstance> BlockMainAnimInstance;
+	TWeakObjectPtr<URpgEquipmentInstance> BlockLayerSource;
+	TWeakObjectPtr<UClass> BlockLayerClass;
+	bool bRefreshingBlockLayer = false;
+	bool bBlockLayerShuttingDown = false;
+
 	bool CanEquipItemInSlot(TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition, ERpgEquipmentSlot Slot) const;
 	void UnequipConflictingItems(TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition, ERpgEquipmentSlot Slot);
 	bool DoesEquipmentOccupySlot(const FRpgAppliedEquipmentEntry& Entry, ERpgEquipmentSlot Slot) const;
 	bool CanEquipmentBlock(const URpgEquipmentInstance* EquipmentInstance) const;
-	URpgEquipmentInstance* GetActiveBlockSource() const;
 	bool ShouldGrantSlotAbilitySet(const FRpgAppliedEquipmentEntry& Entry, const FRpgEquipmentSlotAbilitySet& SlotAbilitySet, const URpgEquipmentInstance* ActiveBlockSource) const;
 
 	UFUNCTION()

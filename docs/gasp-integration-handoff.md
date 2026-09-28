@@ -5,20 +5,25 @@ Zentraler Plan und Aufgabenverträge:
 Diese Datei hält den **aktuellen Arbeitsstand**, die Roadmap die Reihenfolge und
 Abnahme. Beide bei relevanten Fortschritten im selben PR aktualisieren.
 
-## Aktueller Stand – 27.09.2026
+## Aktueller Stand – GASP-06-Neuaufbau, 28.09.2026
 
 | Feld | Wert |
 | --- | --- |
-| Aktive Implementierungsaufgabe | Kein Implementierungsauftrag aktiv; `GASP-05`-Originalbereinigung mit [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158) bestätigt gemergt |
-| Nächste bereite Aufgabe | Kein weiterer automatisch bereiter Schritt; GASP-06 bleibt für einen eigenen späteren Auftrag zurückgestellt. Offene GASP-02-/04-Grenzen bleiben dokumentiert |
-| Zuständiger Chat / beanspruchte Dateien | Implementierung und unabhängige Reviews beendet; Editor/Cook sauber geschlossen, keine Assetdateien beansprucht. Nur bestätigte Merge-Statuspflege |
-| Runtime-Ausgangspunkt | `9de031c9e255a13d117662713739e44984a98edc`, bestätigter Merge PR #152 am 26.09.2026 um 20:51:05 UTC |
-| Checkout / Branch | `D:/Repos/SurvivalRpg`; Arbeitsbranch `codex/gasp-05-remove-sample-actors` abgeschlossen. Bestätigter Arbeitsmerge auf master: `051f03f06abf84b82191338a52401dd64ddd6c32`; anschließende reine Statuspflege verändert keine Prüfbelege |
-| Letzter Implementierungs-Commit | `0c37d9c4b9fb5cb555569c81ea5b10aedaefa4d6`: exakt 2298 Originalpakete und vier alte Sample-Actor-Pakete entfernt; Runtime/Projektkopien unverändert |
-| Letzter gemergter GASP-Arbeits-PR | [PR #158](https://github.com/Athurito/SurvivalRpg/pull/158), bestätigt gemergt als `051f03f06abf84b82191338a52401dd64ddd6c32` am 2026-09-27T01:16:35Z; finaler geprüfter Head `594b202084737c6e98ad3cc853d3cc613504dcc5` |
-| Aktuelle Belege | 11063 Registry-Pakete / 63658 Kanten, keine Referenzen auf Entferntes; 4662 verbleibende Assets und sieben Saves byteidentisch. Zwei Map-Smokes, 9/9 Tests (243 Warnungen), neun BP-/AnimBP-Compiles; voller Windows-Cook für fünf Karten, 3132 Pakete, Exit 0, 3 Warnungen. Vier Overrides verifiziert. [Entfernung](gasp-original-import-removal.md), [Manifest](assets/gasp-original-import-removal.json) |
-| Nächster Handgriff | Bei einem Folgeauftrag aktuellen Git-/PR-Stand und die offenen Roadmap-Grenzen lesen; Originalimport nicht wiederherstellen und GASP-06 nicht ungefragt beginnen |
-| Blocker / offene Abnahme | GASP-05 im dokumentierten Umfang abgeschlossen. 70 bereits vorher unbekannte Registryziele sowie PrimaryAssetId-/dynamische Stringgrenzen dokumentiert. Keine Packaged-Ausführung; GASP-02-/04-Grenzen bleiben offen, GASP-06 zurückgestellt |
+| Aktive Aufgabe | `GASP-06`: Nutzerregressionen nach `bf90d218` korrigiert; erneute Sicht-/Hörprobe offen |
+| Branch / PR | `codex/gasp-06-moving-block`, [Draft-PR #160](https://github.com/Athurito/SurvivalRpg/pull/160), offen; kein Merge |
+| Rückbaubasis | `908b7c7544a42848afe6c8b673988735ebd4ba1b`; vorheriger Head `20d1f7ffe62c8baff982d52ea5f64f41f6766aa2` |
+| Rückbaucommit | `de852e984e65009d6c68cc2be7d98cc94caa0bb5`; separate Historie erhalten, Neuaufbau danach |
+| Implementierungscommit | `ac87a4a6a0a25f5b90633e4ed3e8ef12c987b845`; gesondert nach Rückbau, technische/eigene visuelle Abnahme dokumentiert |
+| Rückbauprüfung | Alle 28 Code-/Tool-/Assetpfade identisch zur Basis beziehungsweise dort nicht vorhanden; acht tatsächliche Assetdateien gegen die LFS-SHA256 der Basis geprüft. Keine neue Build-/PIE-Abnahme im Rückbaucheckpoint |
+| Historische Ergebnisse | Die bisherigen vier Berichte/Manifeste bleiben ausdrücklich als zurückgenommene Versuche erhalten; alte Test-/Cook-Ergebnisse gelten nicht für den Neuaufbau |
+| Implementierung | 35 abgeleitete UEFN-Sequences, fünf kurze GAS-Montagen, gemeinsamer abstrakter AnimBP-Parent mit zwei Datenkindern/Choosern; CMC/Mover verwenden denselben Layer. Aktiver Shield-Satz: 157 cm/s. Gameplay-Lease/Prediction und Reaktionsbestätigung nativ; Abläufe, Kontaktphasen, Clipwahl und Tuning in Assets |
+| Nachbesserung | Commit `794fad7501d5e19625b07c5841095d8c7c0f60b6`: finaler Parent-Interruptblend aktualisiert nur relevanten Zweig; `BS_BlockWalk` behält Marker-Sync ohne zusätzliche SyncPhase-Zeitrücksetzung; 50 Walk-L/R-Notifies an bestehenden Kontakten. Rohbelege `Saved/GaspBlockCadence20260928`, ignoriert/lokal |
+| Prüfstand | Neue Assetkorrektur: 16/16 Tests (623 Warnungen), drei AnimBP-Compiles, kaltes Neuladen 24 Clips/50 Notifies, Kadenz-/Spielmix-/Übergangsaufnahmen und Fünf-Karten-Cook Exit0 (3170 gespeicherte Pakete). Erster 18/19-Lauf mit Rollback-Timeout erhalten. Historische Editor11/Game02/Focus04/Regression02 gelten als frühere Neuaufbauprüfungen, keine neuen Builds; [Bericht](gasp-block-locomotion.md) |
+| Editorzustand | Validierungs-PIEs beendet, PlaySettings restauriert, Editor sauber. Sichtbarer Nutzereditor PID14180 auf `Lvl_RpgGaspMover`, kein PIE automatisch gestartet; isolierter Benutzerpfad `Saved/GaspBlockLayers20260927/IsolatedUser`, MCP-Port8002, `NoSaveConfig` |
+| Nächster Schritt | Nutzer prüft CMC auf `Lvl_RpgGaspMantle` ohne RMB (normale Laufanimation), Mover auf `Lvl_RpgGaspMover` mit RMB+WASD/Diagonal/Stop/Release (Gehschritte). Erst nach erneuter Sicht-/Hörfreigabe mergen. Kein Roadmap-Fortschritt oder Shutdown während dieser Abnahme |
+| Abnahme | 26 Assetkorrekturen seit `bf90d218`, keine C++-/Tempoänderung. Quellclips/Spielstände erhalten. Messung und Nahaufnahmen geprüft; Klangqualität und Nutzergefallen stehen aus. Untere Füße in neuen Nahaufnahmen angeschnitten, keine neue vollständige Fußkontaktabnahme behauptet |
+
+GitHub-Titel/-Beschreibung konnten wegen Connector-403 und fehlender Browseranmeldung noch nicht ersetzt werden; sie beschreiben weiterhin den verworfenen Ansatz. Maßgeblich sind dieser Neuaufbaubericht und die neuen Commits im selben PR. Kein Merge ist freigegeben.
 
 ## Letzter abgeschlossener Schritt – GASP-05-Originalbereinigung
 

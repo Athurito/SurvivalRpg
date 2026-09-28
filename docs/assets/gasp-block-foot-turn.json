@@ -1,0 +1,2108 @@
+{
+  "schema_version": 1,
+  "task": "GASP-06",
+  "date": "2026-09-27",
+  "pr": "https://github.com/Athurito/SurvivalRpg/pull/160",
+  "status": "final_automated_validation_complete_pr_open_visual_acceptance_pending",
+  "baseline_commit": "94ac50d3c1a9225afb861f24b9767eb83c92cc8c",
+  "implementation_commit": "fc2e2b6c7954e95b8dedd8daf49eab9cb8842faa",
+  "preservation_baseline_commit": "f3dd04730c15cde1ec769fe46698c3b1be51a703",
+  "scope": {
+    "changed_assets": [
+      {
+        "variant": "CMC",
+        "repository_path": "Content/SurvivalRpg/Characters/GASP/CMC/RPG/ABP_RpgGasp_CMC.uasset",
+        "baseline_lfs_oid_sha256": "bb3869556e24f501583a5f95bd3112e8e2820e13e86b3722210d558bf0d5e68a",
+        "previous_binary_backup": {
+          "path": "Saved/GaspBlockRefinement20260927/CMC-before-foot-candidate.uasset",
+          "sha256": "bb3869556e24f501583a5f95bd3112e8e2820e13e86b3722210d558bf0d5e68a"
+        },
+        "implementation_lfs_oid_sha256": "06588095db459c9642f0d71955078dc7066e942ce17e00328954cfd40596088f",
+        "current_sha256": "06588095db459c9642f0d71955078dc7066e942ce17e00328954cfd40596088f",
+        "size_bytes": 4297028
+      },
+      {
+        "variant": "Mover",
+        "repository_path": "Content/SurvivalRpg/Characters/GASP/Mover/RPG/ABP_RpgGasp_Mover.uasset",
+        "baseline_lfs_oid_sha256": "ded02bea19a98ee3f7ff96fa11def5d8f2782ad4d946f63dfcd9a52e7130d6f6",
+        "previous_binary_backup": {
+          "path": "Saved/GaspBlockRefinement20260927/Mover-before-foot-candidate.uasset",
+          "sha256": "ded02bea19a98ee3f7ff96fa11def5d8f2782ad4d946f63dfcd9a52e7130d6f6"
+        },
+        "implementation_lfs_oid_sha256": "ffa4a46e3cbaac9922deb63329f813aa520ad8ec170e0b111b75706e7a4b1bca",
+        "current_sha256": "ffa4a46e3cbaac9922deb63329f813aa520ad8ec170e0b111b75706e7a4b1bca",
+        "size_bytes": 6212285
+      }
+    ],
+    "new_native_build_run": true,
+    "candidate_mechanism": [
+      "Preserve active authored routes: Mover experimental state machine1; CMC MotionMatching0.",
+      "Apply extra UpperBody root-release exception only when no leg motion is requested; preserve other source exceptions.",
+      "Blend cached block upper-body pose after OffsetRootBone from spine_01, mesh-space rotation blend, base-pose curves; disable correction for active DefaultSlot.",
+      "Allow existing CMC turn selection during UpperBody slot."
+    ],
+    "fresh_motion_grace_seconds": 0.08,
+    "maximum_leg_blend_seconds": 0.15,
+    "runtime_native_source_changed": false,
+    "editor_test_fixture_changed": true,
+    "fixture_change": {
+      "repository_path": "Source/SurvivalRpgEditor/Private/Network/RpgGaspMovingBlockTests.cpp",
+      "before_sha256": "168a00bec31726ce7447b3174d241f24ca9d13e10526d90e3110a0298074c2c0",
+      "after_sha256": "a1068878e36eb8ad095b2626d8a077796531f2ffcb127d99cb982e632250ed46",
+      "previous_spacing_cm": 500,
+      "new_spacing_cm": 5000,
+      "changes": "One rationale comment and spacing constant only; all collision/physics/input/measurement/assertion contracts unchanged.",
+      "normal_floor_margin_cm": 45000,
+      "outer_start_separation_cm": 10000,
+      "relevancy_reason": "20000-cm spacing rejected because 40000-cm endpoint separation could exceed unchanged pawn relevance limits; CMC radius30000, Engine Actor default radius15000.",
+      "fixture_implementation_commit": "fc2e2b6c7954e95b8dedd8daf49eab9cb8842faa",
+      "commit_status": "committed"
+    }
+  },
+  "measurement": {
+    "evidence": {
+      "path": "Saved/GaspBlockRefinement20260927/foot-turn-analysis.json",
+      "sha256": "89c50198213f98873135595b221b826e8c5b80285d1a06a0a0e2330867a9c68c"
+    },
+    "definitions": {
+      "analysis_window": "Main-probe elapsed_seconds >= 0.5; all main probes requested5s. No alignment or extrapolation between runs.",
+      "actual_yaw": "Sum wrapped adjacent capsule-yaw differences; absolute travel additionally counts reversals. Main full-window and cropped-window results are separate.",
+      "root_gap": "wrap(CharacterTransform.yaw - RootTransform.yaw), not final chest/shield facing.",
+      "negative_foot": "foot_geometry.signed_feet_lateral_cm < 0 along measured thigh_l-to-thigh_r hip axis; projected anatomical side reversal, not proof of surface intersection.",
+      "negative_duration": "Left-held value over each actual adjacent world-time interval wholly in the analysis window; last sample has no extrapolated duration.",
+      "alpha_gate": "needs_leg_motion_flips counts Boolean changes; alpha_half_crossings counts crossings of0.5 for descriptive reporting only.",
+      "settle_zero": "First sampled Alpha <=1e-6 relative to the separately started settle probe, not latency from input release. Probe request was1.2s for these seven captures.",
+      "selection": "Snapshot property read models only: Mover LocomotionSetup1 StateMachine, CMC0 MotionMatching. Neither proves all blend-stack contributors or selected source phase."
+    },
+    "limitations": [
+      "No visual quality pass/fail threshold is defined by this report.",
+      "Old jitter gate metrics cannot prove stepping, foot placement or limb quality.",
+      "Five-second series predate new LocomotionSetup/BlendStackInputs/StateMachineState fields; route and source selection come from separate timestamped screenshot-side property reads.",
+      "Only one current before-normal Mover series is available; no matched CMC or slow/reverse baseline is inferred.",
+      "Camera input amplitude is not a fixed degrees-per-second contract; actual yaw is reported.",
+      "Only local Authority/standalone turn samples are covered; continuous network proxy turn quality is not validated here.",
+      "Screenshots are sequential MCP operations with wall-clock intervals, not exact-FPS video.",
+      "The completed 8s reverse screenshot captures have only 175 CMC / 169 Mover Slate samples; actual net turns are asymmetric (about -48.09 deg / -38.05 deg). Sparse screenshot-side selection reads cannot rule out shorter turn selections between images.",
+      "Current asset cook/checks and final18/18 editor-fixture regression are complete and recorded separately. Earlier failed runs remain preserved. User visual acceptance is pending; no general visual-quality threshold is asserted."
+    ],
+    "runs": [
+      {
+        "label": "feet-select-before-normal",
+        "variant": "Mover",
+        "stage": "baseline",
+        "metadata": {
+          "state": "complete",
+          "duration_seconds": 5.0,
+          "mode": "slow",
+          "amplitude": 0.5,
+          "action_tag": "InputTag.Look.Mouse",
+          "local_role": "<NetRole.ROLE_AUTHORITY: 3>"
+        },
+        "total_sample_count": 319,
+        "full_probe_actual_yaw": {
+          "signed_net_degrees": 381.0649677445664,
+          "absolute_travel_degrees": 381.0649677445664
+        },
+        "after_0_5_seconds": {
+          "sample_count": 288,
+          "world_duration_seconds": 4.483960501849651,
+          "actual_yaw": {
+            "signed_net_degrees": 357.6648209683209,
+            "absolute_travel_degrees": 357.6648209683209
+          },
+          "root_gap_degrees": {
+            "min": 1.1611040676603466,
+            "max": 2.9441601651574274
+          },
+          "alpha": {
+            "min": 0.99743401966472,
+            "max": 1.0
+          },
+          "needs_leg_motion_flips": 0,
+          "alpha_half_crossings": 0,
+          "negative_foot_samples": 167,
+          "negative_foot_duration_seconds": 2.6046162992715836,
+          "signed_feet_lateral_cm": {
+            "min": -37.5859840770758,
+            "max": 33.64860195427744
+          },
+          "feet_distance_xy_cm": {
+            "min": 26.66208300202522,
+            "max": 40.2680585874841
+          },
+          "foot_world_z_span_cm": {
+            "foot_l": 1.3198803429435984,
+            "foot_r": 2.3176918721308084
+          },
+          "speed2d_cm_s": {
+            "min": 0.0,
+            "max": 0.0
+          }
+        },
+        "settle": {
+          "sample_count": 81,
+          "world_duration_seconds": 1.1851879991590977,
+          "actual_yaw": {
+            "signed_net_degrees": 0.8889083204322503,
+            "absolute_travel_degrees": 0.9127441621828041
+          },
+          "root_gap_degrees": {
+            "min": -0.0012019391379567423,
+            "max": 0.218513031421935
+          },
+          "alpha": {
+            "min": 0.0,
+            "max": 1.0
+          },
+          "needs_leg_motion_flips": 1,
+          "alpha_half_crossings": 1,
+          "negative_foot_samples": 0,
+          "negative_foot_duration_seconds": 0,
+          "signed_feet_lateral_cm": {
+            "min": 23.410181753672063,
+            "max": 103.05844428710677
+          },
+          "feet_distance_xy_cm": {
+            "min": 26.157390092160743,
+            "max": 103.19821759423397
+          },
+          "foot_world_z_span_cm": {
+            "foot_l": 4.47383207067481,
+            "foot_r": 3.8119115911175285
+          },
+          "speed2d_cm_s": {
+            "min": 0.0,
+            "max": 0.0
+          },
+          "state": "complete",
+          "requested_duration_seconds": 1.2000000476837158,
+          "first_alpha_zero_elapsed_seconds": 1.0619999999980791,
+          "end_root_gap_degrees": -0.00025610786249785633,
+          "end_alpha": 0.0,
+          "end_feet_distance_xy_cm": 103.19234745854409,
+          "capture_gap_from_turn_last_sample_seconds": 0.45537734031677246
+        },
+        "state_machine_fields_present_in_time_series": false,
+        "cached_mm_selected_animation_counts": {
+          "None": 319
+        },
+        "evidence": {
+          "": {
+            "path": "Saved/GaspBlockRefinement20260927/feet-select-before-normal.json",
+            "sha256": "aaa70633a35a1dfb1870cd87af541dbbb0985b74bc78e28f664944035d6be044"
+          },
+          "-settle": {
+            "path": "Saved/GaspBlockRefinement20260927/feet-select-before-normal-settle.json",
+            "sha256": "bb0dd96fdbd822aaf344117b344d2d3aeeafdc796ca0b5e705f851a459b37156"
+          },
+          "-snapshot": {
+            "path": "Saved/GaspBlockRefinement20260927/feet-select-before-normal-snapshot.json",
+            "sha256": "ea21aebbaca4678756ae23f9b41b17b54df007f8550fb331b9201791dbf17584"
+          }
+        }
+      },
+      {
+        "label": "feet-candidate-mover-normal",
+        "variant": "Mover",
+        "stage": "candidate",
+        "metadata": {
+          "state": "complete",
+          "duration_seconds": 5.0,
+          "mode": "slow",
+          "amplitude": 0.5,
+          "action_tag": "InputTag.Look.Mouse",
+          "local_role": "<NetRole.ROLE_AUTHORITY: 3>"
+        },
+        "total_sample_count": 320,
+        "full_probe_actual_yaw": {
+          "signed_net_degrees": 382.91225819095524,
+          "absolute_travel_degrees": 382.91225819095524
+        },
+        "after_0_5_seconds": {
+          "sample_count": 289,
+          "world_duration_seconds": 4.486610498279333,
+          "actual_yaw": {
+            "signed_net_degrees": 360.38467033254585,
+            "absolute_travel_degrees": 360.38467033254585
+          },
+          "root_gap_degrees": {
+            "min": -2.0798219060599763,
+            "max": 41.73636019381922
+          },
+          "alpha": {
+            "min": 1.0,
+            "max": 1.0
+          },
+          "needs_leg_motion_flips": 0,
+          "alpha_half_crossings": 0,
+          "negative_foot_samples": 0,
+          "negative_foot_duration_seconds": 0,
+          "signed_feet_lateral_cm": {
+            "min": 21.765090387530872,
+            "max": 31.489005378834637
+          },
+          "feet_distance_xy_cm": {
+            "min": 24.10980296640313,
+            "max": 32.02196886400901
+          },
+          "foot_world_z_span_cm": {
+            "foot_l": 7.578187516053887,
+            "foot_r": 3.4143192211968127
+          },
+          "speed2d_cm_s": {
+            "min": 0.0,
+            "max": 0.0
+          }
+        },
+        "settle": {
+          "sample_count": 80,
+          "world_duration_seconds": 1.1810567006468773,
+          "actual_yaw": {
+            "signed_net_degrees": 0.9722037676259845,
+            "absolute_travel_degrees": 0.9982890642092741
+          },
+          "root_gap_degrees": {
+            "min": 0.003242951055881349,
+            "max": 1.6311916129970996
+          },
+          "alpha": {
+            "min": 0.0,
+            "max": 1.0
+          },
+          "needs_leg_motion_flips": 1,
+          "alpha_half_crossings": 1,
+          "negative_foot_samples": 0,
+          "negative_foot_duration_seconds": 0,
+          "signed_feet_lateral_cm": {
+            "min": 31.21105755763233,
+            "max": 104.98309356949487
+          },
+          "feet_distance_xy_cm": {
+            "min": 31.6063014551188,
+            "max": 105.069023718937
+          },
+          "foot_world_z_span_cm": {
+            "foot_l": 4.258719695063981,
+            "foot_r": 4.082286454253087
+          },
+          "speed2d_cm_s": {
+            "min": 0.0,
+            "max": 0.0
+          },
+          "state": "complete",
+          "requested_duration_seconds": 1.2000000476837158,
+          "first_alpha_zero_elapsed_seconds": 0.43800000000192085,
+          "end_root_gap_degrees": 0.003242951055881349,
+          "end_alpha": 0.0,
+          "end_feet_distance_xy_cm": 103.19367305111298,
+          "capture_gap_from_turn_last_sample_seconds": 0.4557344913482666
+        },
+        "state_machine_fields_present_in_time_series": false,
+        "cached_mm_selected_animation_counts": {
+          "None": 320
+        },
+        "evidence": {
+          "": {
+            "path": "Saved/GaspBlockRefinement20260927/feet-candidate-mover-normal.json",
+            "sha256": "71bc30db2b83c0b6588ce37a57c7c82c296dcd055ced5916123fed55051ca660"
+          },
+          "-settle": {
+            "path": "Saved/GaspBlockRefinement20260927/feet-candidate-mover-normal-settle.json",
+            "sha256": "a2cb64eb741031f58cbed75a1016edd193b27c3a4d7825968bb754c8e66a2d45"
+          },
+          "-snapshot": {
+            "path": "Saved/GaspBlockRefinement20260927/feet-candidate-mover-normal-snapshot.json",
+            "sha256": "fc1c95aebed3496e129db8babb10e02a2ca32a995e0b7ed6d22ccdd8e6b1248f"
+          }
+        }
+      },
+      {
+        "label": "feet-candidate-mover-slow",
+        "variant": "Mover",
+        "stage": "candidate",
+        "metadata": {
+          "state": "complete",
+          "duration_seconds": 5.0,
+          "mode": "slow",
+          "amplitude": 0.10000000149011612,
+          "action_tag": "InputTag.Look.Mouse",
+          "local_role": "<NetRole.ROLE_AUTHORITY: 3>"
+        },
+        "total_sample_count": 319,
+        "full_probe_actual_yaw": {
+          "signed_net_degrees": 76.17798350053724,
+          "absolute_travel_degrees": 76.17798350053724
+        },
+        "after_0_5_seconds": {
+          "sample_count": 288,
+          "world_duration_seconds": 4.487124100327492,
+          "actual_yaw": {
+            "signed_net_degrees": 71.47821579288214,
+            "absolute_travel_degrees": 71.47821579288214
+          },
+          "root_gap_degrees": {
+            "min": -1.5523326025974882,
+            "max": 47.617042570786566
+          },
+          "alpha": {
+            "min": 1.0,
+            "max": 1.0
+          },
+          "needs_leg_motion_flips": 0,
+          "alpha_half_crossings": 0,
+          "negative_foot_samples": 0,
+          "negative_foot_duration_seconds": 0,
+          "signed_feet_lateral_cm": {
+            "min": 19.664197166868775,
+            "max": 32.860835543921276
+          },
+          "feet_distance_xy_cm": {
+            "min": 25.51362358595046,
+            "max": 33.44506608866733
+          },
+          "foot_world_z_span_cm": {
+            "foot_l": 8.197342400488537,
+            "foot_r": 5.5546168813144945
+          },
+          "speed2d_cm_s": {
+            "min": 0.0,
+            "max": 0.0
+          }
+        },
+        "settle": {
+          "sample_count": 82,
+          "world_duration_seconds": 1.1755462996661663,
+          "actual_yaw": {
+            "signed_net_degrees": 0.20647731099660405,
+            "absolute_travel_degrees": 0.2336152787561332
+          },
+          "root_gap_degrees": {
+            "min": 0.01214186084447988,
+            "max": 22.4023800426107
+          },
+          "alpha": {
+            "min": 0.0,
+            "max": 1.0
+          },
+          "needs_leg_motion_flips": 1,
+          "alpha_half_crossings": 1,
+          "negative_foot_samples": 0,
+          "negative_foot_duration_seconds": 0,
+          "signed_feet_lateral_cm": {
+            "min": 31.80101324467132,
+            "max": 106.10819542607084
+          },
+          "feet_distance_xy_cm": {
+            "min": 32.18073662196336,
+            "max": 106.15629925000309
+          },
+          "foot_world_z_span_cm": {
+            "foot_l": 4.263749526894081,
+            "foot_r": 4.104849354280244
+          },
+          "speed2d_cm_s": {
+            "min": 0.0,
+            "max": 0.0
+          },
+          "state": "complete",
+          "requested_duration_seconds": 1.2000000476837158,
+          "first_alpha_zero_elapsed_seconds": 0.25,
+          "end_root_gap_degrees": 0.01214186084447988,
+          "end_alpha": 0.0,
+          "end_feet_distance_xy_cm": 103.19537901650355,
+          "capture_gap_from_turn_last_sample_seconds": 0.4397726058959961
+        },
+        "state_machine_fields_present_in_time_series": false,
+        "cached_mm_selected_animation_counts": {
+          "None": 319
+        },
+        "evidence": {
+          "": {
+            "path": "Saved/GaspBlockRefinement20260927/feet-candidate-mover-slow.json",
+            "sha256": "16aaa5afaabeeddd29b955b8e76108e50d234264d902fe3b3e195b2e49e6ff05"
+          },
+          "-settle": {
+            "path": "Saved/GaspBlockRefinement20260927/feet-candidate-mover-slow-settle.json",
+            "sha256": "213f993c47adf928b96e5bde7123693d50ca15ab51224d435cd0cc9d6ae565b7"
+          },
+          "-snapshot": {
+            "path": "Saved/GaspBlockRefinement20260927/feet-candidate-mover-slow-snapshot.json",
+            "sha256": "0f6ff3a6bdf173ebf0a0e731e0d766f8b4c434fb1456097a8e65c74688b3accb"
+          }
+        }
+      },
+      {
+        "label": "feet-candidate-mover-reverse",
+        "variant": "Mover",
+        "stage": "candidate",
+        "metadata": {
+          "state": "complete",
+          "duration_seconds": 5.0,
+          "mode": "reverse",
+          "amplitude": 0.5,
+          "action_tag": "InputTag.Look.Mouse",
+          "local_role": "<NetRole.ROLE_AUTHORITY: 3>"
+        },
+        "total_sample_count": 314,
+        "full_probe_actual_yaw": {
+          "signed_net_degrees": 0.44521090672381547,
+          "absolute_travel_degrees": 242.62533499971588
+        },
+        "after_0_5_seconds": {
+          "sample_count": 282,
+          "world_duration_seconds": 4.479357093572617,
+          "actual_yaw": {
+            "signed_net_degrees": -4.801936639639763,
+            "absolute_travel_degrees": 237.2886930982862
+          },
+          "root_gap_degrees": {
+            "min": -41.84348067153627,
+            "max": 41.404274048031226
+          },
+          "alpha": {
+            "min": 1.0,
+            "max": 1.0
+          },
+          "needs_leg_motion_flips": 0,
+          "alpha_half_crossings": 0,
+          "negative_foot_samples": 0,
+          "negative_foot_duration_seconds": 0,
+          "signed_feet_lateral_cm": {
+            "min": 21.646399718204552,
+            "max": 31.314339324591625
+          },
+          "feet_distance_xy_cm": {
+            "min": 23.64457191595124,
+            "max": 31.89612771964336
+          },
+          "foot_world_z_span_cm": {
+            "foot_l": 7.651794341893584,
+            "foot_r": 7.701944541030031
+          },
+          "speed2d_cm_s": {
+            "min": 0.0,
+            "max": 0.0
+          }
+        },
+        "settle": {
+          "sample_count": 80,
+          "world_duration_seconds": 1.1807812005281448,
+          "actual_yaw": {
+            "signed_net_degrees": -0.11293063740947673,
+            "absolute_travel_degrees": 0.13945136181553153
+          },
+          "root_gap_degrees": {
+            "min": -10.218371362054825,
+            "max": -0.0030070542921976084
+          },
+          "alpha": {
+            "min": 0.0,
+            "max": 1.0
+          },
+          "needs_leg_motion_flips": 1,
+          "alpha_half_crossings": 1,
+          "negative_foot_samples": 0,
+          "negative_foot_duration_seconds": 0,
+          "signed_feet_lateral_cm": {
+            "min": 31.379728613529355,
+            "max": 104.73805978048802
+          },
+          "feet_distance_xy_cm": {
+            "min": 31.772088684619675,
+            "max": 104.83748895884405
+          },
+          "foot_world_z_span_cm": {
+            "foot_l": 4.206107439558494,
+            "foot_r": 4.051105781608516
+          },
+          "speed2d_cm_s": {
+            "min": 0.0,
+            "max": 0.0
+          },
+          "state": "complete",
+          "requested_duration_seconds": 1.2000000476837158,
+          "first_alpha_zero_elapsed_seconds": 0.17199999999866122,
+          "end_root_gap_degrees": -0.0030070542921976084,
+          "end_alpha": 0.0,
+          "end_feet_distance_xy_cm": 103.18669093996179,
+          "capture_gap_from_turn_last_sample_seconds": 0.5146191120147705
+        },
+        "state_machine_fields_present_in_time_series": false,
+        "cached_mm_selected_animation_counts": {
+          "None": 314
+        },
+        "evidence": {
+          "": {
+            "path": "Saved/GaspBlockRefinement20260927/feet-candidate-mover-reverse.json",
+            "sha256": "a24081dd4e84069c07dade895e55bbe7a289c974e5a7b1c78a4b2288800bdb06"
+          },
+          "-settle": {
+            "path": "Saved/GaspBlockRefinement20260927/feet-candidate-mover-reverse-settle.json",
+            "sha256": "bae739b4993fa790d3128f6955bcacc9c9a9d59190e489057dafc0d588dda096"
+          },
+          "-snapshot": {
+            "path": "Saved/GaspBlockRefinement20260927/feet-candidate-mover-reverse-snapshot.json",
+            "sha256": "a7275e1d3c7cd453e4ce01f428da2157317050b960e1feb14706389b97265787"
+          }
+        }
+      },
+      {
+        "label": "feet-candidate-cmc-normal",
+        "variant": "CMC",
+        "stage": "candidate",
+        "metadata": {
+          "state": "complete",
+          "duration_seconds": 5.0,
+          "mode": "slow",
+          "amplitude": 0.5,
+          "action_tag": "InputTag.Look.Mouse",
+          "local_role": "<NetRole.ROLE_AUTHORITY: 3>"
+        },
+        "total_sample_count": 316,
+        "full_probe_actual_yaw": {
+          "signed_net_degrees": 393.7500000000001,
+          "absolute_travel_degrees": 393.7500000000001
+        },
+        "after_0_5_seconds": {
+          "sample_count": 285,
+          "world_duration_seconds": 4.494912497699261,
+          "actual_yaw": {
+            "signed_net_degrees": 355.0000000000001,
+            "absolute_travel_degrees": 355.0000000000001
+          },
+          "root_gap_degrees": {
+            "min": -20.888153076171903,
+            "max": 51.016578674316406
+          },
+          "alpha": {
+            "min": 1.0,
+            "max": 1.0
+          },
+          "needs_leg_motion_flips": 0,
+          "alpha_half_crossings": 0,
+          "negative_foot_samples": 0,
+          "negative_foot_duration_seconds": 0,
+          "signed_feet_lateral_cm": {
+            "min": 25.072582529636296,
+            "max": 52.82093238041004
+          },
+          "feet_distance_xy_cm": {
+            "min": 25.24551892213577,
+            "max": 54.50217147913411
+          },
+          "foot_world_z_span_cm": {
+            "foot_l": 8.26041076296886,
+            "foot_r": 4.547760108103759
+          },
+          "speed2d_cm_s": {
+            "min": 0.0,
+            "max": 0.0
+          }
+        },
+        "settle": {
+          "sample_count": 81,
+          "world_duration_seconds": 1.1953451000154018,
+          "actual_yaw": {
+            "signed_net_degrees": 0.0,
+            "absolute_travel_degrees": 0.0
+          },
+          "root_gap_degrees": {
+            "min": -1.2440567016601562,
+            "max": -0.000301361083984375
+          },
+          "alpha": {
+            "min": 0.0,
+            "max": 0.0
+          },
+          "needs_leg_motion_flips": 0,
+          "alpha_half_crossings": 0,
+          "negative_foot_samples": 0,
+          "negative_foot_duration_seconds": 0,
+          "signed_feet_lateral_cm": {
+            "min": 101.81797786915129,
+            "max": 102.35411530370445
+          },
+          "feet_distance_xy_cm": {
+            "min": 101.93024924727187,
+            "max": 102.47352990029272
+          },
+          "foot_world_z_span_cm": {
+            "foot_l": 0.06105090839897542,
+            "foot_r": 0.004422365910983217
+          },
+          "speed2d_cm_s": {
+            "min": 0.0,
+            "max": 0.0
+          },
+          "state": "complete",
+          "requested_duration_seconds": 1.2000000476837158,
+          "first_alpha_zero_elapsed_seconds": 0.0,
+          "end_root_gap_degrees": -0.000301361083984375,
+          "end_alpha": 0.0,
+          "end_feet_distance_xy_cm": 102.45803088465205,
+          "capture_gap_from_turn_last_sample_seconds": 0.47914624214172363
+        },
+        "state_machine_fields_present_in_time_series": false,
+        "cached_mm_selected_animation_counts": {
+          "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Idle/M_Neutral_Stand_Idle_Loop.M_Neutral_Stand_Idle_Loop": 40,
+          "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Idle/M_Neutral_Stand_Turn_090_R.M_Neutral_Stand_Turn_090_R": 276
+        },
+        "evidence": {
+          "": {
+            "path": "Saved/GaspBlockRefinement20260927/feet-candidate-cmc-normal.json",
+            "sha256": "0269cdddec1892995cbf79ab0d2d4feb6ea8ce8c814c6b37759659787031eb02"
+          },
+          "-settle": {
+            "path": "Saved/GaspBlockRefinement20260927/feet-candidate-cmc-normal-settle.json",
+            "sha256": "801728e91e1a42ba9e587c2cfca5d8f83e3a0543b233ae0e1c7d8fbbb8ff3bdc"
+          },
+          "-snapshot": {
+            "path": "Saved/GaspBlockRefinement20260927/feet-candidate-cmc-normal-snapshot.json",
+            "sha256": "bdf97594d7d82a658fc02f6f02eb6c94f15a227e2febed394002f817a6ce60d6"
+          }
+        }
+      },
+      {
+        "label": "feet-candidate-cmc-slow",
+        "variant": "CMC",
+        "stage": "candidate",
+        "metadata": {
+          "state": "complete",
+          "duration_seconds": 5.0,
+          "mode": "slow",
+          "amplitude": 0.10000000149011612,
+          "action_tag": "InputTag.Look.Mouse",
+          "local_role": "<NetRole.ROLE_AUTHORITY: 3>"
+        },
+        "total_sample_count": 324,
+        "full_probe_actual_yaw": {
+          "signed_net_degrees": 80.75000000000006,
+          "absolute_travel_degrees": 80.75000000000006
+        },
+        "after_0_5_seconds": {
+          "sample_count": 292,
+          "world_duration_seconds": 4.484798401594162,
+          "actual_yaw": {
+            "signed_net_degrees": 72.75000000000006,
+            "absolute_travel_degrees": 72.75000000000006
+          },
+          "root_gap_degrees": {
+            "min": -4.571617126464844,
+            "max": 50.04399108886719
+          },
+          "alpha": {
+            "min": 1.0,
+            "max": 1.0
+          },
+          "needs_leg_motion_flips": 0,
+          "alpha_half_crossings": 0,
+          "negative_foot_samples": 0,
+          "negative_foot_duration_seconds": 0,
+          "signed_feet_lateral_cm": {
+            "min": 44.764557720426765,
+            "max": 53.67669585979786
+          },
+          "feet_distance_xy_cm": {
+            "min": 45.85457238330936,
+            "max": 54.29209284811147
+          },
+          "foot_world_z_span_cm": {
+            "foot_l": 2.3578725530530065,
+            "foot_r": 2.8538732567008225
+          },
+          "speed2d_cm_s": {
+            "min": 0.0,
+            "max": 0.0
+          }
+        },
+        "settle": {
+          "sample_count": 79,
+          "world_duration_seconds": 1.175364799797535,
+          "actual_yaw": {
+            "signed_net_degrees": 0.0,
+            "absolute_travel_degrees": 0.0
+          },
+          "root_gap_degrees": {
+            "min": 0.00048065185546875,
+            "max": 1.709869384765625
+          },
+          "alpha": {
+            "min": 0.0,
+            "max": 0.0
+          },
+          "needs_leg_motion_flips": 0,
+          "alpha_half_crossings": 0,
+          "negative_foot_samples": 0,
+          "negative_foot_duration_seconds": 0,
+          "signed_feet_lateral_cm": {
+            "min": 102.00905517720786,
+            "max": 102.35680651496878
+          },
+          "feet_distance_xy_cm": {
+            "min": 102.1767630829715,
+            "max": 102.47978893364312
+          },
+          "foot_world_z_span_cm": {
+            "foot_l": 0.05738409014143997,
+            "foot_r": 0.0024207863045013767
+          },
+          "speed2d_cm_s": {
+            "min": 0.0,
+            "max": 0.0
+          },
+          "state": "complete",
+          "requested_duration_seconds": 1.2000000476837158,
+          "first_alpha_zero_elapsed_seconds": 0.0,
+          "end_root_gap_degrees": 0.00048065185546875,
+          "end_alpha": 0.0,
+          "end_feet_distance_xy_cm": 102.46140757212127,
+          "capture_gap_from_turn_last_sample_seconds": 0.4765148162841797
+        },
+        "state_machine_fields_present_in_time_series": false,
+        "cached_mm_selected_animation_counts": {
+          "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Idle/M_Neutral_Stand_Idle_Loop.M_Neutral_Stand_Idle_Loop": 237,
+          "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Idle/M_Neutral_Stand_Turn_045_R.M_Neutral_Stand_Turn_045_R": 87
+        },
+        "evidence": {
+          "": {
+            "path": "Saved/GaspBlockRefinement20260927/feet-candidate-cmc-slow.json",
+            "sha256": "f490d1cef623f2a740395171aebcd29560387eb13964ee0d094d5b10e6c01c22"
+          },
+          "-settle": {
+            "path": "Saved/GaspBlockRefinement20260927/feet-candidate-cmc-slow-settle.json",
+            "sha256": "bfd4d1ab0be26a042a0934fc289c9640a857c4c9b9d80411e82496b38782147d"
+          },
+          "-snapshot": {
+            "path": "Saved/GaspBlockRefinement20260927/feet-candidate-cmc-slow-snapshot.json",
+            "sha256": "434aaf52b91ccd3f608a0e8f03251a536b8987429d6f7029133d857f2f4ba9c8"
+          }
+        }
+      },
+      {
+        "label": "feet-candidate-cmc-reverse",
+        "variant": "CMC",
+        "stage": "candidate",
+        "metadata": {
+          "state": "complete",
+          "duration_seconds": 5.0,
+          "mode": "reverse",
+          "amplitude": 0.5,
+          "action_tag": "InputTag.Look.Mouse",
+          "local_role": "<NetRole.ROLE_AUTHORITY: 3>"
+        },
+        "total_sample_count": 322,
+        "full_probe_actual_yaw": {
+          "signed_net_degrees": 2.029713543131919,
+          "absolute_travel_degrees": 255.5614627543836
+        },
+        "after_0_5_seconds": {
+          "sample_count": 291,
+          "world_duration_seconds": 4.486706301569939,
+          "actual_yaw": {
+            "signed_net_degrees": -9.120274720713525,
+            "absolute_travel_degrees": 244.41147449053815
+          },
+          "root_gap_degrees": {
+            "min": -50.36755024082959,
+            "max": 50.463413804769516
+          },
+          "alpha": {
+            "min": 1.0,
+            "max": 1.0
+          },
+          "needs_leg_motion_flips": 0,
+          "alpha_half_crossings": 0,
+          "negative_foot_samples": 0,
+          "negative_foot_duration_seconds": 0,
+          "signed_feet_lateral_cm": {
+            "min": 14.092315651116316,
+            "max": 51.039256340135026
+          },
+          "feet_distance_xy_cm": {
+            "min": 27.12790350010989,
+            "max": 52.91201707975985
+          },
+          "foot_world_z_span_cm": {
+            "foot_l": 8.256509737012863,
+            "foot_r": 7.874205404347251
+          },
+          "speed2d_cm_s": {
+            "min": 0.0,
+            "max": 0.0
+          }
+        },
+        "settle": {
+          "sample_count": 80,
+          "world_duration_seconds": 1.185614101588726,
+          "actual_yaw": {
+            "signed_net_degrees": 0.0,
+            "absolute_travel_degrees": 0.0
+          },
+          "root_gap_degrees": {
+            "min": -0.052546411752700806,
+            "max": -1.0401010513305664e-05
+          },
+          "alpha": {
+            "min": 0.0,
+            "max": 0.0
+          },
+          "needs_leg_motion_flips": 0,
+          "alpha_half_crossings": 0,
+          "negative_foot_samples": 0,
+          "negative_foot_duration_seconds": 0,
+          "signed_feet_lateral_cm": {
+            "min": 102.08198483034764,
+            "max": 102.35737251605488
+          },
+          "feet_distance_xy_cm": {
+            "min": 102.19289015490638,
+            "max": 102.47949821210733
+          },
+          "foot_world_z_span_cm": {
+            "foot_l": 0.05907136788781031,
+            "foot_r": 0.0027858928229242963
+          },
+          "speed2d_cm_s": {
+            "min": 0.0,
+            "max": 0.0
+          },
+          "state": "complete",
+          "requested_duration_seconds": 1.2000000476837158,
+          "first_alpha_zero_elapsed_seconds": 0.0,
+          "end_root_gap_degrees": -1.0401010513305664e-05,
+          "end_alpha": 0.0,
+          "end_feet_distance_xy_cm": 102.45872110645028,
+          "capture_gap_from_turn_last_sample_seconds": 0.4871988296508789
+        },
+        "state_machine_fields_present_in_time_series": false,
+        "cached_mm_selected_animation_counts": {
+          "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Idle/M_Neutral_Stand_Idle_Loop.M_Neutral_Stand_Idle_Loop": 138,
+          "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Idle/M_Neutral_Stand_Turn_090_R.M_Neutral_Stand_Turn_090_R": 111,
+          "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Idle/M_Neutral_Stand_Turn_090_L.M_Neutral_Stand_Turn_090_L": 73
+        },
+        "evidence": {
+          "": {
+            "path": "Saved/GaspBlockRefinement20260927/feet-candidate-cmc-reverse.json",
+            "sha256": "3de1fe46c4a7b1764f973c5b03040da329f4d6bb4a7105ac99450bcc792c386e"
+          },
+          "-settle": {
+            "path": "Saved/GaspBlockRefinement20260927/feet-candidate-cmc-reverse-settle.json",
+            "sha256": "ac45ea4e902c98f4768a885547f619919b446741e5977fb7871fea727e09b578"
+          },
+          "-snapshot": {
+            "path": "Saved/GaspBlockRefinement20260927/feet-candidate-cmc-reverse-snapshot.json",
+            "sha256": "d240c2197b62a295853d74a3f59078d314db71d89629094d0fcd7ac5c03d4f4d"
+          }
+        }
+      }
+    ],
+    "screenshot_captures": [
+      {
+        "label": "mover-feet-before-02",
+        "state": "failed",
+        "error": "RuntimeError: Screenshot latency exhausted the turn window; partial evidence retained without claiming 12 active-turn frames.",
+        "requested_probe_seconds": 5.0,
+        "image_count": 10,
+        "requested_images": 12,
+        "properties_count": 10,
+        "screenshot_request_elapsed_seconds": [
+          0.062215699999796925,
+          0.5786287000009906,
+          1.1068564000015613,
+          1.6325668999998015,
+          2.1511361000011675,
+          2.681434900001477,
+          3.222964000000502,
+          3.764920000001439,
+          4.349998800000321,
+          4.869291400002112
+        ],
+        "selection_routes": {
+          "1": 10
+        },
+        "state_machine_states": {
+          "Idle Loop": 10
+        },
+        "blend_stack_anim_counts": {
+          "{'refPath': '/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Idle/M_Relaxed_Stand_Idle_Break_v02.M_Relaxed_Stand_Idle_Break_v02'}": 7,
+          "{'refPath': '/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Idle/M_Relaxed_Stand_Idle_Loop.M_Relaxed_Stand_Idle_Loop'}": 3
+        },
+        "mm_selected_anim_counts": {
+          "None": 10
+        },
+        "actual_turn_probe": {
+          "sample_count": 66,
+          "duration_seconds": 5.0,
+          "signed_net_yaw_degrees": 73.59098081289252,
+          "absolute_yaw_travel_degrees": 73.59098081289252,
+          "upper_body_slot_true_samples": 66
+        },
+        "capture_interference_limit": "Sequential screenshot/property requests affect the sampling/input cadence. This capture is not frame/time equivalent to the separate5s probe.",
+        "manifest": {
+          "path": "Saved/GaspBlockRefinement20260927/mover-feet-before-02/manifest.json",
+          "sha256": "a7f607e28ae11e7fb62fa910a41c29ab5ddf20eddf6688fae9ae00f1810b6b37"
+        },
+        "turn": {
+          "path": "Saved/GaspBlockRefinement20260927/mover-feet-before-02/turn.json",
+          "sha256": "c81fb866a44023a7010cdf4612da5509767c7f888a74691b9f037130024bb8af"
+        },
+        "settle": {
+          "path": "Saved/GaspBlockRefinement20260927/mover-feet-before-02/settle.json",
+          "sha256": "e44ee1b89c32aa6c984711a557d4bc9235e307e33b30a58183815da7e1ffcb68"
+        },
+        "raw_file_count": 24,
+        "raw_hashes_evidence": "Full per-file SHA256 map is retained in foot-turn-analysis.json; its hash is versioned below."
+      },
+      {
+        "label": "mover-feet-candidate-01",
+        "state": "failed",
+        "error": "RuntimeError: Screenshot latency exhausted the turn window; partial evidence retained without claiming 12 active-turn frames.",
+        "requested_probe_seconds": 8.0,
+        "image_count": 10,
+        "requested_images": 12,
+        "properties_count": 10,
+        "screenshot_request_elapsed_seconds": [
+          0.013699300001462689,
+          0.5973584000021219,
+          1.1262501000019256,
+          1.643327000001591,
+          2.1656351999990875,
+          2.6864554999992833,
+          3.2399576999996498,
+          3.7811012999991362,
+          4.305163200002426,
+          4.83024800000203
+        ],
+        "selection_routes": {
+          "1": 10
+        },
+        "state_machine_states": {
+          "Idle Loop": 10
+        },
+        "blend_stack_anim_counts": {
+          "{'refPath': '/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Idle/M_Relaxed_Stand_Idle_Break_v08.M_Relaxed_Stand_Idle_Break_v08'}": 6,
+          "{'refPath': '/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Idle/M_Relaxed_Stand_Turn_090_R.M_Relaxed_Stand_Turn_090_R'}": 3,
+          "{'refPath': '/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Idle/M_Relaxed_Stand_Idle_Loop.M_Relaxed_Stand_Idle_Loop'}": 1
+        },
+        "mm_selected_anim_counts": {
+          "None": 10
+        },
+        "capture_failure_explanation": "An ad hoc 8s runner copy retained a hard-coded 5s screenshot cutoff. Partial evidence only.",
+        "actual_turn_probe": {
+          "sample_count": 221,
+          "duration_seconds": 8.0,
+          "signed_net_yaw_degrees": 259.580386859044,
+          "absolute_yaw_travel_degrees": 259.580386859044,
+          "upper_body_slot_true_samples": 221
+        },
+        "capture_interference_limit": "Sequential screenshot/property requests affect the sampling/input cadence. This capture is not frame/time equivalent to the separate5s probe.",
+        "manifest": {
+          "path": "Saved/GaspBlockRefinement20260927/mover-feet-candidate-01/manifest.json",
+          "sha256": "edb18e6f14d44ac8038926fcf38bf0837c9c8c3cd2082fca2299f9b835a007f8"
+        },
+        "turn": {
+          "path": "Saved/GaspBlockRefinement20260927/mover-feet-candidate-01/turn.json",
+          "sha256": "f92d9024ebf6e9e9e80c5b5ebe1a6259acccadb17346e22e01791d3dc2cd887f"
+        },
+        "settle": {
+          "path": "Saved/GaspBlockRefinement20260927/mover-feet-candidate-01/settle.json",
+          "sha256": "d36e79546f8d97d8b2275339489ccbd55f4ff56adb3608f9c42c3cba1c35ca93"
+        },
+        "raw_file_count": 24,
+        "raw_hashes_evidence": "Full per-file SHA256 map is retained in foot-turn-analysis.json; its hash is versioned below."
+      },
+      {
+        "label": "cmc-feet-candidate-02",
+        "state": "complete",
+        "error": null,
+        "requested_probe_seconds": 8.0,
+        "image_count": 12,
+        "requested_images": 12,
+        "properties_count": 12,
+        "screenshot_request_elapsed_seconds": [
+          0.0184268000011798,
+          0.6098724000003131,
+          1.1219764000015857,
+          1.6561338000028627,
+          2.1808763000008184,
+          2.6950482000029297,
+          3.2439262000007147,
+          3.786611700001231,
+          4.3325932000007015,
+          4.955523100001301,
+          5.490846700002294,
+          6.004074100001162
+        ],
+        "selection_routes": {
+          "0": 12
+        },
+        "state_machine_states": {
+          "Transition to Idle Loop": 12
+        },
+        "blend_stack_anim_counts": {
+          "{'refPath': '/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Crouch/M_Neutral_Transition_Crouch_to_Stand.M_Neutral_Transition_Crouch_to_Stand'}": 12
+        },
+        "mm_selected_anim_counts": {
+          "{'refPath': '/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Idle/M_Neutral_Stand_Idle_Loop.M_Neutral_Stand_Idle_Loop'}": 12
+        },
+        "actual_turn_probe": {
+          "sample_count": 175,
+          "duration_seconds": 8.0,
+          "signed_net_yaw_degrees": -48.08943969197574,
+          "absolute_yaw_travel_degrees": 131.42511907406143,
+          "upper_body_slot_true_samples": 175
+        },
+        "capture_interference_limit": "Sequential screenshot/property requests affect the sampling/input cadence. This capture is not frame/time equivalent to the separate5s probe.",
+        "manifest": {
+          "path": "Saved/GaspBlockRefinement20260927/cmc-feet-candidate-02/manifest.json",
+          "sha256": "660c98617d25e7cd7545d24a477a64f9b640b6dda4436dcc5009abcbb1b45830"
+        },
+        "turn": {
+          "path": "Saved/GaspBlockRefinement20260927/cmc-feet-candidate-02/turn.json",
+          "sha256": "12df6f6dd8fa8edeac4d54a51fc07556e2b9d8a5fc5fbc7684a475d710d4065d"
+        },
+        "settle": {
+          "path": "Saved/GaspBlockRefinement20260927/cmc-feet-candidate-02/settle.json",
+          "sha256": "6cff14eae4b36e19c487e4686d57ea7654161fb1923875260d79d63e88f52b1a"
+        },
+        "raw_file_count": 28,
+        "raw_hashes_evidence": "Full per-file SHA256 map is retained in foot-turn-analysis.json; its hash is versioned below."
+      },
+      {
+        "label": "mover-feet-candidate-02",
+        "state": "complete",
+        "error": null,
+        "requested_probe_seconds": 8.0,
+        "image_count": 12,
+        "requested_images": 12,
+        "properties_count": 12,
+        "screenshot_request_elapsed_seconds": [
+          0.018222099999547936,
+          0.6370399999977963,
+          1.1728874999971595,
+          1.7206533999997191,
+          2.261348399999406,
+          2.799358599997504,
+          3.324366699998791,
+          3.8955017999978736,
+          4.464013400000113,
+          5.019281099997897,
+          5.569843400000536,
+          6.093807299999753
+        ],
+        "selection_routes": {
+          "1": 12
+        },
+        "state_machine_states": {
+          "Idle Loop": 12
+        },
+        "blend_stack_anim_counts": {
+          "{'refPath': '/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Idle/M_Relaxed_Stand_Idle_Loop.M_Relaxed_Stand_Idle_Loop'}": 5,
+          "{'refPath': '/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Idle/M_Relaxed_Stand_Idle_Break_v03.M_Relaxed_Stand_Idle_Break_v03'}": 7
+        },
+        "mm_selected_anim_counts": {
+          "None": 12
+        },
+        "actual_turn_probe": {
+          "sample_count": 169,
+          "duration_seconds": 8.0,
+          "signed_net_yaw_degrees": -38.0484614789774,
+          "absolute_yaw_travel_degrees": 122.560601877706,
+          "upper_body_slot_true_samples": 169
+        },
+        "capture_interference_limit": "Sequential screenshot/property requests affect the sampling/input cadence. This capture is not frame/time equivalent to the separate5s probe.",
+        "manifest": {
+          "path": "Saved/GaspBlockRefinement20260927/mover-feet-candidate-02/manifest.json",
+          "sha256": "24007c8ac37da7bf8eaf65a6ab503d3391f0bf5aac10c2d5c1818c95e4f896b4"
+        },
+        "turn": {
+          "path": "Saved/GaspBlockRefinement20260927/mover-feet-candidate-02/turn.json",
+          "sha256": "e5521cd627af56e021dcf133c488cf8f7051e464d5cb84e5990f4ccd1e521255"
+        },
+        "settle": {
+          "path": "Saved/GaspBlockRefinement20260927/mover-feet-candidate-02/settle.json",
+          "sha256": "958d019545934bd4661c63a891454a1ed44746ec708d39222b22e4c7a41d22f7"
+        },
+        "raw_file_count": 28,
+        "raw_hashes_evidence": "Full per-file SHA256 map is retained in foot-turn-analysis.json; its hash is versioned below."
+      }
+    ]
+  },
+  "asset_validation": {
+    "evidence": {
+      "path": "Saved/GaspBlockRefinement20260927/foot-final-assets-01.json",
+      "sha256": "5b1cddaa0f793c597116051f08c10b816d055f9fbd6e72fd88f2e459fbd584a4"
+    },
+    "runner": {
+      "path": "Saved/GaspBlockRefinement20260927/final-foot-assets-01.py",
+      "sha256": "6522c8050cccb342696095621a33abad803b9b38cb9d3e54612b7c2857732e5c"
+    },
+    "editor_pid": 46868,
+    "reload": true,
+    "before_dirty_content": [],
+    "before_dirty_maps": [],
+    "after_dirty_content": [],
+    "after_dirty_maps": [],
+    "assets": [
+      {
+        "variant": "CMC",
+        "warnings_as_errors": true,
+        "call_completed_without_tool_error": true,
+        "returned_value": null,
+        "dependency_count": 45,
+        "dependency_mount_counts": {
+          "/Script": 18,
+          "/Engine": 1,
+          "/Game": 26
+        },
+        "unexpected_dependencies": [],
+        "dependency_set_sha256": "5769ea08afa85e791ff5e41e0eac74d1b2f5a2003b80d6f6f0ba6163fd3db9ea",
+        "native_export": {
+          "path": "D:/Repos/SurvivalRpg/Saved/GaspBlockRefinement20260927/IsolatedUser/Saved/Gasp06/ABP_CMC-foot-turn-01.t3d",
+          "sha256": "8c428965389a774ca32a3557f075ddb3370ddf8b79fe4e22b5b3a3a7c520b424"
+        }
+      },
+      {
+        "variant": "Mover",
+        "warnings_as_errors": true,
+        "call_completed_without_tool_error": true,
+        "returned_value": null,
+        "dependency_count": 53,
+        "dependency_mount_counts": {
+          "/Script": 17,
+          "/Engine": 1,
+          "/Game": 35
+        },
+        "unexpected_dependencies": [],
+        "dependency_set_sha256": "55d6d3a7a275cfd08af359d87c7c4551fd5c3708d3e5144975a2cbf6d4acaf7e",
+        "native_export": {
+          "path": "D:/Repos/SurvivalRpg/Saved/GaspBlockRefinement20260927/IsolatedUser/Saved/Gasp06/ABP_Mover-foot-turn-01.t3d",
+          "sha256": "dec191164a15c66fce22066a8400793830466050ed351154067bd060c2df852c"
+        }
+      }
+    ],
+    "limits": [
+      "Compile API is void/null on successful completion; null alone is not interpreted as a Boolean result. The completed runner and absence of tool error are retained.",
+      "Dependency rows are the actual returned direct dependencies; this is not a newly recomputed recursive closure or proof of all soft/management runtime loads."
+    ]
+  },
+  "validation": {
+    "regression": {
+      "evidence": {
+        "summary": {
+          "path": "Saved/GaspBlockRefinement20260927/foot-validation-01-summary.json",
+          "sha256": "8f2567999c6ae1d01ea41dd04d8a98983fd01b306d74e174628f8a3bf0d6dc27"
+        },
+        "results": {
+          "path": "Saved/GaspBlockRefinement20260927/foot-validation-01-results.json",
+          "sha256": "108c03e6f03a6a6e14a57204ad8034ff44dfec391f0983defbb9f94ea376ea87"
+        },
+        "selection": {
+          "path": "Saved/GaspBlockRefinement20260927/foot-validation-01-selection.json",
+          "sha256": "6db53e30ebe39d7b8f57fd7af3ccb98662c53f048b569b367cfee1b10fb628d8"
+        }
+      },
+      "wrapper_seconds": 171.09339779999937,
+      "test_duration_seconds": 170.8749542236328,
+      "passed": 17,
+      "failed": 1,
+      "skipped": 0,
+      "total": 18,
+      "error_count": 4,
+      "warning_count": 810,
+      "warning_categories": {
+        "AdvancedFriendsInterfaceLog": 78,
+        "LogNetPackageMap": 692,
+        "LogBlueprint": 1,
+        "LogPoseSearch": 8,
+        "LogNetworkPrediction": 17,
+        "LogAnimation": 14
+      },
+      "tests": [
+        {
+          "name": "SurvivalRpg.GASP.CMC.GaspCMCExperiencePIE.RemoteMovementLateJoinAndEquipmentMontage",
+          "state": "Success",
+          "duration_seconds": 12.89076042175293,
+          "errors": [],
+          "warning_count": 83
+        },
+        {
+          "name": "SurvivalRpg.GASP.CMC.AssetComposition",
+          "state": "Success",
+          "duration_seconds": 0.0035493001341819763,
+          "errors": [],
+          "warning_count": 0
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mantle.GaspMantleAuthoredMapPIE.RunningApproachUsesAuthoredMapAndEnhancedInput",
+          "state": "Success",
+          "duration_seconds": 4.261905670166016,
+          "errors": [],
+          "warning_count": 4
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mover.Gameplay.GaspMoverGameplayPIE.RemoteEquipmentInputMontageLateJoinAndCancellation",
+          "state": "Success",
+          "duration_seconds": 6.567739009857178,
+          "errors": [],
+          "warning_count": 79
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mover.Gameplay.GaspMoverGameplayPIE.RightMouseHoldReplicatesBlockAndReleasesCleanly",
+          "state": "Success",
+          "duration_seconds": 3.514805316925049,
+          "errors": [],
+          "warning_count": 65
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mover.Lifecycle.GaspMoverLifecyclePIE.DeathCancelsHeldBlockAndRespawnRecomposesOptionalFollower",
+          "state": "Success",
+          "duration_seconds": 11.941514015197754,
+          "errors": [],
+          "warning_count": 92
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mover.Mantle.GaspMoverMantlePIE.RemoteRunningMantleKeepsMomentumAfterHandoff",
+          "state": "Success",
+          "duration_seconds": 5.993438720703125,
+          "errors": [],
+          "warning_count": 6
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mover.Ragdoll.GaspMoverRagdollPIE.OptionalFollowerPreservesPhysicsGetupAndLateJoin",
+          "state": "Success",
+          "duration_seconds": 8.20087718963623,
+          "errors": [],
+          "warning_count": 67
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mover.Ragdoll.AssetComposition",
+          "state": "Success",
+          "duration_seconds": 0.006080098450183868,
+          "errors": [],
+          "warning_count": 0
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mover.AssetComposition",
+          "state": "Success",
+          "duration_seconds": 0.009131599217653275,
+          "errors": [],
+          "warning_count": 0
+        },
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.CMCBlockFacesCameraAndPreservesDirectionalMovementSpeed",
+          "state": "Success",
+          "duration_seconds": 25.666704177856445,
+          "errors": [],
+          "warning_count": 67
+        },
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.CMCMovingBlockKeepsLegsAnimatedThroughLateJoinAndRelease",
+          "state": "Success",
+          "duration_seconds": 13.34371566772461,
+          "errors": [],
+          "warning_count": 67
+        },
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.MoverAuthorityCancelUsesRawSprintWhileOwnerStillPredictsBlockAndThenCorrects",
+          "state": "Success",
+          "duration_seconds": 10.168173789978027,
+          "errors": [],
+          "warning_count": 36
+        },
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.MoverBlockFacesCameraAndPreservesDirectionalMovementSpeed",
+          "state": "Fail",
+          "duration_seconds": 21.577152252197266,
+          "errors": [
+            "Expected 'The same directional input preserves the ordinary movement speed without sprint leakage' to be true.",
+            "Expected 'Real displacement and velocity follow the camera-relative WASD direction' to be true.",
+            "Expected 'The same directional input preserves the ordinary movement speed without sprint leakage' to be true.",
+            "Expected 'Real displacement and velocity follow the camera-relative WASD direction' to be true."
+          ],
+          "warning_count": 70
+        },
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.MoverBlockPreventsSprintInBothInputOrdersAndResumesHeldSprintOnRelease",
+          "state": "Success",
+          "duration_seconds": 19.574861526489258,
+          "errors": [],
+          "warning_count": 69
+        },
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.MoverFixedRollbackPreservesHeldBlockAndReplaysBlockedHistoryAcrossRelease",
+          "state": "Success",
+          "duration_seconds": 11.959951400756836,
+          "errors": [],
+          "warning_count": 36
+        },
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.MoverMovingBlockKeepsLegsAnimatedThroughLateJoinAndRelease",
+          "state": "Success",
+          "duration_seconds": 15.185808181762695,
+          "errors": [],
+          "warning_count": 69
+        },
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.SourceClipsPreserveUEFNArmJointTranslationsAndScale",
+          "state": "Success",
+          "duration_seconds": 0.008784599602222443,
+          "errors": [],
+          "warning_count": 0
+        }
+      ]
+    },
+    "unchanged_isolated_repetition": {
+      "evidence": {
+        "summary": {
+          "path": "Saved/GaspBlockRefinement20260927/foot-direction-isolation-01-summary.json",
+          "sha256": "8cf9c01d3ae7eabee6dbe262727a26b40f203f70695c7a12b16d78f571df2d8c"
+        },
+        "results": {
+          "path": "Saved/GaspBlockRefinement20260927/foot-direction-isolation-01-results.json",
+          "sha256": "a0d99ac8a62cfe2e1b5f24a652f6fe1fa05d2432b5c9400863ab34b446a2d6aa"
+        },
+        "selection": {
+          "path": "Saved/GaspBlockRefinement20260927/foot-direction-isolation-01-selection.json",
+          "sha256": "1dcf0ec8b49dd9bac0758c8deb04f2fd225be1d6c6faa6349d19db2259d0391f"
+        }
+      },
+      "wrapper_seconds": 27.024593599999207,
+      "test_duration_seconds": 26.992462158203125,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "total": 1,
+      "error_count": 0,
+      "warning_count": 69,
+      "warning_categories": {
+        "AdvancedFriendsInterfaceLog": 6,
+        "LogNetPackageMap": 61,
+        "LogNetworkPrediction": 2
+      },
+      "tests": [
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.MoverBlockFacesCameraAndPreservesDirectionalMovementSpeed",
+          "state": "Success",
+          "duration_seconds": 26.992462158203125,
+          "errors": [],
+          "warning_count": 69
+        }
+      ]
+    },
+    "assessment": "Final full regression after the diagnosed capsule-contact fixture correction passed 18/18 with zero errors/skips and 804 warnings. Preserve the earlier batch17/18, unchanged isolated1/1 and instrumented reproduction0/1 as historical evidence. The instrumented failure was traced geometrically to the idle host capsule; its exact partner is not retroactively asserted for the original uninstrumented batch. The fix changes only start-lane spacing and a comment; all behavior assertions remain intact. User visual acceptance is still pending.",
+    "cook": {
+      "status": "success",
+      "result": {
+        "pid": 43600,
+        "exit_code": 0,
+        "seconds": 103.5119231000026,
+        "maps": [
+          "Lvl_RpgBaseline",
+          "Lvl_ThirdPerson",
+          "Lvl_RpgGaspMantle",
+          "Lvl_RpgGaspMover",
+          "Lvl_RpgGaspMoverRagdoll"
+        ],
+        "arguments": [
+          "D:/Programme/UE_5.8/Engine/Binaries/Win64/UnrealEditor-Cmd.exe",
+          "D:/Repos/SurvivalRpg/SurvivalRpg.uproject",
+          "-run=cook",
+          "-TargetPlatform=Windows",
+          "-Map=/Game/SurvivalRpg/Maps/Test/Lvl_RpgBaseline+/Game/SurvivalRpg/Maps/Test/Lvl_ThirdPerson+/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMantle+/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMover+/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMoverRagdoll",
+          "-unattended",
+          "-NoP4",
+          "-NoSplash",
+          "-NoSaveConfig",
+          "-ModelContextProtocolPort=8001",
+          "-UserDir=D:\\Repos\\SurvivalRpg\\Saved\\GaspBlockRefinement20260927\\CookFootUser/",
+          "-abslog=D:\\Repos\\SurvivalRpg\\Saved\\GaspBlockRefinement20260927\\cook-foot.log"
+        ]
+      },
+      "cooked_packages": 3125,
+      "incrementally_skipped": 0,
+      "platform_skipped": 7,
+      "errors": 0,
+      "warnings": 3,
+      "warning_categories": [
+        "GameplayCueNotifyPaths fallback",
+        "MCP licensed technology notice",
+        "CUI_RespawnScreen native tick disabled"
+      ],
+      "evidence": [
+        {
+          "path": "Saved/GaspBlockRefinement20260927/cook-foot-result.json",
+          "sha256": "14816b13107846c6044cdbcdaf229cfe02e01a464893715cb65bb32d8bb18963"
+        },
+        {
+          "path": "Saved/GaspBlockRefinement20260927/cook-foot.log",
+          "sha256": "b0464c491cdfce52a8285e468382f691776106bfabbf0023f9adcb145989a5da"
+        }
+      ],
+      "not_packaged_runtime_validation": true,
+      "fixture_timing_note": "The completed cook covers the same asset/runtime bytes. The later change is solely the editor test-fixture lane spacing/comment and was separately rebuilt and tested."
+    },
+    "user_visual_acceptance": "pending",
+    "merge_status": "not_merged",
+    "editor_fixture_build": {
+      "status": "success",
+      "result": {
+        "exit_code": 0,
+        "target": "SurvivalRpgEditor Win64 Development",
+        "seconds": 16.0125717
+      },
+      "evidence": {
+        "result": {
+          "path": "Saved/GaspBlockRefinement20260927/build-editor-foot-fixture-result.json",
+          "sha256": "98df83343b5b00df78282424485aa0d8b0ffc84c8b31cf8a0a62fdd448a80ca8"
+        },
+        "log": {
+          "path": "Saved/GaspBlockRefinement20260927/build-editor-foot-fixture.log",
+          "sha256": "37eec10b4379fc689866697ded245650b58b35505f5a8ee6da8215f68c1b98c1"
+        }
+      },
+      "compiled_source_files": [
+        "Source/SurvivalRpgEditor/Private/Network/RpgGaspMovingBlockTests.cpp"
+      ],
+      "runtime_modules_rebuilt": false,
+      "note": "Observed four build actions: compile test fixture, link editor lib/dll, write editor target metadata. No new game-target build."
+    },
+    "instrumented_contact_reproduction": {
+      "evidence": {
+        "summary": {
+          "path": "Saved/GaspBlockRefinement20260927/foot-direction-contact-01-summary.json",
+          "sha256": "0b8c0d2b2059e53ff6c66ac46e933ea6b9b2516c0f6d04f356d69b4a16e4b5e3"
+        },
+        "results": {
+          "path": "Saved/GaspBlockRefinement20260927/foot-direction-contact-01-results.json",
+          "sha256": "4ac4e63e52f7408d4ac80fa53cbadc0ae84ccc924edad1512383bb79f1bb4854"
+        },
+        "selection": {
+          "path": "Saved/GaspBlockRefinement20260927/foot-direction-contact-01-selection.json",
+          "sha256": "1dcf0ec8b49dd9bac0758c8deb04f2fd225be1d6c6faa6349d19db2259d0391f"
+        }
+      },
+      "wrapper_seconds": 31.827598300002137,
+      "test_duration_seconds": 31.795148849487305,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "total": 1,
+      "error_count": 5,
+      "warning_count": 67,
+      "warning_categories": {
+        "AdvancedFriendsInterfaceLog": 6,
+        "LogNetPackageMap": 61
+      },
+      "tests": [
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.MoverBlockFacesCameraAndPreservesDirectionalMovementSpeed",
+          "state": "Fail",
+          "duration_seconds": 31.795148849487305,
+          "errors": [
+            "Expected 'The same directional input preserves the ordinary movement speed without sprint leakage' to be true.",
+            "Expected 'Real displacement and velocity follow the camera-relative WASD direction' to be true.",
+            "Expected 'The same directional input preserves the ordinary movement speed without sprint leakage' to be true.",
+            "Expected 'Real displacement and velocity follow the camera-relative WASD direction' to be true.",
+            "Expected 'The same directional input preserves the ordinary movement speed without sprint leakage' to be true."
+          ],
+          "warning_count": 67
+        }
+      ]
+    },
+    "contact_diagnosis": {
+      "evidence": {
+        "report": {
+          "path": "Saved/GaspBlockRefinement20260927/foot-direction-contact-diagnosis.json",
+          "sha256": "cc001324cd0cf7549efcc92227f5c69004c8ea90222da9efd8e2f1ebefac211c"
+        },
+        "description": {
+          "path": "Saved/GaspBlockRefinement20260927/foot-direction-contact-diagnosis.md",
+          "sha256": "a5a7de549c2289be703b879e0b3c5f2514f1ed3557060a09dae81cafa463a36d"
+        },
+        "samples": {
+          "path": "Saved/GaspBlockRefinement20260927/foot-direction-collision-01.jsonl",
+          "sha256": "e5fd5ee77c05866b93c05efb03265ef53faff7dd05a60db6f946ef2c95dc25d3"
+        },
+        "closed_editor_log": {
+          "path": "Saved/GaspBlockRefinement20260927/editor-foot-review-01.log",
+          "sha256": "f686a5b1f9c865babe68c21d2b6a8d963eca6af3a390c2c65a2a20aa5c918479"
+        },
+        "probe": {
+          "path": "Saved/GaspBlockRefinement20260927/foot_direction_collision_probe.py",
+          "sha256": "6f0371846a70439bccf43c5bbb49fa6f04635fe508c280c0f0a173f57595ef06"
+        }
+      },
+      "conclusion": "Concrete capsule-contact/sliding geometry explains the repeated failure in this diagnostic run; no direct FHitResult was sampled. The earlier uninstrumented failure remains separately preserved.",
+      "stage": {
+        "name": "BlockedDirection2 / S",
+        "input_dispatched_utc": "2026-09-27T17:09:10.686Z",
+        "collection_finished_utc": "2026-09-27T17:09:12.420Z",
+        "source_warmup_seconds": 1.0,
+        "source_sample_seconds": 0.75,
+        "log_lines": [
+          3906,
+          3907,
+          3908,
+          3916,
+          3917,
+          3918
+        ],
+        "limit": "Wall-clock overlap after the source warmup, not recovered individual C++ probe sample indices or synchronized NP frames."
+      },
+      "probe": {
+        "sample_count": 255,
+        "near_sample_count": 45,
+        "mismatch_sample_count": 200,
+        "end_record": {
+          "kind": "end",
+          "state": "python_exit",
+          "output": "D:\\Repos\\SurvivalRpg\\Saved\\GaspBlockRefinement20260927\\foot-direction-collision-01.jsonl",
+          "duration_seconds": 180.0,
+          "rows": 256,
+          "sample_count": 255,
+          "near_contact_samples": 45,
+          "mismatch_samples": 200,
+          "worlds_seen": [
+            "/Temp/UEDPIE_0_Untitled_1.Untitled",
+            "/Temp/UEDPIE_1_Untitled_1.Untitled",
+            "/Temp/UEDPIE_2_Untitled_1.Untitled"
+          ],
+          "elapsed_seconds": 127.18799999999828,
+          "cleanup_errors": [],
+          "error": null
+        }
+      },
+      "roles": [
+        {
+          "world": "/Temp/UEDPIE_0_Untitled_1.Untitled",
+          "subject_player_id": 257,
+          "subject_role": "<NetRole.ROLE_AUTHORITY: 3>",
+          "host_player_id": 256,
+          "host_location_cm": [
+            0.0,
+            500.0,
+            120.0
+          ],
+          "host_speed_cm_s": 0.0,
+          "capsule_radius_cm": 30.0,
+          "capsule_half_height_cm": 86.0,
+          "near_sample_count": 15,
+          "min_surface_gap_cm": 0.08142701503073368,
+          "min_near_speed_cm_s": 68.39245102083062,
+          "steady_overlap_samples": [
+            {
+              "ordinal": 213,
+              "utc_seconds": 1790528952.3062644,
+              "distance_xy_cm": 79.16110887421488,
+              "surface_gap_xy_cm": 19.161108874214875,
+              "speed_cm_s": 373.96731990220434,
+              "input_direction_dot": 0.9999999593382761,
+              "input_world": [
+                -0.6900000000000001,
+                -0.72,
+                0.0
+              ],
+              "location_cm": [
+                47.080950659435736,
+                563.6385515485628,
+                88.14999580383301
+              ]
+            },
+            {
+              "ordinal": 215,
+              "utc_seconds": 1790528952.3442745,
+              "distance_xy_cm": 64.35174179643178,
+              "surface_gap_xy_cm": 4.3517417964317815,
+              "speed_cm_s": 373.9673230789362,
+              "input_direction_dot": 0.9999999750590806,
+              "input_world": [
+                -0.6900000000000001,
+                -0.72,
+                0.0
+              ],
+              "location_cm": [
+                36.72838152652418,
+                552.841013073906,
+                88.14999580383301
+              ]
+            },
+            {
+              "ordinal": 217,
+              "utc_seconds": 1790528952.3653066,
+              "distance_xy_cm": 60.74690755779919,
+              "surface_gap_xy_cm": 0.7469075577991902,
+              "speed_cm_s": 190.7302627146501,
+              "input_direction_dot": 0.9861493043475273,
+              "input_world": [
+                -0.6900000000000001,
+                -0.72,
+                0.0
+              ],
+              "location_cm": [
+                33.66879714315041,
+                550.5628210918773,
+                88.14999580383301
+              ]
+            },
+            {
+              "ordinal": 219,
+              "utc_seconds": 1790528952.4042325,
+              "distance_xy_cm": 60.10403258023637,
+              "surface_gap_xy_cm": 0.10403258023637107,
+              "speed_cm_s": 68.39245102083062,
+              "input_direction_dot": 0.4108772150531946,
+              "input_world": [
+                -0.6900000000000001,
+                -0.72,
+                0.0
+              ],
+              "location_cm": [
+                31.094390852899,
+                551.4357228965752,
+                88.14999580383301
+              ]
+            }
+          ]
+        },
+        {
+          "world": "/Temp/UEDPIE_1_Untitled_1.Untitled",
+          "subject_player_id": 257,
+          "subject_role": "<NetRole.ROLE_AUTONOMOUS_PROXY: 2>",
+          "host_player_id": 256,
+          "host_location_cm": [
+            0.0,
+            500.0,
+            120.0
+          ],
+          "host_speed_cm_s": 0.0,
+          "capsule_radius_cm": 30.0,
+          "capsule_half_height_cm": 86.0,
+          "near_sample_count": 18,
+          "min_surface_gap_cm": 0.030697355291344763,
+          "min_near_speed_cm_s": 68.27071916301243,
+          "steady_overlap_samples": [
+            {
+              "ordinal": 210,
+              "utc_seconds": 1790528952.2206411,
+              "distance_xy_cm": 86.58215502307887,
+              "surface_gap_xy_cm": 26.58215502307887,
+              "speed_cm_s": 373.9673176274286,
+              "input_direction_dot": 0.9999999480814641,
+              "input_world": [
+                -0.69,
+                -0.72,
+                0.0
+              ],
+              "location_cm": [
+                52.270133471415,
+                569.0239285706118,
+                88.15
+              ]
+            },
+            {
+              "ordinal": 211,
+              "utc_seconds": 1790528952.2384279,
+              "distance_xy_cm": 79.15806099299017,
+              "surface_gap_xy_cm": 19.158060992990173,
+              "speed_cm_s": 373.96731990220434,
+              "input_direction_dot": 0.999999959338276,
+              "input_world": [
+                -0.69,
+                -0.72,
+                0.0
+              ],
+              "location_cm": [
+                47.09359349680492,
+                563.6254042951999,
+                88.15
+              ]
+            },
+            {
+              "ordinal": 212,
+              "utc_seconds": 1790528952.2722907,
+              "distance_xy_cm": 64.34816453063378,
+              "surface_gap_xy_cm": 4.348164530633781,
+              "speed_cm_s": 373.9673230789362,
+              "input_direction_dot": 0.9999999750590802,
+              "input_world": [
+                -0.69,
+                -0.72,
+                0.0
+              ],
+              "location_cm": [
+                36.74102436389337,
+                552.8278658205431,
+                88.15
+              ]
+            },
+            {
+              "ordinal": 214,
+              "utc_seconds": 1790528952.3072624,
+              "distance_xy_cm": 60.74694059845287,
+              "surface_gap_xy_cm": 0.7469405984528734,
+              "speed_cm_s": 190.52410329837795,
+              "input_direction_dot": 0.9861385222859526,
+              "input_world": [
+                -0.69,
+                -0.72,
+                0.0
+              ],
+              "location_cm": [
+                33.684599167152015,
+                550.5523349710007,
+                88.15
+              ]
+            },
+            {
+              "ordinal": 216,
+              "utc_seconds": 1790528952.345274,
+              "distance_xy_cm": 60.10417163976049,
+              "surface_gap_xy_cm": 0.10417163976048727,
+              "speed_cm_s": 68.27071916301243,
+              "input_direction_dot": 0.4105394543587498,
+              "input_world": [
+                -0.69,
+                -0.72,
+                0.0
+              ],
+              "location_cm": [
+                31.11449425512667,
+                551.4237269725705,
+                88.15
+              ]
+            },
+            {
+              "ordinal": 218,
+              "utc_seconds": 1790528952.3673115,
+              "distance_xy_cm": 60.11748759396293,
+              "surface_gap_xy_cm": 0.1174875939629274,
+              "speed_cm_s": 69.48501973994274,
+              "input_direction_dot": 0.22015175731017814,
+              "input_world": [
+                -0.69,
+                -0.72,
+                0.0
+              ],
+              "location_cm": [
+                29.924078391260686,
+                552.1407887075366,
+                88.15
+              ]
+            },
+            {
+              "ordinal": 220,
+              "utc_seconds": 1790528952.4042325,
+              "distance_xy_cm": 60.125103724989856,
+              "surface_gap_xy_cm": 0.1251037249898559,
+              "speed_cm_s": 79.00816961140032,
+              "input_direction_dot": 0.27281726391513783,
+              "input_world": [
+                -0.69,
+                -0.72,
+                0.0
+              ],
+              "location_cm": [
+                27.242792643675614,
+                553.5990517352171,
+                88.15
+              ]
+            }
+          ]
+        },
+        {
+          "world": "/Temp/UEDPIE_2_Untitled_1.Untitled",
+          "subject_player_id": 257,
+          "subject_role": "<NetRole.ROLE_SIMULATED_PROXY: 1>",
+          "host_player_id": 256,
+          "host_location_cm": [
+            0.0,
+            500.0,
+            120.0
+          ],
+          "host_speed_cm_s": 0.0,
+          "capsule_radius_cm": 30.0,
+          "capsule_half_height_cm": 86.0,
+          "near_sample_count": 12,
+          "min_surface_gap_cm": -0.030573679820562916,
+          "min_near_speed_cm_s": 70.87294000802318,
+          "steady_overlap_samples": [
+            {
+              "ordinal": 221,
+              "utc_seconds": 1790528952.4052362,
+              "distance_xy_cm": 76.68119980674592,
+              "surface_gap_xy_cm": 16.681199806745923,
+              "speed_cm_s": 373.92973938963456,
+              "input_direction_dot": 0.999998500864833,
+              "input_world": [
+                -0.6825396825396826,
+                -0.7142857142857142,
+                0.0
+              ],
+              "location_cm": [
+                45.348306489586825,
+                561.8347596609592,
+                88.15
+              ]
+            }
+          ]
+        }
+      ],
+      "limitations": [
+        "No collision callback/FHitResult or actual response matrix sampled; contact is established geometrically with constant input and capsule-bound sliding.",
+        "The probe uses bounded Slate published samples, so minima differ from the native per-world-tick test.",
+        "Existing Blueprint input read models are not raw NetworkPrediction input history.",
+        "Cross-world world_time_seconds values differ; UTC is used only to correlate one local process with its log.",
+        "Late observer smoothing can introduce slight apparent capsule overlap.",
+        "Early direction mismatches after D-to-S are normal transitions and are excluded from the steady contact witness.",
+        "Original foot-validation-01 failure has no recorded positions and is not retroactively claimed to have an identical contact partner."
+      ],
+      "original_batch_contact_partner_proven": false
+    },
+    "after_fixture_full_regression": {
+      "status": "complete",
+      "evidence": {
+        "summary": {
+          "path": "Saved/GaspBlockRefinement20260927/foot-validation-02-summary.json",
+          "sha256": "956d59ae2d1fc0ef43ec31e60ff1b4d36dbaddaff593819e635d57da5b7f5f1b"
+        },
+        "results": {
+          "path": "Saved/GaspBlockRefinement20260927/foot-validation-02-results.json",
+          "sha256": "6eba038d1540a4855e9b6baffa7900231d630224431876a8013f68f2906dde08"
+        },
+        "selection": {
+          "path": "Saved/GaspBlockRefinement20260927/foot-validation-02-selection.json",
+          "sha256": "6db53e30ebe39d7b8f57fd7af3ccb98662c53f048b569b367cfee1b10fb628d8"
+        }
+      },
+      "wrapper_seconds": 184.99265119999836,
+      "test_duration_seconds": 184.74807739257812,
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0,
+      "total": 18,
+      "error_count": 0,
+      "warning_count": 804,
+      "warning_categories": {
+        "AdvancedFriendsInterfaceLog": 78,
+        "LogNetPackageMap": 692,
+        "LogConsoleManager": 4,
+        "LogBlueprint": 1,
+        "LogPoseSearch": 1,
+        "LogNetworkPrediction": 14,
+        "LogAnimation": 14
+      },
+      "tests": [
+        {
+          "name": "SurvivalRpg.GASP.CMC.GaspCMCExperiencePIE.RemoteMovementLateJoinAndEquipmentMontage",
+          "state": "Success",
+          "duration_seconds": 18.39765739440918,
+          "errors": [],
+          "warning_count": 87
+        },
+        {
+          "name": "SurvivalRpg.GASP.CMC.AssetComposition",
+          "state": "Success",
+          "duration_seconds": 0.005369901657104492,
+          "errors": [],
+          "warning_count": 0
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mantle.GaspMantleAuthoredMapPIE.RunningApproachUsesAuthoredMapAndEnhancedInput",
+          "state": "Success",
+          "duration_seconds": 4.594512462615967,
+          "errors": [],
+          "warning_count": 4
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mover.Gameplay.GaspMoverGameplayPIE.RemoteEquipmentInputMontageLateJoinAndCancellation",
+          "state": "Success",
+          "duration_seconds": 11.076766014099121,
+          "errors": [],
+          "warning_count": 70
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mover.Gameplay.GaspMoverGameplayPIE.RightMouseHoldReplicatesBlockAndReleasesCleanly",
+          "state": "Success",
+          "duration_seconds": 3.3376247882843018,
+          "errors": [],
+          "warning_count": 64
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mover.Lifecycle.GaspMoverLifecyclePIE.DeathCancelsHeldBlockAndRespawnRecomposesOptionalFollower",
+          "state": "Success",
+          "duration_seconds": 11.644115447998047,
+          "errors": [],
+          "warning_count": 92
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mover.Mantle.GaspMoverMantlePIE.RemoteRunningMantleKeepsMomentumAfterHandoff",
+          "state": "Success",
+          "duration_seconds": 5.887042999267578,
+          "errors": [],
+          "warning_count": 6
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mover.Ragdoll.GaspMoverRagdollPIE.OptionalFollowerPreservesPhysicsGetupAndLateJoin",
+          "state": "Success",
+          "duration_seconds": 7.92572546005249,
+          "errors": [],
+          "warning_count": 67
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mover.Ragdoll.AssetComposition",
+          "state": "Success",
+          "duration_seconds": 0.007747098803520203,
+          "errors": [],
+          "warning_count": 0
+        },
+        {
+          "name": "SurvivalRpg.GASP.Mover.AssetComposition",
+          "state": "Success",
+          "duration_seconds": 0.007716398686170578,
+          "errors": [],
+          "warning_count": 0
+        },
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.CMCBlockFacesCameraAndPreservesDirectionalMovementSpeed",
+          "state": "Success",
+          "duration_seconds": 25.57296371459961,
+          "errors": [],
+          "warning_count": 67
+        },
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.CMCMovingBlockKeepsLegsAnimatedThroughLateJoinAndRelease",
+          "state": "Success",
+          "duration_seconds": 13.1934232711792,
+          "errors": [],
+          "warning_count": 67
+        },
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.MoverAuthorityCancelUsesRawSprintWhileOwnerStillPredictsBlockAndThenCorrects",
+          "state": "Success",
+          "duration_seconds": 10.033971786499023,
+          "errors": [],
+          "warning_count": 36
+        },
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.MoverBlockFacesCameraAndPreservesDirectionalMovementSpeed",
+          "state": "Success",
+          "duration_seconds": 27.024234771728516,
+          "errors": [],
+          "warning_count": 68
+        },
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.MoverBlockPreventsSprintInBothInputOrdersAndResumesHeldSprintOnRelease",
+          "state": "Success",
+          "duration_seconds": 19.33458709716797,
+          "errors": [],
+          "warning_count": 70
+        },
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.MoverFixedRollbackPreservesHeldBlockAndReplaysBlockedHistoryAcrossRelease",
+          "state": "Success",
+          "duration_seconds": 11.683721542358398,
+          "errors": [],
+          "warning_count": 36
+        },
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.GaspMovingBlockPIE.MoverMovingBlockKeepsLegsAnimatedThroughLateJoinAndRelease",
+          "state": "Success",
+          "duration_seconds": 15.008586883544922,
+          "errors": [],
+          "warning_count": 70
+        },
+        {
+          "name": "SurvivalRpg.GASP.MovingBlock.SourceClipsPreserveUEFNArmJointTranslationsAndScale",
+          "state": "Success",
+          "duration_seconds": 0.012308601289987564,
+          "errors": [],
+          "warning_count": 0
+        }
+      ],
+      "active_editor_log_hashed": false,
+      "console_performance_warnings": [
+        "LogConsoleManager: Performance warning: Console object named 'a.animnode.offsetrootbone.enable' shows many (500) FindConsoleObject() calls (consider caching e.g. using static)",
+        "LogConsoleManager: Performance warning: Console object named 'DDCvar.DrawCharacterDebugStates' shows many (500) FindConsoleObject() calls (consider caching e.g. using static)",
+        "LogConsoleManager: Performance warning: Console object named 'DDCvar.DrawCharacterDebugGraphs' shows many (500) FindConsoleObject() calls (consider caching e.g. using static)",
+        "LogConsoleManager: Performance warning: Console object named 'DDCvar.DrawCharacterDebugShapes' shows many (500) FindConsoleObject() calls (consider caching e.g. using static)"
+      ]
+    },
+    "pending_validation": [
+      "user_visual_acceptance"
+    ]
+  },
+  "preservation": {
+    "evidence": {
+      "path": "Saved/GaspBlockRefinement20260927/foot-preservation.json",
+      "sha256": "be3cdfbd2d7685bb20c1d9a43694955f2206d066810388881a2e23fe05fb02ac"
+    },
+    "runner": {
+      "path": "Saved/GaspBlockRefinement20260927/audit-foot-preservation.py",
+      "sha256": "1a1788f668d8099e3ba41bca8c38133d92dd0ed64df07a5f9a0b1e7ea8348947"
+    },
+    "baseline_commit": "f3dd04730c15cde1ec769fe46698c3b1be51a703",
+    "tracked_count": 4662,
+    "unchanged_count": 4660,
+    "changed": {
+      "Content/SurvivalRpg/Characters/GASP/CMC/RPG/ABP_RpgGasp_CMC.uasset": {
+        "before_sha256": "80b56d02cf90cad7eda3d56f0dc345062758df3842a2179be5167bf9efafb90b",
+        "after_sha256": "06588095db459c9642f0d71955078dc7066e942ce17e00328954cfd40596088f"
+      },
+      "Content/SurvivalRpg/Characters/GASP/Mover/RPG/ABP_RpgGasp_Mover.uasset": {
+        "before_sha256": "774a369be9790ea2282b43b615b0171f8ecf0779910414478798447a84e50967",
+        "after_sha256": "ffa4a46e3cbaac9922deb63329f813aa520ad8ec170e0b111b75706e7a4b1bca"
+      }
+    },
+    "personal_saves_byte_identical": 7,
+    "save_hashes": {
+      "Saved\\SaveGames\\SlotManagerName.sav": "67773c569c5041710961cc257f2cfa396a724825be4c98156bf50337ff717b91",
+      "Saved\\SaveGames\\SurvivalRpg_BaselineTest.sav": "732a4b84487fcf46ba9e852259cdbc88a7f1659715c75033b8aaf0395f376853",
+      "Saved\\SaveGames\\SurvivalRpg_BaselineTest_Backup.sav": "21fb7a0a9f9c6d1cb8721a09291a15353c6c31568acd155b4882b5f10f1155a5",
+      "Saved\\SaveGames\\SurvivalRpg_BaselineTest_Recovery.sav": "732a4b84487fcf46ba9e852259cdbc88a7f1659715c75033b8aaf0395f376853",
+      "Saved\\SaveGames\\SurvivalRpg_World.sav": "220a3b286d60a6180ad296caf7cdfeff5a49c132aac2dc9568edfe4da33a38c3",
+      "Saved\\SaveGames\\SurvivalRpg_World_Backup.sav": "7afec4c9f0037501abfa7bce4fb785221c7c831ae3ee6a00e549488027143a32",
+      "Saved\\SaveGames\\SurvivalRpg_World_Recovery.sav": "220a3b286d60a6180ad296caf7cdfeff5a49c132aac2dc9568edfe4da33a38c3"
+    },
+    "before_manifest_sha256": "137443f2d4525b9e6302804f6e90d10df8ecc032c6ab8fa2bc49bb162863d993",
+    "baseline_distinction": "This audit compares all 4662 tracked assets against the earlier f3dd baseline. The current two-asset change is separately anchored to 94ac by exact LFS OIDs and pre-candidate binary backups above.",
+    "maps_changed": false
+  },
+  "provenance": {
+    "local_raw_root": "Saved/GaspBlockRefinement20260927",
+    "ignored_evidence_availability": "Saved files are local, ignored and not automatically available in another checkout.",
+    "authoring_scripts": [
+      {
+        "path": "Saved/GaspBlockRefinement20260927/author-foot-turn-candidate.py",
+        "sha256": "855afd705f28b188c44e8a1b532bac906b07d07071b25760baa4ba1937cc1e08"
+      },
+      {
+        "path": "Saved/GaspBlockRefinement20260927/resume-cmc-foot-candidate.py",
+        "sha256": "617b632a29b1de5a1d3683f3a92fb8fd139932d7331a43311c325d8ad8b240dd"
+      }
+    ],
+    "probe_scripts": [
+      {
+        "path": "Saved/GaspBlockRefinement20260927/block_turn_probe.py",
+        "sha256": "28629f48e4d2f70c8fdbc979fa34806a01e70023219d22606335e7d95d3bc58d"
+      },
+      {
+        "path": "Saved/GaspBlockRefinement20260927/run-turn-probe.py",
+        "sha256": "028e18fc2a95a3aa40bdc1b6ba4d59877b0db1b21588fb5026568d66bf42bd93"
+      },
+      {
+        "path": "Saved/GaspBlockRefinement20260927/run-foot-turn-capture.py",
+        "sha256": "4f1db8a3163954242d65a34d612c4d53c269ab395803454c7db98668d29860ab"
+      }
+    ],
+    "raw_input_hashes_verified": 132
+  },
+  "implementation_commit_scope": "Final validation revision includes the unchanged asset candidate from asset_implementation_commit plus the editor-only fixture lane-spacing fix.",
+  "asset_implementation_commit": "1aaee13dbf9ef7194b9ddbde56b865365b7861f9",
+  "historical_status": {
+    "status": "fully_reverted_by_user_request",
+    "baseline": "908b7c7544a42848afe6c8b673988735ebd4ba1b",
+    "superseded_head": "20d1f7ffe62c8baff982d52ea5f64f41f6766aa2",
+    "validation_applies_to": "historical_implementation_only"
+  }
+}

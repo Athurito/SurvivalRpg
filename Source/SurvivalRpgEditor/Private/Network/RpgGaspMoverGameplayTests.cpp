@@ -30,6 +30,7 @@
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_BasicWeaponAttack.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_Block.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/Animation/RpgAnimInstance.h"
 #include "SurvivalRpg/Animation/RpgRuntimeRetargetComponent.h"
 #include "SurvivalRpg/Animation/RpgRuntimeRetargetProfile.h"
 #include "SurvivalRpg/Core/Character/RpgMoverPawn.h"
@@ -121,7 +122,7 @@ namespace RpgGaspMoverGameplayTests
 	USkeletalMeshComponent* Mesh(const APawn* Pawn) { return URpgPawnExtensionComponent::FindGameplayMesh(Pawn); }
 	URpgEquipmentManagerComponent* Equipment(const APawn* Pawn) { return Pawn ? Pawn->FindComponentByClass<URpgEquipmentManagerComponent>() : nullptr; }
 	URpgRuntimeRetargetComponent* Retarget(const APawn* Pawn) { return Pawn ? Pawn->FindComponentByClass<URpgRuntimeRetargetComponent>() : nullptr; }
-	UCharacterMoverComponent* Mover(const APawn* Pawn) { return Pawn ? Pawn->FindComponentByClass<UCharacterMoverComponent>() : nullptr; }
+	URpgCharacterMoverComponent* Mover(const APawn* Pawn) { return Pawn ? Pawn->FindComponentByClass<URpgCharacterMoverComponent>() : nullptr; }
 	bool HasAttackRootMotion(const APawn* Pawn)
 	{
 		return Mover(Pawn) && Mover(Pawn)->FindActiveLayeredMoveByType(FRpgMoverAbilityRootMotion::StaticStruct()) != nullptr;
@@ -502,7 +503,7 @@ namespace RpgGaspMoverGameplayTests
 		float BlockHeldSeconds = 0.0f;
 		float MaxBlockHeldSeconds = 0.0f, BlockObservedSeconds = 0.0f;
 		bool bBlockEquipmentChanged = false, bBlockUsedRootMotion = false;
-		bool bBlockDiagnosticLogged = false, bSawBlockingTag = false, bSawBlockLoop = false;
+		bool bBlockDiagnosticLogged = false, bSawBlockingTag = false, bSawBlockLoop = false, bSawBlockLayer = false;
 	};
 	/** Every world's natural montage and animation ticks are sampled together, including short notify windows. */
 	class FScopedObservations final
@@ -512,6 +513,7 @@ namespace RpgGaspMoverGameplayTests
 		void Start(int32 PlayerId, UAnimMontage* InMontage)
 		{
 			Stop();
+			bObservingBlock = false;
 			Montage = InMontage;
 			Records.Reset();
 			for (const FWorldContext& Context : GEngine->GetWorldContexts())
@@ -610,6 +612,7 @@ namespace RpgGaspMoverGameplayTests
 		}
 		void ObserveBlock(UAnimMontage* Loop, ERpgEquipmentSlot Slot)
 		{
+			bObservingBlock = true;
 			BlockLoop = Loop;
 			BlockSlot = Slot;
 			for (auto& Entry : Records)
@@ -644,7 +647,7 @@ namespace RpgGaspMoverGameplayTests
 					Ability ? Ability->GetAuthorityWindowOpenCountForTests() - Record.OpenBaseline : 0,
 					Ability ? Ability->GetAuthorityWindowCloseCountForTests() - Record.CloseBaseline : 0,
 					Ability ? Ability->GetAuthorityTraceSampleCountForTests() - Record.TraceBaseline : 0);
-				if (BlockLoop.IsValid()) ReportBlock(Record);
+				if (bObservingBlock) ReportBlock(Record);
 			}
 		}
 		void Stop()
@@ -664,11 +667,11 @@ namespace RpgGaspMoverGameplayTests
 			FGameplayTagContainer Tags;
 			ASC(Pawn)->GetOwnedGameplayTags(Tags);
 			const UInputAction* Action = FindObject<UInputAction>(nullptr, TEXT("/GF_Combat_Core/Input/IA_Block.IA_Block"));
-			UE_LOG(LogTemp, Display, TEXT("RpgMoverBlock world=%s held=%.3f maxHeld=%.3f equipmentChanged=%d rootMotion=%d spec=%s active=%d inputPressed=%d rawRMB=%d boundAction=%s tags=%s sawTag=%d sawLoop=%d currentASC=%s currentAnim=%s expectedLoop=%s loopPlaying=%d loopPosition=%.3f"),
+			UE_LOG(LogTemp, Display, TEXT("RpgMoverBlock world=%s held=%.3f maxHeld=%.3f equipmentChanged=%d rootMotion=%d spec=%s active=%d inputPressed=%d rawRMB=%d boundAction=%s tags=%s sawTag=%d sawLoop=%d sawLayer=%d currentASC=%s currentAnim=%s expectedLoop=%s loopPlaying=%d loopPosition=%.3f"),
 				*GetPathNameSafe(Pawn->GetWorld()), Record.BlockHeldSeconds, Record.MaxBlockHeldSeconds, Record.bBlockEquipmentChanged, Record.bBlockUsedRootMotion,
 				Spec ? *Spec->Handle.ToString() : TEXT("None"), Spec && Spec->IsActive(), Spec && Spec->InputPressed,
 				PC && PC->IsInputKeyDown(EKeys::RightMouseButton), Action ? *UEnhancedInputLibrary::GetBoundActionValue(Pawn, Action).ToString() : TEXT("Missing"),
-				*Tags.ToStringSimple(), Record.bSawBlockingTag, Record.bSawBlockLoop, *GetNameSafe(ASC(Pawn)->GetCurrentMontage()),
+				*Tags.ToStringSimple(), Record.bSawBlockingTag, Record.bSawBlockLoop, Record.bSawBlockLayer, *GetNameSafe(ASC(Pawn)->GetCurrentMontage()),
 				*GetNameSafe(Mesh(Pawn)->GetAnimInstance()->GetCurrentActiveMontage()), *GetNameSafe(BlockLoop.Get()),
 				Mesh(Pawn)->GetAnimInstance()->Montage_IsPlaying(BlockLoop.Get()), Mesh(Pawn)->GetAnimInstance()->Montage_GetPosition(BlockLoop.Get()));
 		}
@@ -696,7 +699,7 @@ namespace RpgGaspMoverGameplayTests
 			}
 			Record->bSawRootMotion |= HasAttackRootMotion(Pawn);
 			Record->bRootMotionMoved |= Record->bSawRootMotion && FVector::Dist2D(Record->AttackStartLocation, Pawn->GetActorLocation()) > 2.0;
-			if (BlockLoop.IsValid())
+			if (bObservingBlock)
 			{
 				const URpgEquipmentInstance* Item = Equipment(Pawn)->GetEquipmentInstanceInSlot(BlockSlot);
 				Record->bBlockEquipmentChanged |= !Item || Item != Record->BlockingItem.Get();
@@ -714,10 +717,21 @@ namespace RpgGaspMoverGameplayTests
 				Record->bBlockUsedRootMotion |= HasAttackRootMotion(Pawn);
 				const UAnimInstance* Animation = Source->GetAnimInstance();
 				const bool bHasTag = ASC(Pawn)->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Blocking")));
-				const bool bLoopPlaying = Animation->Montage_IsPlaying(BlockLoop.Get());
+				const bool bLoopPlaying = BlockLoop.IsValid() && Animation->Montage_IsPlaying(BlockLoop.Get());
+				const URpgWeaponInstance* Weapon = Cast<URpgWeaponInstance>(Item);
+				const UClass* LayerClass = Weapon ? Weapon->GetBlockDefinition().BlockLocomotionLayer.Get() : nullptr;
+				const URpgAnimInstance* Layer = Cast<URpgAnimInstance>(Equipment(Pawn)->GetBlockLocomotionLayerInstance());
+				// A configured profile supplies held presentation through the actual linked instance. Legacy items
+				// still require their exact GAS loop montage; neither path can pass on a blocking tag alone.
+				const bool bLayerActive = LayerClass && Layer && Layer->GetClass() == LayerClass
+					&& Layer->GetSkelMeshComponent() == Source && Layer->bBlockLocomotionActive && !bLoopPlaying;
+				const bool bPresentationActive = LayerClass ? bLayerActive
+					: bLoopPlaying && ASC(Pawn)->GetCurrentMontage() == BlockLoop.Get();
 				Record->bSawBlockingTag |= bHasTag;
 				Record->bSawBlockLoop |= bLoopPlaying;
-				if (bHasTag && bLoopPlaying && ASC(Pawn)->GetCurrentMontage() == BlockLoop.Get()) Record->BlockHeldSeconds += DeltaSeconds;
+				Record->bSawBlockLayer |= bLayerActive;
+				if (bHasTag && ASC(Pawn)->IsBlockMovementActive() && Mover(Pawn)->IsBlockMovementActive()
+					&& bPresentationActive) Record->BlockHeldSeconds += DeltaSeconds;
 				else Record->BlockHeldSeconds = 0.0f;
 				Record->MaxBlockHeldSeconds = FMath::Max(Record->MaxBlockHeldSeconds, Record->BlockHeldSeconds);
 				Record->BlockObservedSeconds += DeltaSeconds;
@@ -740,6 +754,7 @@ namespace RpgGaspMoverGameplayTests
 		TMap<TWeakObjectPtr<UWorld>, FObservation> Records;
 		TWeakObjectPtr<UAnimMontage> Montage;
 		TWeakObjectPtr<UAnimMontage> BlockLoop;
+		bool bObservingBlock = false;
 		ERpgEquipmentSlot BlockSlot = ERpgEquipmentSlot::None;
 		FDelegateHandle TickHandle;
 	};
@@ -967,7 +982,7 @@ NETWORK_TEST_CLASS(GaspMoverGameplayPIE, "SurvivalRpg.GASP.Mover.Gameplay")
 				BlockLoop.Reset(Definition.BlockLoopMontage.Get());
 				BlockStart.Reset(Definition.BlockStartMontage.Get());
 				BlockEnd.Reset(Definition.BlockEndMontage.Get());
-				ASSERT_THAT(IsTrue(BlockLoop.IsValid()));
+				ASSERT_THAT(IsTrue(Definition.BlockLocomotionLayer != nullptr || BlockLoop.IsValid()));
 				for (const UAnimMontage* Clip : { BlockStart.Get(), BlockLoop.Get(), BlockEnd.Get() })
 				{
 					if (!Clip) continue;
@@ -988,10 +1003,10 @@ NETWORK_TEST_CLASS(GaspMoverGameplayPIE, "SurvivalRpg.GASP.Mover.Gameplay")
 					if (!Actor || !Actor->GetRootComponent() || Actor->GetRootComponent()->GetAttachParent() != Mesh(Pawn)) return false;
 				return true;
 			}, Timeout())
-			.ThenServer(TEXT("Observe the real block loop and equipment on all peers"), [this](FState&)
+			.ThenServer(TEXT("Observe the configured held block presentation and equipment on all peers"), [this](FState&)
 				{ Observations.ObserveBlock(BlockLoop.Get(), BlockSlot); })
 			.ThenClient(TEXT("Press and hold RMB through the combat mapping context"), 0, [this](FState&) { Input.HoldBlock(true); })
-			.UntilServer(TEXT("Owner, authority and proxy sustain the blocking tag and loop montage"), [this](FState&)
+			.UntilServer(TEXT("Owner, authority and proxy sustain block state and their configured layer or legacy loop"), [this](FState&)
 				{ return Observations.AllBlockHeld(); }, Timeout())
 			.ThenServer(TEXT("Blocking retains the authority gameplay mesh and equipment"), [this](FState& State) { VerifySource(State.World); })
 			.ThenClients(TEXT("Blocking retains owner and late-proxy gameplay sources"), [this](FState& State) { VerifySource(State.World); })
@@ -1010,7 +1025,10 @@ NETWORK_TEST_CLASS(GaspMoverGameplayPIE, "SurvivalRpg.GASP.Mover.Gameplay")
 		if (!Pawn || !ASC(Pawn) || !Mesh(Pawn) || !Mesh(Pawn)->GetAnimInstance()) return false;
 		if (ASC(Pawn)->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Blocking")))
 			|| ASC(Pawn)->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.PerfectBlockWindow")))
+			|| ASC(Pawn)->IsBlockMovementActive() || Mover(Pawn)->IsBlockMovementActive()
 			|| ASC(Pawn)->GetCurrentMontage() || HasAttackRootMotion(Pawn)) return false;
+		if (const URpgAnimInstance* Layer = Cast<URpgAnimInstance>(Equipment(Pawn)->GetBlockLocomotionLayerInstance());
+			Layer && Layer->bBlockLocomotionActive) return false;
 		for (const UAnimMontage* Clip : { BlockStart.Get(), BlockLoop.Get(), BlockEnd.Get() })
 			if (Clip && Mesh(Pawn)->GetAnimInstance()->Montage_IsPlaying(Clip)) return false;
 		const FGameplayAbilitySpec* Spec = BlockSpec(Pawn);

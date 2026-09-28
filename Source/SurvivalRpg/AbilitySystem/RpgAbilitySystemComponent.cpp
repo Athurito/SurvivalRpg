@@ -52,6 +52,7 @@ URpgAbilitySystemComponent::URpgAbilitySystemComponent(const FObjectInitializer&
 
 void URpgAbilitySystemComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	ResetBlockMovement();
 	ResetSimulatedMoverTraversalPresentation();
 	if (AActor* Avatar = GetAvatarActor())
 	{
@@ -74,6 +75,7 @@ void URpgAbilitySystemComponent::EndPlay(const EEndPlayReason::Type EndPlayReaso
 		GlobalAbilitySystem->UnregisterASC(this);
 	}
 	Super::EndPlay(EndPlayReason);
+	InputSuppressedUntilReleaseSpecHandles.Reset();
 }
 
 void URpgAbilitySystemComponent::InitAbilityActorInfo(AActor* InOwnerActor, AActor* InAvatarActor)
@@ -83,6 +85,11 @@ void URpgAbilitySystemComponent::InitAbilityActorInfo(AActor* InOwnerActor, AAct
 	check(InOwnerActor);
 
 	const bool bHasNewPawnAvatar = Cast<APawn>(InAvatarActor) && (InAvatarActor != ActorInfo->AvatarActor);
+	if (ActorInfo->AvatarActor.Get() != InAvatarActor)
+	{
+		ResetBlockMovement();
+		InputSuppressedUntilReleaseSpecHandles.Reset();
+	}
 	if (ActorInfo->AvatarActor.IsValid() && ActorInfo->AvatarActor.Get() != InAvatarActor)
 	{
 		if (URpgCharacterMoverComponent* Mover = ActorInfo->AvatarActor->FindComponentByClass<URpgCharacterMoverComponent>())
@@ -164,6 +171,8 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 
 void URpgAbilitySystemComponent::ClearActorInfo()
 {
+	InputSuppressedUntilReleaseSpecHandles.Reset();
+	ResetBlockMovement();
 	ResetSimulatedMoverTraversalPresentation();
 	InitializedAnimInstance.Reset();
 	if (AActor* Avatar = GetAvatarActor())
@@ -174,6 +183,98 @@ void URpgAbilitySystemComponent::ClearActorInfo()
 		}
 	}
 	Super::ClearActorInfo();
+}
+
+uint32 URpgAbilitySystemComponent::BeginBlockMovement(UGameplayAbility* Ability, float MovementSpeedLimit)
+{
+	AActor* Avatar = GetAvatarActor();
+	if (!Avatar || Avatar->GetLocalRole() < ROLE_AutonomousProxy || !Ability || !Ability->IsActive()
+		|| Ability->GetAbilitySystemComponentFromActorInfo() != this || Ability->GetAvatarActorFromActorInfo() != Avatar
+		|| !Ability->GetCurrentAbilitySpecHandle().IsValid() || !FMath::IsFinite(MovementSpeedLimit) || MovementSpeedLimit < 0.f)
+	{
+		return 0;
+	}
+	if (BlockMovementLease && IsBlockMovementActive())
+	{
+		return BlockMovementAbility.Get() == Ability ? BlockMovementLease : 0;
+	}
+	BlockMovementAbility = Ability;
+	BlockMovementAvatar = Avatar;
+	BlockMovementActivationKey = Ability->GetCurrentActivationInfo().GetActivationPredictionKey();
+	BlockMovementSpeedLimit = MovementSpeedLimit;
+	if (++LastBlockMovementLease == 0) { ++LastBlockMovementLease; }
+	BlockMovementLease = LastBlockMovementLease;
+	return BlockMovementLease;
+}
+
+void URpgAbilitySystemComponent::EndBlockMovement(UGameplayAbility* Ability, uint32 Lease)
+{
+	if (Lease && Lease == BlockMovementLease && BlockMovementAbility.Get() == Ability) { ResetBlockMovement(); }
+}
+
+void URpgAbilitySystemComponent::ConfirmBlockReaction(UGameplayAbility* Ability, uint32 Lease, FGameplayTag ReactionTag)
+{
+	const bool bSupportedReaction = ReactionTag == RpgGameplayTags::GameplayEvent_Block || ReactionTag == RpgGameplayTags::GameplayEvent_PerfectBlock;
+	AActor* Avatar = GetAvatarActor();
+	if (!bSupportedReaction || !Avatar || !Avatar->HasAuthority() || !AbilityActorInfo.IsValid()
+		|| AbilityActorInfo->IsLocallyControlled() || !Lease || Lease != BlockMovementLease
+		|| Ability != BlockMovementAbility.Get() || !IsBlockMovementActive() || !BlockMovementActivationKey.IsValidKey())
+	{
+		return;
+	}
+	// Ordinary replicated GAS montages intentionally skip the autonomous owner. The server still plays
+	// its reaction and stock montage replication serves observers; only the predicting owner needs this event.
+	ClientConfirmBlockReaction(Avatar, Ability->GetCurrentAbilitySpecHandle(), BlockMovementActivationKey, ReactionTag);
+}
+
+void URpgAbilitySystemComponent::ClientConfirmBlockReaction_Implementation(AActor* Avatar, FGameplayAbilitySpecHandle AbilityHandle,
+	FPredictionKey ActivationPredictionKey, FGameplayTag ReactionTag)
+{
+	const bool bSupportedReaction = ReactionTag == RpgGameplayTags::GameplayEvent_Block || ReactionTag == RpgGameplayTags::GameplayEvent_PerfectBlock;
+	const UGameplayAbility* Ability = BlockMovementAbility.Get();
+	if (!bSupportedReaction || !Avatar || Avatar != GetAvatarActor() || Avatar->GetLocalRole() != ROLE_AutonomousProxy
+		|| !AbilityActorInfo.IsValid() || !AbilityActorInfo->IsLocallyControlled() || !IsBlockMovementActive()
+		|| !ActivationPredictionKey.IsValidKey() || ActivationPredictionKey != BlockMovementActivationKey
+		|| !Ability || Ability->GetCurrentAbilitySpecHandle() != AbilityHandle)
+	{
+		return;
+	}
+	FGameplayEventData Payload;
+	Payload.EventTag = ReactionTag;
+	Payload.Target = Avatar;
+	// The existing WaitGameplayEvent tasks choose from this activation's immutable block definition.
+	// No prediction of the damage result or reactivation of an ended block is performed here.
+	HandleGameplayEvent(ReactionTag, &Payload);
+}
+
+void URpgAbilitySystemComponent::ResetBlockMovement()
+{
+	BlockMovementLease = 0;
+	BlockMovementSpeedLimit = 0.f;
+	BlockMovementAbility.Reset();
+	BlockMovementAvatar.Reset();
+	BlockMovementActivationKey = FPredictionKey{};
+}
+
+bool URpgAbilitySystemComponent::IsBlockMovementActive() const
+{
+	const AActor* Avatar = GetAvatarActor();
+	if (!Avatar) { return false; }
+	if (Avatar->GetLocalRole() == ROLE_SimulatedProxy)
+	{
+		return HasMatchingGameplayTag(RpgGameplayTags::State_Blocking);
+	}
+	const UGameplayAbility* Ability = BlockMovementAbility.Get();
+	return BlockMovementLease && BlockMovementAvatar.Get() == Avatar && Ability && Ability->IsActive()
+		&& Ability->GetAbilitySystemComponentFromActorInfo() == this && Ability->GetAvatarActorFromActorInfo() == Avatar
+		&& Ability->GetCurrentActivationInfo().GetActivationPredictionKey() == BlockMovementActivationKey;
+}
+
+float URpgAbilitySystemComponent::GetBlockMovementSpeedLimit() const
+{
+	const AActor* Avatar = GetAvatarActor();
+	return Avatar && Avatar->GetLocalRole() >= ROLE_AutonomousProxy && BlockMovementLease && IsBlockMovementActive()
+		? BlockMovementSpeedLimit : 0.f;
 }
 
 bool URpgAbilitySystemComponent::IsSimulatedMoverTraversalMontage(const UAnimMontage* Montage) const
@@ -540,6 +641,10 @@ void URpgAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& Inpu
 		{
 			if (AbilitySpec.Ability && (AbilitySpec.GetDynamicSpecSourceTags().HasTagExact(InputTag)))
 			{
+				if (InputSuppressedUntilReleaseSpecHandles.Contains(AbilitySpec.Handle))
+				{
+					continue;
+				}
 				if (bLogClientWeaponRequest)
 				{
 					++MatchingSpecCount;
@@ -583,6 +688,7 @@ void URpgAbilitySystemComponent::AbilityInputTagReleased(const FGameplayTag& Inp
 			{
 				InputReleasedSpecHandles.AddUnique(AbilitySpec.Handle);
 				InputHeldSpecHandles.Remove(AbilitySpec.Handle);
+				InputSuppressedUntilReleaseSpecHandles.Remove(AbilitySpec.Handle);
 			}
 		}
 	}
@@ -622,8 +728,14 @@ void URpgAbilitySystemComponent::ProcessAbilityInput(float DeltaTime, bool bGame
 	//
 	// Process all abilities that had their input pressed this frame.
 	//
-	for (const FGameplayAbilitySpecHandle& SpecHandle : InputPressedSpecHandles)
+	// An input callback may synchronously cancel a hold and remove its pending pressed entry.
+	const TArray<FGameplayAbilitySpecHandle> PressedSpecHandles = InputPressedSpecHandles;
+	for (const FGameplayAbilitySpecHandle& SpecHandle : PressedSpecHandles)
 	{
+		if (InputSuppressedUntilReleaseSpecHandles.Contains(SpecHandle))
+		{
+			continue;
+		}
 		if (FGameplayAbilitySpec* AbilitySpec = FindAbilitySpecFromHandle(SpecHandle))
 		{
 			if (AbilitySpec->Ability)
@@ -655,7 +767,11 @@ void URpgAbilitySystemComponent::ProcessAbilityInput(float DeltaTime, bool bGame
 	//
 	for (const FGameplayAbilitySpecHandle& AbilitySpecHandle : AbilitiesToActivate)
 	{
-		TryActivateAbility(AbilitySpecHandle);
+		// Cancellation can occur after this handle was collected, while another input is processed.
+		if (!InputSuppressedUntilReleaseSpecHandles.Contains(AbilitySpecHandle))
+		{
+			TryActivateAbility(AbilitySpecHandle);
+		}
 	}
 
 	//
@@ -690,6 +806,29 @@ void URpgAbilitySystemComponent::ClearAbilityInput()
 	InputPressedSpecHandles.Reset();
 	InputReleasedSpecHandles.Reset();
 	InputHeldSpecHandles.Reset();
+}
+
+void URpgAbilitySystemComponent::SuppressAbilityInputUntilRelease(FGameplayAbilitySpecHandle Handle)
+{
+	if (!AbilityActorInfo.IsValid() || !AbilityActorInfo->IsLocallyControlled() || !FindAbilitySpecFromHandle(Handle))
+	{
+		return;
+	}
+	InputPressedSpecHandles.Remove(Handle);
+	InputHeldSpecHandles.Remove(Handle);
+	// A real release may already be queued in this frame. Do not require a second release in that case.
+	if (!InputReleasedSpecHandles.Contains(Handle))
+	{
+		InputSuppressedUntilReleaseSpecHandles.Add(Handle);
+	}
+}
+
+void URpgAbilitySystemComponent::OnRemoveAbility(FGameplayAbilitySpec& AbilitySpec)
+{
+	const FGameplayAbilitySpecHandle Handle = AbilitySpec.Handle;
+	Super::OnRemoveAbility(AbilitySpec);
+	// Super may cancel the active instance; retire suppression after its cancellation callback.
+	InputSuppressedUntilReleaseSpecHandles.Remove(Handle);
 }
 
 void URpgAbilitySystemComponent::NotifyAbilityActivated(const FGameplayAbilitySpecHandle Handle,

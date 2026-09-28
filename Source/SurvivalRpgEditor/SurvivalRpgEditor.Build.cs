@@ -18,10 +18,12 @@ public class SurvivalRpgEditor : ModuleRules
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
 			"AIModule",
+			"AnimGraph",
 			"AssetRegistry",
 			"AssetTools",
 			"BlueprintGraph",
 			"BlueprintEditorLibrary",
+			"Chooser",
 			"CQTest",
 			"CommonGame",
 			"CommonUI",
@@ -35,6 +37,8 @@ public class SurvivalRpgEditor : ModuleRules
 			"IKRig",
 			"InputBlueprintNodes",
 			"InputCore",
+			"Json",
+			"JsonUtilities",
 			"LevelEditor",
 			"ModelViewViewModel",
 			"ModelViewViewModelBlueprint",

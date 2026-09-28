@@ -9,6 +9,58 @@
 #include "NativeGameplayTags.h"
 #include "GameFramework/Character.h"
 #include "Net/UnrealNetwork.h"
+#include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+
+/** Local prediction history only: block/cap are not compressed client commands accepted by authority. */
+class FSavedMove_RpgCharacter : public FSavedMove_Character
+{
+public:
+	using Super = FSavedMove_Character;
+	virtual void Clear() override
+	{
+		Super::Clear();
+		bBlocking = false;
+		SpeedLimit = 0.f;
+		BlockControlRotation = FRotator::ZeroRotator;
+	}
+
+	virtual void SetMoveFor(ACharacter* Character, float InDeltaTime, FVector const& NewAccel,
+		FNetworkPredictionData_Client_Character& ClientData) override
+	{
+		Super::SetMoveFor(Character, InDeltaTime, NewAccel, ClientData);
+		const URpgCharacterMovementComponent* Movement = CastChecked<URpgCharacterMovementComponent>(Character->GetCharacterMovement());
+		bBlocking = Movement->SampleBlockMovement(SpeedLimit);
+		BlockControlRotation = Character->GetControlRotation();
+	}
+
+	virtual void PrepMoveFor(ACharacter* Character) override
+	{
+		Super::PrepMoveFor(Character);
+		URpgCharacterMovementComponent* Movement = CastChecked<URpgCharacterMovementComponent>(Character->GetCharacterMovement());
+		Movement->bBlockMovementForMove = bBlocking;
+		Movement->BlockMovementSpeedLimitForMove = SpeedLimit;
+		Movement->BlockControlRotationForMove = BlockControlRotation;
+	}
+
+	virtual bool CanCombineWith(const FSavedMovePtr& NewMove, ACharacter* Character, float MaxDelta) const override
+	{
+		const FSavedMove_RpgCharacter* Other = static_cast<const FSavedMove_RpgCharacter*>(NewMove.Get());
+		return bBlocking == Other->bBlocking && SpeedLimit == Other->SpeedLimit && Super::CanCombineWith(NewMove, Character, MaxDelta);
+	}
+
+private:
+	bool bBlocking = false;
+	float SpeedLimit = 0.f;
+	FRotator BlockControlRotation = FRotator::ZeroRotator;
+};
+
+class FNetworkPredictionData_Client_RpgCharacter : public FNetworkPredictionData_Client_Character
+{
+public:
+	explicit FNetworkPredictionData_Client_RpgCharacter(const UCharacterMovementComponent& Movement)
+		: FNetworkPredictionData_Client_Character(Movement) {}
+	virtual FSavedMovePtr AllocateNewMove() override { return FSavedMovePtr(new FSavedMove_RpgCharacter()); }
+};
 
 
 UE_DEFINE_GAMEPLAY_TAG(TAG_Gameplay_MovementStopped, "Gameplay.MovementStopped");
@@ -30,6 +82,56 @@ bool URpgCharacterMovementComponent::CanAttemptJump() const
 	// Same as UCharacterMovementComponent's implementation but without the crouch check
 	return IsJumpAllowed() &&
 		(IsMovingOnGround() || IsFalling()); // Falling included for double-jump and non-zero jump hold time, but validated by character.
+}
+
+FNetworkPredictionData_Client* URpgCharacterMovementComponent::GetPredictionData_Client() const
+{
+	if (!ClientPredictionData)
+	{
+		URpgCharacterMovementComponent* MutableThis = const_cast<URpgCharacterMovementComponent*>(this);
+		MutableThis->ClientPredictionData = new FNetworkPredictionData_Client_RpgCharacter(*this);
+	}
+	return ClientPredictionData;
+}
+
+bool URpgCharacterMovementComponent::SampleBlockMovement(float& OutSpeedLimit) const
+{
+	OutSpeedLimit = 0.f;
+	const URpgAbilitySystemComponent* AbilitySystem = Cast<URpgAbilitySystemComponent>(
+		UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(GetOwner()));
+	if (!AbilitySystem || AbilitySystem->GetAvatarActor() != GetOwner() || !AbilitySystem->IsBlockMovementActive()) { return false; }
+	OutSpeedLimit = AbilitySystem->GetBlockMovementSpeedLimit();
+	return true;
+}
+
+bool URpgCharacterMovementComponent::GetBlockMovementForMove(float& OutSpeedLimit) const
+{
+	if (bInBlockMovementScope)
+	{
+		OutSpeedLimit = BlockMovementSpeedLimitForMove;
+		return bBlockMovementForMove;
+	}
+	return SampleBlockMovement(OutSpeedLimit);
+}
+
+void URpgCharacterMovementComponent::PerformMovement(float DeltaTime)
+{
+	// PrepMoveFor installed the original local policy during correction. A server movement RPC instead
+	// samples the validated authority activation; no client-supplied cap can bypass or prolong its lease.
+	if (!CharacterOwner || !CharacterOwner->bClientUpdating)
+	{
+		bBlockMovementForMove = SampleBlockMovement(BlockMovementSpeedLimitForMove);
+	}
+	TGuardValue<bool> BlockScope(bInBlockMovementScope, true);
+	Super::PerformMovement(DeltaTime);
+}
+
+bool URpgCharacterMovementComponent::IsBlockControllingRotation() const
+{
+	float SpeedLimit = 0.f;
+	return CharacterOwner && CharacterOwner->GetLocalRole() != ROLE_SimulatedProxy && MovementMode != MOVE_None &&
+		!IsMantleControllingRotation() && !HasAnimRootMotion() && !CurrentRootMotion.HasActiveRootMotionSources() &&
+		GetBlockMovementForMove(SpeedLimit);
 }
 
 const FRpgCharacterGroundInfo& URpgCharacterMovementComponent::GetGroundInfo()
@@ -83,10 +185,30 @@ void URpgCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 {
 	// Pawn::FaceRotation is gated separately: controller updates and saved-move replay can call it outside CMC physics.
 	// Reuse the ability's existing lease so cancellation, rejection, death and replication release both policies together.
-	if (!IsMantleControllingRotation())
+	if (IsMantleControllingRotation()) { return; }
+	if (IsBlockControllingRotation())
 	{
+		const bool bSavedOrientToMovement = bOrientRotationToMovement;
+		const bool bSavedControllerDesired = bUseControllerDesiredRotation;
+		bOrientRotationToMovement = true;
+		bUseControllerDesiredRotation = false;
 		Super::PhysicsRotation(DeltaTime);
+		bOrientRotationToMovement = bSavedOrientToMovement;
+		bUseControllerDesiredRotation = bSavedControllerDesired;
 	}
+	else { Super::PhysicsRotation(DeltaTime); }
+}
+
+FRotator URpgCharacterMovementComponent::ComputeOrientToMovementRotation(const FRotator& CurrentRotation,
+	float DeltaTime, FRotator& DeltaRotation) const
+{
+	if (IsBlockControllingRotation())
+	{
+		// Stock PostUpdate_Replay overwrites SavedControlRotation from today's controller. PrepMoveFor
+		// installs our immutable original instead, including when the same move is corrected repeatedly.
+		return CharacterOwner->bClientUpdating ? BlockControlRotationForMove : CharacterOwner->GetControlRotation();
+	}
+	return Super::ComputeOrientToMovementRotation(CurrentRotation, DeltaTime, DeltaRotation);
 }
 
 FRotator URpgCharacterMovementComponent::GetDeltaRotation(float DeltaTime) const
@@ -112,7 +234,10 @@ float URpgCharacterMovementComponent::GetMaxSpeed() const
 		}
 	}
 
-	return Super::GetMaxSpeed();
+	float SpeedLimit = 0.f;
+	const float AuthoredSpeed = Super::GetMaxSpeed();
+	return GetBlockMovementForMove(SpeedLimit) && FMath::IsFinite(SpeedLimit) && SpeedLimit > 0.f
+		? FMath::Min(AuthoredSpeed, SpeedLimit) : AuthoredSpeed;
 }
 
 void URpgCharacterMovementComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const

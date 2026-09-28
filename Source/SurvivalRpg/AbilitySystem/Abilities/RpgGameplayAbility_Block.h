@@ -58,6 +58,8 @@ private:
 		const FGameplayAbilityActorInfo* ActorInfo) const;
 
 	bool ApplyBlockState(const FRpgWeaponBlockDefinition& BlockDefinition);
+	/** Rechecks lifecycle and the equipped source before presenting an event that may have arrived over the network. */
+	bool CanReactToBlockEvent() const;
 	void ClearBlockState();
 	void SetReplicatedLooseTagCount(FGameplayTag Tag, int32 Count) const;
 	float PlayBlockMontage(UAnimMontage* Montage, float PlayRate = 1.0f);
@@ -78,6 +80,9 @@ private:
 	bool bBlockLoopStarted = false;
 	// GAS sets its ending guard only inside Super::EndAbility, after our synchronous cleanup callbacks.
 	bool bEndingBlock = false;
+	// Consumed before synchronous end callbacks; the ASC also checks the exact activation and avatar.
+	TWeakObjectPtr<URpgAbilitySystemComponent> BlockMovementASC;
+	uint32 BlockMovementLease = 0;
 	// This activation's base-value snapshot belongs only to these original, still-registered instances.
 	TWeakObjectPtr<URpgAbilitySystemComponent> BlockStateASC;
 	TWeakObjectPtr<const URpgDefenseSet> BlockStateDefenseSet;

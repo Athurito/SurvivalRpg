@@ -104,6 +104,14 @@ void URpgGameplayAbility_Block::ActivateAbility(
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
+	URpgAbilitySystemComponent* MovementASC = GetRpgAbilitySystemComponentFromActorInfo();
+	BlockMovementLease = MovementASC ? MovementASC->BeginBlockMovement(this, ActiveBlockDefinition.MovementSpeedLimit) : 0;
+	BlockMovementASC = MovementASC;
+	if (!BlockMovementLease)
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
+	}
 
 	if (ActiveBlockDefinition.BlockStartMontage)
 	{
@@ -149,6 +157,19 @@ void URpgGameplayAbility_Block::EndAbility(
 		return;
 	}
 	bEndingBlock = true;
+	if (bWasCancelled)
+	{
+		if (URpgAbilitySystemComponent* ASC = GetRpgAbilitySystemComponentFromActorInfo())
+		{
+			// Cancellation consumes this physical hold. A remote cancellation can precede the
+			// replicated interruption tags, so WhileInputActive must wait for a fresh press.
+			ASC->SuppressAbilityInputUntilRelease(Handle);
+		}
+	}
+	const uint32 MovementLease = BlockMovementLease;
+	BlockMovementLease = 0;
+	if (URpgAbilitySystemComponent* ASC = BlockMovementASC.Get()) { ASC->EndBlockMovement(this, MovementLease); }
+	BlockMovementASC.Reset();
 
 	if (UWorld* World = GetWorld())
 	{
@@ -160,7 +181,7 @@ void URpgGameplayAbility_Block::EndAbility(
 		ClearBlockState();
 	}
 
-	if (bAppliedBlockState || bBlockLoopStarted || ActiveBlockDefinition.BlockStartMontage)
+	if (bAppliedBlockState || bBlockLoopStarted || ActiveBlockDefinition.BlockStartMontage || MovementLease)
 	{
 		PlayBlockMontage(ActiveBlockDefinition.BlockEndMontage, MontagePlayRate);
 	}
@@ -182,8 +203,24 @@ void URpgGameplayAbility_Block::OnBlockInputReleased(float TimeHeld)
 	}
 }
 
+bool URpgGameplayAbility_Block::CanReactToBlockEvent() const
+{
+	if (!IsActive() || bEndingBlock || bBlockInputReleased || !BlockMovementLease || !CurrentActorInfo) { return false; }
+	if (const URpgHealthComponent* Health = URpgHealthComponent::FindHealthComponent(CurrentActorInfo->AvatarActor.Get()))
+	{
+		if (Health->IsDeadOrDying()) { return false; }
+	}
+	const URpgEquipmentInstance* Equipment = Cast<URpgEquipmentInstance>(GetSourceObject(CurrentSpecHandle, CurrentActorInfo));
+	return !Equipment || IsEquipmentActiveForInput(Equipment, GetInputTagFromSpec(CurrentSpecHandle, CurrentActorInfo));
+}
+
 void URpgGameplayAbility_Block::OnBlockEvent(FGameplayEventData Payload)
 {
+	if (!CanReactToBlockEvent()) { return; }
+	if (URpgAbilitySystemComponent* ASC = BlockMovementASC.Get())
+	{
+		ASC->ConfirmBlockReaction(this, BlockMovementLease, RpgGameplayTags::GameplayEvent_Block);
+	}
 	const float HitDuration = PlayBlockMontage(ActiveBlockDefinition.BlockHitMontage, MontagePlayRate);
 	if (HitDuration > 0.0f && ActiveBlockDefinition.BlockLoopMontage && !bBlockInputReleased)
 	{
@@ -194,6 +231,11 @@ void URpgGameplayAbility_Block::OnBlockEvent(FGameplayEventData Payload)
 
 void URpgGameplayAbility_Block::OnPerfectBlockEvent(FGameplayEventData Payload)
 {
+	if (!CanReactToBlockEvent()) { return; }
+	if (URpgAbilitySystemComponent* ASC = BlockMovementASC.Get())
+	{
+		ASC->ConfirmBlockReaction(this, BlockMovementLease, RpgGameplayTags::GameplayEvent_PerfectBlock);
+	}
 	const float HitDuration = PlayBlockMontage(
 		ActiveBlockDefinition.PerfectBlockMontage ? ActiveBlockDefinition.PerfectBlockMontage : ActiveBlockDefinition.BlockHitMontage,
 		MontagePlayRate);
@@ -211,7 +253,8 @@ void URpgGameplayAbility_Block::EndPerfectBlockWindow()
 
 void URpgGameplayAbility_Block::QueueBlockLoopMontage(float Delay)
 {
-	if (!ActiveBlockDefinition.BlockLoopMontage)
+	// The equipment-linked layer supplies held locomotion. GAS still owns optional start/end/hit montages.
+	if (ActiveBlockDefinition.BlockLocomotionLayer || !ActiveBlockDefinition.BlockLoopMontage)
 	{
 		return;
 	}
@@ -237,7 +280,7 @@ void URpgGameplayAbility_Block::QueueBlockLoopMontage(float Delay)
 
 void URpgGameplayAbility_Block::StartBlockLoopMontage()
 {
-	if (!IsActive() || bBlockInputReleased || bBlockLoopStarted || !ActiveBlockDefinition.BlockLoopMontage)
+	if (!IsActive() || bBlockInputReleased || bBlockLoopStarted || ActiveBlockDefinition.BlockLocomotionLayer || !ActiveBlockDefinition.BlockLoopMontage)
 	{
 		return;
 	}

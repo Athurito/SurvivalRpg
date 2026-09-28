@@ -18,6 +18,32 @@ class UGameplayAbility;
 class UMotionWarpingBaseAdapter;
 class URpgAbilitySystemComponent;
 class URpgMoverMotionWarpingComponent;
+class UCommonLegacyMovementSettings;
+class USimpleWalkingMode;
+
+/** Effective block locomotion for one completed Mover frame; replicated with movement for correction and late join. */
+USTRUCT()
+struct SURVIVALRPG_API FRpgMoverBlockMovementSyncState : public FMoverDataStructBase
+{
+	GENERATED_BODY()
+
+	/** Final simulation policy, selected by authority independently of any client's input payload. */
+	UPROPERTY() bool bBlocking = false;
+	/** Activation-sampled limit in cm/s; zero means no additional cap. Never inferred from an animation. */
+	UPROPERTY() float SpeedLimit = 0.f;
+
+	virtual FMoverDataStructBase* Clone() const override;
+	virtual UScriptStruct* GetScriptStruct() const override;
+	virtual bool NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess) override;
+	virtual bool ShouldReconcile(const FMoverDataStructBase& AuthorityState) const override;
+	virtual void Interpolate(const FMoverDataStructBase& From, const FMoverDataStructBase& To, float Pct) override;
+};
+
+template<>
+struct TStructOpsTypeTraits<FRpgMoverBlockMovementSyncState> : public TStructOpsTypeTraitsBase2<FRpgMoverBlockMovementSyncState>
+{
+	enum { WithNetSerializer = true, WithCopy = true };
+};
 
 /**
  * Engine montage root motion with a GAS activation identity. The identity survives Mover rollback and
@@ -78,6 +104,10 @@ struct SURVIVALRPG_API FRpgMoverAbilityRootMotionInputs : public FMoverDataStruc
 	FRpgMoverTraversalCommand Traversal;
 	/** Server-approved living-ragdoll command sampled at this local frame; never serialized from client to server. */
 	UPROPERTY() FRpgMoverRagdollState Ragdoll;
+	/** Original local GAS policy for this frame, retained for replay but never sent as client movement authority. */
+	UPROPERTY() bool bBlocking = false;
+	/** Immutable local activation cap in cm/s; zero means no extra cap, reset on network loading. */
+	UPROPERTY() float BlockMovementSpeedLimit = 0.f;
 
 	/** Pins the sampled montage until all copies of this local input frame have left NP history. */
 	void RetainMontageForHistory();
@@ -119,6 +149,14 @@ public:
 	void RefreshTraversalPresentation(URpgAbilitySystemComponent* AbilitySystem);
 	/** Preserves the GASP input producer and appends this tick's local GAS root-motion playback interval. */
 	virtual void ProduceInput(int32 DeltaTimeMS, FMoverInputCmdContext* Cmd) override;
+
+	/** Game-thread read model: current simulation policy in callbacks, live GAS for owner/server, finalized sync for proxies. */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Mover|Block")
+	bool IsBlockMovementActive() const;
+
+	/** Same policy's limit in cm/s; zero means no additional cap. Sample this on the game thread before animation-worker use. */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Mover|Block")
+	float GetBlockMovementSpeedLimit() const;
 
 	/**
 	 * Stops this pawn permanently after its authoritative health lifecycle starts death. Called by authority
@@ -190,6 +228,9 @@ private:
 	void UpdateTraversalPresentation(const FMoverSyncState& SyncState);
 	void PrepareTraversalSimulation(const FMoverTimeStep& TimeStep, const FMoverTickStartData& StartingData);
 	void PrepareRagdollSimulation(const FMoverTimeStep& TimeStep, const FMoverTickStartData& StartingData);
+	bool SampleBlockMovement(float& OutSpeedLimit) const;
+	void PrepareBlockMovement(const FMoverTimeStep& TimeStep, const FMoverTickStartData& StartingData);
+	void RestoreBlockMovementSettings();
 	void ApplyTraversalCollisionLease(UPrimitiveComponent* Collider);
 	/** Publishes only this corrected command's fixed targets and releases targets from the preceding visible state. */
 	void UpdateTraversalWarpTargets(const FRpgMoverTraversalRequest* Request);
@@ -202,6 +243,20 @@ private:
 	UPROPERTY(Transient) FRpgMoverTraversalSyncState TraversalSimulationState;
 	UPROPERTY(Transient) FRpgMoverRagdollState RagdollCommand;
 	UPROPERTY(Transient) FRpgMoverRagdollSyncState RagdollSimulationState;
+	UPROPERTY(Transient) FRpgMoverBlockMovementSyncState BlockMovementSimulationState;
+	// Scope covers the game-thread simulation and its Blueprint callbacks, never today's GAS during owner replay.
+	bool bInBlockMovementSimulation = false;
+	TWeakObjectPtr<UCommonLegacyMovementSettings> CappedBlockMovementSettings;
+	float UncappedBlockMovementMaxSpeed = 0.f;
+	float AppliedBlockMovementMaxSpeed = 0.f;
+	struct FCappedBlockMovementMode
+	{
+		TWeakObjectPtr<USimpleWalkingMode> Mode;
+		float UncappedMaxSpeed = 0.f;
+		float AppliedMaxSpeed = 0.f;
+	};
+	// Simple/SmoothWalking modes can override shared MaxSpeed; each authored override is scoped separately.
+	TArray<FCappedBlockMovementMode, TInlineAllocator<2>> CappedBlockMovementModes;
 	bool bRagdollEnabled = false;
 	bool bSuppressMovementForRagdollThisTick = false;
 	UPROPERTY(Transient) TObjectPtr<URpgMoverMotionWarpingComponent> TraversalWarping;
