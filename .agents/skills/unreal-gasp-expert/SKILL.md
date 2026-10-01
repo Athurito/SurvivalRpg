@@ -101,6 +101,7 @@ For asset or Pose Search changes:
 - Add `survival-rpg-combat-foundation` when the task changes attacks, block, dodge, hit reactions, combat montages, equipment-granted abilities, or combat animation tags.
 - Add `survival-rpg-project` only when an animation decision changes product scope, combat feel, traversal scope, progression identity, or first-playable priorities.
 - Keep isolated source audits, retargeting checks, Pose Search tuning, and purely cosmetic AnimGraph work within this skill.
+- Author AnimBP, layer interface, montage, notify, BlendSpace, Chooser, and retarget assets through the Unreal MCP workflow; its [project toolsets](../unreal-lyra-expert/references/unreal-mcp-asset-authoring.md#project-toolsets) cover the operations the engine toolsets lack.
 
 ## Verify proportionally
 
