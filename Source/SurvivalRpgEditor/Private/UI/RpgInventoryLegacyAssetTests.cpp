@@ -114,10 +114,6 @@ bool FRpgInventoryLegacyAssetRetirementTest::RunTest(
 		},
 		{
 			TEXT("/Game/SurvivalRpg/UI/DA_RpgUIScreenRegistry"),
-			TEXT("/Game/SurvivalRpg/UI/CUI_BaseTerminalSpatial"),
-		},
-		{
-			TEXT("/Game/SurvivalRpg/UI/DA_RpgUIScreenRegistry"),
 			TEXT("/Game/SurvivalRpg/Crafting/UI/CUI_CraftingStationSpatial"),
 		},
 		{
@@ -135,10 +131,6 @@ bool FRpgInventoryLegacyAssetRetirementTest::RunTest(
 		{
 			TEXT("/Game/SurvivalRpg/UI/CUI_BaseResourceListSpatial"),
 			TEXT("/Game/SurvivalRpg/UI/CUI_BaseResourceEntry"),
-		},
-		{
-			TEXT("/Game/SurvivalRpg/Crafting/UI/CUI_CraftingStationSpatial"),
-			TEXT("/Game/SurvivalRpg/UI/CUI_ActionbarButton"),
 		},
 	};
 

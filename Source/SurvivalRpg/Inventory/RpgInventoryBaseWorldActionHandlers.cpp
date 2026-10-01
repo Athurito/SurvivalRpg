@@ -3,8 +3,10 @@
 #include "SurvivalRpg/Base/RpgBaseBuildableDefinition.h"
 #include "SurvivalRpg/Base/RpgBaseCampActor.h"
 #include "SurvivalRpg/Base/RpgBaseConstructionSiteActor.h"
+#include "SurvivalRpg/Base/RpgBaseStorageStationActor.h"
 #include "SurvivalRpg/Crafting/RpgCraftingRecipeDefinition.h"
 #include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
+#include "SurvivalRpg/Inventory/RpgInventoryContainerActor.h"
 
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
@@ -26,6 +28,16 @@ void FRpgBaseBuildingActionHandler::PlaceBuildable(
 			*GetNameSafe(BaseCamp),
 			*GetNameSafe(BuildableDefinition),
 			*GetNameSafe(RequestingActor));
+		return;
+	}
+
+	// Physical chests require the dedicated footprint/ground/capacity transaction.
+	// The retired virtual-storage station must not be recreated through this older
+	// generic construction RPC after its authored interaction actors are removed.
+	if (BuildableDefinition->BuildActorClass &&
+		(BuildableDefinition->BuildActorClass->IsChildOf(ARpgInventoryContainerActor::StaticClass()) ||
+		 BuildableDefinition->BuildActorClass->IsChildOf(ARpgBaseStorageStationActor::StaticClass())))
+	{
 		return;
 	}
 

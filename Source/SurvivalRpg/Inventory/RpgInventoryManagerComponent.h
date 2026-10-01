@@ -8,6 +8,7 @@
 #include "Misc/Guid.h"
 #include "Net/Serialization/FastArraySerializer.h"
 #include "RpgInventoryGraphTypes.h"
+#include "RpgPhysicalStorageTypes.h"
 
 #include "RpgInventoryManagerComponent.generated.h"
 
@@ -441,6 +442,8 @@ private:
 		const FRpgInventoryEntry& DisplacedEntry,
 		FRpgInventoryGridPlacement& OutDisplacedPlacement) const;
 	void BroadcastChangeMessage(FRpgInventoryEntry& Entry, int32 OldCount, int32 NewCount, bool bOrderChanged = false);
+	/** Publishes retained event snapshots after the authoritative graph and revision have committed. */
+	void FlushDeferredChangeMessages();
 	bool FindFirstFitPlacement(TSubclassOf<URpgInventoryItemDefinition> ItemDef, FRpgInventoryGridPlacement& OutPlacement) const;
 	bool FindFirstFitPlacement(URpgInventoryItemInstance* ItemInstance, FRpgInventoryGridPlacement& OutPlacement) const;
 	bool FindFirstFitPlacement(
@@ -468,6 +471,13 @@ private:
 
 	UPROPERTY(NotReplicated)
 	TObjectPtr<UActorComponent> OwnerComponent;
+
+	/** Keeps removed item instances alive until every synchronous commit observer has been notified. */
+	UPROPERTY(Transient, NotReplicated)
+	TArray<FRpgInventoryChangeMessage> DeferredChangeMessages;
+
+	/** Authority-only scope controlled by the manager's single-inventory transaction gateway. */
+	bool bDeferChangeMessages = false;
 };
 
 template<>
@@ -711,6 +721,25 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Intent")
 	bool ConsumeItemsByDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 NumToConsume);
 
+	/** Plans ordinary item consumption, transfer and grants across all participants without publishing state. */
+	bool CanApplyInventoryBatch(
+		const TArray<FRpgInventoryBatchOperation>& Operations,
+		ERpgInventoryMutationResultCode& OutCode,
+		const TArray<FRpgInventoryBatchCapacityChange>& CapacityChanges = {});
+
+	/**
+	 * Atomically applies an exact server-authored resource batch; the caller validates access/domain membership.
+	 * Optional side effects must be prevalidated infallible native state updates. They run after every inventory
+	 * graph, capacity and revision is final, before synchronous inventory observers are notified.
+	 * RevalidateContext rechecks caller-owned access/settings/domain truth after staging and before publication.
+	 */
+	FRpgInventoryMutationResult ApplyInventoryBatch(
+		const TArray<FRpgInventoryBatchOperation>& Operations,
+		FGuid RequestId,
+		const TArray<FRpgInventoryBatchCapacityChange>& CapacityChanges = {},
+		TFunction<void()> CommitSideEffects = {},
+		TFunction<bool()> RevalidateContext = {});
+
 	/** Plans a stable whole-entry move from a complete replicated source snapshot without exposing kernel operations. */
 	FRpgInventoryMutationResult PlanMoveItem(FRpgInventoryMoveIntent Intent) const;
 
@@ -789,10 +818,11 @@ public:
 	 */
 	bool RestoreInventoryGraph(const FRpgInventoryGraphSaveData& SaveData, FRpgInventoryMutationResult& OutResult);
 
-	/** Runs the complete authority-side staged restore validation against this inventory's current layout without committing entries, revisions, replay state, or notifications. */
+	/** Runs authority-side staged restore validation without commits. An optional saved grid overrides only a non-player inventory's default root bounds. */
 	bool ValidateInventoryGraphForRestore(
 		const FRpgInventoryGraphSaveData& SaveData,
-		FRpgInventoryMutationResult& OutResult);
+		FRpgInventoryMutationResult& OutResult,
+		const FRpgInventoryGridSize* OverrideDefaultGridSize = nullptr);
 
 	/**
 	 * Repairs caller-gated legacy root placements against the current player-layout contract.
@@ -842,7 +872,8 @@ private:
 	UFUNCTION()
 	void OnRep_CapacitySettings();
 
-	void MarkInventoryStateDirty();
+	/** Multi-inventory commits defer callbacks until every participant has published its final revision. */
+	void MarkInventoryStateDirty(bool bBroadcastPostCommit = true);
 	void BroadcastInventoryStateChanged() const;
 	UAbilitySystemComponent* FindCapacityAbilitySystem() const;
 	void RefreshCapacityAttributeBinding();
@@ -863,6 +894,25 @@ private:
 		URpgInventoryItemInstance* StagedInstance,
 		const FRpgInventoryPlacementPlan& Plan,
 		bool bMayCreateAdditionalInstances);
+	FRpgInventoryMutationResult ApplyInventoryBatchInternal(
+		const TArray<FRpgInventoryBatchOperation>& Operations,
+		FGuid RequestId,
+		const TArray<FRpgInventoryBatchCapacityChange>& CapacityChanges,
+		bool bCommit,
+		TFunction<void()> CommitSideEffects,
+		TFunction<bool()> RevalidateContext);
+	struct FRecentPhysicalBatch
+	{
+		TArray<FRpgInventoryBatchOperation> Operations;
+		TArray<FRpgInventoryBatchCapacityChange> CapacityChanges;
+		TArray<TWeakObjectPtr<URpgInventoryManagerComponent>> Inventories;
+		TArray<uint64> Epochs;
+		FRpgInventoryMutationResult Result;
+	};
+	TMap<FGuid, FRecentPhysicalBatch> RecentPhysicalBatches;
+	TArray<FGuid> RecentPhysicalBatchOrder;
+	bool bIsApplyingPhysicalBatch = false;
+
 	struct FPreparedPickupBatch;
 	bool PreparePickupBatch(
 		const FInventoryPickup& Pickup,
@@ -923,7 +973,8 @@ private:
 		const UObject* ExpectedInstanceOuter,
 		bool bEnforceCapacity,
 		FValidatedInventoryGraph& OutGraph,
-		ERpgInventoryMutationResultCode& OutCode) const;
+		ERpgInventoryMutationResultCode& OutCode,
+		const FRpgInventoryGridSize* OverrideDefaultGridSize = nullptr) const;
 	/** Applies the canonical graph contract to the component's current replicated FastArray. */
 	bool ValidateLiveInventoryGraph(
 		bool bEnforceCapacity,
@@ -939,6 +990,10 @@ private:
 	bool CommitRemovalDeltas(
 		const TArray<FRpgInventoryMutationDelta>& Deltas,
 		bool bBroadcastPostCommit = true);
+	/** Internal removal kernel; callers have already checked admission to the authoritative mutation. */
+	bool ApplyRemovalDeltas(
+		const TArray<FRpgInventoryMutationDelta>& Deltas,
+		bool bBroadcastPostCommit);
 	FRpgInventoryMutationRequest BuildMoveMutationRequest(const FRpgInventoryMoveIntent& Intent) const;
 	FRpgInventoryMutationRequest BuildEquipmentMoveMutationRequest(
 		const FRpgInventoryMoveIntent& Intent) const;
@@ -957,7 +1012,8 @@ private:
 		bool bCommitValidatedGraph,
 		bool bAllowLegacyRootPlacementMigration,
 		int32 LegacyPlayerSchemaVersion,
-		FRpgInventoryGraphSaveData* OutMigratedSaveData);
+		FRpgInventoryGraphSaveData* OutMigratedSaveData,
+		const FRpgInventoryGridSize* OverrideDefaultGridSize = nullptr);
 	struct FRecentMutationRecord
 	{
 		enum class EKind : uint8
@@ -1043,6 +1099,9 @@ private:
 
 	/** Server-local generation that invalidates command replay state after a successful profile/disk restore. */
 	uint64 MutationEpoch = 0;
+
+	/** Rejects new mutations during single-inventory staging and notification; cached retries remain readable. */
+	bool bIsApplyingInventoryMutation = false;
 
 	/** Prevents one synchronous pickup notification from committing the same non-RPC batch reentrantly. */
 	bool bIsApplyingPickupBatch = false;

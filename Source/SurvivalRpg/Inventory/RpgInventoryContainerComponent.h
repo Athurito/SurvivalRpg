@@ -1,13 +1,19 @@
 #pragma once
 
 #include "Components/ActorComponent.h"
+#include "RpgPhysicalStorageTypes.h"
 #include "SurvivalRpg/Interaction/IInteractableTarget.h"
 
 #include "RpgInventoryContainerComponent.generated.h"
 
 class URpgInventoryManagerComponent;
+class URpgBaseBuildableDefinition;
 class USceneComponent;
 class FDataValidationContext;
+class URpgInventoryContainerComponent;
+
+/** Emitted after authoritative settings change and after replicated settings arrive. */
+DECLARE_MULTICAST_DELEGATE_OneParam(FRpgPhysicalStorageSettingsChanged, URpgInventoryContainerComponent*);
 
 /** Direction contract enforced for transfers involving an interactable world container. */
 UENUM(BlueprintType)
@@ -31,12 +37,69 @@ class SURVIVALRPG_API URpgInventoryContainerComponent : public UActorComponent, 
 public:
 	explicit URpgInventoryContainerComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	FRpgPhysicalStorageSettingsChanged OnPhysicalStorageSettingsChanged;
+
+	/** Current physical settings snapshot; the inventory graph is exported separately. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Storage")
+	FRpgPhysicalStorageMetadata ExportPhysicalStorageMetadata() const;
+
+	/** Restores validated world-save settings before restoring inventory items. Authority only. */
+	bool RestorePhysicalStorageMetadata(const FRpgPhysicalStorageMetadata& Metadata);
+
+	/** Creates a stable save key once for this world chest on authority. */
+	void EnsurePersistentContainerId();
+
+	/** Changes the server-resolved spatial membership; never accepts client-supplied membership. */
+	void SetResolvedBaseId(FName NewBaseId);
+
+	/** Flags whether world restore must reconstruct this actor. Authority only. */
+	void SetRuntimeBuilt(bool bNewRuntimeBuilt);
+
+	/** Sets the zero-based tier after its capacity/cost transaction has passed validation. */
+	void SetUpgradeTier(int32 NewTier);
+
+	/** Advances settings revision after an authoritative move, invalidating older placement requests. */
+	void MarkPhysicalStorageMoved();
+
+	/** Applies an authority-approved transform while blocking nested chest actions from transform callbacks. */
+	bool TryRelocatePhysicalStorage(const FTransform& Transform, int32 ExpectedRevision);
+
+	/** Stages a newly constructed actor before costs commit; pending actors cannot interact, supply resources or save. */
+	void SetConstructionPending(bool bPending);
+
+	/** Server-only construction staging state; never persisted as a completed chest. */
+	bool IsConstructionPending() const { return bConstructionPending; }
+
+	/** Replaces destination rules, reusing unchanged rules and assigning new orders on authority. */
+	bool SetAssignments(const TArray<FRpgStorageAssignment>& NewAssignments, int32 ExpectedRevision = INDEX_NONE);
+
+	/** Zero exact item, one category, two existing-stock general chest; INDEX_NONE has no destination. */
+	int32 GetAssignmentRank(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int64& OutOrder) const;
+
+	/** Replicated and saved destination rules; callers must use SetAssignments for changes. */
+	const TArray<FRpgStorageAssignment>& GetAssignments() const;
+
+	/** Current authoritative settings revision for stale request rejection. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Storage")
+	int32 GetSettingsRevision() const;
+
+	/** Current resolved base membership, or None outside any base. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Storage")
+	FName GetBaseId() const;
+
 	virtual void GatherInteractionOptions(const FInteractionQuery& InteractQuery, FInteractionOptionBuilder& InteractionBuilder) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 #if WITH_EDITOR
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
 #endif
+
+	/** Designer-owned construction and upgrade tuning for this chest. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Storage")
+	URpgBaseBuildableDefinition* GetBuildableDefinition() const { return BuildableDefinition; }
 
 	/** Inventory manager on the same actor that stores this container's replicated item entries. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Container")
@@ -76,7 +139,7 @@ public:
 	void ConfigureAsDeathLootContainer();
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Container")
-	bool IsContainerAccessible() const { return bAccessible; }
+	bool IsContainerAccessible() const { return bAccessible && !bConstructionPending && !bPhysicalMoveInProgress; }
 
 	/** Returns the transfer direction policy used by UI prediction and authoritative inventory commits. */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Container")
@@ -95,13 +158,17 @@ public:
 
 	/** True when crafting/resource scans may pull items from this container. */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Container")
-	bool AllowsCraftingAccess() const { return bAllowCraftingAccess; }
+	bool AllowsCraftingAccess() const { return bAllowCraftingAccess && !bConstructionPending; }
 
 	/** Maximum distance in centimeters for direct player transfer access. */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Container")
 	float GetInteractionRadius() const { return InteractionRadius; }
 
 protected:
+	/** Construction and tier data; concrete chest Blueprints choose this asset. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Storage")
+	TObjectPtr<URpgBaseBuildableDefinition> BuildableDefinition;
+
 	/** Interaction option shown by Lyra-style interaction UI when this container is accessible. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Container")
 	FInteractionOption OpenContainerOption;
@@ -141,6 +208,20 @@ protected:
 	bool bAllowCraftingAccess = true;
 
 private:
+	/** Authority-only synchronous guard; contents stay on this actor throughout relocation. */
+	bool bPhysicalMoveInProgress = false;
+
+	/** Temporary authority-only admission gate while a construction transaction stages this actor. */
+	bool bConstructionPending = false;
+
+	/** Saved server-owned settings replicated as one coherent value. */
+	UPROPERTY(EditAnywhere, ReplicatedUsing = OnRep_PhysicalStorageMetadata, Category = "Inventory|Storage")
+	FRpgPhysicalStorageMetadata PhysicalStorageMetadata;
+
+	UFUNCTION()
+	void OnRep_PhysicalStorageMetadata();
+	void NotifyPhysicalStorageSettingsChanged();
+
 	/** Local same-owner prompt/range anchor; runtime wiring is reconstructed instead of replicated as an object reference. */
 	UPROPERTY(Transient)
 	TObjectPtr<USceneComponent> InteractionAnchor;

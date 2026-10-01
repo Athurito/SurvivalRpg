@@ -8,6 +8,7 @@
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
+#include "SurvivalRpg/Inventory/RpgInventoryContainerActor.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillGameplayTags.h"
 
 namespace RpgWorldSaveGameTests
@@ -91,6 +92,17 @@ bool FRpgWorldSaveGameMemoryRoundTripTest::RunTest(const FString& Parameters)
 
 	FRpgWorldContainerSaveData Container;
 	Container.PersistentContainerId = TEXT("AutomationChest");
+	Container.ActorClass = ARpgInventoryContainerActor::StaticClass();
+	Container.ActorTransform = FTransform(FRotator(0, 90, 0), FVector(450, 250, 80));
+	Container.Metadata.PersistentContainerId = Container.PersistentContainerId;
+	Container.Metadata.GridSize.Width = 6;
+	Container.Metadata.GridSize.Height = 8;
+	Container.Metadata.UpgradeTier = 2;
+	Container.Metadata.bRuntimeBuilt = true;
+	Container.Metadata.AssignmentOrderHighWaterMark = 42;
+	FRpgStorageAssignment& Assignment = Container.Metadata.Assignments.AddDefaulted_GetRef();
+	Assignment.ItemDefinition = URpgInventoryItemDefinition::StaticClass();
+	Assignment.AssignmentOrder = 37;
 	Source->WorldContainers.Add(Container.PersistentContainerId, Container);
 
 	FString ValidationError;
@@ -162,12 +174,18 @@ bool FRpgWorldSaveGameMemoryRoundTripTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Nested item slot preserves Y"), RestoredNestedItemAddress.Y, 7);
 	}
 	TestTrue(TEXT("Persistent world-container id survives serialization"), Restored->WorldContainers.Contains(TEXT("AutomationChest")));
+	const FRpgWorldContainerSaveData& RestoredChest = Restored->WorldContainers.FindChecked(TEXT("AutomationChest"));
+	TestTrue(TEXT("Built actor transform survives serialization"), RestoredChest.ActorTransform.Equals(Container.ActorTransform));
+	TestEqual(TEXT("Upgrade tier survives serialization"), RestoredChest.Metadata.UpgradeTier, 2);
+	TestEqual(TEXT("Expanded grid survives serialization"), RestoredChest.Metadata.GridSize.Height, 8);
+	TestEqual(TEXT("Assignment creation order survives serialization"), RestoredChest.Metadata.Assignments[0].AssignmentOrder, int64(37));
+	TestEqual(TEXT("Deleted-rule highwater survives serialization"), RestoredChest.Metadata.AssignmentOrderHighWaterMark, int64(42));
 	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgWorldSaveGameLegacyV1EmptyMigrationTest,
-	"SurvivalRpg.Save.WorldSave.V2.LegacyV1MigratesWithEmptyStorageState",
+	"SurvivalRpg.Save.WorldSave.V3.RejectsPrototypeSchemas",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FRpgWorldSaveGameLegacyV1EmptyMigrationTest::RunTest(
@@ -178,8 +196,8 @@ bool FRpgWorldSaveGameLegacyV1EmptyMigrationTest::RunTest(
 	Legacy->SchemaVersion = 1;
 
 	FString ValidationError;
-	TestTrue(
-		TEXT("Schema V1 remains loadable when its V2 storage fields are empty"),
+	TestFalse(
+		TEXT("Schema V1 is rejected by the fresh physical-storage boundary"),
 		Legacy->ValidateForLoad(ValidationError));
 
 	TArray<uint8> Bytes;
@@ -193,19 +211,19 @@ bool FRpgWorldSaveGameLegacyV1EmptyMigrationTest::RunTest(
 		return false;
 	}
 
-	TestTrue(
-		TEXT("Deserialized V1 snapshot validates before migration"),
+	TestFalse(
+		TEXT("Deserialization never implicitly migrates a prototype save"),
 		Restored->ValidateForLoad(ValidationError));
 	TestTrue(
-		TEXT("V1 migration starts with no persisted base networks"),
+		TEXT("Prototype fixture has no persisted base networks"),
 		Restored->BaseStorages.IsEmpty());
 	TestTrue(
-		TEXT("V1 migration starts with no storage knowledge"),
+		TEXT("Prototype fixture has no storage knowledge"),
 		Restored->StorageKnowledgeTags.IsEmpty());
 
-	Restored->SchemaVersion = URpgWorldSaveGame::CurrentSchemaVersion;
-	TestTrue(
-		TEXT("The empty legacy payload is a valid V2 reconstruction boundary"),
+	Restored->SchemaVersion = 2;
+	TestFalse(
+		TEXT("Schema V2 is also rejected, including empty quantity-storage worlds"),
 		Restored->ValidateForLoad(ValidationError));
 
 	Legacy->StorageKnowledgeTags.AddTag(

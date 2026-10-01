@@ -106,7 +106,8 @@ bool URpgInventoryManagerComponent::RestoreInventoryGraph(
 
 bool URpgInventoryManagerComponent::ValidateInventoryGraphForRestore(
 	const FRpgInventoryGraphSaveData& SaveData,
-	FRpgInventoryMutationResult& OutResult)
+	FRpgInventoryMutationResult& OutResult,
+	const FRpgInventoryGridSize* OverrideDefaultGridSize)
 {
 	return RestoreInventoryGraphInternal(
 		SaveData,
@@ -115,7 +116,8 @@ bool URpgInventoryManagerComponent::ValidateInventoryGraphForRestore(
 		false,
 		false,
 		INDEX_NONE,
-		nullptr);
+		nullptr,
+		OverrideDefaultGridSize);
 }
 
 bool URpgInventoryManagerComponent::
@@ -162,7 +164,8 @@ bool URpgInventoryManagerComponent::RestoreInventoryGraphInternal(
 	bool bCommitValidatedGraph,
 	bool bAllowLegacyRootPlacementMigration,
 	int32 LegacyPlayerSchemaVersion,
-	FRpgInventoryGraphSaveData* OutMigratedSaveData)
+	FRpgInventoryGraphSaveData* OutMigratedSaveData,
+	const FRpgInventoryGridSize* OverrideDefaultGridSize)
 {
 	OutResult = FRpgInventoryMutationResult();
 	OutResult.RequestId = FGuid::NewGuid();
@@ -178,6 +181,12 @@ bool URpgInventoryManagerComponent::RestoreInventoryGraphInternal(
 	if (!OwningActor || !OwningActor->HasAuthority())
 	{
 		OutResult.Code = ERpgInventoryMutationResultCode::AuthorityRequired;
+		return false;
+	}
+	if (OverrideDefaultGridSize && (!OverrideDefaultGridSize->IsValid() ||
+		FindOwningPlayerInventoryLayout() || bCommitValidatedGraph || bAllowLegacyRootPlacementMigration))
+	{
+		OutResult.Code = ERpgInventoryMutationResultCode::InvalidRequest;
 		return false;
 	}
 
@@ -452,7 +461,8 @@ bool URpgInventoryManagerComponent::RestoreInventoryGraphInternal(
 		OwningActor,
 		true,
 		StagedGraph,
-		OutResult.Code);
+		OutResult.Code,
+		OverrideDefaultGridSize);
 	const ERpgInventoryMutationResultCode InitialValidationCode =
 		OutResult.Code;
 	if (!bStagedGraphValid &&
@@ -993,7 +1003,8 @@ bool URpgInventoryManagerComponent::RestoreInventoryGraphInternal(
 			OwningActor,
 			true,
 			ProspectiveGraph,
-			ProspectiveCode))
+			ProspectiveCode,
+			OverrideDefaultGridSize))
 	{
 		OutResult.Code = ProspectiveCode;
 		return false;
@@ -1034,6 +1045,8 @@ bool URpgInventoryManagerComponent::RestoreInventoryGraphInternal(
 	{
 		RecentMutationResults.Reset();
 		RecentMutationOrder.Reset();
+		RecentPhysicalBatches.Reset();
+		RecentPhysicalBatchOrder.Reset();
 		++MutationEpoch;
 		if (MutationEpoch == 0)
 		{

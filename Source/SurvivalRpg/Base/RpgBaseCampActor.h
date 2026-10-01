@@ -17,10 +17,9 @@ class ARpgPersonalStorageLockerActor;
 class FDataValidationContext;
 
 /**
- * Replicated authority actor for one player/base storage hub.
- *
- * Resource materials are stored as counts in BaseStorageComponent. Instance-based gear, weapons,
- * shields, and durability-bearing items remain item instances in ArmoryInventoryComponent.
+ * Replicated authority actor for one non-overlapping base area.
+ * Physical chests own their item graphs; BaseStorageComponent provides their shared registry and routing.
+ * Legacy domain inventories remain available to prototype consumers during asset replacement.
  */
 UCLASS(Blueprintable)
 class SURVIVALRPG_API ARpgBaseCampActor : public AActor
@@ -42,11 +41,26 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Base Camp")
 	FName GetBaseId() const { return BaseId; }
 
-	/** Maximum placement radius in centimeters used by V1 buildable validation. */
+	/** Horizontal base radius in centimeters, authoritative for building and shared material access on all floors. */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Base Camp|Building")
 	float GetBuildRadius() const { return BuildRadius; }
 
-	/** Shared resource pool for material counts owned by this base camp. */
+	/** Tests spatial membership without changing state; vertical distance is intentionally ignored. */
+	UFUNCTION(BlueprintPure, Category = "Base Camp|Area")
+	bool ContainsLocation(FVector Location) const;
+
+	/** Moves/resizes this area only if no other base touches it. The accepted transform and radius are saved and replicated. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Base Camp|Area")
+	bool SetBaseArea(FVector Center, float Radius);
+
+	/** Last issued automatic storage rule priority. Saved even when the rule that used it was removed. */
+
+	int64 GetStorageAssignmentHighWaterMark() const { return StorageAssignmentHighWaterMark; }
+
+	/** Allocates a globally ordered server priority and persists the high-water mark on this base. Zero means rejection. */
+	int64 AllocateStorageAssignmentOrder();
+
+	/** Shared physical-container registry and routing for this base area. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Base Camp")
 	URpgBaseStorageComponent* GetBaseStorageComponent() const { return BaseStorageComponent; }
 
@@ -95,6 +109,9 @@ public:
 	/** Atomically restores internal storage, Armory, Containment, and pending owner-private locker graphs. */
 	bool RestoreBaseStorageSaveData(const FRpgBaseStorageSaveData& SaveData, FString& OutError);
 
+	/** Applies area metadata only during whole-world restore after all proposed areas have passed pairwise validation. */
+	bool RestoreBaseAreaForWorldLoad(const FRpgBaseStorageSaveData& SaveData);
+
 	/** True only after an attempted restore could not re-establish the exact pre-candidate state. */
 	bool IsStorageRestoreTainted() const { return bStorageRestoreTainted; }
 
@@ -128,9 +145,13 @@ protected:
 	UPROPERTY(EditInstanceOnly, Replicated, BlueprintReadOnly, Category = "Base Camp")
 	FName BaseId;
 
-	/** Server-validated radius in centimeters for placing base buildables around this camp. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Base Camp|Building", meta = (ClampMin = "0", UIMin = "0", Units = "cm"))
+	/** Server-owned horizontal area radius in centimeters. Positive, saved, replicated, and never allowed to touch another base. */
+	UPROPERTY(EditAnywhere, Replicated, BlueprintReadOnly, Category = "Base Camp|Building", meta = (ClampMin = "1", UIMin = "1", Units = "cm"))
 	float BuildRadius = 2500.0f;
+
+	/** Saved monotonic storage-rule priority high-water mark; clients only read the resulting container rules. */
+	UPROPERTY(Transient)
+	int64 StorageAssignmentHighWaterMark = 0;
 
 	/** Simple replicated actor root so Blueprint children can attach base visuals. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Base Camp")

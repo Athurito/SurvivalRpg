@@ -139,9 +139,24 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rpg|Save")
 	void MarkWorldContainerSaveDirty(FName PersistentContainerId, URpgInventoryManagerComponent* Inventory);
 
+	/** Registers a chest before BeginPlay seeding; retained contents restore after the owning actor finishes BeginPlay. */
+	void RegisterPersistentWorldContainer(class URpgInventoryContainerComponent* Container);
+
+	/** Retains the final physical graph and settings when a chest leaves the loaded world. */
+	void UnregisterPersistentWorldContainer(class URpgInventoryContainerComponent* Container);
+
 	/** Captures one persistent base storage network and restarts the asynchronous save debounce. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rpg|Save")
 	void MarkBaseStorageSaveDirty(ARpgBaseCampActor* BaseCamp);
+
+	/** Captures output inventory, remaining production time, refund claims and settings in the same world snapshot. */
+	void MarkCraftingSaveDirty(class URpgCraftingStationComponent* Station);
+
+	/** Restores a placed station returning after world-save selection, then resumes its saved relative production time. */
+	void RegisterPersistentCraftingStation(class URpgCraftingStationComponent* Station);
+
+	/** Captures the final tray and unpaid claims before a station is destroyed or unloaded; reentry can restore them. */
+	void UnregisterPersistentCraftingStation(class URpgCraftingStationComponent* Station);
 
 	/** Captures replicated world storage knowledge and restarts the asynchronous save debounce. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rpg|Save")
@@ -233,6 +248,17 @@ protected:
 	virtual void ExecuteRespawn(APlayerController* PC, const FTransform& SpawnPoint);
 
 private:
+	friend class FRpgPhysicalWorldRestoreTest;
+	friend class FRpgCraftingStationRetentionTest;
+	friend class FRpgPhysicalChestRetentionTest;
+	friend class FRpgPhysicalChestSplitMergeSaveTest;
+
+	/** Derived live registration only; durable absent-station state remains in CraftingStationSaveDataMap. */
+	TSet<TWeakObjectPtr<class URpgCraftingStationComponent>> RegisteredCraftingStations;
+
+	/** Derived registration prevents repeated restore of a live chest; absent entries remain in the durable map. */
+	TSet<TWeakObjectPtr<class URpgInventoryContainerComponent>> RegisteredWorldContainers;
+
 	/** Runtime-only respawn key retained for the existing replicated session state. */
 	static FUniqueNetIdRepl GetNetIdForPC(const APlayerController* PC);
 	FString ResolveOrAssignOfflinePlayerProfileKey(
@@ -250,6 +276,8 @@ private:
 	void CaptureWorldContainers();
 	bool RestorePlacedWorldContainers();
 	void CaptureBaseStorages();
+	void CaptureCraftingStations();
+	bool RestoreCraftingStations();
 	bool RestorePlacedBaseStorages();
 	bool RestoreBaseStorage(FName BaseId, ARpgBaseCampActor* BaseCamp);
 	void CaptureStorageKnowledge();
@@ -272,6 +300,8 @@ private:
 	void HandleActionBarChanged(FGameplayTag Channel, const FRpgActionBarSlotsChangedMessage& Message);
 	void HandleEquipmentLoadoutChanged(FGameplayTag Channel, const FRpgEquipmentLoadoutSlotsChangedMessage& Message);
 	void HandleBaseStorageChanged(FGameplayTag Channel, const struct FRpgBaseResourceChangeMessage& Message);
+	void HandlePersistentActorSpawned(AActor* Actor);
+	void HandlePhysicalStorageSettingsChanged(class URpgInventoryContainerComponent* Container);
 
 	FRpgPlayerRespawnState& GetOrCreatePlayerRespawnState(APlayerController* PC);
 	const FRpgPlayerRespawnState* FindPlayerRespawnState(APlayerController* PC) const;
@@ -297,6 +327,16 @@ private:
 	/** Host-authoritative persistent base networks keyed by stable BaseId. */
 	UPROPERTY()
 	TMap<FName, FRpgBaseStorageSaveData> BaseStorageSaveDataMap;
+
+	/** Saved station state is committed and rolled back together with every participating inventory. */
+	UPROPERTY()
+	TMap<FName, FRpgCraftingStationSaveData> CraftingStationSaveDataMap;
+
+	/** World callback used only to bind settings persistence for new physical chests. */
+	FDelegateHandle PersistentActorSpawnedHandle;
+
+	/** Actors spawned while evaluating one save candidate; removed when rolling back to pristine state. */
+	TArray<TWeakObjectPtr<AActor>> RestoreSpawnedContainers;
 
 	/** Host-authoritative world-shared storage discoveries mirrored from the GameState component. */
 	UPROPERTY()

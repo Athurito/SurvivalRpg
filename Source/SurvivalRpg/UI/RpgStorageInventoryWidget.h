@@ -1,6 +1,7 @@
 #pragma once
 
 #include "SurvivalRpg/Inventory/RpgInventoryGraphTypes.h"
+#include "SurvivalRpg/Inventory/RpgPhysicalStorageRequest.h"
 #include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
 #include "SurvivalRpg/UI/RpgUIScreenPayload.h"
 
@@ -12,6 +13,8 @@ class URpgInventorySpatialGridWidget;
 class URpgPlayerInventoryPaneWidget;
 class URpgPlayerInventoryViewModel;
 class UTextBlock;
+class URpgPhysicalStorageViewModel;
+class URpgInventoryUiActionComponent;
 
 /**
  * CommonUI storage/loot screen presenter shared by chests, corpses, and dropped-loot actors.
@@ -26,6 +29,34 @@ class SURVIVALRPG_API URpgStorageInventoryWidget : public URpgInventoryInteracti
 	GENERATED_BODY()
 
 public:
+	/** Screen-owned projection for designer-authored chest controls and assignment slot entries. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Physical Storage")
+	URpgPhysicalStorageViewModel* GetPhysicalStorageViewModel() const { return PhysicalStorageViewModel; }
+
+	/** Replaces one rule with an exact item or category. The server assigns persistent priority. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Physical Storage")
+	bool ReplaceAssignmentSlot(int32 SlotIndex, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, FGameplayTag Category);
+
+	/** Appends one selected item/category rule; empty or ambiguous selections are rejected locally. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Physical Storage")
+	bool AddAssignmentSlot(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, FGameplayTag Category);
+
+	/** Requests removal of one confirmed rule; no slot state is optimistically removed. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Physical Storage")
+	bool RemoveAssignmentSlot(int32 SlotIndex);
+
+	/** Requests automatic deposit from this player's inventory using the selected chest's domain. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Physical Storage")
+	bool DepositMaterials();
+
+	/** Requests the next authored capacity tier; authority validates and pays the complete cost. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Physical Storage")
+	bool UpgradeStorage();
+
+	/** Submits the confirmed placement from a Blueprint preview without changing the actor locally. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Physical Storage")
+	bool RelocateStorage(FTransform ProposedTransform);
+
 	/** Current validated inventory screen payload, or null after an invalid/cleared payload. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Storage")
 	URpgInventoryScreenPayload* GetInventoryScreenPayload() const { return InventoryScreenPayload.Get(); }
@@ -129,10 +160,23 @@ private:
 	 */
 	bool BindStorageScreenContext();
 	void EnsureSecondaryPanelViewModel();
+	void BindPhysicalStoragePresentation();
+	void UnbindPhysicalStoragePresentation();
+	bool SubmitPhysicalStorageCommand(FRpgPhysicalStorageRequest Request);
+
+	UFUNCTION()
+	void HandlePhysicalStorageCommandCompleted(FGuid RequestId, bool bSucceeded, FText Message);
 	void BindSecondarySpatialGrid();
 	void ResetStorageScreenContext();
 	void RefreshStorageTransferPresentation();
 	void HandlePlayerInventoryPaneNavigationPanelsChanged();
+
+	/** Read-only metadata projection retained by the screen across activation cycles. */
+	UPROPERTY(Transient)
+	TObjectPtr<URpgPhysicalStorageViewModel> PhysicalStorageViewModel;
+
+	TWeakObjectPtr<URpgInventoryUiActionComponent> PhysicalStorageActions;
+	FGuid PendingPhysicalStorageRequestId;
 
 	/** Validated payload staged during async screen initialization and retained only until deactivation or replacement. */
 	UPROPERTY(Transient)

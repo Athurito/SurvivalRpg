@@ -49,7 +49,8 @@ bool URpgInventoryFragment_StorageProfile::IsStructurallyValid() const
 {
 	const URpgInventoryItemDefinition* ItemDefinition =
 		GetTypedOuter<URpgInventoryItemDefinition>();
-	if (!RpgInventoryStorageProfilePrivate::IsStrictChildOf(
+	if (static_cast<uint8>(StorageMode) > static_cast<uint8>(ERpgInventoryStorageMode::SpecialContainedItem) ||
+		!RpgInventoryStorageProfilePrivate::IsStrictChildOf(
 			StorageDomainTag,
 			RpgGameplayTags::Storage_Domain) ||
 		!RpgInventoryStorageProfilePrivate::AreStrictChildrenOf(
@@ -68,13 +69,10 @@ bool URpgInventoryFragment_StorageProfile::IsStructurallyValid() const
 		{
 			return false;
 		}
-		return !bCanAutoDeposit && !bCanCraftFromNetwork &&
+		return (StorageMode != ERpgInventoryStorageMode::SpecialContainedItem || (!bCanAutoDeposit && !bCanCraftFromNetwork)) &&
 			(StorageMode != ERpgInventoryStorageMode::SpecialContainedItem ||
 				StorageDomainTag ==
 					RpgGameplayTags::Storage_Domain_RiftContainment) &&
-			(StorageMode != ERpgInventoryStorageMode::GridItem ||
-				StorageDomainTag !=
-					RpgGameplayTags::Storage_Domain_Materials) &&
 			(StorageMode != ERpgInventoryStorageMode::GridItem ||
 				StorageDomainTag !=
 					RpgGameplayTags::Storage_Domain_RiftContainment);
@@ -104,6 +102,22 @@ bool URpgInventoryFragment_StorageProfile::CanAutoDeposit(
 	return CanDepositAsBulkWithCapabilities(NetworkCapabilities) && bCanAutoDeposit &&
 		NetworkCapabilities.HasTagExact(
 			RpgGameplayTags::Storage_Capability_AutoDepositBulk);
+}
+
+bool URpgInventoryFragment_StorageProfile::CanAutoDepositPhysical() const
+{
+	const URpgInventoryItemDefinition* Definition = GetTypedOuter<URpgInventoryItemDefinition>();
+	return bCanAutoDeposit && IsStructurallyValid() && !RequiresContainment() &&
+		StorageDomainTag == RpgGameplayTags::Storage_Domain_Materials &&
+		(!Definition || !Definition->FindFragmentByClass(URpgInventoryFragment_ItemContainer::StaticClass()));
+}
+
+bool URpgInventoryFragment_StorageProfile::CanCraftFromPhysicalStorage() const
+{
+	const URpgInventoryItemDefinition* Definition = GetTypedOuter<URpgInventoryItemDefinition>();
+	return bCanCraftFromNetwork && IsStructurallyValid() && !RequiresContainment() &&
+		StorageDomainTag == RpgGameplayTags::Storage_Domain_Materials &&
+		(!Definition || !Definition->FindFragmentByClass(URpgInventoryFragment_ItemContainer::StaticClass()));
 }
 
 const URpgInventoryFragment_StorageProfile*
@@ -203,12 +217,12 @@ EDataValidationResult URpgInventoryFragment_StorageProfile::IsDataValid(
 				"BulkResource definitions cannot provide item-owned containers or fragment runtime-state payloads because definition/count storage would discard them."));
 		}
 	}
-	else if (bCanAutoDeposit || bCanCraftFromNetwork)
+	else if (StorageMode == ERpgInventoryStorageMode::SpecialContainedItem && (bCanAutoDeposit || bCanCraftFromNetwork))
 	{
 		AddError(NSLOCTEXT(
 			"RpgInventoryStorageProfile",
 			"InstanceModeUsesBulkConvenience",
-			"Only BulkResource profiles may enable auto-deposit or definition/count crafting from the network. Grid and contained items require concrete instance handling."));
+			"Special contained items cannot participate in automatic material deposit or crafting."));
 	}
 
 	if (StorageMode == ERpgInventoryStorageMode::SpecialContainedItem &&
@@ -220,13 +234,12 @@ EDataValidationResult URpgInventoryFragment_StorageProfile::IsDataValid(
 			"SpecialContainedItem profiles must target Storage.Domain.RiftContainment."));
 	}
 	if (StorageMode == ERpgInventoryStorageMode::GridItem &&
-		(StorageDomainTag == RpgGameplayTags::Storage_Domain_Materials ||
-		 StorageDomainTag == RpgGameplayTags::Storage_Domain_RiftContainment))
+		(StorageDomainTag == RpgGameplayTags::Storage_Domain_RiftContainment))
 	{
 		AddError(NSLOCTEXT(
 			"RpgInventoryStorageProfile",
 			"GridUsesReservedDomain",
-			"GridItem profiles cannot target the bulk Materials domain or the special RiftContainment domain."));
+			"GridItem profiles cannot target the special RiftContainment domain."));
 	}
 
 	const URpgInventoryItemDefinition* ItemDefinition =

@@ -1360,6 +1360,7 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::AddPickupBatch(
 
 	// Every synchronous listener observes the complete batch graph. No individual
 	// payload row is ever published before the remaining rows have committed.
+	MarkInventoryStateDirty(false);
 	for (FEntryNotification& Notification : EntryNotifications)
 	{
 		InventoryList.BroadcastChangeMessage(
@@ -1368,7 +1369,7 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::AddPickupBatch(
 			Notification.Entry.StackCount);
 	}
 
-	MarkInventoryStateDirty();
+	OnInventoryPostCommit.Broadcast(this);
 
 	return Result;
 }

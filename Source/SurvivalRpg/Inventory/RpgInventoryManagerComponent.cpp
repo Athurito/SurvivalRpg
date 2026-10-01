@@ -389,7 +389,7 @@ void URpgInventoryManagerComponent::OnRep_CapacitySettings()
 	BroadcastCapacityChanged();
 }
 
-void URpgInventoryManagerComponent::MarkInventoryStateDirty()
+void URpgInventoryManagerComponent::MarkInventoryStateDirty(bool bBroadcastPostCommit)
 {
 	AActor* OwningActor = GetOwner();
 	if (!OwningActor || !OwningActor->HasAuthority())
@@ -399,7 +399,10 @@ void URpgInventoryManagerComponent::MarkInventoryStateDirty()
 
 	++InventoryRevision;
 	OwningActor->ForceNetUpdate();
-	OnInventoryPostCommit.Broadcast(this);
+	if (bBroadcastPostCommit)
+	{
+		OnInventoryPostCommit.Broadcast(this);
+	}
 }
 
 void URpgInventoryManagerComponent::BroadcastInventoryStateChanged() const
@@ -421,7 +424,7 @@ void URpgInventoryManagerComponent::BroadcastInventoryStateChanged() const
 
 bool URpgInventoryManagerComponent::IsInventoryMutationLocked() const
 {
-	return bIsApplyingPickupBatch || bIsPlanningPickupBatch ||
+	return bIsApplyingInventoryMutation || bIsApplyingPhysicalBatch || bIsApplyingPickupBatch || bIsPlanningPickupBatch ||
 		bIsApplyingCollectBatch || bIsApplyingCrossInventoryTransfer ||
 		bIsRestoringInventoryGraph;
 }

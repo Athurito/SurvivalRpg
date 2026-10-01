@@ -6,10 +6,13 @@
 #include "Net/UnrealNetwork.h"
 #include "RpgBaseCampActor.h"
 #include "RpgBaseStorageComponent.h"
+#include "RpgStorageAccessRules.h"
 #include "RpgBaseStorageStationComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
+#include "SurvivalRpg/Inventory/RpgPhysicalStorageTypes.h"
+#include "SurvivalRpg/Inventory/RpgInventoryContainerComponent.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgBaseConstructionSiteActor)
 
@@ -59,6 +62,18 @@ void ARpgBaseConstructionSiteActor::InitializeConstructionSite(ARpgBaseCampActor
 			continue;
 		}
 
+		if (FRpgBaseConstructionResourceState* Existing = FindCostState(Cost.ItemDefinition))
+		{
+			const int64 TotalRequired = static_cast<int64>(Existing->RequiredCount) + Cost.Count;
+			if (TotalRequired > MAX_int32)
+			{
+				ConstructionCosts.Reset();
+				BuildableDefinition = nullptr;
+				return;
+			}
+			Existing->RequiredCount = static_cast<int32>(TotalRequired);
+			continue;
+		}
 		FRpgBaseConstructionResourceState& NewState = ConstructionCosts.AddDefaulted_GetRef();
 		NewState.ItemDefinition = Cost.ItemDefinition;
 		NewState.RequiredCount = Cost.Count;
@@ -98,7 +113,7 @@ bool ARpgBaseConstructionSiteActor::IsConstructionComplete() const
 
 bool ARpgBaseConstructionSiteActor::CanActorContribute(const AActor* RequestingActor) const
 {
-	if (!BaseCamp || !BuildableDefinition || bFinished || !RequestingActor)
+	if (!BaseCamp || !BuildableDefinition || bFinished || !RequestingActor || RpgStorageAccessRules::ResolveBaseAtLocation(GetWorld(), GetActorLocation()) != BaseCamp)
 	{
 		return false;
 	}
@@ -120,7 +135,8 @@ bool ARpgBaseConstructionSiteActor::CanActorContribute(const AActor* RequestingA
 		return true;
 	}
 
-	return FVector::DistSquared(GetActorLocation(), RequestingActor->GetActorLocation()) <= FMath::Square(ContributionRadius);
+	const AActor* Avatar = RequestingController->GetPawn() ? RequestingController->GetPawn() : RequestingActor;
+	return FVector::DistSquared(GetActorLocation(), Avatar->GetActorLocation()) <= FMath::Square(ContributionRadius);
 }
 
 bool ARpgBaseConstructionSiteActor::ContributeMaterial(AActor* RequestingActor, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count, bool bAllowBaseStorage)
@@ -161,7 +177,6 @@ bool ARpgBaseConstructionSiteActor::ContributeMaterial(AActor* RequestingActor, 
 		return false;
 	}
 
-	CostState->ContributedCount += ContributionCount;
 	UE_LOG(LogRpgBaseConstructionSite, Log, TEXT("Contributed construction material: Site=%s ItemDef=%s Added=%d Progress=%d/%d TotalRemaining=%d"),
 		*GetNameSafe(this),
 		*GetNameSafe(ItemDefinition),
@@ -175,23 +190,28 @@ bool ARpgBaseConstructionSiteActor::ContributeMaterial(AActor* RequestingActor, 
 
 bool ARpgBaseConstructionSiteActor::ContributeAllResources(AActor* RequestingActor, bool bAllowBaseStorage)
 {
-	if (!HasAuthority() || !CanActorContribute(RequestingActor))
+	if (!HasAuthority() || !CanActorContribute(RequestingActor)) { return false; }
+	TArray<FRpgCraftingResourceCost> Costs;
+	for (const FRpgBaseConstructionResourceState& State : ConstructionCosts)
 	{
-		return false;
+		if (State.ContributedCount >= State.RequiredCount) { continue; }
+		FRpgCraftingResourceCost& Cost = Costs.AddDefaulted_GetRef();
+		Cost.ItemDefinition = State.ItemDefinition;
+		Cost.Count = State.RequiredCount - State.ContributedCount;
 	}
-
-	bool bContributedAny = false;
-	const TArray<FRpgBaseConstructionResourceState> CostsSnapshot = ConstructionCosts;
-	for (const FRpgBaseConstructionResourceState& CostState : CostsSnapshot)
+	if (Costs.IsEmpty()) { return false; }
+	TArray<URpgInventoryManagerComponent*> Sources;
+	if (bAllowBaseStorage) { RpgStorageAccessRules::ResolveStorageSources(GetWorld(), GetActorLocation(), 0.0f, Sources); }
+	TArray<FRpgInventoryBatchOperation> Operations;
+	TArray<FRpgCraftingRefundEntry> Credits;
+	if (!URpgCraftingStationComponent::BuildResourceConsumptionPlan(RequestingActor, Sources, Costs, 1, Operations, Credits) || Operations.IsEmpty()) { return false; }
+	if (!Operations[0].SourceInventory->ApplyInventoryBatch(Operations, FGuid::NewGuid(), {}, [this]()
 	{
-		const int32 RemainingCost = GetRemainingCostForDefinition(CostState.ItemDefinition);
-		if (RemainingCost > 0)
-		{
-			bContributedAny |= ContributeMaterial(RequestingActor, CostState.ItemDefinition, RemainingCost, bAllowBaseStorage);
-		}
-	}
-
-	return bContributedAny;
+		for (FRpgBaseConstructionResourceState& State : ConstructionCosts) { State.ContributedCount = State.RequiredCount; }
+		ForceNetUpdate();
+	}, MakeContributionRevalidator(RequestingActor, bAllowBaseStorage)).IsSuccess()) { return false; }
+	HandleProgressChanged();
+	return true;
 }
 
 AActor* ARpgBaseConstructionSiteActor::FinishConstruction()
@@ -253,36 +273,7 @@ void ARpgBaseConstructionSiteActor::OnRep_ConstructionState()
 
 URpgInventoryManagerComponent* ARpgBaseConstructionSiteActor::FindPlayerInventory(const AActor* RequestingActor) const
 {
-	if (!RequestingActor)
-	{
-		return nullptr;
-	}
-
-	if (const APawn* RequestingPawn = Cast<APawn>(RequestingActor))
-	{
-		if (const ARpgPlayerState* PlayerState = RequestingPawn->GetPlayerState<ARpgPlayerState>())
-		{
-			return PlayerState->GetInventoryManagerComponent();
-		}
-
-		if (const AController* Controller = RequestingPawn->GetController())
-		{
-			if (const ARpgPlayerState* PlayerState = Controller->GetPlayerState<ARpgPlayerState>())
-			{
-				return PlayerState->GetInventoryManagerComponent();
-			}
-		}
-	}
-
-	if (const AController* Controller = Cast<AController>(RequestingActor))
-	{
-		if (const ARpgPlayerState* PlayerState = Controller->GetPlayerState<ARpgPlayerState>())
-		{
-			return PlayerState->GetInventoryManagerComponent();
-		}
-	}
-
-	return RequestingActor->FindComponentByClass<URpgInventoryManagerComponent>();
+	return URpgCraftingStationComponent::FindRequestingPlayerInventory(RequestingActor);
 }
 
 URpgBaseStorageComponent* ARpgBaseConstructionSiteActor::GetBaseStorage() const
@@ -290,63 +281,45 @@ URpgBaseStorageComponent* ARpgBaseConstructionSiteActor::GetBaseStorage() const
 	return BaseCamp ? BaseCamp->GetBaseStorageComponent() : nullptr;
 }
 
-bool ARpgBaseConstructionSiteActor::ConsumeFromPlayer(URpgInventoryManagerComponent* PlayerInventory, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count) const
-{
-	return Count <= 0 || (PlayerInventory && PlayerInventory->ConsumeItemsByDefinition(ItemDefinition, Count));
-}
 
-bool ARpgBaseConstructionSiteActor::ConsumeFromBase(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count) const
+
+
+
+TFunction<bool()> ARpgBaseConstructionSiteActor::MakeContributionRevalidator(AActor* RequestingActor, bool bAllowBaseStorage) const
 {
-	URpgBaseStorageComponent* BaseStorage = GetBaseStorage();
-	return Count <= 0 || (BaseStorage && BaseStorage->WithdrawResource(ItemDefinition, Count));
+	const TWeakObjectPtr<const ARpgBaseConstructionSiteActor> Site(this);
+	const TWeakObjectPtr<AActor> Requester(RequestingActor);
+	const FTransform Transform = GetActorTransform();
+	const FVector BaseCenter = BaseCamp ? BaseCamp->GetActorLocation() : FVector::ZeroVector;
+	const float Radius = BaseCamp ? BaseCamp->GetBuildRadius() : 0.0f;
+	TArray<URpgInventoryManagerComponent*> Sources;
+	if (bAllowBaseStorage) { RpgStorageAccessRules::ResolveStorageSources(GetWorld(), GetActorLocation(), 0.0f, Sources); }
+	return [Site, Requester, Transform, BaseCenter, Radius, Sources, bAllowBaseStorage]()
+	{
+		if (!Site.IsValid() || !Requester.IsValid() || !Site->CanActorContribute(Requester.Get()) ||
+			!Site->GetActorTransform().Equals(Transform) || !Site->BaseCamp ||
+			Site->BaseCamp->GetActorLocation() != BaseCenter || Site->BaseCamp->GetBuildRadius() != Radius) { return false; }
+		TArray<URpgInventoryManagerComponent*> CurrentSources;
+		if (bAllowBaseStorage) { RpgStorageAccessRules::ResolveStorageSources(Site->GetWorld(), Site->GetActorLocation(), 0.0f, CurrentSources); }
+		return CurrentSources == Sources;
+	};
 }
 
 bool ARpgBaseConstructionSiteActor::ConsumeContribution(AActor* RequestingActor, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count, bool bAllowBaseStorage)
 {
-	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory(RequestingActor);
-	URpgBaseStorageComponent* BaseStorage = bAllowBaseStorage ? GetBaseStorage() : nullptr;
-	const int32 AvailableInPlayer = PlayerInventory ? PlayerInventory->GetTotalItemCountByDefinition(ItemDefinition) : 0;
-	const int32 AvailableInBase = BaseStorage ? BaseStorage->GetResourceCount(ItemDefinition) : 0;
-
-	auto ConsumePlayer = [&](int32& RemainingCount)
+	TArray<URpgInventoryManagerComponent*> Sources;
+	if (bAllowBaseStorage) { RpgStorageAccessRules::ResolveStorageSources(GetWorld(), GetActorLocation(), 0.0f, Sources); }
+	FRpgCraftingResourceCost Cost;
+	Cost.ItemDefinition = ItemDefinition;
+	Cost.Count = Count;
+	TArray<FRpgInventoryBatchOperation> Operations;
+	TArray<FRpgCraftingRefundEntry> Credits;
+	if (!URpgCraftingStationComponent::BuildResourceConsumptionPlan(RequestingActor, Sources, { Cost }, 1, Operations, Credits) || Operations.IsEmpty()) { return false; }
+	return Operations[0].SourceInventory->ApplyInventoryBatch(Operations, FGuid::NewGuid(), {}, [this, ItemDefinition, Count]()
 	{
-		const int32 CountToConsume = FMath::Min(AvailableInPlayer, RemainingCount);
-		if (!ConsumeFromPlayer(PlayerInventory, ItemDefinition, CountToConsume))
-		{
-			return false;
-		}
-		RemainingCount -= CountToConsume;
-		return true;
-	};
-
-	auto ConsumeBase = [&](int32& RemainingCount)
-	{
-		const int32 CountToConsume = FMath::Min(AvailableInBase, RemainingCount);
-		if (!ConsumeFromBase(ItemDefinition, CountToConsume))
-		{
-			return false;
-		}
-		RemainingCount -= CountToConsume;
-		return true;
-	};
-
-	int32 RemainingCount = Count;
-	switch (ContributionConsumeOrder)
-	{
-	case ERpgBaseConstructionResourceConsumeOrder::PlayerThenBase:
-		return ConsumePlayer(RemainingCount) && (bAllowBaseStorage ? ConsumeBase(RemainingCount) : true) && RemainingCount <= 0;
-
-	case ERpgBaseConstructionResourceConsumeOrder::BaseThenPlayer:
-		return (bAllowBaseStorage ? ConsumeBase(RemainingCount) : true) && ConsumePlayer(RemainingCount) && RemainingCount <= 0;
-
-	case ERpgBaseConstructionResourceConsumeOrder::PlayerOnly:
-		return ConsumePlayer(RemainingCount) && RemainingCount <= 0;
-
-	case ERpgBaseConstructionResourceConsumeOrder::BaseOnly:
-		return bAllowBaseStorage && ConsumeBase(RemainingCount) && RemainingCount <= 0;
-	}
-
-	return false;
+		if (FRpgBaseConstructionResourceState* State = FindCostState(ItemDefinition)) { State->ContributedCount += Count; }
+		ForceNetUpdate();
+	}, MakeContributionRevalidator(RequestingActor, bAllowBaseStorage)).IsSuccess();
 }
 
 FRpgBaseConstructionResourceState* ARpgBaseConstructionSiteActor::FindCostState(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition)
@@ -385,6 +358,13 @@ void ARpgBaseConstructionSiteActor::LinkSpawnedActorToBase(AActor* SpawnedActor)
 	if (URpgBaseStorageStationComponent* StorageStation = SpawnedActor->FindComponentByClass<URpgBaseStorageStationComponent>())
 	{
 		StorageStation->SetLinkedBaseCamp(BaseCamp);
+	}
+
+	if (URpgInventoryContainerComponent* Container = SpawnedActor->FindComponentByClass<URpgInventoryContainerComponent>())
+	{
+		Container->EnsurePersistentContainerId();
+		Container->SetResolvedBaseId(BaseCamp->GetBaseId());
+		Container->SetRuntimeBuilt(true);
 	}
 
 	if (URpgCraftingStationComponent* CraftingStation = SpawnedActor->FindComponentByClass<URpgCraftingStationComponent>())

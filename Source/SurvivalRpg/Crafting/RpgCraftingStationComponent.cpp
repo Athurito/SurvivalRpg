@@ -7,12 +7,15 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerState.h"
 #include "NativeGameplayTags.h"
+#include "Templates/UnrealTemplate.h"
 #include "Net/UnrealNetwork.h"
 #include "SurvivalRpg/Base/RpgBaseCampActor.h"
 #include "SurvivalRpg/Base/RpgBaseStorageComponent.h"
+#include "SurvivalRpg/Base/RpgStorageAccessRules.h"
 #include "SurvivalRpg/Base/RpgBaseStorageStationComponent.h"
 #include "SurvivalRpg/Base/RpgWorldStorageKnowledgeComponent.h"
 #include "SurvivalRpg/Core/Game/RpgGameStateBase.h"
+#include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
 #include "SurvivalRpg/Crafting/RpgCraftingRecipeDefinition.h"
 #include "SurvivalRpg/Crafting/RpgRecipeUnlockComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
@@ -24,6 +27,7 @@
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
+#include "SurvivalRpg/Inventory/RpgPhysicalStorageTypes.h"
 #include "TimerManager.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgCraftingStationComponent)
@@ -49,10 +53,19 @@ void URpgCraftingStationComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
+	if (ARpgGameModeBase* GameMode = GetWorld()->GetAuthGameMode<ARpgGameModeBase>())
+	{
+		GameMode->RegisterPersistentCraftingStation(this);
+	}
 	if (OutputInventoryComponent)
 	{
 		SetOutputInventoryManager(OutputInventoryComponent);
 	}
+}
+
+void URpgCraftingStationComponent::SetPersistenceRestorePending(bool bPending)
+{
+	if (GetOwner() && GetOwner()->HasAuthority()) bPersistenceRestorePending = bPending;
 }
 
 void URpgCraftingStationComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -82,7 +95,7 @@ void URpgCraftingStationComponent::GatherInteractionOptions(const FInteractionQu
 	{
 		RequestingController = RequestingPawn->GetController();
 	}
-	const bool bSemanticallyAccessible = GetOwner() && RequestingController && RequestingController->IsPlayerController();
+	const bool bSemanticallyAccessible = !bPersistenceRestorePending && GetOwner() && RequestingController && RequestingController->IsPlayerController();
 	Option.Availability = bSemanticallyAccessible
 		? ERpgInteractionAvailability::Available
 		: ERpgInteractionAvailability::Blocked;
@@ -95,13 +108,6 @@ void URpgCraftingStationComponent::GatherInteractionOptions(const FInteractionQu
 
 namespace
 {
-	bool IsMaterialDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition)
-	{
-		const URpgInventoryFragment_StorageProfile* Profile =
-			URpgInventoryFragment_StorageProfile::ResolveStorageProfile(
-				ItemDefinition);
-		return Profile && Profile->CanDepositAsBulk();
-	}
 
 	bool TryBuildAggregatedResourceCosts(
 		const TArray<FRpgCraftingResourceCost>& RequiredItems,
@@ -167,84 +173,38 @@ namespace
 		NewRefundEntry.ItemDefinition = ItemDefinition;
 		NewRefundEntry.Count = Count;
 		NewRefundEntry.Inventory = Inventory;
+	NewRefundEntry.InventoryId = RpgStorageAccessRules::GetPersistentInventoryId(Inventory);
 		NewRefundEntry.bRefundToBaseStorage = bRefundToBaseStorage;
 	}
+}
+
+URpgInventoryManagerComponent* URpgCraftingStationComponent::FindRequestingPlayerInventory(const AActor* RequestingActor)
+{
+	if (!RequestingActor) { return nullptr; }
+	const APawn* Pawn = Cast<APawn>(RequestingActor);
+	const AController* Controller = Cast<AController>(RequestingActor);
+	if (!Controller && Pawn) { Controller = Pawn->GetController(); }
+	const APlayerState* PlayerState = Controller ? Controller->PlayerState.Get() : (Pawn ? Pawn->GetPlayerState() : nullptr);
+	if (PlayerState)
+	{
+		if (URpgInventoryManagerComponent* Inventory = PlayerState->FindComponentByClass<URpgInventoryManagerComponent>()) { return Inventory; }
+	}
+	return RequestingActor->FindComponentByClass<URpgInventoryManagerComponent>();
+}
+
+ARpgBaseCampActor* URpgCraftingStationComponent::ResolveSpatialBaseCamp() const
+{
+	return GetOwner() ? RpgStorageAccessRules::ResolveBaseAtLocation(GetWorld(), GetOwner()->GetActorLocation()) : nullptr;
 }
 
 TArray<URpgInventoryManagerComponent*> URpgCraftingStationComponent::GetResourceInventories(AActor* RequestingActor) const
 {
 	TArray<URpgInventoryManagerComponent*> Results;
-
-	if (RequestingActor == nullptr)
-	{
-		return Results;
-	}
-
-	if (URpgInventoryManagerComponent* DirectInventory = RequestingActor->FindComponentByClass<URpgInventoryManagerComponent>())
-	{
-		Results.AddUnique(DirectInventory);
-	}
-
-	if (const APawn* RequestingPawn = Cast<APawn>(RequestingActor))
-	{
-		if (APlayerState* PlayerState = RequestingPawn->GetPlayerState())
-		{
-			if (URpgInventoryManagerComponent* PlayerInventory = PlayerState->FindComponentByClass<URpgInventoryManagerComponent>())
-			{
-				Results.AddUnique(PlayerInventory);
-			}
-		}
-
-		if (AController* Controller = RequestingPawn->GetController())
-		{
-			if (APlayerState* PlayerState = Controller->PlayerState)
-			{
-				if (URpgInventoryManagerComponent* PlayerInventory = PlayerState->FindComponentByClass<URpgInventoryManagerComponent>())
-				{
-					Results.AddUnique(PlayerInventory);
-				}
-			}
-		}
-	}
-
-	if (!bUseNearbyCraftingContainers)
-	{
-		return Results;
-	}
-
-	const AActor* StationOwner = GetOwner();
-	const UWorld* World = GetWorld();
-	if (!StationOwner || !World)
-	{
-		return Results;
-	}
-
-	const float SearchRadiusSq = FMath::Square(StorageSearchRadius);
-	for (TActorIterator<AActor> It(World); It; ++It)
-	{
-		AActor* CandidateActor = *It;
-		if (!CandidateActor || CandidateActor == StationOwner)
-		{
-			continue;
-		}
-
-		URpgInventoryContainerComponent* Container = CandidateActor->FindComponentByClass<URpgInventoryContainerComponent>();
-		URpgInventoryManagerComponent* Inventory = CandidateActor->FindComponentByClass<URpgInventoryManagerComponent>();
-		if (!Container || !Inventory || !Container->AllowsCraftingAccess() || !Container->IsContainerAccessible())
-		{
-			continue;
-		}
-
-		const bool bSameStorageGroup = !StorageGroupId.IsNone() && Container->GetStorageGroupId() == StorageGroupId;
-		const bool bWithinRadius = StorageSearchRadius <= 0.0f ||
-			FVector::DistSquared(StationOwner->GetActorLocation(), CandidateActor->GetActorLocation()) <= SearchRadiusSq;
-
-		if (bSameStorageGroup || bWithinRadius)
-		{
-			Results.AddUnique(Inventory);
-		}
-	}
-
+	if (!RequestingActor || !GetOwner()) { return Results; }
+	if (URpgInventoryManagerComponent* Inventory = FindRequestingPlayerInventory(RequestingActor)) { Results.Add(Inventory); }
+	TArray<URpgInventoryManagerComponent*> StorageSources;
+	RpgStorageAccessRules::ResolveStorageSources(GetWorld(), GetOwner()->GetActorLocation(), StorageSearchRadius, StorageSources);
+	for (URpgInventoryManagerComponent* Inventory : StorageSources) { Results.AddUnique(Inventory); }
 	return Results;
 }
 
@@ -256,7 +216,8 @@ void URpgCraftingStationComponent::SetLinkedBaseCamp(ARpgBaseCampActor* NewBaseC
 		return;
 	}
 
-	LinkedBaseCamp = NewBaseCamp;
+	// Spatial membership is authoritative; stale authored links cannot expand access.
+	LinkedBaseCamp = ResolveSpatialBaseCamp();
 	OwnerActor->ForceNetUpdate();
 }
 
@@ -305,7 +266,8 @@ bool URpgCraftingStationComponent::IsRecipeOfferedByStation(const URpgCraftingRe
 		}
 	}
 
-	const FGameplayTagContainer BaseUpgradeTags = LinkedBaseCamp ? LinkedBaseCamp->GetGrantedStorageUpgradeTags() : FGameplayTagContainer();
+	const ARpgBaseCampActor* SpatialBase = ResolveSpatialBaseCamp();
+	const FGameplayTagContainer BaseUpgradeTags = SpatialBase ? SpatialBase->GetGrantedStorageUpgradeTags() : FGameplayTagContainer();
 	return RecipeDefinition->RequiredUnlockTags.IsEmpty() || BaseUpgradeTags.HasAllExact(RecipeDefinition->RequiredUnlockTags);
 }
 
@@ -374,67 +336,26 @@ int32 URpgCraftingStationComponent::GetMaxCraftableQuantity(AActor* RequestingAc
 
 bool URpgCraftingStationComponent::QueueCraftRecipe(AActor* RequestingActor, URpgCraftingRecipeDefinition* RecipeDefinition, int32 Quantity)
 {
-	AActor* OwnerActor = GetOwner();
-	if (!OwnerActor || !OwnerActor->HasAuthority() || !CanCraftRecipeQuantity(RequestingActor, RecipeDefinition, Quantity))
-	{
-		return false;
-	}
-
-	// Timed base-backed jobs remain disabled until their queue and exact refund sources are persisted.
-	// Instant recipes and timed recipes that consume only concrete inventory sources remain supported.
-	if (RecipeDefinition->CraftTime > 0.0f &&
-		ResourceConsumeOrder != ERpgCraftingResourceConsumeOrder::PlayerOnly)
-	{
-		TArray<FRpgCraftingResourceCost> AggregatedCosts;
-		if (!TryBuildAggregatedResourceCosts(
-				RecipeDefinition->RequiredResources, AggregatedCosts))
-		{
-			return false;
-		}
-
-		const TArray<URpgInventoryManagerComponent*> ResourceInventories =
-			GetResourceInventories(RequestingActor);
-		const URpgBaseStorageComponent* BaseStorage = GetLinkedBaseStorage();
-		for (const FRpgCraftingResourceCost& Cost : AggregatedCosts)
-		{
-			const int64 Required64 = static_cast<int64>(Cost.Count) * Quantity;
-			if (Required64 > MAX_int32)
-			{
-				return false;
-			}
-			const int32 Required = static_cast<int32>(Required64);
-			const int32 InventoryAvailable =
-				GetAvailableInventoryResourceCount(
-					Cost.ItemDefinition, ResourceInventories);
-			const int32 BaseAvailable = BaseStorage &&
-				BaseStorage->CanCraftFromNetwork(Cost.ItemDefinition)
-				? BaseStorage->GetResourceCount(Cost.ItemDefinition) : 0;
-			const bool bWouldConsumeBase =
-				ResourceConsumeOrder == ERpgCraftingResourceConsumeOrder::BaseOnly ||
-				(ResourceConsumeOrder == ERpgCraftingResourceConsumeOrder::BaseThenPlayer && BaseAvailable > 0) ||
-				(ResourceConsumeOrder == ERpgCraftingResourceConsumeOrder::PlayerThenBase && InventoryAvailable < Required);
-			if (bWouldConsumeBase)
-			{
-				return false;
-			}
-		}
-	}
-
+	if (bMutationInProgress) { return false; }
+	TGuardValue<bool> MutationGuard(bMutationInProgress, true);
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !OutputInventoryComponent || !CanCraftRecipeQuantity(RequestingActor, RecipeDefinition, Quantity)) { return false; }
+	const TFunction<bool()> Revalidate = MakeContextRevalidator(RequestingActor);
+	TArray<FRpgInventoryBatchOperation> Operations;
 	TArray<FRpgCraftingRefundEntry> RefundEntries;
-	if (!ConsumeResourcesWithRefund(RequestingActor, RecipeDefinition->RequiredResources, Quantity, RefundEntries))
+	if (!BuildResourceConsumptionPlan(RequestingActor, GetResourceInventories(RequestingActor), RecipeDefinition->RequiredResources, Quantity, Operations, RefundEntries)) { return false; }
+	// The job and its credits exist before inventory observers may save the committed resource debit.
+	auto CommitJob = [this, RecipeDefinition, Quantity, &RefundEntries]()
 	{
-		return false;
-	}
-
-	FRpgCraftingJobEntry& NewJob = CraftingJobs.AddDefaulted_GetRef();
-	NewJob.JobId = FGuid::NewGuid();
-	NewJob.Recipe = RecipeDefinition;
-	NewJob.QuantityTotal = Quantity;
-	NewJob.QuantityCompleted = 0;
-	NewJob.State = ERpgCraftingJobState::Queued;
-	NewJob.RefundEntries = MoveTemp(RefundEntries);
-
-	MarkCraftingStateDirty(NewJob.JobId, NewJob.State);
+		FRpgCraftingJobEntry& Job = CraftingJobs.AddDefaulted_GetRef();
+		Job.JobId = FGuid::NewGuid();
+		Job.Recipe = RecipeDefinition;
+		Job.QuantityTotal = Quantity;
+		Job.RefundEntries = MoveTemp(RefundEntries);
+		MarkCraftingStateDirty(Job.JobId, Job.State);
+	};
+	if (!Revalidate()) { return false; }
+	if (Operations.IsEmpty()) { CommitJob(); }
+	else if (!OutputInventoryComponent->ApplyInventoryBatch(Operations, FGuid::NewGuid(), {}, CommitJob, Revalidate).IsSuccess()) { return false; }
 	TryStartNextQueuedJob();
 	return true;
 }
@@ -446,34 +367,31 @@ bool URpgCraftingStationComponent::CraftRecipe(AActor* RequestingActor, URpgCraf
 
 bool URpgCraftingStationComponent::CancelCraftJob(AActor* RequestingActor, FGuid JobId)
 {
-	AActor* OwnerActor = GetOwner();
-	if (!OwnerActor || !OwnerActor->HasAuthority() || !CanActorAccess(RequestingActor))
-	{
-		return false;
-	}
-
+	if (bMutationInProgress) { return false; }
+	TGuardValue<bool> MutationGuard(bMutationInProgress, true);
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !CanActorAccess(RequestingActor)) { return false; }
 	const int32 JobIndex = FindJobIndex(JobId);
-	if (JobIndex == INDEX_NONE)
+	if (JobIndex == INDEX_NONE) { return false; }
+	const ERpgCraftingJobState State = CraftingJobs[JobIndex].State;
+	const bool bWasActive = State == ERpgCraftingJobState::Active || State == ERpgCraftingJobState::Paused || State == ERpgCraftingJobState::BlockedOutput;
+	if (!RefundRemainingJobCosts(JobId, [this, JobId, State, bWasActive]()
 	{
-		return false;
-	}
-
-	const ERpgCraftingJobState RemovedState = CraftingJobs[JobIndex].State;
-	const bool bWasActive = RemovedState == ERpgCraftingJobState::Active || RemovedState == ERpgCraftingJobState::Paused || RemovedState == ERpgCraftingJobState::BlockedOutput;
-	if (bWasActive)
-	{
-		GetWorld()->GetTimerManager().ClearTimer(CraftingTimerHandle);
-	}
-
-	RefundRemainingJobCosts(CraftingJobs[JobIndex]);
-	CraftingJobs.RemoveAt(JobIndex);
-	MarkCraftingStateDirty(JobId, RemovedState);
+		if (bWasActive)
+		{
+			GetWorld()->GetTimerManager().ClearTimer(CraftingTimerHandle);
+			GetWorld()->GetTimerManager().ClearTimer(OutputRetryTimerHandle);
+		}
+		CraftingJobs.RemoveAt(FindJobIndex(JobId));
+		MarkCraftingStateDirty(JobId, State);
+	})) { return false; }
 	TryStartNextQueuedJob();
 	return true;
 }
 
 bool URpgCraftingStationComponent::PauseCraftingStation(AActor* RequestingActor)
 {
+	if (bMutationInProgress) { return false; }
+	TGuardValue<bool> MutationGuard(bMutationInProgress, true);
 	AActor* OwnerActor = GetOwner();
 	if (!OwnerActor || !OwnerActor->HasAuthority() || !CanActorAccess(RequestingActor) || bStationPaused)
 	{
@@ -497,6 +415,8 @@ bool URpgCraftingStationComponent::PauseCraftingStation(AActor* RequestingActor)
 
 bool URpgCraftingStationComponent::ResumeCraftingStation(AActor* RequestingActor)
 {
+	if (bMutationInProgress) { return false; }
+	TGuardValue<bool> MutationGuard(bMutationInProgress, true);
 	AActor* OwnerActor = GetOwner();
 	if (!OwnerActor || !OwnerActor->HasAuthority() || !CanActorAccess(RequestingActor) || !bStationPaused)
 	{
@@ -531,140 +451,30 @@ bool URpgCraftingStationComponent::GetActiveCraftingJob(FRpgCraftingJobEntry& Ou
 
 int32 URpgCraftingStationComponent::GetAvailableResourceCount(AActor* RequestingActor, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition) const
 {
-	if (!ItemDefinition)
+	if (!ItemDefinition) { return 0; }
+	URpgInventoryManagerComponent* PlayerInventory = FindRequestingPlayerInventory(RequestingActor);
+	const URpgInventoryFragment_StorageProfile* Profile = URpgInventoryFragment_StorageProfile::ResolveStorageProfile(ItemDefinition);
+	int64 Count = 0;
+	for (URpgInventoryManagerComponent* Inventory : GetResourceInventories(RequestingActor))
 	{
-		return 0;
+		if (Inventory != PlayerInventory && (!Profile || !Profile->CanCraftFromPhysicalStorage())) { continue; }
+		Count += GetAvailableInventoryResourceCount(ItemDefinition, { Inventory });
 	}
-
-	int32 TotalCount = 0;
-	const TArray<URpgInventoryManagerComponent*> ResourceInventories = GetResourceInventories(RequestingActor);
-	if (ResourceConsumeOrder != ERpgCraftingResourceConsumeOrder::BaseOnly)
-	{
-		TotalCount += GetAvailableInventoryResourceCount(ItemDefinition, ResourceInventories);
-	}
-
-	if (ResourceConsumeOrder != ERpgCraftingResourceConsumeOrder::PlayerOnly)
-	{
-		if (const URpgBaseStorageComponent* BaseStorage = GetLinkedBaseStorage())
-		{
-			if (BaseStorage->CanCraftFromNetwork(ItemDefinition))
-			{
-				TotalCount += BaseStorage->GetResourceCount(ItemDefinition);
-			}
-		}
-	}
-
-	return TotalCount;
+	return static_cast<int32>(FMath::Min<int64>(Count, MAX_int32));
 }
 
 bool URpgCraftingStationComponent::ConsumeResources(AActor* RequestingActor, const TArray<FRpgCraftingResourceCost>& RequiredItems)
 {
-	AActor* OwnerActor = GetOwner();
-	if (!OwnerActor || !OwnerActor->HasAuthority())
-	{
-		return false;
-	}
-
-	TArray<FRpgCraftingResourceCost> AggregatedRequiredItems;
-	if (!TryBuildAggregatedResourceCosts(RequiredItems, AggregatedRequiredItems))
-	{
-		return false;
-	}
-
-	for (const FRpgCraftingResourceCost& RequiredItem : AggregatedRequiredItems)
-	{
-		if (GetAvailableResourceCount(RequestingActor, RequiredItem.ItemDefinition) < RequiredItem.Count)
-		{
-			return false;
-		}
-	}
-
-	TArray<URpgInventoryManagerComponent*> ResourceInventories = GetResourceInventories(RequestingActor);
-	for (const FRpgCraftingResourceCost& RequiredItem : AggregatedRequiredItems)
-	{
-		int32 RemainingCount = RequiredItem.Count;
-
-		auto ConsumeFromBase = [&]()
-		{
-			if (RemainingCount <= 0)
-			{
-				return true;
-			}
-
-			const URpgBaseStorageComponent* BaseStorage = GetLinkedBaseStorage();
-			const int32 AvailableInBase = BaseStorage ? BaseStorage->GetResourceCount(RequiredItem.ItemDefinition) : 0;
-			const int32 CountToConsume = FMath::Min(AvailableInBase, RemainingCount);
-			if (ConsumeBaseResources(RequiredItem.ItemDefinition, CountToConsume))
-			{
-				RemainingCount -= CountToConsume;
-				return true;
-			}
-
-			return false;
-		};
-
-		auto ConsumeFromInventories = [&]()
-		{
-			if (RemainingCount <= 0)
-			{
-				return true;
-			}
-
-			const int32 AvailableInInventories = GetAvailableInventoryResourceCount(RequiredItem.ItemDefinition, ResourceInventories);
-			const int32 CountToConsume = FMath::Min(AvailableInInventories, RemainingCount);
-			if (ConsumeInventoryResources(RequiredItem.ItemDefinition, CountToConsume, ResourceInventories))
-			{
-				RemainingCount -= CountToConsume;
-				return true;
-			}
-
-			return false;
-		};
-
-		switch (ResourceConsumeOrder)
-		{
-		case ERpgCraftingResourceConsumeOrder::BaseThenPlayer:
-			if (!ConsumeFromBase() || !ConsumeFromInventories())
-			{
-				return false;
-			}
-			break;
-
-		case ERpgCraftingResourceConsumeOrder::PlayerThenBase:
-			if (!ConsumeFromInventories() || !ConsumeFromBase())
-			{
-				return false;
-			}
-			break;
-
-		case ERpgCraftingResourceConsumeOrder::BaseOnly:
-			if (!ConsumeFromBase())
-			{
-				return false;
-			}
-			break;
-
-		case ERpgCraftingResourceConsumeOrder::PlayerOnly:
-			if (!ConsumeFromInventories())
-			{
-				return false;
-			}
-			break;
-		}
-
-		if (RemainingCount > 0)
-		{
-			return false;
-		}
-	}
-
-	return true;
+	if (bMutationInProgress) { return false; }
+	TGuardValue<bool> MutationGuard(bMutationInProgress, true);
+	TArray<FRpgCraftingRefundEntry> RefundEntries;
+	return CanActorAccess(RequestingActor) && ConsumeResourcesWithRefund(RequestingActor, RequiredItems, 1, RefundEntries);
 }
 
 bool URpgCraftingStationComponent::CanActorAccess(const AActor* RequestingActor) const
 {
 	const AActor* OwnerActor = GetOwner();
-	if (!OwnerActor || !RequestingActor)
+	if (bPersistenceRestorePending || !OwnerActor || !RequestingActor)
 	{
 		return false;
 	}
@@ -686,11 +496,14 @@ bool URpgCraftingStationComponent::CanActorAccess(const AActor* RequestingActor)
 		return true;
 	}
 
-	return FVector::DistSquared(OwnerActor->GetActorLocation(), RequestingActor->GetActorLocation()) <= FMath::Square(InteractionRadius);
+	const AActor* Avatar = RequestingController->GetPawn() ? RequestingController->GetPawn() : RequestingActor;
+	return FVector::DistSquared(OwnerActor->GetActorLocation(), Avatar->GetActorLocation()) <= FMath::Square(InteractionRadius);
 }
 
 void URpgCraftingStationComponent::SetOutputInventoryManager(URpgInventoryManagerComponent* InOutputInventory)
 {
+	if (bMutationInProgress) { return; }
+	TGuardValue<bool> MutationGuard(bMutationInProgress, true);
 	OutputInventoryComponent = InOutputInventory;
 	if (OutputInventoryComponent)
 	{
@@ -730,241 +543,78 @@ bool URpgCraftingStationComponent::CanAcceptCraftingOutputs(const TArray<FRpgCra
 
 bool URpgCraftingStationComponent::AddCraftingOutputs(const TArray<FRpgCraftingOutputItem>& OutputItems)
 {
-	AActor* OwnerActor = GetOwner();
-	if (!OwnerActor || !OwnerActor->HasAuthority() || !CanAcceptCraftingOutputs(OutputItems))
-	{
-		return false;
-	}
-
-	UE_LOG(LogRpgCraftingStation, Log, TEXT("AddCraftingOutputs: Station=%s AutoDeposit=%s BaseStorage=%s Armory=%s OutputInventory=%s OutputCount=%d"),
-		*GetNameSafe(GetOwner()),
-		ShouldAutoDepositCraftingOutputs() ? TEXT("true") : TEXT("false"),
-		*GetNameSafe(GetLinkedBaseStorage()),
-		*GetNameSafe(GetLinkedArmoryInventory()),
-		*GetNameSafe(OutputInventoryComponent),
-		OutputItems.Num());
-
-	for (const FRpgCraftingOutputItem& OutputItem : OutputItems)
-	{
-		if (!AddOutputItemOrDrop(OutputItem.ItemDefinition, OutputItem.Count))
-		{
-			return false;
-		}
-	}
-
-	return true;
+	if (bPersistenceRestorePending || bMutationInProgress) { return false; }
+	TGuardValue<bool> MutationGuard(bMutationInProgress, true);
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !OutputInventoryComponent || !CanAcceptCraftingOutputs(OutputItems)) { return false; }
+	const TFunction<bool()> Revalidate = MakeContextRevalidator(nullptr);
+	TArray<FRpgInventoryBatchOperation> Operations;
+	return Revalidate() && BuildOutputPlan(OutputItems, Operations) && OutputInventoryComponent->ApplyInventoryBatch(Operations, FGuid::NewGuid(), {}, {}, Revalidate).IsSuccess();
 }
 
 bool URpgCraftingStationComponent::CraftItems(AActor* RequestingActor, const TArray<FRpgCraftingResourceCost>& RequiredItems, const TArray<FRpgCraftingOutputItem>& OutputItems)
 {
-	AActor* OwnerActor = GetOwner();
-	if (!OwnerActor || !OwnerActor->HasAuthority() || !CanActorAccess(RequestingActor) || !CanAcceptCraftingOutputs(OutputItems))
-	{
-		return false;
-	}
-
-	return ConsumeResources(RequestingActor, RequiredItems) && AddCraftingOutputs(OutputItems);
+	if (bMutationInProgress) { return false; }
+	TGuardValue<bool> MutationGuard(bMutationInProgress, true);
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !OutputInventoryComponent || !CanActorAccess(RequestingActor) || !CanAcceptCraftingOutputs(OutputItems)) { return false; }
+	const TFunction<bool()> Revalidate = MakeContextRevalidator(RequestingActor);
+	TArray<FRpgInventoryBatchOperation> Operations;
+	TArray<FRpgCraftingRefundEntry> Refunds;
+	return BuildResourceConsumptionPlan(RequestingActor, GetResourceInventories(RequestingActor), RequiredItems, 1, Operations, Refunds) &&
+		BuildOutputPlan(OutputItems, Operations) && OutputInventoryComponent->ApplyInventoryBatch(Operations, FGuid::NewGuid(), {}, {}, Revalidate).IsSuccess();
 }
 
 bool URpgCraftingStationComponent::FlushOutputToBaseStorage()
 {
-	AActor* OwnerActor = GetOwner();
-	if (!OwnerActor || !OwnerActor->HasAuthority() || !OutputInventoryComponent)
+	if (bPersistenceRestorePending || bMutationInProgress) { return false; }
+	TGuardValue<bool> MutationGuard(bMutationInProgress, true);
+	return FlushOutputToBaseStorageInternal();
+}
+
+bool URpgCraftingStationComponent::FlushOutputToBaseStorageInternal()
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !OutputInventoryComponent || !ShouldAutoDepositCraftingOutputs()) { return false; }
+	const TFunction<bool()> Revalidate = MakeContextRevalidator(nullptr);
+	TArray<FRpgInventoryBatchOperation> Operations;
+	for (const FRpgInventoryEntryView& Entry : OutputInventoryComponent->GetAllEntries())
 	{
-		return false;
-	}
-
-	bool bMovedAnyOutput = false;
-	URpgBaseStorageComponent* BaseStorage = GetLinkedBaseStorage();
-	URpgInventoryManagerComponent* ArmoryInventory = GetLinkedArmoryInventory();
-	const TArray<FRpgInventoryEntryView> OutputEntries = OutputInventoryComponent->GetAllEntries();
-	for (const FRpgInventoryEntryView& OutputEntry : OutputEntries)
-	{
-		URpgInventoryItemInstance* OutputInstance = OutputEntry.Instance;
-		if (!OutputInstance || OutputEntry.StackCount <= 0)
+		if (!Entry.Instance || !Entry.Instance->CanCollapseIntoDefinitionCount()) { continue; }
+		TArray<URpgInventoryManagerComponent*> Targets;
+		RpgStorageAccessRules::ResolveDepositTargets(GetWorld(), GetOwner()->GetActorLocation(), StorageSearchRadius, Entry.Instance->GetItemDef(), Targets);
+		int32 Remaining = Entry.StackCount;
+		for (URpgInventoryManagerComponent* Target : Targets)
 		{
-			continue;
-		}
-		// Auto-deposit operates on physical roots. Moving a provider root transfers
-		// its complete subtree; visiting descendants independently would tear the
-		// authored graph apart when the provider itself must remain concrete.
-		if (OutputEntry.Placement.GetContainerHandle().IsItemOwned())
-		{
-			continue;
-		}
-
-		const TSubclassOf<URpgInventoryItemDefinition> ItemDefinition = OutputInstance->GetItemDef();
-		if (IsMaterialDefinition(ItemDefinition) && BaseStorage)
-		{
-			const int32 CountToStore = FMath::Min(
-				OutputEntry.StackCount,
-				BaseStorage->GetFreeResourceCapacity(ItemDefinition));
-			if (CountToStore <= 0)
+			if (!Target || Target == OutputInventoryComponent || Remaining <= 0) { continue; }
+			FRpgInventoryBatchOperation Operation;
+			Operation.SourceInventory = OutputInventoryComponent;
+			Operation.TargetInventory = Target;
+			Operation.ItemId = Entry.ItemId;
+			Operation.ExpectedSourceRevision = OutputInventoryComponent->GetInventoryRevision();
+			Operation.ExpectedTargetRevision = Target->GetInventoryRevision();
+			int32 Low = 0, High = Remaining;
+			while (Low < High)
 			{
-				continue;
+				Operation.Quantity = Low + (High - Low + 1) / 2;
+				Operations.Add(Operation);
+				ERpgInventoryMutationResultCode Code;
+				const bool bFits = OutputInventoryComponent->CanApplyInventoryBatch(Operations, Code);
+				Operations.Pop();
+				if (bFits) { Low = Operation.Quantity; } else { High = Operation.Quantity - 1; }
 			}
-			if (!BaseStorage->CanStoreResourceInstance(
-					OutputInstance,
-					CountToStore))
-			{
-				UE_LOG(
-					LogRpgCraftingStation,
-					Verbose,
-					TEXT("Crafting-output auto-deposit kept non-collapsible item %s in the concrete output inventory."),
-					*OutputEntry.ItemId.ToString());
-				continue;
-			}
-
-			const int32 EntryCountBefore =
-				OutputInventoryComponent->GetAllEntries().Num();
-			const FRpgInventoryGraphSaveData OutputGraphBefore =
-				OutputInventoryComponent->ExportInventoryGraph();
-			const FRpgInventorySavedItem* SavedOutputBefore =
-				OutputGraphBefore.Items.FindByPredicate(
-					[&OutputEntry](const FRpgInventorySavedItem& Candidate)
-					{
-						return Candidate.ItemId == OutputEntry.ItemId;
-					});
-			if (OutputGraphBefore.Items.Num() != EntryCountBefore ||
-				!SavedOutputBefore)
-			{
-				UE_LOG(
-					LogRpgCraftingStation,
-					Error,
-					TEXT("Crafting-output auto-deposit skipped %s because the exact pre-consume graph could not be exported."),
-					*OutputEntry.ItemId.ToString());
-				continue;
-			}
-
-			auto RestoreExactOutputGraph = [&]() -> bool
-			{
-				FRpgInventoryMutationResult RollbackResult;
-				const bool bGraphRestored =
-					OutputInventoryComponent->RestoreRuntimeCheckpoint(
-						OutputGraphBefore,
-						RollbackResult) &&
-					RollbackResult.IsSuccess();
-				FRpgInventoryGridPlacement RestoredPlacement;
-				return bGraphRestored &&
-					OutputInventoryComponent->ContainsEntry(
-						OutputEntry.EntryId) &&
-					OutputInventoryComponent->FindItemById(
-						OutputEntry.ItemId) == OutputInstance &&
-					OutputInventoryComponent->GetItemStackCount(
-						OutputInstance) == OutputEntry.StackCount &&
-					OutputInventoryComponent->GetItemPlacement(
-						OutputInstance,
-						RestoredPlacement) &&
-					RestoredPlacement == OutputEntry.Placement;
-			};
-
-			// Keep one unit alive when the whole stack is deposited so a failed
-			// storage write can restore the same concrete instance and EntryId.
-			const int32 CountToConsumeBeforeStore =
-				CountToStore == OutputEntry.StackCount
-					? CountToStore - 1
-					: CountToStore;
-			if (CountToConsumeBeforeStore > 0)
-			{
-				const FRpgInventoryMutationResult ConsumeResult =
-					OutputInventoryComponent->ConsumeItemById(
-						OutputEntry.ItemId,
-						CountToConsumeBeforeStore);
-				if (!ConsumeResult.IsSuccess() ||
-					ConsumeResult.AppliedQuantity !=
-						CountToConsumeBeforeStore)
-				{
-					continue;
-				}
-			}
-
-			if (!BaseStorage->StoreResourceInstance(
-					OutputInstance,
-					CountToStore))
-			{
-				if (!RestoreExactOutputGraph())
-				{
-					UE_LOG(
-						LogRpgCraftingStation,
-						Error,
-						TEXT("Crafting-output auto-deposit rollback failed for %s after base storage rejected %d x %s."),
-						*GetNameSafe(GetOwner()),
-						CountToStore,
-						*GetNameSafe(ItemDefinition));
-				}
-				continue;
-			}
-
-			const int32 RemainingConsumeCount =
-				CountToStore - CountToConsumeBeforeStore;
-			if (RemainingConsumeCount > 0)
-			{
-				const FRpgInventoryMutationResult FinalConsumeResult =
-					OutputInventoryComponent->ConsumeItemById(
-						OutputEntry.ItemId,
-						RemainingConsumeCount);
-				if (!FinalConsumeResult.IsSuccess() ||
-					FinalConsumeResult.AppliedQuantity !=
-						RemainingConsumeCount)
-				{
-					const bool bStorageRestored =
-						BaseStorage->WithdrawResource(
-							ItemDefinition,
-							CountToStore);
-					const bool bInventoryRestored =
-						RestoreExactOutputGraph();
-					if (!bStorageRestored || !bInventoryRestored)
-					{
-						UE_LOG(
-							LogRpgCraftingStation,
-							Error,
-							TEXT("Crafting-output auto-deposit finalization rollback failed for %s (%d x %s, Storage=%s, Inventory=%s)."),
-							*GetNameSafe(GetOwner()),
-							CountToStore,
-							*GetNameSafe(ItemDefinition),
-							bStorageRestored ? TEXT("restored") : TEXT("failed"),
-							bInventoryRestored ? TEXT("restored") : TEXT("failed"));
-					}
-					continue;
-				}
-			}
-
-			bMovedAnyOutput = true;
-			continue;
-		}
-
-		if (bAutoDepositInstanceOutputsToArmory && ArmoryInventory)
-		{
-			FRpgInventoryTransferIntent TransferIntent;
-			TransferIntent.ItemId = OutputEntry.ItemId;
-			TransferIntent.ExpectedEntryId = OutputEntry.EntryId;
-			TransferIntent.ExpectedSourcePlacement = OutputEntry.Placement;
-			TransferIntent.ExpectedSourceQuantity = OutputEntry.StackCount;
-			TransferIntent.TargetContainer =
-				FRpgInventoryContainerHandle::MakeRoot(ArmoryInventory->GetDefaultContainerId());
-			TransferIntent.Quantity = OutputEntry.StackCount;
-			TransferIntent.EnsureRequestId();
-
-			const FRpgInventoryMutationResult TransferResult =
-				OutputInventoryComponent->TransferItem(ArmoryInventory, TransferIntent);
-			bMovedAnyOutput |= TransferResult.IsSuccess() &&
-				TransferResult.AppliedQuantity == OutputEntry.StackCount;
+			if (Low > 0) { Operation.Quantity = Low; Operations.Add(Operation); Remaining -= Low; }
 		}
 	}
-
-	return bMovedAnyOutput;
+	return !Operations.IsEmpty() && OutputInventoryComponent->ApplyInventoryBatch(Operations, FGuid::NewGuid(), {}, {}, Revalidate).IsSuccess();
 }
 
 bool URpgCraftingStationComponent::HasCraftingOutputAutoDepositAccess() const
 {
-	const URpgBaseStorageStationComponent* UpgradeProvider = GetOutputAutoDepositUpgradeProvider();
-	const bool bProviderHasTag = UpgradeProvider && UpgradeProvider->HasUpgradeTag(RpgGameplayTags::Base_Storage_Upgrade_CraftingOutputAutoDeposit);
-	const bool bBaseCampHasTag = LinkedBaseCamp && LinkedBaseCamp->HasStorageUpgradeTag(RpgGameplayTags::Base_Storage_Upgrade_CraftingOutputAutoDeposit);
-	return bAlwaysAutoDepositCraftingOutputs || bBaseCampHasTag || bProviderHasTag;
+	return true;
 }
 
 bool URpgCraftingStationComponent::SetCraftingOutputAutoDepositEnabled(AActor* RequestingActor, bool bEnabled)
 {
+	if (bMutationInProgress) { return false; }
+	TGuardValue<bool> MutationGuard(bMutationInProgress, true);
 	AActor* OwnerActor = GetOwner();
 	if (!OwnerActor || !OwnerActor->HasAuthority() || !CanActorAccess(RequestingActor))
 	{
@@ -981,7 +631,7 @@ bool URpgCraftingStationComponent::SetCraftingOutputAutoDepositEnabled(AActor* R
 
 	if (bEnabled && ShouldAutoDepositCraftingOutputs())
 	{
-		FlushOutputToBaseStorage();
+		FlushOutputToBaseStorageInternal();
 	}
 
 	return true;
@@ -989,22 +639,7 @@ bool URpgCraftingStationComponent::SetCraftingOutputAutoDepositEnabled(AActor* R
 
 bool URpgCraftingStationComponent::ShouldAutoDepositCraftingOutputs() const
 {
-	const URpgBaseStorageStationComponent* UpgradeProvider = GetOutputAutoDepositUpgradeProvider();
-	const bool bProviderHasTag = UpgradeProvider && UpgradeProvider->HasUpgradeTag(RpgGameplayTags::Base_Storage_Upgrade_CraftingOutputAutoDeposit);
-	const bool bBaseCampHasTag = LinkedBaseCamp && LinkedBaseCamp->HasStorageUpgradeTag(RpgGameplayTags::Base_Storage_Upgrade_CraftingOutputAutoDeposit);
-	const bool bHasAutoDepositAccess = bAlwaysAutoDepositCraftingOutputs || bBaseCampHasTag || bProviderHasTag;
-	const bool bShouldAutoDeposit = bAutoDepositCraftingOutputsEnabled && bHasAutoDepositAccess;
-	UE_LOG(LogRpgCraftingStation, Verbose, TEXT("ShouldAutoDepositCraftingOutputs: Station=%s Enabled=%s Always=%s BaseCamp=%s BaseHasTag=%s ProviderActor=%s ProviderComponent=%s ProviderHasTag=%s Result=%s"),
-		*GetNameSafe(GetOwner()),
-		bAutoDepositCraftingOutputsEnabled ? TEXT("true") : TEXT("false"),
-		bAlwaysAutoDepositCraftingOutputs ? TEXT("true") : TEXT("false"),
-		*GetNameSafe(LinkedBaseCamp),
-		bBaseCampHasTag ? TEXT("true") : TEXT("false"),
-		*GetNameSafe(OutputAutoDepositUpgradeProviderActor),
-		*GetNameSafe(UpgradeProvider),
-		bProviderHasTag ? TEXT("true") : TEXT("false"),
-		bShouldAutoDeposit ? TEXT("true") : TEXT("false"));
-	return bShouldAutoDeposit;
+	return bAutoDepositCraftingOutputsEnabled;
 }
 
 URpgBaseStorageStationComponent* URpgCraftingStationComponent::GetOutputAutoDepositUpgradeProvider() const
@@ -1019,17 +654,15 @@ URpgBaseStorageStationComponent* URpgCraftingStationComponent::GetOutputAutoDepo
 
 URpgBaseStorageComponent* URpgCraftingStationComponent::GetLinkedBaseStorage() const
 {
-	return bUseLinkedBaseStorage && LinkedBaseCamp ? LinkedBaseCamp->GetBaseStorageComponent() : nullptr;
+	ARpgBaseCampActor* Base = ResolveSpatialBaseCamp();
+	return Base ? Base->GetBaseStorageComponent() : nullptr;
 }
 
-URpgInventoryManagerComponent* URpgCraftingStationComponent::GetLinkedArmoryInventory() const
-{
-	return LinkedBaseCamp ? LinkedBaseCamp->GetArmoryInventoryComponent() : nullptr;
-}
+
 
 int32 URpgCraftingStationComponent::GetAvailableInventoryResourceCount(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, const TArray<URpgInventoryManagerComponent*>& ResourceInventories) const
 {
-	int32 TotalCount = 0;
+	int64 TotalCount = 0;
 	for (URpgInventoryManagerComponent* Inventory : ResourceInventories)
 	{
 		if (!Inventory)
@@ -1047,325 +680,151 @@ int32 URpgCraftingStationComponent::GetAvailableInventoryResourceCount(TSubclass
 			}
 		}
 	}
-	return TotalCount;
+	return static_cast<int32>(FMath::Min<int64>(TotalCount, MAX_int32));
 }
 
-bool URpgCraftingStationComponent::ConsumeInventoryResources(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count, const TArray<URpgInventoryManagerComponent*>& ResourceInventories) const
-{
-	int32 RemainingCount = Count;
-	for (URpgInventoryManagerComponent* Inventory : ResourceInventories)
-	{
-		if (!Inventory || RemainingCount <= 0)
-		{
-			break;
-		}
 
-		const TArray<FRpgInventoryEntryView> Entries = Inventory->GetAllEntries();
-		for (const FRpgInventoryEntryView& Entry : Entries)
-		{
-			if (RemainingCount <= 0)
-			{
-				break;
-			}
-			if (!Entry.Instance || Entry.Instance->GetItemDef() != ItemDefinition ||
-				Entry.StackCount <= 0 ||
-				!Entry.Instance->CanCollapseIntoDefinitionCount())
-			{
-				continue;
-			}
 
-			const int32 CountToConsume =
-				FMath::Min(Entry.StackCount, RemainingCount);
-			const FRpgInventoryMutationResult Result =
-				Inventory->ConsumeItemById(Entry.ItemId, CountToConsume);
-			if (!Result.IsSuccess() || Result.AppliedQuantity != CountToConsume)
-			{
-				return false;
-			}
-			RemainingCount -= CountToConsume;
-		}
-	}
 
-	return RemainingCount <= 0;
-}
-
-bool URpgCraftingStationComponent::ConsumeBaseResources(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count) const
-{
-	if (Count <= 0)
-	{
-		return true;
-	}
-
-	URpgBaseStorageComponent* BaseStorage = GetLinkedBaseStorage();
-	return BaseStorage && BaseStorage->CanCraftFromNetwork(ItemDefinition) &&
-		BaseStorage->WithdrawResource(ItemDefinition, Count);
-}
 
 void URpgCraftingStationComponent::OnRep_CraftingState()
 {
 	MarkCraftingStateDirty();
 }
 
-bool URpgCraftingStationComponent::ConsumeResourcesWithRefund(
-	AActor* RequestingActor,
-	const TArray<FRpgCraftingResourceCost>& RequiredItems,
-	int32 Quantity,
-	TArray<FRpgCraftingRefundEntry>& OutRefundEntries)
+bool URpgCraftingStationComponent::BuildResourceConsumptionPlan(
+	AActor* RequestingActor, const TArray<URpgInventoryManagerComponent*>& StorageInventories,
+	const TArray<FRpgCraftingResourceCost>& RequiredItems, int32 Quantity,
+	TArray<FRpgInventoryBatchOperation>& OutOperations, TArray<FRpgCraftingRefundEntry>& OutRefundEntries)
 {
+	OutOperations.Reset();
 	OutRefundEntries.Reset();
-	AActor* OwnerActor = GetOwner();
-	if (!OwnerActor || !OwnerActor->HasAuthority() || Quantity <= 0)
+	if (!RequestingActor || Quantity <= 0) { return false; }
+	TArray<FRpgCraftingResourceCost> Costs;
+	if (!TryBuildAggregatedResourceCosts(RequiredItems, Costs)) { return false; }
+	URpgInventoryManagerComponent* PlayerInventory = FindRequestingPlayerInventory(RequestingActor);
+	TArray<URpgInventoryManagerComponent*> Sources;
+	if (PlayerInventory) { Sources.Add(PlayerInventory); }
+	for (URpgInventoryManagerComponent* Inventory : StorageInventories)
 	{
-		return false;
+		if (!Inventory || !Inventory->GetOwner()) { continue; }
+		// Defense in depth: an accidental broad caller list cannot consume another player's inventory.
+		const AActor* SourceOwner = Inventory->GetOwner();
+		if (Inventory != PlayerInventory && (SourceOwner->IsA<APlayerState>() || SourceOwner->IsA<APawn>() || SourceOwner->IsA<AController>())) { continue; }
+		Sources.AddUnique(Inventory);
 	}
-
-	TArray<FRpgCraftingResourceCost> AggregatedRequiredItems;
-	if (!TryBuildAggregatedResourceCosts(RequiredItems, AggregatedRequiredItems))
+	for (const FRpgCraftingResourceCost& Cost : Costs)
 	{
-		return false;
+		const int64 Required = static_cast<int64>(Cost.Count) * Quantity;
+		if (Required > MAX_int32) { return false; }
+		int32 Remaining = static_cast<int32>(Required);
+		const URpgInventoryFragment_StorageProfile* Profile = URpgInventoryFragment_StorageProfile::ResolveStorageProfile(Cost.ItemDefinition);
+		for (URpgInventoryManagerComponent* Inventory : Sources)
+		{
+			if (Inventory != PlayerInventory && (!Profile || !Profile->CanCraftFromPhysicalStorage())) { continue; }
+			for (const FRpgInventoryEntryView& Entry : Inventory->GetAllEntries())
+			{
+				if (Remaining <= 0) { break; }
+				if (!Entry.Instance || Entry.Instance->GetItemDef() != Cost.ItemDefinition || Entry.StackCount <= 0 || !Entry.Instance->CanCollapseIntoDefinitionCount()) { continue; }
+				const int32 Debit = FMath::Min(Remaining, Entry.StackCount);
+				FRpgInventoryBatchOperation& Operation = OutOperations.AddDefaulted_GetRef();
+				Operation.SourceInventory = Inventory;
+				Operation.ItemId = Entry.ItemId;
+				Operation.Quantity = Debit;
+				Operation.ExpectedSourceRevision = Inventory->GetInventoryRevision();
+				AddRefundCredit(OutRefundEntries, Cost.ItemDefinition, Debit, Inventory, false);
+				Remaining -= Debit;
+			}
+		}
+		if (Remaining > 0) { OutOperations.Reset(); OutRefundEntries.Reset(); return false; }
 	}
+	return true;
+}
 
-	for (FRpgCraftingResourceCost& RequiredItem : AggregatedRequiredItems)
-	{
-		const int64 RequiredCount = static_cast<int64>(RequiredItem.Count) * static_cast<int64>(Quantity);
-		if (RequiredCount > MAX_int32 ||
-			GetAvailableResourceCount(RequestingActor, RequiredItem.ItemDefinition) < RequiredCount)
-		{
-			return false;
-		}
-
-		RequiredItem.Count = static_cast<int32>(RequiredCount);
-	}
-
-	TArray<URpgInventoryManagerComponent*> ResourceInventories = GetResourceInventories(RequestingActor);
-	auto RefundAndFail = [this, &OutRefundEntries]()
-	{
-		for (const FRpgCraftingRefundEntry& RefundEntry : OutRefundEntries)
-		{
-			RefundResourceCredit(RefundEntry);
-		}
-		OutRefundEntries.Reset();
-		return false;
-	};
-
-	for (const FRpgCraftingResourceCost& RequiredItem : AggregatedRequiredItems)
-	{
-		int32 RemainingCount = RequiredItem.Count;
-
-		auto ConsumeFromBase = [&]()
-		{
-			if (RemainingCount <= 0)
-			{
-				return true;
-			}
-
-			URpgBaseStorageComponent* BaseStorage = GetLinkedBaseStorage();
-			const int32 AvailableInBase = BaseStorage ? BaseStorage->GetResourceCount(RequiredItem.ItemDefinition) : 0;
-			const int32 CountToConsume = FMath::Min(AvailableInBase, RemainingCount);
-			if (CountToConsume <= 0)
-			{
-				return true;
-			}
-
-			if (!ConsumeBaseResources(RequiredItem.ItemDefinition, CountToConsume))
-			{
-				return false;
-			}
-
-			AddRefundCredit(OutRefundEntries, RequiredItem.ItemDefinition, CountToConsume, nullptr, true);
-			RemainingCount -= CountToConsume;
-			return true;
-		};
-
-		auto ConsumeFromInventories = [&]()
-		{
-			if (RemainingCount <= 0)
-			{
-				return true;
-			}
-
-			for (URpgInventoryManagerComponent* Inventory : ResourceInventories)
-			{
-				if (!Inventory || RemainingCount <= 0)
-				{
-					break;
-				}
-
-				const TArray<URpgInventoryManagerComponent*> SingleInventory = { Inventory };
-				const int32 AvailableInInventory =
-					GetAvailableInventoryResourceCount(
-						RequiredItem.ItemDefinition,
-						SingleInventory);
-				const int32 CountToConsume = FMath::Min(AvailableInInventory, RemainingCount);
-				if (CountToConsume <= 0)
-				{
-					continue;
-				}
-
-				if (!ConsumeInventoryResources(
-						RequiredItem.ItemDefinition,
-						CountToConsume,
-						SingleInventory))
-				{
-					return false;
-				}
-
-				AddRefundCredit(OutRefundEntries, RequiredItem.ItemDefinition, CountToConsume, Inventory, false);
-				RemainingCount -= CountToConsume;
-			}
-
-			return true;
-		};
-
-		switch (ResourceConsumeOrder)
-		{
-		case ERpgCraftingResourceConsumeOrder::BaseThenPlayer:
-			if (!ConsumeFromBase() || !ConsumeFromInventories())
-			{
-				return RefundAndFail();
-			}
-			break;
-
-		case ERpgCraftingResourceConsumeOrder::PlayerThenBase:
-			if (!ConsumeFromInventories() || !ConsumeFromBase())
-			{
-				return RefundAndFail();
-			}
-			break;
-
-		case ERpgCraftingResourceConsumeOrder::BaseOnly:
-			if (!ConsumeFromBase())
-			{
-				return RefundAndFail();
-			}
-			break;
-
-		case ERpgCraftingResourceConsumeOrder::PlayerOnly:
-			if (!ConsumeFromInventories())
-			{
-				return RefundAndFail();
-			}
-			break;
-		}
-
-		if (RemainingCount > 0)
-		{
-			return RefundAndFail();
-		}
-	}
-
+bool URpgCraftingStationComponent::ConsumeResourcesWithRefund(AActor* RequestingActor,
+	const TArray<FRpgCraftingResourceCost>& RequiredItems, int32 Quantity, TArray<FRpgCraftingRefundEntry>& OutRefundEntries)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority()) { return false; }
+	const TFunction<bool()> Revalidate = MakeContextRevalidator(RequestingActor);
+	TArray<FRpgInventoryBatchOperation> Operations;
+	if (!BuildResourceConsumptionPlan(RequestingActor, GetResourceInventories(RequestingActor), RequiredItems, Quantity, Operations, OutRefundEntries)) { return false; }
+	if (Operations.IsEmpty()) { return true; }
+	URpgInventoryManagerComponent* Coordinator = Operations[0].SourceInventory;
+	if (!Coordinator || !Coordinator->ApplyInventoryBatch(Operations, FGuid::NewGuid(), {}, {}, Revalidate).IsSuccess()) { OutRefundEntries.Reset(); return false; }
 	return true;
 }
 
 void URpgCraftingStationComponent::SpendRefundCreditsForCompletedUnit(FRpgCraftingJobEntry& Job)
 {
-	if (!Job.Recipe)
+	if (!Job.Recipe) { return; }
+	TArray<FRpgCraftingResourceCost> Costs;
+	if (!TryBuildAggregatedResourceCosts(Job.Recipe->RequiredResources, Costs)) { return; }
+	for (const FRpgCraftingResourceCost& Cost : Costs)
 	{
-		return;
-	}
-
-	TArray<FRpgCraftingResourceCost> AggregatedRequiredItems;
-	if (!TryBuildAggregatedResourceCosts(Job.Recipe->RequiredResources, AggregatedRequiredItems))
-	{
-		return;
-	}
-
-	auto SpendFromCredits = [&Job](TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32& RemainingCount, bool bPreferBase)
-	{
-		for (FRpgCraftingRefundEntry& RefundEntry : Job.RefundEntries)
+		int32 Remaining = Cost.Count;
+		for (FRpgCraftingRefundEntry& Refund : Job.RefundEntries)
 		{
-			if (RemainingCount <= 0)
-			{
-				return;
-			}
-
-			if (RefundEntry.ItemDefinition != ItemDefinition || RefundEntry.Count <= 0 || RefundEntry.bRefundToBaseStorage != bPreferBase)
-			{
-				continue;
-			}
-
-			const int32 CountToSpend = FMath::Min(RefundEntry.Count, RemainingCount);
-			RefundEntry.Count -= CountToSpend;
-			RemainingCount -= CountToSpend;
+			if (Refund.ItemDefinition != Cost.ItemDefinition || Remaining <= 0) { continue; }
+			const int32 Spent = FMath::Min(Remaining, Refund.Count);
+			Refund.Count -= Spent;
+			Remaining -= Spent;
 		}
+	}
+	Job.RefundEntries.RemoveAll([](const FRpgCraftingRefundEntry& Refund) { return Refund.Count <= 0; });
+}
+
+bool URpgCraftingStationComponent::RefundRemainingJobCosts(FGuid JobId, TFunction<void()> CommitSideEffects)
+{
+	const int32 JobIndex = FindJobIndex(JobId);
+	if (!OutputInventoryComponent || !CraftingJobs.IsValidIndex(JobIndex)) { return false; }
+	const TFunction<bool()> Revalidate = MakeContextRevalidator(nullptr, true, JobId);
+	const TArray<FRpgCraftingRefundEntry> RefundEntries = CraftingJobs[JobIndex].RefundEntries;
+	TArray<FRpgInventoryBatchOperation> Operations;
+	for (const FRpgCraftingRefundEntry& Refund : RefundEntries)
+	{
+		if (!Refund.ItemDefinition || Refund.Count <= 0) { return false; }
+		URpgInventoryManagerComponent* Original = Refund.InventoryId.IsNone()
+			? Refund.Inventory.Get() : RpgStorageAccessRules::FindPersistentInventory(GetWorld(), Refund.InventoryId);
+		if (!IsValid(Original) || !IsValid(Original->GetOwner()) || Original->GetOwner()->IsActorBeingDestroyed()) { Original = nullptr; }
+		int32 Remaining = Refund.Count;
+		TArray<URpgInventoryManagerComponent*> Targets;
+		if (Original) { Targets.Add(Original); }
+		Targets.AddUnique(OutputInventoryComponent);
+		for (URpgInventoryManagerComponent* Target : Targets)
+		{
+			FRpgInventoryBatchOperation Operation;
+			Operation.TargetInventory = Target;
+			Operation.ItemDefinition = Refund.ItemDefinition;
+			Operation.ExpectedTargetRevision = Target->GetInventoryRevision();
+			int32 Low = 0, High = Remaining;
+			while (Low < High)
+			{
+				Operation.Quantity = Low + (High - Low + 1) / 2;
+				Operations.Add(Operation);
+				ERpgInventoryMutationResultCode Code;
+				const bool bFits = OutputInventoryComponent->CanApplyInventoryBatch(Operations, Code);
+				Operations.Pop();
+				if (bFits) { Low = Operation.Quantity; } else { High = Operation.Quantity - 1; }
+			}
+			if (Low > 0) { Operation.Quantity = Low; Operations.Add(Operation); Remaining -= Low; }
+		}
+		if (Remaining > 0) { return false; }
+	}
+	auto CommitRefund = [this, JobId, &CommitSideEffects]()
+	{
+		CraftingJobs[FindJobIndex(JobId)].RefundEntries.Reset();
+		if (CommitSideEffects) { CommitSideEffects(); }
 	};
-
-	for (const FRpgCraftingResourceCost& RequiredItem : AggregatedRequiredItems)
-	{
-		int32 RemainingCount = RequiredItem.Count;
-		switch (ResourceConsumeOrder)
-		{
-		case ERpgCraftingResourceConsumeOrder::BaseThenPlayer:
-			SpendFromCredits(RequiredItem.ItemDefinition, RemainingCount, true);
-			SpendFromCredits(RequiredItem.ItemDefinition, RemainingCount, false);
-			break;
-
-		case ERpgCraftingResourceConsumeOrder::PlayerThenBase:
-			SpendFromCredits(RequiredItem.ItemDefinition, RemainingCount, false);
-			SpendFromCredits(RequiredItem.ItemDefinition, RemainingCount, true);
-			break;
-
-		case ERpgCraftingResourceConsumeOrder::BaseOnly:
-			SpendFromCredits(RequiredItem.ItemDefinition, RemainingCount, true);
-			break;
-
-		case ERpgCraftingResourceConsumeOrder::PlayerOnly:
-			SpendFromCredits(RequiredItem.ItemDefinition, RemainingCount, false);
-			break;
-		}
-	}
-
-	Job.RefundEntries.RemoveAll([](const FRpgCraftingRefundEntry& RefundEntry)
-	{
-		return RefundEntry.Count <= 0;
-	});
+	if (!Revalidate()) { return false; }
+	if (Operations.IsEmpty()) { CommitRefund(); return true; }
+	return OutputInventoryComponent->ApplyInventoryBatch(Operations, FGuid::NewGuid(), {}, CommitRefund, Revalidate).IsSuccess();
 }
 
-void URpgCraftingStationComponent::RefundRemainingJobCosts(FRpgCraftingJobEntry& Job)
-{
-	for (const FRpgCraftingRefundEntry& RefundEntry : Job.RefundEntries)
-	{
-		RefundResourceCredit(RefundEntry);
-	}
 
-	Job.RefundEntries.Reset();
-}
-
-bool URpgCraftingStationComponent::RefundResourceCredit(const FRpgCraftingRefundEntry& RefundEntry)
-{
-	if (!RefundEntry.ItemDefinition || RefundEntry.Count <= 0)
-	{
-		return true;
-	}
-
-	if (RefundEntry.bRefundToBaseStorage)
-	{
-		if (URpgBaseStorageComponent* BaseStorage = GetLinkedBaseStorage())
-		{
-			if (BaseStorage->CanStoreResource(RefundEntry.ItemDefinition, RefundEntry.Count) &&
-				BaseStorage->StoreDefinitionResource(
-					RefundEntry.ItemDefinition,
-					RefundEntry.Count))
-			{
-				return true;
-			}
-		}
-
-		return SpawnOrMergeDroppedOutput(RefundEntry.ItemDefinition, RefundEntry.Count);
-	}
-
-	if (RefundEntry.Inventory &&
-		RefundEntry.Inventory->CanAddItemDefinition(RefundEntry.ItemDefinition, RefundEntry.Count))
-	{
-		RefundEntry.Inventory->GrantItemDefinition(RefundEntry.ItemDefinition, RefundEntry.Count);
-		return true;
-	}
-
-	return SpawnOrMergeDroppedOutput(RefundEntry.ItemDefinition, RefundEntry.Count);
-}
 
 void URpgCraftingStationComponent::TryStartNextQueuedJob()
 {
+	if (bPersistenceRestorePending) return;
 	AActor* OwnerActor = GetOwner();
 	if (!OwnerActor || !OwnerActor->HasAuthority() || bStationPaused || HasActiveOrPausedJob())
 	{
@@ -1384,6 +843,7 @@ void URpgCraftingStationComponent::TryStartNextQueuedJob()
 
 void URpgCraftingStationComponent::StartJobAtIndex(int32 JobIndex, float DurationOverride, bool bPauseStateChanged)
 {
+	if (bPersistenceRestorePending) return;
 	if (!CraftingJobs.IsValidIndex(JobIndex))
 	{
 		return;
@@ -1416,7 +876,7 @@ void URpgCraftingStationComponent::StartJobAtIndex(int32 JobIndex, float Duratio
 	World->GetTimerManager().ClearTimer(CraftingTimerHandle);
 	if (RemainingDuration <= 0.0f)
 	{
-		World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateUObject(this, &ThisClass::CompleteActiveJobUnit));
+		CraftingTimerHandle = World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateUObject(this, &ThisClass::CompleteActiveJobUnit));
 	}
 	else
 	{
@@ -1428,45 +888,58 @@ void URpgCraftingStationComponent::StartJobAtIndex(int32 JobIndex, float Duratio
 
 void URpgCraftingStationComponent::CompleteActiveJobUnit()
 {
-	AActor* OwnerActor = GetOwner();
-	if (!OwnerActor || !OwnerActor->HasAuthority())
+	if (bPersistenceRestorePending) return;
+	if (bMutationInProgress)
 	{
+		if (UWorld* World = GetWorld()) { World->GetTimerManager().SetTimer(CraftingTimerHandle, this, &ThisClass::CompleteActiveJobUnit, 0.01f, false); }
 		return;
 	}
+	TGuardValue<bool> MutationGuard(bMutationInProgress, true);
+	CompleteActiveJobUnitInternal();
+}
 
-	const int32 ActiveJobIndex = FindActiveJobIndex();
-	if (ActiveJobIndex == INDEX_NONE || !CraftingJobs.IsValidIndex(ActiveJobIndex))
+void URpgCraftingStationComponent::CompleteActiveJobUnitInternal()
+{
+	if (bPersistenceRestorePending) return;
+	if (!GetOwner() || !GetOwner()->HasAuthority()) { return; }
+	const int32 Index = FindActiveJobIndex();
+	if (!CraftingJobs.IsValidIndex(Index)) { TryStartNextQueuedJob(); return; }
+	const FRpgCraftingJobEntry Job = CraftingJobs[Index];
+	if (!Job.Recipe || Job.State != ERpgCraftingJobState::Active) { return; }
+	const FGuid JobId = Job.JobId;
+	const TFunction<bool()> Revalidate = MakeContextRevalidator(nullptr, false, JobId);
+	TArray<FRpgInventoryBatchOperation> Operations;
+	const bool bPrepared = OutputInventoryComponent && BuildOutputPlan(Job.Recipe->OutputItems, Operations);
+	const bool bCommitted = bPrepared && Revalidate() && OutputInventoryComponent->ApplyInventoryBatch(Operations, FGuid::NewGuid(), {}, [this, JobId]()
 	{
-		TryStartNextQueuedJob();
+		const int32 CommittedIndex = FindJobIndex(JobId);
+		FRpgCraftingJobEntry& CommittedJob = CraftingJobs[CommittedIndex];
+		SpendRefundCreditsForCompletedUnit(CommittedJob);
+		++CommittedJob.QuantityCompleted;
+		if (CommittedJob.QuantityCompleted >= CommittedJob.QuantityTotal)
+		{
+			const FGuid FinishedId = CommittedJob.JobId;
+			CraftingJobs.RemoveAt(CommittedIndex);
+			MarkCraftingStateDirty(FinishedId, ERpgCraftingJobState::Completed);
+		}
+		else
+		{
+			// Snapshotting between units persists a queued unit, never an already-produced active unit.
+			CommittedJob.State = ERpgCraftingJobState::Queued;
+			MarkCraftingStateDirty(CommittedJob.JobId, CommittedJob.State);
+		}
+	}, Revalidate).IsSuccess();
+	if (!bCommitted)
+	{
+		if (!IsValid(GetOwner()) || GetOwner()->IsActorBeingDestroyed() || !GetWorld()) { return; }
+		const int32 CurrentIndex = FindJobIndex(JobId);
+		if (!CraftingJobs.IsValidIndex(CurrentIndex)) { return; }
+		CraftingJobs[CurrentIndex].State = ERpgCraftingJobState::BlockedOutput;
+		GetWorld()->GetTimerManager().SetTimer(OutputRetryTimerHandle, this, &ThisClass::RetryBlockedOutput, 0.5f, false);
+		MarkCraftingStateDirty(JobId, ERpgCraftingJobState::BlockedOutput);
 		return;
 	}
-
-	FRpgCraftingJobEntry& Job = CraftingJobs[ActiveJobIndex];
-	if (!Job.Recipe || Job.State != ERpgCraftingJobState::Active)
-	{
-		return;
-	}
-
-	if (!AddCraftingOutputs(Job.Recipe->OutputItems))
-	{
-		Job.State = ERpgCraftingJobState::BlockedOutput;
-		MarkCraftingStateDirty(Job.JobId, Job.State);
-		return;
-	}
-
-	SpendRefundCreditsForCompletedUnit(Job);
-	++Job.QuantityCompleted;
-
-	if (Job.QuantityCompleted >= Job.QuantityTotal)
-	{
-		const FGuid FinishedJobId = Job.JobId;
-		CraftingJobs.RemoveAt(ActiveJobIndex);
-		MarkCraftingStateDirty(FinishedJobId, ERpgCraftingJobState::Completed);
-		TryStartNextQueuedJob();
-		return;
-	}
-
-	StartJobAtIndex(ActiveJobIndex);
+	TryStartNextQueuedJob();
 }
 
 int32 URpgCraftingStationComponent::FindActiveJobIndex() const
@@ -1528,140 +1001,270 @@ float URpgCraftingStationComponent::GetRecipeCraftTime(const URpgCraftingRecipeD
 	return RecipeDefinition ? FMath::Max(0.0f, RecipeDefinition->CraftTime) : 0.0f;
 }
 
-bool URpgCraftingStationComponent::AddOutputItemOrDrop(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count)
+
+
+
+
+
+
+void URpgCraftingStationComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	if (!ItemDefinition || Count <= 0)
+	if (UWorld* World = GetWorld())
 	{
-		return false;
-	}
-
-	int32 RemainingCount = Count;
-	const bool bAutoDeposit = ShouldAutoDepositCraftingOutputs();
-	if (bAutoDeposit && IsMaterialDefinition(ItemDefinition))
-	{
-		if (URpgBaseStorageComponent* BaseStorage = GetLinkedBaseStorage())
+		// Preserve paid jobs and tray items before this actor disappears from world enumeration.
+		if (ARpgGameModeBase* GameMode = World->GetAuthGameMode<ARpgGameModeBase>())
 		{
-			const int32 CountToStore = FMath::Min(RemainingCount, BaseStorage->GetFreeResourceCapacity(ItemDefinition));
-			if (CountToStore > 0 &&
-				BaseStorage->StoreDefinitionResource(
-					ItemDefinition,
-					CountToStore))
-			{
-				RemainingCount -= CountToStore;
-			}
+			GameMode->UnregisterPersistentCraftingStation(this);
 		}
+		World->GetTimerManager().ClearTimer(CraftingTimerHandle);
+		World->GetTimerManager().ClearTimer(OutputRetryTimerHandle);
 	}
-	else if (bAutoDeposit && bAutoDepositInstanceOutputsToArmory)
-	{
-		if (URpgInventoryManagerComponent* ArmoryInventory = GetLinkedArmoryInventory())
-		{
-			if (ArmoryInventory->CanAddItemDefinition(ItemDefinition, RemainingCount))
-			{
-				ArmoryInventory->GrantItemDefinition(ItemDefinition, RemainingCount);
-				RemainingCount = 0;
-			}
-		}
-	}
-
-	while (RemainingCount > 0 && OutputInventoryComponent)
-	{
-		int32 CountToAdd = RemainingCount;
-		while (CountToAdd > 0 && !OutputInventoryComponent->CanAddItemDefinition(ItemDefinition, CountToAdd))
-		{
-			--CountToAdd;
-		}
-
-		if (CountToAdd <= 0)
-		{
-			break;
-		}
-
-		OutputInventoryComponent->GrantItemDefinition(ItemDefinition, CountToAdd);
-		RemainingCount -= CountToAdd;
-	}
-
-	return RemainingCount <= 0 || SpawnOrMergeDroppedOutput(ItemDefinition, RemainingCount);
+	Super::EndPlay(EndPlayReason);
 }
 
-bool URpgCraftingStationComponent::SpawnOrMergeDroppedOutput(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count)
+TFunction<bool()> URpgCraftingStationComponent::MakeContextRevalidator(AActor* RequestingActor, bool bRefund, FGuid ExpectedJobId) const
 {
-	AActor* OwnerActor = GetOwner();
-	UWorld* World = GetWorld();
-	if (!OwnerActor || !OwnerActor->HasAuthority() || !World || !ItemDefinition || Count <= 0)
+	const TWeakObjectPtr<const URpgCraftingStationComponent> Station(this);
+	const TWeakObjectPtr<AActor> Requester(RequestingActor);
+	const bool bCheckAccess = RequestingActor != nullptr;
+	const FTransform InitialTransform = GetOwner() ? GetOwner()->GetActorTransform() : FTransform::Identity;
+	const float InitialRadius = StorageSearchRadius;
+	const bool bInitialAutoDeposit = bAutoDepositCraftingOutputsEnabled;
+	const bool bInitialPaused = bStationPaused;
+	const int32 InitialStateRevision = CraftingStateRevision;
+	const TWeakObjectPtr<URpgInventoryManagerComponent> InitialOutputInventory(OutputInventoryComponent);
+	const TWeakObjectPtr<ARpgBaseCampActor> InitialBase(ResolveSpatialBaseCamp());
+	const FVector InitialBaseCenter = InitialBase.IsValid() ? InitialBase->GetActorLocation() : FVector::ZeroVector;
+	const float InitialBaseRadius = InitialBase.IsValid() ? InitialBase->GetBuildRadius() : 0.0f;
+	TArray<URpgInventoryManagerComponent*> Domain;
+	if (GetOwner()) { RpgStorageAccessRules::ResolveStorageSources(GetWorld(), GetOwner()->GetActorLocation(), StorageSearchRadius, Domain); }
+	TArray<TPair<TWeakObjectPtr<URpgInventoryManagerComponent>, int32>> Inventories;
+	TArray<TPair<TWeakObjectPtr<URpgInventoryContainerComponent>, int32>> Containers;
+	for (URpgInventoryManagerComponent* Inventory : Domain)
 	{
-		return false;
+		Inventories.Emplace(Inventory, Inventory->GetInventoryRevision());
+		if (URpgInventoryContainerComponent* Container = Inventory->GetOwner()->FindComponentByClass<URpgInventoryContainerComponent>())
+		{
+			Containers.Emplace(Container, Container->GetSettingsRevision());
+		}
 	}
-
-	if (TryMergeDroppedOutput(ItemDefinition, Count))
+	return [Station, Requester, bCheckAccess, bRefund, InitialTransform, InitialRadius, bInitialAutoDeposit, bInitialPaused,
+		InitialStateRevision, InitialOutputInventory, ExpectedJobId, InitialBase, InitialBaseCenter, InitialBaseRadius, Inventories, Containers]()
 	{
+		if (!Station.IsValid() || Station->IsPersistenceRestorePending() || !IsValid(Station->GetOwner()) || Station->GetOwner()->IsActorBeingDestroyed() ||
+			!Station->GetOwner()->HasAuthority() || !Station->GetOwner()->GetActorTransform().Equals(InitialTransform) ||
+			Station->StorageSearchRadius != InitialRadius || Station->bAutoDepositCraftingOutputsEnabled != bInitialAutoDeposit ||
+			Station->CraftingStateRevision != InitialStateRevision || Station->OutputInventoryComponent != InitialOutputInventory.Get() ||
+			(ExpectedJobId.IsValid() && Station->FindJobIndex(ExpectedJobId) == INDEX_NONE) ||
+			Station->bStationPaused != bInitialPaused || (bCheckAccess && (!Requester.IsValid() || !Station->CanActorAccess(Requester.Get())))) { return false; }
+		if (bRefund) { return true; }
+		ARpgBaseCampActor* CurrentBase = Station->ResolveSpatialBaseCamp();
+		if (CurrentBase != InitialBase.Get() || (CurrentBase && (CurrentBase->GetActorLocation() != InitialBaseCenter || CurrentBase->GetBuildRadius() != InitialBaseRadius))) { return false; }
+		TArray<URpgInventoryManagerComponent*> CurrentDomain;
+		RpgStorageAccessRules::ResolveStorageSources(Station->GetWorld(), Station->GetOwner()->GetActorLocation(), InitialRadius, CurrentDomain);
+		if (CurrentDomain.Num() != Inventories.Num()) { return false; }
+		for (const auto& Pair : Inventories)
+		{
+			if (!Pair.Key.IsValid() || !CurrentDomain.Contains(Pair.Key.Get()) || Pair.Key->GetInventoryRevision() != Pair.Value) { return false; }
+		}
+		for (const auto& Pair : Containers)
+		{
+			if (!Pair.Key.IsValid() || Pair.Key->GetSettingsRevision() != Pair.Value) { return false; }
+		}
 		return true;
-	}
+	};
+}
 
-	TSubclassOf<ARpgDroppedInventoryActor> DropClass = DroppedOutputActorClass;
-	if (!DropClass)
+bool URpgCraftingStationComponent::BuildOutputPlan(const TArray<FRpgCraftingOutputItem>& OutputItems,
+	TArray<FRpgInventoryBatchOperation>& InOutOperations) const
+{
+	if (!OutputInventoryComponent || !GetOwner() || !CanAcceptCraftingOutputs(OutputItems)) { return false; }
+	for (const FRpgCraftingOutputItem& Output : OutputItems)
 	{
-		DropClass = ARpgDroppedInventoryActor::StaticClass();
+		int32 Remaining = Output.Count;
+		TArray<URpgInventoryManagerComponent*> Targets;
+		if (ShouldAutoDepositCraftingOutputs())
+		{
+			RpgStorageAccessRules::ResolveDepositTargets(GetWorld(), GetOwner()->GetActorLocation(), StorageSearchRadius, Output.ItemDefinition, Targets);
+		}
+		Targets.AddUnique(OutputInventoryComponent);
+		for (URpgInventoryManagerComponent* Target : Targets)
+		{
+			if (!Target || Remaining <= 0) { continue; }
+			FRpgInventoryBatchOperation Operation;
+			Operation.TargetInventory = Target;
+			Operation.ItemDefinition = Output.ItemDefinition;
+			Operation.ExpectedTargetRevision = Target->GetInventoryRevision();
+			int32 Low = 0, High = Remaining;
+			while (Low < High)
+			{
+				Operation.Quantity = Low + (High - Low + 1) / 2;
+				InOutOperations.Add(Operation);
+				ERpgInventoryMutationResultCode Code;
+				const bool bFits = OutputInventoryComponent->CanApplyInventoryBatch(InOutOperations, Code);
+				InOutOperations.Pop();
+				if (bFits) { Low = Operation.Quantity; } else { High = Operation.Quantity - 1; }
+			}
+			if (Low > 0) { Operation.Quantity = Low; InOutOperations.Add(Operation); Remaining -= Low; }
+		}
+		if (Remaining > 0) { return false; }
 	}
-	if (!DropClass)
-	{
-		return false;
-	}
-
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.Owner = OwnerActor;
-	SpawnParameters.Instigator = Cast<APawn>(OwnerActor);
-	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-
-	const FVector SpawnLocation = OwnerActor->GetActorLocation() + OwnerActor->GetActorForwardVector() * 80.0f + FVector(0.0f, 0.0f, 40.0f);
-	ARpgDroppedInventoryActor* DropActor = World->SpawnActor<ARpgDroppedInventoryActor>(DropClass, SpawnLocation, OwnerActor->GetActorRotation(), SpawnParameters);
-	if (!DropActor)
-	{
-		return false;
-	}
-
-	FInventoryPickup Pickup;
-	FPickupTemplate& Template = Pickup.Templates.AddDefaulted_GetRef();
-	Template.ItemDef = ItemDefinition;
-	Template.StackCount = Count;
-	DropActor->SetPickupInventory(Pickup);
 	return true;
 }
 
-bool URpgCraftingStationComponent::TryMergeDroppedOutput(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count) const
+void URpgCraftingStationComponent::RetryBlockedOutput()
 {
-	const AActor* OwnerActor = GetOwner();
-	UWorld* World = GetWorld();
-	if (!OwnerActor || !World || !ItemDefinition || Count <= 0 || OutputDropMergeRadius <= 0.0f)
+	if (bPersistenceRestorePending) return;
+	if (bMutationInProgress)
 	{
+		if (UWorld* World = GetWorld()) { World->GetTimerManager().SetTimer(OutputRetryTimerHandle, this, &ThisClass::RetryBlockedOutput, 0.5f, false); }
+		return;
+	}
+	TGuardValue<bool> MutationGuard(bMutationInProgress, true);
+	const int32 Index = FindActiveJobIndex();
+	if (!CraftingJobs.IsValidIndex(Index) || CraftingJobs[Index].State != ERpgCraftingJobState::BlockedOutput) { return; }
+	if (bStationPaused)
+	{
+		GetWorld()->GetTimerManager().SetTimer(OutputRetryTimerHandle, this, &ThisClass::RetryBlockedOutput, 0.5f, false);
+		return;
+	}
+	CraftingJobs[Index].State = ERpgCraftingJobState::Active;
+	CompleteActiveJobUnitInternal();
+}
+
+FName URpgCraftingStationComponent::GetPersistentStationId() const
+{
+	if (!PersistentStationId.IsNone()) { return PersistentStationId; }
+	if (!GetOwner()) { return NAME_None; }
+	if (const URpgInventoryContainerComponent* Container = GetOwner()->FindComponentByClass<URpgInventoryContainerComponent>())
+	{
+		if (!Container->GetPersistentContainerId().IsNone()) { return Container->GetPersistentContainerId(); }
+	}
+	return GetOwner()->GetFName();
+}
+
+FRpgCraftingStationSaveData URpgCraftingStationComponent::ExportCraftingState() const
+{
+	FRpgCraftingStationSaveData Save;
+	Save.StationId = GetPersistentStationId();
+	Save.bPaused = bStationPaused;
+	Save.bAutoDepositOutputs = bAutoDepositCraftingOutputsEnabled;
+	if (OutputInventoryComponent)
+	{
+		Save.OutputGridSize = OutputInventoryComponent->GetDefaultGridSize();
+		Save.OutputInventoryGraph = OutputInventoryComponent->ExportInventoryGraph();
+	}
+	for (const FRpgCraftingJobEntry& Job : CraftingJobs)
+	{
+		FRpgCraftingJobSaveData& SavedJob = Save.Jobs.AddDefaulted_GetRef();
+		SavedJob.JobId = Job.JobId;
+		SavedJob.Recipe = Job.Recipe;
+		SavedJob.QuantityTotal = Job.QuantityTotal;
+		SavedJob.QuantityCompleted = Job.QuantityCompleted;
+		SavedJob.State = static_cast<uint8>(Job.State);
+		SavedJob.RemainingTime = Job.State == ERpgCraftingJobState::Active
+			? FMath::Max(0.0f, Job.FinishServerTime - GetServerWorldTimeSeconds()) : Job.PausedRemainingTime;
+		for (const FRpgCraftingRefundEntry& Refund : Job.RefundEntries)
+		{
+			FRpgCraftingRefundSaveData& SavedRefund = SavedJob.Refunds.AddDefaulted_GetRef();
+			SavedRefund.ItemDefinition = Refund.ItemDefinition;
+			SavedRefund.Count = Refund.Count;
+			SavedRefund.InventoryId = Refund.InventoryId;
+		}
+	}
+	return Save;
+}
+
+bool URpgCraftingStationComponent::RestoreCraftingState(const FRpgCraftingStationSaveData& Save)
+{
+	if (bMutationInProgress) { return false; }
+	TGuardValue<bool> MutationGuard(bMutationInProgress, true);
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !OutputInventoryComponent || Save.StationId != GetPersistentStationId() ||
+		!Save.OutputGridSize.IsValid()) { return false; }
+	TArray<FRpgCraftingJobEntry> Restored;
+	TSet<FGuid> JobIds;
+	int32 RunningCount = 0;
+	for (const FRpgCraftingJobSaveData& SavedJob : Save.Jobs)
+	{
+		if (!SavedJob.JobId.IsValid() || JobIds.Contains(SavedJob.JobId) || SavedJob.QuantityTotal <= 0 || SavedJob.QuantityCompleted < 0 ||
+			SavedJob.QuantityCompleted >= SavedJob.QuantityTotal || SavedJob.State > static_cast<uint8>(ERpgCraftingJobState::BlockedOutput) ||
+			!FMath::IsFinite(SavedJob.RemainingTime) || SavedJob.RemainingTime < 0.0f) { return false; }
+		URpgCraftingRecipeDefinition* Recipe = SavedJob.Recipe.LoadSynchronous();
+		if (!Recipe || !CanAcceptCraftingOutputs(Recipe->OutputItems)) { return false; }
+		JobIds.Add(SavedJob.JobId);
+		FRpgCraftingJobEntry& Job = Restored.AddDefaulted_GetRef();
+		Job.JobId = SavedJob.JobId;
+		Job.Recipe = Recipe;
+		Job.QuantityTotal = SavedJob.QuantityTotal;
+		Job.QuantityCompleted = SavedJob.QuantityCompleted;
+		Job.State = static_cast<ERpgCraftingJobState>(SavedJob.State);
+		Job.PausedRemainingTime = SavedJob.RemainingTime;
+		if (Job.State != ERpgCraftingJobState::Queued && ++RunningCount > 1) { return false; }
+		if (Job.State == ERpgCraftingJobState::Active) { Job.State = ERpgCraftingJobState::Paused; }
+		for (const FRpgCraftingRefundSaveData& SavedRefund : SavedJob.Refunds)
+		{
+			TSubclassOf<URpgInventoryItemDefinition> Definition = SavedRefund.ItemDefinition.LoadSynchronous();
+			if (!Definition || SavedRefund.Count <= 0 || !URpgInventoryFragment_StorageProfile::IsDefinitionIntrinsicallyCollapsible(Definition)) { return false; }
+			FRpgCraftingRefundEntry& Refund = Job.RefundEntries.AddDefaulted_GetRef();
+			Refund.ItemDefinition = Definition;
+			Refund.Count = SavedRefund.Count;
+			Refund.InventoryId = SavedRefund.InventoryId;
+			Refund.Inventory = RpgStorageAccessRules::FindPersistentInventory(GetWorld(), Refund.InventoryId);
+		}
+		// Credits must cover precisely the unfinished units. Corrupt snapshots cannot mint refunds.
+		TArray<FRpgCraftingResourceCost> Costs;
+		if (!TryBuildAggregatedResourceCosts(Recipe->RequiredResources, Costs)) { return false; }
+		TMap<UClass*, int64> Credits;
+		for (const FRpgCraftingRefundEntry& Refund : Job.RefundEntries) { Credits.FindOrAdd(Refund.ItemDefinition.Get()) += Refund.Count; }
+		for (const FRpgCraftingResourceCost& Cost : Costs)
+		{
+			const int64 Required = static_cast<int64>(Cost.Count) * (Job.QuantityTotal - Job.QuantityCompleted);
+			const int64* Credit = Credits.Find(Cost.ItemDefinition.Get());
+			if (!Credit || *Credit != Required) { return false; }
+			Credits.Remove(Cost.ItemDefinition.Get());
+		}
+		if (!Credits.IsEmpty()) { return false; }
+	}
+	FRpgInventoryMutationResult RestoreResult;
+	// Validate the saved root bounds before resizing or publishing any part of the live tray.
+	if (!OutputInventoryComponent->ValidateInventoryGraphForRestore(Save.OutputInventoryGraph, RestoreResult, &Save.OutputGridSize)) { return false; }
+	const FRpgInventoryGridSize PreviousGrid = OutputInventoryComponent->GetDefaultGridSize();
+	if (!OutputInventoryComponent->ExpandDefaultGridToMinimum(Save.OutputGridSize)) { return false; }
+	if (!OutputInventoryComponent->RestoreInventoryGraph(Save.OutputInventoryGraph, RestoreResult))
+	{
+		OutputInventoryComponent->SetDefaultGridSize(PreviousGrid);
 		return false;
 	}
+	if (!OutputInventoryComponent->SetDefaultGridSize(Save.OutputGridSize)) { return false; }
+	GetWorld()->GetTimerManager().ClearTimer(CraftingTimerHandle);
+	GetWorld()->GetTimerManager().ClearTimer(OutputRetryTimerHandle);
+	CraftingJobs = MoveTemp(Restored);
+	bStationPaused = Save.bPaused;
+	bAutoDepositCraftingOutputsEnabled = Save.bAutoDepositOutputs;
+	MarkCraftingStateDirty();
+	return true;
+}
 
-	const float MergeRadiusSq = FMath::Square(OutputDropMergeRadius);
-	const FVector Origin = OwnerActor->GetActorLocation();
-	for (TActorIterator<ARpgDroppedInventoryActor> It(World); It; ++It)
+void URpgCraftingStationComponent::ResumeRestoredCrafting()
+{
+	if (bPersistenceRestorePending || bMutationInProgress) { return; }
+	TGuardValue<bool> MutationGuard(bMutationInProgress, true);
+	if (!GetOwner() || !GetOwner()->HasAuthority()) { return; }
+	const int32 Index = FindActiveJobIndex();
+	if (CraftingJobs.IsValidIndex(Index))
 	{
-		ARpgDroppedInventoryActor* DropActor = *It;
-		if (!DropActor || DropActor->IsPendingKillPending())
+		if (CraftingJobs[Index].State == ERpgCraftingJobState::BlockedOutput)
 		{
-			continue;
+			GetWorld()->GetTimerManager().SetTimer(OutputRetryTimerHandle, this, &ThisClass::RetryBlockedOutput, 0.5f, false);
 		}
-
-		if (FVector::DistSquared(Origin, DropActor->GetActorLocation()) > MergeRadiusSq)
-		{
-			continue;
-		}
-
-		if (DropActor->CanMergePickupTemplate(ItemDefinition) && DropActor->MergePickupTemplate(ItemDefinition, Count))
-		{
-			return true;
-		}
+		else if (!bStationPaused) { StartJobAtIndex(Index, CraftingJobs[Index].PausedRemainingTime); }
 	}
-
-	return false;
+	else if (!bStationPaused) { TryStartNextQueuedJob(); }
 }
 
 void URpgCraftingStationComponent::MarkCraftingStateDirty(FGuid ChangedJobId, ERpgCraftingJobState ChangedState, bool bPauseStateChanged)
 {
+	if (GetOwner() && GetOwner()->HasAuthority()) { ++CraftingStateRevision; }
 	UWorld* World = GetWorld();
 	if (!World || !World->IsGameWorld() || !IsRegistered() || HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject))
 	{
@@ -1672,8 +1275,8 @@ void URpgCraftingStationComponent::MarkCraftingStateDirty(FGuid ChangedJobId, ER
 	{
 		if (OwnerActor->HasAuthority())
 		{
-			++CraftingStateRevision;
 			OwnerActor->ForceNetUpdate();
+			if (ARpgGameModeBase* GameMode = World->GetAuthGameMode<ARpgGameModeBase>()) { GameMode->MarkCraftingSaveDirty(this); }
 		}
 	}
 

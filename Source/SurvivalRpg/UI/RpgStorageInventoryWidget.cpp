@@ -1,6 +1,10 @@
 #include "RpgStorageInventoryWidget.h"
 
 #include "Components/TextBlock.h"
+#include "GameFramework/PlayerController.h"
+#include "SurvivalRpg/Inventory/RpgInventoryContainerComponent.h"
+#include "SurvivalRpg/Inventory/RpgInventoryUiActionComponent.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgPhysicalStorageViewModel.h"
 #include "SurvivalRpg/Inventory/RpgInventoryDragDropCoordinator.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryPanelViewModel.h"
@@ -24,6 +28,7 @@ URpgStorageInventoryWidget::GetStoragePlayerInventoryViewModel() const
 void URpgStorageInventoryWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
+	if (!PhysicalStorageViewModel) { PhysicalStorageViewModel = NewObject<URpgPhysicalStorageViewModel>(this); }
 	RefreshStorageTransferPresentation();
 
 	if (PlayerInventoryPane)
@@ -48,6 +53,7 @@ void URpgStorageInventoryWidget::NativeConstruct()
 
 void URpgStorageInventoryWidget::NativeDestruct()
 {
+	UnbindPhysicalStoragePresentation();
 	if (PlayerInventoryPane)
 	{
 		PlayerInventoryPane->OnNavigationPanelsChanged.RemoveAll(this);
@@ -202,6 +208,7 @@ bool URpgStorageInventoryWidget::BindStorageScreenContext()
 
 	// Set the guard before view-model callbacks can run so an incidental reentrant payload delivery cannot double-bind.
 	bStorageContextBound = true;
+	BindPhysicalStoragePresentation();
 
 	// Establish the storage root before binding the reusable player pane. Pane binding can synchronously register
 	// dynamic content panels; registering Secondary.Root first preserves the screen's canonical initial source.
@@ -430,6 +437,7 @@ void URpgStorageInventoryWidget::BindSecondarySpatialGrid()
 
 void URpgStorageInventoryWidget::ResetStorageScreenContext()
 {
+	UnbindPhysicalStoragePresentation();
 	bStorageContextBound = false;
 
 	if (URpgInventoryDragDropCoordinator* Coordinator = GetScreenDragDropCoordinator())
@@ -507,4 +515,114 @@ void URpgStorageInventoryWidget::HandlePlayerInventoryPaneNavigationPanelsChange
 	{
 		QueueDeferredInventoryScreenRefresh();
 	}
+}
+
+void URpgStorageInventoryWidget::BindPhysicalStoragePresentation()
+{
+	UnbindPhysicalStoragePresentation();
+	if (!PhysicalStorageViewModel) { PhysicalStorageViewModel = NewObject<URpgPhysicalStorageViewModel>(this); }
+	AActor* StorageOwner = SecondaryInventory ? SecondaryInventory->GetOwner() : nullptr;
+	URpgInventoryContainerComponent* Container = StorageOwner ? StorageOwner->FindComponentByClass<URpgInventoryContainerComponent>() : nullptr;
+	PhysicalStorageViewModel->BindContainer(Container);
+	if (APlayerController* Player = GetOwningPlayer())
+	{
+		PhysicalStorageActions = Player->FindComponentByClass<URpgInventoryUiActionComponent>();
+		if (PhysicalStorageActions.IsValid())
+		{
+			PhysicalStorageActions->OnPhysicalStorageCommandCompleted.AddUniqueDynamic(this, &ThisClass::HandlePhysicalStorageCommandCompleted);
+		}
+	}
+}
+
+void URpgStorageInventoryWidget::UnbindPhysicalStoragePresentation()
+{
+	if (PhysicalStorageActions.IsValid())
+	{
+		PhysicalStorageActions->OnPhysicalStorageCommandCompleted.RemoveDynamic(this, &ThisClass::HandlePhysicalStorageCommandCompleted);
+	}
+	PhysicalStorageActions.Reset();
+	PendingPhysicalStorageRequestId.Invalidate();
+	if (PhysicalStorageViewModel) { PhysicalStorageViewModel->UnbindContainer(); }
+}
+
+bool URpgStorageInventoryWidget::SubmitPhysicalStorageCommand(FRpgPhysicalStorageRequest Request)
+{
+	if (!bStorageContextBound || !PhysicalStorageViewModel || !PhysicalStorageViewModel->IsPhysicalStorage() ||
+		PhysicalStorageViewModel->IsCommandPending() || !PhysicalStorageActions.IsValid()) { return false; }
+	Request.RequestId = FGuid::NewGuid();
+	Request.ContainerId = PhysicalStorageViewModel->GetContainerId();
+	Request.ExpectedSettingsRevision = PhysicalStorageViewModel->GetSettingsRevision();
+	PendingPhysicalStorageRequestId = Request.RequestId;
+	PhysicalStorageViewModel->SetCommandPending(true);
+	PhysicalStorageViewModel->SetCommandResult(false, FText::GetEmpty());
+	PhysicalStorageActions->RequestPhysicalStorageCommand(Request);
+	return true;
+}
+
+bool URpgStorageInventoryWidget::ReplaceAssignmentSlot(int32 SlotIndex, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, FGameplayTag Category)
+{
+	if (!PhysicalStorageViewModel || (ItemDefinition != nullptr) == Category.IsValid()) { return false; }
+	FRpgPhysicalStorageRequest Request;
+	Request.Command = ERpgPhysicalStorageCommand::SetAssignments;
+	Request.Assignments = PhysicalStorageViewModel->GetAssignments();
+	if (!Request.Assignments.IsValidIndex(SlotIndex)) { return false; }
+	FRpgStorageAssignment& Rule = Request.Assignments[SlotIndex];
+	Rule.ItemDefinition = ItemDefinition;
+	Rule.Category = Category;
+	Rule.AssignmentOrder = 0;
+	return SubmitPhysicalStorageCommand(MoveTemp(Request));
+}
+
+bool URpgStorageInventoryWidget::AddAssignmentSlot(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, FGameplayTag Category)
+{
+	if (!PhysicalStorageViewModel || (ItemDefinition != nullptr) == Category.IsValid()) { return false; }
+	FRpgPhysicalStorageRequest Request;
+	Request.Command = ERpgPhysicalStorageCommand::SetAssignments;
+	Request.Assignments = PhysicalStorageViewModel->GetAssignments();
+	FRpgStorageAssignment& Rule = Request.Assignments.AddDefaulted_GetRef();
+	Rule.ItemDefinition = ItemDefinition;
+	Rule.Category = Category;
+	return SubmitPhysicalStorageCommand(MoveTemp(Request));
+}
+
+bool URpgStorageInventoryWidget::RemoveAssignmentSlot(int32 SlotIndex)
+{
+	if (!PhysicalStorageViewModel) { return false; }
+	FRpgPhysicalStorageRequest Request;
+	Request.Command = ERpgPhysicalStorageCommand::SetAssignments;
+	Request.Assignments = PhysicalStorageViewModel->GetAssignments();
+	if (!Request.Assignments.IsValidIndex(SlotIndex)) { return false; }
+	Request.Assignments.RemoveAt(SlotIndex);
+	return SubmitPhysicalStorageCommand(MoveTemp(Request));
+}
+
+bool URpgStorageInventoryWidget::DepositMaterials()
+{
+	FRpgPhysicalStorageRequest Request;
+	Request.Command = ERpgPhysicalStorageCommand::DepositMaterials;
+	return SubmitPhysicalStorageCommand(MoveTemp(Request));
+}
+
+bool URpgStorageInventoryWidget::UpgradeStorage()
+{
+	FRpgPhysicalStorageRequest Request;
+	Request.Command = ERpgPhysicalStorageCommand::Upgrade;
+	return SubmitPhysicalStorageCommand(MoveTemp(Request));
+}
+
+bool URpgStorageInventoryWidget::RelocateStorage(FTransform ProposedTransform)
+{
+	FRpgPhysicalStorageRequest Request;
+	Request.Command = ERpgPhysicalStorageCommand::Relocate;
+	Request.Transform = ProposedTransform;
+	return SubmitPhysicalStorageCommand(MoveTemp(Request));
+}
+
+void URpgStorageInventoryWidget::HandlePhysicalStorageCommandCompleted(FGuid RequestId, bool bSucceeded, FText Message)
+{
+	if (!PhysicalStorageViewModel || !PendingPhysicalStorageRequestId.IsValid() || RequestId != PendingPhysicalStorageRequestId) { return; }
+	PendingPhysicalStorageRequestId.Invalidate();
+	PhysicalStorageViewModel->SetCommandPending(false);
+	PhysicalStorageViewModel->SetCommandResult(bSucceeded, Message);
+	PhysicalStorageViewModel->Refresh();
 }

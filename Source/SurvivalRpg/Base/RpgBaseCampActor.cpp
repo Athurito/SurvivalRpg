@@ -7,6 +7,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Net/UnrealNetwork.h"
 #include "RpgBaseBuildableDefinition.h"
+#include "RpgStorageAccessRules.h"
 #include "RpgBaseStorageComponent.h"
 #include "RpgBaseStorageDomainAnchorComponent.h"
 #include "RpgBaseStorageStationComponent.h"
@@ -15,6 +16,7 @@
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
+#include "SurvivalRpg/Inventory/RpgInventoryContainerComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 
 #if WITH_EDITOR
@@ -62,7 +64,7 @@ ARpgBaseCampActor::ARpgBaseCampActor(const FObjectInitializer& ObjectInitializer
 	: Super(ObjectInitializer)
 {
 	bReplicates = true;
-	SetReplicatingMovement(false);
+	SetReplicatingMovement(true);
 
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	SetRootComponent(SceneRoot);
@@ -125,6 +127,74 @@ void ARpgBaseCampActor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(ThisClass, BaseId);
+	DOREPLIFETIME(ThisClass, BuildRadius);
+}
+
+bool ARpgBaseCampActor::ContainsLocation(FVector Location) const
+{
+	return RpgStorageAccessRules::ResolveBaseAtLocation(GetWorld(), Location) == this;
+}
+
+bool ARpgBaseCampActor::RestoreBaseAreaForWorldLoad(const FRpgBaseStorageSaveData& SaveData)
+{
+	if (!HasAuthority() || SaveData.BaseId != BaseId || SaveData.AreaCenter.ContainsNaN() ||
+		!FMath::IsFinite(SaveData.AreaRadius) || SaveData.AreaRadius <= 0.0f || SaveData.StorageAssignmentHighWaterMark < 0)
+	{
+		return false;
+	}
+	SetActorLocation(SaveData.AreaCenter);
+	BuildRadius = SaveData.AreaRadius;
+	StorageAssignmentHighWaterMark = SaveData.StorageAssignmentHighWaterMark;
+	ForceNetUpdate();
+	return true;
+}
+
+bool ARpgBaseCampActor::SetBaseArea(FVector Center, float Radius)
+{
+	if (!HasAuthority() || !RpgStorageAccessRules::CanPlaceBaseArea(GetWorld(), Center, Radius, this))
+	{
+		return false;
+	}
+	SetActorLocation(Center);
+	BuildRadius = Radius;
+	ForceNetUpdate();
+	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+	{
+		if (URpgInventoryContainerComponent* Container = It->FindComponentByClass<URpgInventoryContainerComponent>();
+			Container && Container->AllowsCraftingAccess())
+		{
+			const ARpgBaseCampActor* SpatialBase = RpgStorageAccessRules::ResolveBaseAtLocation(GetWorld(), It->GetActorLocation());
+			Container->SetResolvedBaseId(SpatialBase ? SpatialBase->GetBaseId() : NAME_None);
+		}
+	}
+	if (BaseStorageComponent)
+	{
+		BaseStorageComponent->RefreshPhysicalStorageRegistry();
+		BaseStorageComponent->NotifyExternalStorageStateMutation();
+	}
+	if (ARpgGameModeBase* GameMode = GetWorld()->GetAuthGameMode<ARpgGameModeBase>())
+	{
+		GameMode->MarkBaseStorageSaveDirty(this);
+	}
+	return true;
+}
+
+int64 ARpgBaseCampActor::AllocateStorageAssignmentOrder()
+{
+	if (!HasAuthority())
+	{
+		return 0;
+	}
+	const int64 Order = RpgStorageAccessRules::AllocateAssignmentOrder(GetWorld());
+	if (Order > 0)
+	{
+		StorageAssignmentHighWaterMark = Order;
+		if (ARpgGameModeBase* GameMode = GetWorld()->GetAuthGameMode<ARpgGameModeBase>())
+		{
+			GameMode->MarkBaseStorageSaveDirty(this);
+		}
+	}
+	return Order;
 }
 
 #if WITH_EDITOR
@@ -140,6 +210,12 @@ EDataValidationResult ARpgBaseCampActor::IsDataValid(
 			Context.AddError(Message);
 			Result = EDataValidationResult::Invalid;
 		};
+	if (!FMath::IsFinite(BuildRadius) || BuildRadius <= 0.0f ||
+		(GetWorld() && !HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject) &&
+		 !RpgStorageAccessRules::CanPlaceBaseArea(GetWorld(), GetActorLocation(), BuildRadius, this)))
+	{
+		AddError(NSLOCTEXT("RpgBase", "InvalidBaseArea", "Base radius must be positive and its horizontal area must not touch or overlap another base."));
+	}
 
 	struct FRequiredAnchorDomain
 	{
@@ -431,6 +507,9 @@ bool ARpgBaseCampActor::ExportBaseStorageSaveData(
 
 	OutSaveData = FRpgBaseStorageSaveData();
 	OutSaveData.BaseId = BaseId;
+	OutSaveData.AreaCenter = GetActorLocation();
+	OutSaveData.AreaRadius = BuildRadius;
+	OutSaveData.StorageAssignmentHighWaterMark = StorageAssignmentHighWaterMark;
 	OutSaveData.OwnerProfileKey = OwnerProfileKey;
 	BaseStorageComponent->ExportStorageState(OutSaveData);
 	OutSaveData.ContainmentStates.Reset();
@@ -499,7 +578,8 @@ bool ARpgBaseCampActor::RestoreBaseStorageSaveData(
 	}
 	if (!HasAuthority() || SaveData.BaseId != BaseId ||
 		!BaseStorageComponent || !ArmoryInventoryComponent ||
-		!ContainmentInventoryComponent)
+		!ContainmentInventoryComponent || SaveData.StorageAssignmentHighWaterMark < 0 ||
+		!RpgStorageAccessRules::CanPlaceBaseArea(GetWorld(), SaveData.AreaCenter, SaveData.AreaRadius, this))
 	{
 		OutError = TEXT("Base restore target or authority is invalid.");
 		return false;
@@ -696,6 +776,7 @@ bool ARpgBaseCampActor::RestoreBaseStorageSaveData(
 	}
 
 	OwnerProfileKey = SaveData.OwnerProfileKey;
+	RestoreBaseAreaForWorldLoad(SaveData);
 	ContainmentStates.Reset();
 	PendingPersonalLockerGraphs = SaveData.PersonalLockerGraphs;
 	ArmoryInventoryComponent->SetFixedMaxEntries(
@@ -811,10 +892,9 @@ bool ARpgBaseCampActor::CanPlaceBuildableAtTransform(const URpgBaseBuildableDefi
 	}
 
 	const float EffectiveBaseRadius = BuildableDefinition->MaxPlacementDistanceFromBase > 0.0f
-		? BuildableDefinition->MaxPlacementDistanceFromBase
-		: BuildRadius;
-	if (EffectiveBaseRadius > 0.0f &&
-		FVector::DistSquared(GetActorLocation(), BuildTransform.GetLocation()) > FMath::Square(EffectiveBaseRadius))
+		? FMath::Min(BuildableDefinition->MaxPlacementDistanceFromBase, BuildRadius) : BuildRadius;
+	if (!ContainsLocation(BuildTransform.GetLocation()) ||
+		!RpgStorageAccessRules::IsInsideBaseArea(GetActorLocation(), EffectiveBaseRadius, BuildTransform.GetLocation()))
 	{
 		return false;
 	}

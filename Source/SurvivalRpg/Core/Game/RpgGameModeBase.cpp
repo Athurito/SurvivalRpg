@@ -20,6 +20,9 @@
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Base/RpgBaseCampActor.h"
 #include "SurvivalRpg/Base/RpgBaseStorageComponent.h"
+#include "SurvivalRpg/Base/RpgStorageAccessRules.h"
+#include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
+#include "SurvivalRpg/Inventory/RpgInventoryContainerActor.h"
 #include "SurvivalRpg/Base/RpgPersonalStorageLockerActor.h"
 #include "SurvivalRpg/Base/RpgWorldStorageKnowledgeComponent.h"
 #include "SurvivalRpg/Core/AI/RpgAIController.h"
@@ -49,6 +52,26 @@
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerState.h"
 #include "TimerManager.h"
+
+namespace
+{
+	bool CapturePhysicalContainer(URpgInventoryContainerComponent* Container, FRpgWorldContainerSaveData& OutSaveData)
+	{
+		URpgInventoryManagerComponent* Inventory = Container ? Container->GetInventoryManager() : nullptr;
+		if (!Container || Container->IsConstructionPending() || !Inventory || !Container->GetOwner() || Container->GetPersistentContainerId().IsNone())
+		{
+			return false;
+		}
+		OutSaveData.PersistentContainerId = Container->GetPersistentContainerId();
+		OutSaveData.ActorClass = Container->GetOwner()->GetClass();
+		OutSaveData.ActorTransform = Container->GetOwner()->GetActorTransform();
+		OutSaveData.Metadata = Container->ExportPhysicalStorageMetadata();
+		const ARpgBaseCampActor* Base = RpgStorageAccessRules::ResolveBaseAtLocation(Container->GetWorld(), OutSaveData.ActorTransform.GetLocation());
+		OutSaveData.Metadata.BaseId = Base ? Base->GetBaseId() : NAME_None;
+		OutSaveData.InventoryGraph = Inventory->ExportInventoryGraph();
+		return OutSaveData.InventoryGraph.Items.Num() == Inventory->GetAllEntries().Num();
+	}
+}
 
 namespace RpgPlayerSpawning
 {
@@ -905,23 +928,156 @@ void ARpgGameModeBase::MarkWorldContainerSaveDirty(
 	FName PersistentContainerId,
 	URpgInventoryManagerComponent* Inventory)
 {
-	if (!HasAuthority() || PersistentContainerId.IsNone() || !Inventory)
+	if (!HasAuthority() || bIsRestoringSaveState || PersistentContainerId.IsNone() || !Inventory)
 	{
 		return;
 	}
 
-	FRpgWorldContainerSaveData& SaveData = WorldContainerSaveDataMap.FindOrAdd(PersistentContainerId);
-	const FRpgInventoryGraphSaveData ExportedGraph = Inventory->ExportInventoryGraph();
-	if (ExportedGraph.Items.Num() != Inventory->GetAllEntries().Num())
+	URpgInventoryContainerComponent* Container = Inventory->GetOwner()
+		? Inventory->GetOwner()->FindComponentByClass<URpgInventoryContainerComponent>() : nullptr;
+	if (Container && Container->IsConstructionPending()) return;
+	FRpgWorldContainerSaveData SaveData;
+	if (!CapturePhysicalContainer(Container, SaveData))
 	{
 		bDiskWritesBlockedByRestoreFailure = true;
 		UE_LOG(LogRpg, Error, TEXT("RpgGameMode: World-container graph export failed for [%s]; disk writes are blocked."),
 			*PersistentContainerId.ToString());
 		return;
 	}
-	SaveData.PersistentContainerId = PersistentContainerId;
-	SaveData.InventoryGraph = ExportedGraph;
+	WorldContainerSaveDataMap.Add(PersistentContainerId, MoveTemp(SaveData));
 	MarkWorldSaveDirty();
+}
+
+void ARpgGameModeBase::RegisterPersistentWorldContainer(URpgInventoryContainerComponent* Container)
+{
+	if (!HasAuthority() || bIsRestoringSaveState || !IsValid(Container) || !IsValid(Container->GetOwner()) ||
+		Container->GetOwner()->IsActorBeingDestroyed() || Container->IsConstructionPending() || RegisteredWorldContainers.Contains(Container)) return;
+	// Suppress save notifications from identity/base initialization and any authored actor BeginPlay seeding.
+	Container->SetConstructionPending(true);
+	Container->EnsurePersistentContainerId();
+	const FName Id = Container->GetPersistentContainerId();
+	const ARpgBaseCampActor* Base = RpgStorageAccessRules::ResolveBaseAtLocation(GetWorld(), Container->GetOwner()->GetActorLocation());
+	Container->SetResolvedBaseId(Base ? Base->GetBaseId() : NAME_None);
+	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+	{
+		const URpgInventoryContainerComponent* Other = It->FindComponentByClass<URpgInventoryContainerComponent>();
+		if (!It->IsActorBeingDestroyed() && Other && Other != Container && Other->GetPersistentContainerId() == Id)
+		{
+			bDiskWritesBlockedByRestoreFailure = true;
+			UE_LOG(LogRpg, Error, TEXT("Duplicate returning container [%s]; refusing to duplicate its saved items."), *Id.ToString());
+			return;
+		}
+	}
+	RegisteredWorldContainers.Add(Container);
+	if (bWorldSaveCandidateSelectionComplete && WorldContainerSaveDataMap.Contains(Id))
+	{
+		const TWeakObjectPtr<URpgInventoryContainerComponent> Returning(Container);
+		GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this, Returning, Id]()
+		{
+			URpgInventoryContainerComponent* Current = Returning.Get();
+			if (!Current || !IsValid(Current->GetOwner()) || Current->GetOwner()->IsActorBeingDestroyed() ||
+				!RegisteredWorldContainers.Contains(Current) || !Current->IsConstructionPending()) return;
+			// The owning Blueprint has finished synchronous BeginPlay grants. Replace that entire graph with saved state.
+			if (Current->GetPersistentContainerId() != Id || !RestoreWorldContainer(Id, Current->GetInventoryManager()))
+			{
+				bDiskWritesBlockedByRestoreFailure = true;
+				UE_LOG(LogRpg, Error, TEXT("Returning container [%s] could not restore its physical snapshot; disk writes are blocked."), *Id.ToString());
+				return;
+			}
+			Current->SetConstructionPending(false);
+			MarkWorldContainerSaveDirty(Id, Current->GetInventoryManager());
+		}));
+		return;
+	}
+	Container->SetConstructionPending(false);
+	MarkWorldContainerSaveDirty(Id, Container->GetInventoryManager());
+}
+
+void ARpgGameModeBase::UnregisterPersistentWorldContainer(URpgInventoryContainerComponent* Container)
+{
+	if (!Container) return;
+	// Pending construction/reentry must never replace a committed snapshot with temporary seed/default contents.
+	MarkWorldContainerSaveDirty(Container->GetPersistentContainerId(), Container->GetInventoryManager());
+	RegisteredWorldContainers.Remove(Container);
+}
+
+void ARpgGameModeBase::MarkCraftingSaveDirty(URpgCraftingStationComponent* Station)
+{
+	if (!HasAuthority() || bIsRestoringSaveState || bDiskWritesBlockedByRestoreFailure || !Station ||
+		Station->IsPersistenceRestorePending() || Station->GetPersistentStationId().IsNone())
+	{
+		return;
+	}
+	FRpgCraftingStationSaveData Saved = Station->ExportCraftingState();
+	if (!Station->GetOutputInventory() || Saved.OutputInventoryGraph.Items.Num() != Station->GetOutputInventory()->GetAllEntries().Num())
+	{
+		bDiskWritesBlockedByRestoreFailure = true;
+		UE_LOG(LogRpg, Error, TEXT("Crafting tray export was incomplete; refusing disk writes."));
+		return;
+	}
+	CraftingStationSaveDataMap.Add(Station->GetPersistentStationId(), MoveTemp(Saved));
+	MarkWorldSaveDirty();
+}
+
+void ARpgGameModeBase::RegisterPersistentCraftingStation(URpgCraftingStationComponent* Station)
+{
+	if (!HasAuthority() || bIsRestoringSaveState || !bWorldSaveCandidateSelectionComplete ||
+		!IsValid(Station) || !IsValid(Station->GetOwner()) || Station->GetOwner()->IsActorBeingDestroyed() ||
+		RegisteredCraftingStations.Contains(Station))
+	{
+		return;
+	}
+	const FName Id = Station->GetPersistentStationId();
+	if (Id.IsNone()) return;
+	Station->SetPersistenceRestorePending(true);
+	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+	{
+		const URpgCraftingStationComponent* Other = It->FindComponentByClass<URpgCraftingStationComponent>();
+		if (!It->IsActorBeingDestroyed() && Other && Other != Station && Other->GetPersistentStationId() == Id)
+		{
+			bDiskWritesBlockedByRestoreFailure = true;
+			UE_LOG(LogRpg, Error, TEXT("Duplicate returning crafting station [%s]; refusing to duplicate its saved tray or claims."), *Id.ToString());
+			return;
+		}
+	}
+	RegisteredCraftingStations.Add(Station);
+	if (CraftingStationSaveDataMap.Contains(Id))
+	{
+		const TWeakObjectPtr<URpgCraftingStationComponent> WeakStation(Station);
+		GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this, WeakStation, Id]()
+		{
+			URpgCraftingStationComponent* Returning = WeakStation.Get();
+			if (!Returning || !IsValid(Returning->GetOwner()) || Returning->GetOwner()->IsActorBeingDestroyed() ||
+				!RegisteredCraftingStations.Contains(Returning) || !Returning->IsPersistenceRestorePending()) return;
+			// Owner Blueprint BeginPlay grants have finished. Replace the whole provisional tray and queue together.
+			bool bRestored = false;
+			{
+				TGuardValue<bool> RestoreGuard(bIsRestoringSaveState, true);
+				const FRpgCraftingStationSaveData* Saved = CraftingStationSaveDataMap.Find(Id);
+				bRestored = Saved && Returning->GetPersistentStationId() == Id && Returning->RestoreCraftingState(*Saved);
+			}
+			if (!bRestored)
+			{
+				bDiskWritesBlockedByRestoreFailure = true;
+				UE_LOG(LogRpg, Error, TEXT("Returning crafting station [%s] could not restore its saved tray and claims; disk writes are blocked."), *Id.ToString());
+				return;
+			}
+			Returning->SetPersistenceRestorePending(false);
+			Returning->ResumeRestoredCrafting();
+			MarkCraftingSaveDirty(Returning);
+		}));
+		return;
+	}
+	Station->SetPersistenceRestorePending(false);
+	Station->ResumeRestoredCrafting();
+	MarkCraftingSaveDirty(Station);
+}
+
+void ARpgGameModeBase::UnregisterPersistentCraftingStation(URpgCraftingStationComponent* Station)
+{
+	// EndPlay still owns a complete inventory graph. Keep this last state even when no live actor is captured next time.
+	MarkCraftingSaveDirty(Station);
+	RegisteredCraftingStations.Remove(Station);
 }
 
 void ARpgGameModeBase::MarkBaseStorageSaveDirty(
@@ -1230,29 +1386,89 @@ void ARpgGameModeBase::CaptureConnectedPlayers()
 
 void ARpgGameModeBase::CaptureWorldContainers()
 {
+	TMap<FName, FRpgWorldContainerSaveData> CapturedContainers = WorldContainerSaveDataMap;
+	TSet<FName> SeenIds;
 	for (TActorIterator<AActor> Iterator(GetWorld()); Iterator; ++Iterator)
 	{
 		AActor* Actor = *Iterator;
 		URpgInventoryContainerComponent* Container = Actor ? Actor->FindComponentByClass<URpgInventoryContainerComponent>() : nullptr;
 		const FName PersistentId = Container ? Container->GetPersistentContainerId() : NAME_None;
 		URpgInventoryManagerComponent* Inventory = Container ? Container->GetInventoryManager() : nullptr;
-		if (PersistentId.IsNone() || !Inventory)
+		if (PersistentId.IsNone() || !Inventory || Container->IsConstructionPending())
 		{
 			continue;
 		}
 
-		FRpgWorldContainerSaveData& SaveData = WorldContainerSaveDataMap.FindOrAdd(PersistentId);
-		const FRpgInventoryGraphSaveData ExportedGraph = Inventory->ExportInventoryGraph();
-		if (ExportedGraph.Items.Num() != Inventory->GetAllEntries().Num())
+		if (SeenIds.Contains(PersistentId))
+		{
+			bDiskWritesBlockedByRestoreFailure = true;
+			UE_LOG(LogRpg, Error, TEXT("Duplicate persistent container id [%s]; refusing save."), *PersistentId.ToString());
+			return;
+		}
+		SeenIds.Add(PersistentId);
+		FRpgWorldContainerSaveData& SaveData = CapturedContainers.Add(PersistentId);
+		if (!CapturePhysicalContainer(Container, SaveData))
 		{
 			bDiskWritesBlockedByRestoreFailure = true;
 			UE_LOG(LogRpg, Error, TEXT("RpgGameMode: Graph export failed for world container [%s]; disk writes are blocked."),
 				*PersistentId.ToString());
 			return;
 		}
-		SaveData.PersistentContainerId = PersistentId;
-		SaveData.InventoryGraph = ExportedGraph;
+		RegisteredWorldContainers.Add(Container);
 	}
+	WorldContainerSaveDataMap = MoveTemp(CapturedContainers);
+}
+
+void ARpgGameModeBase::CaptureCraftingStations()
+{
+	// Unloaded/destroyed placed stations retain their tray and reserved-resource claims until they return.
+	// A live empty station must overwrite its earlier snapshot, so completed/canceled jobs cannot reappear.
+	TMap<FName, FRpgCraftingStationSaveData> CapturedStations = CraftingStationSaveDataMap;
+	TSet<FName> SeenIds;
+	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+	{
+		URpgCraftingStationComponent* Station = It->FindComponentByClass<URpgCraftingStationComponent>();
+		if (!Station || Station->IsPersistenceRestorePending()) continue;
+		const FName Id = Station->GetPersistentStationId();
+		if (Id.IsNone() || SeenIds.Contains(Id))
+		{
+			bDiskWritesBlockedByRestoreFailure = true;
+			UE_LOG(LogRpg, Error, TEXT("Crafting stations require unique persistent IDs; refusing save."));
+			return;
+		}
+		SeenIds.Add(Id);
+		FRpgCraftingStationSaveData Saved = Station->ExportCraftingState();
+		if (!Station->GetOutputInventory() || Saved.OutputInventoryGraph.Items.Num() != Station->GetOutputInventory()->GetAllEntries().Num())
+		{
+			bDiskWritesBlockedByRestoreFailure = true;
+			UE_LOG(LogRpg, Error, TEXT("Crafting tray export was incomplete; refusing disk writes."));
+			return;
+		}
+		CapturedStations.Add(Id, MoveTemp(Saved));
+		RegisteredCraftingStations.Add(Station);
+	}
+	CraftingStationSaveDataMap = MoveTemp(CapturedStations);
+}
+
+bool ARpgGameModeBase::RestoreCraftingStations()
+{
+	TSet<FName> SeenIds;
+	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+	{
+		if (It->IsActorBeingDestroyed()) continue;
+		URpgCraftingStationComponent* Station = It->FindComponentByClass<URpgCraftingStationComponent>();
+		if (!Station) continue;
+		const FName Id = Station->GetPersistentStationId();
+		if (Id.IsNone() || SeenIds.Contains(Id)) return false;
+		SeenIds.Add(Id);
+		if (const FRpgCraftingStationSaveData* Saved = CraftingStationSaveDataMap.Find(Id))
+		{
+			if (!Station->RestoreCraftingState(*Saved)) return false;
+		}
+		RegisteredCraftingStations.Add(Station);
+	}
+	// Missing placed stations remain unresolved in the snapshot. Their BeginPlay registration restores them on reentry.
+	return true;
 }
 
 void ARpgGameModeBase::CaptureBaseStorages()
@@ -1298,7 +1514,7 @@ bool ARpgGameModeBase::RestorePlacedWorldContainers()
 	{
 		AActor* Actor = *Iterator;
 		URpgInventoryContainerComponent* Container = Actor ? Actor->FindComponentByClass<URpgInventoryContainerComponent>() : nullptr;
-		if (!Container || Container->GetPersistentContainerId().IsNone())
+		if (!Container || Container->IsConstructionPending() || Container->GetPersistentContainerId().IsNone())
 		{
 			continue;
 		}
@@ -1317,6 +1533,33 @@ bool ARpgGameModeBase::RestorePlacedWorldContainers()
 				PersistentId,
 				Container->GetInventoryManager()) && bAllRestored;
 		}
+		RegisteredWorldContainers.Add(Container);
+	}
+	for (const TPair<FName, FRpgWorldContainerSaveData>& Pair : WorldContainerSaveDataMap)
+	{
+		if (SeenPersistentIds.Contains(Pair.Key)) continue;
+		const FRpgWorldContainerSaveData& Saved = Pair.Value;
+		// Placed actors may belong to an unloaded level. Retain their exact snapshot until lifecycle registration returns them.
+		if (!Saved.Metadata.bRuntimeBuilt) continue;
+		UClass* ActorClass = Saved.ActorClass.LoadSynchronous();
+		if (!ActorClass || !ActorClass->IsChildOf(ARpgInventoryContainerActor::StaticClass()))
+		{
+			UE_LOG(LogRpg, Warning, TEXT("Cannot reconstruct missing authored/unsupported container [%s]."), *Pair.Key.ToString());
+			return false;
+		}
+		ARpgInventoryContainerActor* Spawned = GetWorld()->SpawnActorDeferred<ARpgInventoryContainerActor>(
+			ActorClass, Saved.ActorTransform, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (!Spawned) return false;
+		RestoreSpawnedContainers.Add(Spawned);
+		URpgInventoryContainerComponent* Container = Spawned->GetContainerComponent();
+		if (!Container || !Container->RestorePhysicalStorageMetadata(Saved.Metadata))
+		{
+			Spawned->Destroy();
+			return false;
+		}
+		Spawned->FinishSpawning(Saved.ActorTransform);
+		if (!RestoreWorldContainer(Pair.Key, Container->GetInventoryManager())) return false;
+		RegisteredWorldContainers.Add(Container);
 	}
 	return bAllRestored;
 }
@@ -1328,6 +1571,27 @@ bool ARpgGameModeBase::RestorePlacedBaseStorages()
 		return false;
 	}
 
+	// Validate the complete projected area layout before moving any individual base.
+	TArray<ARpgBaseCampActor*> Bases;
+	for (TActorIterator<ARpgBaseCampActor> It(GetWorld()); It; ++It) Bases.Add(*It);
+	for (int32 Index = 0; Index < Bases.Num(); ++Index)
+	{
+		const FRpgBaseStorageSaveData* A = BaseStorageSaveDataMap.Find(Bases[Index]->GetBaseId());
+		const FVector CenterA = A ? A->AreaCenter : Bases[Index]->GetActorLocation();
+		const float RadiusA = A ? A->AreaRadius : Bases[Index]->GetBuildRadius();
+		if (CenterA.ContainsNaN() || !FMath::IsFinite(RadiusA) || RadiusA <= 0.0f) return false;
+		for (int32 Other = Index + 1; Other < Bases.Num(); ++Other)
+		{
+			const FRpgBaseStorageSaveData* B = BaseStorageSaveDataMap.Find(Bases[Other]->GetBaseId());
+			if (RpgStorageAccessRules::BaseAreasConflict(CenterA, RadiusA,
+				B ? B->AreaCenter : Bases[Other]->GetActorLocation(), B ? B->AreaRadius : Bases[Other]->GetBuildRadius())) return false;
+		}
+	}
+	for (ARpgBaseCampActor* Base : Bases)
+	{
+		if (const FRpgBaseStorageSaveData* Saved = BaseStorageSaveDataMap.Find(Base->GetBaseId());
+			Saved && !Base->RestoreBaseAreaForWorldLoad(*Saved)) return false;
+	}
 	bool bAllRestored = true;
 	TSet<FName> SeenBaseIds;
 	for (TActorIterator<ARpgBaseCampActor> Iterator(GetWorld()); Iterator; ++Iterator)
@@ -1345,6 +1609,10 @@ bool ARpgGameModeBase::RestorePlacedBaseStorages()
 		{
 			bAllRestored = RestoreBaseStorage(BaseId, BaseCamp) && bAllRestored;
 		}
+	}
+	for (const auto& Pair : BaseStorageSaveDataMap)
+	{
+		if (!SeenBaseIds.Contains(Pair.Key)) return false;
 	}
 	return bAllRestored;
 }
@@ -1396,17 +1664,40 @@ bool ARpgGameModeBase::RestoreWorldContainer(
 
 	FRpgInventoryMutationResult ImportResult;
 	TGuardValue<bool> RestoreGuard(bIsRestoringSaveState, true);
+	URpgInventoryContainerComponent* Container = Inventory->GetOwner()
+		? Inventory->GetOwner()->FindComponentByClass<URpgInventoryContainerComponent>() : nullptr;
+	const ARpgBaseCampActor* SpatialBase = RpgStorageAccessRules::ResolveBaseAtLocation(GetWorld(), SaveData->ActorTransform.GetLocation());
+	if (!Container || Container->GetPersistentContainerId() != PersistentContainerId ||
+		SaveData->ActorClass.LoadSynchronous() != Inventory->GetOwner()->GetClass() ||
+		SaveData->Metadata.BaseId != (SpatialBase ? SpatialBase->GetBaseId() : NAME_None))
+	{
+		return false;
+	}
+	const FRpgPhysicalStorageMetadata PreviousMetadata = Container->ExportPhysicalStorageMetadata();
+	const FRpgInventoryGraphSaveData PreviousGraph = Inventory->ExportInventoryGraph();
+	if (PreviousGraph.Items.Num() != Inventory->GetAllEntries().Num()) return false;
+	if (!Inventory->ExpandDefaultGridToMinimum(SaveData->Metadata.GridSize)) return false;
 	const bool bRestored = Inventory->RestoreInventoryGraph(
 		SaveData->InventoryGraph,
 		ImportResult);
-	if (!bRestored)
+	if (!bRestored || !Container->RestorePhysicalStorageMetadata(SaveData->Metadata))
 	{
 		UE_LOG(LogRpg, Warning,
 			TEXT("RpgGameMode: World container [%s] rejected the selected snapshot graph with result %d."),
 			*PersistentContainerId.ToString(),
 			static_cast<int32>(ImportResult.Code));
+		FRpgInventoryMutationResult RollbackResult;
+		if (!Inventory->ExpandDefaultGridToMinimum(PreviousMetadata.GridSize) ||
+			!Inventory->RestoreRuntimeCheckpoint(PreviousGraph, RollbackResult) ||
+			!Container->RestorePhysicalStorageMetadata(PreviousMetadata))
+		{
+			bDiskWritesBlockedByRestoreFailure = true;
+			UE_LOG(LogRpg, Error, TEXT("Exact physical-container restore rollback failed for [%s]; disk writes blocked."), *PersistentContainerId.ToString());
+		}
+		return false;
 	}
-	return bRestored;
+	Inventory->GetOwner()->SetActorTransform(SaveData->ActorTransform);
+	return true;
 }
 
 void ARpgGameModeBase::ApplyRestoredEquipmentSelection(APlayerController* PC)
@@ -1616,7 +1907,7 @@ bool ARpgGameModeBase::RestoreLoadedWorldSaveCandidatesAtomically()
 		URpgInventoryContainerComponent* Container = Actor
 			? Actor->FindComponentByClass<URpgInventoryContainerComponent>()
 			: nullptr;
-		if (!Container || Container->GetPersistentContainerId().IsNone())
+		if (!Container || Container->IsConstructionPending() || Container->GetPersistentContainerId().IsNone())
 		{
 			continue;
 		}
@@ -1636,10 +1927,7 @@ bool ARpgGameModeBase::RestoreLoadedWorldSaveCandidatesAtomically()
 
 		FRpgWorldContainerSaveData& Checkpoint =
 			InitialWorldContainers.Add(PersistentId);
-		Checkpoint.PersistentContainerId = PersistentId;
-		Checkpoint.InventoryGraph = Inventory->ExportInventoryGraph();
-		if (Checkpoint.InventoryGraph.Items.Num() !=
-			Inventory->GetAllEntries().Num())
+		if (!CapturePhysicalContainer(Container, Checkpoint))
 		{
 			bDiskWritesBlockedByRestoreFailure = true;
 			UE_LOG(LogRpg, Error,
@@ -1692,11 +1980,15 @@ bool ARpgGameModeBase::RestoreLoadedWorldSaveCandidatesAtomically()
 	const FGameplayTagContainer InitialKnowledgeTags =
 		Knowledge->GetKnowledgeTags();
 	const TMap<FString, FRpgPlayerSaveData> EmptyInitialPlayers;
+	CaptureCraftingStations();
+	if (bDiskWritesBlockedByRestoreFailure) return false;
+	const TMap<FName, FRpgCraftingStationSaveData> InitialCraftingStations = CraftingStationSaveDataMap;
 
 	auto ApplyWholeState = [this, &PreflightPlayerGraphs](
 		const TMap<FString, FRpgPlayerSaveData>& Players,
 		const TMap<FName, FRpgWorldContainerSaveData>& WorldContainers,
 		const TMap<FName, FRpgBaseStorageSaveData>& BaseStorages,
+		const TMap<FName, FRpgCraftingStationSaveData>& CraftingStations,
 		const FGameplayTagContainer& KnowledgeTags)
 	{
 		if (!PreflightPlayerGraphs(Players, true))
@@ -1704,13 +1996,20 @@ bool ARpgGameModeBase::RestoreLoadedWorldSaveCandidatesAtomically()
 			return false;
 		}
 		PlayerSaveDataMap = Players;
+		for (const TWeakObjectPtr<AActor>& Spawned : RestoreSpawnedContainers)
+		{
+			if (Spawned.IsValid()) Spawned->Destroy();
+		}
+		RestoreSpawnedContainers.Reset();
 		WorldContainerSaveDataMap = WorldContainers;
 		BaseStorageSaveDataMap = BaseStorages;
+		CraftingStationSaveDataMap = CraftingStations;
 		StorageKnowledgeSaveTags = KnowledgeTags;
 
 		bool bApplied = RestoreStorageKnowledge();
-		bApplied = RestorePlacedWorldContainers() && bApplied;
 		bApplied = RestorePlacedBaseStorages() && bApplied;
+		bApplied = RestorePlacedWorldContainers() && bApplied;
+		bApplied = RestoreCraftingStations() && bApplied;
 		return bApplied;
 	};
 	auto IsAnyBaseTainted = [this]()
@@ -1743,6 +2042,7 @@ bool ARpgGameModeBase::RestoreLoadedWorldSaveCandidatesAtomically()
 						EmptyInitialPlayers,
 						InitialWorldContainers,
 						InitialBaseStorages,
+						InitialCraftingStations,
 						InitialKnowledgeTags) ||
 					IsAnyBaseTainted())
 				{
@@ -1779,6 +2079,7 @@ bool ARpgGameModeBase::RestoreLoadedWorldSaveCandidatesAtomically()
 					PreparedPlayers,
 					Candidate->WorldContainers,
 					Candidate->BaseStorages,
+					Candidate->CraftingStations,
 					Candidate->StorageKnowledgeTags))
 			{
 				SelectedCandidate = Candidate;
@@ -1813,6 +2114,7 @@ bool ARpgGameModeBase::RestoreLoadedWorldSaveCandidatesAtomically()
 				EmptyInitialPlayers,
 				InitialWorldContainers,
 				InitialBaseStorages,
+				InitialCraftingStations,
 				InitialKnowledgeTags);
 			if (!bReset || IsAnyBaseTainted())
 			{
@@ -1832,7 +2134,15 @@ bool ARpgGameModeBase::RestoreLoadedWorldSaveCandidatesAtomically()
 	}
 
 	LastSuccessfulSaveGame = SelectedCandidate;
+	RestoreSpawnedContainers.Reset();
 	bWorldSaveCandidateSelectionComplete = true;
+	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+	{
+		if (URpgCraftingStationComponent* Station = It->FindComponentByClass<URpgCraftingStationComponent>())
+		{
+			Station->ResumeRestoredCrafting();
+		}
+	}
 	LoadedPlayerProfileKeys.Reset();
 	for (const TPair<FString, FRpgPlayerSaveData>& Pair :
 		SelectedCandidate->Players)
@@ -1865,6 +2175,7 @@ void ARpgGameModeBase::LoadWorldSaveFromDisk()
 	PlayerSaveDataMap.Reset();
 	WorldContainerSaveDataMap.Reset();
 	BaseStorageSaveDataMap.Reset();
+	CraftingStationSaveDataMap.Reset();
 	StorageKnowledgeSaveTags.Reset();
 	ValidLoadedSaveCandidates.Reset();
 	LoadedPlayerProfileKeys.Reset();
@@ -1928,7 +2239,15 @@ URpgWorldSaveGame* ARpgGameModeBase::BuildWorldSaveSnapshot()
 	}
 	Snapshot->WorldContainers = WorldContainerSaveDataMap;
 	Snapshot->BaseStorages = BaseStorageSaveDataMap;
+	Snapshot->CraftingStations = CraftingStationSaveDataMap;
 	Snapshot->StorageKnowledgeTags = StorageKnowledgeSaveTags;
+	FString ValidationError;
+	if (!Snapshot->ValidateForLoad(ValidationError))
+	{
+		bDiskWritesBlockedByRestoreFailure = true;
+		UE_LOG(LogRpg, Error, TEXT("Refusing to write an invalid world snapshot: %s"), *ValidationError);
+		return nullptr;
+	}
 	return Snapshot;
 }
 
@@ -1945,6 +2264,14 @@ void ARpgGameModeBase::MarkWorldSaveDirty()
 
 void ARpgGameModeBase::ScheduleAsyncWorldSave()
 {
+	// BeginPlay may seed placed actors while the Experience is still loading. Keep
+	// their dirty flag, but do not replace durable state before whole-save selection.
+	// OnExperienceLoaded schedules the pending write after restoration succeeds.
+	if (!bWorldSaveCandidateSelectionComplete)
+	{
+		return;
+	}
+
 	if (bAsyncSaveInFlight)
 	{
 		bSaveQueuedDuringAsync = true;
@@ -1988,6 +2315,10 @@ void ARpgGameModeBase::SaveWorldStateAsync()
 	{
 		return;
 	}
+	if (!bWorldSaveCandidateSelectionComplete)
+	{
+		return;
+	}
 	if (bAsyncSaveInFlight)
 	{
 		bSaveQueuedDuringAsync = true;
@@ -2004,6 +2335,7 @@ void ARpgGameModeBase::SaveWorldStateAsync()
 	CaptureConnectedPlayers();
 	CaptureWorldContainers();
 	CaptureBaseStorages();
+	CaptureCraftingStations();
 	CaptureStorageKnowledge();
 	if (bDiskWritesBlockedByRestoreFailure)
 	{
@@ -2017,6 +2349,7 @@ void ARpgGameModeBase::SaveWorldStateAsync()
 	}
 
 	ActiveAsyncSaveGame = BuildWorldSaveSnapshot();
+	if (!ActiveAsyncSaveGame) return;
 	bAsyncSaveInFlight = true;
 	bSaveQueuedDuringAsync = false;
 	bWorldSaveDirty = false;
@@ -2064,10 +2397,17 @@ bool ARpgGameModeBase::SaveWorldStateSync()
 	{
 		return !bEnableDiskPersistence;
 	}
+	// Early PIE shutdown, disconnect or checkpoint requests must not save startup
+	// defaults over a candidate whose world/player inventories have not restored.
+	if (!bWorldSaveCandidateSelectionComplete || HasPendingLoadedPlayerProfiles())
+	{
+		return false;
+	}
 
 	CaptureConnectedPlayers();
 	CaptureWorldContainers();
 	CaptureBaseStorages();
+	CaptureCraftingStations();
 	CaptureStorageKnowledge();
 	if (bDiskWritesBlockedByRestoreFailure)
 	{
@@ -2080,6 +2420,7 @@ bool ARpgGameModeBase::SaveWorldStateSync()
 	}
 
 	URpgWorldSaveGame* Snapshot = BuildWorldSaveSnapshot();
+	if (!Snapshot) return false;
 	const bool bRecoverySaved = !WorldSaveRecoverySlotName.IsEmpty() &&
 		UGameplayStatics::SaveGameToSlot(Snapshot, WorldSaveRecoverySlotName, WorldSaveUserIndex);
 	const bool bPrimarySaved = UGameplayStatics::SaveGameToSlot(Snapshot, WorldSaveSlotName, WorldSaveUserIndex);
@@ -2133,10 +2474,42 @@ void ARpgGameModeBase::RegisterSaveStateListeners()
 		FGameplayTag::RequestGameplayTag(TEXT("Rpg.BaseStorage.Message.Changed")),
 		this,
 		&ThisClass::HandleBaseStorageChanged);
+	if (UWorld* World = GetWorld())
+	{
+		PersistentActorSpawnedHandle = World->AddOnActorSpawnedHandler(
+			FOnActorSpawned::FDelegate::CreateUObject(this, &ThisClass::HandlePersistentActorSpawned));
+		for (TActorIterator<AActor> It(World); It; ++It) HandlePersistentActorSpawned(*It);
+	}
+}
+
+void ARpgGameModeBase::HandlePersistentActorSpawned(AActor* Actor)
+{
+	if (URpgInventoryContainerComponent* Container = Actor ? Actor->FindComponentByClass<URpgInventoryContainerComponent>() : nullptr)
+	{
+		Container->OnPhysicalStorageSettingsChanged.RemoveAll(this);
+		Container->OnPhysicalStorageSettingsChanged.AddUObject(this, &ThisClass::HandlePhysicalStorageSettingsChanged);
+	}
+}
+
+void ARpgGameModeBase::HandlePhysicalStorageSettingsChanged(URpgInventoryContainerComponent* Container)
+{
+	if (Container) MarkWorldContainerSaveDirty(Container->GetPersistentContainerId(), Container->GetInventoryManager());
 }
 
 void ARpgGameModeBase::UnregisterSaveStateListeners()
 {
+	if (UWorld* World = GetWorld())
+	{
+		if (PersistentActorSpawnedHandle.IsValid()) World->RemoveOnActorSpawnedHandler(PersistentActorSpawnedHandle);
+		PersistentActorSpawnedHandle.Reset();
+		for (TActorIterator<AActor> It(World); It; ++It)
+		{
+			if (URpgInventoryContainerComponent* Container = It->FindComponentByClass<URpgInventoryContainerComponent>())
+			{
+				Container->OnPhysicalStorageSettingsChanged.RemoveAll(this);
+			}
+		}
+	}
 	if (InventoryChangedSaveHandle.IsValid())
 	{
 		InventoryChangedSaveHandle.Unregister();
@@ -2168,6 +2541,14 @@ void ARpgGameModeBase::HandleInventoryChanged(FGameplayTag Channel, const FRpgIn
 	{
 		MarkPlayerSaveDirty(PlayerState->GetRpgPlayerController());
 		return;
+	}
+	if (URpgCraftingStationComponent* Station = InventoryOwner ? InventoryOwner->FindComponentByClass<URpgCraftingStationComponent>() : nullptr)
+	{
+		if (Station->GetOutputInventory() == Inventory)
+		{
+			MarkCraftingSaveDirty(Station);
+			return;
+		}
 	}
 
 	URpgInventoryContainerComponent* Container = InventoryOwner

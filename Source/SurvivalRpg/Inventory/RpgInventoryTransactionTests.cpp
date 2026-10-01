@@ -7921,15 +7921,24 @@ bool FRpgInventoryLegacyOrderingSurfaceRemovedTest::RunTest(const FString& Param
 		return false;
 	}
 	BaseStorageOwner->AddInstanceComponent(BaseStorage);
+	// This migration-only ordering contract uses the retained per-definition ledger.
+	FBoolProperty* SharedCapacityProperty = FindFProperty<FBoolProperty>(
+		URpgBaseStorageComponent::StaticClass(), TEXT("bUseSharedMaterialCapacity"));
+	if (!TestNotNull(TEXT("Legacy capacity mode is configurable for the migration fixture"), SharedCapacityProperty))
+	{
+		return false;
+	}
+	SharedCapacityProperty->SetPropertyValue_InContainer(BaseStorage, false);
 	BaseStorage->RegisterComponent();
 	TestTrue(
 		TEXT("The BaseStorage ordering fixture is server-authoritative"),
 		BaseStorageOwner->HasAuthority());
 
+	// Sorting requires two valid count-only resources; stateful materials cannot enter the bulk ledger.
 	const TSubclassOf<URpgInventoryItemDefinition> AlphabeticalFirst =
-		URpgInventoryAutomationTestMaterialDefinition::StaticClass();
+		URpgInventoryAutomationTestBulkConsumableDefinition::StaticClass();
 	const TSubclassOf<URpgInventoryItemDefinition> AlphabeticalSecond =
-		URpgInventoryAutomationTestStatefulMaterialDefinition::StaticClass();
+		URpgInventoryAutomationTestMaterialDefinition::StaticClass();
 	constexpr int32 FirstCount = 3;
 	constexpr int32 SecondCount = 7;
 	constexpr int32 ResourceCapacity = 20;
@@ -8406,6 +8415,155 @@ bool FRpgInventorySplitIdempotencyTest::RunTest(const FString& Parameters)
 		Inventory->PlanInventoryMutation(WholeStackSplit).Code,
 		ERpgInventoryMutationResultCode::StackLimitReached);
 	return true;
+}
+
+namespace RpgInventoryTransactionTests
+{
+	/** Row observers must be safe persistence boundaries, including synchronous replay and nested requests. */
+	bool RunSingleMutationPublicationTest(FAutomationTestBase& Test, bool bSplit, bool bPartialMerge = false)
+	{
+		FScopedInventoryWorld TestWorld;
+		if (!InitializeTest(Test, TestWorld)) return false;
+		auto* Inventory = TestWorld.CreateInventory(TEXT("SingleMutationPublication"));
+		auto* Validator = TestWorld.CreateInventory(TEXT("PublicationGraphValidator"));
+		if (!Test.TestNotNull(TEXT("Observed inventory exists"), Inventory) ||
+			!Test.TestNotNull(TEXT("Independent read-only graph validator exists"), Validator)) return false;
+		const FRpgInventoryContainerHandle Root = MakeStorageHandle();
+		const auto Material = bPartialMerge ? URpgInventoryAutomationTestStackItemDefinition::StaticClass()
+			: URpgInventoryAutomationTestStatefulMaterialDefinition::StaticClass();
+		auto* Survivor = Inventory->AddItemDefinitionToPlacement(Material, bSplit ? 10 : (bPartialMerge ? 8 : 6), MakePlacement(Root, 0, 0));
+		auto* Moving = bSplit ? Survivor : Inventory->AddItemDefinitionToPlacement(Material, 4, MakePlacement(Root, 1, 0));
+		if (!Test.TestNotNull(TEXT("Surviving stack exists"), Survivor) || !Test.TestNotNull(TEXT("Moving stack exists"), Moving)) return false;
+		const FRpgInventoryItemId SurvivorId = Survivor->GetItemId();
+		const FRpgInventoryItemId MovingId = Moving->GetItemId();
+		FRpgInventoryMutationRequest Request = MakePlacementRequest(
+			bSplit ? ERpgInventoryMutationOperation::Split : ERpgInventoryMutationOperation::Merge,
+			Moving, Root, Root, bSplit ? 1 : 0, 0);
+		Request.Quantity = 4;
+		if (!Test.TestTrue(TEXT("The full single-inventory mutation plans successfully"), Inventory->PlanInventoryMutation(Request).IsSuccess())) return false;
+
+		const int32 InitialRevision = Inventory->GetInventoryRevision();
+		const int32 ExpectedRows = bSplit || bPartialMerge ? 2 : 1;
+		const int32 ExpectedTotal = bPartialMerge ? 12 : 10;
+		const int32 ExpectedApplied = bPartialMerge ? 2 : 4;
+		const int32 ExpectedSurvivorCount = bSplit ? 6 : 10;
+		int32 RowNotifications = 0, PostCommitNotifications = 0, NestedNotifications = 0;
+		int32 SuccessfulReplays = 0, RejectedNestedRequests = 0;
+		bool bInsideObserver = false;
+		bool bEveryObserverSawFinalGraph = true;
+		bool bEveryObserverSawFinalRevision = true;
+		bool bEveryCallbackPreservedGraph = true;
+		TArray<FRpgInventoryMutationResult> ReplayedResults;
+		auto ObservePublication = [&]()
+		{
+			// Prevent a failing implementation from recursively running the test indefinitely.
+			if (bInsideObserver) { ++NestedNotifications; return; }
+			TGuardValue<bool> ObserverGuard(bInsideObserver, true);
+			const FRpgInventoryGraphSaveData Graph = Inventory->ExportInventoryGraph();
+			const auto Entries = Inventory->GetAllEntries();
+			int32 ExportedCount = 0;
+			for (const auto& Item : Graph.Items) ExportedCount += Item.StackCount;
+			FRpgInventoryMutationResult Validation;
+			// The source is deliberately mutation-locked; validate the exported DTO using another actor's empty inventory.
+			bEveryObserverSawFinalGraph &= Graph.Items.Num() == ExpectedRows && Entries.Num() == ExpectedRows &&
+				ExportedCount == ExpectedTotal && Inventory->GetTotalItemCountByDefinition(Material) == ExpectedTotal &&
+				Inventory->GetItemStackCount(Survivor) == ExpectedSurvivorCount &&
+				Validator->ValidateInventoryGraphForRestore(Graph, Validation);
+			bEveryObserverSawFinalRevision &= Inventory->GetInventoryRevision() == InitialRevision + 1;
+			const FString BeforeCallbacks = MakeStrictInventorySignature(Inventory);
+			const FRpgInventoryMutationResult Replay = Inventory->ExecuteInventoryMutation(Request);
+			ReplayedResults.Add(Replay);
+			if (Replay.IsSuccess() && Replay.RequestId == Request.RequestId && Replay.AppliedQuantity == ExpectedApplied) ++SuccessfulReplays;
+
+			FRpgInventoryMutationRequest Nested = MakePlacementRequest(
+				ERpgInventoryMutationOperation::Consume, Survivor, Root, Root, 0, 0);
+			Nested.Quantity = 1;
+			const FRpgInventoryMutationResult Rejected = Inventory->ExecuteInventoryMutation(Nested);
+			if (Rejected.Code == ERpgInventoryMutationResultCode::InvalidRequest && Rejected.AppliedQuantity == 0 && Rejected.Deltas.IsEmpty()) ++RejectedNestedRequests;
+			bEveryCallbackPreservedGraph &= MakeStrictInventorySignature(Inventory) == BeforeCallbacks;
+		};
+		UGameplayMessageSubsystem& Messages = UGameplayMessageSubsystem::Get(TestWorld.GetTestWorld());
+		const FGameplayMessageListenerHandle Listener = Messages.RegisterListener<FRpgInventoryChangeMessage>(
+			FGameplayTag::RequestGameplayTag(TEXT("Rpg.Inventory.Message.StackChanged")),
+			[&](FGameplayTag, const FRpgInventoryChangeMessage& Message)
+			{
+				if (Message.InventoryOwner != Inventory) return;
+				++RowNotifications;
+				ObservePublication();
+			});
+		const FDelegateHandle PostCommit = Inventory->OnInventoryPostCommit.AddLambda([&](URpgInventoryManagerComponent*)
+		{
+			++PostCommitNotifications;
+			ObservePublication();
+		});
+		const FRpgInventoryMutationResult Committed = Inventory->ExecuteInventoryMutation(Request);
+		const FString FinalSignature = MakeStrictInventorySignature(Inventory);
+		const int32 NotificationsBeforeReplay = RowNotifications + PostCommitNotifications;
+		const FRpgInventoryMutationResult FinalReplay = Inventory->ExecuteInventoryMutation(Request);
+		Messages.UnregisterListener(Listener);
+		Inventory->OnInventoryPostCommit.Remove(PostCommit);
+
+		Test.TestTrue(TEXT("Single-inventory mutation commits"), Committed.IsSuccess());
+		Test.TestEqual(TEXT("Only the planned stack amount is applied"), Committed.AppliedQuantity, ExpectedApplied);
+		if (bPartialMerge) Test.TestEqual(TEXT("Overflow is reported as partial success"), Committed.Code, ERpgInventoryMutationResultCode::PartiallyApplied);
+		Test.TestEqual(TEXT("Both changed rows are published exactly once"), RowNotifications, 2);
+		Test.TestEqual(TEXT("One post-commit event follows the full mutation"), PostCommitNotifications, 1);
+		Test.TestTrue(TEXT("Every row and post-commit observer exports a complete conserved graph"), bEveryObserverSawFinalGraph);
+		Test.TestTrue(TEXT("Every observer sees the newly committed revision"), bEveryObserverSawFinalRevision);
+		Test.TestEqual(TEXT("Exact in-callback replay returns the cached success to every observer"), SuccessfulReplays, NotificationsBeforeReplay);
+		Test.TestEqual(TEXT("Every new mutation is rejected throughout publication"), RejectedNestedRequests, NotificationsBeforeReplay);
+		Test.TestEqual(TEXT("Neither replay nor rejected mutation publishes nested notifications"), NestedNotifications, 0);
+		Test.TestTrue(TEXT("Callback requests preserve all identities, placements, counts and revision"), bEveryCallbackPreservedGraph);
+		for (const FRpgInventoryMutationResult& Replay : ReplayedResults)
+		{
+			Test.TestEqual(TEXT("Callback replay retains the committed result code"), Replay.Code, Committed.Code);
+			Test.TestEqual(TEXT("Callback replay retains all committed deltas"), Replay.Deltas.Num(), Committed.Deltas.Num());
+			for (int32 Index = 0; Index < FMath::Min(Replay.Deltas.Num(), Committed.Deltas.Num()); ++Index)
+			{
+				Test.TestTrue(TEXT("Callback replay retains the committed item identity, including the generated split ID"), Replay.Deltas[Index].ItemId == Committed.Deltas[Index].ItemId);
+			}
+		}
+		Test.TestEqual(TEXT("Replay after publication still succeeds"), FinalReplay.Code, Committed.Code);
+		Test.TestEqual(TEXT("Replay after publication emits no new events"), RowNotifications + PostCommitNotifications, NotificationsBeforeReplay);
+		Test.TestEqual(TEXT("Replay leaves the final graph unchanged"), MakeStrictInventorySignature(Inventory), FinalSignature);
+		Test.TestEqual(TEXT("The complete operation publishes one inventory revision"), Inventory->GetInventoryRevision(), InitialRevision + 1);
+		Test.TestEqual(TEXT("Every original unit remains in the final graph"), Inventory->GetTotalItemCountByDefinition(Material), ExpectedTotal);
+		Test.TestEqual(TEXT("The original target stack keeps its identity"), Inventory->FindItemById(SurvivorId), Survivor);
+		if (bPartialMerge)
+		{
+			Test.TestEqual(TEXT("Partial merge keeps the source instance identity"), Inventory->FindItemById(MovingId), Moving);
+			Test.TestEqual(TEXT("Only the two fitting units left the source"), Inventory->GetItemStackCount(Moving), 2);
+		}
+		else if (!bSplit) Test.TestNull(TEXT("The fully merged source identity is absent"), Inventory->FindItemById(MovingId));
+		return true;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgInventorySplitPublicationTest,
+	"SurvivalRpg.Inventory.Transaction.SplitObserversSeeAtomicGraphAndReplay",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventorySplitPublicationTest::RunTest(const FString& Parameters)
+{
+	return RpgInventoryTransactionTests::RunSingleMutationPublicationTest(*this, true);
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgInventoryMergePublicationTest,
+	"SurvivalRpg.Inventory.Transaction.MergeObserversSeeAtomicGraphAndReplay",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryMergePublicationTest::RunTest(const FString& Parameters)
+{
+	return RpgInventoryTransactionTests::RunSingleMutationPublicationTest(*this, false);
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgInventoryPartialMergePublicationTest,
+	"SurvivalRpg.Inventory.Transaction.PartialMergeObserversSeeAtomicGraphAndReplay",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryPartialMergePublicationTest::RunTest(const FString& Parameters)
+{
+	return RpgInventoryTransactionTests::RunSingleMutationPublicationTest(*this, false, true);
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(

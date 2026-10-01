@@ -156,8 +156,7 @@ private:
 
 	URpgInventoryManagerComponent* FindPlayerInventory(const AActor* RequestingActor) const;
 	URpgBaseStorageComponent* GetBaseStorage() const;
-	bool ConsumeFromPlayer(URpgInventoryManagerComponent* PlayerInventory, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count) const;
-	bool ConsumeFromBase(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count) const;
+	TFunction<bool()> MakeContributionRevalidator(AActor* RequestingActor, bool bAllowBaseStorage) const;
 	bool ConsumeContribution(AActor* RequestingActor, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count, bool bAllowBaseStorage);
 	FRpgBaseConstructionResourceState* FindCostState(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition);
 	const FRpgBaseConstructionResourceState* FindCostState(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition) const;

@@ -5,6 +5,8 @@
 #include "GameplayTagContainer.h"
 #include "RpgPlayerSaveData.h"
 #include "SurvivalRpg/Base/RpgBaseStorageSaveTypes.h"
+#include "SurvivalRpg/Inventory/RpgPhysicalStorageTypes.h"
+#include "SurvivalRpg/Crafting/RpgCraftingSaveTypes.h"
 
 #include "RpgWorldSaveGame.generated.h"
 
@@ -17,6 +19,18 @@ struct SURVIVALRPG_API FRpgWorldContainerSaveData
 	/** Stable designer-authored id shared with URpgInventoryContainerComponent::PersistentContainerId. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save|World Container")
 	FName PersistentContainerId = NAME_None;
+
+	/** Blueprint class used to reconstruct player-built chests. Placed containers must retain their authored class. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save|World Container")
+	TSoftClassPtr<AActor> ActorClass;
+
+	/** Confirmed world transform, saved for both authored and player-built physical storage. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save|World Container")
+	FTransform ActorTransform = FTransform::Identity;
+
+	/** Complete chest settings; grid dimensions are applied before its item graph is reconstructed. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save|World Container")
+	FRpgPhysicalStorageMetadata Metadata;
 
 	/** Complete authoritative contents, including item-owned child-container subtrees. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save|World Container")
@@ -36,10 +50,10 @@ class SURVIVALRPG_API URpgWorldSaveGame : public USaveGame
 
 public:
 	/** Current top-level save schema emitted by this build. */
-	static constexpr int32 CurrentSchemaVersion = 2;
+	static constexpr int32 CurrentSchemaVersion = 3;
 
-	/** Oldest top-level schema with an explicit migration path. V1 predates persistent base storage. */
-	static constexpr int32 MinimumSupportedSchemaVersion = 1;
+	/** Physical-storage saves start fresh; prototype quantity-storage saves have no implicit migration. */
+	static constexpr int32 MinimumSupportedSchemaVersion = 3;
 
 	/** Selects the top-level migration/validation path before any profile is restored. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save", meta = (ClampMin = "1", UIMin = "1"))
@@ -56,6 +70,10 @@ public:
 	/** Persistent physical world-container graphs keyed by their designer-authored stable id. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save")
 	TMap<FName, FRpgWorldContainerSaveData> WorldContainers;
+
+	/** Output graphs, persistent production/refund state and saved settings keyed by stable station identity. */
+	UPROPERTY(SaveGame)
+	TMap<FName, FRpgCraftingStationSaveData> CraftingStations;
 
 	/** Persistent base-storage networks keyed by stable ARpgBaseCampActor::BaseId. Added in schema V2. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save")

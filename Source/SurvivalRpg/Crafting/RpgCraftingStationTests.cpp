@@ -1,6 +1,7 @@
 #include "RpgCraftingRecipeDefinition.h"
 #include "RpgCraftingStationActor.h"
 #include "RpgCraftingStationComponent.h"
+#include "RpgCraftingAutomationTestTypes.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -8,8 +9,14 @@
 #include "SurvivalRpg/Base/RpgBaseStorageComponent.h"
 #include "SurvivalRpg/Base/RpgWorldStorageKnowledgeComponent.h"
 #include "SurvivalRpg/Core/Game/RpgGameStateBase.h"
+#include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
+#include "SurvivalRpg/Base/RpgStorageAccessRules.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgDroppedInventoryActor.h"
+#include "SurvivalRpg/Inventory/RpgInventoryContainerActor.h"
+#include "SurvivalRpg/Inventory/RpgInventoryContainerComponent.h"
+#include "SurvivalRpg/Inventory/RpgPhysicalStorageTypes.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgPhysicalStorageViewModel.h"
 #include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
@@ -19,6 +26,8 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Misc/AutomationTest.h"
+#include "Templates/UnrealTemplate.h"
+#include "TimerManager.h"
 #include "UObject/UnrealType.h"
 
 namespace RpgCraftingStationTests
@@ -59,12 +68,21 @@ namespace RpgCraftingStationTests
 			}
 		}
 
-		bool Initialize(FAutomationTestBase& Test)
+		bool Initialize(FAutomationTestBase& Test, bool bUsePersistentGameMode = false)
 		{
 			if (!GameInstance || !World)
 			{
 				Test.AddError(TEXT("Could not create an isolated standalone crafting test world."));
 				return false;
+			}
+
+			if (bUsePersistentGameMode)
+			{
+				FURL GameUrl;
+				GameUrl.AddOption(*FString::Printf(TEXT("game=%s"), *ARpgGameModeBase::StaticClass()->GetPathName()));
+				if (!World->SetGameMode(GameUrl)) { return false; }
+				World->GetAuthGameMode<ARpgGameModeBase>()->bEnableDiskPersistence = false;
+				World->InitializeActorsForPlay(GameUrl);
 			}
 
 			FActorSpawnParameters ControllerSpawnParameters;
@@ -107,7 +125,8 @@ namespace RpgCraftingStationTests
 
 		bool OfferRecipes(
 			FAutomationTestBase& Test,
-			const TArray<URpgCraftingRecipeDefinition*>& Recipes)
+			const TArray<URpgCraftingRecipeDefinition*>& Recipes,
+			URpgCraftingStationComponent* TargetStation = nullptr)
 		{
 			RecipeSet = NewObject<URpgCraftingRecipeSet>(GetTransientPackage(), NAME_None, RF_Transient);
 			if (!Test.TestNotNull(TEXT("The transient recipe set exists"), RecipeSet.Get()))
@@ -128,47 +147,24 @@ namespace RpgCraftingStationTests
 				return false;
 			}
 
-			AvailableRecipeSetProperty->SetObjectPropertyValue_InContainer(Station, RecipeSet.Get());
+			AvailableRecipeSetProperty->SetObjectPropertyValue_InContainer(TargetStation ? TargetStation : Station.Get(), RecipeSet.Get());
 			return true;
 		}
 
-		ARpgBaseCampActor* CreateLinkedBaseCamp(FAutomationTestBase& Test)
+		ARpgInventoryContainerActor* CreateChest()
 		{
-			FActorSpawnParameters SpawnParameters;
-			SpawnParameters.Name = MakeUniqueObjectName(
-				World,
-				ARpgBaseCampActor::StaticClass(),
-				TEXT("CraftingTestBaseCamp"));
-			SpawnParameters.ObjectFlags = RF_Transient;
-			ARpgBaseCampActor* BaseCamp = World->SpawnActor<ARpgBaseCampActor>(SpawnParameters);
-			if (Test.TestNotNull(TEXT("The linked base-camp fixture exists"), BaseCamp))
-			{
-				URpgBaseStorageComponent* BaseStorage =
-					BaseCamp->GetBaseStorageComponent();
-				if (!Test.TestNotNull(
-						TEXT("The linked base-camp fixture owns storage"),
-						BaseStorage))
-				{
-					return nullptr;
-				}
+			ARpgInventoryContainerActor* Chest = World->SpawnActor<ARpgInventoryContainerActor>();
+			if (Chest) { Chest->GetContainerComponent()->EnsurePersistentContainerId(); }
+			return Chest;
+		}
 
-				// InitializeStandalone does not dispatch actor BeginPlay. Restore an
-				// empty validated network snapshot so the fixture receives the same
-				// baseline Materials capacity and capabilities as a live base.
-				FRpgBaseStorageSaveData BootstrapState;
-				FString BootstrapError;
-				if (!Test.TestTrue(
-						TEXT("The standalone base-storage fixture initializes its baseline network"),
-						BaseStorage->RestoreStorageState(
-							BootstrapState,
-							BootstrapError)))
-				{
-					Test.AddError(BootstrapError);
-					return nullptr;
-				}
-				Station->SetLinkedBaseCamp(BaseCamp);
-			}
-			return BaseCamp;
+		URpgInventoryManagerComponent* CreatePlayerInventory(AActor* Player = nullptr)
+		{
+			if (!Player) { Player = RequestingController; }
+			URpgInventoryManagerComponent* Inventory = NewObject<URpgInventoryManagerComponent>(Player);
+			Player->AddInstanceComponent(Inventory);
+			Inventory->RegisterComponent();
+			return Inventory;
 		}
 
 		ARpgInventoryAutomationTestPlayerController* GetRequestingController() const
@@ -198,6 +194,29 @@ namespace RpgCraftingStationTests
 			++Count;
 		}
 		return Count;
+	}
+
+	void AdvanceCraftingTimers(UWorld* World, float Seconds)
+	{
+		// TimerManager processes each frame once; isolated fixtures have no engine frame loop.
+		TGuardValue<uint64> FrameGuard(GFrameCounter, GFrameCounter);
+		++GFrameCounter;
+		World->GetTimerManager().Tick(0.0f);
+		++GFrameCounter;
+		World->GetTimerManager().Tick(Seconds);
+	}
+
+	int32 CountReservedMaterial(const URpgCraftingStationComponent* Station, TSubclassOf<URpgInventoryItemDefinition> Material)
+	{
+		int32 Total = 0;
+		for (const FRpgCraftingJobEntry& Job : Station->GetCraftingJobs())
+		{
+			for (const FRpgCraftingRefundEntry& Refund : Job.RefundEntries)
+			{
+				if (Refund.ItemDefinition == Material) { Total += Refund.Count; }
+			}
+		}
+		return Total;
 	}
 }
 
@@ -387,524 +406,625 @@ bool FRpgCraftingFreeRecipeQuantityLimitTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FRpgCraftingResourceBackedQuantityTest,
-	"SurvivalRpg.Crafting.Authority.ResourceBackedQuantityUsesResources",
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgCraftingPhysicalSourcesTest,
+	"SurvivalRpg.Crafting.Physical.PlayerFirstAndOtherPlayersExcluded",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FRpgCraftingResourceBackedQuantityTest::RunTest(const FString& Parameters)
+bool FRpgCraftingPhysicalSourcesTest::RunTest(const FString& Parameters)
 {
 	using namespace RpgCraftingStationTests;
-	FScopedCraftingWorld TestWorld;
-	if (!TestWorld.Initialize(*this))
-	{
-		return false;
-	}
+	FScopedCraftingWorld Fixture;
+	if (!Fixture.Initialize(*this)) { return false; }
+	URpgCraftingStationComponent* Station = Fixture.GetStation();
+	AActor* Requester = Fixture.GetRequestingController();
+	URpgInventoryManagerComponent* Player = Fixture.CreatePlayerInventory();
+	ARpgInventoryContainerActor* Chest = Fixture.CreateChest();
+	if (!TestNotNull(TEXT("Shared physical chest exists"), Chest)) { return false; }
+	const TSubclassOf<URpgInventoryItemDefinition> Material = URpgInventoryAutomationTestMaterialDefinition::StaticClass();
+	Player->AddItemDefinition(Material, 3);
+	Chest->GetInventoryManager()->AddItemDefinition(Material, 9);
+	FRpgCraftingResourceCost Cost;
+	Cost.ItemDefinition = Material;
+	Cost.Count = 5;
+	TestEqual(TEXT("UI count includes own inventory and physical chest"), Station->GetAvailableResourceCount(Requester, Material), 12);
+	TestTrue(TEXT("Exact cost is consumed atomically"), Station->ConsumeResources(Requester, { Cost }));
+	TestEqual(TEXT("Own inventory was consumed first"), Player->GetTotalItemCountByDefinition(Material), 0);
+	TestEqual(TEXT("Only remainder comes from shared chest"), Chest->GetInventoryManager()->GetTotalItemCountByDefinition(Material), 7);
+	AActor* OtherPlayer = Station->GetWorld()->SpawnActor<ARpgInventoryAutomationTestPlayerController>();
+	URpgInventoryManagerComponent* OtherInventory = Fixture.CreatePlayerInventory(OtherPlayer);
+	OtherInventory->AddItemDefinition(Material, 10);
+	TestEqual(TEXT("Nearby other player's materials are absent from UI count"), Station->GetAvailableResourceCount(Requester, Material), 7);
+	TArray<FRpgInventoryBatchOperation> Operations;
+	TArray<FRpgCraftingRefundEntry> Credits;
+	Cost.Count = 8;
+	TestFalse(TEXT("Even a caller-supplied other-player source is rejected by the shared debit seam"),
+		URpgCraftingStationComponent::BuildResourceConsumptionPlan(Requester, { OtherInventory, Chest->GetInventoryManager() }, { Cost }, 1, Operations, Credits));
+	TestEqual(TEXT("Failed planning leaves foreign inventory intact"), OtherInventory->GetTotalItemCountByDefinition(Material), 10);
+	return true;
+}
 
-	URpgCraftingRecipeDefinition* ResourceRecipe = TestWorld.CreateRecipe();
-	if (!TestNotNull(TEXT("The resource-backed recipe fixture exists"), ResourceRecipe))
-	{
-		return false;
-	}
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgCraftingAtomicOutputsTest,
+	"SurvivalRpg.Crafting.Physical.AtomicOutputsAndNoWorldDrops",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-	FRpgCraftingResourceCost& Cost = ResourceRecipe->RequiredResources.AddDefaulted_GetRef();
-	Cost.ItemDefinition =
-		URpgInventoryAutomationTestMaterialDefinition::StaticClass();
+bool FRpgCraftingAtomicOutputsTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCraftingStationTests;
+	FScopedCraftingWorld Fixture;
+	if (!Fixture.Initialize(*this)) { return false; }
+	URpgCraftingStationComponent* Station = Fixture.GetStation();
+	URpgInventoryManagerComponent* Tray = Station->GetOutputInventory();
+	FRpgInventoryGridSize OneCell;
+	OneCell.Width = 1;
+	OneCell.Height = 1;
+	if (!TestTrue(TEXT("Output tray fixture has one cell"), Tray->SetDefaultGridSize(OneCell))) { return false; }
+	FRpgCraftingOutputItem Output;
+	Output.ItemDefinition = URpgInventoryAutomationTestUnitItemDefinition::StaticClass();
+	Output.Count = 1;
+	TestFalse(TEXT("Two products cannot partially commit to a one-cell tray"), Station->AddCraftingOutputs({ Output, Output }));
+	TestEqual(TEXT("First product was not leaked by later product failure"), Tray->GetUsedEntryCount(), 0);
+	TestEqual(TEXT("Failure creates no world pickups"), CountDroppedOutputActors(Station->GetWorld()), 0);
+	URpgInventoryManagerComponent* Player = Fixture.CreatePlayerInventory();
+	const TSubclassOf<URpgInventoryItemDefinition> Material = URpgInventoryAutomationTestMaterialDefinition::StaticClass();
+	Player->AddItemDefinition(Material, 4);
+	FRpgCraftingResourceCost Cost;
+	Cost.ItemDefinition = Material;
 	Cost.Count = 2;
-	if (!TestWorld.OfferRecipes(*this, { ResourceRecipe }))
-	{
-		return false;
-	}
-
-	ARpgBaseCampActor* BaseCamp = TestWorld.CreateLinkedBaseCamp(*this);
-	URpgBaseStorageComponent* BaseStorage = BaseCamp ? BaseCamp->GetBaseStorageComponent() : nullptr;
-	if (!TestNotNull(TEXT("The linked resource storage exists"), BaseStorage))
-	{
-		return false;
-	}
-
-	BaseStorage->AddResourceCapacity(
-		URpgInventoryAutomationTestMaterialDefinition::StaticClass(),
-		250);
-	if (!TestTrue(
-			TEXT("The linked base stores the resource fixture"),
-			BaseStorage->StoreDefinitionResource(
-				URpgInventoryAutomationTestMaterialDefinition::StaticClass(),
-				250)))
-	{
-		return false;
-	}
-
-	URpgCraftingStationComponent* Station = TestWorld.GetStation();
-	AActor* RequestingActor = TestWorld.GetRequestingController();
-	TestEqual(
-		TEXT("Resource-backed quantity is derived from available resources and is not capped by the free-recipe fallback"),
-		Station->GetMaxCraftableQuantity(RequestingActor, ResourceRecipe),
-		125);
-	TestTrue(TEXT("The full resource-backed maximum is accepted"), Station->CanCraftRecipeQuantity(RequestingActor, ResourceRecipe, 125));
-	TestFalse(TEXT("A resource-backed quantity above the available amount is rejected"), Station->CanCraftRecipeQuantity(RequestingActor, ResourceRecipe, 126));
+	TestFalse(TEXT("Immediate crafting failure keeps costs too"), Station->CraftItems(Fixture.GetRequestingController(), { Cost }, { Output, Output }));
+	TestEqual(TEXT("Player retains all input material"), Player->GetTotalItemCountByDefinition(Material), 4);
+	TestTrue(TEXT("A fitting single output commits"), Station->AddCraftingOutputs({ Output }));
+	TestFalse(TEXT("Full tray rejects another output without dropping"), Station->AddCraftingOutputs({ Output }));
+	TestEqual(TEXT("Full-tray rejection retains exactly the existing item"), Tray->GetUsedEntryCount(), 1);
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FRpgCraftingOutputValidationAndWorldDropFallbackTest,
-	"SurvivalRpg.Crafting.Authority.OutputValidationAndWorldDropFallback",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgCraftingDurableQueueTest,
+	"SurvivalRpg.Crafting.Physical.DurableQueueAndRetainedRefund",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FRpgCraftingOutputValidationAndWorldDropFallbackTest::RunTest(const FString& Parameters)
+bool FRpgCraftingDurableQueueTest::RunTest(const FString& Parameters)
 {
 	using namespace RpgCraftingStationTests;
-	FScopedCraftingWorld TestWorld;
-	if (!TestWorld.Initialize(*this))
-	{
-		return false;
-	}
-
-	URpgCraftingRecipeDefinition* EmptyOutputRecipe = TestWorld.CreateRecipe();
-	if (!TestNotNull(TEXT("The empty-output recipe fixture exists"), EmptyOutputRecipe))
-	{
-		return false;
-	}
-
-	EmptyOutputRecipe->OutputItems.Reset();
-	if (!TestWorld.OfferRecipes(*this, { EmptyOutputRecipe }))
-	{
-		return false;
-	}
-
-	URpgCraftingStationComponent* Station = TestWorld.GetStation();
-	AActor* RequestingActor = TestWorld.GetRequestingController();
-	const TArray<FRpgCraftingOutputItem> EmptyOutputs;
-	TestFalse(TEXT("An empty output list is rejected fail-closed"), Station->CanAcceptCraftingOutputs(EmptyOutputs));
-	TestEqual(
-		TEXT("An offered recipe without outputs has no craftable quantity"),
-		Station->GetMaxCraftableQuantity(RequestingActor, EmptyOutputRecipe),
-		0);
-
-	TArray<FRpgCraftingOutputItem> InvalidOutputs;
-	FRpgCraftingOutputItem& InvalidOutput = InvalidOutputs.AddDefaulted_GetRef();
-	InvalidOutput.ItemDefinition = URpgInventoryAutomationTestUnitItemDefinition::StaticClass();
-	InvalidOutput.Count = 0;
-	TestFalse(TEXT("A malformed output entry is rejected fail-closed"), Station->CanAcceptCraftingOutputs(InvalidOutputs));
-
-	TArray<FRpgCraftingOutputItem> ValidOutputs;
-	FRpgCraftingOutputItem& ValidOutput = ValidOutputs.AddDefaulted_GetRef();
-	ValidOutput.ItemDefinition = URpgInventoryAutomationTestUnitItemDefinition::StaticClass();
-	ValidOutput.Count = 1;
-
-	URpgInventoryManagerComponent* OutputInventory = Station->GetOutputInventory();
-	if (!TestNotNull(TEXT("The station output inventory exists"), OutputInventory))
-	{
-		return false;
-	}
-
-	const FRpgInventoryGridSize OutputGridSize =
-		OutputInventory->GetDefaultGridSize();
-	bool bFilledOutputGrid = OutputGridSize.IsValid();
-	for (int32 CellIndex = 0;
-		bFilledOutputGrid &&
-			CellIndex < OutputGridSize.Width * OutputGridSize.Height;
-		++CellIndex)
-	{
-		bFilledOutputGrid =
-			OutputInventory->AddItemDefinition(
-				URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
-				1) != nullptr;
-	}
-	if (!TestTrue(
-			TEXT("The finite spatial output grid can be filled completely"),
-			bFilledOutputGrid))
-	{
-		return false;
-	}
-	TestFalse(
-		TEXT("The full spatial output grid cannot accept another valid item"),
-		OutputInventory->CanAddItemDefinition(ValidOutput.ItemDefinition, ValidOutput.Count));
-	TestTrue(
-		TEXT("A valid output remains acceptable because storage overflow has a world-drop fallback"),
-		Station->CanAcceptCraftingOutputs(ValidOutputs));
-
-	UWorld* World = Station->GetWorld();
-	const int32 DropsBefore = CountDroppedOutputActors(World);
-	TestTrue(
-		TEXT("Authority materializes valid overflow through the world-drop fallback"),
-		Station->AddCraftingOutputs(ValidOutputs));
-	TestEqual(
-		TEXT("Exactly one world pickup is spawned for the overflow"),
-		CountDroppedOutputActors(World),
-		DropsBefore + 1);
+	FScopedCraftingWorld Fixture;
+	if (!Fixture.Initialize(*this)) { return false; }
+	URpgCraftingStationComponent* Station = Fixture.GetStation();
+	AActor* Requester = Fixture.GetRequestingController();
+	ARpgInventoryContainerActor* Chest = Fixture.CreateChest();
+	if (!TestNotNull(TEXT("Refund source chest exists"), Chest)) { return false; }
+	URpgInventoryManagerComponent* Source = Chest->GetInventoryManager();
+	FRpgInventoryGridSize OneCell;
+	OneCell.Width = 1; OneCell.Height = 1;
+	Source->SetDefaultGridSize(OneCell);
+	Station->GetOutputInventory()->SetDefaultGridSize(OneCell);
+	const TSubclassOf<URpgInventoryItemDefinition> Material = URpgInventoryAutomationTestMaterialDefinition::StaticClass();
+	Source->AddItemDefinition(Material, 10);
+	URpgCraftingRecipeDefinition* Recipe = Fixture.CreateRecipe();
+	Recipe->CraftTime = 30.0f;
+	FRpgCraftingResourceCost& First = Recipe->RequiredResources.AddDefaulted_GetRef();
+	First.ItemDefinition = Material; First.Count = 2;
+	FRpgCraftingResourceCost& Second = Recipe->RequiredResources.AddDefaulted_GetRef();
+	Second.ItemDefinition = Material; Second.Count = 3;
+	if (!Fixture.OfferRecipes(*this, { Recipe })) { return false; }
+	TestEqual(TEXT("Duplicate material costs aggregate for quantity"), Station->GetMaxCraftableQuantity(Requester, Recipe), 2);
+	TestTrue(TEXT("Timed physical-storage job queues"), Station->QueueCraftRecipe(Requester, Recipe, 2));
+	TestTrue(TEXT("Explicit pause is accepted"), Station->PauseCraftingStation(Requester));
+	const FRpgCraftingStationSaveData Save = Station->ExportCraftingState();
+	if (!TestEqual(TEXT("One paid batch is exported"), Save.Jobs.Num(), 1)) { return false; }
+	TestEqual(TEXT("Refund records exact paid quantity"), Save.Jobs[0].Refunds[0].Count, 10);
+	TestTrue(TEXT("The source identity is durable"), !Save.Jobs[0].Refunds[0].InventoryId.IsNone());
+	TestTrue(TEXT("Saved queue restores with tray and paused state"), Station->RestoreCraftingState(Save));
+	Station->ResumeRestoredCrafting();
+	TestTrue(TEXT("Restored explicit pause remains paused"), Station->IsCraftingPaused());
+	TestEqual(TEXT("Restore retains relative remaining time"), Station->ExportCraftingState().Jobs[0].RemainingTime, Save.Jobs[0].RemainingTime);
+	Source->AddItemDefinition(URpgInventoryAutomationTestUnitItemDefinition::StaticClass(), 1);
+	Station->GetOutputInventory()->AddItemDefinition(URpgInventoryAutomationTestUnitItemDefinition::StaticClass(), 1);
+	TestFalse(TEXT("Cancel cannot discard a refund when source and tray are full"), Station->CancelCraftJob(Requester, Save.Jobs[0].JobId));
+	TestEqual(TEXT("Unpaid refund claim remains with its job"), Station->GetCraftingJobs().Num(), 1);
+	TestEqual(TEXT("No refund falls onto the ground"), CountDroppedOutputActors(Station->GetWorld()), 0);
+	const TArray<FRpgInventoryEntryView> SourceEntries = Source->GetAllEntries();
+	Source->ConsumeItemById(SourceEntries[0].ItemId, 1);
+	TestTrue(TEXT("Cancel succeeds once original source has space"), Station->CancelCraftJob(Requester, Save.Jobs[0].JobId));
+	TestEqual(TEXT("All paid materials are restored exactly once"), Source->GetTotalItemCountByDefinition(Material), 10);
+	TestEqual(TEXT("Successful refund removes the job"), Station->GetCraftingJobs().Num(), 0);
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FRpgCraftingDuplicateResourceAggregationTest,
-	"SurvivalRpg.Crafting.Authority.DuplicateResourceCostsAreAggregated",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgCraftingOutputAssignmentTest,
+	"SurvivalRpg.Crafting.Physical.TrayDefaultAssignmentAndRuntimeState",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FRpgCraftingDuplicateResourceAggregationTest::RunTest(const FString& Parameters)
+bool FRpgCraftingOutputAssignmentTest::RunTest(const FString& Parameters)
 {
 	using namespace RpgCraftingStationTests;
-	FScopedCraftingWorld TestWorld;
-	if (!TestWorld.Initialize(*this))
-	{
-		return false;
-	}
-
-	URpgCraftingRecipeDefinition* DuplicateCostRecipe = TestWorld.CreateRecipe();
-	if (!TestNotNull(TEXT("The duplicate-cost recipe fixture exists"), DuplicateCostRecipe))
-	{
-		return false;
-	}
-
-	FRpgCraftingResourceCost& FirstCost = DuplicateCostRecipe->RequiredResources.AddDefaulted_GetRef();
-	FirstCost.ItemDefinition =
-		URpgInventoryAutomationTestMaterialDefinition::StaticClass();
-	FirstCost.Count = 2;
-	FRpgCraftingResourceCost& DuplicateCost = DuplicateCostRecipe->RequiredResources.AddDefaulted_GetRef();
-	DuplicateCost.ItemDefinition =
-		URpgInventoryAutomationTestMaterialDefinition::StaticClass();
-	DuplicateCost.Count = 3;
-	if (!TestWorld.OfferRecipes(*this, { DuplicateCostRecipe }))
-	{
-		return false;
-	}
-
-	ARpgBaseCampActor* BaseCamp = TestWorld.CreateLinkedBaseCamp(*this);
-	URpgBaseStorageComponent* BaseStorage = BaseCamp ? BaseCamp->GetBaseStorageComponent() : nullptr;
-	if (!TestNotNull(TEXT("The linked resource storage exists"), BaseStorage))
-	{
-		return false;
-	}
-
-	BaseStorage->AddResourceCapacity(
-		URpgInventoryAutomationTestMaterialDefinition::StaticClass(),
-		20);
-	if (!TestTrue(
-			TEXT("The linked base stores twenty duplicate-cost resources"),
-			BaseStorage->StoreDefinitionResource(
-				URpgInventoryAutomationTestMaterialDefinition::StaticClass(),
-				20)))
-	{
-		return false;
-	}
-
-	URpgCraftingStationComponent* Station = TestWorld.GetStation();
-	AActor* RequestingActor = TestWorld.GetRequestingController();
-	TestEqual(
-		TEXT("Costs of two plus three for the same definition are treated as five per unit"),
-		Station->GetMaxCraftableQuantity(RequestingActor, DuplicateCostRecipe),
-		4);
-	TestTrue(
-		TEXT("The aggregated resource maximum is accepted"),
-		Station->CanCraftRecipeQuantity(RequestingActor, DuplicateCostRecipe, 4));
-	TestFalse(
-		TEXT("A quantity that only passes the individual duplicate entries is rejected"),
-		Station->CanCraftRecipeQuantity(RequestingActor, DuplicateCostRecipe, 5));
-
-	if (!TestTrue(
-			TEXT("The authoritative queue consumes the exact aggregated batch cost"),
-			Station->QueueCraftRecipe(RequestingActor, DuplicateCostRecipe, 4)))
-	{
-		return false;
-	}
-	TestEqual(
-		TEXT("The aggregated batch consumes all twenty resources"),
-		BaseStorage->GetResourceCount(
-			URpgInventoryAutomationTestMaterialDefinition::StaticClass()),
-		0);
-
-	const TArray<FRpgCraftingJobEntry> Jobs = Station->GetCraftingJobs();
-	if (!TestEqual(TEXT("Exactly one aggregated-cost job was queued"), Jobs.Num(), 1))
-	{
-		return false;
-	}
-
-	TestTrue(
-		TEXT("Canceling the batch refunds the aggregated resource credit"),
-		Station->CancelCraftJob(RequestingActor, Jobs[0].JobId));
-	TestEqual(
-		TEXT("The complete aggregated batch cost is restored"),
-		BaseStorage->GetResourceCount(
-			URpgInventoryAutomationTestMaterialDefinition::StaticClass()),
-		20);
+	FScopedCraftingWorld Fixture;
+	if (!Fixture.Initialize(*this)) { return false; }
+	URpgCraftingStationComponent* Station = Fixture.GetStation();
+	ARpgInventoryContainerActor* Chest = Fixture.CreateChest();
+	if (!TestNotNull(TEXT("Assigned destination exists"), Chest)) { return false; }
+	const TSubclassOf<URpgInventoryItemDefinition> Material = URpgInventoryAutomationTestMaterialDefinition::StaticClass();
+	FRpgStorageAssignment Rule;
+	Rule.ItemDefinition = Material;
+	TestTrue(TEXT("An exact item assignment can be authored"), Chest->GetContainerComponent()->SetAssignments({ Rule }));
+	FRpgCraftingOutputItem Output;
+	Output.ItemDefinition = Material; Output.Count = 3;
+	TestFalse(TEXT("Outputs remain in tray by default"), Station->IsCraftingOutputAutoDepositEnabled());
+	TestTrue(TEXT("Default output is created"), Station->AddCraftingOutputs({ Output }));
+	TestEqual(TEXT("The tray owns the default output"), Station->GetOutputInventory()->GetTotalItemCountByDefinition(Material), 3);
+	TestTrue(TEXT("Automatic routing needs no upgrade"), Station->SetCraftingOutputAutoDepositEnabled(Fixture.GetRequestingController(), true));
+	TestEqual(TEXT("Turning automation on routes existing ordinary output"), Chest->GetInventoryManager()->GetTotalItemCountByDefinition(Material), 3);
+	URpgInventoryItemInstance* Variant = Station->GetOutputInventory()->AddItemDefinition(Material, 2);
+	if (!TestNotNull(TEXT("Runtime-state material fixture exists"), Variant)) { return false; }
+	Variant->AddStatTagStack(RpgGameplayTags::Ability_Attack_Basic, 71);
+	const FRpgInventoryItemId VariantId = Variant->GetItemId();
+	const int32 Revision = Station->GetOutputInventory()->GetInventoryRevision();
+	TestFalse(TEXT("Automation does not collapse a stateful material"), Station->FlushOutputToBaseStorage());
+	TestEqual(TEXT("Skipped stateful output does not change the tray revision"), Station->GetOutputInventory()->GetInventoryRevision(), Revision);
+	TestTrue(TEXT("Stateful output retains exact identity and state"), Station->GetOutputInventory()->FindItemById(VariantId) == Variant && Variant->GetStatTagStackCount(RpgGameplayTags::Ability_Attack_Basic) == 71);
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FRpgCraftingRuntimeStateBaseStorageBoundaryTest,
-	"SurvivalRpg.Crafting.Output.RuntimeStateBaseStorageBoundary",
-	EAutomationTestFlags::EditorContext |
-		EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgCraftingSpatialDomainTest,
+	"SurvivalRpg.Crafting.Physical.BaseOverridesStationRadius",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FRpgCraftingRuntimeStateBaseStorageBoundaryTest::RunTest(
-	const FString& Parameters)
+bool FRpgCraftingSpatialDomainTest::RunTest(const FString& Parameters)
 {
 	using namespace RpgCraftingStationTests;
-	FScopedCraftingWorld TestWorld;
-	if (!TestWorld.Initialize(*this))
+	FScopedCraftingWorld Fixture;
+	if (!Fixture.Initialize(*this)) { return false; }
+	URpgCraftingStationComponent* Station = Fixture.GetStation();
+	ARpgBaseCampActor* Base = Station->GetWorld()->SpawnActor<ARpgBaseCampActor>();
+	if (!TestNotNull(TEXT("Area fixture exists"), Base) || !TestTrue(TEXT("Valid base area is accepted"), Base->SetBaseArea(FVector::ZeroVector, 5000.0f))) { return false; }
+	FFloatProperty* Radius = FindFProperty<FFloatProperty>(URpgCraftingStationComponent::StaticClass(), TEXT("StorageSearchRadius"));
+	if (!TestNotNull(TEXT("Outside radius tuning exists"), Radius)) { return false; }
+	Radius->SetPropertyValue_InContainer(Station, 150.0f);
+	const TSubclassOf<URpgInventoryItemDefinition> Material = URpgInventoryAutomationTestMaterialDefinition::StaticClass();
+	auto MakeStock = [&](FVector Position, int32 Count)
 	{
-		return false;
-	}
-
-	URpgCraftingStationComponent* Station = TestWorld.GetStation();
-	URpgInventoryManagerComponent* OutputInventory =
-		Station ? Station->GetOutputInventory() : nullptr;
-	ARpgBaseCampActor* BaseCamp =
-		TestWorld.CreateLinkedBaseCamp(*this);
-	URpgBaseStorageComponent* BaseStorage =
-		BaseCamp ? BaseCamp->GetBaseStorageComponent() : nullptr;
-	if (!TestNotNull(
-			TEXT("The state-boundary output inventory exists"),
-			OutputInventory) ||
-		!TestNotNull(
-			TEXT("The state-boundary base storage exists"),
-			BaseStorage))
-	{
-		return false;
-	}
-
-	const TSubclassOf<URpgInventoryItemDefinition> PlainMaterialDefinition =
-		URpgInventoryAutomationTestMaterialDefinition::StaticClass();
-	BaseStorage->AddResourceCapacity(PlainMaterialDefinition, 20);
-	URpgInventoryItemInstance* DefaultMaterial =
-		OutputInventory->AddItemDefinition(PlainMaterialDefinition, 3);
-	if (!TestNotNull(
-		TEXT("A default-state material output exists"),
-		DefaultMaterial))
-	{
-		return false;
-	}
-	TestTrue(
-		TEXT("Base storage accepts a concrete reproducible default state"),
-		BaseStorage->CanStoreResourceInstance(DefaultMaterial, 3));
-	TestTrue(
-		TEXT("Default-state crafting output is projected into the base pool"),
-		Station->FlushOutputToBaseStorage());
-	TestEqual(
-		TEXT("The default material count reaches base storage"),
-		BaseStorage->GetResourceCount(PlainMaterialDefinition),
-		3);
-	TestEqual(
-		TEXT("The projected default material leaves no concrete output entry"),
-		OutputInventory->GetUsedEntryCount(),
-		0);
-
-	URpgInventoryItemInstance* VariantMaterial =
-		OutputInventory->AddItemDefinition(PlainMaterialDefinition, 2);
-	if (!TestNotNull(
-			TEXT("A concrete runtime-state variant exists"),
-			VariantMaterial))
-	{
-		return false;
-	}
-	VariantMaterial->AddStatTagStack(
-		RpgGameplayTags::Ability_Attack_Basic,
-		71);
-
-	const TArray<FRpgInventoryEntryView> EntriesBefore =
-		OutputInventory->GetAllEntries();
-	if (!TestEqual(
-		TEXT("Exactly one variant output entry is present"),
-		EntriesBefore.Num(),
-		1))
-	{
-		return false;
-	}
-	const FRpgInventoryEntryView EntryBefore = EntriesBefore[0];
-	const int32 RevisionBefore = OutputInventory->GetInventoryRevision();
-	FRpgInventoryStackKey KeyBefore;
-	if (!TestTrue(
-		TEXT("The variant output has a valid canonical key"),
-		VariantMaterial->TryBuildStackKey(KeyBefore)))
-	{
-		return false;
-	}
-
-	TestFalse(
-		TEXT("Base storage rejects a concrete non-default runtime state"),
-		BaseStorage->CanStoreResourceInstance(VariantMaterial, 2));
-	TestFalse(
-		TEXT("Crafting flush reports no movement for the rejected variant"),
-		Station->FlushOutputToBaseStorage());
-	TestEqual(
-		TEXT("Rejected variant does not change the base resource count"),
-		BaseStorage->GetResourceCount(PlainMaterialDefinition),
-		3);
-	TestEqual(
-		TEXT("Rejected variant does not advance the output revision"),
-		OutputInventory->GetInventoryRevision(),
-		RevisionBefore);
-	TestTrue(
-		TEXT("Rejected variant preserves its persistent identity and UObject"),
-		OutputInventory->FindItemById(EntryBefore.ItemId) ==
-			VariantMaterial);
-	TestTrue(
-		TEXT("Rejected variant preserves its replicated entry identity"),
-		OutputInventory->ContainsEntry(EntryBefore.EntryId));
-	TestEqual(
-		TEXT("Rejected variant preserves its exact quantity"),
-		OutputInventory->GetItemStackCount(VariantMaterial),
-		EntryBefore.StackCount);
-	FRpgInventoryGridPlacement PlacementAfter;
-	TestTrue(
-		TEXT("Rejected variant preserves its exact placement"),
-		OutputInventory->GetItemPlacement(
-			VariantMaterial,
-			PlacementAfter) &&
-			PlacementAfter == EntryBefore.Placement);
-	FRpgInventoryStackKey KeyAfter;
-	TestTrue(
-		TEXT("Rejected variant preserves all fragment runtime bytes"),
-		VariantMaterial->TryBuildStackKey(KeyAfter) &&
-			KeyAfter == KeyBefore &&
-			VariantMaterial->GetStatTagStackCount(
-				RpgGameplayTags::Ability_Attack_Basic) == 71);
+		ARpgInventoryContainerActor* Chest = Fixture.CreateChest();
+		if (!Chest) { return false; }
+		Chest->SetActorLocation(Position);
+		return Chest->GetInventoryManager()->AddItemDefinition(Material, Count) != nullptr;
+	};
+	if (!MakeStock(FVector(4000, 0, 0), 7) || !MakeStock(FVector(4990, 0, 0), 11) ||
+		!MakeStock(FVector(0, 0, 10000), 13) || !MakeStock(FVector(5100, 0, 0), 3)) { AddError(TEXT("Could not seed spatial source fixtures")); return false; }
+	AActor* Requester = Fixture.GetRequestingController();
+	TestEqual(TEXT("Inside uses the full horizontal base including other floors"), Station->GetAvailableResourceCount(Requester, Material), 31);
+	Station->GetOwner()->SetActorLocation(FVector(5100, 0, 0));
+	TestEqual(TEXT("Outside radius reaches individual nearby base chests without inheriting their base"), Station->GetAvailableResourceCount(Requester, Material), 14);
+	Radius->SetPropertyValue_InContainer(Station, 0.0f);
+	TestEqual(TEXT("Zero outside radius never means unlimited access"), Station->GetAvailableResourceCount(Requester, Material), 0);
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FRpgCraftingContainerProviderBaseStorageBoundaryTest,
-	"SurvivalRpg.Crafting.Output.ContainerProviderBaseStorageBoundary",
-	EAutomationTestFlags::EditorContext |
-		EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgPhysicalStorageReadModelLifecycleTest,
+	"SurvivalRpg.Inventory.PhysicalStorage.ReadModelLifecycle",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FRpgCraftingContainerProviderBaseStorageBoundaryTest::RunTest(
-	const FString& Parameters)
+bool FRpgPhysicalStorageReadModelLifecycleTest::RunTest(const FString& Parameters)
 {
 	using namespace RpgCraftingStationTests;
-	FScopedCraftingWorld TestWorld;
-	if (!TestWorld.Initialize(*this))
-	{
-		return false;
-	}
-
-	URpgCraftingStationComponent* Station = TestWorld.GetStation();
-	URpgInventoryManagerComponent* OutputInventory =
-		Station ? Station->GetOutputInventory() : nullptr;
-	ARpgBaseCampActor* BaseCamp =
-		TestWorld.CreateLinkedBaseCamp(*this);
-	URpgBaseStorageComponent* BaseStorage =
-		BaseCamp ? BaseCamp->GetBaseStorageComponent() : nullptr;
-	URpgInventoryManagerComponent* ArmoryInventory =
-		BaseCamp ? BaseCamp->GetArmoryInventoryComponent() : nullptr;
-	if (!TestNotNull(
-			TEXT("The provider-boundary output inventory exists"),
-			OutputInventory) ||
-		!TestNotNull(
-			TEXT("The provider-boundary base storage exists"),
-			BaseStorage) ||
-		!TestNotNull(
-			TEXT("The provider-boundary armory exists"),
-			ArmoryInventory))
-	{
-		return false;
-	}
-
-	const TSubclassOf<URpgInventoryItemDefinition> ProviderDefinition =
-		URpgInventoryAutomationTestMaterialContainerDefinition::
-			StaticClass();
-	BaseStorage->AddResourceCapacity(ProviderDefinition, 10);
-	URpgInventoryItemInstance* Provider =
-		OutputInventory->AddItemDefinition(ProviderDefinition, 1);
-	if (!TestNotNull(
-			TEXT("A material container provider exists"),
-			Provider))
-	{
-		return false;
-	}
-
-	FRpgInventoryGridPlacement RequestedChildPlacement;
-	RequestedChildPlacement.SetContainerHandle(
-		FRpgInventoryContainerHandle::MakeItemOwned(
-			Provider->GetItemId(),
-			TEXT("Main"),
-			1));
-	RequestedChildPlacement.X = 0;
-	RequestedChildPlacement.Y = 0;
-	RequestedChildPlacement.Width = 1;
-	RequestedChildPlacement.Height = 1;
-	URpgInventoryItemInstance* Child =
-		OutputInventory->AddItemDefinitionToPlacement(
-			URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
-			1,
-			RequestedChildPlacement);
-	if (!TestNotNull(
-			TEXT("The material provider owns one concrete child"),
-			Child))
-	{
-		return false;
-	}
-	Child->AddStatTagStack(RpgGameplayTags::Ability_Attack_Basic, 3);
-	const FRpgInventoryItemId ProviderItemId = Provider->GetItemId();
-	const FRpgInventoryItemId ChildItemId = Child->GetItemId();
-	const int32 RevisionBefore =
-		OutputInventory->GetInventoryRevision();
-
-	TestFalse(
-		TEXT("A container provider cannot collapse into definition/count"),
-		Provider->CanCollapseIntoDefinitionCount());
-	TestFalse(
-		TEXT("Base storage rejects a material container before consume"),
-		BaseStorage->CanStoreResourceInstance(Provider, 1));
-	TestTrue(
-		TEXT("Crafting flush preserves the concrete provider by routing it to the Armory"),
-		Station->FlushOutputToBaseStorage());
-	TestEqual(
-		TEXT("Rejected provider creates no base resource credit"),
-		BaseStorage->GetResourceCount(ProviderDefinition),
-		0);
-	TestEqual(
-		TEXT("The exact cross-inventory transfer advances the output revision once"),
-		OutputInventory->GetInventoryRevision(),
-		RevisionBefore + 1);
-	TestEqual(
-		TEXT("The transferred provider subtree leaves the output graph atomically"),
-		OutputInventory->GetUsedEntryCount(),
-		0);
-
-	URpgInventoryItemInstance* TransferredProvider =
-		ArmoryInventory->FindItemById(ProviderItemId);
-	URpgInventoryItemInstance* TransferredChild =
-		ArmoryInventory->FindItemById(ChildItemId);
-	if (!TestNotNull(
-			TEXT("Armory receives the provider's persistent identity"),
-			TransferredProvider) ||
-		!TestNotNull(
-			TEXT("Armory receives the child's persistent identity"),
-			TransferredChild))
-	{
-		return false;
-	}
-	TestEqual(
-		TEXT("Armory receives the complete provider subtree"),
-		ArmoryInventory->GetUsedEntryCount(),
-		2);
-	TestTrue(
-		TEXT("Cross-actor transfer re-owns concrete instances without reusing source UObjects"),
-		TransferredProvider != Provider && TransferredChild != Child);
-	TestEqual(
-		TEXT("Transferred child preserves its runtime stat payload"),
-		TransferredChild->GetStatTagStackCount(
-			RpgGameplayTags::Ability_Attack_Basic),
-		3);
-	FRpgInventoryGridPlacement ProviderPlacementAfter;
-	FRpgInventoryGridPlacement ChildPlacementAfter;
-	TestTrue(
-		TEXT("Transferred provider occupies the Armory root"),
-		ArmoryInventory->GetItemPlacement(
-			TransferredProvider,
-			ProviderPlacementAfter) &&
-			!ProviderPlacementAfter.GetContainerHandle().IsItemOwned());
-	TestTrue(
-		TEXT("Transferred child remains inside the same persistent provider identity"),
-		ArmoryInventory->GetItemPlacement(
-			TransferredChild,
-			ChildPlacementAfter) &&
-			ChildPlacementAfter.GetContainerHandle().IsItemOwned() &&
-			ChildPlacementAfter.GetContainerHandle().ItemOwnerId ==
-				ProviderItemId &&
-			ArmoryInventory->GetItemStackCount(TransferredChild) == 1);
+	FScopedCraftingWorld Fixture;
+	if (!Fixture.Initialize(*this)) { return false; }
+	ARpgInventoryContainerActor* First = Fixture.CreateChest();
+	ARpgInventoryContainerActor* Second = Fixture.CreateChest();
+	if (!TestNotNull(TEXT("First view-model source exists"), First) || !TestNotNull(TEXT("Second view-model source exists"), Second)) { return false; }
+	URpgPhysicalStorageViewModel* Model = NewObject<URpgPhysicalStorageViewModel>();
+	FRpgStorageAssignment Rule;
+	Rule.ItemDefinition = URpgInventoryAutomationTestMaterialDefinition::StaticClass();
+	Model->BindContainer(First->GetContainerComponent());
+	TestTrue(TEXT("A physical chest enables its metadata projection"), Model->IsPhysicalStorage());
+	First->GetContainerComponent()->SetAssignments({ Rule });
+	TestEqual(TEXT("Server-confirmed settings immediately refresh the read model"), Model->GetAssignments().Num(), 1);
+	TestEqual(TEXT("The read model carries the observed settings revision"), Model->GetSettingsRevision(), First->GetContainerComponent()->GetSettingsRevision());
+	Model->BindContainer(Second->GetContainerComponent());
+	First->GetContainerComponent()->SetAssignments({});
+	First->GetContainerComponent()->SetAssignments({ Rule });
+	TestEqual(TEXT("Changes on the released source cannot leak into the new context"), Model->GetAssignments().Num(), 0);
+	Second->GetContainerComponent()->SetAssignments({ Rule });
+	TestEqual(TEXT("New source metadata remains observed"), Model->GetAssignments().Num(), 1);
+	Model->SetCommandPending(true);
+	Model->UnbindContainer();
+	TestFalse(TEXT("Releasing presentation clears pending state"), Model->IsCommandPending());
+	TestFalse(TEXT("Unbound projection exposes no gameplay target"), Model->IsPhysicalStorage());
+	Second->GetContainerComponent()->SetAssignments({});
+	Second->GetContainerComponent()->SetAssignments({ Rule });
+	TestEqual(TEXT("Released projection remains empty despite later source changes"), Model->GetAssignments().Num(), 0);
 	return true;
 }
 
-#endif // WITH_DEV_AUTOMATION_TESTS
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgCraftingStationReentrancyTest,
+	"SurvivalRpg.Crafting.Physical.SynchronousMutationGuard",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCraftingStationReentrancyTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCraftingStationTests;
+	FScopedCraftingWorld Fixture;
+	if (!Fixture.Initialize(*this)) { return false; }
+	URpgCraftingStationComponent* Station = Fixture.GetStation();
+	AActor* Requester = Fixture.GetRequestingController();
+	URpgCraftingRecipeDefinition* Recipe = Fixture.CreateRecipe();
+	Recipe->CraftTime = 0.1f;
+	Recipe->OutputItems[0].ItemDefinition = URpgCraftingAutomationReentrantProduct::StaticClass();
+	URpgCraftingRecipeDefinition* FreeRecipe = Fixture.CreateRecipe();
+	if (!Fixture.OfferRecipes(*this, { Recipe, FreeRecipe }) ||
+		!TestTrue(TEXT("Fixture product is queued"), Station->QueueCraftRecipe(Requester, Recipe, 1))) { return false; }
+	const FRpgCraftingStationSaveData Snapshot = Station->ExportCraftingState();
+	const FGuid JobId = Snapshot.Jobs[0].JobId;
+	int32 FragmentCalls = 0;
+	int32 ObserverCalls = 0;
+	bool bRejectedAllCommands = true;
+	auto AttemptNestedCommands = [&]()
+	{
+		bRejectedAllCommands &= !Station->QueueCraftRecipe(Requester, FreeRecipe, 1);
+		bRejectedAllCommands &= !Station->CancelCraftJob(Requester, JobId);
+		bRejectedAllCommands &= !Station->PauseCraftingStation(Requester);
+		bRejectedAllCommands &= !Station->ResumeCraftingStation(Requester);
+		bRejectedAllCommands &= !Station->RestoreCraftingState(Snapshot);
+		bRejectedAllCommands &= !Station->SetCraftingOutputAutoDepositEnabled(Requester, true);
+		Station->ResumeRestoredCrafting();
+	};
+	URpgCraftingAutomationReentrantFragment::OnCreate = [&]()
+	{
+		++FragmentCalls;
+		AttemptNestedCommands();
+	};
+	const FDelegateHandle Handle = Station->GetOutputInventory()->OnInventoryPostCommit.AddLambda([&](URpgInventoryManagerComponent*)
+	{
+		++ObserverCalls;
+		AttemptNestedCommands();
+	});
+	// Isolated fixture clocks need a fresh frame both when registering and when expiring a pending timer.
+	TGuardValue<uint64> FrameGuard(GFrameCounter, GFrameCounter);
+	++GFrameCounter;
+	Station->GetWorld()->GetTimerManager().Tick(0.0f);
+	++GFrameCounter;
+	Station->GetWorld()->GetTimerManager().Tick(0.2f);
+	URpgCraftingAutomationReentrantFragment::OnCreate = {};
+	Station->GetOutputInventory()->OnInventoryPostCommit.Remove(Handle);
+	TestTrue(TEXT("Output preparation exercised the fragment callback"), FragmentCalls > 0);
+	TestTrue(TEXT("Output publication exercised the synchronous inventory observer"), ObserverCalls > 0);
+	TestTrue(TEXT("Queue, refund, pause, restore and settings reject nested mutation"), bRejectedAllCommands);
+	TestEqual(TEXT("The original job completes exactly once"), Station->GetCraftingJobs().Num(), 0);
+	TestEqual(TEXT("Only the original output is committed"), Station->GetOutputInventory()->GetTotalItemCountByDefinition(URpgCraftingAutomationReentrantProduct::StaticClass()), 1);
+	FIntProperty* StateRevision = FindFProperty<FIntProperty>(URpgCraftingStationComponent::StaticClass(), TEXT("CraftingStateRevision"));
+	if (!TestNotNull(TEXT("Queue revision contract exists"), StateRevision)) { return false; }
+	TestTrue(TEXT("A second product queues after the guard releases"), Station->QueueCraftRecipe(Requester, Recipe, 1));
+	URpgCraftingAutomationReentrantFragment::OnCreate = [&]()
+	{
+		// Simulate a future internal mutation bypassing command entrypoints: final context validation must still reject it.
+		StateRevision->SetPropertyValue_InContainer(Station, StateRevision->GetPropertyValue_InContainer(Station) + 1);
+	};
+	++GFrameCounter;
+	Station->GetWorld()->GetTimerManager().Tick(0.0f);
+	++GFrameCounter;
+	Station->GetWorld()->GetTimerManager().Tick(0.2f);
+	URpgCraftingAutomationReentrantFragment::OnCreate = {};
+	TestEqual(TEXT("Changed station revision rejects the staged output"), Station->GetOutputInventory()->GetTotalItemCountByDefinition(URpgCraftingAutomationReentrantProduct::StaticClass()), 1);
+	const TArray<FRpgCraftingJobEntry> PendingJobs = Station->GetCraftingJobs();
+	if (!TestEqual(TEXT("Rejected output retains its unpaid job"), PendingJobs.Num(), 1)) { return false; }
+	TestEqual(TEXT("The rejected unit waits for a safe retry"), PendingJobs[0].State, ERpgCraftingJobState::BlockedOutput);
+	TestTrue(TEXT("The unchanged refund claim remains cancelable"), Station->CancelCraftJob(Requester, PendingJobs[0].JobId));
+	TestTrue(TEXT("The guard releases after the outer operation"), Station->QueueCraftRecipe(Requester, FreeRecipe, 1));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgCraftingRestoreGridValidationTest,
+	"SurvivalRpg.Crafting.Physical.RestoreRejectsOutsideSavedGrid",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCraftingRestoreGridValidationTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCraftingStationTests;
+	FScopedCraftingWorld Fixture;
+	if (!Fixture.Initialize(*this)) { return false; }
+	URpgCraftingStationComponent* Station = Fixture.GetStation();
+	URpgInventoryManagerComponent* Tray = Station->GetOutputInventory();
+	FRpgInventoryGridSize Grid;
+	Grid.Width = 4; Grid.Height = 4;
+	if (!Tray->SetDefaultGridSize(Grid) || !Tray->AddItemDefinition(URpgInventoryAutomationTestUnitItemDefinition::StaticClass(), 1)) { return false; }
+	const FRpgCraftingStationSaveData Original = Station->ExportCraftingState();
+	const int32 Revision = Tray->GetInventoryRevision();
+	int32 Notifications = 0;
+	const FDelegateHandle Handle = Tray->OnInventoryPostCommit.AddLambda([&](URpgInventoryManagerComponent*) { ++Notifications; });
+	FRpgCraftingStationSaveData Invalid = Original;
+	Invalid.OutputGridSize.Width = 1;
+	Invalid.OutputInventoryGraph.Items[0].Placement.X = 2;
+	TestFalse(TEXT("A root item fitting the old tray but outside the saved tray rejects before publication"), Station->RestoreCraftingState(Invalid));
+	Invalid.OutputGridSize.Width = 8;
+	Invalid.OutputInventoryGraph.Items[0].Placement.X = 8;
+	TestFalse(TEXT("Invalid expanded save does not temporarily enlarge the runtime tray"), Station->RestoreCraftingState(Invalid));
+	Tray->OnInventoryPostCommit.Remove(Handle);
+	const FRpgCraftingStationSaveData After = Station->ExportCraftingState();
+	TestTrue(TEXT("Rejected restore retains the original dimensions"), After.OutputGridSize == Original.OutputGridSize);
+	TestEqual(TEXT("Rejected restore retains the original position"), After.OutputInventoryGraph.Items[0].Placement.X, Original.OutputInventoryGraph.Items[0].Placement.X);
+	TestEqual(TEXT("Rejected restore does not publish an inventory revision"), Tray->GetInventoryRevision(), Revision);
+	TestEqual(TEXT("Rejected restore notifies no committed graph"), Notifications, 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgCraftingCompetingQueuesConservationTest,
+	"SurvivalRpg.Crafting.Physical.CompetingQueuesConserveMaterials",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCraftingCompetingQueuesConservationTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCraftingStationTests;
+	FScopedCraftingWorld Fixture;
+	if (!Fixture.Initialize(*this)) { return false; }
+	URpgCraftingStationComponent* First = Fixture.GetStation();
+	UWorld* World = First->GetWorld();
+	ARpgCraftingStationActor* OtherActor = World->SpawnActor<ARpgCraftingStationActor>();
+	ARpgInventoryAutomationTestPlayerController* OtherPlayer = World->SpawnActor<ARpgInventoryAutomationTestPlayerController>();
+	ARpgInventoryContainerActor* Chest = Fixture.CreateChest();
+	if (!OtherActor || !OtherPlayer || !Chest) { return false; }
+	URpgCraftingStationComponent* Second = OtherActor->GetCraftingStationComponent();
+	URpgInventoryManagerComponent* Source = Chest->GetInventoryManager();
+	const TSubclassOf<URpgInventoryItemDefinition> Material = URpgInventoryAutomationTestMaterialDefinition::StaticClass();
+	const TSubclassOf<URpgInventoryItemDefinition> Product = URpgInventoryAutomationTestUnitItemDefinition::StaticClass();
+	if (!Source->AddItemDefinition(Material, 9)) { return false; }
+	URpgCraftingRecipeDefinition* Recipe = Fixture.CreateRecipe();
+	Recipe->CraftTime = 0.1f;
+	FRpgCraftingResourceCost& Cost = Recipe->RequiredResources.AddDefaulted_GetRef();
+	Cost.ItemDefinition = Material; Cost.Count = 3;
+	if (!Fixture.OfferRecipes(*this, { Recipe }) || !Fixture.OfferRecipes(*this, { Recipe }, Second)) { return false; }
+	AActor* Requester = Fixture.GetRequestingController();
+	TestTrue(TEXT("Both players initially see the same affordable batch"), First->CanCraftRecipeQuantity(Requester, Recipe, 2) && Second->CanCraftRecipeQuantity(OtherPlayer, Recipe, 2));
+	TestTrue(TEXT("First request reserves six shared materials"), First->QueueCraftRecipe(Requester, Recipe, 2));
+	TestFalse(TEXT("Another player cannot queue a stale affordable batch at the same station"), First->QueueCraftRecipe(OtherPlayer, Recipe, 2));
+	TestFalse(TEXT("Another station cannot spend those same reserved materials"), Second->QueueCraftRecipe(OtherPlayer, Recipe, 2));
+	TestTrue(TEXT("A smaller independent request can spend the remaining three"), Second->QueueCraftRecipe(OtherPlayer, Recipe, 1));
+	TestEqual(TEXT("Live plus both stations' paid claims equals the initial stock"), Source->GetTotalItemCountByDefinition(Material) + CountReservedMaterial(First, Material) + CountReservedMaterial(Second, Material), 9);
+	const TArray<FRpgCraftingJobEntry> FirstJobs = First->GetCraftingJobs();
+	if (!TestEqual(TEXT("First queue has one paid batch"), FirstJobs.Num(), 1)) { return false; }
+	TestTrue(TEXT("Second player can cancel the shared first queue"), First->CancelCraftJob(OtherPlayer, FirstJobs[0].JobId));
+	TestFalse(TEXT("A repeated cancellation cannot refund twice"), First->CancelCraftJob(Requester, FirstJobs[0].JobId));
+	AdvanceCraftingTimers(World, 0.2f);
+	TestEqual(TEXT("Canceled timer produces no output"), First->GetOutputInventory()->GetTotalItemCountByDefinition(Product), 0);
+	TestEqual(TEXT("Other station completes once"), Second->GetOutputInventory()->GetTotalItemCountByDefinition(Product), 1);
+	TestEqual(TEXT("Refunded inputs plus inputs represented by produced output conserve all nine"), Source->GetTotalItemCountByDefinition(Material) + 3 * Second->GetOutputInventory()->GetTotalItemCountByDefinition(Product), 9);
+	TestEqual(TEXT("Completed and canceled queues retain no credits"), CountReservedMaterial(First, Material) + CountReservedMaterial(Second, Material), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgCraftingCompletionDomainChangeTest,
+	"SurvivalRpg.Crafting.Physical.CompletionRetriesAfterConcurrentSourceChanges",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCraftingCompletionDomainChangeTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCraftingStationTests;
+	FScopedCraftingWorld Fixture;
+	if (!Fixture.Initialize(*this)) { return false; }
+	URpgCraftingStationComponent* First = Fixture.GetStation();
+	UWorld* World = First->GetWorld();
+	ARpgCraftingStationActor* OtherActor = World->SpawnActor<ARpgCraftingStationActor>();
+	ARpgInventoryContainerActor* Chest = Fixture.CreateChest();
+	if (!OtherActor || !Chest) { return false; }
+	URpgCraftingStationComponent* Second = OtherActor->GetCraftingStationComponent();
+	URpgInventoryManagerComponent* Source = Chest->GetInventoryManager();
+	const TSubclassOf<URpgInventoryItemDefinition> Material = URpgInventoryAutomationTestMaterialDefinition::StaticClass();
+	if (!Source->AddItemDefinition(Material, 6)) { return false; }
+	URpgCraftingRecipeDefinition* Recipe = Fixture.CreateRecipe();
+	Recipe->CraftTime = 0.1f;
+	Recipe->OutputItems[0].ItemDefinition = URpgCraftingAutomationReentrantProduct::StaticClass();
+	FRpgCraftingResourceCost& Cost = Recipe->RequiredResources.AddDefaulted_GetRef();
+	Cost.ItemDefinition = Material; Cost.Count = 2;
+	URpgCraftingRecipeDefinition* OtherRecipe = Fixture.CreateRecipe();
+	OtherRecipe->CraftTime = 0.1f;
+	OtherRecipe->RequiredResources = Recipe->RequiredResources;
+	if (!Fixture.OfferRecipes(*this, { Recipe }) || !Fixture.OfferRecipes(*this, { OtherRecipe }, Second)) { return false; }
+	AActor* Requester = Fixture.GetRequestingController();
+	if (!First->QueueCraftRecipe(Requester, Recipe, 1)) { return false; }
+	bool bChanged = false, bOtherQueueAccepted = false, bExpanded = false;
+	URpgCraftingAutomationReentrantFragment::OnCreate = [&]()
+	{
+		if (bChanged) { return; }
+		bChanged = true;
+		// An independent station may commit while the first station stages its finished output.
+		bOtherQueueAccepted = Second->QueueCraftRecipe(Requester, OtherRecipe, 1);
+		FRpgInventoryGridSize Larger = Source->GetDefaultGridSize();
+		++Larger.Width;
+		bExpanded = Source->SetDefaultGridSize(Larger);
+		Chest->SetActorLocation(FVector(10000.0f, 0.0f, 0.0f));
+	};
+	AdvanceCraftingTimers(World, 0.2f);
+	URpgCraftingAutomationReentrantFragment::OnCreate = {};
+	TestTrue(TEXT("Independent queue, capacity update and source move occurred during staging"), bChanged && bOtherQueueAccepted && bExpanded);
+	const TArray<FRpgCraftingJobEntry> Blocked = First->GetCraftingJobs();
+	if (!TestEqual(TEXT("Changed domain preserves the paid first job"), Blocked.Num(), 1)) { return false; }
+	TestEqual(TEXT("Stale output plan waits for retry"), Blocked[0].State, ERpgCraftingJobState::BlockedOutput);
+	TestEqual(TEXT("Rejected preparation creates no first product"), First->GetOutputInventory()->GetUsedEntryCount(), 0);
+	TestEqual(TEXT("Live stock and both paid claims still conserve six inputs"), Source->GetTotalItemCountByDefinition(Material) + CountReservedMaterial(First, Material) + CountReservedMaterial(Second, Material), 6);
+	AdvanceCraftingTimers(World, 0.6f);
+	TestEqual(TEXT("Retry completes first job once after its source moved away"), First->GetOutputInventory()->GetTotalItemCountByDefinition(URpgCraftingAutomationReentrantProduct::StaticClass()), 1);
+	TestEqual(TEXT("Independent station also completes once"), Second->GetOutputInventory()->GetTotalItemCountByDefinition(URpgInventoryAutomationTestUnitItemDefinition::StaticClass()), 1);
+	TestEqual(TEXT("Both completed jobs release all paid claims"), CountReservedMaterial(First, Material) + CountReservedMaterial(Second, Material), 0);
+	TestEqual(TEXT("Untouched source remainder survives the upgrade and move"), Source->GetTotalItemCountByDefinition(Material), 2);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgCraftingBlockedRemainderConservationTest,
+	"SurvivalRpg.Crafting.Physical.PartialCompletionFullRefundAndReload",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCraftingBlockedRemainderConservationTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCraftingStationTests;
+	FScopedCraftingWorld Fixture;
+	if (!Fixture.Initialize(*this)) { return false; }
+	URpgCraftingStationComponent* Station = Fixture.GetStation();
+	URpgInventoryManagerComponent* Tray = Station->GetOutputInventory();
+	ARpgInventoryContainerActor* Chest = Fixture.CreateChest();
+	if (!Chest) { return false; }
+	URpgInventoryManagerComponent* Source = Chest->GetInventoryManager();
+	const TSubclassOf<URpgInventoryItemDefinition> Material = URpgInventoryAutomationTestMaterialDefinition::StaticClass();
+	const TSubclassOf<URpgInventoryItemDefinition> Product = URpgInventoryAutomationTestUnitItemDefinition::StaticClass();
+	FRpgInventoryGridSize OneCell; OneCell.Width = 1; OneCell.Height = 1;
+	if (!Tray->SetDefaultGridSize(OneCell) || !Source->SetDefaultGridSize(OneCell) || !Source->AddItemDefinition(Material, 6)) { return false; }
+	URpgCraftingRecipeDefinition* Recipe = Fixture.CreateRecipe();
+	Recipe->CraftTime = 0.1f;
+	FRpgCraftingResourceCost& Cost = Recipe->RequiredResources.AddDefaulted_GetRef();
+	Cost.ItemDefinition = Material; Cost.Count = 2;
+	if (!Fixture.OfferRecipes(*this, { Recipe }) || !Station->QueueCraftRecipe(Fixture.GetRequestingController(), Recipe, 3)) { return false; }
+	if (!Source->AddItemDefinition(Product, 1)) { return false; }
+	AdvanceCraftingTimers(Station->GetWorld(), 0.2f);
+	AdvanceCraftingTimers(Station->GetWorld(), 0.2f);
+	const FRpgCraftingStationSaveData Save = Station->ExportCraftingState();
+	if (!TestEqual(TEXT("Full tray retains one unfinished batch"), Save.Jobs.Num(), 1)) { return false; }
+	TestEqual(TEXT("Exactly one unit completed before the tray filled"), Save.Jobs[0].QuantityCompleted, 1);
+	TestEqual(TEXT("Only the two unfinished units retain input credits"), CountReservedMaterial(Station, Material), 4);
+	TestTrue(TEXT("Blocked output and its exact credits restore together"), Station->RestoreCraftingState(Save));
+	TestFalse(TEXT("Cancel cannot delete credits when original source and tray are full"), Station->CancelCraftJob(Fixture.GetRequestingController(), Save.Jobs[0].JobId));
+	TestEqual(TEXT("Failed cancellation preserves all four remaining inputs"), CountReservedMaterial(Station, Material), 4);
+	Station->ResumeRestoredCrafting();
+	const TArray<FRpgInventoryEntryView> FirstProducts = Tray->GetAllEntries();
+	if (!TestEqual(TEXT("First output exists exactly once after restore"), FirstProducts.Num(), 1)) { return false; }
+	TestTrue(TEXT("Player may collect the completed output"), Tray->ConsumeItemById(FirstProducts[0].ItemId, 1).IsSuccess());
+	AdvanceCraftingTimers(Station->GetWorld(), 0.6f);
+	TestEqual(TEXT("Freed tray permits one additional unit"), Tray->GetTotalItemCountByDefinition(Product), 1);
+	TestEqual(TEXT("Only the last unit remains reserved"), CountReservedMaterial(Station, Material), 2);
+	const TArray<FRpgInventoryEntryView> SecondProducts = Tray->GetAllEntries();
+	if (!TestEqual(TEXT("The retry creates a single second output"), SecondProducts.Num(), 1)) { return false; }
+	TestTrue(TEXT("Player collects second product before cancellation"), Tray->ConsumeItemById(SecondProducts[0].ItemId, 1).IsSuccess());
+	TestTrue(TEXT("Remaining two inputs refund into the now-empty tray"), Station->CancelCraftJob(Fixture.GetRequestingController(), Save.Jobs[0].JobId));
+	TestFalse(TEXT("Cancel replay after success cannot mint another refund"), Station->CancelCraftJob(Fixture.GetRequestingController(), Save.Jobs[0].JobId));
+	AdvanceCraftingTimers(Station->GetWorld(), 1.0f);
+	TestEqual(TEXT("Two collected products plus refund conserve the six original inputs"), 2 * 2 + Tray->GetTotalItemCountByDefinition(Material), 6);
+	TestEqual(TEXT("Canceled completion cannot append another product"), Tray->GetTotalItemCountByDefinition(Product), 0);
+	TestEqual(TEXT("No paid claims are left after successful refund"), CountReservedMaterial(Station, Material), 0);
+	TestEqual(TEXT("Capacity pressure never produced world drops"), CountDroppedOutputActors(Station->GetWorld()), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgCraftingMissingRefundSourcesTest,
+	"SurvivalRpg.Crafting.Physical.DisconnectAndDestroyedSourceRetainRefunds",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCraftingMissingRefundSourcesTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCraftingStationTests;
+	FScopedCraftingWorld Fixture;
+	if (!Fixture.Initialize(*this)) { return false; }
+	URpgCraftingStationComponent* Station = Fixture.GetStation();
+	URpgInventoryManagerComponent* Tray = Station->GetOutputInventory();
+	ARpgInventoryContainerActor* Chest = Fixture.CreateChest();
+	URpgInventoryManagerComponent* PlayerInventory = Fixture.CreatePlayerInventory();
+	if (!Chest || !PlayerInventory) { return false; }
+	const TSubclassOf<URpgInventoryItemDefinition> Material = URpgInventoryAutomationTestMaterialDefinition::StaticClass();
+	const TSubclassOf<URpgInventoryItemDefinition> Product = URpgInventoryAutomationTestUnitItemDefinition::StaticClass();
+	FRpgInventoryGridSize OneCell; OneCell.Width = 1; OneCell.Height = 1;
+	if (!Tray->SetDefaultGridSize(OneCell) || !PlayerInventory->AddItemDefinition(Material, 2) || !Chest->GetInventoryManager()->AddItemDefinition(Material, 4)) { return false; }
+	URpgCraftingRecipeDefinition* Recipe = Fixture.CreateRecipe();
+	Recipe->CraftTime = 30.0f;
+	FRpgCraftingResourceCost& Cost = Recipe->RequiredResources.AddDefaulted_GetRef();
+	Cost.ItemDefinition = Material; Cost.Count = 3;
+	if (!Fixture.OfferRecipes(*this, { Recipe }) || !Station->QueueCraftRecipe(Fixture.GetRequestingController(), Recipe, 2)) { return false; }
+	TestEqual(TEXT("Own materials were reserved before the shared source"), PlayerInventory->GetTotalItemCountByDefinition(Material), 0);
+	const FRpgCraftingStationSaveData Save = Station->ExportCraftingState();
+	if (!TestEqual(TEXT("Paid batch records both sources"), Save.Jobs[0].Refunds.Num(), 2)) { return false; }
+	Fixture.GetRequestingController()->Destroy();
+	Chest->Destroy();
+	ARpgInventoryAutomationTestPlayerController* OtherPlayer = Station->GetWorld()->SpawnActor<ARpgInventoryAutomationTestPlayerController>();
+	if (!OtherPlayer || !Station->RestoreCraftingState(Save) || !Tray->AddItemDefinition(Product, 1)) { return false; }
+	TestFalse(TEXT("Missing original sources and a full tray retain the cancel claim"), Station->CancelCraftJob(OtherPlayer, Save.Jobs[0].JobId));
+	TestEqual(TEXT("Disconnected player's and destroyed chest's credits remain intact"), CountReservedMaterial(Station, Material), 6);
+	const TArray<FRpgInventoryEntryView> Entries = Tray->GetAllEntries();
+	if (Entries.Num() != 1 || !Tray->ConsumeItemById(Entries[0].ItemId, 1).IsSuccess()) { return false; }
+	TestTrue(TEXT("Another player can recover the paid resources into the station tray"), Station->CancelCraftJob(OtherPlayer, Save.Jobs[0].JobId));
+	TestEqual(TEXT("All six reserved inputs survive lost source actors and reload"), Tray->GetTotalItemCountByDefinition(Material), 6);
+	TestFalse(TEXT("Repeated recovery has no surviving job to refund"), Station->CancelCraftJob(OtherPlayer, Save.Jobs[0].JobId));
+	TestEqual(TEXT("No world drop substitutes for a missing source"), CountDroppedOutputActors(Station->GetWorld()), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgCraftingActiveRestoreTimeTest,
+	"SurvivalRpg.Crafting.Physical.ActiveRestoreNoOfflineProgressOrDuplicateOutput",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCraftingActiveRestoreTimeTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCraftingStationTests;
+	FScopedCraftingWorld Fixture;
+	if (!Fixture.Initialize(*this)) { return false; }
+	URpgCraftingStationComponent* Station = Fixture.GetStation();
+	URpgInventoryManagerComponent* Player = Fixture.CreatePlayerInventory();
+	const TSubclassOf<URpgInventoryItemDefinition> Material = URpgInventoryAutomationTestMaterialDefinition::StaticClass();
+	if (!Player || !Player->AddItemDefinition(Material, 4)) { return false; }
+	URpgCraftingRecipeDefinition* Recipe = Fixture.CreateRecipe();
+	Recipe->CraftTime = 0.1f;
+	FRpgCraftingResourceCost& Cost = Recipe->RequiredResources.AddDefaulted_GetRef();
+	Cost.ItemDefinition = Material; Cost.Count = 2;
+	if (!Fixture.OfferRecipes(*this, { Recipe }) || !Station->QueueCraftRecipe(Fixture.GetRequestingController(), Recipe, 2)) { return false; }
+	FRpgCraftingStationSaveData Save = Station->ExportCraftingState();
+	Save.Jobs[0].RemainingTime = 0.05f;
+	TestTrue(TEXT("Active paid job restores with its saved remaining duration"), Station->RestoreCraftingState(Save));
+	AdvanceCraftingTimers(Station->GetWorld(), 10.0f);
+	TestEqual(TEXT("A restored queue cannot run before the world restore completes"), Station->GetOutputInventory()->GetUsedEntryCount(), 0);
+	TestEqual(TEXT("Waiting for resume preserves all paid inputs"), CountReservedMaterial(Station, Material), 4);
+	Station->ResumeRestoredCrafting();
+	AdvanceCraftingTimers(Station->GetWorld(), 0.025f);
+	TestEqual(TEXT("Resume does not complete before the stored remaining duration"), Station->GetOutputInventory()->GetUsedEntryCount(), 0);
+	AdvanceCraftingTimers(Station->GetWorld(), 0.03f);
+	TestEqual(TEXT("Stored active unit completes once"), Station->GetOutputInventory()->GetUsedEntryCount(), 1);
+	TestEqual(TEXT("Completed unit spends exactly its two input credits"), CountReservedMaterial(Station, Material), 2);
+	AdvanceCraftingTimers(Station->GetWorld(), 0.2f);
+	TestEqual(TEXT("The full batch produces exactly two products"), Station->GetOutputInventory()->GetTotalItemCountByDefinition(URpgInventoryAutomationTestUnitItemDefinition::StaticClass()), 2);
+	TestEqual(TEXT("No paid job survives completion"), Station->GetCraftingJobs().Num(), 0);
+	TestEqual(TEXT("Restore and completion never charge ingredients again"), Player->GetTotalItemCountByDefinition(Material), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgCraftingPendingSourceRestoreRefundTest,
+	"SurvivalRpg.Crafting.Physical.PendingSourceRestoreRefundUsesTray",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCraftingPendingSourceRestoreRefundTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCraftingStationTests;
+	FScopedCraftingWorld Fixture;
+	if (!Fixture.Initialize(*this, true)) { return false; }
+	URpgCraftingStationComponent* Station = Fixture.GetStation();
+	ARpgGameModeBase* Mode = Station->GetWorld()->GetAuthGameMode<ARpgGameModeBase>();
+	APlayerController* Requester = Fixture.GetRequestingController();
+	URpgInventoryManagerComponent* ProvisionalPlayer = Fixture.CreatePlayerInventory();
+	ARpgInventoryContainerActor* ReturningChest = Fixture.CreateChest();
+	if (!Mode || !ProvisionalPlayer || !ReturningChest) { return false; }
+	const TSubclassOf<URpgInventoryItemDefinition> Material = URpgInventoryAutomationTestMaterialDefinition::StaticClass();
+	URpgCraftingRecipeDefinition* Recipe = Fixture.CreateRecipe();
+	FRpgCraftingResourceCost& Cost = Recipe->RequiredResources.AddDefaulted_GetRef();
+	Cost.ItemDefinition = Material; Cost.Count = 2;
+	TestFalse(TEXT("The connected player still awaits its profile restore"), Mode->IsPlayerProfileRestoreComplete(Requester));
+	ReturningChest->GetContainerComponent()->SetConstructionPending(true);
+
+	for (URpgInventoryManagerComponent* Original : { ProvisionalPlayer, ReturningChest->GetInventoryManager() })
+	{
+		const FName SourceId = RpgStorageAccessRules::GetPersistentInventoryId(Original);
+		if (!TestFalse(TEXT("The pending source has a durable identity"), SourceId.IsNone())) { return false; }
+		TestNull(TEXT("Pending graph replacement excludes the provisional refund target"), RpgStorageAccessRules::FindPersistentInventory(Station->GetWorld(), SourceId));
+		const FRpgInventoryGraphSaveData PendingGraph = Original->ExportInventoryGraph();
+		FRpgCraftingStationSaveData Save = Station->ExportCraftingState();
+		Save.bPaused = true;
+		FRpgCraftingJobSaveData& Job = Save.Jobs.AddDefaulted_GetRef();
+		Job.JobId = FGuid::NewGuid(); Job.Recipe = Recipe; Job.QuantityTotal = 1;
+		Job.State = static_cast<uint8>(ERpgCraftingJobState::Paused);
+		Job.RemainingTime = 1.0f;
+		FRpgCraftingRefundSaveData& Credit = Job.Refunds.AddDefaulted_GetRef();
+		Credit.ItemDefinition = Material; Credit.Count = 2; Credit.InventoryId = SourceId;
+		const FGuid JobId = Job.JobId;
+		if (!TestTrue(TEXT("A saved paid claim restores while its source is pending"), Station->RestoreCraftingState(Save))) { return false; }
+		TestTrue(TEXT("Cancellation refunds to the stable tray while the source is provisional"), Station->CancelCraftJob(Requester, JobId));
+		TestEqual(TEXT("Provisional source receives no items that its later restore could erase"), Original->GetTotalItemCountByDefinition(Material), 0);
+		TestEqual(TEXT("The entire refund is retained in the output tray"), Station->GetOutputInventory()->GetTotalItemCountByDefinition(Material), 2);
+		FRpgInventoryMutationResult Result;
+		TestTrue(TEXT("The delayed source graph replacement completes"), Original->RestoreInventoryGraph(PendingGraph, Result));
+		TestEqual(TEXT("Whole graph replacement cannot erase the two refunded materials"), Station->GetOutputInventory()->GetTotalItemCountByDefinition(Material) + Original->GetTotalItemCountByDefinition(Material), 2);
+		const TArray<FRpgInventoryEntryView> RefundItems = Station->GetOutputInventory()->GetAllEntries();
+		if (RefundItems.Num() != 1 || !Station->GetOutputInventory()->ConsumeItemById(RefundItems[0].ItemId, 2).IsSuccess()) { return false; }
+	}
+	return true;
+}
+
+#endif
