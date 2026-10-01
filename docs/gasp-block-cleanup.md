@@ -99,22 +99,19 @@ in anderen Checkouts vorhanden).
   Asset-Compile/Audit erforderlich. Unabhängiges read-only Review und
   `git diff --check` ohne blockierenden Befund.
 
-Reproduzierbare Automation-Filter:
+Reproduzierbarer Lauf vom Repository-Root (siehe `Build/Tools/Unreal/README.md`):
 
-```text
-SurvivalRpg.Combat.Block.Lifecycle
-SurvivalRpg.GASP.CMC.GaspCMCExperiencePIE.RemoteMovementLateJoinAndEquipmentMontage
-SurvivalRpg.GASP.Mover.Gameplay.GaspMoverGameplayPIE.RightMouseHoldReplicatesBlockAndReleasesCleanly
-SurvivalRpg.GASP.Mover.Lifecycle.GaspMoverLifecyclePIE.DeathCancelsHeldBlockAndRespawnRecomposesOptionalFollower
+```powershell
+python Build/Tools/Unreal/ue.py test SurvivalRpg.Combat.Block.Lifecycle `
+  SurvivalRpg.GASP.CMC.GaspCMCExperiencePIE.RemoteMovementLateJoinAndEquipmentMontage `
+  SurvivalRpg.GASP.Mover.Gameplay.GaspMoverGameplayPIE.RightMouseHoldReplicatesBlockAndReleasesCleanly `
+  SurvivalRpg.GASP.Mover.Lifecycle.GaspMoverLifecyclePIE.DeathCancelsHeldBlockAndRespawnRecomposesOptionalFollower
 ```
 
-Die Filter mit `+` verbinden und dem gebauten `UnrealEditor-Cmd.exe` zusammen
-mit `SurvivalRpg.uproject`, `/Engine/Maps/Entry`,
-`-ExecCmds="Automation RunTests <Filter>"`,
-`-TestExit="Automation Test Queue Empty"`, `-ReportExportPath=<neuer Ordner>`,
-`-abslog=<neues Log>`, `-unattended -nop4 -nosteam -nosplash -nosound
--NoSaveConfig -RenderOffscreen` übergeben. Die Netzwerkprüfungen benötigen
-gerenderten PIE; kein NullRHI. Den JSON-Bericht prüfen, nicht nur den Exitcode.
+Der Wrapper startet den Editor auf `/Engine/Maps/Entry` mit gerendertem
+Offscreen-PIE, den die Netzwerkprüfungen benötigen; kein `--null-rhi`. Er wertet
+den JSON-Bericht aus, nicht den Exitcode des Editors, und scheitert auch, wenn
+ein Filter keinen Test trifft.
 
 Kein neuer manueller Sichttest, Packaged-/WAN-Test oder separater Nachweis eines
 absichtlich erzwungenen GAS-Scope-Locks. Die unveränderte Timer-Expiry hat keinen

@@ -23,6 +23,6 @@ jobs:
         run: python Build/Tools/AgentSkills/sync.py --check
       - name: Python tool tests
         run: |
-          for suite in Build/Tools/AgentSkills Build/Tools/GaspImportAudit Build/Tools/GaspPacketGap; do
+          for suite in Build/Tools/AgentSkills Build/Tools/GaspImportAudit Build/Tools/GaspPacketGap Build/Tools/Unreal; do
             python -m unittest discover -b -s "$suite" -p "test_*.py"
           done
