@@ -1,6 +1,6 @@
 ---
 name: survival-rpg-combat-foundation
-description: Use for SurvivalRpg combat, equipment, inventory-facing item instances, loadouts and quick access, GAS ability grants, mastery/progression, runes, portal combat, Dungeonbreak, and modular GameFeature combat content. Prefers current repo truth and preserves the Lyra-rooted RPG equipment/inventory architecture. Pair with unreal-lyra-expert for engine-facing implementation and add unreal-gasp-expert for combat animation, montage/locomotion overlap, dodge, block, hit reactions, or GASP-driven presentation.
+description: Defines SurvivalRpg's combat, equipment, and item-instance architecture, covering equip authority, loadouts and quick access, GAS ability grants, native fragments versus ItemDefinition content, asset-first GameplayAbilities, damage areas, mastery, runes, and combat GameFeatures. Use when working on attacks, weapons, equipment, abilities, damage, hit reactions, progression, runes, portal combat, or Dungeonbreak.
 ---
 
 # SurvivalRpg Combat Foundation

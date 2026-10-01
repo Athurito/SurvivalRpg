@@ -1,6 +1,6 @@
 ---
 name: survival-rpg-project
-description: Use for SurvivalRpg project vision, feature scope, gameplay priorities, first-playable planning, portal-centric world design, survival/crafting/progression tradeoffs, and content architecture so implementation stays aligned with the game identity.
+description: Keeps SurvivalRpg work aligned with the game vision, covering identity, feature scope, first-playable priorities, portal-centric world design, and survival, crafting, and progression tradeoffs. Use when deciding what to build, triaging or prioritizing features, planning the vertical slice, or reviewing a proposal for scope drift.
 ---
 
 # SurvivalRpg Project

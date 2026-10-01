@@ -12,21 +12,23 @@ Established architecture:
 - Lyra Interaction is adopted approximately 1:1.
 - Inventory and Equipment use Lyra as the root architecture.
 - Inventory and Equipment are adapted for RPG systems.
-- GASP is migrated into project-owned content and integrated on a CMC variant and a Mover variant. The previous native GASP port is archived and removed; use `docs/gasp-integration-roadmap.md` for the current accepted state instead of historical migration intentions.
+- GASP is migrated into project-owned content. The previous native GASP port is archived and removed; use `docs/gasp-integration-roadmap.md` for the current accepted state instead of historical migration intentions.
 
 ## Agent skills
 
-The canonical skills live in `.agents/skills/<name>/SKILL.md`. Codex discovers them there (invoke with `$name`). Claude Code discovers the generated entry points in `.claude/skills/<name>/SKILL.md` (invoke with `/name`); each one points back to the canonical file.
+The canonical skills live in `.agents/skills/<name>/`, where Codex discovers them (`$name`). Claude Code reads generated full copies in `.claude/skills/<name>/` (`/name`).
 
-- Edit only the canonical files under `.agents/skills/`. After adding, renaming, or changing the frontmatter of a skill, run `python Build/Tools/AgentSkills/sync.py`, then `python Build/Tools/AgentSkills/sync.py --check`.
-- Write skill text tool-neutrally: refer to other skills by their plain name, not by a tool-specific invocation syntax.
+- Edit only `.agents/skills/`, then run `python Build/Tools/AgentSkills/sync.py`. CI runs it with `--check`, which fails on stale copies, dead repository paths, `/Game` paths, or `URpg*`-style identifiers, Codex-only `$name` syntax in Markdown, and an `AGENTS.md` without a sibling `CLAUDE.md` that imports it.
+- Refer to other skills by their plain name in shared Markdown.
 
-Use the closest matching skill:
+Use the closest matching skill and combine only those whose boundaries the task crosses:
 - `survival-rpg-project` for game identity, feature scope, first-playable priorities, survival/crafting/progression tradeoffs, portal fantasy, and long-term resource relevance.
 - `survival-rpg-combat-foundation` for combat, equipment, loadouts, item instances, ability grants, mastery/progression, runes, portal combat, Dungeonbreak, and combat GameFeature content.
 - `unreal-lyra-expert` for Unreal Engine, Lyra-derived architecture, GAS, replication, CommonUI/CommonGame, Enhanced Input, Experiences, Game Features, Lyra Interaction, Unreal MCP asset authoring, and Lyra-rooted RPG inventory/equipment implementation.
-- `unreal-gasp-expert` for GASP on the CMC and Mover variants, load-aware RPG movement, sprint/gait profiles, curated mantle/vault/hurdle/climb traversal, Motion Matching, Pose Search, trajectory, procedural animation, retargeting, animation threading, and multiplayer locomotion parity.
-- `survival-rpg-orchestrator` for broad or ambiguous multi-system tasks that need routing before implementation.
+- `unreal-gasp-expert` for GASP locomotion and traversal, load-aware RPG movement, sprint/gait profiles, Motion Matching, Pose Search, retargeting, animation threading, and multiplayer locomotion parity.
+- `survival-rpg-orchestrator` to plan broad multi-system work and to record the C++ boundary decision for new or materially extended systems.
+
+Common combinations: runtime work on a new feature pairs `survival-rpg-project` with `unreal-lyra-expert`; combat or equipment work starts with `survival-rpg-combat-foundation` and adds `unreal-lyra-expert` for engine-facing changes; GASP work adds `unreal-lyra-expert` when it touches PawnData, Experiences, character lifecycle, movement replication, GAS montages, equipment, death, or ragdoll, and `survival-rpg-combat-foundation` for attacks, dodge, block, hit reactions, combat tags, montage notifies, or equipment-granted combat behavior.
 
 ## Architecture guardrails
 
@@ -45,8 +47,6 @@ Use the closest matching skill:
 - Do not introduce unrelated Lyra subsystems only because Lyra has them.
 - Do not restore the archived native GASP port. Runtime assets must not depend on the external GASP sample checkout.
 - Keep movement gameplay authority in project-owned CMC/Mover, GAS, and Motion-Warping seams. Widening Mover scope or adopting Locomotor, sample camera, Foley, or experimental systems requires explicit roadmap scope and an isolated dependency evaluation; they are never incidental additions.
-- Pair `unreal-gasp-expert` with `unreal-lyra-expert` when animation work touches PawnData, Experiences, character lifecycle, movement replication, GAS montages, equipment, death, or ragdoll.
-- Add `survival-rpg-combat-foundation` when GASP work touches attacks, dodge, block, hit reactions, combat tags, montage notifies, or equipment-granted combat behavior.
 
 ## GASP roadmap and cross-chat handoff
 
@@ -64,36 +64,15 @@ Use the closest matching skill:
 
 ## Documentation defaults
 
-Add concise Unreal-style documentation comments by default when creating or modifying designer-facing or gameplay-facing APIs. This section is the canonical documentation rule; skills add only domain-specific emphasis.
+Add concise Unreal-style doc comments when creating or changing designer- or gameplay-facing APIs: reflected types, public or protected `UFUNCTION`s, `UPROPERTY` fields exposed to Blueprints, DataAssets, config, saves, or replication, and definitions, fragments, ability sets, interaction options, GameFeature configuration, and tuning data. Say what the value controls, its units or valid range, whether it is designer-tuned static data or runtime-mutated, replicated, saved, derived, cosmetic, or UI-read-only, and who has authority. Skip obvious locals, trivial private helpers, and comments that only restate a name. Skills add only domain-specific emphasis to this rule.
 
-Document by default:
+## Local environment
 
-- UCLASS, USTRUCT, UENUM, and important UINTERFACE types
-- public or protected UFUNCTION APIs
-- UPROPERTY fields exposed to Blueprints, DataAssets, config, save data, replication, or editor tuning
-- DataAsset fields
-- item definitions
-- equipment definitions
-- fragments
-- ability sets
-- interaction options
-- GameFeature-facing configuration
-- portal, rune, recipe, crafting, enemy, loot, progression, and combat tuning data
-- replicated properties
-- saved properties
-- authority-sensitive properties
-- fields with non-obvious lifecycle, ownership, or runtime mutation rules
+Machine-specific locations on the primary workstation. If one is missing, say so and continue without it.
 
-For Blueprint-configurable fields, comments should explain:
-
-- what the field controls
-- expected units, ranges, or gameplay meaning
-- whether it is designer-tuned, runtime-mutated, replicated, saved, derived, or cosmetic-only
-- important ownership assumptions such as server-authoritative, owning-client-only, UI-read-only, static definition data, or runtime mutable state
-
-Prefer useful intent comments over noisy restatements.
-
-Do not add comments for obvious local variables or trivial private helpers unless the behavior is non-obvious.
+- Unreal Engine 5.8: `D:/Programme/UE_5.8`
+- Lyra reference project: `D:/Repos/LyraStarterGame`
+- GASP reference project: `D:/Repos/GameAnimationSample`
 
 ## Verification
 

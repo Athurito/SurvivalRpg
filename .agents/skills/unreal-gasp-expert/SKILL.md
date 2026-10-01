@@ -1,6 +1,6 @@
 ---
 name: unreal-gasp-expert
-description: Use for Unreal Engine 5 Game Animation Sample (GASP) locomotion on SurvivalRpg's CMC and Mover variants, RPG movement, equipment-load-aware gait and sprint, curated mantle/vault/hurdle/climb traversal, Motion Matching, Pose Search schemas/databases, trajectory, Blend Stack, Steering, Offset Root Bone, Foot Placement/IK, retargeting, animation-thread safety, multiplayer locomotion parity, C++/Blueprint/DataAsset ownership for animation, and integration with Lyra-derived PawnData, Experiences, GAS montages, equipment, death, or ragdoll. Start from the GASP roadmap and handoff, and pair with unreal-lyra-expert at gameplay, composition, or character-lifecycle boundaries.
+description: Guides SurvivalRpg's Game Animation Sample (GASP) locomotion and traversal on the CMC and Mover variants, covering Motion Matching, Pose Search, AnimBP and Chooser ownership, sprint and equipment-load-aware gait, mantle, vault, and hurdle, retargeting, animation thread safety, and multiplayer locomotion parity. Use when changing character animation, movement feel, traversal, or their replication; it starts from the GASP roadmap and handoff.
 ---
 
 # Unreal GASP Expert
@@ -12,19 +12,17 @@ Start every animation or movement change from the accepted integration state and
 1. Read `docs/gasp-integration-roadmap.md` and `docs/gasp-integration-handoff.md`, then the report linked to the affected task ID. Respect the active task, its branch, and recorded file ownership; keep one bounded roadmap task per branch/PR.
 2. Before building or switching branches, verify the checkout-local NetworkPrediction/Mover plugin overrides as described in `Build/Patches/NetworkPrediction/README.md`. They are Git-ignored and not present in a fresh worktree.
 3. Read `SurvivalRpg.uproject` to confirm the engine version and enabled animation plugins.
-4. Inspect the affected project-owned GASP content under `/Game/SurvivalRpg/Characters/GASP` (`CMC`, `Mover`, `Shared`), the AnimBP parent (`URpgAnimInstance` where used), character and movement code, traversal code (`Source/SurvivalRpg/Traversal`), the relevant Experience and PawnData, and the existing tests.
-5. Compare with `D:\Repos\GameAnimationSample` when available. It is a version-matched comparison source, never a runtime dependency; the original import was removed from this project (GASP-05).
-6. Compare with `D:\Repos\LyraStarterGame` when a change crosses PawnData, Experience, GAS, character lifecycle, equipment, death, or ragdoll.
+4. Inspect the affected project-owned GASP content under `/Game/SurvivalRpg/Characters/GASP`, the AnimBP parent (`URpgAnimInstance` where used), character and movement code, traversal code (`Source/SurvivalRpg/Traversal`), the relevant Experience and PawnData, and the existing tests.
+5. Compare with the GASP reference project listed under "Local environment" in `AGENTS.md` when available. It is a version-matched comparison source, never a runtime dependency; the original import was removed from this project.
+6. Compare with the Lyra reference project listed there when a change crosses PawnData, Experience, GAS, character lifecycle, equipment, death, or ragdoll.
 
 If a reference project is unavailable, continue from repository truth and say that the comparison could not be performed. Read [the GASP-Lyra integration contract](references/gasp-lyra-integration.md) whenever a task crosses animation, gameplay, composition, combat, equipment, or networking ownership.
 
-## Current integration state
+## Integration state and scope
 
-The roadmap is authoritative; this summary only orients:
+Take the current state from the roadmap, not from memory: its "Bereits vorhanden" and status tables list the accepted movement variants, Experiences, traversal actions, and pilots, and the handoff names the active task. Independent of that state:
 
-- GASP content is project-owned. Runtime must not depend on the external sample checkout.
-- Two movement stacks coexist and are compared deliberately (GASP-04): the **CMC variant** (locomotion, mantle, vault, hurdle, block locomotion, and sprint with GAS stamina, used by the existing Experiences such as `RpgGaspCMCExperience`) and the **Mover variant** (`RpgGaspMoverExperience`, fixed 50 Hz simulation with the patched NetworkPrediction plugin, Mover traversal, and the ragdoll pilot in `RpgGaspMoverRagdollExperience`).
-- The UEFN mesh remains the gameplay mesh; runtime retargeting is an optional profile.
+- GASP content is project-owned; runtime never depends on the external sample checkout.
 - Scope a change to the variant its task names. When touching shared assets or seams, check that the other variant still works.
 - Further sample systems (Locomotor, sample camera, additional Foley or audio, experimental plugins) need explicit roadmap scope and an isolated dependency evaluation; they are never incidental additions.
 
@@ -62,7 +60,7 @@ Epic's GASP is Blueprint-authored glue on native engine animation systems. That 
 - `Equipment.Load.Light`, `Equipment.Load.Medium`, and `Equipment.Load.Heavy` are gameplay input. Equipment/GAS and the movement component stay authoritative; animation consumes a thread-safe snapshot.
 - Define load-aware movement as a data-driven profile (speed, acceleration, braking, rotation response, jump, dodge, stamina, gait, Pose Search selection) and apply only differences that improve feel and readability. Never fake heavy running only by slowing playback; movement physics, gameplay costs, gait selection, and visual weight follow one authoritative profile.
 - Replicate or reconstruct the animation-relevant movement profile for simulated proxies and late joiners; owner-only equipment state is not enough.
-- CMC sprint with GAS stamina exists (GASP-07, `docs/gasp-cmc-sprint.md`). Extend that gameplay-owned seam instead of inferring sprint from a locally selected pose or adding parallel sprint state.
+- Sprint is gameplay-owned with GAS stamina (see `docs/gasp-cmc-sprint.md`). Extend that seam instead of inferring sprint from a locally selected pose or adding parallel sprint state.
 - Mantle, vault, hurdle, and short climb are curated, server-validated RPG traversal actions using project-owned montages and Motion Warping where appropriate, on both CMC and Mover. Neither variant may silently depend on the other.
 - Sustained climbing, ledge hanging, ladders, or wall movement need explicit movement modes or equally authoritative movement state, never AnimBP-only logic.
 - Pilot a new traversal action in isolation (separate PawnData/Experience or a development GameFeature) and prove collision validation, cancellation, multiplayer correction, and rollback before widening the move set.

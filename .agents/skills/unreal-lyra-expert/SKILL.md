@@ -1,6 +1,6 @@
 ---
 name: unreal-lyra-expert
-description: Use for Unreal Engine 5 C++/Blueprint review, design, debugging, refactoring, networking, GAS, Enhanced Input, CommonUI, CommonGame, ModularGameplay, Game Features, Lyra Experiences, Lyra Interaction, Unreal MCP asset authoring, and Lyra-rooted RPG inventory/equipment architecture. Inspect the project first, treat adopted Lyra systems as canonical, adapt inventory/equipment to the project's RPG model, and pair with unreal-gasp-expert when GASP locomotion or animation crosses PawnData, Experiences, GAS montages, movement replication, equipment, death, or ragdoll.
+description: Applies SurvivalRpg's Lyra-derived Unreal architecture (Experiences, Game Features, GAS, Lyra Interaction, RPG inventory and equipment, CommonUI with MVVM, replication) and its boundary between C++ and Blueprint, Widget Blueprint, or DataAsset content, including Unreal MCP asset authoring. Use when designing, implementing, reviewing, or debugging Unreal C++, Blueprints, Widget Blueprints, or DataAssets in this project.
 ---
 
 # Unreal Lyra Expert
@@ -17,7 +17,7 @@ When context is incomplete, inspect in this order:
 4. relevant `Config/Default*.ini`
 5. Game Feature descriptors, Experience assets, PawnData, AbilitySets, Interaction assets, ItemDefinitions, EquipmentDefinitions, and inventory/equipment runtime classes
 
-Compare against `D:\Repos\LyraStarterGame` when it exists locally; if it is unavailable, say so and continue. Use Lyra as a comparison baseline to detect accidental drift in copied systems, never to overwrite project-specific RPG adaptations.
+Compare against the Lyra reference project listed under "Local environment" in `AGENTS.md` when it exists; if it is unavailable, say so and continue. Use Lyra as a comparison baseline to detect accidental drift in copied systems, never to overwrite project-specific RPG adaptations.
 
 ## Project architecture facts
 
@@ -27,7 +27,7 @@ Treat these as established architecture, not optional direction:
 - Game Feature plugins are the feature and content activation boundary.
 - Lyra Interaction is adopted approximately 1:1; reuse it instead of one-off traces or widget-driven interaction logic.
 - Inventory and Equipment use Lyra as the root architecture, adapted for this project's RPG systems.
-- GASP content is migrated into project-owned assets and integrated on a CMC variant and a Mover variant through dedicated Experiences and PawnData. The accepted state and active tasks live in `docs/gasp-integration-roadmap.md` and `docs/gasp-integration-handoff.md`. The older native GASP port is archived and must not be restored.
+- GASP content is migrated into project-owned assets and composed through Experiences and PawnData. The accepted integration state and active tasks live in `docs/gasp-integration-roadmap.md` and `docs/gasp-integration-handoff.md`. The older native GASP port is archived and must not be restored.
 
 Coordinate with `unreal-gasp-expert` instead of duplicating GASP guidance:
 
@@ -88,14 +88,8 @@ Assume server authority unless the feature is obviously local-only. Before recom
 
 ## Patterns and heuristics
 
-- Consult [lyra-patterns.md](references/lyra-patterns.md) for the adopted Lyra systems, decision order, and anti-patterns, and [unreal-best-practices.md](references/unreal-best-practices.md) for general implementation and review guidance. Apply only what is relevant.
-- Map/mode composition, pawn setup, action sets, ability grants, or feature activation: check the Experience and Game Feature path first.
-- Contextual world use (pickups, containers, crafting stations, harvest nodes, doors, vendors, loot objects, RPG interaction gating): check the adopted Lyra Interaction path first.
-- Cooldowns, costs, state gating, combat state, or gameplay-triggered status: bias toward GAS where GAS owns the domain.
-- Equipment, item ownership, item stats, equipment ability grants, or replicated item state: extend the Lyra-rooted RPG inventory/equipment architecture.
-- Behavior repeated across many actors: prefer a component or subsystem-appropriate abstraction over copy-paste.
-- Optional, delayed, or large content: prefer soft references and scalable loading over hard reference chains.
+- Read [project-patterns.md](references/project-patterns.md) for the adopted systems and how to extend them, the decision order, anti-patterns, and verification by area.
+- Prefer a component or subsystem-appropriate abstraction over behavior copied across actors, and soft references with scalable loading for optional, delayed, or large content.
 - A local bug gets a local fix before any architectural expansion.
-- Do not recommend Lyra subsystems the project has not adopted merely because Lyra has them.
 
 Distinguish observed facts from recommendations, name the files, modules, assets, or systems a conclusion rests on, and do not assert class names, plugin usage, or version-specific correctness without evidence.
