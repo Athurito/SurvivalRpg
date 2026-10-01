@@ -121,7 +121,7 @@ The task lists use these short toolset names:
 - Read back parentage, properties, widget trees, and references with `BlueprintTools.get_parent`, `ObjectTools.get_properties`, `UMGToolSet.GetWidgets`, and `AssetTools.get_dependencies`.
 - Prove a fresh load by calling `AssetContractTools.reload_assets` before that readback; `export_asset` writes a complete T3D export for diffs.
 - Read compile and load warnings with `LogsToolset.GetLogEntries`.
-- Run automation tests with `AutomationTestToolset.DiscoverTests`, then `RunTestsByFilter`, `GetTestStatus`, and `GetTestResults`.
+- Run automation tests inside the editor with `AutomationTestToolset.DiscoverTests`, then `RunTestsByFilter`, `GetTestStatus`, and `GetTestResults`. Command-line builds, tests, and cooks go through `Build/Tools/Unreal/ue.py` instead.
 - Check gameplay with `EditorAppToolset.StartPIE`, `IsPIERunning`, `CaptureViewport`, and `StopPIE`. `AssetContractTools.set_pie_input_key` and `set_pie_view_rotation` drive a local PIE player, and `SlateInspectorToolset.SlateInspectorToolset` (`Snapshot`, `Click`, `Screenshot`) inspects UI.
 - Check Game Feature activation with `GameFeaturesToolset.ListEnabledGameFeaturePlugins`, `GetGameFeatureState`, and `RequestActivateGameFeature`.
 
