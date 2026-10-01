@@ -1,0 +1,28 @@
+# Cheap text-only checks; Unreal builds and automation stay on the local workstation.
+name: Agent tooling
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # LFS objects are not needed; pointer files are enough for the /Game path checks.
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Agent skills and instruction files
+        run: python Build/Tools/AgentSkills/sync.py --check
+      - name: Python tool tests
+        run: |
+          for suite in Build/Tools/AgentSkills Build/Tools/GaspImportAudit Build/Tools/GaspPacketGap; do
+            python -m unittest discover -b -s "$suite" -p "test_*.py"
+          done

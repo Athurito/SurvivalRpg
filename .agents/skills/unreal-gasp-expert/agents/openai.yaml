@@ -1,7 +1,7 @@
 interface:
   display_name: "Unreal GASP Expert"
-  short_description: "GASP CMC, RPG movement, and Lyra integration"
-  default_prompt: "Use $unreal-gasp-expert for SurvivalRpg GASP Blueprint migration, locomotion, Motion Matching, or later Lyra/GAS adaptation, respecting the requested migration stage and multiplayer/thread-safety contracts."
+  short_description: "GASP on CMC/Mover, RPG movement, Lyra integration"
+  default_prompt: "Use $unreal-gasp-expert for SurvivalRpg GASP locomotion, traversal, Motion Matching, or Lyra/GAS integration on the CMC and Mover variants, starting from docs/gasp-integration-roadmap.md and the handoff and respecting multiplayer and thread-safety contracts."
 
 policy:
   allow_implicit_invocation: true

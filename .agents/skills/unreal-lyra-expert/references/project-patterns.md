@@ -1,0 +1,76 @@
+# Lyra-Derived Project Patterns
+
+Project-specific conventions only; general Unreal knowledge is assumed.
+
+## Contents
+
+- Adopted systems and how to extend them
+- Not adopted without evidence or request
+- Decision order
+- Anti-patterns to flag
+- Verification by area
+
+## Adopted systems and how to extend them
+
+This project uses Lyra as a proven baseline, not as a sample to clone. Extend the adopted system instead of adding a parallel manager, pawn-owned state path, or widget-owned gameplay truth.
+
+| System | Use for | Extend through | Flag |
+| --- | --- | --- | --- |
+| Lifecycle / init state | Features with initialization dependencies | Modular component init-state progression | `BeginPlay` ordering chains and hidden startup side effects |
+| Experiences | Mode rules, pawn setup, ability and action grants, mode input, Game Feature activation | Experience and action-set assets | Custom mode-composition managers; avoiding Experiences because they are "Lyra-specific" |
+| Game Features | Modular gameplay slices and optional content | One plugin per feature with narrow dependencies | Moving feature logic into the core module for convenience |
+| GAS | Capabilities, costs, cooldowns, blockers, combat and status state | Abilities, effects, attributes, gameplay tags | Parallel cooldown or state managers; booleans that duplicate tags |
+| PawnData / AbilitySets | Pawn class, input setup, granted data, pawn defaults | Data assets | A second pawn setup path |
+| Attribute sets | Health-like state | HealthSet-style attribute ownership | Health or damage logic spread across pawn, controller, UI, and helpers |
+| Interaction (adopted ~1:1) | Pickups, containers, crafting stations, harvest nodes, doors, NPCs, vendors, loot | Interaction options with tag, ability, or item gating | One-off trace, prompt, and execute logic per interactable type |
+| Inventory / Equipment (Lyra root plus RPG layer) | Items, equipment, equipment grants | Definitions and native fragments, item and equipment instances, FastArray replication with intentional `OnRep`, server-authoritative mutation, save data as reconstruction source | Parallel inventory managers, pawn-owned item arrays, widget-owned equipment truth, reverting RPG code to Lyra sample behavior |
+| CommonUI | Screens, layers, focus and input routing | Activatable Widget Blueprints with MVVM | Ad hoc widget stacks; gameplay truth in widgets |
+| Enhanced Input | Gameplay input | Input configs and mapping contexts granted by Experience, PawnData, or Game Feature | Hard-coded bindings; gameplay input in widgets |
+
+RPG adaptations layered on the inventory/equipment root include rarity, item level, affixes, sockets, durability, class or stat requirements, generated loot, crafting data, vendor and economy data, stat aggregation, progression scaling, and persistence mapping.
+
+## Not adopted without evidence or request
+
+- Lyra subsystems not already present in this project
+- Lyra spawning or possession changes outside the adopted Experience/PawnData path
+- Shooter-specific assumptions that do not fit an RPG
+- Lyra sample UI flows that conflict with the RPG UI
+- Lyra sample inventory/equipment behavior that would remove the RPG item model
+- New framework layers, singleton managers, or plugin boundaries not aligned with the current structure
+
+Name a Lyra concept only to anchor a recommendation, never as "Lyra does X, so do X".
+
+## Decision order
+
+1. Can this stay a small local feature?
+2. Does it belong in the lifecycle / init-state flow?
+3. Should an Experience configure or activate it?
+4. Does it belong in an existing or new Game Feature plugin?
+5. Is it a GAS concern, and should its state live in attributes, effects, or tags?
+6. Should PawnData or AbilitySets configure it?
+7. For world interaction: does the adopted Interaction path fit?
+8. For items or equipment: does it extend the Lyra-rooted RPG inventory/equipment architecture?
+9. For UI: does it fit CommonUI screen flow with gameplay truth outside widgets?
+
+If none apply, use normal Unreal patterns and keep the solution simple.
+
+## Anti-patterns to flag
+
+- Bypassing an adopted system with a local framework (custom mode manager, ad hoc plugin activation, one-off interaction traces, pawn-owned inventory arrays)
+- Recommending a Lyra subsystem only because Lyra has it
+- Lifecycle bypass through implicit ordering or manual cross-object assumptions
+- GAS duplication through custom cooldowns, combat-state managers, or shadow booleans
+- Scattered health ownership
+- Forking inventory or equipment beside the Lyra-rooted RPG path, or monolithic item classes where fragment composition fits
+- Widget-driven gameplay or widget-owned authoritative state
+- Replicated convenience variables instead of authoritative reconstructed state
+- Undocumented designer-facing configuration
+
+## Verification by area
+
+- Inventory/equipment: server mutation, replicated item state, equipment grant lifecycle, ability and effect removal, persistence reconstruction, UI refresh.
+- Interaction: authority handoff, prompt ownership, target lifetime safety, tag and ability gating.
+- Experiences and Game Features: activation and deactivation, plugin dependencies, data asset registration, load and cook implications.
+- Blueprint-facing APIs: reflection macros, categories, metadata, null safety.
+- Asset-driven systems: soft references, Primary Asset usage, config registration, cook and load implications.
+- Replicated gameplay: authority path, replicated state, `OnRep` side effects, late join, prediction assumptions.
