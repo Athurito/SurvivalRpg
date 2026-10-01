@@ -1,8 +1,10 @@
 # Unreal tooling
 
 `ue.py` builds, tests and cooks this checkout from the repository root. The
-other Python files here are editor-side modules (`import unreal`) that an editor
-Python bootstrap loads; the documents that use them describe how.
+other Python files here are optional editor-side Unreal MCP toolsets
+(`import unreal`) that an editor Python bootstrap loads. Their purpose,
+registration and invocation are described in
+[unreal-mcp-asset-authoring.md](../../../.agents/skills/unreal-lyra-expert/references/unreal-mcp-asset-authoring.md#project-toolsets).
 
 ```powershell
 python Build/Tools/Unreal/ue.py build

@@ -1,20 +1,185 @@
 # Unreal MCP Asset Authoring
 
-Use this workflow whenever work creates or changes Blueprint, Widget Blueprint, Gameplay Ability, or DataAsset assets.
+Use this workflow whenever work creates or changes Blueprint, Widget Blueprint, Gameplay Ability, or DataAsset assets. The toolset and tool names below match UE 5.8.2 editor sessions of this project; `unreal-mcp:list_toolsets` and `unreal-mcp:describe_toolset` remain the authority for the running editor.
+
+## Contents
+
+- [Required workflow](#required-workflow)
+- [Calling toolset tools](#calling-toolset-tools)
+- [Tools by task](#tools-by-task)
+- [Project toolsets](#project-toolsets)
+- [Other engine toolsets](#other-engine-toolsets)
+- [Capability gaps](#capability-gaps)
 
 ## Required workflow
 
 1. Check that Unreal Editor is running and that the project MCP endpoint is reachable at `http://127.0.0.1:8000/mcp`. The server is configured as `unreal-mcp` in `.codex/config.toml` for Codex and in `.mcp.json` for Claude Code; coordinate a shared editor session with other worktrees or agents before authoring.
-2. Search the available MCP tools before deciding that an asset operation is unsupported. Tool availability varies with the active editor toolsets, and some clients load MCP tool schemas only on demand (Claude Code: tool search).
+2. Call `unreal-mcp:list_toolsets` and `unreal-mcp:describe_toolset` before deciding that an asset operation is unsupported. Availability depends on the enabled engine plugins and on the project toolsets the editor session loaded.
 3. Inspect the existing parent classes, related assets, Blueprint graphs, widget trees, object properties, references, and project naming/placement conventions before authoring.
-4. Author through the narrowest applicable MCP surface:
-   - Blueprint tools for Blueprint assets, graphs, functions, events, nodes, variables, and compilation;
-   - UMG tools for Widget Blueprints, widget trees, named slots, bindings, and widget variables;
-   - Object tools for reflected property inspection and assignment;
-   - DataAsset/asset tools for definitions, fragment-instance configuration, references, loading, and saving;
-   - GAS tools for Gameplay Ability, Gameplay Effect, Gameplay Cue, AbilitySet, and tag-related asset inspection or authoring where available.
-5. Compile affected Blueprints and Widget Blueprints, save all changed assets, and validate parentage, compile status, required properties, graphs/bindings, references, and asset contracts.
+4. Author through the narrowest applicable toolset from [Tools by task](#tools-by-task). Use the [project toolsets](#project-toolsets) only for operations the engine toolsets cannot perform.
+5. Compile affected Blueprints and Widget Blueprints, save the changed assets by path, and validate parentage, compile status, required properties, graphs/bindings, references, and asset contracts.
 
 Do not replace an asset-authoring step with a runtime C++ content class merely because editing `.uasset` files is less convenient than editing source.
 
-If the required operation still cannot be performed after tool search and inspection, record the exact missing capability. Only then introduce the smallest reusable editor-only MCP/tooling seam that closes that confirmed gap. Keep it out of runtime modules and do not create one-off tooling for a single content leaf.
+## Calling toolset tools
+
+The project runs the MCP server in tool-search mode (`bEnableToolSearch=True` in `Config/DefaultEditorPerProjectUserSettings.ini`). The server therefore lists only three tools, and every toolset tool is called through them. This reference writes MCP tools as `unreal-mcp:<tool>`; clients add their own prefix, for example `mcp__unreal-mcp__call_tool` in Claude Code.
+
+| MCP tool | Arguments | Result |
+| --- | --- | --- |
+| `unreal-mcp:list_toolsets` | none | One line per toolset: qualified name and description |
+| `unreal-mcp:describe_toolset` | `toolset_name` | JSON schema with each tool's name, description, and input schema |
+| `unreal-mcp:call_tool` | `toolset_name`, `tool_name`, `arguments` | The tool's JSON result, with the value under `returnValue` |
+
+```json
+{
+  "toolset_name": "editor_toolset.toolsets.blueprint.BlueprintTools",
+  "tool_name": "compile_blueprint",
+  "arguments": {"blueprint": "<Blueprint object path>", "warnings_as_errors": true}
+}
+```
+
+- Toolset names are qualified: `<Plugin>.<Class>` for C++ toolsets (`UMGToolSet.UMGToolSet`) and `<module path>.<Class>` for Python toolsets (`editor_toolset.toolsets.object.ObjectTools`). `tool_name` is the bare function name, such as `compile_blueprint` or `CompileWidgetBlueprint`.
+- Pass an object as its object path string or as `{"refPath": "<object path>"}`; results return objects in the `refPath` form. Pass a class by class path: `/Script/<Module>.<Class>` for a native class, `<package path>.<Asset>_C` for a Blueprint class.
+- `ProgrammaticToolset.execute_tool_script` batches many calls into one script after `get_execution_environment`. Its sandbox reaches tools through `execute_tool("<toolset>.<tool>", <JSON>)` and imports only `json`, `math`, `re`, `copy`, `datetime`, and `time`, so it cannot load project modules.
+- Read each tool's description from `describe_toolset` for preconditions. The tag and cue tools require explicit user approval before they add, remove, or rename anything.
+- To recheck this reference without an MCP client, for example after an engine upgrade, run `UnrealEditor-Cmd.exe <project>.uproject -run=ModelContextProtocolToolHashMapping -Output=<file>.json -nullrhi`; it writes every registered `<toolset>.<tool>` name. Add `"-ExecCmds=py <script path>"` to include the project toolsets. It loads the project binaries, so do not run it while another session builds.
+
+## Tools by task
+
+The task lists use these short toolset names:
+
+| Short name | `toolset_name` |
+| --- | --- |
+| AssetTools | `editor_toolset.toolsets.asset.AssetTools` |
+| ObjectTools | `editor_toolset.toolsets.object.ObjectTools` |
+| BlueprintTools | `editor_toolset.toolsets.blueprint.BlueprintTools` |
+| DataAssetTools | `editor_toolset.toolsets.data_asset.DataAssetTools` |
+| ActorTools | `editor_toolset.toolsets.actor.ActorTools` |
+| UMGToolSet | `UMGToolSet.UMGToolSet` |
+| GameplayTagsToolset | `GameplayTagsToolset.GameplayTagsToolset` |
+| GameplayCueToolset | `GASToolsets.GameplayCueToolset` |
+| AttributeSetToolset | `GASToolsets.AttributeSetToolset` |
+| AbilitySystemInspectorToolset | `GASToolsets.AbilitySystemInspectorToolset` |
+| GameFeaturesToolset | `GameFeaturesToolset.GameFeaturesToolset` |
+| EditorAppToolset | `EditorToolset.EditorAppToolset` |
+| LogsToolset | `EditorToolset.LogsToolset` |
+| AutomationTestToolset | `AutomationTestToolset.AutomationTestToolset` |
+
+### Inspect
+
+- Find and classify assets with `AssetTools.find_assets`, `exists`, `get_asset_class`, `get_dependencies`, and `get_referencers`.
+- Read reflected state with `ObjectTools.get_class`, `search_subclasses`, `list_properties`, and `get_properties`. A Blueprint argument resolves to its class default object (CDO).
+- Read Blueprints with `BlueprintTools.get_parent`, `list_graphs`, `list_variables`, `list_functions`, `find_nodes`, `get_node_infos`, and `read_graph_dsl`.
+- Confirm the asset kind on a sibling before creating one. Experiences, ItemDefinitions, EquipmentDefinitions, GameplayAbilities, and GameplayEffects are Blueprint classes; AbilitySets and PawnData are DataAsset instances.
+
+### Create, edit, and compile a Blueprint
+
+1. `BlueprintTools.create(folder_path, asset_name, asset_type)` creates a Blueprint whose parent is `asset_type`; `set_parent` reparents an existing one.
+2. `ObjectTools.set_properties(instance, values)` with the Blueprint and a JSON object of property values sets class defaults.
+3. Add members with `add_variable`, `add_struct_variable`, `add_object_variable`, `set_variable_replication`, `add_function_graph`, `add_event`, or `add_component_bound_event`.
+4. For graphs, read `get_graph_dsl_docs` once, then use `read_graph_dsl` and `write_graph_dsl` (which also compiles) for whole graphs, or `find_node_types`, `create_node`, `connect_pins`, and `set_pin_value` for single nodes.
+5. Change components with `ActorTools.add_component` and `remove_component`. To edit an inherited component template, first get a child-owned override from `AssetContractTools.editable_blueprint_component`.
+6. Compile with `BlueprintTools.compile_blueprint(blueprint, warnings_as_errors=true)`.
+
+### GameplayAbility
+
+- Create `GA_*` assets with `BlueprintTools.create`, parented to `/Script/SurvivalRpg.RpgGameplayAbility` or to the generated class (`_C`) of a Blueprint family base.
+- Set tags, costs, cooldowns, and activation policy with `ObjectTools.set_properties`, and build behavior with the Blueprint graph tools.
+- Grant the ability by referencing it from an AbilitySet (see [DataAssets](#dataassets-and-itemdefinition-fragments)).
+
+### GameplayEffects, cues, tags, and attributes
+
+- GameplayEffects (`GE_*`) are Blueprints parented to `/Script/GameplayAbilities.GameplayEffect`. Set modifiers, duration, and GE components with `ObjectTools.set_properties`; GE components follow the instanced-property rules below.
+- Gameplay tags: `GameplayTagsToolset.ListTags`, `GetTagInfo`, and `FindReferencersByTag` read. `AddTag(TagName, Comment, TagSource)`, `RemoveTag`, and `RenameTag` change the INI tag sources and need explicit user approval. Check `Source/` for a native declaration before adding a tag to an INI source.
+- Gameplay cues: `GameplayCueToolset.ListCues`, `GetCueInfo`, `FindCueNotifyAssets`, and `FindCueTagsWithoutNotifies` read. `CreateCueNotifyAsset` and `AddCueTag` need explicit user approval.
+- Attribute sets are native schema; `AttributeSetToolset.FindAttributeSetClasses` and `ListAttributes` only read them.
+- During PIE, `AbilitySystemInspectorToolset.GetGrantedAbilities`, `GetActiveTags`, `GetActiveEffects`, and `GetAttributeValues` show an actor's ability system state.
+
+### Widget Blueprint
+
+- `UMGToolSet.CreateWidgetBlueprint(FolderPath, AssetName, ParentClass)` creates the asset; `GetWidgets` reports an existing Widget Blueprint's `ParentClass` and widget tree.
+- Build the tree with `ListWidgetClasses`, `AddWidget`, `SetNamedSlotContent`, `GetNamedSlots`, `MoveWidget`, `WrapWidgets`, `RenameWidget`, `RemoveWidget`, and the `ReplaceWidgetWith*` tools.
+- Expose `BindWidget` members with `ToggleWidgetAsVariable`, and bind delegate events such as `OnClicked` with `BindToEventProperty`.
+- Set widget and slot properties (padding, alignment, anchors) by passing the widget or its `Slot` object from `GetWidgets` to `ObjectTools.set_properties`.
+- `CompileWidgetBlueprint` reports missing `BindWidget` bindings and type errors.
+- UE 5.8 ships an `MVVMToolset`, but `AllToolsets` does not enable it, so no ViewModel or view-binding tools are registered. Treat MVVM authoring as a [capability gap](#capability-gaps).
+
+### DataAssets and ItemDefinition fragments
+
+- DataAsset instances such as `URpgAbilitySet` and `URpgPawnData`: create with `DataAssetTools.create(folder_path, asset_name, asset_type)`, then set values with `ObjectTools.set_properties`.
+- Blueprint-class definitions such as `URpgExperienceDefinition`, `URpgInventoryItemDefinition`, and `URpgEquipmentDefinition`: create with `BlueprintTools.create` and the native definition class as `asset_type`, then call `ObjectTools.set_properties` on the Blueprint.
+- Instanced properties such as an ItemDefinition's `Fragments`: an element `{"refPath": "/Script/SurvivalRpg.<FragmentClass>"}` creates a new fragment instance owned by the asset, and an existing subobject path keeps that instance. Read the result back with `get_properties`, then configure each fragment by calling `set_properties` on its subobject path.
+- Arrays are replaced as a whole, so send the complete new array with the existing elements as `get_properties` returned them. A call that changes the array size and existing elements together is rejected; split it into separate calls.
+
+### Save and validate
+
+- Save explicitly with `AssetTools.save_assets(asset_paths)` and the changed paths. An empty list saves every dirty package, which can include another agent's work in a shared editor.
+- Check unsaved state with `AssetTools.is_dirty` or `AssetContractTools.editor_status`.
+- Read back parentage, properties, widget trees, and references with `BlueprintTools.get_parent`, `ObjectTools.get_properties`, `UMGToolSet.GetWidgets`, and `AssetTools.get_dependencies`.
+- Prove a fresh load by calling `AssetContractTools.reload_assets` before that readback; `export_asset` writes a complete T3D export for diffs.
+- Read compile and load warnings with `LogsToolset.GetLogEntries`.
+- Run automation tests inside the editor with `AutomationTestToolset.DiscoverTests`, then `RunTestsByFilter`, `GetTestStatus`, and `GetTestResults`. Command-line builds, tests, and cooks go through `Build/Tools/Unreal/ue.py` instead.
+- Check gameplay with `EditorAppToolset.StartPIE`, `IsPIERunning`, `CaptureViewport`, and `StopPIE`. `AssetContractTools.set_pie_input_key` and `set_pie_view_rotation` drive a local PIE player, and `SlateInspectorToolset.SlateInspectorToolset` (`Snapshot`, `Click`, `Screenshot`) inspects UI.
+- Check Game Feature activation with `GameFeaturesToolset.ListEnabledGameFeaturePlugins`, `GetGameFeatureState`, and `RequestActivateGameFeature`.
+
+## Project toolsets
+
+`Build/Tools/Unreal/` holds optional, editor-only Python toolsets that fill gaps in the stock UE 5.8 toolsets. They contain no content, never save assets, and refuse asset work during PIE. All but the import audit call native helpers in `Source/SurvivalRpgEditor`. The engine toolsets still own duplication, ordinary property edits, compilation, and saving.
+
+Each toolset is named `Game.Build.Tools.Unreal.<module>.<Class>`:
+
+- `AssetContractTools` in `Build/Tools/Unreal/asset_contract_tools.py`: asset contracts and local PIE inspection. Tools: `editor_status`, `export_asset`, `reload_assets`, `montage_contract`, `animation_pose_contract`, `remap_owned_references`, `remap_animation_notify_classes`, `editable_blueprint_component`, `set_pie_input_key`, `set_pie_view_rotation`, `pie_mesh_bone_contract`, and `close_clean_editor`.
+- `AnimationAssetTools` in `Build/Tools/Unreal/animation_asset_tools.py`: animation asset structure.
+  - AnimBPs and layers: `create_anim_blueprint`, `set_anim_blueprint_abstract`, `create_animation_layer_interface`, `implement_animation_layer_interface`, `add_animation_layer`, `create_linked_animation_layer_node`, and `configure_linked_animation_layer`.
+  - Blueprint metadata: `set_local_function_thread_safety` and `set_variable_tooltip`.
+  - Montages and notifies: `create_montage_from_sequence`, `register_animation_slot`, `add_animation_notifies`, and `animation_notify_contract`.
+  - BlendSpaces and Choosers: `create_blend_space`, `set_blend_space_samples`, `create_chooser`, and `configure_chooser`.
+- `AnimationRetargetTools` in `Build/Tools/Unreal/animation_retarget_tools.py`: derived animation batches through the IK retargeter. Tools: `retarget_animation_batch`, `retarget_asset_contract`, and `normalize_derived_sequence`.
+- `GaspImportAuditTools` in `Build/Tools/Unreal/gasp_import_audit.py`: read-only registry inventory for the GASP import cleanup. Tool: `collect_registry`; the workflow is in `Build/Tools/GaspImportAudit/README.md`.
+
+### Register
+
+Project startup does not load these toolsets. Import them into an editor that has loaded the `SurvivalRpgEditor` module; each module registers its toolset on import:
+
+```python
+import sys
+sys.path.insert(0, '<repository root>/Build/Tools/Unreal')
+import asset_contract_tools
+import animation_asset_tools
+```
+
+- In a running editor, enter these lines in the Output Log's Python command line, or run a saved script with the `py "<script path>"` console command.
+- At editor launch, pass the script as `-ExecutePythonScript=<script path>` and call `unreal.EditorPythonScripting.set_keep_python_script_alive(True)` in it; otherwise the editor exits after the script.
+- Import from the checkout whose project the editor opened. The toolset name follows the file location: `Game.Build.Tools.Unreal.<module>.<Class>` inside the project, `PythonTypes.<Class>_0x<hash>` outside it.
+- A repeated import does nothing, and a second registration only logs `already registered`. Restart the editor to load an edited toolset file.
+- `unreal-mcp:list_toolsets` shows a new registration immediately; the MCP client does not need to reconnect.
+
+### Call
+
+Describe the toolset, then call its tools with the qualified name:
+
+```json
+{
+  "toolset_name": "Game.Build.Tools.Unreal.asset_contract_tools.AssetContractTools",
+  "tool_name": "reload_assets",
+  "arguments": {"asset_paths": ["<package path>"]}
+}
+```
+
+## Other engine toolsets
+
+`list_toolsets` also returns these toolsets; describe one when a task needs it:
+
+- Editor content: `SceneTools` (levels, actors, outliner folders), `MaterialTools`, `MaterialInstanceTools`, `StaticMeshTools`, `SkeletalMeshTools` (bones, sockets), `TextureTools`, `DataTableTools`, `CurveTableTools`, `StringTableTools`, and `PrimitiveTools`, all under `editor_toolset.toolsets.<module>.<Class>`.
+- Editor and project: `EditorToolset.EditorAppToolset` (selection, camera, Content Browser, asset editors, CVars, viewport capture, PIE), `SlateInspectorToolset.SlateInspectorToolset`, `SemanticSearchToolset.SemanticSearchToolset`, `ConfigSettingsToolset.ConfigSettingsToolset`, and `PluginToolset.PluginToolset`. The last two change project settings and plugins; use their write tools only for an approved task.
+- Gameplay systems: `state_tree_toolset.toolsets.state_tree.StateTreeTools`, `aimodule_toolset.toolsets.behavior_tree.BehaviorTreeTools`, `DataRegistryToolset.DataRegistryTools`, `WorldConditionsToolset.WorldConditionTools`, `conversation_toolset.toolsets.conversation.ConversationTools`, and `PhysicsToolsets.PhysicsAssetToolset`.
+- Effects and animation content: the `NiagaraToolsets` and `PCGToolset` toolsets, the Sequencer and Control Rig toolsets under `animation_toolset.toolsets`, and `DataflowAgent.DataflowAgentToolset`.
+- Assistant support: `AIAssistant.AIAssistantToolset` and `ToolsetRegistry.AgentSkillToolset`.
+
+## Capability gaps
+
+If the required operation still cannot be performed after `describe_toolset` and inspection, record the exact missing capability. Only then introduce the smallest reusable editor-only tooling seam that closes that confirmed gap: a tool on the project toolset that owns the area, or a new module in `Build/Tools/Unreal/` for a new area, with any native support in `Source/SurvivalRpgEditor`. Keep it out of runtime modules and do not create one-off tooling for a single content leaf.
+
+- Native editor helpers without a toolset wrapper are not callable through MCP, because `execute_tool_script` cannot import project modules.
+- MVVM authoring is a known gap. Enabling the engine's `MVVMToolset` plugin is the smaller seam to evaluate before writing project tooling.
