@@ -1,13 +1,13 @@
 # GASP-Lyra Integration Contract
 
-Use this contract for later Lyra adaptation when a task crosses SurvivalRpg animation, GAS combat, equipment, character lifecycle, or networking. Archive/removal is the current stage; the user plans to migrate original GASP Blueprints manually before that adaptation. The previous native port is retained on `codex/archive-gasp-native-port-2026-09-06` (`ec8bef45`).
+Use this contract when a task crosses SurvivalRpg animation, GAS combat, equipment, character lifecycle, or networking. GASP content is migrated into project-owned assets and integrated on a CMC variant and a Mover variant; the accepted state lives in `docs/gasp-integration-roadmap.md`. The previous native port is archived on `codex/archive-gasp-native-port-2026-09-06` (`ec8bef45`) and is not restored.
 
 ## Canonical sources
 
 Use sources in this order:
 
 1. Current SurvivalRpg runtime code, assets, tests, and plugin contracts.
-2. The currently requested migration stage and its documentation; `docs/gasp-cmc-migration-plan.md` and the old plugin contracts are historical archive sources, not the adopted runtime boundary.
+2. `docs/gasp-integration-roadmap.md`, `docs/gasp-integration-handoff.md`, and the task reports they link. Older migration plans and the archived plugin contracts are historical sources, not the adopted runtime boundary.
 3. `D:\Repos\GameAnimationSample` for version-matched GASP comparison when present.
 4. `D:\Repos\LyraStarterGame` for Lyra lifecycle and composition comparison when present.
 
@@ -31,40 +31,39 @@ Never let either sample project override a deliberate SurvivalRpg adaptation wit
 | Mantle, vault, hurdle, and short climb | GAS and CharacterMovement | GASP for curated montages; Lyra for composition | Validate traversal on the server and keep the action project-owned. |
 | Sustained climb, ledge hang, and ladders | CharacterMovement custom mode | GAS/Lyra for activation; GASP for presentation | Keep continuous movement authority outside the AnimBP. |
 | Death, corpse, and ragdoll | Character/combat lifecycle | GASP for AnimGraph and mesh handoff | Keep `GetMesh()` and physics transitions compatible. |
-| Migrated animation content | The approved project content boundary | Lyra only when composition changes | Preserve the imported source baseline; runtime must not depend on the external sample checkout. |
+| Migrated animation content | `/Game/SurvivalRpg/Characters/GASP` (`CMC`, `Mover`, `Shared`) | Lyra only when composition changes | Preserve the accepted project-owned baseline; runtime must not depend on the external sample checkout. |
 
-## Seams to verify during later Lyra adaptation
+## Seams to verify when changing the integration
 
-Inspect these contracts against the migrated Blueprint baseline and existing Lyra gameplay; do not assume the archived GASP implementation is present:
+Inspect these contracts against the current project-owned baseline and existing Lyra gameplay:
 
-- Verify the migrated AnimBP's parent and introduce native integration only for a demonstrated need; do not require the archived `URpgAnimInstance` GASP coordinator.
+- Verify the AnimBP's parent and add native integration only for a demonstrated need; keep `URpgAnimInstance` narrow rather than growing it into one state owner.
 - The AnimInstance proxy captures gameplay and movement inputs on the game thread.
-- Adapt production character selection through PawnData and an Experience after the isolated source Blueprint baseline is available.
+- Character selection goes through PawnData and Experiences (for example `RpgGaspCMCExperience`, `RpgGaspMoverExperience`), never through a sample-owned character path.
 - `GetMesh()` remains the montage, notify, equipment socket, corpse, and ragdoll mesh.
 - `DefaultSlot` remains available to GAS combat montages.
 - Curated sequences preserve their authored root-motion import settings while the AnimInstance extraction policy remains root motion from montages only.
-- Preserve the migrated Blueprint/Chooser selection baseline until an explicit adaptation changes it. Project ownership does not require native selection or restoration of the old resolvers.
-- Inspect the chosen content boundary separately from PawnData, Experience, and AnimBP composition; the removed content plugin is not a prerequisite.
-- Equipment/GAS and CharacterMovement own load and traversal state; the AnimInstance receives only animation-safe snapshots.
+- Preserve the accepted Blueprint/Chooser selection baseline until an explicit task changes it. Project ownership does not require native selection or restoration of the old resolvers.
+- Equipment/GAS and the movement component (CMC or Mover) own load and traversal state; the AnimInstance receives only animation-safe snapshots.
 
 ## Cross-system decision rules
 
-- If a change affects only source parity, retargeted content, Pose Search metadata, or cosmetic graph tuning, let `$unreal-gasp-expert` lead.
+- If a change affects only source parity, retargeted content, Pose Search metadata, or cosmetic graph tuning, let `unreal-gasp-expert` lead.
 - If a change is presentation-only, prefer AnimBP, Chooser, profile, or DataAsset ownership unless measured performance, engine integration, thread safety, or durable deterministic testing justifies a focused native resolver.
-- If it affects PawnData, Experience activation, character class, movement replication, ASC access, montage lifecycle, death, or ragdoll, use `$unreal-gasp-expert` with `$unreal-lyra-expert`.
-- If it affects attacks, dodge, block, hit reactions, combat tags, montage notifies, equipment grants, or damage windows, add `$survival-rpg-combat-foundation`.
-- If it affects load-aware movement, sprint, stamina, traversal abilities, or equipment-driven gait, use `$unreal-gasp-expert` with `$unreal-lyra-expert` and `$survival-rpg-combat-foundation`.
-- If it proposes Mover, Traversal, camera, Foley, or a wider movement fantasy, require an isolated product and dependency evaluation before implementation.
+- If it affects PawnData, Experience activation, character class, movement replication, ASC access, montage lifecycle, death, or ragdoll, use `unreal-gasp-expert` with `unreal-lyra-expert`.
+- If it affects attacks, dodge, block, hit reactions, combat tags, montage notifies, equipment grants, or damage windows, add `survival-rpg-combat-foundation`.
+- If it affects load-aware movement, sprint, stamina, traversal abilities, or equipment-driven gait, use `unreal-gasp-expert` with `unreal-lyra-expert` and `survival-rpg-combat-foundation`.
+- If it widens Mover scope or proposes Locomotor, sample camera, additional Foley, or a wider movement fantasy, require an isolated product and dependency evaluation against the roadmap before implementation.
 
 ## Integration invariants
 
 - Do not query UObject gameplay state from worker-thread animation update.
 - Do not make combat success, hit detection, stamina use, or movement authority depend on cosmetic pose selection.
-- Do not replace production Experience/PawnData composition with the GASP sample character hierarchy; a separately requested isolated source Blueprint baseline may precede that integration.
+- Do not replace production Experience/PawnData composition with the GASP sample character hierarchy.
 - Do not replace RPG equipment truth with AnimBP variables or socket state.
 - Do not remove montage slots, gameplay notifies, or root-motion behavior while simplifying locomotion graphs.
-- Do not create runtime references to the external sample checkout or import dependencies beyond the approved Blueprint migration scope.
-- Do not add Mover, Traversal, Locomotor, NetworkPrediction, sample camera, or Foley as incidental dependencies.
+- Do not create runtime references to the external sample checkout or import dependencies beyond the approved task scope.
+- Do not widen the adopted Mover/NetworkPrediction setup or add Locomotor, sample camera, Foley, or other sample systems as incidental dependencies; change the NetworkPrediction patch only through `Build/Patches/NetworkPrediction/README.md`.
 - Do not add another presentation state machine, watchdog, database switch, or package-path classifier to a native animation coordinator before evaluating a focused helper/runtime split and an AnimBP/Chooser/DataAsset alternative.
 - Do not move complex native behavior one-to-one into Blueprint; simplify and separate the responsibility first.
 - Do not claim multiplayer completion from value-only unit tests. Verify authority, autonomous proxy, simulated proxy, correction, notify delivery, and late join in an actual network session when the change crosses those seams.

@@ -1,34 +1,47 @@
 ---
 name: survival-rpg-orchestrator
-description: Use for large or ambiguous SurvivalRpg requests and for new or materially extended gameplay, UI, editor, persistence, or content-pipeline systems that need repository-wide ownership boundaries. Route across project vision, Unreal/Lyra architecture, GASP animation/locomotion, combat/equipment, planning, review, or implementation; select only the needed specialists and smallest useful slice.
+description: Use for large or ambiguous SurvivalRpg requests and for new or materially extended gameplay, UI, editor, persistence, or content-pipeline systems that need repository-wide ownership boundaries. Routes across project vision, Unreal/Lyra architecture, GASP animation/locomotion, and combat/equipment, then selects only the needed specialist skills and the smallest verifiable slice.
 ---
 
 # SurvivalRpg Orchestrator
 
-Use this skill as a router for broad, ambiguous, multi-system, or multi-step SurvivalRpg work.
-For narrow tasks, go directly to the relevant specialist skill instead of routing through this skill.
+Use this skill as a router for broad, ambiguous, multi-system, or multi-step SurvivalRpg work. For narrow tasks, use the relevant specialist skill directly.
 
-Classify the request before doing work.
+Skill names below refer to the shared skills in `.agents/skills/` (Codex: `$name`, Claude Code: `/name`).
 
-- Read docs/game-vision.md first when the task touches product direction, feature scope, gameplay priorities, or vertical-slice tradeoffs.
-- Identify whether the task is primarily about game vision, gameplay design, Unreal implementation, architecture, review, debugging, planning, or production execution.
-- Identify whether the task changes code, project docs, content structure, or only needs advice.
-- Identify whether the request is narrow enough for one pass or should be split into bounded subtasks.
-- Treat every new or materially extended gameplay, UI, editor, persistence, or content-pipeline system as a system-ownership decision, even when it does not use a Lyra-specific subsystem.
-- Read [the repository-wide system ownership boundaries](references/system-ownership-boundaries.md) for new systems, cross-cutting refactors, or unclear C++/asset/UI/tooling placement.
+## Classify the request
 
-Route to the minimum skill set that covers the task.
+- Read `docs/game-vision.md` when the task touches product direction, feature scope, gameplay priorities, or vertical-slice tradeoffs.
+- Identify whether the task is primarily vision, gameplay design, Unreal implementation, architecture, review, debugging, planning, or production execution.
+- Identify whether it changes code, docs, content/assets, or only needs advice, and whether it fits one pass or needs bounded subtasks.
+- Treat every new or materially extended gameplay, UI, editor, persistence, or content-pipeline system as a system-ownership decision, even when no Lyra subsystem is involved. Read [the system ownership boundaries](references/system-ownership-boundaries.md) for new systems, cross-cutting refactors, or unclear C++/asset/UI/tooling placement.
 
-- Use `$survival-rpg-project` for any decision that affects game identity, feature scope, progression priorities, portal fantasy, survival friction, or long-term resource relevance.
-- Use `$survival-rpg-combat-foundation` for combat foundation, weapon equip/unequip, loadout, hotbar or hotwheel, weapon action routing, or early GAS weapon architecture in this repository.
-- Use `$unreal-lyra-expert` for Unreal Engine, GAS, Lyra-style architecture, modular gameplay, replication, C++ versus Blueprint boundaries, or engine-facing reviews.
-- Use `$unreal-gasp-expert` for GASP CMC locomotion, Motion Matching, Pose Search, trajectory, procedural animation nodes, retargeting, animation threading, or multiplayer locomotion parity.
-- Combine only the specialists whose ownership boundaries the request crosses.
-- Do not duplicate specialist guidance inside this skill. Delegate to the specialist skill instead.
+## Route to the minimum skill set
 
-Make a system-ownership decision for every new or materially extended system, then record its C++ boundary before implementation. Lyra is a useful reference implementation, not the scope of this rule.
+| Skill | Owns |
+| --- | --- |
+| `survival-rpg-project` | Game identity, feature scope, first-playable priorities, progression identity, portal fantasy, survival friction, long-term resource relevance |
+| `survival-rpg-combat-foundation` | Combat, equipment and loadouts, hotbar/quick access, item instances, weapon action routing, ability grants, mastery, runes, portal combat, Dungeonbreak |
+| `unreal-lyra-expert` | Unreal/GAS/Lyra architecture, replication, Experiences, Game Features, Interaction, CommonUI/MVVM, C++ versus asset boundary, Unreal MCP asset authoring |
+| `unreal-gasp-expert` | GASP locomotion on the CMC and Mover variants, traversal, Motion Matching/Pose Search, animation threading, locomotion network parity |
 
-State this concise decision before creating code or assets:
+Default combinations:
+
+- New gameplay feature: `survival-rpg-project`, plus `unreal-lyra-expert` once it touches runtime implementation.
+- Combat, equipment, loadout, or weapon GAS work: `survival-rpg-combat-foundation` first; add `unreal-lyra-expert` for engine-facing work and `survival-rpg-project` when scope or progression tradeoffs matter.
+- Progression, gathering, crafting, portals, bosses, runes, or world events: `survival-rpg-project` and `unreal-lyra-expert` unless only design direction is discussed; keep `survival-rpg-combat-foundation` active when the weapon backbone is touched.
+- GASP-only work such as source audits, Pose Search tuning, or cosmetic AnimGraph changes: `unreal-gasp-expert` alone.
+- GASP work that touches PawnData, Experiences, Game Features, character lifecycle, movement replication, GAS montages, equipment, death, or ragdoll: add `unreal-lyra-expert`.
+- GASP work that touches attacks, dodge, block, hit reactions, combat notifies or tags, or equipment-granted abilities: also add `survival-rpg-combat-foundation`.
+- Adopting further sample systems (Locomotor, sample camera, Foley, experimental plugins) or widening Mover scope: `unreal-gasp-expert` for an isolated dependency evaluation against `docs/gasp-integration-roadmap.md`; add `survival-rpg-project` when movement fantasy or scope changes.
+- Refactor, bug fix, review, replication, GAS ability work, or subsystem placement: `unreal-lyra-expert`; keep `survival-rpg-project` active if identity or scope could shift.
+- Documentation, prioritization, feature triage, or MVP planning: `survival-rpg-project` first; add `unreal-lyra-expert` only when technical constraints matter.
+
+Do not duplicate specialist guidance here; delegate to the specialist skill.
+
+## Record the C++ boundary decision
+
+Before creating code or assets for a new or materially extended system, state:
 
 ```text
 C++ boundary decision
@@ -41,50 +54,25 @@ C++ boundary decision
 ```
 
 - Expect zero new native classes for pure content, tuning, composition, or presentation work.
-- Keep native schema types such as semantic inventory-fragment subclasses in C++; configure their instances in ItemDefinition assets instead of creating Blueprint fragment subclasses.
-- Keep reusable mechanisms native only when Blueprint-inaccessible APIs, authority, prediction, lifecycle invariants, or known/measured hot paths require it. Do not require separate user approval when that technical gate is satisfied.
-- Route inventory-fragment and GameplayAbility ownership decisions through `$survival-rpg-combat-foundation` and `$unreal-lyra-expert`.
-- Route CommonUI, Widget Blueprint, MVVM, and Unreal MCP asset-authoring decisions through `$unreal-lyra-expert`.
+- Keep reusable mechanisms native only when Blueprint-inaccessible APIs, authority, prediction, lifecycle invariants, or known/measured hot paths require it. No separate user approval is needed when that technical gate is satisfied.
 - Never substitute a native content leaf because `.uasset` authoring is less convenient. Use Unreal MCP first; after a confirmed capability gap, propose only the smallest reusable editor-only tooling seam.
-- Apply the same decision to crafting, progression, portals, AI, saving, world events, interaction, building, economy, UI, and future systems; route only the domain-specific details to Lyra or another specialist.
+- Route inventory-fragment and GameplayAbility ownership through `survival-rpg-combat-foundation` and `unreal-lyra-expert`; route CommonUI, Widget Blueprint, MVVM, and Unreal MCP authoring through `unreal-lyra-expert`.
 
-Preserve repository-wide documentation defaults.
+Documentation comments are part of normal implementation quality. Apply the documentation defaults in `AGENTS.md` without turning them into a separate task.
 
-When a routed task creates or modifies designer-facing Unreal APIs, DataAssets, Blueprint-configurable fields, combat tuning, item/equipment data, portal data, rune data, recipe data, progression data, replicated gameplay state, or save-relevant state, ensure the selected specialist skill adds concise documentation comments by default.
+## Execute large requests as a stable sequence
 
-Do not turn this into a separate documentation task unless the user asked for documentation only. Treat it as part of normal implementation quality.
+1. Restate the concrete deliverable.
+2. Load the relevant project and technical skills.
+3. Inspect the repository before proposing structure changes.
+4. Record the system-ownership and C++ boundary decision.
+5. Choose the smallest slice that proves fun, clarity, or architectural soundness.
+6. Implement or document that slice.
+7. Verify the result and name remaining risks.
 
-Apply these default routing rules.
+Delegate to sub-agents only when the task is large enough, the active tool and the user allow delegation, and the subtasks are concrete and non-overlapping, for example one agent exploring affected gameplay files, one implementing a UI slice, and one reviewing replication risks. Prefer local execution for small or tightly coupled work, and keep the project skill in every delegated brief.
 
-- New gameplay feature: use `$survival-rpg-project`, then add `$unreal-lyra-expert` if the feature touches runtime implementation.
-- Combat foundation, weapon equip/unequip, hotbar or hotwheel loadout, or early weapon GAS work: use `$survival-rpg-combat-foundation` first, then add `$unreal-lyra-expert` for engine-facing work and `$survival-rpg-project` when feature scope or progression tradeoffs matter.
-- Combat, progression, gathering, crafting, portals, bosses, runes, or world events: use both core skills unless the user is only discussing design direction; keep `$survival-rpg-combat-foundation` active whenever the task touches the Phase 1 weapon backbone.
-- GASP source audits, curated asset work, Pose Search tuning, or purely cosmetic AnimGraph work: use `$unreal-gasp-expert` alone unless the task crosses a gameplay boundary.
-- GASP work that touches PawnData, Experiences, Game Features, character lifecycle, movement replication, GAS montages, equipment, death, or ragdoll: use `$unreal-gasp-expert` together with `$unreal-lyra-expert`.
-- GASP work that touches attacks, dodge, block, hit reactions, combat montage notifies, combat tags, or equipment-granted abilities: also use `$survival-rpg-combat-foundation`.
-- Requests to adopt GASP Mover, Traversal, Locomotor, camera, Foley, or experimental systems: route through `$unreal-gasp-expert` for an isolated dependency evaluation and add `$survival-rpg-project` when the change affects gameplay scope or movement fantasy.
-- Refactor, bug fix, review, replication, GAS ability work, or subsystem placement: use `$unreal-lyra-expert` and keep `$survival-rpg-project` active if the change could shift the game's identity or scope.
-- Documentation, prioritization, feature triage, or MVP planning: use `$survival-rpg-project` first and only add `$unreal-lyra-expert` when technical constraints matter.
-
-Turn large requests into a stable execution sequence.
-
-- Step 1: restate the concrete deliverable internally.
-- Step 2: load the relevant project and technical skills.
-- Step 3: inspect the local repository before proposing structure changes.
-- Step 4: record the repository-wide system-ownership and C++ boundary decision.
-- Step 5: choose the smallest slice that proves fun, clarity, or architectural soundness.
-- Step 6: implement or document that slice.
-- Step 7: verify the result and call out remaining risks.
-
-Use sub-agents only when the task is explicitly large enough to benefit from delegation.
-
-- Prefer local execution for small or tightly coupled work.
-- Split only into concrete, non-overlapping subtasks with clear ownership.
-- Good delegation examples: one agent explores affected gameplay files, another implements a UI slice, another reviews replication risks.
-- Avoid delegation when the next action is blocked on a small local answer.
-- When delegating, keep the project skill active in the framing so all agents stay aligned with the same product guardrails.
-
-Use these orchestration priorities when tradeoffs appear.
+## Tradeoff priorities
 
 - Product identity outranks convenience.
 - First playable outranks feature breadth.
@@ -92,22 +80,8 @@ Use these orchestration priorities when tradeoffs appear.
 - Data-driven extension points outrank hard-coded content.
 - Fun and readability outrank simulation depth.
 
-Catch coordination failures early.
+Stop scope drift toward MMO structure, pure sandbox building, or punitive survival micromanagement; technical drift toward hard-coded content, oversized managers, or bypassing existing Unreal/Lyra seams; and planning drift beyond the current vertical-slice goal.
 
-- Stop scope drift toward MMO structure, pure sandbox building, or punitive survival micromanagement.
-- Stop technical drift toward hard-coded content, oversized managers, or systems that bypass Unreal and Lyra extension seams already present.
-- Stop planning drift when a task grows beyond the current vertical-slice goal.
+## Reporting
 
-When reporting back, summarize in this order when routing decisions matter. Do not force a routing report for small implementation tasks.
-
-- Which specialist skills were relevant and why.
-- What concrete slice was chosen.
-- What was implemented, reviewed, or deferred.
-- What risks or next steps remain.
-
-State assumptions explicitly when context is incomplete.
-
-- Name the files, systems, or design goals used to classify the task.
-- If there is no project documentation yet, use `$survival-rpg-project` as the temporary source of truth and recommend creating docs when the same decisions repeat.
-
-
+When routing decisions matter (not for small implementation tasks), report in this order: relevant skills and why, the chosen slice, what was implemented, reviewed, or deferred, and remaining risks or next steps. Name the files, systems, or design goals used to classify the task, and state assumptions when context is incomplete.

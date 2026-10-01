@@ -4,8 +4,8 @@ Use this workflow whenever work creates or changes Blueprint, Widget Blueprint, 
 
 ## Required workflow
 
-1. Check that Unreal Editor is running and that the project MCP endpoint is reachable at `http://127.0.0.1:8000/mcp`.
-2. Search the available MCP tools before deciding that an asset operation is unsupported. Tool availability can vary with the active editor toolsets.
+1. Check that Unreal Editor is running and that the project MCP endpoint is reachable at `http://127.0.0.1:8000/mcp`. The server is configured as `unreal-mcp` in `.codex/config.toml` for Codex and in `.mcp.json` for Claude Code; coordinate a shared editor session with other worktrees or agents before authoring.
+2. Search the available MCP tools before deciding that an asset operation is unsupported. Tool availability varies with the active editor toolsets, and some clients load MCP tool schemas only on demand (Claude Code: tool search).
 3. Inspect the existing parent classes, related assets, Blueprint graphs, widget trees, object properties, references, and project naming/placement conventions before authoring.
 4. Author through the narrowest applicable MCP surface:
    - Blueprint tools for Blueprint assets, graphs, functions, events, nodes, variables, and compilation;

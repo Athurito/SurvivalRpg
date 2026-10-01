@@ -1,128 +1,72 @@
 ---
 name: survival-rpg-combat-foundation
-description: Use for SurvivalRpg combat, equipment, inventory-facing item instances, loadouts, GAS ability grants, mastery/progression, runes, portal combat, Dungeonbreak, and modular GameFeature combat content. Prefer current repo truth, preserve Lyra-rooted RPG equipment/inventory architecture, pair with $unreal-lyra-expert for engine-facing implementation, and add $unreal-gasp-expert for combat animation, montage/locomotion overlap, dodge, block, hit reactions, or GASP-driven presentation.
+description: Use for SurvivalRpg combat, equipment, inventory-facing item instances, loadouts and quick access, GAS ability grants, mastery/progression, runes, portal combat, Dungeonbreak, and modular GameFeature combat content. Prefers current repo truth and preserves the Lyra-rooted RPG equipment/inventory architecture. Pair with unreal-lyra-expert for engine-facing implementation and add unreal-gasp-expert for combat animation, montage/locomotion overlap, dodge, block, hit reactions, or GASP-driven presentation.
 ---
 
 # SurvivalRpg Combat Foundation
 
-## Skill Boundaries
+## Skill boundaries
 
 This skill owns SurvivalRpg combat, equipment, inventory-facing item instances, weapon action routing, runes, mastery/progression, portal combat, Dungeonbreak combat escalation, and combat GameFeature guidance.
 
-Use it together with `$unreal-lyra-expert` when implementation details touch Unreal Engine, GAS internals, replication, Experiences, Game Features, Lyra Interaction, or Lyra-rooted inventory/equipment.
+- Add `unreal-lyra-expert` when implementation touches Unreal Engine, GAS internals, replication, Experiences, Game Features, Lyra Interaction, or Lyra-rooted inventory/equipment.
+- Add `unreal-gasp-expert` when combat work changes the GASP AnimBP, Motion Matching layers, montage slots, root motion, dodge or block presentation, hit reactions, equipment sockets, death, ragdoll, or locomotion-driven combat tags. Combat outcomes stay authoritative in GAS and equipment; animation remains presentation.
+- Add `survival-rpg-project` when a decision changes product scope, progression identity, survival friction, first-playable priorities, or long-term resource relevance.
 
-Use it together with `$unreal-gasp-expert` when combat work changes the GASP AnimBP, Motion Matching layers, montage slots, root-motion interaction, dodge or block presentation, hit reactions, equipment sockets, death, ragdoll, or locomotion-driven combat tags. Keep combat outcomes authoritative in GAS and equipment while animation remains presentation.
+Do not create a parallel combat, equipment, inventory, ability-grant, or item-instance authority beside the existing Lyra-rooted RPG architecture.
 
-Use it together with `$survival-rpg-project` when a combat, equipment, rune, portal, or progression decision changes product scope, progression identity, survival friction, first-playable priorities, or long-term resource relevance.
+## Combat philosophy
 
-Do not let this skill create a parallel combat, equipment, inventory, ability-grant, or item-instance authority beside the existing Lyra-rooted RPG architecture.
+The long-term fantasy is a powerful portal hunter and rune warrior in a living world threatened by portals. Combat is direct and readable, skill-based without becoming a pure Soulslike, built on timing, positioning, and build synergy, and driven by GAS abilities, effects, cues, and tags so melee, ranged, magic, runes, and portal-specific mechanics stay modular.
 
-## Always start from current repository truth
+The foundation must prove that attack input triggers the correct ability, the montage plays reliably, hit detection is authoritative and readable, damage is applied through GameplayEffects, hit reactions, stagger, and death work, equipment grants and removes combat capabilities, and progression unlocks or modifies abilities cleanly.
 
-Before proposing changes, Codex should inspect the current repository instead of relying on stale document names.
+## Start from current repository truth
 
-Read first, if present:
+Inspect the repository instead of relying on remembered document or class names. Read what is relevant:
 
-- `docs/game-vision.md`
-- `docs/combat/README.md`
-- `docs/combat/*.md`
-- `docs/progression/*.md`
-- `docs/equipment/*.md`
+- `docs/game-vision.md`, especially sections 8 to 10 and 12
+- `docs/combat-mastery-reference.md` for the combat loop, mastery, and skill-group model
+- `docs/combat-network-smoke.md`, `docs/rpg-baseline.md`, and `docs/inventory-refactor-plan.md` when networking, the baseline Experience, or inventory are involved
+- `docs/gasp-cmc-sprint.md` and `docs/gasp-block-locomotion.md` when stamina, sprint, or block movement are involved
 
-Then inspect current code paths that actually exist, especially:
-
-- `Source/SurvivalRpg/Equipment`
-- `Source/SurvivalRpg/AbilitySystem`
-- `Source/SurvivalRpg/Core/Character`
-- inventory-facing code
-- progression / experience / mastery code
-- active Lyra Experience and GameFeature setup
-
-Do **not** assume `docs/combat/phase-1-weapon-equip-foundation.md` exists. If a referenced doc is missing, flag it as stale and continue from existing code and current vision docs.
-
----
-
-# Current game direction
-
-The project is a **dark fantasy open-world survival action RPG** with a strong focus on:
-
-- responsive third-person combat
-- weapon, magic and rune builds
-- portal encounters and Dungeonbreak escalation
-- magical harvesting instead of only axe/pickaxe gathering
-- use-based progression with meaningful specialization choices
-- dynamic world threat and replayability
-
-The combat architecture should support the long-term fantasy of a player becoming a powerful portal hunter / rune warrior in a living world affected by portals.
-
----
-
-# Core combat philosophy
-
-Combat should be:
-
-- direct and readable
-- skill-based without becoming a pure Soulslike
-- built around timing, positioning and build synergy
-- driven by GAS abilities, effects, cues and tags
-- modular enough to support melee, ranged, magic, runes and portal-specific mechanics
-
-Core combat should prove:
-
-- attack input triggers the correct ability
-- montage / animation plays reliably
-- hit detection is authoritative and readable
-- damage is applied through GameplayEffects
-- hit reactions, stagger and death work
-- equipment can grant and remove combat capabilities
-- progression can unlock or modify abilities cleanly
-
----
-
-# Architecture boundaries
+Then inspect the code that actually exists, especially `Source/SurvivalRpg/Equipment`, `Source/SurvivalRpg/AbilitySystem`, `Source/SurvivalRpg/Combat`, `Source/SurvivalRpg/Inventory`, `Source/SurvivalRpg/Progression`, `Source/SurvivalRpg/ActionBar`, `Source/SurvivalRpg/Core/Character`, the GameFeature plugins under `Plugins/GameFeatures`, and the active Experience setup. If a referenced doc or class is missing, flag the reference as stale and continue from code and the vision document.
 
 ## Equipment authority
 
-Keep `URpgEquipmentComponent` or the current equivalent equipment component as the authority for:
+Current runtime model; verify details in code before relying on them:
 
-- equipped state
-- slot conflict resolution
-- replicated equipped items
-- equipment-driven loose tags
-- aggregated ability grants
-- aggregated gameplay effects
-- active equipment context
-- source bindings for attacks and abilities
+- Inventory graph locations (Gear and Carry grids) are the sole physical truth of what a character carries and wears.
+- `URpgEquipmentLoadoutComponent` (controller-owned) reconciles a read-only Gear projection, owns the active Main-/OffHand selection and remembered pairings, runs side-effect-free conflict preflights, derives the equipment load tier (`Equipment.Load.*`), and drives pawn equipment and GAS grants.
+- `URpgEquipmentManagerComponent` (pawn-owned, Lyra-rooted) holds the replicated applied equipment instances and their ability/effect grants. Each `URpgEquipmentInstance` keeps its source item instance as replicated instigator.
+- `URpgWeaponAbilityLoadoutComponent` only chooses which granted ability ids are bound to `InputTag.Weapon.Ability.1..3`; `FRpgAbilityBindingResolver` resolves those ids to exactly one granted spec on the server.
 
-Equip input abilities such as `URpgGameplayAbility_EquipLoadoutSlot` should stay thin. They should map input to equip requests and delegate actual state changes to the equipment system.
+Keep these ownerships:
 
-Characters and UI should mirror equipment state for presentation only. They should not own combat truth.
-
-Avoid duplicate managers that overlap with equipment authority. A future weapon manager is only acceptable if it has a narrow role that does not conflict with equipped-state ownership.
+- Server authority owns equip/unequip, slot conflict resolution, grant rebuilds, replicated equipped state, equipment-driven loose tags, aggregated ability and effect grants, active equipment context, source bindings, and authoritative damage application.
+- Equip input abilities stay thin: they map input to requests and delegate state changes to the equipment components.
+- Characters and UI mirror equipment state for presentation only.
+- A new weapon or equipment helper is acceptable only with a narrow role that does not overlap equipped-state ownership.
 
 ## Native schema, mechanism, and designer content
 
 Classify combat and inventory work before adding a native type:
 
 - **Native schema** defines a reusable runtime concept that assets must be able to configure.
-- **Native mechanism** enforces engine-facing behavior, authority, prediction, replication, lifecycle invariants, or a known or measured performance hotpath.
+- **Native mechanism** enforces engine-facing behavior, authority, prediction, replication, lifecycle invariants, or a known or measured hot path.
 - **Designer content** selects, composes, and tunes those schemas and mechanisms for a concrete item, ability, weapon, rune, portal, or encounter.
 
-Pure designer-content work should add no native classes. A large task is not automatically a native task, and tooling inconvenience is not a reason to create a C++ content leaf.
+Pure designer-content work adds no native classes. Task size is not a native justification, and tooling inconvenience never justifies a C++ content leaf. The repository-wide rules live in `.agents/skills/survival-rpg-orchestrator/references/system-ownership-boundaries.md`.
 
 ### Inventory fragments are native schema types
 
-- Keep `URpgInventoryItemFragment` and every semantic inventory-fragment subclass in C++.
-- Do not create Blueprint subclasses of inventory fragments. Blueprint exposure exists so assets can configure native fragment instances, not so content can extend the fragment type hierarchy.
-- Add a new native fragment subclass only when the project needs new item semantics or reusable runtime behavior that existing fragment types cannot express.
-- Do not add a fragment subclass for a single item, a balance variant, different presentation data, or another combination of existing properties.
-- Build concrete items by adding and configuring inline instances of the existing native fragment types in `URpgInventoryItemDefinition` or the current equivalent ItemDefinition asset.
-
-For example, sword, axe, and armor definitions may configure different values on native equippable, itemization, trait, or presentation fragments. They should not introduce `BP_*Fragment` classes or one native fragment class per item.
+- Keep `URpgInventoryItemFragment` and every semantic fragment subclass in C++. Do not create Blueprint fragment subclasses; Blueprint exposure exists so assets can configure native fragment instances.
+- Add a native fragment subclass only for new item semantics or reusable runtime behavior that existing fragment types cannot express, never for a single item, a balance variant, different presentation data, or another combination of existing properties.
+- Build concrete items by configuring inline instances of existing native fragment types on `URpgInventoryItemDefinition` assets. Sword, axe, and armor definitions differ in configured values, not in `BP_*Fragment` classes or one native fragment per item.
 
 ### Gameplay Abilities are asset-first
 
-Use `URpgGameplayAbility` as the default native foundation and implement concrete `GA_*` abilities as Blueprint assets. Shared designer flow may also live in a Blueprint parent such as `GA_MeleeBase`:
+Use `URpgGameplayAbility` as the native foundation and implement concrete `GA_*` abilities as Blueprint assets. Shared designer flow may live in a Blueprint parent:
 
 ```text
 URpgGameplayAbility (C++)
@@ -131,367 +75,83 @@ URpgGameplayAbility (C++)
     GA_AxeHeavy (Blueprint)
 ```
 
-Add an abstract native intermediate such as `URpgGameplayAbility_MeleeBase` only when the shared mechanism requires at least one of:
+Add an abstract native intermediate only when the shared mechanism needs Blueprint-unavailable engine APIs, natively enforced authority/prediction/lifecycle invariants, or a known or measured hot path. Task size, shared designer sequencing, graph neatness, or `.uasset` convenience do not qualify. A justified native intermediate stays generic and exposes focused extension points for Blueprint descendants.
 
-- engine APIs that are unavailable or unsuitable in Blueprint
-- authority, prediction, or lifecycle invariants that must be enforced natively
-- a known or measured hotpath whose work belongs in C++
+Keep concrete ability identity and content in assets, AbilitySets, equipment or item definitions, GameplayEffects, and GameplayCues: ability and input tags, costs and cooldowns, montage and cue selection, names, text, icons, range, radius, damage, duration and other balance values, and weapon-, rune-, element-, portal-, or encounter-specific composition.
 
-Task size, shared designer sequencing, graph neatness, or `.uasset` authoring convenience do not justify a native ability intermediate. If a native intermediate is necessary, keep it generic and expose focused extension points for Blueprint descendants instead of embedding one concrete attack's identity or tuning.
+Author Blueprint, GameplayAbility, GameplayEffect, GameplayCue, AbilitySet, and ItemDefinition assets through the Unreal MCP workflow of `unreal-lyra-expert`. Only a confirmed MCP capability gap justifies a small reusable editor-only tooling seam, never a runtime C++ content class.
 
-Keep concrete ability identity and content in assets, AbilitySets, equipment or item definitions, GameplayEffects, and GameplayCues as appropriate. This includes:
+Test the reusable native mechanism once, then validate concrete ability content through stable asset contracts: Blueprint compilation, intended parentage, required tags and references, and AbilitySet or equipment grants. Do not require a content ability to exist as a native `/Script/...` class or create a native leaf only for unit-test convenience.
 
-- ability and input tags
-- costs and cooldowns
-- montage and cue selection
-- names, text, and icons
-- range, radius, damage, duration, and other balance values
-- weapon-, rune-, element-, portal-, or encounter-specific composition
+## Documentation for combat data
 
-For Blueprint, Widget Blueprint, GameplayAbility, GameplayEffect, GameplayCue, AbilitySet, and ItemDefinition authoring, pair this skill with `$unreal-lyra-expert` and follow its Unreal MCP asset-authoring workflow. Inspect the current parents and assets, use the available MCP tools to create or edit the asset, compile it where applicable, save it, and validate its contracts. Only a confirmed MCP capability gap may justify a small reusable editor-only tooling seam; it does not justify a runtime C++ content class.
+Apply the documentation defaults in `AGENTS.md`. For combat data, cover in particular damage, cooldown, cost, range, duration, radius, tick interval and targeting values, gameplay tag fields, GameplayEffect and GameplayAbility class references, ability grant configuration, runtime item instance fields, replicated equipment state, and save-relevant item or progression state. State units, valid ranges, authority, replication, save behavior, and whether UI only reads the value.
 
-Test the reusable native mechanism once, then validate concrete ability content through stable asset contracts such as Blueprint compilation, intended parentage, required tags/references, and AbilitySet or equipment grants. Do not require a content ability to exist as a `/Script/...` native class, and do not create a native ability leaf only to make it directly unit-testable.
+## Item architecture model
 
-## Documentation defaults for combat assets
+Keep these concepts separate: static item definition, concrete item instance, physical inventory location, equipped runtime projection and hand selection, ability-binding presets, and presentation state. Presets describe a target configuration; they are never the final runtime truth of what is equipped.
 
-When creating or modifying combat, item, equipment, rune, portal, mastery, DamageArea, GameplayAbility, GameplayEffect, or GameFeature configuration, add concise documentation comments for designer-facing fields.
+Inventory owns and supplies item instances. Equipment owns equip rules and combat activation. Flag any implementation that bypasses item instances where instance identity matters, especially for generated loot, affixes, rune sockets, upgrades, durability, mastery-relevant traits, and instance-specific granted abilities or effects.
 
-Document especially:
+## GAS aggregation model
 
-- DataAsset fields
-- Blueprint-configurable tuning values
-- gameplay tag fields
-- GameplayEffect class references
-- GameplayAbility class references
-- item definition fields
-- equipment definition fields
-- fragment fields
-- runtime item instance fields
-- replicated equipment state
-- save/load relevant item or progression state
-- ability grant configuration
-- damage, cooldown, cost, range, duration, radius, tick interval, and targeting values
+Combat behavior that depends on the equipped setup flows through GAS, not hard-coded pawn branches. Aggregate from all currently equipped item instances: granted abilities, granted gameplay effects, loose gameplay tags, gameplay cues, source objects, and ability input bindings.
 
-Comments should explain:
+`InputTag.Weapon.Primary` and `InputTag.Weapon.Secondary` route through the active equipment context, slot occupancy, and gameplay tags instead of per-weapon-class branches.
 
-- gameplay intent
-- expected units
-- valid ranges
-- whether the field is static definition data or runtime mutable state
-- whether the value is server-authoritative
-- whether the value is replicated
-- whether the value is saved
-- whether UI should only read the value
-- how designers are expected to tune the value
+## GameFeature boundaries
 
-Avoid comments that merely restate the property name.
+Use GameFeature plugins for modular gameplay packages without overcomplicating early prototypes.
 
----
+- Existing under `Plugins/GameFeatures`: `GF_Combat_Core`, `GF_Combat_Magic`, `GF_Runes_Core`, `GF_Portals_Core`, `GF_Harvesting_Magic`, `GF_Progression`, `GF_AI_RiftMonsters`, `GF_AI_Wildlife`, and `GF_Dev_Sandbox`.
+- Planned in the vision document: `GF_Combat_Ranged`, `GF_Runes_Elemental`, `GF_Runes_Rift`, `GF_Dungeonbreak_System`, and `GF_WorldState`. Create one only when a slice needs it.
 
-# Item architecture model
+For early testing, simple prototype actors and effects (for example a viewport-placed damage-area test actor or `GE_Damage_Instant`) may live in Core when GameFeature placement blocks fast iteration. Mark them as prototype or base assets and refactor later.
 
-Keep these concepts separate:
+Put generic reusable logic in Core or `GF_Combat_Core`: base damage area, base melee attack flow, generic instant damage, generic damage-over-time base, generic stamina cost, and generic hit reaction or stagger effects. Put specializations in their owning feature, for example fire areas in `GF_Combat_Magic` or elemental runes, rift corruption in the Dungeonbreak feature, rune procs in rune features, and portal-monster bonuses in portal features. Dependencies flow from specific features to core, never the reverse.
 
-- static item definition
-- concrete item instance
-- equipped runtime state
-- loadout preset
-- presentation state
+## DamageArea guidance
 
-Loadouts are presets that describe a target configuration. They are never the final runtime truth of what is equipped.
-
-Inventory owns and supplies item instances. Equipment owns equip rules and combat activation.
-
-Keep `SourceItemHandle` or an equivalent resolver as the inventory-agnostic seam for resolving concrete item instances.
-
-Flag any implementation that bypasses item instances when instance identity matters, especially for:
-
-- generated loot
-- affixes
-- rune sockets
-- upgrades
-- durability
-- mastery-relevant traits
-- instance-specific granted abilities or effects
-
----
-
-# GAS aggregation model
-
-Combat behavior that depends on equipped setup should flow through GAS, not hard-coded pawn branches.
-
-Aggregate from all currently equipped item instances:
-
-- granted abilities
-- granted gameplay effects
-- loose gameplay tags
-- gameplay cues
-- source objects / source handles
-- ability input bindings
-
-`InputTag.Weapon.Primary` and `InputTag.Weapon.Secondary` should route through active equipment context, slot occupancy and gameplay tags instead of hard branches per weapon class.
-
-Server authority should own:
-
-- equip / unequip
-- grant rebuilds
-- conflict resolution
-- replicated equipped state
-- authoritative damage application
-
----
-
-# GameFeature boundaries
-
-Use GameFeature plugins for modular gameplay packages, but do not overcomplicate early prototypes.
-
-Recommended long-term features:
-
-- `GF_Combat_Core`
-- `GF_Combat_Magic`
-- `GF_Combat_Ranged`
-- `GF_Runes_Core`
-- `GF_Runes_Elemental`
-- `GF_Runes_Rift`
-- `GF_Portals_Core`
-- `GF_Dungeonbreak_System`
-- `GF_Harvesting_Magic`
-- `GF_Progression`
-- `GF_AI_RiftMonsters`
-
-For early testing, it is acceptable to keep simple prototype actors such as a viewport-placed `BP_DamageArea_Test` or `GE_Damage_Instant` in Survival/Core if GameFeature placement prevents fast iteration. Mark these as prototype or base assets and refactor later.
-
-## Core vs feature rule
-
-Put generic reusable logic in Core or `GF_Combat_Core`:
-
-- base damage area
-- base melee attack flow
-- generic instant damage effect
-- generic damage-over-time base
-- generic stamina cost effect
-- generic hit reaction / stagger effects
-
-Put specializations in their owning feature:
-
-- fire damage area -> `GF_Combat_Magic` or `GF_Runes_Elemental`
-- frost / shock / burn effects -> magic or elemental runes
-- rift corruption area -> `GF_Dungeonbreak_System`
-- rune weapon procs -> rune features
-- portal monster bonuses -> rift/portal features
-
-Dependencies should flow from specific features to core, not from core to specific features.
-
----
-
-# DamageArea guidance
-
-A generic damage area can live in Core or `GF_Combat_Core` if it is broadly reusable.
-
-Recommended base behavior:
-
-- collision / overlap detection
-- target collection
-- owner / instigator ignore rules
-- optional team filtering
-- tick interval
-- duration
-- GameplayEffect class to apply
-- optional one-shot vs repeated application
-- self-destroy after duration
-
-The base class should not know whether it is fire, poison, frost or rift. It should receive data from exposed variables or a DataAsset.
-
-Example base fields:
+A generic damage area may live in Core or `GF_Combat_Core`. Its base behavior: overlap detection, target collection, owner/instigator ignore rules, optional team filtering, tick interval, duration, the GameplayEffect class to apply, one-shot versus repeated application, and self-destroy after duration. The base never knows whether it is fire, poison, frost, or rift; it receives data from exposed variables or a DataAsset, for example:
 
 ```text
-DamageEffectClass
-Radius
-Duration
-TickInterval
-bApplyOnce
-bIgnoreOwner
-TargetFilterTags
-BlockedTargetTags
+DamageEffectClass, Radius, Duration, TickInterval, bApplyOnce, bIgnoreOwner, TargetFilterTags, BlockedTargetTags
 ```
 
-Specialized data or child assets can live in feature plugins:
+Specialized data lives in feature plugins, for example `DA_DamageArea_FireGround` with `GE_Damage_Fire_DOT` in `GF_Combat_Magic`. Spawn damage areas through GameplayAbilities, AnimNotifies or attack windows, portal actors, Dungeonbreak managers, or encounter spawners. Avoid placing feature-owned gameplay actors in main maps unless the map is a feature test map or the dependency is intentional.
 
-```text
-GF_Combat_Magic
-  DA_DamageArea_FireGround
-  GE_Damage_Fire_DOT
+## Abilities with montages
 
-GF_Dungeonbreak_System
-  DA_DamageArea_RiftCorruption
-  GE_RiftCorruption_DOT
-```
+Abilities may live in a GameFeature and reference montages in the same feature; the Experience or GameFeature action grants the ability set and input mapping, and the ability plays the montage and drives attack windows, traces, and effects. Core never references feature-only montages; a feature may reference core or shared character assets.
 
-Spawn damage areas through:
+When montage abilities fail, check the skeleton or compatible skeleton, the AnimBP slot node and slot name, the input config loaded by the active Experience, that the ability is granted to the ASC, and that activation tags are not blocked. With the GASP AnimBP, also check the `unreal-gasp-expert` contract for `DefaultSlot`, root-motion extraction, `GetMesh()`, worker-thread tag snapshots, locomotion interruption, and simulated-proxy presentation.
 
-- GameplayAbilities
-- AnimNotifies / attack windows
-- portal actors
-- Dungeonbreak managers
-- encounter spawners
+## Weapon and content model
 
-Avoid directly placing feature-owned gameplay actors in main maps unless the map is a feature test map or the dependency is intentional.
+Keep definitions fragment-friendly rather than monolithic weapon classes. Use tags and data for classification: a weapon type tag (melee, ranged, magic), a weapon family tag (sword, axe, spear, bow, staff, shield), and equipment trait tags (block, parry, charge, casting, harvesting, rune socket, utility). Assume item instances may later add behavior through affixes, rune sockets, generated modifiers, upgrades, durability, mastery unlocks, or special source bindings, so never hard-code behavior only by static weapon class when instance data may matter.
 
----
+## Progression and mastery
 
-# Abilities with montages
+Use the hybrid model from `docs/game-vision.md` section 9 and `docs/combat-mastery-reference.md`: use-based growth, automatic unlocks for basics, milestone choices for build identity, and runes and equipment for further shaping. Layered mastery (roughly 70 % general, 20 % category or style, 10 % weapon familiarity) keeps weapon switches from feeling like a reset.
 
-Abilities may live in a GameFeature and reference montages in the same GameFeature.
+Skill unlocks grant or modify AbilitySets (preferred for active skills), GameplayEffects (persistent passives), GameplayTags (ability upgrades checked at runtime), input bindings, and passive bonuses.
 
-Example:
+## Combat MVP priority
 
-```text
-GF_Combat_Core
-  GA_MeleeAttack
-  AM_MeleeAttack_Light
-  LAS_Combat_Core
-  IA_Attack
-  IMC_Combat
-```
+When in doubt, finish the smallest playable loop before building broad systems: equip a test weapon, trigger a basic attack ability, play the montage, detect the hit, apply `GE_Damage_Instant` or equivalent, play hit reaction or cue, kill the enemy, and grant XP or mastery progress through the progression seam. That loop must leave room for runes, magic, ranged weapons, portal monsters, Dungeonbreak modifiers, skill-tree unlocks, and item-instance modifiers.
 
-The Experience or GameFeature action grants the ability set and input mapping. The ability plays the montage and drives attack windows / traces / effects.
-
-Check these when montage abilities fail:
-
-- correct skeleton / compatible skeleton
-- AnimBP contains the required Slot node
-- montage slot name matches ability expectations
-- input config is loaded by the active Experience
-- ability is actually granted to the ASC
-- activation tags are not blocked
-
-When the active character uses the GASP AnimBP, also check the `$unreal-gasp-expert` contract for `DefaultSlot`, root-motion extraction, `GetMesh()`, worker-thread tag snapshots, locomotion interruption, and simulated-proxy presentation.
-
-Core should not reference feature-only montages. A feature can reference core/shared character assets.
-
----
-
-# Weapon and content model
-
-Keep definitions fragment-friendly rather than monolithic weapon classes.
-
-Use tags/data for broad classification and future progression:
-
-- `WeaponTypeTag`: broad type such as melee, ranged, magic
-- `WeaponFamilyTag`: sword, axe, spear, bow, staff, shield, etc.
-- `EquipmentTraitTags`: block, parry, charge, casting, harvesting, rune socket, utility, etc.
-
-Assume future item instances may add behavior through:
-
-- affixes
-- rune sockets
-- generated modifiers
-- upgrades
-- durability
-- mastery unlocks
-- special source bindings
-
-Do not hard-code weapon behavior only by static weapon class if instance data may matter.
-
----
-
-# Progression and mastery model
-
-The current preferred model is **hybrid progression**:
-
-- use-based leveling for natural growth
-- automatic unlocks for basic capabilities
-- milestone choices for build identity
-- runes and equipment for additional build shaping
-
-Avoid hard-reset frustration when changing weapons.
-
-Use layered mastery instead of isolated per-weapon grind:
-
-```text
-70% general mastery
-20% category/style mastery
-10% weapon familiarity
-```
-
-Example melee progression:
-
-```text
-Melee Mastery
-  general attacks, stamina control, combat fundamentals
-
-One-Handed / Two-Handed / Shield / Dual Wield
-  style-specific skills and modifiers
-
-Sword / Axe / Spear Familiarity
-  small family bonuses and flavor skills
-```
-
-Changing from sword to axe should keep `Melee Mastery` and `One-Handed` progress. Only small familiarity bonuses should differ.
-
-Skill unlocks should grant or modify:
-
-- AbilitySets
-- GameplayEffects
-- GameplayTags
-- input bindings
-- passive bonuses
-- ability upgrade tags
-
-Prefer AbilitySets for active skill unlocks.
-
-Passive skills can apply long-duration or persistent GameplayEffects.
-
-Ability upgrades can be represented by GameplayTags that the ability checks at runtime.
-
----
-
-# Combat MVP priority
-
-When in doubt, prioritize the smallest playable combat loop:
-
-1. equip a test weapon
-2. trigger a basic attack ability
-3. play montage
-4. detect hit
-5. apply `GE_Damage_Instant` or equivalent
-6. play hit reaction / cue
-7. kill enemy
-8. grant XP / mastery progress through progression seam
-
-Do not build broad systems before this feels good.
-
-The first combat milestone should support later:
-
-- runes
-- magic
-- ranged weapons
-- portal monsters
-- dungeonbreak modifiers
-- skill tree unlocks
-- item instance modifiers
-
----
-
-# Drift warnings
+## Drift warnings
 
 Flag proposals that:
 
-- reference stale docs as required truth
-- create Blueprint subclasses of `URpgInventoryItemFragment` or its semantic fragment subclasses
-- add a fragment type for per-item values or composition that belongs in an ItemDefinition asset
-- add a concrete native GameplayAbility leaf when the behavior can be expressed as a `GA_*` Blueprint asset
-- add a native ability intermediate only to share designer flow, keep Blueprint graphs small, or avoid MCP asset authoring
-- bake concrete ability tags, costs, cooldowns, montages, cues, text, icons, range, or damage tuning into a generic native ability base
-- require a concrete content ability to exist as a native `/Script/...` class or create a native leaf solely for unit-test convenience
-- bypass equipment authority for equip state
-- make loadouts runtime truth
-- put combat truth into UI or character visuals
-- couple inventory directly to plugin-only combat types
-- hard-code weapon families where tags/data should be used
-- block future generated items, affixes, runes or item instances
-- implement skill trees that make weapon switching feel like starting from zero
-- put special fire/rift/rune logic into generic core assets
-- require main maps to hard-reference feature-only actors without clear reason
+- treat stale docs or remembered class names as required truth
+- create Blueprint subclasses of `URpgInventoryItemFragment` or its semantic subclasses, or add a fragment type for per-item values or composition
+- add a concrete native GameplayAbility leaf when a `GA_*` Blueprint asset can express the behavior, or a native intermediate only to share designer flow, shrink graphs, or avoid MCP authoring
+- bake concrete ability tags, costs, cooldowns, montages, cues, text, icons, range, or damage into a generic native base
+- require a content ability to exist as a native class or create a native leaf for test convenience
+- bypass equipment authority, treat presets as equipped-state truth, or put combat truth into UI or character visuals
+- couple inventory directly to plugin-only combat types, hard-code weapon families, or block generated items, affixes, runes, or item instances
+- build skill trees that make weapon switching feel like starting from zero
+- put fire, rift, or rune specifics into generic core assets, or make main maps hard-reference feature-only actors without reason
 - make authoritative combat results depend on GASP pose selection or AnimBP-local state
-- remove montage slots, notifies, root-motion behavior, equipment sockets, death, or ragdoll seams while simplifying the GASP locomotion graph
+- remove montage slots, notifies, root motion, equipment sockets, death, or ragdoll seams while simplifying the GASP graph

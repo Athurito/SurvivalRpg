@@ -4,9 +4,8 @@ Use this reference for implementation and review work in Unreal Engine projects.
 
 ## Version Policy
 
-- Assume Unreal Engine 5.8 by default.
-- Prefer Unreal Engine 5.8 APIs, idioms, and plugin-era architecture unless inspected project files show a different engine target.
-- If the project appears to be on an older version, call out the mismatch explicitly and separate "5.8 best practice" from "compatible fallback for this codebase".
+- The project targets Unreal Engine 5.8; prefer 5.8 APIs, idioms, and plugin-era architecture.
+- If inspected files show a different engine target, call out the mismatch and separate "5.8 best practice" from "compatible fallback for this codebase".
 
 ## Architecture
 
@@ -24,63 +23,11 @@ Use this reference for implementation and review work in Unreal Engine projects.
 - Expose focused `BlueprintCallable`, `BlueprintPure`, or `BlueprintImplementableEvent` APIs instead of broad utility surfaces.
 - Avoid giant all-purpose Blueprint base classes.
 
-Apply these project-specific ownership rules:
-
-- Keep `URpgInventoryItemFragment` and every semantic fragment subclass native C++; do not create Blueprint fragment subclasses.
-- Add a native fragment type only for new schema semantics or runtime behavior. Configure native fragment instances and item-specific values in ItemDefinition assets.
-- Default concrete Gameplay Abilities to `GA_*` Blueprint assets derived directly from `URpgGameplayAbility` or a Blueprint family base such as `GA_MeleeBase`.
-- Introduce an abstract native ability intermediate only for Blueprint-inaccessible APIs, authority/prediction/lifecycle invariants, or a known or measured hot path; keep its concrete content children in assets.
-- Keep UI WBP/MVVM-first. Reserve C++ for subsystems, ViewModels, Slate, lifecycle seams, reusable geometry/algorithms, and real hot paths; keep screens and visual leaves in Widget Blueprints.
-- Expect pure content/design work to add no native classes. Native schema types and technically justified reusable mechanics are exceptions.
-- Test reusable native mechanisms once and keep asset tests to stable compilation, parent/interface, MVVM-source, registry/cook, and required-reference contracts.
-- Do not freeze widget-tree names, exact binding counts, colors, display text, animations, or the absence of Blueprint graphs in C++ automation tests, and do not create native leaves solely for testability.
+The project-specific ownership rules for fragments, Gameplay Abilities, UI, and asset tests are in `SKILL.md` and `.agents/skills/survival-rpg-orchestrator/references/system-ownership-boundaries.md`.
 
 ## Documentation and Designer-Facing APIs
 
-Add concise documentation comments by default for reflected Unreal APIs that designers, Blueprint authors, or future gameplay programmers will touch.
-
-Document by default:
-
-- UCLASS, USTRUCT, UENUM, and important UINTERFACE types
-- public or protected UFUNCTION APIs
-- Blueprint-callable, Blueprint-pure, Blueprint-native, or Blueprint-implementable functions
-- UPROPERTY fields exposed to Blueprints, DataAssets, config, save data, replication, or editor tuning
-- DataAsset fields
-- item definitions
-- equipment definitions
-- item fragments
-- equipment fragments
-- ability sets
-- interaction options
-- recipe data
-- rune data
-- portal encounter data
-- enemy data
-- progression unlock data
-- gameplay tag fields
-- asset references
-- class references
-- replicated fields
-- saved fields
-- authority-sensitive fields
-
-For designer-facing UPROPERTY fields, comments should explain:
-
-- what the value controls
-- expected unit, range, or scale
-- whether the value is static asset data or runtime state
-- whether it is designer-tuned, runtime-mutated, replicated, saved, cosmetic, or UI-only
-- whether server authority owns the value
-- whether the field is safe to change in child Blueprints or DataAssets
-- whether the field expects a hard reference, soft reference, gameplay tag, class reference, or DataAsset reference
-
-Prefer comments that explain intent, constraints, ownership, or designer impact.
-
-Avoid noisy comments on obvious local variables, simple private helpers, boilerplate code, or comments that only repeat the property name.
-
-When useful for editor clarity, also use Unreal metadata such as ToolTip, ClampMin, ClampMax, UIMin, UIMax, ForceUnits, Units, AllowedClasses, Categories, DisplayName, EditCondition, or EditConditionHides.
-
-Keep comments short, practical, and accurate.
+Follow the documentation defaults in `AGENTS.md` and the Unreal-specific notes in `SKILL.md`. Beyond those, say whether a field is safe to change in child Blueprints or DataAssets and whether it expects a hard reference, soft reference, gameplay tag, class reference, or DataAsset reference. Avoid noisy comments on obvious locals, simple private helpers, boilerplate, or comments that only repeat the property name.
 
 ## UObject and Lifetime Safety
 
