@@ -201,8 +201,9 @@ APIs. Standard MCP asset, object and Blueprint tools perform duplication,
 configuration, compilation and saving. The adapter has no runtime content and
 registers only when explicitly loaded; project startup does not enable it.
 
-Existing unrelated limitations remain in the [roadmap](gasp-integration-roadmap.md)
-under GASP-02. This slice does not close historical lifecycle or network findings
+Existing unrelated limitations remain tracked as GASP-02 items in the
+[roadmap](gasp-integration-roadmap.md) and as
+[open findings](gasp-integration-handoff.md#offene-befunde). This slice does not close historical lifecycle or network findings
 merely because another run succeeds.
 
 After editor validation in `Lvl_RpgGaspMover`, the user accepted the visible result
@@ -212,3 +213,52 @@ the automated host/owner/observer evidence above remains a separate validation.
 Only documentation changed after tested runtime commit `b78edf5b`; the builds and
 automated tests were not rerun for this acceptance update or the subsequent
 documentation-only merge-status update. PR #144 is confirmed merged.
+
+## Roadmap contract
+
+Moved here from the roadmap. This is the GASP-01 task contract the slice above
+was accepted against.
+
+**Goal:** Cross low, thin obstacles with validated ground behind them in the
+original GASP flow and return to ordinary Walking. Vault remains the variant
+without that BackFloor; Mantle is preserved.
+
+**Scope:**
+
+- Check the original Mover chooser, the required Hurdle montages and their
+  dependencies against the existing CMC adaptation. Copy only the content that
+  is actually needed as project-local Mover copies.
+- Extend the existing `RpgGaspMoverExperience`, query, contextual Space input and
+  `GA_RpgGasp_MoverMantle`. The names come from the Mantle pilot; Hurdle gets no
+  additional ability family or Experience.
+- Extend the existing native traversal seams for FrontLedge, BackLedge,
+  BackFloor, landing surface, collision lease and predicted movement in a
+  targeted way. The previous Hurdle integration assumed `ACharacter` in several
+  places; Mover must not simply skip these CMC checks.
+- Preserve source curves, notifies, montage tempo and conditional handoffs. Test
+  scenes use the approved GASP blocks, grid materials and LevelVisuals.
+
+**Ownership:** Server/GAS and Mover own activation, valid geometry, prediction,
+warping history and cleanup. Blueprints, choosers and montage assets own
+concrete selection and presentation. Before adding native types, justify which
+existing interface is insufficient; no new class is prescribed up front.
+
+**Acceptance:**
+
+- Test standing, walking, running and at an angle on suitable obstacles.
+- Blocked landing, lost support, cancellation, death and correction clean up
+  their own warp, collision and montage resources.
+- Host, owning client and observing client see matching movement and animation
+  phase; late join and the handoff into continued running work.
+- Check a real Fixed correction; value tests alone are no multiplayer evidence.
+- Regression-check Mover Mantle/Vault, CMC traversal, equipment montages and
+  optional retargeting according to the touched interfaces.
+- Actually run editor/game builds where affected; freshly load and compile
+  changed assets and document the source-target and reference comparison.
+- Record the manual visual test and remaining limits in the PR and handoff.
+
+Entry points at the time: [CMC Hurdle](gasp-hurdle-integration.md),
+[Mover Vault](gasp-mover-vault.md),
+[traversal presentation](gasp-mover-traversal-presentation.md),
+`Source/SurvivalRpg/Traversal/RpgGameplayAbility_Mantle.cpp` and
+`Source/SurvivalRpg/Core/Character/RpgMoverTraversalTypes.h`.

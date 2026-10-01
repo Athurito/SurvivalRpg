@@ -3,7 +3,7 @@
 Status update: PR #142 was merged on September 20, 2026 after user visual
 validation and an explicit merge request. Draft references in the validation
 record below describe its earlier state. Remaining findings are tracked in the
-[current roadmap](gasp-integration-roadmap.md#gasp-02--register-der-offenen-folgearbeiten).
+[handoff](gasp-integration-handoff.md#offene-befunde).
 
 September 26 follow-up: the active-Mantle correction witness gap recorded below
 now has a frame-matched restore/replay proof and a real negative control in
