@@ -1,4 +1,4 @@
-> **Historischer, vollständig zurückgenommener GASP-06-Versuch.** Der Nutzer hat am 27.09.2026 den vollständigen Rückbau auf PR-Basis `908b7c75` beauftragt. Die folgenden Ergebnisse beschreiben ausschließlich den damaligen Stand; sie sind keine Abnahme des neuen Linked-Layer-/Chooser-Ansatzes. Siehe [aktuelle Übergabe](gasp-integration-handoff.md).
+> **Historischer, vollständig zurückgenommener GASP-06-Versuch.** Der Nutzer hat am 27.09.2026 den vollständigen Rückbau auf PR-Basis `908b7c75` beauftragt. Die folgenden Ergebnisse beschreiben ausschließlich den damaligen Stand; sie sind keine Abnahme des neuen Linked-Layer-/Chooser-Ansatzes. Siehe [Bericht des Neuaufbaus](gasp-block-locomotion.md).
 
 # GASP-06: Schritte bei gehaltener Block-Standdrehung
 

@@ -243,23 +243,22 @@ Paketverlust-Erholung.
 
 ## Nachstellen ohne manuelles Timing
 
-Nach einem aktuellen Editor-Build und der Override-Prüfung gemäß
-`Build/Patches/NetworkPrediction/README.md` führt dieser PowerShell-Aufruf die
-drei Fokusfälle aus. Engine-/Projektpfade an den eigenen Checkout anpassen;
-der neue Reportpfad überschreibt keinen der oben ausgewerteten Läufe.
-Die Fixture erzeugt den Auto-Blend-Out-Fall selbst. Ein lokales Hilfsskript aus
-`Saved/` wird dafür nicht benötigt.
+Diese Aufrufe vom Repository-Root bauen den Editor und führen die drei
+Fokusfälle aus. Der [Wrapper](../Build/Tools/Unreal/README.md) verifiziert vorher
+die Overrides gemäß `Build/Patches/NetworkPrediction/README.md`, findet Engine
+und Projekt selbst und legt jeden Lauf in einem neuen Ordner unter
+`Saved/ToolRuns` ab, sodass keiner der oben ausgewerteten Läufe überschrieben
+wird. Die Fixture erzeugt den Auto-Blend-Out-Fall selbst. Ein lokales
+Hilfsskript aus `Saved/` wird dafür nicht benötigt.
 
 ```powershell
-& 'D:\Programme\UE_5.8\Engine\Binaries\Win64\UnrealEditor-Cmd.exe' `
-  'D:\Repos\SurvivalRpg\SurvivalRpg.uproject' '/Engine/Maps/Entry' `
-  -unattended -nop4 -nosteam -nosplash -nosound -NoSaveConfig -RenderOffscreen `
-  -stdout -FullStdOutLogOutput `
-  '-ExecCmds=np.ForceReconcile 0,np.SkipReconcile 0,t.MaxFPS 30,Automation RunTests SurvivalRpg.GASP.Mover.Mantle.GaspMoverMantlePIE.NaturalAutoBlendCompletionRetainsFinishedOnEveryRole+SurvivalRpg.GASP.Mover.Mantle.GaspMoverMantlePIE.AuthorityCancellationDuringAutoBlendRemainsCancelled+SurvivalRpg.GASP.Mover.Mantle.GaspMoverMantlePIE.FixedCorrectionAfterHandoffCannotRestoreOldTraversal' `
-  '-TestExit=Automation Test Queue Empty' `
-  '-ReportExportPath=D:\Repos\SurvivalRpg\Saved\GaspTerminalReconciliationRepro' `
-  '-abslog=D:\Repos\SurvivalRpg\Saved\GaspTerminalReconciliationRepro.log' `
-  '-LogCmds=LogRpgAbilitySystem Verbose'
+python Build/Tools/Unreal/ue.py build
+python Build/Tools/Unreal/ue.py test `
+  SurvivalRpg.GASP.Mover.Mantle.GaspMoverMantlePIE.NaturalAutoBlendCompletionRetainsFinishedOnEveryRole `
+  SurvivalRpg.GASP.Mover.Mantle.GaspMoverMantlePIE.AuthorityCancellationDuringAutoBlendRemainsCancelled `
+  SurvivalRpg.GASP.Mover.Mantle.GaspMoverMantlePIE.FixedCorrectionAfterHandoffCannotRestoreOldTraversal `
+  --exec "np.ForceReconcile 0" --exec "np.SkipReconcile 0" --exec "t.MaxFPS 30" `
+  --log-cmds "LogRpgAbilitySystem Verbose" --expect-tests 3
 ```
 
 Im bereits geöffneten Editor lassen sich vor dem einzelnen Fall

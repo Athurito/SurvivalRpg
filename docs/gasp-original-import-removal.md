@@ -126,3 +126,20 @@ eigenen übernommenen Varianten wie bisher.
 
 GASP-05 ist im dokumentierten Umfang abgeschlossen und bestätigt gemergt. GASP-02-/04-Grenzen bleiben dokumentiert;
 GASP-06 bleibt gemäß Roadmap zurückgestellt.
+
+## Roadmap-Auftrag
+
+Aus der Roadmap hierher verschoben; Auftrag für den
+[Abhängigkeitsaudit](gasp-import-cleanup-audit.md) und diese Entfernung.
+
+Erst nach dem Variantenvergleich einen eigenen Bereinigungs-PR erstellen.
+Aktive eigene Inhalte bleiben unter `/Game/SurvivalRpg`; vorhandene Engine-,
+Plugin- und GameFeature-Abhängigkeiten werden wiederverwendet.
+
+Vor jeder Entfernung eine konkrete Paketliste und Quell-Ziel-Zuordnung erzeugen.
+Harte, weiche, Management- und dynamisch konfigurierte Referenzen, Chooser,
+PoseSearch, Retargeting, Foley und Map-Auswahl prüfen. Frisches Laden/Kompilieren
+und repräsentatives Cooking müssen ohne Importoriginale bzw. externes
+`D:/Repos/GameAnimationSample` als Laufzeitquelle funktionieren. Baseline und
+benötigte Varianten erhalten, Rückweg über Git/LFS sichern. Vorhandene
+Foundation-/Sample-Dateien nicht allein aufgrund ihres Ordnernamens löschen.

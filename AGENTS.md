@@ -51,9 +51,9 @@ Common combinations: runtime work on a new feature pairs `survival-rpg-project` 
 ## GASP roadmap and cross-chat handoff
 
 - Standing user preference (26.09.2026): when a roadmap step cannot reasonably be tested manually by the user, perform the appropriate automated validation and review, then push/merge the verified work and continue with the next bounded step without requesting another manual sign-off. Preserve actual failures and remaining limits; this does not authorize bypassing required checks. For readily observable gameplay changes, provide a simple reproduction path.
-- Before GASP integration or movement follow-up work, read `docs/gasp-integration-roadmap.md` and `docs/gasp-integration-handoff.md`, then verify the current branch, PR and repository state.
-- Use the roadmap's stable task IDs and keep one bounded task per implementation chat/PR. Respect the active task and recorded file ownership; coordinate shared editor/MCP sessions and binary assets across worktrees.
-- Update roadmap status and the handoff in the same work PR with actual commits, validation, open findings and the next concrete action. Do not report an open PR as merged or historical test results as newly executed.
+- Before GASP integration or movement follow-up work, read `docs/gasp-integration-handoff.md` (current state and open findings) and `docs/gasp-integration-roadmap.md` (status, rules, next ready step), then only the task report linked to the affected task ID, and verify the current branch, PR and repository state.
+- Use the roadmap's stable task IDs and keep one bounded task per implementation chat/PR. Respect the active task and recorded file ownership; coordinate shared editor/MCP sessions and binary assets across worktrees. If no task is marked ready, ask the user instead of picking one.
+- In the same work PR, record actual commits, validation, failed attempts and limits in the task report (`docs/gasp-<topic>.md`) and the PR description; update only the task's roadmap status row; replace the handoff's current state (active task, branch/PR, file ownership, next action, open findings) instead of appending history. Do not report an open PR as merged or historical test results as newly executed.
 - Ignored `Saved/` evidence and generated NetworkPrediction/Mover plugin overrides are not automatically available in another checkout. Follow the roadmap and `Build/Patches/NetworkPrediction/README.md` before building or changing branches.
 
 ## Map presentation preference
@@ -76,6 +76,7 @@ Machine-specific locations on the primary workstation. If one is missing, say so
 
 ## Verification
 
+- Build, test and cook through `python Build/Tools/Unreal/ue.py build`, `... test <filter>...` and `... cook <map>...` instead of assembling `Build.bat` or `UnrealEditor-Cmd.exe` calls. The wrapper verifies the NetworkPrediction/Mover overrides first, prints a compact verdict with log and report paths, and exits with 0 passed, 1 failed or 2 setup error. Options and the engine lookup are in `Build/Tools/Unreal/README.md`; unreal-lyra-expert has the short form.
 - Do not claim the project compiles unless the relevant Unreal build was actually run.
 - For replicated gameplay, check server authority, replicated state, late join behavior, and OnRep / FastArray behavior.
 - For GASP animation changes, check worker-thread safety, simulated-proxy inputs, late join, montage/root-motion compatibility, and project-local asset dependencies.

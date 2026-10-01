@@ -125,3 +125,21 @@ Freigaben abgeleitet. Der Merge betrifft Tests und Dokumentation gemäß der
 stehenden Freigabe für technische Schritte. Als nächster begrenzter Auftrag
 kann GASP-05 eine konkrete Import-Entfernungsliste aus den Abhängigkeiten
 ableiten; diese Matrix allein autorisiert keine pauschale Asset-Löschung.
+
+## Roadmap-Auftrag
+
+Aus der Roadmap hierher verschoben; Auftrag, an dem dieser Vergleich gemessen
+wurde.
+
+Eine gemeinsame Matrix für CMC, Mover und Mover-Ragdoll führen: Bewegung,
+vorhandene Gaits, kontextabhängiger Sprung, Mantle/Vault/Hurdle soweit pro Variante
+unterstützt, Equipment/Combat-Montagen, Tod/Respawn und optionales Retargeting.
+Unterschiede explizit erklären statt automatisch Gleichheit aller Features zu
+erzwingen. Erst hier verbleibende CMC-/Mover-Gait- oder Komfortunterschiede für
+einen eigenen kleinen Auftrag bewerten.
+
+UEFN-Standard und mindestens ein gezielt konfiguriertes kompatibles Retarget-
+Profil prüfen; daraus folgt keine Entscheidung für Manny als finalen Character.
+Gameplay-Mesh, Notifies, Root Motion und Equipment-Sockets bleiben eindeutig
+zugeordnet. Build-/Asset-/Multiplayer-Ergebnisse und Nutzerabnahme pro Variante
+festhalten; offene Punkte aus `GASP-02` mitführen.

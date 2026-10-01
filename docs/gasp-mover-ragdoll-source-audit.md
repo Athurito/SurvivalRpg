@@ -315,3 +315,14 @@ Fixture-Timingempfindlichkeit, VAL-01/02 und die NET-03-Rekonstruktionsgrenze
 bleiben offen. Historische Physics-Control-Befunde aus dem
 [Follow-up](gasp-physics-control-followup.md) müssen gegen aktuelle Quellen
 geprüft werden; der Auditstart bestätigt weder deren Fortbestand noch Behebung.
+
+## Roadmap-Auftrag
+
+Aus der Roadmap hierher verschoben; Auftrag des ersten GASP-03-Teilschritts.
+
+Originalen GASP-Ragdoll-Pawn, Physics-Control-/Mover-Abhängigkeiten und
+Anknüpfung an vorhandene RPG-Komponenten auditieren. Noch keine vollständige
+migrierte Ragdoll-Pawn-Basis voraussetzen. Ergebnis ist eine Quell-Ziel-/
+Ownership-Zuordnung und ein begrenzter Implementierungsumfang. Der Audit
+behauptet keine Runtimeänderung, importierten Assets oder neu bestandenen
+Unreal-Builds.

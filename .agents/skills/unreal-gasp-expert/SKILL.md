@@ -9,7 +9,7 @@ Start every animation or movement change from the accepted integration state and
 
 ## Start from current repository truth
 
-1. Read `docs/gasp-integration-roadmap.md` and `docs/gasp-integration-handoff.md`, then the report linked to the affected task ID. Respect the active task, its branch, and recorded file ownership; keep one bounded roadmap task per branch/PR.
+1. Read `docs/gasp-integration-handoff.md` and `docs/gasp-integration-roadmap.md`, then only the report linked to the affected task ID. Respect the active task, its branch, and recorded file ownership; keep one bounded roadmap task per branch/PR.
 2. Before building or switching branches, verify the checkout-local NetworkPrediction/Mover plugin overrides as described in `Build/Patches/NetworkPrediction/README.md`. They are Git-ignored and not present in a fresh worktree.
 3. Read `SurvivalRpg.uproject` to confirm the engine version and enabled animation plugins.
 4. Inspect the affected project-owned GASP content under `/Game/SurvivalRpg/Characters/GASP`, the AnimBP parent (`URpgAnimInstance` where used), character and movement code, traversal code (`Source/SurvivalRpg/Traversal`), the relevant Experience and PawnData, and the existing tests.
@@ -20,7 +20,7 @@ If a reference project is unavailable, continue from repository truth and say th
 
 ## Integration state and scope
 
-Take the current state from the roadmap, not from memory: its "Bereits vorhanden" and status tables list the accepted movement variants, Experiences, traversal actions, and pilots, and the handoff names the active task. Independent of that state:
+Take the current state from the roadmap, not from memory: its "Bereits vorhanden" and status tables list the accepted movement variants, Experiences, traversal actions, and pilots, and the handoff names the active task and the open findings. Independent of that state:
 
 - GASP content is project-owned; runtime never depends on the external sample checkout.
 - Scope a change to the variant its task names. When touching shared assets or seams, check that the other variant still works.
@@ -109,6 +109,7 @@ Use the narrowest verification that proves the change, then widen when the bound
 
 - Run the relevant editor build after C++ or module dependency changes; never claim compilation without running it.
 - Discover and run the current focused automation filters for the changed behavior (see the task reports for filters). Archived GASP-port tests are historical evidence, not active fixtures.
+- Build, test, and cook through `Build/Tools/Unreal/ue.py` as described in unreal-lyra-expert; pass reconciliation and frame-rate preconditions with `--exec`, for example `--exec "np.ForceReconcile 0" --exec "t.MaxFPS 30"`.
 - Validate affected assets: AnimBP compilation, parent class, skeleton, exposed defaults, graph nodes, reference closure, and cook/load assumptions.
 - Test locomotion in editor for starts, stops, pivots, gait boundaries, crouch, turns, jump/landing, uneven ground, LOD changes, and rapid input reversals.
 - For replicated changes, test a listen server with at least two clients, simulated proxies, correction scenarios, and late join. Value-only simulations are regression coverage, not proof of replication, correction, notify delivery, or late join.
@@ -116,6 +117,6 @@ Use the narrowest verification that proves the change, then widen when the bound
 - For traversal, test authoritative obstacle validation, activation cost, montage/root-motion handoff, cancellation, collision failure, correction, combat interruption, death/ragdoll, and rollback of the isolated feature.
 - For gameplay integration, run montage, notify, root-motion, equipment socket, hit reaction, death, corpse, and ragdoll regressions.
 - Inspect Pose Search cost/debug output and profile animation-thread and game-thread cost before tuning by feel alone.
-- Record actual results, failed attempts, and remaining limits in the task report, roadmap, and handoff; never present historical results as freshly executed.
+- Record actual results, failed attempts, and remaining limits in the task report and PR; update only the task's roadmap status row and replace the handoff's current state. Never present historical results as freshly executed.
 
 Report which project files and reference assets were inspected, which behavior intentionally follows GASP and which intentionally differs, why each changed responsibility lives in C++, Blueprint, or DataAssets, and which verification actually ran.
