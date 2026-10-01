@@ -5,3 +5,11 @@ interface:
 
 policy:
   allow_implicit_invocation: true
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "unreal-mcp"
+      description: "Unreal Editor MCP server for inspecting, authoring, compiling, and saving assets; requires a running editor"
+      transport: "streamable_http"
+      url: "http://127.0.0.1:8000/mcp"
