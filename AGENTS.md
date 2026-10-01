@@ -76,6 +76,7 @@ Machine-specific locations on the primary workstation. If one is missing, say so
 
 ## Verification
 
+- Build, test and cook through `python Build/Tools/Unreal/ue.py build`, `... test <filter>...` and `... cook <map>...` instead of assembling `Build.bat` or `UnrealEditor-Cmd.exe` calls. The wrapper verifies the NetworkPrediction/Mover overrides first, prints a compact verdict with log and report paths, and exits with 0 passed, 1 failed or 2 setup error. Options and the engine lookup are in `Build/Tools/Unreal/README.md`; unreal-lyra-expert has the short form.
 - Do not claim the project compiles unless the relevant Unreal build was actually run.
 - For replicated gameplay, check server authority, replicated state, late join behavior, and OnRep / FastArray behavior.
 - For GASP animation changes, check worker-thread safety, simulated-proxy inputs, late join, montage/root-motion compatibility, and project-local asset dependencies.

@@ -35,19 +35,11 @@ blend-out begins.
 equipment assignment, using MainHand and OffHand respectively. This contract lives alongside the
 weapon asset tests and is independent of animation implementation.
 
-Run from PowerShell:
+Run from the repository root (see `Build/Tools/Unreal/README.md`):
 
 ```powershell
-& 'D:\Programme\UE_5.8\Engine\Binaries\Win64\UnrealEditor-Cmd.exe' `
-  'D:\Repos\SurvivalRpg\SurvivalRpg.uproject' `
-  -unattended -nop4 -nosteam -nosplash -nosound -NullRHI `
-  -stdout -FullStdOutLogOutput -NoLogTimes `
-  -ddc=InstalledNoZenLocalFallback `
-  '-LocalDataCachePath=D:\Repos\SurvivalRpg\Intermediate\CombatNetworkDDC' `
-  '-ExecCmds=Automation RunTests SurvivalRpg.Combat.WeaponAttackAssetContract+SurvivalRpg.Combat.StarterEquipmentAssetContract; Quit' `
-  '-TestExit=Automation Test Queue Empty' `
-  '-ReportExportPath=D:\Repos\SurvivalRpg\Saved\Automation\Issue57AssetContract' `
-  '-abslog=D:\Repos\SurvivalRpg\Saved\Logs\Issue57AssetContract.log'
+python Build/Tools/Unreal/ue.py test SurvivalRpg.Combat.WeaponAttackAssetContract `
+  SurvivalRpg.Combat.StarterEquipmentAssetContract --null-rhi --expect-tests 2
 ```
 
 ## Automated rendered network contract
@@ -84,21 +76,14 @@ their exact numeric values. The cancellation case requires one authority open an
 damage, no residual timers or attack state, and no mutation during the post-cleanup observation
 period.
 
-Run from PowerShell:
+Run from the repository root. The wrapper's default rendered offscreen PIE is required here, so do
+not add `--null-rhi`:
 
 ```powershell
-& 'D:\Programme\UE_5.8\Engine\Binaries\Win64\UnrealEditor-Cmd.exe' `
-  'D:\Repos\SurvivalRpg\SurvivalRpg.uproject' `
-  -unattended -nop4 -nosteam -nosplash -nosound -RenderOffscreen `
-  -stdout -FullStdOutLogOutput -NoLogTimes `
-  '-ShaderWorkingDir=D:\Repos\SurvivalRpg\Intermediate\CombatNetworkShaders' `
-  -ddc=InstalledNoZenLocalFallback `
-  '-LocalDataCachePath=D:\Repos\SurvivalRpg\Intermediate\CombatNetworkDDC' `
-  '-ini:Engine:[ConsoleVariables]:TestFramework.CQTest.CommandTimeout.Network=90' `
-  '-ExecCmds=Automation RunTests SurvivalRpg.Network.CombatRemoteMeleePIE.RemoteClientAttackWindowDamageAndCancellation; Quit' `
-  '-TestExit=Automation Test Queue Empty' `
-  '-ReportExportPath=D:\Repos\SurvivalRpg\Saved\Automation\Issue57CombatNetwork' `
-  '-abslog=D:\Repos\SurvivalRpg\Saved\Logs\Issue57CombatNetwork.log'
+python Build/Tools/Unreal/ue.py test `
+  SurvivalRpg.Network.CombatRemoteMeleePIE.RemoteClientAttackWindowDamageAndCancellation `
+  --expect-tests 1 `
+  '--ue-arg=-ini:Engine:[ConsoleVariables]:TestFramework.CQTest.CommandTimeout.Network=90'
 ```
 
 Record the tested commit, UE version, result, topology, network profile, report path, log path,

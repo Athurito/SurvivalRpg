@@ -40,6 +40,7 @@ found. Copied assets resolve within the project, without mounting the source che
 - `Build.bat SurvivalRpgEditor Win64 Development -Project=... -WaitMutex
   -NoHotReloadFromIDE`: **Succeeded**. The initial sandboxed .NET attempt hung and
   was cancelled; the completed build ran with access to the required build caches.
+  The same build now runs as `python Build/Tools/Unreal/ue.py build`.
 - MCP PIE smoke test of `/Game/SurvivalRpg/Maps/Test/Lvl_ThirdPerson`, about **64 s**:
   started and stopped successfully, with no invalid-tag, SmartObject StateTree,
   unknown-structure or missing-component errors. Used **NullRHI** and `-nosteam`;

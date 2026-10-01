@@ -108,6 +108,7 @@ Use the narrowest verification that proves the change, then widen when the bound
 
 - Run the relevant editor build after C++ or module dependency changes; never claim compilation without running it.
 - Discover and run the current focused automation filters for the changed behavior (see the task reports for filters). Archived GASP-port tests are historical evidence, not active fixtures.
+- Build, test, and cook through `Build/Tools/Unreal/ue.py` as described in unreal-lyra-expert; pass reconciliation and frame-rate preconditions with `--exec`, for example `--exec "np.ForceReconcile 0" --exec "t.MaxFPS 30"`.
 - Validate affected assets: AnimBP compilation, parent class, skeleton, exposed defaults, graph nodes, reference closure, and cook/load assumptions.
 - Test locomotion in editor for starts, stops, pivots, gait boundaries, crouch, turns, jump/landing, uneven ground, LOD changes, and rapid input reversals.
 - For replicated changes, test a listen server with at least two clients, simulated proxies, correction scenarios, and late join. Value-only simulations are regression coverage, not proof of replication, correction, notify delivery, or late join.

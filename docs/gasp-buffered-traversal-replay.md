@@ -315,24 +315,23 @@ VAL-02 und die NET-03-Rekonstruktionsgrenze bleiben dabei ausdrücklich offen.
 
 Zuerst bei geschlossenem Editor die projektlokalen Overrides gemäß
 [Prepare/Verify-Anleitung](../Build/Patches/NetworkPrediction/README.md)
-vorbereiten beziehungsweise verifizieren und anschließend `SurvivalRpgEditor`
-bauen. Engine-, Projekt- und Ausgabepfade an den eigenen Checkout anpassen.
-Der ignorierte lokale Runner `Saved/GaspBufferedTraversalReplay20260926/validate.py` ist keine Voraussetzung.
+vorbereiten, dann vom Repository-Root bauen und testen. Der
+[Wrapper](../Build/Tools/Unreal/README.md) verifiziert die Overrides vor jedem
+Lauf, findet Engine und Projekt selbst und legt jeden Lauf in einem neuen Ordner
+unter `Saved/ToolRuns` ab. Der ignorierte lokale Runner
+`Saved/GaspBufferedTraversalReplay20260926/validate.py` ist keine Voraussetzung.
 
 ```powershell
-& 'D:/Programme/UE_5.8/Engine/Binaries/Win64/UnrealEditor-Cmd.exe' `
-  'D:/Repos/SurvivalRpg/SurvivalRpg.uproject' '/Engine/Maps/Entry' `
-  -unattended -nop4 -nosteam -nosound -NoSaveConfig -RenderOffscreen `
-  '-ExecCmds=np.ForceReconcile 0,np.SkipReconcile 0,Automation RunTests SurvivalRpg.GASP.Mover.Vault.GaspMoverVaultPIE.SameAssetReplayReceiptCannotReleaseUnseenReplacedVault' `
-  '-TestExit=Automation Test Queue Empty' `
-  '-ReportExportPath=D:/Repos/SurvivalRpg/Saved/Val03Repro' `
-  '-abslog=D:/Repos/SurvivalRpg/Saved/Val03Repro.log' `
-  '-LogCmds=LogRpgAbilitySystem Verbose'
+python Build/Tools/Unreal/ue.py build
+python Build/Tools/Unreal/ue.py test `
+  SurvivalRpg.GASP.Mover.Vault.GaspMoverVaultPIE.SameAssetReplayReceiptCannotReleaseUnseenReplacedVault `
+  --exec "np.ForceReconcile 0" --exec "np.SkipReconcile 0" `
+  --log-cmds "LogRpgAbilitySystem Verbose" --expect-tests 1
 ```
 
-Für die zusätzliche 30-FPS-Prüfung `t.MaxFPS 30,` unmittelbar vor
-`Automation RunTests` in `ExecCmds` ergänzen und einen anderen Reportpfad
-verwenden. Anschließend `index.json` auf genau einen ausgeführten Test und
-dessen Ergebnis prüfen: Exitcode 0 allein reicht nicht, wie der erhaltene
-Null-Test-Versuch zeigt. Die temporäre Runtime-Mutation gehört ausschließlich
-zur dokumentierten Negativkontrolle und ist zum regulären Nachstellen unnötig.
+Für die zusätzliche 30-FPS-Prüfung nach den beiden Reconcile-Befehlen
+`--exec "t.MaxFPS 30"` ergänzen. `--expect-tests 1` lässt den Lauf scheitern,
+wenn der Bericht nicht genau diesen einen Test enthält; der Exitcode des Editors
+allein reicht nicht, wie der erhaltene Null-Test-Versuch zeigt. Die temporäre
+Runtime-Mutation gehört ausschließlich zur dokumentierten Negativkontrolle und
+ist zum regulären Nachstellen unnötig.

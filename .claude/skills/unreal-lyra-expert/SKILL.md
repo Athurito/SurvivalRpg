@@ -63,6 +63,22 @@ Read and follow the [Unreal MCP asset-authoring workflow](references/unreal-mcp-
 - Do not add a C++ automation suite per screen, entry, tooltip, toast, or Blueprint specialization, and do not assert widget-tree structure, cosmetic names, binding counts, colors, text, animation details, or the absence of Blueprint graph functions.
 - Do not create a native widget or GameplayAbility leaf merely to make content easier to unit test.
 
+## Build, test, and cook
+
+Run these from the repository root instead of assembling `Build.bat` or `UnrealEditor-Cmd.exe` calls:
+
+```powershell
+python Build/Tools/Unreal/ue.py build
+python Build/Tools/Unreal/ue.py test SurvivalRpg.Combat.Block.Lifecycle --null-rhi
+python Build/Tools/Unreal/ue.py test SurvivalRpg.GASP.Mover.Mantle --exec "np.ForceReconcile 0" --exec "t.MaxFPS 30"
+python Build/Tools/Unreal/ue.py cook Lvl_RpgGaspMantle
+```
+
+- Exit code 0 means passed, 1 failed, and 2 a setup error such as a missing engine or unverified NetworkPrediction/Mover overrides. Act on the printed errors or failed tests; open the named log or report only for details.
+- Build after C++ or `.Build.cs` changes and before testing them. An open editor with Live Coding blocks the build, so close it first.
+- PIE network tests need rendering, so use `--null-rhi` only for native and asset tests. Add `--expect-tests N` when a filter must select exactly N tests.
+- `Build/Tools/Unreal/README.md` lists the remaining options and the engine lookup.
+
 ## Documentation of designer-facing APIs
 
 Apply the documentation defaults in `AGENTS.md`. In Unreal C++, place block comments before reflected `UCLASS`, `USTRUCT`, `UENUM`, `UINTERFACE`, `UPROPERTY`, and `UFUNCTION` declarations, and document every non-trivial field exposed with `EditAnywhere`, `EditDefaultsOnly`, `EditInstanceOnly`, `BlueprintReadOnly`, `BlueprintReadWrite`, `Config`, or `SaveGame`. Add metadata such as `ToolTip`, `ClampMin`/`ClampMax`, `UIMin`/`UIMax`, `Units`/`ForceUnits`, `AllowedClasses`, `Categories`, `DisplayName`, or `EditCondition` where it makes the editor safer to use.
