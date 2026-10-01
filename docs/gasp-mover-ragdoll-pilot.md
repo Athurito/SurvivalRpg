@@ -324,3 +324,29 @@ unveränderte terminale Health-/Death-/Respawn-Ownership bleiben Grenzen.
 Die 115 Hashprüfungen aus PR #151 sind historische Source-Audit-Ergebnisse.
 VAL-01/02, die NET-03-Rekonstruktionsgrenze und die ältere Pending-Fixture-
 Timingempfindlichkeit bleiben eigenständige offene Folgepunkte.
+
+## Roadmap-Auftrag
+
+Aus der Roadmap hierher verschoben; Auftrag der GASP-03-Experience, an dem der
+Pilot gemessen wurde.
+
+**Vor GASP-03:** Lifecycle-Fehler und Zustandsabweichungen zuerst gezielt
+bearbeiten und ihre Auswirkung auf Ragdoll/Tod/Respawn dokumentieren. Nicht
+reproduzierte Fälle bleiben offen; weitere Prototyp-Arbeit darf diese nicht als
+behoben ausgeben. Ein konkreter blockierender Fehler wird zuerst korrigiert.
+Die vollständige Umgebungsfreigabe aus `GASP-VAL-02` ist für Produktionsreife
+erforderlich, kein pauschales Verbot eines begrenzten Ragdoll-Piloten.
+
+Eine eigene Experience/PawnData-Variante aufbauen. Bestehende Experiences
+bleiben erhalten. Ragdoll-Einstieg und Aufstehen, Kontrollrückgabe, Equipment,
+GAS-Abbruch, Tod/Respawn und Rekonstruktion bei Late Join ausdrücklich behandeln.
+Lebendes Ragdoll und endgültiger Tod dürfen keinen zweiten Health-/Respawn-Pfad
+einführen. UEFN bleibt zunächst Gameplay-Mesh; die physische Autorität und Rolle
+eines optionalen Retarget-Followers vor Umsetzung festlegen.
+
+**Abnahme:** Ein-/Ausstieg, Unterbrechung, Tod während Ragdoll, Respawn, Observer
+und Late Join ohne übrig gebliebene Collision-, Montage- oder Input-Ownership.
+Aktive Abhängigkeiten projektlokal; Asset-Lade-/Compile- und passende Build-/Netz-
+Tests sowie Sichttest nachweisen. Historische Physics-Control-Warnungen aus
+[diesem Bericht](gasp-physics-control-followup.md) einbeziehen, ihre Ursache aber
+nicht ohne neue Evidenz als gelöst oder erneut vorhanden behaupten.

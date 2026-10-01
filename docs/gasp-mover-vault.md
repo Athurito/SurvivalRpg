@@ -1,9 +1,9 @@
 # Grounded GASP Mover Vault
 
-Status update: PR #142 was merged on September 20, 2026 after user visual
-validation and an explicit merge request. The draft status in the historical
-validation record below is superseded; open findings remain in the
-[current roadmap](gasp-integration-roadmap.md).
+Status update: PR #142 (feature commit `06d810fa`) was merged on September 20,
+2026 after user visual validation and an explicit merge request. The draft
+status in the historical validation record below is superseded; open findings
+are tracked in the [handoff](gasp-integration-handoff.md#offene-befunde).
 
 This slice extends `RpgGaspMoverExperience` with grounded Vault through its
 existing contextual Space input and concrete `GA_RpgGasp_MoverMantle` asset.

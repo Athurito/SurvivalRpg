@@ -165,3 +165,20 @@ Der Mover-Testvorlauf wird jetzt vor jeder Messung einmal aus echten Authority-B
 **Nutzerfreigabe erfolgt; PR #160 ist gemergt.** Titel/Body wurden am 28.09.2026 über die inzwischen authentifizierte GitHub-CLI auf den tatsächlichen Neuaufbau korrigiert; die frühere Connector-/Browserblockade ist erledigt. Die Umsetzung liegt in `ac87a4a6`, die Kadenz-/Foley-Korrektur in `794fad75`. Der anschließende [CMC-Sprint](gasp-cmc-sprint.md) wurde separat in PR #161 geprüft und gemergt. Die positive Nutzerprobe ist keine zusätzliche universelle Audio-, Footlock- oder Mehrrechnerabnahme.
 
 Rohbelege unter `Saved/GaspBlockLayers20260927/` sind ignoriert. Das Manifest hält Pfade und Hashes fest; andere Checkouts benötigen den gespeicherten Content, verifizierte Plugin-Overrides und eigene Ausführungsbelege. Bestehende NET03-/VAL-Grenzen bleiben bestehen.
+
+## Roadmap-Auftrag
+
+Aus der Roadmap hierher verschoben; Auftrag des Neuaufbaus.
+
+Der Nutzer hat den bisherigen Ansatz visuell abgelehnt und ausdrücklich den
+vollständigen Rückbau auf PR-Basis `908b7c75` gewählt. Der Rückbau umfasst auch
+Schulterkorrektur, Blocklease, Kameraausrichtung, Sprint-Sperre, Werkzeuge und
+Tests. Historische Berichte sind als zurückgenommen markiert und bleiben erhalten.
+
+Neuaufbau: Ein gemeinsamer Blueprint-Linked-Layer besitzt Idle, MoveStart,
+MoveLoop, MoveStop und Turn. Datenkinder konfigurieren Chooser, BlendSpaces und
+Tuning pro Animationssatz. Equipment referenziert den Layer; GAS und CMC/Mover
+besitzen Zustand, Kameraausrichtung, Sprint-Sperre und vorhergesagte Tempogrenze.
+Sword-and-Shield ist der erste Satz, ein zweiter Testsatz belegt Austauschbarkeit.
+Retargeting, Fußkontakte und Root-Yaw werden je Satz geprüft; Quellclips bleiben
+erhalten. Natürliche Haltung hat Vorrang vor bisherigem Normaltempo.
