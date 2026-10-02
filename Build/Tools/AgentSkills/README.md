@@ -72,7 +72,8 @@ and, like `sync.py --check`, the repository paths and identifiers in code spans.
 `run` starts one fresh headless session per scenario from the repository root:
 Claude Code with `-p --permission-mode plan --no-session-persistence`, Codex
 with `exec --sandbox read-only --ephemeral`. Each query gets a fixed note to
-work read-only and answer with a plan. The tool's user and project
+work read-only and answer with a plan. Claude's plan mode stores each plan
+under `~/.claude/plans/`, outside the checkout. The tool's user and project
 configuration still apply, as in real use. A skill counts as loaded when Claude
 calls the Skill tool or when a tool call reads `skills/<name>/SKILL.md`, which is
 how Codex loads skills. Only tool inputs are scanned, so listings and search

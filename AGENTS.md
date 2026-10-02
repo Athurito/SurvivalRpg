@@ -22,7 +22,7 @@ The canonical skills live in `.agents/skills/<name>/`, where Codex discovers the
 - Refer to other skills by their plain name in shared Markdown.
 - After changing a skill description, a boundary rule, or the routing below, run the affected scenarios in `Build/Tools/AgentSkills/evals/` before and after the change; see "Evaluations" in `Build/Tools/AgentSkills/README.md`.
 
-Use the closest matching skill and combine only those whose boundaries the task crosses:
+Load the closest matching skill before planning, reviewing, or changing work in its domain, and combine only those whose boundaries the task crosses. This file summarizes the guardrails; the skills hold the binding detail:
 - `survival-rpg-project` for game identity, feature scope, first-playable priorities, survival/crafting/progression tradeoffs, portal fantasy, and long-term resource relevance.
 - `survival-rpg-combat-foundation` for combat, equipment, loadouts, item instances, ability grants, mastery/progression, runes, portal combat, Dungeonbreak, and combat GameFeature content.
 - `unreal-lyra-expert` for Unreal Engine, Lyra-derived architecture, GAS, replication, CommonUI/CommonGame, Enhanced Input, Experiences, Game Features, Lyra Interaction, Unreal MCP asset authoring, and Lyra-rooted RPG inventory/equipment implementation.

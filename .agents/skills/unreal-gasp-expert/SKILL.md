@@ -1,6 +1,6 @@
 ---
 name: unreal-gasp-expert
-description: Guides SurvivalRpg's Game Animation Sample (GASP) locomotion and traversal on the CMC and Mover variants, covering Motion Matching, Pose Search, AnimBP and Chooser ownership, sprint and equipment-load-aware gait, mantle, vault, and hurdle, retargeting, animation thread safety, and multiplayer locomotion parity. Use when changing character animation, movement feel, traversal, or their replication; it starts from the GASP roadmap and handoff.
+description: Guides SurvivalRpg's Game Animation Sample (GASP) locomotion and traversal on the CMC and Mover variants, covering Motion Matching, Pose Search, AnimBP and Chooser ownership, sprint and equipment-load-aware gait, mantle, vault, and hurdle, retargeting, animation thread safety, and multiplayer locomotion parity. Use for any plan or change touching character animation, locomotion or movement feel, traversal such as mantle, vault, climbing, or ledges, or their replication; it starts from the GASP roadmap and handoff.
 ---
 
 # Unreal GASP Expert
