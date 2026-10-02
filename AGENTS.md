@@ -2,6 +2,13 @@
 
 Shared instructions for coding agents (Codex, Claude Code, and others) working in this repository.
 
+## Conventions
+
+- **Language:** Write new documentation, skills, code comments, commit messages, and issue/PR titles and bodies in English. For small edits to existing German documents, keep the surrounding language; translate the document when substantially revising it. Respond to the user in their language.
+- **Branches:** Use `<agent>/<task-id>-<slug>` in lowercase with hyphens, with `codex` or `claude` for the respective agent. Use the stable roadmap ID when available, otherwise `issue-<number>`; for work without either, use `<agent>/<slug>`. Examples: `codex/issue-170-agent-conventions`, `claude/gasp-07-cmc-sprint`. Keep one bounded task per branch/PR; existing branches need not be renamed.
+- **Commits:** Use Conventional Commit titles: `<type>(<scope>): <summary>`, with an optional scope and a short imperative English summary. Choose `feat`, `fix`, `docs`, `refactor`, `test`, `build`, `ci`, or `chore`; for example, `docs(agents): define shared conventions`. Use the same format for PR titles. Generated merge/revert titles may keep Git's default format.
+- **PRs:** Use `Behavior` for the problem and resulting change, `Validation` for checks actually run and their results, and `Limits` for remaining risks or unverified behavior (or `None`). Add `Playtest` with reproduction steps and expected behavior for observable gameplay changes. Link the issue and task ID when available; use `Closes #<number>` only when the PR fully resolves it. Apply relevant existing labels: `documentation`, `bug`, `feature`, or `refactor`; use more than one when appropriate.
+
 ## SurvivalRpg repository guidance
 
 This repository is a dark-fantasy survival action RPG derived from Lyra architecture.
