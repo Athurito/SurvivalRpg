@@ -11,7 +11,7 @@ Exit codes: 0 passed, 1 failed, 2 setup or usage error. See README.md next to th
 from __future__ import annotations
 
 import argparse
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, CancelledError, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from datetime import datetime
 import json
@@ -19,9 +19,11 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 import sync
@@ -151,7 +153,85 @@ def compact(text: str, limit: int = MAX_TOOL_LINE) -> str:
 def skill_pattern(names: list[str]) -> re.Pattern:
     """A skill file named in a tool call: .agents/skills/<name>/... or .claude/skills/<name>/..., either slash."""
     alternatives = "|".join(re.escape(name) for name in sorted(names, key=len, reverse=True))
-    return re.compile(rf"skills[\\/]+({alternatives})[\\/]+([\w.\-\\/]*?\.md)\b", re.IGNORECASE)
+    return re.compile(rf"(?:\.agents|\.claude)[\\/]+skills[\\/]+({alternatives})[\\/]+([\w.\-\\/]*?\.md)\b", re.IGNORECASE)
+
+
+def result_text(content) -> str:
+    """Text blocks returned by a tool, excluding images and other structured content."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(str(block.get("text", "")) for block in content
+                         if isinstance(block, dict) and block.get("type") == "text")
+    return ""
+
+
+def skill_content(text: str, skill: str) -> bool:
+    """Confirm returned skill text by its frontmatter and body, including numbered Read output."""
+    text = re.sub(r"(?m)^\s*\d+(?:\t|→)", "", text.replace("\r\n", "\n"))
+    if re.search(r"(?i)(?:tokens?|characters?|lines?) truncated|output (?:was )?truncated|truncated output", text):
+        return False
+    for match in re.finditer(r"(?ms)^---[ \t]*\n(.*?)\n---[ \t]*\n\s*(\S)", text):
+        if re.search(rf"(?m)^name:[ \t]*['\"]?{re.escape(skill)}['\"]?[ \t]*$", match.group(1)):
+            return True
+    return False
+
+
+def shell_reads(command: str) -> list[str]:
+    """Literal full-file cat/type/Get-Content reads; unsupported shell expressions prove no load.
+
+    Recognize the CLI's PowerShell/POSIX shell wrapper and sequential statements. Pipes,
+    redirection, slicing, variables, and other dynamic expressions are deliberately rejected.
+    This is an evidence filter, not a general shell interpreter.
+    """
+    wrapper = re.match(r'''(?is)^\s*("[^"]+"|'[^']+'|\S+)\s+(?:.*?\s+)?(?:-command|-lc|-c)\s+(.+)$''', command)
+    if wrapper:
+        executable = re.split(r"[\\/]+", wrapper.group(1).strip("\"'"))[-1].lower()
+        if executable not in ("powershell", "powershell.exe", "pwsh", "pwsh.exe", "bash", "sh", "zsh"):
+            return []
+        command = wrapper.group(2).strip()
+        if len(command) >= 2 and command[0] == command[-1] and command[0] in "\"'":
+            command = command[1:-1]
+    # Keep separators and quoted arguments distinct; refuse syntax the lexer cannot account for.
+    token_pattern = re.compile(r'''[ \t\r]+|"[^"\n]*"|'[^'\n]*'|[;\n|&<>,]|[^\s"'`;|&<>,]+''')
+    tokens, end = [], 0
+    for match in token_pattern.finditer(command):
+        if match.start() != end:
+            return []
+        token, end = match.group(), match.end()
+        if not token.isspace() or token == "\n":
+            tokens.append(token)
+    if end != len(command):
+        return []
+    paths, statement = [], []
+    for token in [*tokens, ";"]:
+        if token not in (";", "\n"):
+            statement.append(token)
+            continue
+        words, statement = statement, []
+        if not words or words[0].lower() not in ("get-content", "cat", "type"):
+            continue
+        candidates, index, valid = [], 1, True
+        while index < len(words):
+            word = words[index].strip("\"'")
+            option = word.lower()
+            if option == "-encoding" and words[0].lower() == "get-content":
+                index += 2
+                continue
+            if option in ("-raw", "-literalpath", "-path") and words[0].lower() == "get-content":
+                index += 1
+                continue
+            if word in (",", "--"):
+                index += 1
+                continue
+            if not word or word.startswith("-") or re.search(r"[$`*?{}()|&<>]", word):
+                valid = False
+                break
+            candidates.append(word)
+            index += 1
+        if valid:
+            paths.extend(candidates)
+    return paths
 
 
 @dataclass
@@ -171,14 +251,31 @@ class Transcript:
             self.loaded.append(skill)
 
     def call(self, name: str, detail: str) -> None:
-        """Record a tool call; only its input is scanned, so listings or search output never count as a load."""
+        """Keep requested tool inputs for the judge, separately from confirmed skill reads."""
         self.tools.append(compact(f"{name} {detail}"))
-        for match in self.pattern.finditer(detail):
-            skill, path = match.group(1).lower(), re.sub(r"[\\/]+", "/", match.group(2))
-            if path.lower() == "skill.md":
-                self.load(skill)
-            elif f"{skill}/{path}" not in self.skill_files:
-                self.skill_files.append(f"{skill}/{path}")
+
+    def read(self, path: str, content: str) -> None:
+        """Record a completed read; SKILL.md additionally needs identifiable returned skill content."""
+        if not content.strip():
+            return
+        for match in self.pattern.finditer(path):
+            if match.end() != len(path):
+                continue
+            skill, relative = match.group(1).lower(), re.sub(r"[\\/]+", "/", match.group(2))
+            if relative.lower() == "skill.md":
+                if skill_content(content, skill):
+                    self.load(skill)
+            elif f"{skill}/{relative}" not in self.skill_files:
+                self.skill_files.append(f"{skill}/{relative}")
+
+    def command_read(self, command: str, output: str, exit_code) -> None:
+        """A compound command may return skill content before an unrelated command fails."""
+        if not isinstance(exit_code, int):
+            return
+        for path in shell_reads(command):
+            match = self.pattern.search(path)
+            if match and (match.group(2).lower() == "skill.md" or exit_code == 0):
+                self.read(path, output)
 
 
 def events(lines: list[str]):
@@ -192,9 +289,10 @@ def events(lines: list[str]):
 
 
 def parse_claude(lines: list[str], names: list[str]) -> Transcript:
-    """Claude Code stream-json: a Skill call or a SKILL.md read loads a skill; ExitPlanMode carries the plan."""
+    """Claude stream-json: completed Skill/Read calls prove loads; ExitPlanMode carries the plan."""
     transcript = Transcript(skill_pattern(names))
     plan, texts, result = "", [], None
+    pending = {}
     for event in events(lines):
         kind = event.get("type")
         if kind == "system" and event.get("subtype") == "init":
@@ -205,11 +303,38 @@ def parse_claude(lines: list[str], names: list[str]) -> Transcript:
                     texts.append(str(block.get("text", "")))
                 elif block.get("type") == "tool_use":
                     name, arguments = str(block.get("name", "")), block.get("input") or {}
-                    if name == "Skill":
-                        transcript.load(str(arguments.get("skill", "")).lstrip("/"))
-                    elif name == "ExitPlanMode":
+                    if name == "ExitPlanMode":
                         plan = str(arguments.get("plan", ""))
                     transcript.call(name, json.dumps(arguments, ensure_ascii=False))
+                    if block.get("id"):
+                        pending[block["id"]] = (name, arguments)
+        elif kind == "user":
+            for block in (event.get("message") or {}).get("content") or []:
+                if not isinstance(block, dict) or block.get("type") != "tool_result":
+                    continue
+                call = pending.pop(block.get("tool_use_id"), None)
+                if call is None or block.get("is_error"):
+                    continue
+                name, arguments = call
+                content = result_text(block.get("content"))
+                metadata = event.get("tool_use_result") or {}
+                metadata = metadata if isinstance(metadata, dict) else {}
+                if metadata.get("success") is False:
+                    continue
+                if name == "Skill":
+                    skill = str(arguments.get("skill", "")).lstrip("/")
+                    if metadata.get("success") is True or content.strip() == f"Launching skill: {skill}":
+                        transcript.load(skill)
+                elif name == "Read":
+                    file = metadata.get("file") or {}
+                    file = file if isinstance(file, dict) else {}
+                    complete = (file.get("startLine") == 1 and isinstance(file.get("numLines"), int)
+                                and isinstance(file.get("totalLines"), int)
+                                and file["numLines"] >= file["totalLines"])
+                    if complete or (not file and arguments.get("offset", 1) == 1 and "limit" not in arguments):
+                        transcript.read(str(arguments.get("file_path", "")), result_text(file.get("content", content)))
+                elif name == "Bash":
+                    transcript.command_read(str(arguments.get("command", "")), content, 0)
         elif kind == "result":
             result = event
     final = str(result.get("result") or "") if result else ""
@@ -229,9 +354,9 @@ def parse_claude(lines: list[str], names: list[str]) -> Transcript:
 
 
 def parse_codex(lines: list[str], names: list[str]) -> Transcript:
-    """Codex exec --json: a command that reads skills/<name>/SKILL.md loads it; the last agent message answers."""
+    """Codex exec --json: completed literal reads prove loads; the last agent message answers."""
     transcript = Transcript(skill_pattern(names))
-    seen = set()
+    seen, completed = set(), set()
     for event in events(lines):
         kind = event.get("type")
         if kind in ("item.started", "item.completed"):
@@ -246,6 +371,11 @@ def parse_codex(lines: list[str], names: list[str]) -> Transcript:
                           if key not in ("id", "type", "status", "aggregated_output", "exit_code", "result", "output", "error")}
                 detail = item.get("command") if isinstance(item.get("command"), str) else json.dumps(inputs, ensure_ascii=False)
                 transcript.call(item_type, detail)
+            if (kind == "item.completed" and item_type == "command_execution"
+                    and (item.get("id") is None or item["id"] not in completed)):
+                completed.add(item.get("id"))
+                transcript.command_read(str(item.get("command", "")), str(item.get("aggregated_output", "")),
+                                        item.get("exit_code"))
         elif kind == "turn.completed":
             transcript.usage = event.get("usage") or {}
         elif kind in ("turn.failed", "error"):
@@ -313,22 +443,79 @@ def session_command(tool: str, exe: str, model: str | None, budget: float | None
 
 
 def kill_tree(process: subprocess.Popen) -> None:
-    if os.name == "nt":
-        subprocess.run(["taskkill", "/T", "/F", "/PID", str(process.pid)], capture_output=True)
-    else:
-        process.kill()
-    process.wait()
+    """Best-effort cleanup; report uncertainty without preventing cleanup of other sessions."""
+    try:
+        tree_error = ""
+        if os.name == "nt":
+            try:
+                stopped = subprocess.run(["taskkill", "/T", "/F", "/PID", str(process.pid)], capture_output=True,
+                                         timeout=10, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                if stopped.returncode:
+                    reason = stopped.stderr.decode("utf-8", errors="replace").strip()
+                    tree_error = f"taskkill exit {stopped.returncode}: {compact(reason)}"
+            except (OSError, subprocess.TimeoutExpired) as error:
+                tree_error = f"taskkill failed: {error}"
+        else:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            except OSError as error:
+                tree_error = f"process group termination failed: {error}"
+        if tree_error:
+            print(f"WARNING: PID {process.pid}: {tree_error}; trying parent termination only. "
+                  "Descendants may still be running.", file=sys.stderr)
+            process.kill()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        print(f"WARNING: PID {process.pid}: process cleanup failed: {error}", file=sys.stderr)
+
+
+class SessionCancellation:
+    """Stop active sessions and prevent queued workers from starting after cancellation."""
+
+    def __init__(self) -> None:
+        self.cancelled = threading.Event()
+        self._lock = threading.Lock()
+        self._processes: set[subprocess.Popen] = set()
+
+    def start(self, command: list[str], **kwargs) -> subprocess.Popen:
+        # Launch and registration must be atomic with respect to cancellation.
+        with self._lock:
+            if self.cancelled.is_set():
+                raise CancelledError()
+            process = subprocess.Popen(command, **kwargs)
+            self._processes.add(process)
+            return process
+
+    def finished(self, process: subprocess.Popen) -> None:
+        with self._lock:
+            self._processes.discard(process)
+
+    def cancel(self) -> None:
+        with self._lock:
+            self.cancelled.set()
+            processes = list(self._processes)
+        for process in processes:
+            kill_tree(process)
 
 
 def run_session(command: list[str], prompt: str, cwd: Path, stdout_path: Path, stderr_path: Path,
-                timeout_minutes: float) -> tuple[int | None, bool, float]:
+                timeout_minutes: float, cancellation: SessionCancellation | None = None) -> tuple[int | None, bool, float]:
     """Run with the prompt on stdin. Returns (exit code, timed out, seconds); kills the tree on timeout or Ctrl+C."""
     started = time.monotonic()
     with stdout_path.open("wb") as stdout, stderr_path.open("wb") as stderr:
-        process = subprocess.Popen(command, cwd=cwd, stdin=subprocess.PIPE, stdout=stdout, stderr=stderr,
-                                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        launch = cancellation.start if cancellation is not None else subprocess.Popen
+        process = launch(command, cwd=cwd, stdin=subprocess.PIPE, stdout=stdout, stderr=stderr,
+                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), start_new_session=os.name != "nt")
         try:
             process.communicate(prompt.encode("utf-8"), timeout=timeout_minutes * 60)
+            if cancellation is not None and cancellation.cancelled.is_set():
+                raise CancelledError()
             return process.returncode, False, time.monotonic() - started
         except subprocess.TimeoutExpired:
             kill_tree(process)
@@ -336,16 +523,19 @@ def run_session(command: list[str], prompt: str, cwd: Path, stdout_path: Path, s
         except KeyboardInterrupt:
             kill_tree(process)
             raise
+        finally:
+            if cancellation is not None:
+                cancellation.finished(process)
 
 
 def run_scenario(tool: str, command: list[str], scenario: dict, names: list[str], run_dir: Path,
-                 timeout_minutes: float) -> dict:
+                 timeout_minutes: float, cancellation: SessionCancellation | None = None) -> dict:
     sid = scenario["id"]
     files = scenario.get("files", [])
     prompt = scenario["query"] + (f"\n\nDateien: {', '.join(files)}" if files else "") + READ_ONLY_NOTE
     transcript_path = run_dir / f"{sid}.jsonl"
     code, timed_out, seconds = run_session(command, prompt, REPO, transcript_path, run_dir / f"{sid}.stderr.txt",
-                                           timeout_minutes)
+                                           timeout_minutes, cancellation)
     lines = transcript_path.read_bytes().decode("utf-8", errors="replace").splitlines()
     transcript = (parse_claude if tool == "claude" else parse_codex)(lines, names)
     error = "timed out" if timed_out else transcript.error or (f"exit code {code}" if code else "")
@@ -415,12 +605,27 @@ def command_run(args) -> int:
         "scenarios": [scenario["id"] for scenario in selected]})
     print(f"run: {shown(run_dir)} ({len(selected)} scenarios, {args.tool} {args.model or 'default model'})", flush=True)
     results = []
-    with ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        futures = [pool.submit(run_scenario, args.tool, command, scenario, names, run_dir, args.timeout)
-                   for scenario in selected]
-        for future in as_completed(futures):
-            results.append(future.result())
-            print(result_line(results[-1]), flush=True)
+    cancellation = SessionCancellation()
+    pool = ThreadPoolExecutor(max_workers=args.jobs)
+    futures = []
+    try:
+        for scenario in selected:
+            futures.append(pool.submit(run_scenario, args.tool, command, scenario, names, run_dir, args.timeout,
+                                       cancellation))
+        pending = set(futures)
+        while pending:
+            # A bounded wait lets Python handle Ctrl+C promptly on Windows too.
+            done, pending = wait(pending, timeout=0.1, return_when=FIRST_COMPLETED)
+            for future in done:
+                results.append(future.result())
+                print(result_line(results[-1]), flush=True)
+    except BaseException:
+        cancellation.cancel()
+        for future in futures:
+            future.cancel()
+        raise
+    finally:
+        pool.shutdown(wait=True, cancel_futures=True)
     counts = {status: sum(result["status"] == status for result in results) for status in ("passed", "failed", "error")}
     print(f"TRIGGER {'PASSED' if counts['passed'] == len(results) else 'FAILED'}: "
           f"{counts['passed']} passed, {counts['failed']} failed, {counts['error']} errors")
@@ -518,6 +723,28 @@ def run_folder(value: str) -> Path:
     return path.resolve()
 
 
+def run_results(run_dir: Path) -> tuple[dict, list[tuple[str, dict | None]]]:
+    """Keep every scheduled scenario visible, including sessions with no result file."""
+    run = read_json(run_dir / "run.json")
+    ids = run.get("scenarios")
+    if (not isinstance(ids, list) or not ids
+            or not all(isinstance(sid, str) and sync.NAME_PATTERN.fullmatch(sid) for sid in ids)
+            or len(set(ids)) != len(ids)):
+        raise SetupError(f"{run_dir / 'run.json'}: scenarios must list unique scenario ids")
+    expected_files = {f"{sid}.result.json" for sid in ids}
+    extra = sorted(path.name for path in run_dir.glob("*.result.json") if path.name not in expected_files)
+    if extra:
+        raise SetupError(f"{run_dir}: results not scheduled in run.json: {', '.join(extra)}")
+    results = []
+    for sid in ids:
+        path = run_dir / f"{sid}.result.json"
+        result = read_json(path) if path.is_file() else None
+        if result is not None and result.get("id") != sid:
+            raise SetupError(f"{path}: result id does not match scheduled scenario {sid}")
+        results.append((sid, result))
+    return run, results
+
+
 def rubric(result: dict, scenarios: dict[str, dict]) -> list[str]:
     """The scenario's current expected_behavior while its query is unchanged, else the one stored with the run."""
     scenario = scenarios.get(result["id"])
@@ -526,13 +753,17 @@ def rubric(result: dict, scenarios: dict[str, dict]) -> list[str]:
 
 def command_grade(args) -> int:
     run_dir = run_folder(args.run)
+    run, results = run_results(run_dir)
     exe = executable(args.judge, args.exe)
-    parse = parse_claude if read_json(run_dir / "run.json")["tool"] == "claude" else parse_codex
+    parse = parse_claude if run["tool"] == "claude" else parse_codex
     names = sync.discover(REPO)
     scenarios = {scenario["id"]: scenario for scenario in load_scenarios(REPO)[0]}
     met = total = graded = skipped = 0
-    for path in sorted(run_dir.glob("*.result.json")):
-        result = read_json(path)
+    for sid, result in results:
+        if result is None:
+            skipped += 1
+            print(f"SKIP {sid}: missing result (scheduled in run.json)")
+            continue
         grade_path = run_dir / f"{result['id']}.grade.json"
         if result["status"] == "error":
             skipped += 1
@@ -545,7 +776,8 @@ def command_grade(args) -> int:
             transcript_path = run_dir / f"{result['id']}.jsonl"
             if transcript_path.is_file():
                 transcript = parse(transcript_path.read_bytes().decode("utf-8", errors="replace").splitlines(), names)
-                result = dict(result, tools=transcript.tools, answer=transcript.answer or result["answer"])
+                result = dict(result, loaded=transcript.loaded, tools=transcript.tools,
+                              answer=transcript.answer or result["answer"])
             try:
                 grade = judge(args.judge, exe, args.model, judge_prompt(result, expected), expected, args.timeout)
             except (ValueError, KeyError, json.JSONDecodeError) as error:
@@ -572,12 +804,18 @@ def command_grade(args) -> int:
 def command_report(args) -> int:
     """One row per scenario and run, runs labeled A, B, ... and listed side by side for comparison."""
     rows, legend = [], []
+    incomplete = False
     for number, value in enumerate(args.runs):
         run_dir, label = run_folder(value), chr(ord("A") + number)
-        run = read_json(run_dir / "run.json")
+        run, results = run_results(run_dir)
         passed = met = total = 0
-        for path in sorted(run_dir.glob("*.result.json")):
-            result = read_json(path)
+        missing = 0
+        for sid, result in results:
+            if result is None:
+                missing += 1
+                incomplete = True
+                rows.append((sid, number, [sid, label, "missing result", "–", "–", "–"]))
+                continue
             grade_path = run_dir / f"{result['id']}.grade.json"
             grade = read_json(grade_path) if grade_path.is_file() else None
             passed += result["status"] == "passed"
@@ -587,15 +825,15 @@ def command_report(args) -> int:
                          ", ".join(result["loaded"]) or "none", f"{grade['met']}/{grade['total']}" if grade else "–",
                          ", ".join(not_met) or "–"]))
         legend.append(f"- {label}: `{run_dir.name}`, {run['tool']} {run['version']}, model {run['model']}, "
-                      f"commit {run['commit']}; trigger {passed}/{len(list(run_dir.glob('*.result.json')))}, "
-                      f"behavior {met}/{total}")
+                      f"commit {run['commit']}; trigger {passed}/{len(results)}, "
+                      f"behavior {met}/{total}" + (f"; INCOMPLETE: {missing} missing results" if missing else ""))
     print("| Scenario | Run | Trigger | Loaded skills | Behavior | Not met |")
     print("| --- | --- | --- | --- | --- | --- |")
     for _, _, cells in sorted(rows, key=lambda row: (row[0], row[1])):
         print("| " + " | ".join(cell.replace("|", "\\|") for cell in cells) + " |")
     print()
     print("\n".join(legend))
-    return PASSED
+    return FAILED if incomplete else PASSED
 
 
 def command_check(args) -> int:
@@ -655,7 +893,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"SETUP ERROR: {error}", file=sys.stderr)
         return SETUP
     except KeyboardInterrupt:
-        print("cancelled; running sessions were stopped", file=sys.stderr)
+        print("cancelled", file=sys.stderr)
         return FAILED
 
 

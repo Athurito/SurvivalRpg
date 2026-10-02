@@ -5,7 +5,7 @@
     "query": "Der Mover-Sprint soll wie der CMC-Sprint Ausdauer verbrauchen. Setz das bitte um.",
     "expected_behavior": [
       "Reads `docs/gasp-integration-handoff.md` and `docs/gasp-integration-roadmap.md` first, then the related task report such as `docs/gasp-cmc-sprint.md`.",
-      "Checks whether a ready roadmap task covers the change; when none does, asks the user to define and mark the task before implementation.",
+      "Checks whether the change belongs to an already authorized active task or a ready roadmap task; when neither covers it, asks the user to define and mark the new task before implementation.",
       "Plans to verify the checkout-local NetworkPrediction/Mover overrides before building or switching branches.",
       "Extends the existing GAS sprint and stamina seam of the CMC variant instead of adding parallel sprint state or inferring sprint from animation.",
       "Keeps movement and stamina authority in Mover and GAS and plans verification for simulated proxies and late join.",
@@ -14,10 +14,10 @@
   },
   {
     "id": "gasp-ledge-hang",
-    "skills": ["unreal-gasp-expert"],
+    "skills": ["unreal-gasp-expert", "unreal-lyra-expert", "survival-rpg-project", "survival-rpg-orchestrator"],
     "query": "Füge Klettern an Kanten hinzu (an der Kante hängen und seitlich hangeln). Am einfachsten steuern wir das komplett im AnimBP.",
     "expected_behavior": [
-      "Reads the GASP handoff and roadmap, treats ledge hanging as new traversal scope, and asks the user to define and mark a roadmap task before implementation.",
+      "Reads the GASP handoff and roadmap, treats ledge hanging as new traversal scope, and asks the user to define and mark a roadmap task before implementation when no already authorized active or ready task covers it.",
       "Rejects AnimBP-only control and requires an explicit movement mode or equally authoritative movement state with server validation.",
       "Proposes piloting the move in isolation, such as a separate PawnData and Experience or a development GameFeature, before widening the move set.",
       "Scopes the work to one movement variant or asks which one, without making CMC and Mover silently depend on each other.",
@@ -26,7 +26,7 @@
   },
   {
     "id": "gasp-heavy-armor-gait",
-    "skills": ["unreal-gasp-expert"],
+    "skills": ["unreal-gasp-expert", "unreal-lyra-expert", "survival-rpg-combat-foundation"],
     "query": "Mit schwerer Rüstung soll der Charakter sichtbar träger laufen. Spiel dafür einfach die Laufanimationen langsamer ab.",
     "expected_behavior": [
       "Rejects slower animation playback as the mechanism for heavy movement.",
@@ -34,6 +34,18 @@
       "Keeps equipment, GAS, and the movement component authoritative and passes the load to animation as a game-thread snapshot.",
       "Makes the movement profile available to simulated proxies and late joiners, such as through replicated state.",
       "Reads the GASP handoff and roadmap before planning the change."
+    ]
+  },
+  {
+    "id": "gasp-active-task-continuation",
+    "skills": ["unreal-gasp-expert", "unreal-lyra-expert"],
+    "query": "Setze den noch offenen Validierungsschritt unserer Mover-Sprint-Ausdauer-Aufgabe fort. Für diesen isolierten Fortsetzungsfall gilt folgender Übergabestand anstelle der heutigen Statuswerte in den Dokumenten: Ich habe die begrenzte Aufgabe bereits freigegeben, sie steht auf 'In Arbeit', und dieser Chat ist dafür zuständig. Die Umsetzung im Aufgabenbranch ist abgeschlossen; offen sind nur der Build und die vorhandenen Sprint-/Ausdauer-Regressionen über den Unreal-Wrapper. Keine Aufgabe steht auf 'Bereit'.",
+    "expected_behavior": [
+      "Reads the GASP handoff and roadmap and distinguishes the supplied continuation state from the real checkout's current status.",
+      "Plans the remaining validation of the already authorized active task without asking the user to define it again, mark it ready again, or renew approval merely because no task is ready.",
+      "Checks the task branch, working tree, relevant task report, and checkout-local NetworkPrediction/Mover overrides before the build.",
+      "Uses the existing Unreal wrapper to build and run the relevant existing sprint and stamina regression filters after inspecting them.",
+      "Keeps the work limited to the remaining validation and reports actual results and limits without claiming the read-only evaluation ran a build or tests."
     ]
   }
 ]

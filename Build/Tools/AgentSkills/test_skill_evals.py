@@ -26,8 +26,9 @@ def lines(*events: dict) -> list[str]:
     return [json.dumps(event) for event in events] + ["not json"]
 
 
-def tool_use(name: str, arguments: dict) -> dict:
-    return {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": name, "input": arguments}]}}
+def tool_use(name: str, arguments: dict, call_id: str | None = None) -> dict:
+    return {"type": "assistant", "message": {"content": [{"type": "tool_use", "id": call_id or name,
+                                                        "name": name, "input": arguments}]}}
 
 
 def command(item_id: str, text: str, output: str = "", kind: str = "item.completed") -> dict:
@@ -133,8 +134,14 @@ class TranscriptTests(unittest.TestCase):
         transcript = skill_evals.parse_claude(lines(
             {"type": "system", "subtype": "init", "skills": NAMES + ["other"]},
             tool_use("Skill", {"skill": "alpha-skill"}),
+            {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "Skill",
+                                                        "content": "Launching skill: alpha-skill"}]}},
             tool_use("Read", {"file_path": "D:\\Repo\\.claude\\skills\\beta-skill\\SKILL.md"}),
+            {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "Read",
+                                                        "content": "---\nname: beta-skill\n---\n# Beta\nRead the project."}]}},
             tool_use("Read", {"file_path": "D:/Repo/.claude/skills/beta-skill/references/notes.md"}),
+            {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "Read",
+                                                        "content": "# Notes\nInspect the files."}]}},
             tool_use("Grep", {"pattern": "SKILL", "path": ".agents/skills"}),
             {"type": "user", "message": {"content": [{"type": "tool_result", "content": ".agents/skills/alpha-skill/SKILL.md"}]}},
             tool_use("ExitPlanMode", {"plan": "1. Plan the thing."}),
@@ -171,9 +178,10 @@ class TranscriptTests(unittest.TestCase):
         transcript = skill_evals.parse_codex(lines(
             {"type": "thread.started", "thread_id": "t"},
             command("1", "Get-Content .agents\\skills\\alpha-skill\\SKILL.md", kind="item.started"),
-            command("1", "Get-Content .agents\\skills\\alpha-skill\\SKILL.md"),
+            command("1", "Get-Content .agents\\skills\\alpha-skill\\SKILL.md",
+                    output="---\nname: alpha-skill\n---\n# Alpha\nRead the project."),
             command("2", "rg -l SKILL .agents/skills", output=".agents/skills/beta-skill/SKILL.md"),
-            command("3", "sed -n '1,80p' .agents/skills/alpha-skill/references/notes.md"),
+            command("3", "cat .agents/skills/alpha-skill/references/notes.md", output="# Notes\nInspect the files."),
             {"type": "item.completed", "item": {"id": "4", "type": "agent_message", "text": "Looking around."}},
             {"type": "item.completed", "item": {"id": "5", "type": "reasoning", "text": "skills/beta-skill/SKILL.md"}},
             {"type": "item.completed", "item": {"id": "6", "type": "agent_message", "text": "The plan."}},
@@ -206,7 +214,7 @@ class ReportTests(unittest.TestCase):
                 run_dir = Path(folder) / name
                 run_dir.mkdir()
                 skill_evals.write_json(run_dir / "run.json", {"tool": "codex", "version": "codex-cli 1.0", "model": "default",
-                                                              "commit": "abc", "started": "now"})
+                                                              "commit": "abc", "started": "now", "scenarios": ["x"]})
                 result = {"id": "x", "status": "passed" if loaded else "failed", "error": "", "loaded": loaded,
                           "missing": [] if loaded else ["alpha-skill"], "unexpected": []}
                 skill_evals.write_json(run_dir / "x.result.json", result)

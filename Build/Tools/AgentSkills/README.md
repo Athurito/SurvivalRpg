@@ -74,10 +74,15 @@ Claude Code with `-p --permission-mode plan --no-session-persistence`, Codex
 with `exec --sandbox read-only --ephemeral`. Each query gets a fixed note to
 work read-only and answer with a plan. Claude's plan mode stores each plan
 under `~/.claude/plans/`, outside the checkout. The tool's user and project
-configuration still apply, as in real use. A skill counts as loaded when Claude
-calls the Skill tool or when a tool call reads `skills/<name>/SKILL.md`, which is
-how Codex loads skills. Only tool inputs are scanned, so listings and search
-results never count. Other skill files read, such as references, are recorded
+configuration still apply, as in real use. A skill counts as loaded after a
+successful Claude Skill result, or a completed full-file read of
+`.agents/skills/<name>/SKILL.md` or its `.claude/skills/` copy that returns the
+skill's frontmatter and body. Claude Read calls and literal shell
+`Get-Content`, `cat`, and `type` reads are recognized. Searches, existence
+checks, failed or unfinished reads, and truncated output do not prove a load.
+Shell pipelines, sliced reads, variables, and other dynamic expressions are
+conservatively unrecognized; inspect the raw transcript when a valid read uses
+one of those forms. Other skill files read, such as references, are recorded
 too. Use `--id` or `--skill` to narrow a run, `--model` to compare models,
 `--jobs` for parallel sessions, and `--exe` when the CLI is not on `PATH`. The
 CLI must be logged in for headless use, so `claude -p` or `codex exec` has to
@@ -92,12 +97,28 @@ run can be graded again after a rubric fix; existing grades are reused unless
 the behaviors changed or `--force` is given. Treat grades as evidence, not
 proof, and check not-met items against the transcript before changing a skill.
 `report` prints one row per scenario and run, labels the runs A, B, and so on
-for before-and-after comparisons, and lists each run's totals.
+for before-and-after comparisons, and lists each run's totals. Both commands
+check the scenario list recorded in `run.json`. Missing result files remain
+visible as ungraded or missing rows and make the command fail; the trigger
+denominator includes every scheduled scenario. Unexpected result files and
+mismatched scenario ids are setup errors.
 
 Each run writes a new folder under `Saved/AgentSkillEvals/<time>-<tool>[-<model>]`
 with `run.json` (tool version, model, commit), the raw transcript, stderr, the
 result, and the grade per scenario. Like all of `Saved/`, it stays local. Exit
 codes: 0 all passed, 1 a trigger, session, or behavior failed, 2 setup error.
+`report` returns 1 for incomplete runs; a complete comparison report can still
+contain failed triggers or behaviors. Ctrl+C cancels queued scenarios and stops
+running CLI process trees before returning. Results completed before the
+interruption remain available for inspection. Operating-system cleanup failures
+are printed as warnings; parent-only fallback cannot confirm that descendants
+have stopped.
+
+Stored trigger results are historical observations from the parser and routing
+expectations used by that run. A parser or required-skill change needs a new run
+for a directly comparable trigger result; existing result files are not silently
+rewritten. In particular, counts produced before completed-read verification
+may include path mentions or partial searches and do not prove full skill loads.
 
 Run the affected scenarios with at least one model per tool before and after
 changing a skill description, a boundary rule, or the routing in `AGENTS.md`.
