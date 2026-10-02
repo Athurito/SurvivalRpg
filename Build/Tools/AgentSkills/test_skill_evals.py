@@ -161,7 +161,10 @@ class TranscriptTests(unittest.TestCase):
     def test_claude_errors_are_reported(self) -> None:
         failed = skill_evals.parse_claude(lines({"type": "result", "subtype": "success", "is_error": True,
                                                  "result": "Not logged in"}), NAMES)
-        self.assertEqual(failed.error, "success: Not logged in")
+        self.assertEqual(failed.error, "Not logged in")
+        limited = skill_evals.parse_claude(lines({"type": "result", "subtype": "error_max_budget_usd", "is_error": True,
+                                                  "result": "Budget"}), NAMES)
+        self.assertEqual(limited.error, "error_max_budget_usd: Budget")
         self.assertEqual(skill_evals.parse_claude(lines(), NAMES).error, "no result event")
 
     def test_codex_skill_reads_load_skills_without_counting_output(self) -> None:

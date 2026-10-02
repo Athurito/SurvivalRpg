@@ -222,8 +222,9 @@ def parse_claude(lines: list[str], names: list[str]) -> Transcript:
         transcript.error = "no result event"
     else:
         transcript.usage = {key: result[key] for key in ("total_cost_usd", "num_turns", "duration_ms") if key in result}
-        if result.get("is_error") or result.get("subtype", "success") != "success":
-            transcript.error = compact(f"{result.get('subtype', 'error')}: {final}")
+        kind = result.get("subtype", "success")
+        if result.get("is_error") or kind != "success":
+            transcript.error = compact(final if kind == "success" else f"{kind}: {final}")
     return transcript
 
 
