@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import argparse
+import contextlib
+import io
 import json
 from pathlib import Path
 import tempfile
@@ -190,6 +193,30 @@ class TranscriptTests(unittest.TestCase):
         item = scenario("x", skills=["alpha-skill"], excluded_skills=["beta-skill"])
         self.assertEqual(skill_evals.trigger(item, ["alpha-skill"]), ([], []))
         self.assertEqual(skill_evals.trigger(item, ["beta-skill"]), (["alpha-skill"], ["beta-skill"]))
+
+
+class ReportTests(unittest.TestCase):
+    def test_report_lists_runs_side_by_side_with_totals(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            runs = []
+            for name, loaded, met in (("before", [], 1), ("after", ["alpha-skill"], 2)):
+                run_dir = Path(folder) / name
+                run_dir.mkdir()
+                skill_evals.write_json(run_dir / "run.json", {"tool": "codex", "version": "codex-cli 1.0", "model": "default",
+                                                              "commit": "abc", "started": "now"})
+                result = {"id": "x", "status": "passed" if loaded else "failed", "error": "", "loaded": loaded,
+                          "missing": [] if loaded else ["alpha-skill"], "unexpected": []}
+                skill_evals.write_json(run_dir / "x.result.json", result)
+                skill_evals.write_json(run_dir / "x.grade.json", {"met": met, "total": 2, "items": [
+                    {"expected": "One.", "met": True, "evidence": ""}, {"expected": "Two.", "met": met == 2, "evidence": ""}]})
+                runs.append(str(run_dir))
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(skill_evals.command_report(argparse.Namespace(runs=runs)), skill_evals.PASSED)
+        text = output.getvalue()
+        self.assertIn("| x | A | missing alpha-skill | none | 1/2 | 2 |\n| x | B | pass | alpha-skill | 2/2 | – |", text)
+        self.assertIn("- A: `before`, codex codex-cli 1.0, model default, commit abc; trigger 0/1, behavior 1/2", text)
+        self.assertIn("- B: `after`", text)
 
 
 class VerdictTests(unittest.TestCase):

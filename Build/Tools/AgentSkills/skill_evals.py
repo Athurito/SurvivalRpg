@@ -569,25 +569,31 @@ def command_grade(args) -> int:
 # --- Report ------------------------------------------------------------------------------------
 
 def command_report(args) -> int:
-    print("| Scenario | Tool, model | Trigger | Loaded skills | Behavior | Not met |")
-    print("| --- | --- | --- | --- | --- | --- |")
-    headers = []
-    for value in args.runs:
-        run_dir = run_folder(value)
+    """One row per scenario and run, runs labeled A, B, ... and listed side by side for comparison."""
+    rows, legend = [], []
+    for number, value in enumerate(args.runs):
+        run_dir, label = run_folder(value), chr(ord("A") + number)
         run = read_json(run_dir / "run.json")
-        headers.append(f"- {run_dir.name}: {run['tool']} {run['version']}, model {run['model']}, "
-                       f"commit {run['commit']}, started {run['started']}")
+        passed = met = total = 0
         for path in sorted(run_dir.glob("*.result.json")):
             result = read_json(path)
             grade_path = run_dir / f"{result['id']}.grade.json"
             grade = read_json(grade_path) if grade_path.is_file() else None
-            behavior = f"{grade['met']}/{grade['total']}" if grade else "–"
+            passed += result["status"] == "passed"
+            met, total = met + (grade["met"] if grade else 0), total + (grade["total"] if grade else 0)
             not_met = [str(index) for index, item in enumerate(grade["items"], start=1) if not item["met"]] if grade else []
-            cells = [result["id"], f"{run['tool']}, {run['model']}", trigger_state(result),
-                     ", ".join(result["loaded"]) or "none", behavior, ", ".join(not_met) or "–"]
-            print("| " + " | ".join(cell.replace("|", "\\|") for cell in cells) + " |")
+            rows.append((result["id"], number, [result["id"], label, trigger_state(result),
+                         ", ".join(result["loaded"]) or "none", f"{grade['met']}/{grade['total']}" if grade else "–",
+                         ", ".join(not_met) or "–"]))
+        legend.append(f"- {label}: `{run_dir.name}`, {run['tool']} {run['version']}, model {run['model']}, "
+                      f"commit {run['commit']}; trigger {passed}/{len(list(run_dir.glob('*.result.json')))}, "
+                      f"behavior {met}/{total}")
+    print("| Scenario | Run | Trigger | Loaded skills | Behavior | Not met |")
+    print("| --- | --- | --- | --- | --- | --- |")
+    for _, _, cells in sorted(rows, key=lambda row: (row[0], row[1])):
+        print("| " + " | ".join(cell.replace("|", "\\|") for cell in cells) + " |")
     print()
-    print("\n".join(headers))
+    print("\n".join(legend))
     return PASSED
 
 

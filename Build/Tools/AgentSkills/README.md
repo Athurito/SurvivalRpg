@@ -85,9 +85,13 @@ work on its own.
 `grade` sends each answer and the condensed tool calls to a judge session
 without tools, started outside the repository: Claude by default, `--judge
 codex` otherwise. The judge marks each `expected_behavior` item as met with
-short evidence; existing grades are reused unless `--force` is given. Treat
-grades as evidence, not proof, and check not-met items against the transcript
-before changing a skill.
+short evidence; a planned step counts, since sessions are read-only. Grading
+uses a scenario's current behaviors while its query is unchanged, so an older
+run can be graded again after a rubric fix; existing grades are reused unless
+the behaviors changed or `--force` is given. Treat grades as evidence, not
+proof, and check not-met items against the transcript before changing a skill.
+`report` prints one row per scenario and run, labels the runs A, B, and so on
+for before-and-after comparisons, and lists each run's totals.
 
 Each run writes a new folder under `Saved/AgentSkillEvals/<time>-<tool>[-<model>]`
 with `run.json` (tool version, model, commit), the raw transcript, stderr, the
