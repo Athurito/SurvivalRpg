@@ -7,10 +7,11 @@
 #include "Harvesting/RpgHarvestRewardService.h"
 #include "Misc/ScopeExit.h"
 #include "Net/UnrealNetwork.h"
-#include "SurvivalRpg/Interaction/Abilities/RpgGameplayAbility_ExecuteInteraction.h"
 #include "SurvivalRpg/Interaction/InteractionOption.h"
 #include "SurvivalRpg/Interaction/InteractionQuery.h"
 #include "SurvivalRpg/Physics/RpgCollisionChannels.h"
+#include "SurvivalRpg/System/RpgAssetManager.h"
+#include "SurvivalRpg/System/RpgGameData.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgHarvestableInstancedMeshComponent)
 
@@ -411,7 +412,8 @@ bool URpgHarvestableInstancedMeshComponent::BuildInteractionOption(
 	OutOption.Prompt = InteractionPrompt;
 	OutOption.Prompt.SanitizeRanges();
 	OutOption.Availability = ERpgInteractionAvailability::Available;
-	OutOption.InteractionAbilityToGrant = URpgGameplayAbility_ExecuteInteraction::StaticClass();
+	OutOption.InteractionAbilityToGrant = URpgAssetManager::GetSubclass(
+		URpgGameData::Get().ExecuteInteractionAbility);
 	return true;
 }
 

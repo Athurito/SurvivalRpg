@@ -2,7 +2,6 @@
 
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
-#include "SurvivalRpg/Interaction/Abilities/RpgGameplayAbility_Collect.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Interaction/InteractionQuery.h"
 #include "SurvivalRpg/Inventory/RpgInventoryContainerComponent.h"
@@ -697,11 +696,6 @@ FInteractionOption ARpgDroppedInventoryActor::BuildCollectInteractionOption(
 
 void ARpgDroppedInventoryActor::EnsureDefaultPickupInteractionOption()
 {
-	if (!Option.InteractionAbilityToGrant)
-	{
-		Option.InteractionAbilityToGrant = URpgGameplayAbility_Collect::StaticClass();
-	}
-
 	Option.InteractionTag = RpgGameplayTags::Rpg_Interaction_Action_Collect;
 	if (Option.Prompt.ActionText.IsEmpty())
 	{

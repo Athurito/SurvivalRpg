@@ -6,10 +6,11 @@
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
-#include "SurvivalRpg/Interaction/Abilities/RpgGameplayAbility_Collect.h"
 #include "SurvivalRpg/Interaction/InteractionQuery.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
+#include "SurvivalRpg/System/RpgAssetManager.h"
+#include "SurvivalRpg/System/RpgGameData.h"
 
 namespace
 {
@@ -62,7 +63,6 @@ ARpgWorldCollectable::ARpgWorldCollectable()
 	Option.Prompt.ActionText = NSLOCTEXT("RpgInteraction", "CollectInteractionText", "Pick Up");
 	Option.Prompt.TargetText = NSLOCTEXT("RpgInteraction", "CollectableFallbackTarget", "Item");
 	Option.Prompt.InteractionPriority = 20;
-	Option.InteractionAbilityToGrant = URpgGameplayAbility_Collect::StaticClass();
 }
 
 void ARpgWorldCollectable::GatherInteractionOptions(const FInteractionQuery& InteractQuery,
@@ -76,6 +76,11 @@ FInteractionOption ARpgWorldCollectable::BuildCollectInteractionOption(const FIn
 	(void)InteractQuery;
 
 	FInteractionOption Result = Option;
+	if (!Result.InteractionAbilityToGrant)
+	{
+		Result.InteractionAbilityToGrant = URpgAssetManager::GetSubclass(
+			URpgGameData::Get().CollectInteractionAbility);
+	}
 	Result.InteractionTag = RpgGameplayTags::Rpg_Interaction_Action_Collect;
 	Result.TargetRef.TargetActor = const_cast<ARpgWorldCollectable*>(this);
 	Result.Availability = ERpgInteractionAvailability::Available;

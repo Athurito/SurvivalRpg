@@ -76,6 +76,14 @@ their exact numeric values. The cancellation case requires one authority open an
 damage, no residual timers or attack state, and no mutation during the post-cleanup observation
 period.
 
+The test also dispatches `GameplayEvent.HitReaction` to the fully composed
+authority avatar between the normal attacks and the 1.5x attack. The actual
+granted Blueprint must activate and end once, clear its active spec, and
+release both exclusive activation groups. The following genuine remote attack
+proves recovery. This checks GAS lifecycle without depending on a graph layout
+or a particular montage; it does not assert owner-side montage replication for
+the server-only reaction.
+
 Run from the repository root. The wrapper's default rendered offscreen PIE is required here, so do
 not add `--null-rhi`:
 

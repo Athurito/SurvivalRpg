@@ -19,7 +19,6 @@
 #include "SurvivalRpg/Crafting/RpgCraftingRecipeDefinition.h"
 #include "SurvivalRpg/Crafting/RpgRecipeUnlockComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
-#include "SurvivalRpg/Interaction/Abilities/RpgGameplayAbility_OpenCraftingStation.h"
 #include "SurvivalRpg/Interaction/InteractionQuery.h"
 #include "SurvivalRpg/Inventory/RpgDroppedInventoryActor.h"
 #include "SurvivalRpg/Inventory/RpgInventoryContainerComponent.h"
@@ -28,6 +27,8 @@
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Inventory/RpgPhysicalStorageTypes.h"
+#include "SurvivalRpg/System/RpgAssetManager.h"
+#include "SurvivalRpg/System/RpgGameData.h"
 #include "TimerManager.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgCraftingStationComponent)
@@ -46,7 +47,6 @@ URpgCraftingStationComponent::URpgCraftingStationComponent(const FObjectInitiali
 	OpenCraftingOption.Prompt.ActionText = NSLOCTEXT("RpgCrafting", "OpenCraftingStationText", "Open");
 	OpenCraftingOption.Prompt.TargetText = NSLOCTEXT("RpgCrafting", "OpenCraftingStationSubText", "Crafting Station");
 	OpenCraftingOption.Prompt.InteractionPriority = 50;
-	OpenCraftingOption.InteractionAbilityToGrant = URpgGameplayAbility_OpenCraftingStation::StaticClass();
 }
 
 void URpgCraftingStationComponent::BeginPlay()
@@ -82,6 +82,11 @@ void URpgCraftingStationComponent::GetLifetimeReplicatedProps(TArray<FLifetimePr
 void URpgCraftingStationComponent::GatherInteractionOptions(const FInteractionQuery& InteractQuery, FInteractionOptionBuilder& InteractionBuilder)
 {
 	FInteractionOption Option = OpenCraftingOption;
+	if (!Option.InteractionAbilityToGrant)
+	{
+		Option.InteractionAbilityToGrant = URpgAssetManager::GetSubclass(
+			URpgGameData::Get().OpenCraftingInteractionAbility);
+	}
 	Option.InteractionTag = RpgGameplayTags::Rpg_Interaction_Action_OpenCrafting;
 	Option.TargetRef.TargetActor = GetOwner();
 	Option.Prompt.InteractionRange = InteractionRadius > 0.0f

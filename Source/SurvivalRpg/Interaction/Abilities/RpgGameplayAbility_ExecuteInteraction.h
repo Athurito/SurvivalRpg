@@ -9,8 +9,9 @@
 /**
  * Shared server-only ability for simple target-owned interactions such as doors and harvest instances.
  * The target is re-gathered and validated before its CommitInteraction implementation may mutate state.
+ * Concrete GA assets supply content identity; this bridge owns the native-only provider commit contract.
  */
-UCLASS()
+UCLASS(Abstract, Blueprintable)
 class SURVIVALRPG_API URpgGameplayAbility_ExecuteInteraction : public URpgGameplayAbility
 {
 	GENERATED_BODY()

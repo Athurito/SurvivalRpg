@@ -15,14 +15,6 @@ URpgGameplayAbility_Stagger::URpgGameplayAbility_Stagger(const FObjectInitialize
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
 	ActivationPolicy = ERpgAbilityActivationPolicy::OnInputTriggered;
 	ActivationGroup = ERpgAbilityActivationGroup::Independent;
-
-	if (HasAnyFlags(RF_ClassDefaultObject))
-	{
-		FAbilityTriggerData TriggerData;
-		TriggerData.TriggerTag = RpgGameplayTags::GameplayEvent_Stagger;
-		TriggerData.TriggerSource = EGameplayAbilityTriggerSource::GameplayEvent;
-		AbilityTriggers.Add(TriggerData);
-	}
 }
 
 bool URpgGameplayAbility_Stagger::CanActivateAbility(

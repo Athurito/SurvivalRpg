@@ -15,7 +15,7 @@ class UAbilitySystemComponent;
  * The equipped URpgWeaponInstance supplies montage, damage GE, SetByCaller damage,
  * trace shape, and optional camera mode. Damage is applied only on authority.
  */
-UCLASS()
+UCLASS(Abstract, Blueprintable)
 class SURVIVALRPG_API URpgGameplayAbility_BasicWeaponAttack : public URpgGameplayAbility_FromEquipment
 {
 	GENERATED_BODY()
@@ -150,11 +150,13 @@ private:
 	void FinishAttack(bool bWasCancelled);
 
 private:
+	/** Designer-selected equipment attack key used when input routing does not select a definition. */
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon", meta = (Categories = "Weapon.Attack"))
 	FGameplayTag AttackDefinitionTag;
 
+	/** Designer opt-in to resolve primary/secondary attack definitions from the granted spec's input tag. */
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	bool bRouteAttackDefinitionFromInputTag = true;
+	bool bRouteAttackDefinitionFromInputTag = false;
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgWeaponInstance> ActiveWeaponInstance;

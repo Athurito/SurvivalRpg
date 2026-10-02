@@ -47,6 +47,8 @@ namespace RpgCombatPIENetworkTests
 		TEXT("/Game/SurvivalRpg/Core/Character/BP_Rpg_Character");
 	constexpr TCHAR BasicSwordDefinitionClassPath[] =
 		TEXT("/GF_Combat_Core/Equipment/Weapons/ED_BasicSword.ED_BasicSword_C");
+	constexpr TCHAR HitReactionAbilityClassPath[] =
+		TEXT("/GF_Combat_Core/GAS/Abilities/GA_Combat_HitReaction.GA_Combat_HitReaction_C");
 	constexpr int32 NormalCompletedAttackCount = 20;
 	constexpr int32 CompletedAttackCount = NormalCompletedAttackCount + 1;
 	constexpr double CleanupStabilitySeconds = 0.2;
@@ -119,6 +121,65 @@ namespace RpgCombatPIENetworkTests
 		FString SlotPrefix;
 		FDelegateHandle GameModeInitializedHandle;
 		TMap<TWeakObjectPtr<const ARpgGameModeBase>, FString> GameModeSlots;
+	};
+
+	/** Observes the granted ability's GAS lifecycle without depending on its designer graph or montage. */
+	class FScopedAbilityLifecycle final
+	{
+	public:
+		~FScopedAbilityLifecycle() { Stop(); }
+
+		void Start(URpgAbilitySystemComponent* InAbilitySystem, FGameplayAbilitySpecHandle InHandle)
+		{
+			Stop();
+			AbilitySystem = InAbilitySystem;
+			AbilityHandle = InHandle;
+			Activations = Ends = CancelledEnds = 0;
+			ActivatedHandle = InAbilitySystem->AbilityActivatedCallbacks.AddLambda([this](UGameplayAbility* Ability)
+			{
+				if (Ability && Ability->GetCurrentAbilitySpecHandle() == AbilityHandle)
+				{
+					++Activations;
+				}
+			});
+			EndedHandle = InAbilitySystem->OnAbilityEnded.AddLambda([this](const FAbilityEndedData& Data)
+			{
+				if (Data.AbilitySpecHandle == AbilityHandle)
+				{
+					++Ends;
+					CancelledEnds += Data.bWasCancelled ? 1 : 0;
+				}
+			});
+		}
+
+		void Stop()
+		{
+			if (AbilitySystem.IsValid())
+			{
+				AbilitySystem->AbilityActivatedCallbacks.Remove(ActivatedHandle);
+				AbilitySystem->OnAbilityEnded.Remove(EndedHandle);
+			}
+			AbilitySystem.Reset();
+			ActivatedHandle.Reset();
+			EndedHandle.Reset();
+		}
+
+		bool HasEnded() const
+		{
+			const FGameplayAbilitySpec* Spec = AbilitySystem.IsValid()
+				? AbilitySystem->FindAbilitySpecFromHandle(AbilityHandle) : nullptr;
+			return Activations > 0 && Ends > 0 && Spec && !Spec->IsActive();
+		}
+
+		int32 Activations = 0;
+		int32 Ends = 0;
+		int32 CancelledEnds = 0;
+
+	private:
+		TWeakObjectPtr<URpgAbilitySystemComponent> AbilitySystem;
+		FGameplayAbilitySpecHandle AbilityHandle;
+		FDelegateHandle ActivatedHandle;
+		FDelegateHandle EndedHandle;
 	};
 
 	const FGameplayTag& PrimaryWeaponInputTag()
@@ -559,6 +620,7 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 
 	// Keep the hooks alive through CQTest network teardown; never restore persistence on test actors.
 	RpgCombatPIENetworkTests::FScopedPIEWorldSaveIsolation WorldSaveIsolation;
+	RpgCombatPIENetworkTests::FScopedAbilityLifecycle HitReactionLifecycle;
 	FPIENetworkComponent<FNetworkState> Network{
 		TestRunner,
 		TestCommandBuilder,
@@ -581,6 +643,53 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 		const TCHAR* Result = **Description;
 		StepDescriptions.Add(MoveTemp(Description));
 		return Result;
+	}
+
+	void QueueHitReactionLifecycle()
+	{
+		using namespace RpgCombatPIENetworkTests;
+		Network
+			.ThenServer(TEXT("Trigger the authored hit reaction on the real composed remote pawn"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(State.World, SubjectPlayerId);
+					URpgAbilitySystemComponent* AbilitySystem = Character ? Character->GetRpgAbilitySystemComponent() : nullptr;
+					UClass* ReactionClass = LoadClass<URpgGameplayAbility>(nullptr, HitReactionAbilityClassPath);
+					FGameplayAbilitySpec* ReactionSpec = AbilitySystem && ReactionClass
+						? AbilitySystem->FindAbilitySpecFromClass(ReactionClass) : nullptr;
+					ASSERT_THAT(IsTrue(Character && Character->HasAuthority() && HasCleanAuthorityAttack(State)));
+					ASSERT_THAT(IsNotNull(ReactionSpec));
+					if (!Character || !AbilitySystem || !ReactionSpec) return;
+					ASSERT_THAT(IsFalse(ReactionSpec->IsActive()));
+					ASSERT_THAT(IsFalse(AbilitySystem->IsActivationGroupBlocked(ERpgAbilityActivationGroup::Exclusive_Replaceable)));
+					HitReactionLifecycle.Start(AbilitySystem, ReactionSpec->Handle);
+
+					const FGameplayTag EventTag = FGameplayTag::RequestGameplayTag(TEXT("GameplayEvent.HitReaction"));
+					FGameplayEventData Payload;
+					Payload.EventTag = EventTag;
+					Payload.Instigator = State.Target;
+					Payload.Target = Character;
+					Payload.ContextHandle = AbilitySystem->MakeEffectContext();
+					ASSERT_THAT(IsTrue(AbilitySystem->HandleGameplayEvent(EventTag, &Payload) == 1));
+					ASSERT_THAT(IsTrue(HitReactionLifecycle.Activations == 1));
+				})
+			.UntilServer(TEXT("The authored hit-reaction lifecycle finishes and clears its active spec"),
+				[this](FNetworkState&) { return HitReactionLifecycle.HasEnded(); }, NetworkTimeout())
+			.ThenServer(TEXT("Hit reaction ends once and releases the exclusive activation group"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(State.World, SubjectPlayerId);
+					URpgAbilitySystemComponent* AbilitySystem = Character ? Character->GetRpgAbilitySystemComponent() : nullptr;
+					ASSERT_THAT(IsTrue(HitReactionLifecycle.Activations == 1 && HitReactionLifecycle.Ends == 1));
+					ASSERT_THAT(IsTrue(HitReactionLifecycle.CancelledEnds == 0));
+					ASSERT_THAT(IsTrue(AbilitySystem &&
+						!AbilitySystem->IsActivationGroupBlocked(ERpgAbilityActivationGroup::Exclusive_Replaceable) &&
+						!AbilitySystem->IsActivationGroupBlocked(ERpgAbilityActivationGroup::Exclusive_Blocking)));
+				})
+			.UntilServer(TEXT("Authority montage state settles before the next genuine primary attack"),
+				[](FNetworkState& State) { return HasCleanAuthorityAttack(State); }, NetworkTimeout())
+			.UntilClient(TEXT("Owner is ready to submit primary input after the server hit reaction"), 0,
+				[](FNetworkState& State) { return IsClientAttackReady(State); }, NetworkTimeout());
 	}
 
 	void QueueCompletedAttack(
@@ -1161,6 +1270,7 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 
 	AFTER_EACH()
 	{
+		HitReactionLifecycle.Stop();
 		GetMutableDefault<URpgDeveloperSettings>()->ExperienceOverride =
 			OriginalExperienceOverride;
 		GetMutableDefault<URpgCombatDeveloperSettings>()
@@ -1310,10 +1420,18 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 		{
 			QueueCompletedAttack(AttackIndex);
 		}
+		QueueHitReactionLifecycle();
+		// Reusing the normal remote attack path proves that reaction cleanup admits the next action.
 		QueueCompletedAttack(
 			NormalCompletedAttackCount,
 			FastMontageTimingPlayRate);
 		QueueCancelledAttack();
+		Network.ThenServer(TEXT("Later attacks do not finish or reactivate the retired hit reaction"),
+			[this](FNetworkState&)
+			{
+				ASSERT_THAT(IsTrue(HitReactionLifecycle.Activations == 1 && HitReactionLifecycle.Ends == 1));
+				ASSERT_THAT(IsTrue(HitReactionLifecycle.CancelledEnds == 0));
+			});
 	}
 };
 

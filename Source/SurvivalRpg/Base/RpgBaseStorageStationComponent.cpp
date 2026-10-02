@@ -6,10 +6,11 @@
 #include "RpgBaseCampActor.h"
 #include "RpgBaseStorageUpgradeDefinition.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
-#include "SurvivalRpg/Interaction/Abilities/RpgGameplayAbility_OpenBaseStorageStation.h"
 #include "SurvivalRpg/Interaction/InteractionQuery.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
+#include "SurvivalRpg/System/RpgAssetManager.h"
+#include "SurvivalRpg/System/RpgGameData.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgBaseStorageStationComponent)
 
@@ -23,7 +24,6 @@ URpgBaseStorageStationComponent::URpgBaseStorageStationComponent(const FObjectIn
 	OpenStationOption.Prompt.ActionText = NSLOCTEXT("RpgBaseStorage", "OpenBaseStorageText", "Open");
 	OpenStationOption.Prompt.TargetText = NSLOCTEXT("RpgBaseStorage", "OpenBaseStorageSubText", "Base Storage");
 	OpenStationOption.Prompt.InteractionPriority = 50;
-	OpenStationOption.InteractionAbilityToGrant = URpgGameplayAbility_OpenBaseStorageStation::StaticClass();
 }
 
 void URpgBaseStorageStationComponent::BeginPlay()
@@ -85,6 +85,11 @@ void URpgBaseStorageStationComponent::OnRep_InstalledUpgrades()
 void URpgBaseStorageStationComponent::GatherInteractionOptions(const FInteractionQuery& InteractQuery, FInteractionOptionBuilder& InteractionBuilder)
 {
 	FInteractionOption Option = OpenStationOption;
+	if (!Option.InteractionAbilityToGrant)
+	{
+		Option.InteractionAbilityToGrant = URpgAssetManager::GetSubclass(
+			URpgGameData::Get().OpenBaseStorageInteractionAbility);
+	}
 	Option.InteractionTag = RpgGameplayTags::Rpg_Interaction_Action_OpenBaseStorage;
 	Option.TargetRef.TargetActor = GetOwner();
 	Option.Prompt.InteractionRange = InteractionRadius > 0.0f

@@ -6,7 +6,8 @@
 
 class UAnimMontage;
 
-UCLASS()
+/** Abstract server stagger lifecycle with replicated state cleanup and activation-group restoration. */
+UCLASS(Abstract, Blueprintable)
 class SURVIVALRPG_API URpgGameplayAbility_Stagger : public URpgGameplayAbility
 {
 	GENERATED_BODY()
@@ -48,15 +49,19 @@ private:
 private:
 	ERpgAbilityActivationGroup ActivationGroupBeforeStagger = ERpgAbilityActivationGroup::Independent;
 
+	/** Designer-selected replicated stagger montage; optional when a duration supplies completion. */
 	UPROPERTY(EditDefaultsOnly, Category = "Stagger")
 	TObjectPtr<UAnimMontage> StaggerMontage;
 
+	/** Designer-selected guard-break montage, preferred over the stagger montage when configured. */
 	UPROPERTY(EditDefaultsOnly, Category = "Stagger")
 	TObjectPtr<UAnimMontage> GuardBreakMontage;
 
+	/** Positive cosmetic montage playback multiplier; authoritative duration comes from the defense attributes. */
 	UPROPERTY(EditDefaultsOnly, Category = "Stagger", meta = (ClampMin = "0.01"))
 	float MontagePlayRate = 1.0f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Stagger", meta = (ClampMin = "0.0"))
-	float FallbackDuration = 0.7f;
+	/** Designer fallback duration in seconds when the server has no positive stagger-duration attribute. */
+	UPROPERTY(EditDefaultsOnly, Category = "Stagger", meta = (ClampMin = "0.0", Units = "s"))
+	float FallbackDuration = 0.0f;
 };

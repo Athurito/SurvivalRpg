@@ -30,7 +30,12 @@ URpgGameplayAbility_Block::URpgGameplayAbility_Block(const FObjectInitializer& O
 	DefaultBlockDefinition.bCanBlock = false;
 	DefaultBlockDefinition.bAllowPerfectBlock = false;
 	DefaultBlockDefinition.PerfectBlockWindow = 0.0f;
-	DefaultBlockDefinition.BlockableDamageTypeTags.AddTag(RpgGameplayTags::Damage_Type_Melee);
+	DefaultBlockDefinition.BlockAngleDegrees = 0.0f;
+	DefaultBlockDefinition.StaminaCost = 0.0f;
+	DefaultBlockDefinition.DamageReduction = 0.0f;
+	DefaultBlockDefinition.BlockStaggerDamageMultiplier = 1.0f;
+	DefaultBlockDefinition.PerfectBlockStaminaRestore = 0.0f;
+	DefaultBlockDefinition.PerfectBlockStaggerDamage = 0.0f;
 }
 
 bool URpgGameplayAbility_Block::CanActivateAbility(

@@ -13,8 +13,9 @@ class URpgInventoryManagerComponent;
  *
  * The ability validates the station on the server before opening local UI through a reliable
  * owning-client RPC. Deposits, withdrawals, sorting, and upgrades remain server-authoritative.
+ * Concrete GA assets own ability content; this bridge also keeps personal-locker creation on authority.
  */
-UCLASS(Blueprintable)
+UCLASS(Abstract, Blueprintable)
 class SURVIVALRPG_API URpgGameplayAbility_OpenBaseStorageStation : public URpgGameplayAbility
 {
 	GENERATED_BODY()

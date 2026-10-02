@@ -84,6 +84,9 @@ namespace RpgBlockLifecycleTests
 
 		bool Initialize(FAutomationTestBase& Test)
 		{
+			BlockAbilityClass = LoadClass<URpgGameplayAbility_Block>(nullptr,
+				TEXT("/GF_Combat_Core/GAS/Abilities/GA_Combat_Block.GA_Combat_Block_C"));
+			if (!Test.TestNotNull(TEXT("The concrete block Blueprint ability loads"), BlockAbilityClass.Get())) return false;
 			if (!Test.TestNotNull(TEXT("Standalone block lifecycle world exists"), World)) return false;
 			Pawn = World->SpawnActor<APawn>();
 			if (!Test.TestNotNull(TEXT("Authoritative block avatar exists"), Pawn)) return false;
@@ -95,7 +98,7 @@ namespace RpgBlockLifecycleTests
 			ASC->AddAttributeSetSubobject(Defense.Get());
 			ASC->InitAbilityActorInfo(Pawn, Pawn);
 			Weapon.Reset(NewObject<URpgWeaponInstance>(Pawn, NAME_None, RF_Transient));
-			// Exercise the real native ability with its public equipment configuration. Animation and
+			// Exercise the reusable native lifecycle through its concrete Blueprint grant. Animation and
 			// network presentation remain covered by the existing rendered block PIE test.
 			Weapon->ConfigureMeleeBlock(true, true, 150.0f, 0.25f, 23.0f, 0.9f, 0.4f, 17.0f, 41.0f, nullptr);
 			EndHandle = ASC->OnAbilityEnded.AddLambda([this](const FAbilityEndedData& Data)
@@ -111,7 +114,7 @@ namespace RpgBlockLifecycleTests
 
 		FGameplayAbilitySpecHandle Grant()
 		{
-			FGameplayAbilitySpec Spec(URpgGameplayAbility_Block::StaticClass(), 1);
+			FGameplayAbilitySpec Spec(BlockAbilityClass, 1);
 			Spec.SourceObject = Weapon.Get();
 			Spec.GetDynamicSpecSourceTags().AddTag(RpgGameplayTags::InputTag_Weapon_Block);
 			const FGameplayAbilitySpecHandle Handle = ASC->GiveAbility(Spec);
@@ -162,6 +165,7 @@ namespace RpgBlockLifecycleTests
 
 	private:
 		TStrongObjectPtr<UGameInstance> GameInstance;
+		TSubclassOf<URpgGameplayAbility_Block> BlockAbilityClass;
 		FDelegateHandle EndHandle;
 	};
 }
