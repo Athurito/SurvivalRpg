@@ -1,0 +1,42 @@
+[
+  {
+    "id": "combat-fire-sword",
+    "skills": ["survival-rpg-combat-foundation", "unreal-lyra-expert"],
+    "excluded_skills": ["unreal-gasp-expert"],
+    "query": "Füge ein Feuerschwert hinzu: Es verhält sich wie das Testschwert, setzt getroffene Gegner aber zusätzlich einige Sekunden in Brand.",
+    "expected_behavior": [
+      "Inspects the existing test sword ItemDefinition, its AbilitySet, and the native inventory fragment types before deciding what to add.",
+      "Builds the sword as a new ItemDefinition asset that configures instances of existing native fragment types with its own values; proposes no Blueprint subclass of an inventory fragment and no fragment type for this one item.",
+      "Proposes no new native C++ class for the sword or its burn; a native addition is acceptable only for reusable semantics that existing fragments, abilities, or GameplayEffects demonstrably cannot express, and the gap is named.",
+      "Keeps the burn as data (a damage-over-time GameplayEffect, a GameplayCue, and tuning values in assets) placed in a fire-owning feature such as GF_Combat_Magic or a rune feature, not in generic core assets.",
+      "Makes any new or changed ability a GA_* Blueprint asset granted through an AbilitySet or the equipment definition, not a native GameplayAbility leaf.",
+      "Plans asset authoring, compilation, saving, and validation through the Unreal MCP workflow."
+    ]
+  },
+  {
+    "id": "combat-heavy-axe-ability",
+    "skills": ["survival-rpg-combat-foundation", "unreal-lyra-expert"],
+    "query": "Neue Ability: ein aufladbarer schwerer Axtschlag, der Ausdauer kostet, eine eigene Montage abspielt und mit längerer Ladezeit mehr Schaden macht.",
+    "expected_behavior": [
+      "Implements the concrete ability as a GA_* Blueprint asset (for example GA_AxeHeavy) deriving from `URpgGameplayAbility` or a Blueprint family base, not as a new concrete native `URpgGameplayAbility_*` class.",
+      "Keeps ability and input tags, stamina cost, cooldown, montage, cues, charge timing, and damage scaling in assets (ability defaults, GameplayEffects, AbilitySet), not in native code.",
+      "Adds native code only for a reusable mechanism that needs a Blueprint-inaccessible API, an authority, prediction, or lifecycle invariant, or a measured hot path, names that reason, and keeps such a class abstract with focused extension points.",
+      "Does not use the existing concrete native `URpgGameplayAbility_*` classes as precedent for another native leaf.",
+      "Grants the ability through an AbilitySet or equipment definition and routes input through the weapon input tags and the active equipment context, not through pawn or weapon-class branches.",
+      "Validates the content through stable asset contracts (Blueprint compile, parent class, required tags, AbilitySet or equipment grant) instead of creating a native leaf for testing."
+    ]
+  },
+  {
+    "id": "combat-loadout-swap-widget",
+    "skills": ["survival-rpg-combat-foundation", "unreal-lyra-expert"],
+    "excluded_skills": ["unreal-gasp-expert"],
+    "query": "Baue einen Hotkey und einen Button im Inventar-Widget, mit denen der Spieler zwischen zwei gespeicherten Waffen-Sets wechselt. Der Button soll die Waffen dabei direkt am Charakter ausrüsten.",
+    "expected_behavior": [
+      "Rejects equipping directly from the widget or the character; the UI only sends a request and reflects replicated equipment state.",
+      "Routes the switch through the existing equipment seams: the controller-owned `URpgEquipmentLoadoutComponent` for hand selection and conflict preflight, and the pawn-owned `URpgEquipmentManagerComponent` for applied equipment and grants.",
+      "Treats the saved weapon sets as presets that describe a target configuration, while inventory Gear locations stay the physical truth of what is carried and worn.",
+      "Has the server perform equip and unequip, conflict resolution, and GAS grant rebuilds, and considers replication to other clients and late joiners.",
+      "Builds the button in a CommonUI Widget Blueprint with MVVM and the hotkey through Enhanced Input or input tags, without a parallel equipment state."
+    ]
+  }
+]

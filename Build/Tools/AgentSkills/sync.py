@@ -198,23 +198,29 @@ def source_identifiers(root: Path) -> set[str]:
     return found
 
 
+def span_problems(root: Path, label: str, text: str, identifiers: set[str]) -> list[str]:
+    """Repository paths, `/Game/...` asset paths, and `URpg`-style identifiers in code spans must exist."""
+    problems = []
+    for span in sorted(set(CODE_SPAN.findall(text))):
+        if PLACEHOLDER.search(span):
+            continue
+        if span.startswith(PATH_PREFIXES) and not (root / span.rstrip("/")).exists():
+            problems.append(f"{label}: missing path {span}")
+        elif span.startswith("/Game/"):
+            package = root / "Content" / span[len("/Game/"):].split(".")[0].rstrip("/")
+            if not (package.is_dir() or package.with_suffix(".uasset").is_file() or package.with_suffix(".umap").is_file()):
+                problems.append(f"{label}: missing asset path {span}")
+        elif IDENTIFIER.match(span) and span not in identifiers:
+            problems.append(f"{label}: identifier {span} not found in Source/")
+    return problems
+
+
 def reference_problems(root: Path) -> list[str]:
     identifiers = source_identifiers(root)
     problems = []
     for document in checked_documents(root):
         text = read_text(document)
-        spans = CODE_SPAN.findall(text)
-        for span in sorted(set(spans)):
-            if PLACEHOLDER.search(span):
-                continue
-            if span.startswith(PATH_PREFIXES) and not (root / span.rstrip("/")).exists():
-                problems.append(f"{rel(root, document)}: missing path {span}")
-            elif span.startswith("/Game/"):
-                package = root / "Content" / span[len("/Game/"):].split(".")[0].rstrip("/")
-                if not (package.is_dir() or package.with_suffix(".uasset").is_file() or package.with_suffix(".umap").is_file()):
-                    problems.append(f"{rel(root, document)}: missing asset path {span}")
-            elif IDENTIFIER.match(span) and span not in identifiers:
-                problems.append(f"{rel(root, document)}: identifier {span} not found in Source/")
+        problems += span_problems(root, rel(root, document), text, identifiers)
         for link in sorted(set(MARKDOWN_LINK.findall(text))):
             if "://" not in link and not PLACEHOLDER.search(link) and not (document.parent / link).exists():
                 problems.append(f"{rel(root, document)}: broken link {link}")

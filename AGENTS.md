@@ -20,6 +20,7 @@ The canonical skills live in `.agents/skills/<name>/`, where Codex discovers the
 
 - Edit only `.agents/skills/`, then run `python Build/Tools/AgentSkills/sync.py`. CI runs it with `--check`, which fails on stale copies, dead repository paths, `/Game` paths, or `URpg*`-style identifiers, Codex-only `$name` syntax in Markdown, and an `AGENTS.md` without a sibling `CLAUDE.md` that imports it.
 - Refer to other skills by their plain name in shared Markdown.
+- After changing a skill description, a boundary rule, or the routing below, run the affected scenarios in `Build/Tools/AgentSkills/evals/` before and after the change; see "Evaluations" in `Build/Tools/AgentSkills/README.md`.
 
 Use the closest matching skill and combine only those whose boundaries the task crosses:
 - `survival-rpg-project` for game identity, feature scope, first-playable priorities, survival/crafting/progression tradeoffs, portal fantasy, and long-term resource relevance.

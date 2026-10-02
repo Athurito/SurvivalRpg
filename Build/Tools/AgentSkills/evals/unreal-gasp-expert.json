@@ -1,0 +1,38 @@
+[
+  {
+    "id": "gasp-mover-sprint-stamina",
+    "skills": ["unreal-gasp-expert", "unreal-lyra-expert"],
+    "query": "Der Mover-Sprint soll wie der CMC-Sprint Ausdauer verbrauchen. Setz das bitte um.",
+    "expected_behavior": [
+      "Reads `docs/gasp-integration-handoff.md` and `docs/gasp-integration-roadmap.md` first, then only the related task report such as `docs/gasp-cmc-sprint.md`.",
+      "Checks whether a roadmap task covering this change is marked ready; when none is, asks the user to define and mark the task instead of starting the implementation.",
+      "Plans to verify the checkout-local NetworkPrediction/Mover overrides as described in `Build/Patches/NetworkPrediction/README.md` before building or switching branches.",
+      "Extends the existing GAS sprint and stamina seam of the CMC variant instead of adding parallel sprint state or inferring sprint from animation.",
+      "Keeps movement and stamina authority in Mover and GAS and plans verification for simulated proxies, correction, and late join, with builds and tests through `Build/Tools/Unreal/ue.py`."
+    ]
+  },
+  {
+    "id": "gasp-ledge-hang",
+    "skills": ["unreal-gasp-expert"],
+    "query": "Füge Klettern an Kanten hinzu (an der Kante hängen und seitlich hangeln). Am einfachsten steuern wir das komplett im AnimBP.",
+    "expected_behavior": [
+      "Starts from the GASP handoff and roadmap and treats ledge hanging as new traversal scope that needs a roadmap task the user marks ready.",
+      "Rejects AnimBP-only control and requires an explicit movement mode or equally authoritative movement state with server validation.",
+      "Proposes piloting the move in isolation (separate PawnData and Experience or a development GameFeature) and proving collision validation, cancellation, multiplayer correction, and rollback before widening the move set.",
+      "Covers both the CMC and the Mover variant without making one silently depend on the other.",
+      "Keeps the animation side consuming read-only, thread-safe snapshots."
+    ]
+  },
+  {
+    "id": "gasp-heavy-armor-gait",
+    "skills": ["unreal-gasp-expert"],
+    "query": "Mit schwerer Rüstung soll der Charakter sichtbar träger laufen. Spiel dafür einfach die Laufanimationen langsamer ab.",
+    "expected_behavior": [
+      "Rejects slower animation playback as the mechanism for heavy movement.",
+      "Drives load-aware movement from the authoritative `Equipment.Load.*` tier through one data-driven profile covering speed, acceleration, gait, stamina, and pose selection.",
+      "Keeps equipment, GAS, and the movement component authoritative and passes the load to animation as a game-thread snapshot.",
+      "Ensures simulated proxies and late joiners reconstruct the movement profile.",
+      "Reads the GASP handoff and roadmap before planning the change."
+    ]
+  }
+]
