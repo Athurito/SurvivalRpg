@@ -10,7 +10,7 @@ class UAbilityTask_WaitInputRelease;
 class URpgDefenseSet;
 
 /** Equipment-configured block presentation with server-owned defensive attributes and teardown-safe cleanup. */
-UCLASS()
+UCLASS(Abstract, Blueprintable)
 class SURVIVALRPG_API URpgGameplayAbility_Block : public URpgGameplayAbility_FromEquipment
 {
 	GENERATED_BODY()

@@ -13,8 +13,9 @@ class URpgInventoryManagerComponent;
  *
  * The ability validates the station on the server before opening local UI through a
  * reliable owning-client RPC. Crafting commands remain server-authoritative.
+ * Concrete GA assets own ability content; this native bridge enforces access before the client RPC.
  */
-UCLASS(Blueprintable)
+UCLASS(Abstract, Blueprintable)
 class SURVIVALRPG_API URpgGameplayAbility_OpenCraftingStation : public URpgGameplayAbility
 {
 	GENERATED_BODY()

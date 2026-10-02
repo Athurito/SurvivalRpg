@@ -4,8 +4,9 @@
 
 #include "Net/UnrealNetwork.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
-#include "SurvivalRpg/Interaction/Abilities/RpgGameplayAbility_ExecuteInteraction.h"
 #include "SurvivalRpg/Interaction/InteractionQuery.h"
+#include "SurvivalRpg/System/RpgAssetManager.h"
+#include "SurvivalRpg/System/RpgGameData.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInteractableDoorComponent)
 
@@ -23,7 +24,6 @@ namespace
 		Option.Prompt.FocusRange = 500.0f;
 		Option.Prompt.InteractionRange = 300.0f;
 		Option.Prompt.InteractionPriority = 60;
-		Option.InteractionAbilityToGrant = URpgGameplayAbility_ExecuteInteraction::StaticClass();
 	}
 }
 
@@ -95,6 +95,11 @@ void URpgInteractableDoorComponent::GatherInteractionOptions(
 		}
 	}
 
+	if (!Option.InteractionAbilityToGrant)
+	{
+		Option.InteractionAbilityToGrant = URpgAssetManager::GetSubclass(
+			URpgGameData::Get().ExecuteInteractionAbility);
+	}
 	Option.TargetRef.TargetActor = GetOwner();
 	Option.TargetRef.Revision = DoorStateRevision;
 	InteractionBuilder.AddInteractionOption(Option);

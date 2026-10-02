@@ -24,7 +24,7 @@ struct FRpgInventoryUsableItemUseStep;
  * Item definitions supply requirements, optional montage data, effect/cue steps, and consumption timing. Blueprint
  * children may override defaults or add cosmetic hooks, but inventory mutation remains in this C++ path.
  */
-UCLASS(Blueprintable)
+UCLASS(Abstract, Blueprintable)
 class SURVIVALRPG_API URpgGameplayAbility_ApplyItemEffects : public URpgGameplayAbility
 {
 	GENERATED_BODY()

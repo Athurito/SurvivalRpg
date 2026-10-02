@@ -144,7 +144,6 @@ URpgGameplayAbility_BasicWeaponAttack::URpgGameplayAbility_BasicWeaponAttack(con
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
 	ActivationPolicy = ERpgAbilityActivationPolicy::OnInputTriggered;
 	ActivationGroup = ERpgAbilityActivationGroup::Exclusive_Blocking;
-	AttackDefinitionTag = RpgGameplayTags::Weapon_Attack_Primary;
 }
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -1010,7 +1009,7 @@ FGameplayTag URpgGameplayAbility_BasicWeaponAttack::ResolveAttackDefinitionTag(c
 		}
 	}
 
-	return AttackDefinitionTag.IsValid() ? AttackDefinitionTag : RpgGameplayTags::Weapon_Attack_Primary;
+	return AttackDefinitionTag;
 }
 
 bool URpgGameplayAbility_BasicWeaponAttack::TryGetSocketLocationFromWeapon(const URpgWeaponInstance* WeaponInstance, FName SocketName, FVector& OutLocation) const

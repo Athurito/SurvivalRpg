@@ -13,8 +13,9 @@ class URpgInventoryManagerComponent;
  *
  * The ability validates the target on the server, then asks the owning controller to
  * create local UI. Inventory transfers remain server-authoritative.
+ * Concrete GA assets own ability content; this native bridge enforces access before the client RPC.
  */
-UCLASS(Blueprintable)
+UCLASS(Abstract, Blueprintable)
 class SURVIVALRPG_API URpgGameplayAbility_OpenStorageContainer : public URpgGameplayAbility
 {
 	GENERATED_BODY()

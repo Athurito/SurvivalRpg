@@ -7,7 +7,8 @@
 #include "SurvivalRpg/Interaction/InteractionOption.h"
 #include "RpgGameplayAbility_Revive.generated.h"
 
-UCLASS()
+/** Abstract server revive transaction with ongoing authoritative interaction validation and cancellation cleanup. */
+UCLASS(Abstract, Blueprintable)
 class SURVIVALRPG_API URpgGameplayAbility_Revive : public URpgGameplayAbility
 {
 	GENERATED_BODY()
@@ -26,8 +27,9 @@ protected:
 	UFUNCTION()
 	void ValidateReviveInteraction();
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Revive", meta = (ClampMin = "0.5"))
-	float ReviveDuration = 5.0f;
+	/** Designer channel duration in seconds, evaluated on the server; zero completes without a channel delay. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Revive", meta = (ClampMin = "0.0", Units = "s"))
+	float ReviveDuration = 0.0f;
 
 private:
 	bool IsReviveInteractionStillValid() const;

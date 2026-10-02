@@ -7,7 +7,6 @@
 #include "Abilities/GameplayAbilityTypes.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
-#include "SurvivalRpg/Interaction/Abilities/RpgGameplayAbility_ExecuteInteraction.h"
 #include "SurvivalRpg/Interaction/Components/RpgInteractableDoorComponent.h"
 #include "SurvivalRpg/Interaction/InteractionQuery.h"
 #include "SurvivalRpg/Interaction/InteractionStatics.h"
@@ -309,16 +308,21 @@ bool FRpgInteractionCommonAuthorityValidationTest::RunTest(const FString& Parame
 		return false;
 	}
 
-	FGameplayAbilitySpec ExecuteSpec(URpgGameplayAbility_ExecuteInteraction::StaticClass(), 1);
-	const FGameplayAbilitySpecHandle ExecuteHandle = AbilitySystem->GiveAbility(ExecuteSpec);
-	if (!TestTrue(TEXT("Generic execution ability is granted"), ExecuteHandle.IsValid()))
+	DoorOwner->SetActorLocation(FVector(100.0, 0.0, 0.0));
+	FInteractionOption CurrentOption;
+	if (!TestTrue(TEXT("Current door option can be gathered"), GatherSingleOption(Door, Requester, CurrentOption)))
 	{
 		return false;
 	}
 
-	DoorOwner->SetActorLocation(FVector(100.0, 0.0, 0.0));
-	FInteractionOption CurrentOption;
-	if (!TestTrue(TEXT("Current door option can be gathered"), GatherSingleOption(Door, Requester, CurrentOption)))
+	if (!TestNotNull(TEXT("Door resolves its configured execution ability"), CurrentOption.InteractionAbilityToGrant.Get()))
+	{
+		return false;
+	}
+	const TSubclassOf<UGameplayAbility> ExecuteAbilityClass = CurrentOption.InteractionAbilityToGrant;
+	const FGameplayAbilitySpecHandle ExecuteHandle = AbilitySystem->GiveAbility(
+		FGameplayAbilitySpec(ExecuteAbilityClass, 1));
+	if (!TestTrue(TEXT("Configured execution ability is granted"), ExecuteHandle.IsValid()))
 	{
 		return false;
 	}
@@ -372,7 +376,7 @@ bool FRpgInteractionCommonAuthorityValidationTest::RunTest(const FString& Parame
 	AbilitySystem->ClearAbility(ExecuteHandle);
 	Validate(TEXT("An option whose execution ability is no longer granted is rejected"), ValidPayload, false);
 	const FGameplayAbilitySpecHandle ReplacementHandle = AbilitySystem->GiveAbility(
-		FGameplayAbilitySpec(URpgGameplayAbility_ExecuteInteraction::StaticClass(), 1));
+		FGameplayAbilitySpec(ExecuteAbilityClass, 1));
 	if (!TestTrue(TEXT("Execution ability can be restored for spatial validation"), ReplacementHandle.IsValid()))
 	{
 		return false;

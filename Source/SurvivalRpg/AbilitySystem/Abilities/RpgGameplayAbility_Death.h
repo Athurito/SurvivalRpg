@@ -6,10 +6,8 @@
 #include "RpgGameplayAbility.h"
 #include "RpgGameplayAbility_Death.generated.h"
 
-/**
- * 
- */
-UCLASS()
+/** Abstract server death lifecycle: cancels incompatible abilities and guarantees terminal health cleanup. */
+UCLASS(Abstract, Blueprintable)
 class SURVIVALRPG_API URpgGameplayAbility_Death : public URpgGameplayAbility
 {
 	GENERATED_BODY()
@@ -23,17 +21,17 @@ protected:
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
 	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;
 
-	// Starts the death sequence.
+	/** Starts the authoritative health-component death lifecycle once; callable by designer presentation flow. */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Ability")
 	void StartDeath();
 
-	// Finishes the death sequence.
+	/** Finishes an already-started authoritative death lifecycle; repeated calls are harmless. */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Ability")
 	void FinishDeath();
 
 protected:
 
-	// If enabled, the ability will automatically call StartDeath.  FinishDeath is always called when the ability ends if the death was started.
+	/** Designer opt-in to start death on activation; native end cleanup always finishes a started death. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Death")
-	bool bAutoStartDeath;
+	bool bAutoStartDeath = false;
 };

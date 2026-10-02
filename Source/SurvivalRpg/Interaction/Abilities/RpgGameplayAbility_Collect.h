@@ -10,12 +10,14 @@ class URpgInventoryItemInstance;
 class URpgInventoryManagerComponent;
 
 /**
- * Adds a pickupable interaction target to the instigating player's inventory.
+ * Native authority and transaction mechanism for pickup and dropped-inventory collection.
  *
  * Optional equipment assignment is kept data-driven per ability asset so normal harvest pickups
  * can stay inventory-only while test weapons can be equipped immediately without pawn hardcoding.
+ * Concrete GA assets own content identity and collection policy; native code preserves atomic inventory
+ * mutations, source item identity, server equip intents, and the owning-client loot RPC.
  */
-UCLASS(Blueprintable)
+UCLASS(Abstract, Blueprintable)
 class SURVIVALRPG_API URpgGameplayAbility_Collect : public URpgGameplayAbility
 {
 	GENERATED_BODY()
@@ -30,6 +32,7 @@ protected:
 		const FGameplayAbilityActivationInfo ActivationInfo,
 		const FGameplayEventData* TriggerEventData) override;
 
+	/** Designer policy: authority destroys a fully collected target after the inventory transaction succeeds. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Collect")
 	bool bDestroyCollectedActor = true;
 

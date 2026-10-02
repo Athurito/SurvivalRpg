@@ -6,7 +6,8 @@
 #include "RpgGameplayAbility.h"
 #include "RpgGameplayAbility_SelfRevive.generated.h"
 
-UCLASS()
+/** Abstract server revive mechanism coordinating lifecycle reset, downed reservations and native health mutation. */
+UCLASS(Abstract, Blueprintable)
 class SURVIVALRPG_API URpgGameplayAbility_SelfRevive : public URpgGameplayAbility
 {
 	GENERATED_BODY()
@@ -21,9 +22,11 @@ protected:
 	UFUNCTION()
 	void OnSelfReviveFinished();
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Revive", meta = (ClampMin = "0.0"))
+	/** Designer delay in seconds before the server restores this avatar; zero completes immediately. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Revive", meta = (ClampMin = "0.0", Units = "s"))
 	float SelfReviveDelay = 0.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Revive", meta = (ClampMin = "0.05", ClampMax = "1.0"))
-	float ReviveHealthPercent = 0.3f;
+	/** Designer fraction of maximum health restored by the server outside the downed-component revive path. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Revive", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float ReviveHealthPercent = 0.0f;
 };

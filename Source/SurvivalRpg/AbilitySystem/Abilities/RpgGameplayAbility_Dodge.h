@@ -5,8 +5,6 @@
 
 #include "RpgGameplayAbility_Dodge.generated.h"
 
-class UAbilityTask_PlayMontageAndWait;
-
 /** Designer tuning applied when an equipment dodge profile selects a semantic root-motion profile name. */
 USTRUCT(BlueprintType)
 struct SURVIVALRPG_API FRpgDodgeRootMotionTuning
@@ -62,12 +60,12 @@ struct SURVIVALRPG_API FRpgResolvedDodgeProfile
 };
 
 /**
- * Local-predicted GAS dodge that consumes the authoritative Gear+Carry load tier.
+ * Native snapshot of the authoritative Gear+Carry load tier for a predicted dodge activation.
  *
- * The ability changes only dodge montage/root-motion presentation. Existing costs, cooldowns, i-frame effects,
- * stamina attributes, walk speed, and sprint speed remain configured by their existing GAS/character paths.
+ * Blueprint assets own commit and montage/task sequencing. Resolving once prevents an equipment change during
+ * an activation from changing its selected root-motion profile; native end cleanup releases that snapshot.
  */
-UCLASS(Blueprintable, meta = (DisplayName = "Equipment Load Dodge Ability"))
+UCLASS(Abstract, Blueprintable, meta = (DisplayName = "Equipment Load Dodge Ability"))
 class SURVIVALRPG_API URpgGameplayAbility_Dodge : public URpgGameplayAbility
 {
 	GENERATED_BODY()
@@ -79,6 +77,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rpg|Ability|Dodge")
 	FRpgResolvedDodgeProfile GetResolvedDodgeProfile() const { return ResolvedDodgeProfile; }
 
+	/** Caches this predicted/server activation's equipment profile; rejects an invalid avatar or an inactive/ending activation. */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Ability|Dodge")
+	bool ResolveDodgeProfileForActivation();
+
 	/** Pure lookup used by validation/tests; unmatched or None names use the supplied defaults. */
 	static FRpgDodgeRootMotionTuning ResolveRootMotionTuning(
 		FName ProfileName,
@@ -88,11 +90,6 @@ public:
 
 protected:
 	//~ UGameplayAbility interface
-	virtual void ActivateAbility(
-		const FGameplayAbilitySpecHandle Handle,
-		const FGameplayAbilityActorInfo* ActorInfo,
-		const FGameplayAbilityActivationInfo ActivationInfo,
-		const FGameplayEventData* TriggerEventData) override;
 	virtual void EndAbility(
 		const FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo,
@@ -100,10 +97,6 @@ protected:
 		bool bReplicateEndAbility,
 		bool bWasCancelled) override;
 	//~ End UGameplayAbility interface
-
-	/** Called after tier/profile resolution and before the montage task starts. Cosmetic Blueprint logic only. */
-	UFUNCTION(BlueprintImplementableEvent, Category = "Rpg|Ability|Dodge", meta = (DisplayName = "On Dodge Profile Selected"))
-	void K2_OnDodgeProfileSelected(const FRpgResolvedDodgeProfile& Profile);
 
 	/** Fallback used when the controller has no loadout component or a tier has no montage configured. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Ability|Dodge")
@@ -122,19 +115,11 @@ protected:
 	float DefaultRootMotionTranslationScale = 1.0f;
 
 private:
-	UFUNCTION()
-	void HandleDodgeMontageCompleted();
-
-	UFUNCTION()
-	void HandleDodgeMontageInterrupted();
-
 	FRpgResolvedDodgeProfile ResolveDodgeProfile(const FGameplayAbilityActorInfo& ActorInfo) const;
-	void FinishCurrentDodge(bool bWasCancelled);
 
 	/** Per-activation profile cached for animation/presentation reads; never replicated or saved. */
 	UPROPERTY(Transient)
 	FRpgResolvedDodgeProfile ResolvedDodgeProfile;
 
-	UPROPERTY(Transient)
-	TObjectPtr<UAbilityTask_PlayMontageAndWait> ActiveMontageTask = nullptr;
+	bool bHasResolvedDodgeProfile = false;
 };

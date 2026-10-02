@@ -11,9 +11,10 @@
 #include "SurvivalRpg/Base/RpgStorageAccessRules.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
-#include "SurvivalRpg/Interaction/Abilities/RpgGameplayAbility_OpenStorageContainer.h"
 #include "SurvivalRpg/Interaction/InteractionQuery.h"
 #include "SurvivalRpg/Inventory/RpgDroppedInventoryActor.h"
+#include "SurvivalRpg/System/RpgAssetManager.h"
+#include "SurvivalRpg/System/RpgGameData.h"
 
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
@@ -40,7 +41,6 @@ URpgInventoryContainerComponent::URpgInventoryContainerComponent(const FObjectIn
 	OpenContainerOption.Prompt.ActionText = NSLOCTEXT("RpgInventory", "OpenStorageContainerText", "Open");
 	OpenContainerOption.Prompt.TargetText = NSLOCTEXT("RpgInventory", "OpenStorageContainerSubText", "Storage");
 	OpenContainerOption.Prompt.InteractionPriority = 50;
-	OpenContainerOption.InteractionAbilityToGrant = URpgGameplayAbility_OpenStorageContainer::StaticClass();
 }
 
 void URpgInventoryContainerComponent::BeginPlay()
@@ -321,6 +321,11 @@ void URpgInventoryContainerComponent::GatherInteractionOptions(const FInteractio
 	}
 
 	FInteractionOption Option = OpenContainerOption;
+	if (!Option.InteractionAbilityToGrant)
+	{
+		Option.InteractionAbilityToGrant = URpgAssetManager::GetSubclass(
+			URpgGameData::Get().OpenStorageInteractionAbility);
+	}
 	Option.InteractionTag = RpgGameplayTags::Rpg_Interaction_Action_OpenStorage;
 	Option.TargetRef.TargetActor = GetOwner();
 	Option.TargetRef.TargetComponent = Cast<UPrimitiveComponent>(InteractionAnchor.Get());

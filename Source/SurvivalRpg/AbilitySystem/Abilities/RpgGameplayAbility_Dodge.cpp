@@ -1,6 +1,5 @@
 #include "RpgGameplayAbility_Dodge.h"
 
-#include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "GameFramework/Controller.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 
@@ -12,11 +11,6 @@ URpgGameplayAbility_Dodge::URpgGameplayAbility_Dodge(const FObjectInitializer& O
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
 	ActivationGroup = ERpgAbilityActivationGroup::Exclusive_Replaceable;
-	AbilityDisplayName = NSLOCTEXT("RpgAbilities", "EquipmentLoadDodgeName", "Dodge");
-	AbilityDescription = NSLOCTEXT(
-		"RpgAbilities",
-		"EquipmentLoadDodgeDescription",
-		"Dodges using the montage and root-motion profile selected by current equipment load.");
 }
 
 FRpgDodgeRootMotionTuning URpgGameplayAbility_Dodge::ResolveRootMotionTuning(
@@ -46,47 +40,18 @@ FRpgDodgeRootMotionTuning URpgGameplayAbility_Dodge::ResolveRootMotionTuning(
 	return Fallback;
 }
 
-void URpgGameplayAbility_Dodge::ActivateAbility(
-	const FGameplayAbilitySpecHandle Handle,
-	const FGameplayAbilityActorInfo* ActorInfo,
-	const FGameplayAbilityActivationInfo ActivationInfo,
-	const FGameplayEventData* TriggerEventData)
+bool URpgGameplayAbility_Dodge::ResolveDodgeProfileForActivation()
 {
-	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
-
-	if (!ActorInfo || !ActorInfo->AvatarActor.IsValid())
+	if (!IsActive() || bIsAbilityEnding || !CurrentActorInfo || !CurrentActorInfo->AvatarActor.IsValid())
 	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-		return;
+		return false;
 	}
-
-	ResolvedDodgeProfile = ResolveDodgeProfile(*ActorInfo);
-	UAnimMontage* Montage = ResolvedDodgeProfile.Montage.LoadSynchronous();
-	if (!Montage || !CommitAbility(Handle, ActorInfo, ActivationInfo))
+	if (!bHasResolvedDodgeProfile)
 	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-		return;
+		ResolvedDodgeProfile = ResolveDodgeProfile(*CurrentActorInfo);
+		bHasResolvedDodgeProfile = true;
 	}
-
-	K2_OnDodgeProfileSelected(ResolvedDodgeProfile);
-	ActiveMontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
-		this,
-		TEXT("EquipmentLoadDodge"),
-		Montage,
-		ResolvedDodgeProfile.MontagePlayRate,
-		ResolvedDodgeProfile.StartSection,
-		true,
-		ResolvedDodgeProfile.TranslationScale);
-	if (!ActiveMontageTask)
-	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-		return;
-	}
-
-	ActiveMontageTask->OnCompleted.AddDynamic(this, &ThisClass::HandleDodgeMontageCompleted);
-	ActiveMontageTask->OnInterrupted.AddDynamic(this, &ThisClass::HandleDodgeMontageInterrupted);
-	ActiveMontageTask->OnCancelled.AddDynamic(this, &ThisClass::HandleDodgeMontageInterrupted);
-	ActiveMontageTask->ReadyForActivation();
+	return true;
 }
 
 void URpgGameplayAbility_Dodge::EndAbility(
@@ -96,19 +61,19 @@ void URpgGameplayAbility_Dodge::EndAbility(
 	bool bReplicateEndAbility,
 	bool bWasCancelled)
 {
-	ActiveMontageTask = nullptr;
-	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
+	if (!IsEndAbilityValid(Handle, ActorInfo))
+	{
+		return;
+	}
+	if (ScopeLockCount > 0)
+	{
+		WaitingToExecute.Add(FPostLockDelegate::CreateUObject(this, &ThisClass::EndAbility,
+			Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled));
+		return;
+	}
 	ResolvedDodgeProfile = FRpgResolvedDodgeProfile();
-}
-
-void URpgGameplayAbility_Dodge::HandleDodgeMontageCompleted()
-{
-	FinishCurrentDodge(false);
-}
-
-void URpgGameplayAbility_Dodge::HandleDodgeMontageInterrupted()
-{
-	FinishCurrentDodge(true);
+	bHasResolvedDodgeProfile = false;
+	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
 
 FRpgResolvedDodgeProfile URpgGameplayAbility_Dodge::ResolveDodgeProfile(const FGameplayAbilityActorInfo& ActorInfo) const
@@ -146,14 +111,4 @@ FRpgResolvedDodgeProfile URpgGameplayAbility_Dodge::ResolveDodgeProfile(const FG
 	Result.TranslationScale = Tuning.TranslationScale;
 	Result.StartSection = Tuning.StartSection;
 	return Result;
-}
-
-void URpgGameplayAbility_Dodge::FinishCurrentDodge(bool bWasCancelled)
-{
-	if (!IsActive())
-	{
-		return;
-	}
-
-	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, bWasCancelled);
 }

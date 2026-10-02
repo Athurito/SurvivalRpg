@@ -18,14 +18,6 @@ URpgGameplayAbility_Revive::URpgGameplayAbility_Revive()
 {
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
-
-	if (HasAnyFlags(RF_ClassDefaultObject))
-	{
-		FAbilityTriggerData TriggerData;
-		TriggerData.TriggerTag = RpgGameplayTags::GameplayEvent_Revive;
-		TriggerData.TriggerSource = EGameplayAbilityTriggerSource::GameplayEvent;
-		AbilityTriggers.Add(TriggerData);
-	}
 }
 
 void URpgGameplayAbility_Revive::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData)

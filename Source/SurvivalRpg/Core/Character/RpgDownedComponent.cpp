@@ -7,10 +7,11 @@
 #include "TimerManager.h"
 #include "SurvivalRpg/SurvivalRpg.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
-#include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_Revive.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Interaction/InteractionQuery.h"
+#include "SurvivalRpg/System/RpgAssetManager.h"
+#include "SurvivalRpg/System/RpgGameData.h"
 
 URpgDownedComponent::URpgDownedComponent(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -27,7 +28,6 @@ URpgDownedComponent::URpgDownedComponent(const FObjectInitializer& ObjectInitial
 	ReviveInteractionOption.Prompt.FocusRange = 650.0f;
 	ReviveInteractionOption.Prompt.InteractionRange = 250.0f;
 	ReviveInteractionOption.Prompt.InteractionPriority = 100;
-	ReviveInteractionOption.InteractionAbilityToGrant = URpgGameplayAbility_Revive::StaticClass();
 }
 
 void URpgDownedComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -48,6 +48,10 @@ void URpgDownedComponent::GatherInteractionOptions(
 	}
 
 	FInteractionOption Option = ReviveInteractionOption;
+	if (!Option.InteractionAbilityToGrant)
+	{
+		Option.InteractionAbilityToGrant = URpgAssetManager::GetSubclass(URpgGameData::Get().ReviveInteractionAbility);
+	}
 	Option.InteractionTag = RpgGameplayTags::Rpg_Interaction_Action_Revive;
 	Option.TargetRef.TargetActor = GetOwner();
 	AActor* RequestingActor = InteractQuery.RequestingAvatar.Get();

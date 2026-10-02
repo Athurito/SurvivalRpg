@@ -13,17 +13,6 @@ URpgGameplayAbility_Death::URpgGameplayAbility_Death(const FObjectInitializer& O
 {
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
-
-	bAutoStartDeath = true;
-
-	if (HasAnyFlags(RF_ClassDefaultObject))
-	{
-		// Add the ability trigger tag as default to the CDO.
-		FAbilityTriggerData TriggerData;
-		TriggerData.TriggerTag = RpgGameplayTags::GameplayEvent_Death;
-		TriggerData.TriggerSource = EGameplayAbilityTriggerSource::GameplayEvent;
-		AbilityTriggers.Add(TriggerData);
-	}
 }
 
 void URpgGameplayAbility_Death::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData)
