@@ -1,6 +1,6 @@
 ---
 name: survival-rpg-orchestrator
-description: Produces the ownership and C++ boundary decision for new or materially extended SurvivalRpg systems and splits large multi-system requests into the smallest verifiable slice. Use before building a new gameplay, UI, persistence, editor, or content-pipeline system, or when a request spans several systems and the split between C++, assets, UI, and tooling is unclear.
+description: Produces the ownership and C++ boundary decision for new or materially extended SurvivalRpg systems and splits large multi-system requests into the smallest verifiable slice. Use before building a new gameplay, UI, persistence, editor, or content-pipeline system, or when a request spans several systems and the split between C++, assets, UI, and tooling is unclear. Not needed for new content inside an existing system, such as an item, ability, widget, or interaction, or for deciding what to build next.
 ---
 
 # SurvivalRpg Orchestrator
@@ -13,7 +13,7 @@ Copy this checklist and track it:
 
 ```text
 - [ ] 1. Restate the deliverable and whether it changes code, docs, assets, or only needs advice
-- [ ] 2. Load the needed specialist skills; read the game vision when scope or priorities are involved
+- [ ] 2. Load the needed specialist skills and check the request against the first-playable scope
 - [ ] 3. Inspect existing systems and extension seams before proposing structure
 - [ ] 4. Record the C++ boundary decision
 - [ ] 5. Choose the smallest slice that proves fun, clarity, or architectural soundness
@@ -21,11 +21,11 @@ Copy this checklist and track it:
 - [ ] 7. Verify it and name the remaining risks
 ```
 
-The game vision is `docs/game-vision.md`.
+The game vision is `docs/game-vision.md`. When a request lies outside its first-playable scope (section 12), say so and propose the smallest slice or ask whether to build it now.
 
 ## Record the C++ boundary decision
 
-Treat every new or materially extended gameplay, UI, editor, persistence, or content-pipeline system as an ownership decision, also when no Lyra subsystem is involved. Read [the system ownership boundaries](references/system-ownership-boundaries.md), then state before creating code or assets:
+Treat every new or materially extended gameplay, UI, editor, persistence, or content-pipeline system as an ownership decision, also when no Lyra subsystem is involved. Read [the system ownership boundaries](references/system-ownership-boundaries.md), then write this block in the answer before creating code or assets, also when the user asks to start right away:
 
 ```text
 C++ boundary decision

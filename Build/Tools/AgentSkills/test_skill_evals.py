@@ -215,12 +215,22 @@ class VerdictTests(unittest.TestCase):
             skill_evals.parse_verdict("no json here", self.EXPECTED)
 
     def test_judge_prompt_lists_expectations_and_limits_tool_calls(self) -> None:
-        result = {"query": "Task", "expected_behavior": self.EXPECTED, "loaded": [], "answer": "Answer",
+        result = {"query": "Task", "expected_behavior": ["Stored behavior."], "loaded": [], "answer": "Answer",
                   "tools": [f"Read file{index}" for index in range(skill_evals.MAX_TOOL_CALLS + 2)]}
-        prompt = skill_evals.judge_prompt(result)
+        prompt = skill_evals.judge_prompt(result, self.EXPECTED)
         self.assertIn("1. First behavior.\n2. Second behavior.", prompt)
+        self.assertNotIn("Stored behavior.", prompt)
         self.assertIn("<skills_loaded>none</skills_loaded>", prompt)
         self.assertIn("... 2 more calls", prompt)
+
+    def test_rubric_follows_current_scenario_only_while_the_query_is_unchanged(self) -> None:
+        scenarios = {"x": {"query": "Task", "expected_behavior": ["Current."]}}
+        self.assertEqual(skill_evals.rubric({"id": "x", "query": "Task", "expected_behavior": ["Old."]}, scenarios),
+                         ["Current."])
+        self.assertEqual(skill_evals.rubric({"id": "x", "query": "Older task", "expected_behavior": ["Old."]}, scenarios),
+                         ["Old."])
+        self.assertEqual(skill_evals.rubric({"id": "gone", "query": "Task", "expected_behavior": ["Old."]}, scenarios),
+                         ["Old."])
 
 
 if __name__ == "__main__":

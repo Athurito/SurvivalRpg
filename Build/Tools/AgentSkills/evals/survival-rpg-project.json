@@ -7,7 +7,7 @@
     "expected_behavior": [
       "Grounds the answer in `docs/game-vision.md`, in particular the first-playable scope in section 12, and cites it.",
       "Recommends the first rune because it is MVP content, and defers factions and large base building, which the vision lists as not needed early.",
-      "Describes the smallest rune slice that proves the fun and keeps runes data-driven for later content.",
+      "Describes a small rune slice that proves the fun and keeps runes data-driven.",
       "Does not start implementing or design a broad framework."
     ]
   },
@@ -18,8 +18,8 @@
     "query": "Feature-Vorschlag zur Bewertung: Hunger und Durst sinken jede Minute, bei null stirbt der Spieler sofort, und Werkzeuge zerbrechen nach 20 Schlägen endgültig.",
     "expected_behavior": [
       "Flags the proposal as punitive survival micromanagement that conflicts with the survival-without-friction pillar of the vision.",
-      "Proposes an alternative in which survival matters through preparation, buffs, and situational hazards instead of constant punishment.",
-      "Considers whether permanent tool loss undermines the lasting economy and offers a less frustrating variant, such as repair.",
+      "Proposes an alternative in which survival matters through preparation, such as buffs or situational hazards, instead of constant punishment.",
+      "Offers a less frustrating variant of permanent tool loss, such as repair, with the lasting economy in mind.",
       "Bases the assessment on named sections of `docs/game-vision.md`."
     ]
   },
@@ -31,7 +31,7 @@
     "expected_behavior": [
       "Flags linear tier replacement that makes earlier ores worthless as conflicting with the lasting-economy pillar.",
       "Suggests ways to keep earlier materials relevant, such as processing, runes, repairs, or recipes that combine tiers.",
-      "Recommends expressing materials and recipes as data-driven definitions.",
+      "Prefers expressing materials and recipes as data, such as definitions or recipe assets, over hard-coded tiers.",
       "Names the vision sections the assessment relies on."
     ]
   }

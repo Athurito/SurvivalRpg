@@ -34,7 +34,7 @@ TOOLS = ("claude", "codex")
 PASSED, FAILED, SETUP = 0, 1, 2
 MIN_SCENARIOS = 3        # the skill-authoring guide asks for at least three evaluations per skill
 TIMEOUT_MINUTES = 15     # per session; only stops hung sessions, raise it with --timeout for slow models
-MAX_TOOL_LINE = 200      # characters kept per condensed tool call
+MAX_TOOL_LINE = 500      # characters kept per condensed tool call; Codex chains several file reads per command
 MAX_TOOL_CALLS = 200     # tool calls shown to the judge
 MAX_ANSWER = 40000       # answer characters shown to the judge
 
@@ -429,24 +429,27 @@ def command_run(args) -> int:
 
 # --- Grading -----------------------------------------------------------------------------------
 
-def judge_prompt(result: dict) -> str:
-    expected = "\n".join(f"{index}. {item}" for index, item in enumerate(result["expected_behavior"], start=1))
+def judge_prompt(result: dict, expected: list[str]) -> str:
+    rubric = "\n".join(f"{index}. {item}" for index, item in enumerate(expected, start=1))
     tools = "\n".join(result["tools"][:MAX_TOOL_CALLS]) or "(none)"
     if len(result["tools"]) > MAX_TOOL_CALLS:
         tools += f"\n... {len(result['tools']) - MAX_TOOL_CALLS} more calls"
     return (
-        "You grade one evaluation run of a coding agent in the SurvivalRpg Unreal Engine repository. The agent "
-        "worked read-only and answered with its approach or plan instead of changing files.\n\n"
+        "You grade one evaluation run of a coding agent in the SurvivalRpg Unreal Engine repository. The agent was "
+        "told to work read-only and to answer with its approach or plan instead of changing files, building, or "
+        "creating assets, so nothing has to be executed: a planned step counts when the answer commits to it "
+        "concretely.\n\n"
         f"<task>\n{result['query']}\n</task>\n\n"
-        f"<expected_behavior>\n{expected}\n</expected_behavior>\n\n"
+        f"<expected_behavior>\n{rubric}\n</expected_behavior>\n\n"
         f"<skills_loaded>{', '.join(result['loaded']) or 'none'}</skills_loaded>\n\n"
         f"<tool_calls>\n{tools}\n</tool_calls>\n\n"
         f"<final_answer>\n{result['answer'][:MAX_ANSWER]}\n</final_answer>\n\n"
         "Judge each expected behavior independently, using only the final answer and the tool calls. Mark it met "
-        "only when they clearly show the behavior; partial, vague, or contradicted behavior is not met, and an "
-        "inspection counts only when the tool calls show it. Give short evidence for every item, quoting the answer "
-        'where possible. Reply with JSON only: {"items": [{"index": 1, "met": true, "evidence": "..."}], '
-        '"summary": "one sentence"}')
+        "when they clearly show its core behavior; missing, vague, or contradicted behavior is not met. Examples "
+        "introduced with 'such as' or 'for example' illustrate the behavior and are not a checklist. An inspection "
+        "counts when the tool calls show it or the answer reports concrete findings from those files. Give short "
+        "evidence for every item, quoting the answer where possible. Reply with JSON only: "
+        '{"items": [{"index": 1, "met": true, "evidence": "..."}], "summary": "one sentence"}')
 
 
 def json_object(text: str):
@@ -514,9 +517,18 @@ def run_folder(value: str) -> Path:
     return path.resolve()
 
 
+def rubric(result: dict, scenarios: dict[str, dict]) -> list[str]:
+    """The scenario's current expected_behavior while its query is unchanged, else the one stored with the run."""
+    scenario = scenarios.get(result["id"])
+    return scenario["expected_behavior"] if scenario and scenario["query"] == result["query"] else result["expected_behavior"]
+
+
 def command_grade(args) -> int:
     run_dir = run_folder(args.run)
     exe = executable(args.judge, args.exe)
+    parse = parse_claude if read_json(run_dir / "run.json")["tool"] == "claude" else parse_codex
+    names = sync.discover(REPO)
+    scenarios = {scenario["id"]: scenario for scenario in load_scenarios(REPO)[0]}
     met = total = graded = skipped = 0
     for path in sorted(run_dir.glob("*.result.json")):
         result = read_json(path)
@@ -525,11 +537,16 @@ def command_grade(args) -> int:
             skipped += 1
             print(f"SKIP {result['id']}: session error ({result['error']})")
             continue
-        if grade_path.is_file() and not args.force:
-            grade = read_json(grade_path)
-        else:
+        expected = rubric(result, scenarios)
+        grade = read_json(grade_path) if grade_path.is_file() else None
+        if args.force or grade is None or [item["expected"] for item in grade["items"]] != expected:
+            # Re-read the raw transcript so parser fixes reach the judge, as for old runs graded again.
+            transcript_path = run_dir / f"{result['id']}.jsonl"
+            if transcript_path.is_file():
+                transcript = parse(transcript_path.read_bytes().decode("utf-8", errors="replace").splitlines(), names)
+                result = dict(result, tools=transcript.tools, answer=transcript.answer or result["answer"])
             try:
-                grade = judge(args.judge, exe, args.model, judge_prompt(result), result["expected_behavior"], args.timeout)
+                grade = judge(args.judge, exe, args.model, judge_prompt(result, expected), expected, args.timeout)
             except (ValueError, KeyError, json.JSONDecodeError) as error:
                 skipped += 1
                 print(f"SKIP {result['id']}: {error}")

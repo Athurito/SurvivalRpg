@@ -9,7 +9,7 @@ Start every animation or movement change from the accepted integration state and
 
 ## Start from current repository truth
 
-1. Read `docs/gasp-integration-handoff.md` and `docs/gasp-integration-roadmap.md`, then only the report linked to the affected task ID. Respect the active task, its branch, and recorded file ownership; keep one bounded roadmap task per branch/PR.
+1. Read `docs/gasp-integration-handoff.md` and `docs/gasp-integration-roadmap.md`, then only the report linked to the affected task ID. Respect the active task, its branch, and recorded file ownership; keep one bounded roadmap task per branch/PR. If no task marked ready covers the request, say so and ask the user to define the task and mark it ready before implementing; a proposed task outline may accompany the question.
 2. Before building or switching branches, verify the checkout-local NetworkPrediction/Mover plugin overrides as described in `Build/Patches/NetworkPrediction/README.md`. They are Git-ignored and not present in a fresh worktree.
 3. Read `SurvivalRpg.uproject` to confirm the engine version and enabled animation plugins.
 4. Inspect the affected project-owned GASP content under `/Game/SurvivalRpg/Characters/GASP`, the AnimBP parent (`URpgAnimInstance` where used), character and movement code, traversal code (`Source/SurvivalRpg/Traversal`), the relevant Experience and PawnData, and the existing tests.
