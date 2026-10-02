@@ -185,10 +185,9 @@ def shell_reads(command: str) -> list[str]:
     This is an evidence filter, not a general shell interpreter.
     """
     wrapper = re.match(r'''(?is)^\s*("[^"]+"|'[^']+'|\S+)\s+(?:.*?\s+)?(?:-command|-lc|-c)\s+(.+)$''', command)
-    if wrapper:
-        executable = re.split(r"[\\/]+", wrapper.group(1).strip("\"'"))[-1].lower()
-        if executable not in ("powershell", "powershell.exe", "pwsh", "pwsh.exe", "bash", "sh", "zsh"):
-            return []
+    # Only a shell executable is a wrapper; in `cat x; head -c 9 y` the `-c` belongs to a later statement.
+    executable = re.split(r"[\\/]+", wrapper.group(1).strip("\"'"))[-1].lower() if wrapper else ""
+    if executable in ("powershell", "powershell.exe", "pwsh", "pwsh.exe", "bash", "sh", "zsh"):
         command = wrapper.group(2).strip()
         if len(command) >= 2 and command[0] == command[-1] and command[0] in "\"'":
             command = command[1:-1]

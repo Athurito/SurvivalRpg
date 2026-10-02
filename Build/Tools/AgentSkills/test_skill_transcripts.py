@@ -45,6 +45,12 @@ class ConfirmedSkillTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual(parse_codex(command).loaded, ["alpha-skill"])
 
+    def test_dash_c_in_a_later_statement_is_not_a_shell_wrapper(self):
+        command = f"cat {ALPHA}; head -c 200 docs/notes.md"
+        self.assertEqual(s.shell_reads(command), [ALPHA])
+        self.assertEqual(parse_claude("Bash", {"command": command}).loaded, ["alpha-skill"])
+        self.assertEqual(s.shell_reads("python -c 'print(1)'"), [])
+
     def test_failed_empty_or_unfinished_reads_do_not_load(self):
         for kwargs in ({"output": "Access denied", "code": 1}, {"output": ""}, {"kind": "item.started"}):
             with self.subTest(kwargs=kwargs):
