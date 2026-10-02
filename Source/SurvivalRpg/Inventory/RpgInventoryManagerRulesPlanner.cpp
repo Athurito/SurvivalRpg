@@ -375,10 +375,16 @@ bool URpgInventoryManagerComponent::ValidateInventoryGraph(
 	const UObject* ExpectedInstanceOuter,
 	bool bEnforceCapacity,
 	FValidatedInventoryGraph& OutGraph,
-	ERpgInventoryMutationResultCode& OutCode) const
+	ERpgInventoryMutationResultCode& OutCode,
+	const FRpgInventoryGridSize* OverrideDefaultGridSize) const
 {
 	OutGraph = FValidatedInventoryGraph();
 	OutCode = ERpgInventoryMutationResultCode::Success;
+	if (OverrideDefaultGridSize && (!OverrideDefaultGridSize->IsValid() || FindOwningPlayerInventoryLayout()))
+	{
+		OutCode = ERpgInventoryMutationResultCode::InvalidRequest;
+		return false;
+	}
 	// Capacity is the outer import/target policy and intentionally wins over
 	// deeper corruption diagnostics for a graph that cannot be admitted anyway.
 	if (bEnforceCapacity && !IsCapacityUnlimited() &&
@@ -485,6 +491,11 @@ bool URpgInventoryManagerComponent::ValidateInventoryGraph(
 			Entry.Placement.GetContainerHandle();
 		if (Handle.IsRoot())
 		{
+			if (OverrideDefaultGridSize && Handle == FRpgInventoryContainerHandle::MakeRoot(DefaultContainerId))
+			{
+				GridSizes[EntryIndex] = *OverrideDefaultGridSize;
+				continue;
+			}
 			if (!GetGridSizeForContainerHandle(Handle, GridSizes[EntryIndex]))
 			{
 				OutCode = ERpgInventoryMutationResultCode::InvalidContainer;

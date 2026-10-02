@@ -1887,6 +1887,9 @@ URpgInventoryManagerComponent::CommitCollectRootItemsBatch(
 				B.Entry.Placement.GetContainerHandle().Depth;
 		});
 
+	// Publish both revisions before the first row or post-commit observer can run.
+	MarkInventoryStateDirty(false);
+	TargetInventory->MarkInventoryStateDirty(false);
 	for (FStableNotification& Changed : SourceChangedNotifications)
 	{
 		InventoryList.BroadcastChangeMessage(
@@ -1916,8 +1919,8 @@ URpgInventoryManagerComponent::CommitCollectRootItemsBatch(
 			Added.Entry.StackCount);
 	}
 
-	MarkInventoryStateDirty();
-	TargetInventory->MarkInventoryStateDirty();
+	OnInventoryPostCommit.Broadcast(this);
+	TargetInventory->OnInventoryPostCommit.Broadcast(TargetInventory);
 
 	return Result;
 }

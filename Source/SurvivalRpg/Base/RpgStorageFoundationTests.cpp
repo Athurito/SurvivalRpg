@@ -193,7 +193,7 @@ bool FRpgStorageProfileStaticContractTest::RunTest(const FString& Parameters)
 
 	Profile->BulkCapacityCost = 1;
 	Profile->StorageMode = ERpgInventoryStorageMode::GridItem;
-	TestFalse(TEXT("Instance-preserving mode rejects bulk convenience flags"), Profile->IsStructurallyValid());
+	TestTrue(TEXT("Physical material grids accept automatic deposit and crafting flags without bulk conversion"), Profile->IsStructurallyValid());
 
 	Profile->bCanAutoDeposit = false;
 	Profile->bCanCraftFromNetwork = false;

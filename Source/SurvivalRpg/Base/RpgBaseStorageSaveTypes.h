@@ -68,6 +68,18 @@ struct SURVIVALRPG_API FRpgBaseStorageSaveData
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save|Base Storage")
 	FName BaseId = NAME_None;
 
+	/** Saved horizontal base center; height does not limit base membership. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save|Base Storage")
+	FVector AreaCenter = FVector::ZeroVector;
+
+	/** Authoritative positive base radius in centimeters; touching other saved base areas is invalid. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save|Base Storage")
+	float AreaRadius = 2500.0f;
+
+	/** Highest issued automatic assignment order, including assignments subsequently deleted. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save|Base Storage")
+	int64 StorageAssignmentHighWaterMark = 0;
+
 	/** Stable host profile key allowed to perform owner-only base operations. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save|Base Storage")
 	FString OwnerProfileKey;

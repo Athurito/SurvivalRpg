@@ -433,7 +433,15 @@ bool FRpgInventoryPickupBatchAtomicCommitTest::RunTest(
 	const int32 RevisionBeforePreflight = Inventory->GetInventoryRevision();
 	const FString SignatureBeforePreflight = MakeStrictSignature(Inventory);
 	int32 MessageCount = 0;
+	int32 PostCommitCount = 0;
 	bool bEveryCallbackSawFinalState = true;
+	const FDelegateHandle PostCommitHandle = Inventory->OnInventoryPostCommit.AddLambda(
+		[&](URpgInventoryManagerComponent*)
+		{
+			++PostCommitCount;
+			bEveryCallbackSawFinalState &= Inventory->GetInventoryRevision() == RevisionBeforePreflight + 1 &&
+				Inventory->GetUsedEntryCount() == 2;
+		});
 	UGameplayMessageSubsystem& MessageSubsystem =
 		UGameplayMessageSubsystem::Get(TestWorld.GetWorld());
 	const FGameplayMessageListenerHandle ListenerHandle =
@@ -466,6 +474,7 @@ bool FRpgInventoryPickupBatchAtomicCommitTest::RunTest(
 	TArray<FRpgInventoryItemId> AffectedItemIds;
 	const FRpgInventoryMutationResult Result =
 		Inventory->AddPickupBatch(Pickup, AffectedItemIds);
+	Inventory->OnInventoryPostCommit.Remove(PostCommitHandle);
 	MessageSubsystem.UnregisterListener(ListenerHandle);
 
 	TestEqual(
@@ -495,6 +504,7 @@ bool FRpgInventoryPickupBatchAtomicCommitTest::RunTest(
 	TestTrue(
 		TEXT("Every notification observes the complete final batch graph"),
 		bEveryCallbackSawFinalState);
+	TestEqual(TEXT("The pickup batch emits one post-commit callback"), PostCommitCount, 1);
 	TestEqual(
 		TEXT("The complete batch advances inventory revision exactly once"),
 		Inventory->GetInventoryRevision(),

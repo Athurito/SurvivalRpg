@@ -5,6 +5,9 @@
 #include "NativeGameplayTags.h"
 #include "Net/UnrealNetwork.h"
 #include "RpgBaseCampActor.h"
+#include "RpgStorageAccessRules.h"
+#include "EngineUtils.h"
+#include "SurvivalRpg/Inventory/RpgInventoryContainerComponent.h"
 #include "RpgBaseStorageDomainAnchorComponent.h"
 #include "RpgBaseStorageUpgradeDefinition.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
@@ -24,6 +27,81 @@
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgBaseStorageComponent)
 
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Rpg_BaseStorage_Message_Changed, "Rpg.BaseStorage.Message.Changed");
+
+bool URpgBaseStorageComponent::RegisterPhysicalStorage(URpgInventoryContainerComponent* Container)
+{
+	const ARpgBaseCampActor* Base = Cast<ARpgBaseCampActor>(GetOwner());
+	if (!Base || !IsValid(Container) || !Container->GetOwner() ||
+		RpgStorageAccessRules::ResolveBaseAtLocation(GetWorld(), Container->GetOwner()->GetActorLocation()) != Base ||
+		!Container->AllowsCraftingAccess() || !Container->GetInventoryManager() ||
+		Container->GetTransferPolicy() != ERpgInventoryContainerTransferPolicy::Bidirectional)
+	{
+		return false;
+	}
+	if (Base->HasAuthority())
+	{
+		Container->EnsurePersistentContainerId();
+		Container->SetResolvedBaseId(Base->GetBaseId());
+	}
+	for (const TWeakObjectPtr<URpgInventoryContainerComponent>& Existing : PhysicalStorageContainers)
+	{
+		if (Existing.IsValid() && Existing.Get() != Container &&
+			Existing->GetPersistentContainerId() == Container->GetPersistentContainerId())
+		{
+			return false;
+		}
+	}
+	PhysicalStorageContainers.AddUnique(Container);
+	return true;
+}
+
+void URpgBaseStorageComponent::UnregisterPhysicalStorage(URpgInventoryContainerComponent* Container)
+{
+	PhysicalStorageContainers.RemoveAll([Container](const TWeakObjectPtr<URpgInventoryContainerComponent>& Entry)
+	{
+		return !Entry.IsValid() || Entry.Get() == Container;
+	});
+}
+
+void URpgBaseStorageComponent::RefreshPhysicalStorageRegistry()
+{
+	PhysicalStorageContainers.Reset();
+	const ARpgBaseCampActor* Base = Cast<ARpgBaseCampActor>(GetOwner());
+	if (!Base || !GetWorld())
+	{
+		return;
+	}
+	TArray<URpgInventoryManagerComponent*> Sources;
+	RpgStorageAccessRules::ResolveStorageSources(GetWorld(), Base->GetActorLocation(), 0.0f, Sources);
+	for (URpgInventoryManagerComponent* Inventory : Sources)
+	{
+		if (URpgInventoryContainerComponent* Container = Inventory->GetOwner()->FindComponentByClass<URpgInventoryContainerComponent>())
+		{
+			RegisterPhysicalStorage(Container);
+		}
+	}
+}
+
+TArray<URpgInventoryContainerComponent*> URpgBaseStorageComponent::GetPhysicalStorageContainers()
+{
+	RefreshPhysicalStorageRegistry();
+	TArray<URpgInventoryContainerComponent*> Results;
+	for (const TWeakObjectPtr<URpgInventoryContainerComponent>& Container : PhysicalStorageContainers)
+	{
+		if (Container.IsValid()) Results.Add(Container.Get());
+	}
+	Results.Sort([](const URpgInventoryContainerComponent& A, const URpgInventoryContainerComponent& B)
+	{
+		return A.GetPersistentContainerId().LexicalLess(B.GetPersistentContainerId());
+	});
+	return Results;
+}
+
+TArray<URpgInventoryContainerComponent*> URpgBaseStorageComponent::GetPhysicalStorageTargets(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition) const
+{
+	return GetOwner() ? RpgStorageAccessRules::GetPhysicalStorageTargets(GetWorld(), GetOwner()->GetActorLocation(), 0.0f, ItemDefinition)
+		: TArray<URpgInventoryContainerComponent*>();
+}
 
 namespace
 {

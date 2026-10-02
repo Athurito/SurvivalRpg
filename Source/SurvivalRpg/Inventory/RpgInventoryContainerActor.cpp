@@ -11,7 +11,7 @@ ARpgInventoryContainerActor::ARpgInventoryContainerActor(const FObjectInitialize
 	: Super(ObjectInitializer)
 {
 	bReplicates = true;
-	SetReplicatingMovement(false);
+	SetReplicatingMovement(true);
 
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	SetRootComponent(SceneRoot);

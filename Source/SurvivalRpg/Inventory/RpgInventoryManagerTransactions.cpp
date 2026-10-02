@@ -587,8 +587,15 @@ bool URpgInventoryManagerComponent::CommitRemovalDeltas(
 	const TArray<FRpgInventoryMutationDelta>& Deltas,
 	bool bBroadcastPostCommit)
 {
+	return !IsInventoryMutationLocked() && ApplyRemovalDeltas(Deltas, bBroadcastPostCommit);
+}
+
+bool URpgInventoryManagerComponent::ApplyRemovalDeltas(
+	const TArray<FRpgInventoryMutationDelta>& Deltas,
+	bool bBroadcastPostCommit)
+{
 	AActor* OwningActor = GetOwner();
-	if (IsInventoryMutationLocked() || !OwningActor ||
+	if (!OwningActor ||
 		!OwningActor->HasAuthority() || Deltas.IsEmpty())
 	{
 		return false;
@@ -1098,6 +1105,9 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteInventoryMutat
 		return CacheResult(MoveTemp(Result));
 	}
 
+	// Planning may invoke native fragment compatibility hooks; admit no nested mutation
+	// until this command has finished staging and publishing its complete state.
+	TGuardValue<bool> MutationGuard(bIsApplyingInventoryMutation, true);
 	Result = PlanInventoryMutation(Request);
 	if (!Result.IsSuccess())
 	{
@@ -1113,6 +1123,10 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteInventoryMutat
 		return CacheResult(MoveTemp(Result));
 	}
 
+	// Fragment hooks and observers must not enter another mutation while entry pointers or
+	// deferred notifications belong to this command. A cached retry can still return its result.
+	TGuardValue<bool> NotificationGuard(InventoryList.bDeferChangeMessages, true);
+	check(InventoryList.DeferredChangeMessages.IsEmpty());
 	FRpgInventoryEntry* Entry = InventoryList.FindEntryByItemId(Request.ItemId);
 	bool bCommitted = false;
 	bool bInventoryStateChanged = true;
@@ -1193,7 +1207,7 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteInventoryMutat
 
 	case ERpgInventoryMutationOperation::Consume:
 		bInventoryStateChanged = true;
-		bCommitted = CommitRemovalDeltas(Result.Deltas, false);
+		bCommitted = ApplyRemovalDeltas(Result.Deltas, false);
 		break;
 
 	default:
@@ -1210,7 +1224,16 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteInventoryMutat
 	Result = CacheResult(MoveTemp(Result));
 	if (bBroadcastPostCommit)
 	{
-		MarkInventoryStateDirty();
+		// Saves and UI listeners must only see the finished graph, registered subobjects,
+		// current revision and cached command result, including when a merge removed a row.
+		MarkInventoryStateDirty(false);
+		InventoryList.FlushDeferredChangeMessages();
+		OnInventoryPostCommit.Broadcast(this);
+	}
+	else
+	{
+		// Failed split insertion rolls its source count back; do not publish those intermediate steps.
+		InventoryList.DeferredChangeMessages.Reset();
 	}
 	return Result;
 }
@@ -2239,6 +2262,9 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteCrossInventory
 				B.Placement.GetContainerHandle().Depth;
 		});
 
+	// Publish both revisions before the first row or post-commit observer can run.
+	MarkInventoryStateDirty(false);
+	TargetInventory->MarkInventoryStateDirty(false);
 	for (FRpgInventoryEntry& Changed : SourceChangedNotifications)
 	{
 		InventoryList.BroadcastChangeMessage(
@@ -2270,8 +2296,8 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ExecuteCrossInventory
 			Added.StackCount);
 	}
 
-	MarkInventoryStateDirty();
-	TargetInventory->MarkInventoryStateDirty();
+	OnInventoryPostCommit.Broadcast(this);
+	TargetInventory->OnInventoryPostCommit.Broadcast(TargetInventory);
 
 	return Result;
 }

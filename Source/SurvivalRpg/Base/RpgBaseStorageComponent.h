@@ -14,6 +14,7 @@ class URpgInventoryItemInstance;
 class URpgBaseStorageUpgradeDefinition;
 class APlayerController;
 class FDataValidationContext;
+class URpgInventoryContainerComponent;
 struct FNetDeltaSerializeInfo;
 
 /** Resource capacity contribution for one material definition. */
@@ -227,6 +228,23 @@ public:
 	explicit URpgBaseStorageComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	virtual void BeginPlay() override;
+
+	/** Rebuilds the non-owning chest registry from authoritative spatial membership; contents stay in each inventory. */
+	void RefreshPhysicalStorageRegistry();
+
+	/** Idempotent registration rejects duplicate stable IDs and containers outside the owning base area. */
+	bool RegisterPhysicalStorage(URpgInventoryContainerComponent* Container);
+
+	/** Removes stale registration only; does not move, destroy, or clear items. */
+	void UnregisterPhysicalStorage(URpgInventoryContainerComponent* Container);
+
+	/** Current accessible physical chests belonging to this base, sorted by persistent identity. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Base Storage|Physical")
+	TArray<URpgInventoryContainerComponent*> GetPhysicalStorageContainers();
+
+	/** Automatic destinations ordered by exact/category/general rule, stock amount, then saved assignment order. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Base Storage|Physical")
+	TArray<URpgInventoryContainerComponent*> GetPhysicalStorageTargets(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition) const;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 #if WITH_EDITOR
@@ -507,6 +525,9 @@ protected:
 	int32 RiftCleanseAmount = 25;
 
 private:
+	/** Registry is derived from live actors; it never owns item graphs or persists raw actor pointers. */
+	TArray<TWeakObjectPtr<URpgInventoryContainerComponent>> PhysicalStorageContainers;
+
 	struct FRecentCommandResult
 	{
 		uint32 PayloadHash = 0;

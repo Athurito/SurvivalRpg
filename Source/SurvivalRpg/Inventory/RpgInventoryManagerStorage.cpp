@@ -201,9 +201,24 @@ void FRpgInventoryList::BroadcastChangeMessage(FRpgInventoryEntry& Entry, int32 
 	Message.Placement = Entry.Placement;
 	Message.bOrderChanged = bOrderChanged;
 	Message.bCapacityChanged = false;
+	if (bDeferChangeMessages)
+	{
+		DeferredChangeMessages.Add(MoveTemp(Message));
+		return;
+	}
 
 	UGameplayMessageSubsystem& MessageSystem = UGameplayMessageSubsystem::Get(OwnerComponent->GetWorld());
 	MessageSystem.BroadcastMessage(TAG_Rpg_Inventory_Message_StackChanged, Message);
+}
+
+void FRpgInventoryList::FlushDeferredChangeMessages()
+{
+	UGameplayMessageSubsystem& MessageSystem = UGameplayMessageSubsystem::Get(OwnerComponent->GetWorld());
+	for (const FRpgInventoryChangeMessage& Message : DeferredChangeMessages)
+	{
+		MessageSystem.BroadcastMessage(TAG_Rpg_Inventory_Message_StackChanged, Message);
+	}
+	DeferredChangeMessages.Reset();
 }
 
 bool FRpgInventoryList::AddEntry(URpgInventoryItemInstance* Instance, int32 StackCount)

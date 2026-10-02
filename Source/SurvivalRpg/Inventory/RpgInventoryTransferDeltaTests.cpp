@@ -370,6 +370,14 @@ bool FRpgInventoryTransferDeltaAtomicCallbacksTest::RunTest(
 			TargetInventory->GetInventoryRevision() ==
 				TargetRevisionBefore + 1;
 	};
+	int32 PostCommitCount = 0;
+	auto ObservePostCommit = [&](URpgInventoryManagerComponent*)
+	{
+		++PostCommitCount;
+		bEveryCallbackSawFinalGraphs &= IsFinalStateVisible();
+	};
+	const FDelegateHandle SourcePostCommit = SourceInventory->OnInventoryPostCommit.AddLambda(ObservePostCommit);
+	const FDelegateHandle TargetPostCommit = TargetInventory->OnInventoryPostCommit.AddLambda(ObservePostCommit);
 
 	UGameplayMessageSubsystem& MessageSubsystem =
 		UGameplayMessageSubsystem::Get(TestWorld.GetWorld());
@@ -401,6 +409,8 @@ bool FRpgInventoryTransferDeltaAtomicCallbacksTest::RunTest(
 			TargetInventory,
 			Request,
 			false);
+	SourceInventory->OnInventoryPostCommit.Remove(SourcePostCommit);
+	TargetInventory->OnInventoryPostCommit.Remove(TargetPostCommit);
 	MessageSubsystem.UnregisterListener(ListenerHandle);
 
 	TestEqual(
@@ -422,6 +432,7 @@ bool FRpgInventoryTransferDeltaAtomicCallbacksTest::RunTest(
 	TestTrue(
 		TEXT("Every callback observes both final inventory graphs"),
 		bEveryCallbackSawFinalGraphs);
+	TestEqual(TEXT("The transfer emits one post-commit callback per participant"), PostCommitCount, 2);
 	TestFalse(
 		TEXT("Unrelated sentinel rows emit no transfer message"),
 		bSentinelWasNotified);

@@ -47,17 +47,17 @@ public:
 	int32 BulkCapacityCost = 1;
 
 	/**
-	 * Allows eligible lossless instances to participate in return/deposit-all routing.
-	 * This is only valid for BulkResource and never bypasses the instance collapse-safety check.
+	 * Allows ordinary material instances to participate in automatic physical chest routing.
+	 * Explicit opt-in; physical routing preserves runtime state and never converts items to a ledger.
 	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Storage|Bulk", meta = (EditCondition = "StorageMode == ERpgInventoryStorageMode::BulkResource", EditConditionHides))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Storage")
 	bool bCanAutoDeposit = false;
 
 	/**
-	 * Allows definition/count consumption from the local network without selecting a concrete instance.
-	 * This is only valid for fungible BulkResource definitions.
+	 * Allows concrete material stacks in shared storage to supply recipe and construction costs.
+	 * Physical consumption selects exact source item identities; contained special items are excluded.
 	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Storage|Bulk", meta = (EditCondition = "StorageMode == ERpgInventoryStorageMode::BulkResource", EditConditionHides))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Storage")
 	bool bCanCraftFromNetwork = false;
 
 	/** Functional storage capabilities required before this definition can use its configured network route. */
@@ -102,6 +102,14 @@ public:
 	 */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Storage")
 	bool CanAutoDeposit(const FGameplayTagContainer& NetworkCapabilities) const;
+
+	/** Automatic chest routing for ordinary materials, independent of the retired count-ledger representation. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Storage")
+	bool CanAutoDepositPhysical() const;
+
+	/** Whether physical shared stacks may supply crafting/build costs. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Storage")
+	bool CanCraftFromPhysicalStorage() const;
 
 	/** Resolves the effective first Storage Profile on an item definition, or null when none is authored. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Storage")

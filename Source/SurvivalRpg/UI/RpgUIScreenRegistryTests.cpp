@@ -3,7 +3,6 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
-#include "SurvivalRpg/UI/RpgBaseTerminalWidget.h"
 #include "SurvivalRpg/UI/RpgCraftingStationWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
 #include "SurvivalRpg/UI/RpgPlayerInventoryWidget.h"
@@ -36,10 +35,6 @@ namespace
 		TEXT("/Game/SurvivalRpg/UI/Menus/GameMenu/GameMenu/CUI_GameMenu");
 	constexpr TCHAR PlayerInventoryPackageName[] =
 		TEXT("/Game/SurvivalRpg/Inventory/UI/CUI_PlayerInventory");
-	constexpr TCHAR BaseTerminalSpatialPackageName[] =
-		TEXT("/Game/SurvivalRpg/UI/CUI_BaseTerminalSpatial");
-	constexpr TCHAR LegacyBaseTerminalPackageName[] =
-		TEXT("/Game/SurvivalRpg/UI/CUI_BaseTerminal");
 	constexpr TCHAR ScreenRegistryPackageName[] =
 		TEXT("/Game/SurvivalRpg/UI/DA_RpgUIScreenRegistry");
 
@@ -223,12 +218,6 @@ bool FRpgInventoryScreenFamilyClosureTest::RunTest(
 				"CUI_StorageSpatial.CUI_StorageSpatial_C")
 		},
 		{
-			RpgGameplayTags::UI_Screen_BaseTerminal,
-			TEXT(
-				"/Game/SurvivalRpg/UI/"
-				"CUI_BaseTerminalSpatial.CUI_BaseTerminalSpatial_C")
-		},
-		{
 			RpgGameplayTags::UI_Screen_Crafting,
 			TEXT(
 				"/Game/SurvivalRpg/Crafting/UI/"
@@ -320,82 +309,6 @@ bool FRpgUIScreenRegistryStorageSpatialMappingTest::RunTest(const FString& Param
 	TestTrue(
 		TEXT("Mapped Storage class derives from the native Storage presenter"),
 		StorageClass && StorageClass->IsChildOf(URpgStorageInventoryWidget::StaticClass()));
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FRpgUIScreenRegistryBaseTerminalSpatialMappingTest,
-	"SurvivalRpg.UI.ScreenRegistry.BaseTerminalSpatialMapping",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
-
-bool FRpgUIScreenRegistryBaseTerminalSpatialMappingTest::RunTest(
-	const FString& Parameters)
-{
-	const URpgUIScreenRegistry* Registry = LoadObject<URpgUIScreenRegistry>(
-		nullptr,
-		TEXT("/Game/SurvivalRpg/UI/DA_RpgUIScreenRegistry.DA_RpgUIScreenRegistry"));
-	if (!TestNotNull(TEXT("UI screen registry loads"), Registry))
-	{
-		return false;
-	}
-
-	int32 BaseTerminalEntryCount = 0;
-	for (const FRpgUIScreenRegistryEntry& Candidate : Registry->Screens)
-	{
-		BaseTerminalEntryCount +=
-			Candidate.ScreenTag == RpgGameplayTags::UI_Screen_BaseTerminal ? 1 : 0;
-	}
-	TestEqual(
-		TEXT("Base Terminal is authored exactly once in the screen registry"),
-		BaseTerminalEntryCount,
-		1);
-
-	FRpgUIScreenRegistryEntry BaseTerminalEntry;
-	if (!TestTrue(
-		TEXT("Base Terminal registry entry exists"),
-		Registry->FindScreen(
-			RpgGameplayTags::UI_Screen_BaseTerminal,
-			BaseTerminalEntry)))
-	{
-		return false;
-	}
-
-	TestTrue(
-		TEXT("Base Terminal opens on the CommonUI game-menu layer"),
-		BaseTerminalEntry.LayerTag == RpgGameplayTags::UI_Layer_GameMenu);
-	TestTrue(
-		TEXT("Base Terminal suspends owning-player input while its screen class streams"),
-		BaseTerminalEntry.bSuspendInputUntilLoaded);
-	TestTrue(
-		TEXT("Base Terminal reuses its active CommonUI screen instance"),
-		BaseTerminalEntry.bSingleInstance);
-	TestEqual(
-		TEXT("Base Terminal registry points at the authored spatial screen"),
-		BaseTerminalEntry.WidgetClass.ToSoftObjectPath().ToString(),
-		FString(TEXT(
-			"/Game/SurvivalRpg/UI/CUI_BaseTerminalSpatial.CUI_BaseTerminalSpatial_C")));
-
-	UClass* BaseTerminalClass = BaseTerminalEntry.WidgetClass.LoadSynchronous();
-	TestTrue(
-		TEXT("Mapped Base Terminal class derives from the native Base Terminal presenter"),
-		BaseTerminalClass &&
-			BaseTerminalClass->IsChildOf(URpgBaseTerminalWidget::StaticClass()));
-
-	const IAssetRegistry& AssetRegistry =
-		FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
-	TArray<FName> RegistryDependencies;
-	TestTrue(
-		TEXT("Asset Registry resolves UI screen registry dependencies"),
-		AssetRegistry.GetDependencies(
-			FName(ScreenRegistryPackageName),
-			RegistryDependencies,
-			UE::AssetRegistry::EDependencyCategory::Package));
-	TestTrue(
-		TEXT("UI screen registry depends on the authored spatial Base Terminal"),
-		RegistryDependencies.Contains(FName(BaseTerminalSpatialPackageName)));
-	TestFalse(
-		TEXT("UI screen registry no longer depends on the legacy Base Terminal"),
-		RegistryDependencies.Contains(FName(LegacyBaseTerminalPackageName)));
 	return true;
 }
 

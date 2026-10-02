@@ -4,6 +4,7 @@
 #include "GameplayTagContainer.h"
 #include "RpgInventoryManagerComponent.h"
 #include "RpgPlayerInventoryLayoutTypes.h"
+#include "RpgPhysicalStorageRequest.h"
 #include "SurvivalRpg/Base/RpgBaseStorageTransactionTypes.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
 
@@ -657,6 +658,23 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Crafting")
 	void RequestSetCraftingOutputAutoDepositEnabled(URpgCraftingStationComponent* CraftingStation, bool bEnabled);
 
+	/** Stable-ID chest request. Only this controller's player inventory can be used to pay or deposit. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Physical Storage")
+	void RequestPhysicalStorageCommand(FRpgPhysicalStorageRequest Request);
+
+	/** Read-only placement preview using the same footprint, ground and area checks as authority. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Physical Storage")
+	bool CanPlacePhysicalStorage(URpgBaseBuildableDefinition* Definition, FTransform Transform,
+		FName RelocatingContainerId, FText& OutReason) const;
+
+	/** Local command feedback for authored storage/build screens; does not mutate gameplay state. */
+	UPROPERTY(BlueprintAssignable, Category = "Inventory|Physical Storage")
+	FRpgPhysicalStorageCommandCompleted OnPhysicalStorageCommandCompleted;
+
+	/** Server's final result for a correlated chest command, delivered only to its requesting controller. */
+	UFUNCTION(Client, Reliable)
+	void ClientPhysicalStorageCommandCompleted(FGuid RequestId, bool bSucceeded, const FText& Message);
+
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|UI Actions")
 	bool CanAccessInventory(URpgInventoryManagerComponent* Inventory) const;
 
@@ -665,6 +683,20 @@ private:
 	friend class FRpgInventoryUseRequestReplayCacheContractTest;
 
 	URpgInventoryManagerComponent* FindPlayerInventory() const;
+
+	/** Bounded replay window; no record survives controller lifetime or world restore. */
+	UPROPERTY(Transient)
+	TArray<FRpgPhysicalStorageCommandRecord> PhysicalStorageCommands;
+	/** Server-only authorization captured at direct interaction; moving never reserves or copies chest items. */
+	FGuid PhysicalStorageRelocationSessionId;
+	TWeakObjectPtr<AActor> PhysicalStorageRelocationPawn;
+	TWeakObjectPtr<AActor> PhysicalStorageRelocationChest;
+	TWeakObjectPtr<ARpgBaseCampActor> PhysicalStorageRelocationBase;
+	TWeakObjectPtr<URpgInventoryManagerComponent> PhysicalStorageRelocationInventory;
+	uint64 PhysicalStorageRelocationEpoch = 0;
+	int32 PhysicalStorageRelocationRevision = INDEX_NONE;
+	bool CanContinuePhysicalStorageRelocation(const FRpgPhysicalStorageRequest& Request) const;
+	bool ExecutePhysicalStorageCommand(const FRpgPhysicalStorageRequest& Request, FText& OutMessage);
 	URpgEquipmentLoadoutComponent* FindEquipmentLoadout() const;
 	URpgPlayerInventoryLayoutComponent* FindPlayerInventoryLayout() const;
 	URpgActionBarComponent* FindActionBar() const;

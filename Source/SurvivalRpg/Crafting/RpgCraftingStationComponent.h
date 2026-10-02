@@ -2,6 +2,7 @@
 
 #include "Components/ActorComponent.h"
 #include "GameplayTagContainer.h"
+#include "RpgCraftingSaveTypes.h"
 #include "SurvivalRpg/Interaction/IInteractableTarget.h"
 
 #include "RpgCraftingStationComponent.generated.h"
@@ -14,6 +15,7 @@ class URpgBaseStorageStationComponent;
 class URpgBaseStorageComponent;
 class URpgCraftingRecipeDefinition;
 class URpgCraftingRecipeSet;
+struct FRpgInventoryBatchOperation;
 
 /** Resource source order used by a crafting station when a recipe consumes materials. */
 UENUM(BlueprintType)
@@ -45,7 +47,7 @@ enum class ERpgCraftingJobState : uint8
 	/** Station-level pause froze this job's remaining time. */
 	Paused,
 
-	/** Output could not be stored or dropped; the station is waiting for a retry path. */
+	/** Output does not fit; the station retains the paid job and retries without dropping items. */
 	BlockedOutput,
 
 	/** Job has finished and is about to be removed from the queue. */
@@ -96,6 +98,10 @@ struct SURVIVALRPG_API FRpgCraftingRefundEntry
 
 	UPROPERTY(NotReplicated)
 	TObjectPtr<URpgInventoryManagerComponent> Inventory = nullptr;
+
+	/** Stable original source, persisted independently of player connectivity or actor lifetime. */
+	UPROPERTY(NotReplicated)
+	FName InventoryId;
 
 	UPROPERTY(NotReplicated)
 	bool bRefundToBaseStorage = false;
@@ -179,10 +185,34 @@ public:
 	explicit URpgCraftingStationComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void GatherInteractionOptions(const FInteractionQuery& InteractQuery, FInteractionOptionBuilder& InteractionBuilder) override;
 
-	/** Returns player inventory plus crafting-accessible containers in range or in the same storage group. */
+	/** Stable authored identity, with the persistent container ID or level actor name as fallback. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|Persistence")
+	FName GetPersistentStationId() const;
+
+	/** Captures only relative production time; must share the world inventory snapshot. */
+	FRpgCraftingStationSaveData ExportCraftingState() const;
+
+	/** Restores validated settings and paid jobs without advancing production. */
+	bool RestoreCraftingState(const FRpgCraftingStationSaveData& SaveData);
+
+	/** Starts restored timers after all world inventories have been restored. */
+	void ResumeRestoredCrafting();
+
+	/** Resolves only the requesting player's inventory; never searches other players. */
+	static URpgInventoryManagerComponent* FindRequestingPlayerInventory(const AActor* RequestingActor);
+
+	/** Prepares exact ordinary-material debits, own inventory first; does not mutate inventory. */
+	static bool BuildResourceConsumptionPlan(AActor* RequestingActor,
+		const TArray<URpgInventoryManagerComponent*>& StorageInventories,
+		const TArray<FRpgCraftingResourceCost>& RequiredItems, int32 Quantity,
+		TArray<FRpgInventoryBatchOperation>& OutOperations,
+		TArray<FRpgCraftingRefundEntry>& OutRefundEntries);
+
+	/** Returns the requesting inventory first, followed by shared sources in this station's physical domain. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting")
 	TArray<URpgInventoryManagerComponent*> GetResourceInventories(AActor* RequestingActor) const;
 
@@ -192,7 +222,7 @@ public:
 
 	/** Returns the linked base camp this station may consume from and auto-deposit into. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting|Base Storage")
-	ARpgBaseCampActor* GetLinkedBaseCamp() const { return LinkedBaseCamp; }
+	ARpgBaseCampActor* GetLinkedBaseCamp() const { return ResolveSpatialBaseCamp(); }
 
 	/** Semantic station tags used by recipe filters, such as Crafting.Station.Smelter. */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Crafting|Recipes", meta = (Categories = "Crafting.Station"))
@@ -262,35 +292,41 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting")
 	bool CanActorAccess(const AActor* RequestingActor) const;
 
-	/** Replicated inventory where crafted outputs wait when they are not auto-deposited into the base. */
+	/** Replicated physical output tray; also a material source in the applicable storage domain. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting|Output")
 	URpgInventoryManagerComponent* GetOutputInventory() const { return OutputInventoryComponent; }
+
+	/** Server lifecycle gate: provisional BeginPlay contents cannot participate until the saved tray and queue are restored. */
+	bool IsPersistenceRestorePending() const { return bPersistenceRestorePending; }
+
+	/** Authority-only persistence seam; GameMode releases this after replacing synchronous authored seed grants. */
+	void SetPersistenceRestorePending(bool bPending);
 
 	/** Assigns the output inventory component, usually from a native or Blueprint crafting-station actor constructor. */
 	UFUNCTION(BlueprintCallable, Category = "Crafting|Output")
 	void SetOutputInventoryManager(URpgInventoryManagerComponent* InOutputInventory);
 
-	/** Validates a non-empty output list. Storage fit is not required because valid overflow falls back to an authoritative world pickup. */
+	/** Validates output definitions. A full tray blocks production while keeping the paid job intact. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting|Output")
 	bool CanAcceptCraftingOutputs(const TArray<FRpgCraftingOutputItem>& OutputItems) const;
 
-	/** Adds outputs to base storage/armory or station inventory, then world-drops any valid overflow. Server-authoritative. */
+	/** Atomically creates all recipe outputs in eligible chests or the tray. Failure creates no outputs. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Crafting|Output")
 	bool AddCraftingOutputs(const TArray<FRpgCraftingOutputItem>& OutputItems);
 
-	/** Convenience V1 craft path: validates outputs, consumes aggregated costs, then stores or world-drops outputs. */
+	/** Atomically consumes costs and creates every output; failure changes no inventory. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Crafting")
 	bool CraftItems(AActor* RequestingActor, const TArray<FRpgCraftingResourceCost>& RequiredItems, const TArray<FRpgCraftingOutputItem>& OutputItems);
 
-	/** Attempts to move current output inventory contents into linked base storage/armory. Server-authoritative. */
+	/** Moves eligible ordinary outputs into assigned physical chests using the station domain. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Crafting|Output")
 	bool FlushOutputToBaseStorage();
 
-	/** Returns true when this station has an upgrade/config source that permits auto-deposit. */
+	/** Physical chest output routing is available from the first chest without an upgrade gate. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting|Output")
 	bool HasCraftingOutputAutoDepositAccess() const;
 
-	/** Runtime station toggle for auto-deposit. The upgrade/config source must still grant access. */
+	/** Saved station preference: false keeps outputs in the tray, true uses assignment routing. */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Crafting|Output")
 	bool IsCraftingOutputAutoDepositEnabled() const { return bAutoDepositCraftingOutputsEnabled; }
 
@@ -307,6 +343,10 @@ public:
 	URpgBaseStorageStationComponent* GetOutputAutoDepositUpgradeProvider() const;
 
 protected:
+	/** Stable unique identity authored on placed stations; built stations inherit their container identity. */
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Crafting|Persistence")
+	FName PersistentStationId;
+
 	/** Interaction option shown by the Lyra-style interaction scan when this station can open its crafting UI. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Interaction")
 	FInteractionOption OpenCraftingOption;
@@ -319,55 +359,55 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Recipes")
 	TObjectPtr<URpgCraftingRecipeSet> AvailableRecipeSet;
 
-	/** Shared storage group this station belongs to. Empty means radius-only shared-container lookup. */
+	/** Legacy asset field. Physical sources are selected by the containing base or outside radius. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting")
 	FName StorageGroupId;
 
-	/** Whether old shared containers in range/storage group are included as recipe input sources. Disabled by default for V1 basislager flow. */
+	/** Legacy asset field; physical crafting always resolves eligible shared chests and station trays. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting")
-	bool bUseNearbyCraftingContainers = false;
+	bool bUseNearbyCraftingContainers = true;
 
-	/** Radius in centimeters for including nearby shared containers as crafting resource sources. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting", meta = (EditCondition = "bUseNearbyCraftingContainers", ClampMin = "0", UIMin = "0", Units = "cm"))
+	/** Outside-base radius in centimeters. A containing base overrides this radius; zero grants no outside sources. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting", meta = (ClampMin = "1", UIMin = "1", Units = "cm"))
 	float StorageSearchRadius = 1200.0f;
 
 	/** Maximum direct distance in centimeters for taking outputs from this station. Zero or below allows access at any distance. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting", meta = (ClampMin = "0", UIMin = "0", Units = "cm"))
 	float InteractionRadius = 350.0f;
 
-	/** Optional base camp resource pool this station may pull material counts from. */
+	/** Server-resolved spatial base reference for presentation and existing Blueprint callers; not a material-count source. */
 	UPROPERTY(EditInstanceOnly, Replicated, BlueprintReadOnly, Category = "Crafting|Base Storage")
 	TObjectPtr<ARpgBaseCampActor> LinkedBaseCamp;
 
-	/** Whether recipe checks and consumption include the linked base camp's material-count pool. */
+	/** Legacy asset field; physical crafting uses spatial storage membership regardless of this value. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Base Storage")
 	bool bUseLinkedBaseStorage = true;
 
-	/** Resource source order used by recipe cost checks and consumption. */
+	/** Legacy content compatibility only. Physical crafting always consumes the requesting player first. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Base Storage")
-	ERpgCraftingResourceConsumeOrder ResourceConsumeOrder = ERpgCraftingResourceConsumeOrder::BaseThenPlayer;
+	ERpgCraftingResourceConsumeOrder ResourceConsumeOrder = ERpgCraftingResourceConsumeOrder::PlayerThenBase;
 
-	/** Actor whose base storage station component supplies output auto-deposit upgrade tags. Set this to the placed terminal/storage-unit actor. */
+	/** Legacy upgrade-provider reference retained for existing assets; physical output routing uses the saved toggle. */
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Crafting|Output")
 	TObjectPtr<AActor> OutputAutoDepositUpgradeProviderActor;
 
-	/** Direct component fallback for advanced Blueprint setups. Prefer OutputAutoDepositUpgradeProviderActor for placed level actors. */
+	/** Legacy provider component; it does not gate physical output routing. */
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Crafting|Output")
 	TObjectPtr<URpgBaseStorageStationComponent> OutputAutoDepositUpgradeProvider;
 
-	/** Debug/prototype override that enables auto-deposit without requiring the upgrade provider tag. */
+	/** Legacy prototype override, ignored by physical output routing. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Output")
 	bool bAlwaysAutoDepositCraftingOutputs = false;
 
-	/** Runtime toggle for this station. Replicated for UI; auto-deposit still requires the upgrade/config access source. */
+	/** Saved, replicated preference. False retains outputs in the tray; true uses physical assignment routing. */
 	UPROPERTY(EditAnywhere, ReplicatedUsing = OnRep_CraftingState, BlueprintReadOnly, Category = "Crafting|Output")
-	bool bAutoDepositCraftingOutputsEnabled = true;
+	bool bAutoDepositCraftingOutputsEnabled = false;
 
-	/** Whether instance-based outputs may go directly to the linked base armory when auto-deposit is active. */
+	/** Legacy armory preference, ignored by physical output routing. Concrete outputs retain their item state. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Output")
 	bool bAutoDepositInstanceOutputsToArmory = true;
 
-	/** Output inventory used when auto-deposit is disabled or linked storage is full. Its root grid is the authored output tray. */
+	/** Physical output tray used when automatic deposit is disabled or eligible chests cannot accept all outputs. */
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Crafting|Output")
 	TObjectPtr<URpgInventoryManagerComponent> OutputInventoryComponent;
 
@@ -424,27 +464,31 @@ private:
 
 	bool IsRecipeOfferedByStation(const URpgCraftingRecipeDefinition* RecipeDefinition) const;
 	URpgBaseStorageComponent* GetLinkedBaseStorage() const;
-	URpgInventoryManagerComponent* GetLinkedArmoryInventory() const;
+	ARpgBaseCampActor* ResolveSpatialBaseCamp() const;
 	int32 GetAvailableInventoryResourceCount(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, const TArray<URpgInventoryManagerComponent*>& ResourceInventories) const;
-	bool ConsumeInventoryResources(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count, const TArray<URpgInventoryManagerComponent*>& ResourceInventories) const;
-	bool ConsumeBaseResources(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count) const;
+	TFunction<bool()> MakeContextRevalidator(AActor* RequestingActor, bool bRefund = false, FGuid ExpectedJobId = FGuid()) const;
+	bool BuildOutputPlan(const TArray<FRpgCraftingOutputItem>& OutputItems, TArray<FRpgInventoryBatchOperation>& InOutOperations) const;
 	bool ConsumeResourcesWithRefund(AActor* RequestingActor, const TArray<FRpgCraftingResourceCost>& RequiredItems, int32 Quantity, TArray<FRpgCraftingRefundEntry>& OutRefundEntries);
 	void SpendRefundCreditsForCompletedUnit(FRpgCraftingJobEntry& Job);
-	void RefundRemainingJobCosts(FRpgCraftingJobEntry& Job);
-	bool RefundResourceCredit(const FRpgCraftingRefundEntry& RefundEntry);
+	bool RefundRemainingJobCosts(FGuid JobId, TFunction<void()> CommitSideEffects = {});
+	bool FlushOutputToBaseStorageInternal();
+	void RetryBlockedOutput();
 	void TryStartNextQueuedJob();
 	void StartJobAtIndex(int32 JobIndex, float DurationOverride = -1.0f, bool bPauseStateChanged = false);
 	void CompleteActiveJobUnit();
+	void CompleteActiveJobUnitInternal();
 	int32 FindActiveJobIndex() const;
 	int32 FindJobIndex(FGuid JobId) const;
 	bool HasActiveOrPausedJob() const;
 	float GetServerWorldTimeSeconds() const;
 	float GetRecipeCraftTime(const URpgCraftingRecipeDefinition* RecipeDefinition) const;
-	bool AddOutputItemOrDrop(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count);
-	bool SpawnOrMergeDroppedOutput(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count);
-	bool TryMergeDroppedOutput(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 Count) const;
+
 	void MarkCraftingStateDirty(FGuid ChangedJobId = FGuid(), ERpgCraftingJobState ChangedState = ERpgCraftingJobState::Queued, bool bPauseStateChanged = false);
 
 private:
+	// Covers preparation, publication and synchronous observers; nested public commands cannot invalidate paid jobs.
+	bool bMutationInProgress = false;
+	bool bPersistenceRestorePending = false;
 	FTimerHandle CraftingTimerHandle;
+	FTimerHandle OutputRetryTimerHandle;
 };
