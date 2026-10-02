@@ -1,6 +1,6 @@
 ---
 name: unreal-lyra-expert
-description: Applies SurvivalRpg's Lyra-derived Unreal architecture (Experiences, Game Features, GAS, Lyra Interaction, RPG inventory and equipment, CommonUI with MVVM, replication) and its boundary between C++ and Blueprint, Widget Blueprint, or DataAsset content, including Unreal MCP asset authoring. Use when designing, implementing, reviewing, or debugging Unreal C++, Blueprints, Widget Blueprints, or DataAssets in this project.
+description: Applies SurvivalRpg's Lyra-derived Unreal architecture (Experiences, Game Features, GAS, Lyra Interaction, RPG inventory and equipment, CommonUI with MVVM, replication) and its boundary between C++ and Blueprint, Widget Blueprint, or DataAsset content, including Unreal MCP asset authoring. Use for any plan, implementation, review, or debugging of Unreal C++, Blueprints, Widget Blueprints, UI, GAS, or DataAssets in this project, including asset tuning and build or test questions.
 ---
 
 # Unreal Lyra Expert
@@ -49,7 +49,7 @@ The repository-wide rules are in `.agents/skills/survival-rpg-orchestrator/refer
 - Put native-only engine integration, durable authority/replication/prediction/lifecycle invariants, persistence, reusable runtime schemas, and known or measured hot paths in C++.
 - Keep concrete content identity, tuning, composition, asset references, tags, costs, cooldowns, montages, cues, text, icons, and presentation in Blueprint or DataAsset assets. Task size, speculative performance, or inconvenient `.uasset` tooling never justify a runtime C++ leaf class.
 - Concrete `GA_*` assets inherit directly from `URpgGameplayAbility` or a Blueprint family base such as `GA_MeleeBase`. Add an abstract native intermediate only for Blueprint-inaccessible APIs, authority/prediction/lifecycle invariants, or a known or measured hot path.
-- Keep UI WBP/MVVM-first: native subsystems, ViewModels, Slate primitives, lifecycle integration, geometry algorithms, and real hot paths may be C++; screens, entries, toasts, tooltips, layout, styling, and animation live in CommonUI Widget Blueprints. UI reflects gameplay state and never owns item or equipment truth.
+- Keep UI WBP/MVVM-first: native subsystems, ViewModels, Slate primitives, lifecycle integration, geometry algorithms, and real hot paths may be C++; screens, entries, toasts, tooltips, layout, styling, and animation live in CommonUI Widget Blueprints. UI reflects gameplay state and never owns item or equipment truth. When a native widget already renders a fallback layout, add new rows and styling in its Widget Blueprint child and limit native changes to exposing read-only data through the ViewModels.
 - Expose narrow extension points instead of burying authoritative rules in widgets or creating a native class per presentation leaf.
 
 Read and follow the [Unreal MCP asset-authoring workflow](references/unreal-mcp-asset-authoring.md) for any work that creates or changes Blueprint, Widget Blueprint, Gameplay Ability, or DataAsset assets.

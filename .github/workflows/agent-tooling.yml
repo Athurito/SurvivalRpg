@@ -21,6 +21,8 @@ jobs:
           python-version: "3.14"
       - name: Agent skills and instruction files
         run: python Build/Tools/AgentSkills/sync.py --check
+      - name: Skill evaluation scenarios
+        run: python Build/Tools/AgentSkills/skill_evals.py check
       - name: Python tool tests
         run: |
           for suite in Build/Tools/AgentSkills Build/Tools/GaspImportAudit Build/Tools/GaspPacketGap Build/Tools/Unreal; do

@@ -27,8 +27,9 @@ The canonical skills live in `.agents/skills/<name>/`, where Codex discovers the
 
 - Edit only `.agents/skills/`, then run `python Build/Tools/AgentSkills/sync.py`. CI runs it with `--check`, which fails on stale copies, dead repository paths, `/Game` paths, or `URpg*`-style identifiers, Codex-only `$name` syntax in Markdown, and an `AGENTS.md` without a sibling `CLAUDE.md` that imports it.
 - Refer to other skills by their plain name in shared Markdown.
+- After changing a skill description, a boundary rule, or the routing below, run the affected scenarios in `Build/Tools/AgentSkills/evals/` before and after the change; see "Evaluations" in `Build/Tools/AgentSkills/README.md`.
 
-Use the closest matching skill and combine only those whose boundaries the task crosses:
+At the start of a task, before inspecting, planning, reviewing, or changing anything in a skill's domain, load the closest matching skill, also when only a plan or review is requested. Combine only those whose boundaries the task crosses. This file summarizes the guardrails; the skills hold the binding detail:
 - `survival-rpg-project` for game identity, feature scope, first-playable priorities, survival/crafting/progression tradeoffs, portal fantasy, and long-term resource relevance.
 - `survival-rpg-combat-foundation` for combat, equipment, loadouts, item instances, ability grants, mastery/progression, runes, portal combat, Dungeonbreak, and combat GameFeature content.
 - `unreal-lyra-expert` for Unreal Engine, Lyra-derived architecture, GAS, replication, CommonUI/CommonGame, Enhanced Input, Experiences, Game Features, Lyra Interaction, Unreal MCP asset authoring, and Lyra-rooted RPG inventory/equipment implementation.
@@ -59,7 +60,7 @@ Common combinations: runtime work on a new feature pairs `survival-rpg-project` 
 
 - Standing user preference (26.09.2026): when a roadmap step cannot reasonably be tested manually by the user, perform the appropriate automated validation and review, then push/merge the verified work and continue with the next bounded step without requesting another manual sign-off. Preserve actual failures and remaining limits; this does not authorize bypassing required checks. For readily observable gameplay changes, provide a simple reproduction path.
 - Before GASP integration or movement follow-up work, read `docs/gasp-integration-handoff.md` (current state and open findings) and `docs/gasp-integration-roadmap.md` (status, rules, next ready step), then only the task report linked to the affected task ID, and verify the current branch, PR and repository state.
-- Use the roadmap's stable task IDs and keep one bounded task per implementation chat/PR. Respect the active task and recorded file ownership; coordinate shared editor/MCP sessions and binary assets across worktrees. If no task is marked ready, ask the user instead of picking one.
+- Use the roadmap's stable task IDs and keep one bounded task per implementation chat/PR. Respect the active task and recorded file ownership; coordinate shared editor/MCP sessions and binary assets across worktrees. Continue an already authorized active task at its recorded next step without requiring it to be marked ready again. When selecting a new task, if no task is marked ready, ask the user instead of picking one.
 - In the same work PR, record actual commits, validation, failed attempts and limits in the task report (`docs/gasp-<topic>.md`) and the PR description; update only the task's roadmap status row; replace the handoff's current state (active task, branch/PR, file ownership, next action, open findings) instead of appending history. Do not report an open PR as merged or historical test results as newly executed.
 - Ignored `Saved/` evidence and generated NetworkPrediction/Mover plugin overrides are not automatically available in another checkout. Follow the roadmap and `Build/Patches/NetworkPrediction/README.md` before building or changing branches.
 

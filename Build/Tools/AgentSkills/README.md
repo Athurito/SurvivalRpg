@@ -37,3 +37,90 @@ Only code spans and relative links are checked; globs and placeholders such as
 `<name>` or `*` are skipped. Folders under `.claude/skills/` without the
 generated marker are left alone, so Claude-only skills can live there under a
 different name.
+
+## Evaluations
+
+`evals/<skill>.json` holds at least three scenarios per skill that test whether
+Codex and Claude Code load the right skills and keep their boundary rules. Each
+scenario uses the evaluation structure of Anthropic's skill-authoring guide plus
+a stable `id` and optional `excluded_skills`:
+
+| Field | Meaning |
+| --- | --- |
+| `id` | Stable name in reports, lowercase words joined by hyphens |
+| `skills` | Skills that must load; the minimal set the routing in `AGENTS.md` requires |
+| `excluded_skills` | Optional; skills whose loading means misrouting |
+| `query` | The request, phrased the way users actually ask, often with a tempting wrong approach |
+| `files` | Optional repository files attached to the query |
+| `expected_behavior` | One observable behavior per item, graded independently |
+
+The file's own skill must appear in `skills` or `excluded_skills`. Keep
+behaviors valid when repository state moves on, for example "when no roadmap
+task is ready, asks the user" instead of naming today's task status.
+
+```powershell
+python Build/Tools/AgentSkills/skill_evals.py check
+python Build/Tools/AgentSkills/skill_evals.py run --tool codex
+python Build/Tools/AgentSkills/skill_evals.py run --tool claude --model haiku --skill unreal-gasp-expert
+python Build/Tools/AgentSkills/skill_evals.py grade Saved/AgentSkillEvals/<run>
+python Build/Tools/AgentSkills/skill_evals.py report Saved/AgentSkillEvals/<run> Saved/AgentSkillEvals/<run>
+```
+
+`check` runs in CI and validates the fields, the skill names, the minimum count,
+and, like `sync.py --check`, the repository paths and identifiers in code spans.
+
+`run` starts one fresh headless session per scenario from the repository root:
+Claude Code with `-p --permission-mode plan --no-session-persistence`, Codex
+with `exec --sandbox read-only --ephemeral`. Each query gets a fixed note to
+work read-only and answer with a plan. Claude's plan mode stores each plan
+under `~/.claude/plans/`, outside the checkout. The tool's user and project
+configuration still apply, as in real use. A skill counts as loaded after a
+successful Claude Skill result, or a completed full-file read of
+`.agents/skills/<name>/SKILL.md` or its `.claude/skills/` copy that returns the
+skill's frontmatter and body. Claude Read calls and literal shell
+`Get-Content`, `cat`, and `type` reads are recognized. Searches, existence
+checks, failed or unfinished reads, and truncated output do not prove a load.
+Shell pipelines, sliced reads, variables, and other dynamic expressions are
+conservatively unrecognized; inspect the raw transcript when a valid read uses
+one of those forms. Other skill files read, such as references, are recorded
+too. Use `--id` or `--skill` to narrow a run, `--model` to compare models,
+`--jobs` for parallel sessions, and `--exe` when the CLI is not on `PATH`. The
+CLI must be logged in for headless use, so `claude -p` or `codex exec` has to
+work on its own.
+
+`grade` sends each answer and the condensed tool calls to a judge session
+without tools, started outside the repository: Claude by default, `--judge
+codex` otherwise. The judge marks each `expected_behavior` item as met with
+short evidence; a planned step counts, since sessions are read-only. Grading
+uses a scenario's current behaviors while its query is unchanged, so an older
+run can be graded again after a rubric fix; existing grades are reused unless
+the behaviors changed or `--force` is given. Treat grades as evidence, not
+proof, and check not-met items against the transcript before changing a skill.
+`report` prints one row per scenario and run, labels the runs A, B, and so on
+for before-and-after comparisons, and lists each run's totals. Both commands
+check the scenario list recorded in `run.json`. Missing result files remain
+visible as ungraded or missing rows and make the command fail; the trigger
+denominator includes every scheduled scenario. Unexpected result files and
+mismatched scenario ids are setup errors.
+
+Each run writes a new folder under `Saved/AgentSkillEvals/<time>-<tool>[-<model>]`
+with `run.json` (tool version, model, commit), the raw transcript, stderr, the
+result, and the grade per scenario. Like all of `Saved/`, it stays local. Exit
+codes: 0 all passed, 1 a trigger, session, or behavior failed, 2 setup error.
+`report` returns 1 for incomplete runs; a complete comparison report can still
+contain failed triggers or behaviors. Ctrl+C cancels queued scenarios and stops
+running CLI process trees before returning. Results completed before the
+interruption remain available for inspection. Operating-system cleanup failures
+are printed as warnings; parent-only fallback cannot confirm that descendants
+have stopped.
+
+Stored trigger results are historical observations from the parser and routing
+expectations used by that run. A parser or required-skill change needs a new run
+for a directly comparable trigger result; existing result files are not silently
+rewritten. In particular, counts produced before completed-read verification
+may include path mentions or partial searches and do not prove full skill loads.
+
+Run the affected scenarios with at least one model per tool before and after
+changing a skill description, a boundary rule, or the routing in `AGENTS.md`.
+Record the `report` tables and the deviations that led to the change in the pull
+request.

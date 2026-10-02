@@ -1,0 +1,51 @@
+[
+  {
+    "id": "lyra-item-tooltip",
+    "skills": ["unreal-lyra-expert"],
+    "excluded_skills": ["unreal-gasp-expert"],
+    "query": "Das Item-Tooltip im Inventar soll zusätzlich Schaden, Gewicht und Seltenheit anzeigen.",
+    "expected_behavior": [
+      "Finds and extends the existing tooltip foundation `URpgInventoryItemTooltipWidget` and its entry and itemization ViewModels instead of building a second tooltip.",
+      "Puts the new rows, layout, and styling in a Widget Blueprint child bound through MVVM; native changes stay limited to exposing missing read-only values, not to growing the native fallback layout.",
+      "Checks where damage, weight, and rarity are defined, such as item fragments or generated itemization rolls, before adding data.",
+      "Keeps the tooltip read-only: it reflects item data and never owns item or equipment truth.",
+      "Plans authoring, compiling, and saving the Widget Blueprint through the Unreal MCP workflow.",
+      "Does not plan C++ tests that assert the widget tree, bindings, text, or colors."
+    ]
+  },
+  {
+    "id": "lyra-chest-interaction",
+    "skills": ["unreal-lyra-expert"],
+    "excluded_skills": ["unreal-gasp-expert"],
+    "query": "Spieler sollen Truhen mit F öffnen können. Mach dafür im Tick des Characters einen Line-Trace nach vorne und öffne die Truhe, wenn er etwas trifft.",
+    "expected_behavior": [
+      "Recommends the adopted Lyra Interaction system, such as interactable targets, interaction options, and interaction abilities, over a per-tick character trace.",
+      "Checks the existing storage-container interaction, such as `URpgGameplayAbility_OpenStorageContainer`, before adding anything new.",
+      "Keeps opening and access server-authoritative, with the UI only reflecting the opened container.",
+      "Adds no native class unless the interaction needs a reusable mechanism the existing abilities do not cover."
+    ]
+  },
+  {
+    "id": "lyra-client-damage-review",
+    "skills": ["unreal-lyra-expert", "survival-rpg-combat-foundation"],
+    "query": "Review bitte diesen Ansatz: Der Client berechnet beim Treffer den Schaden und schickt ihn per Server-RPC; der Server zieht den Wert direkt vom Leben ab.",
+    "expected_behavior": [
+      "Leads with the concrete defect: the server trusts a client-reported damage value.",
+      "Has the server validate the hit and apply damage through a GameplayEffect instead of writing health directly.",
+      "Limits client prediction to cosmetic feedback such as hit cues while outcomes stay authoritative.",
+      "Recommends the smallest fix that matches the existing combat and GAS seams."
+    ]
+  },
+  {
+    "id": "lyra-build-and-test",
+    "skills": ["unreal-lyra-expert"],
+    "excluded_skills": ["unreal-gasp-expert"],
+    "query": "Ich habe C++ am Block-System geändert. Wie baue ich das Projekt und führe die Block-Tests aus?",
+    "expected_behavior": [
+      "Uses `python Build/Tools/Unreal/ue.py build` and `python Build/Tools/Unreal/ue.py test` with a block filter such as SurvivalRpg.Combat.Block, without assembling Build.bat or UnrealEditor-Cmd calls.",
+      "Mentions closing the editor or Live Coding before building.",
+      "Explains the wrapper's exit codes or that it verifies the NetworkPrediction/Mover overrides first.",
+      "Does not claim that the build or the tests passed when they were not run."
+    ]
+  }
+]

@@ -1,6 +1,6 @@
 ---
 name: survival-rpg-combat-foundation
-description: Defines SurvivalRpg's combat, equipment, and item-instance architecture, covering equip authority, loadouts and quick access, GAS ability grants, native fragments versus ItemDefinition content, asset-first GameplayAbilities, damage areas, mastery, runes, and combat GameFeatures. Use when working on attacks, weapons, equipment, abilities, damage, hit reactions, progression, runes, portal combat, or Dungeonbreak.
+description: Defines SurvivalRpg's combat, equipment, and item-instance architecture, covering equip authority, loadouts and quick access, GAS ability grants, native fragments versus ItemDefinition content, asset-first GameplayAbilities, damage areas, mastery, runes, and combat GameFeatures. Use for any plan, change, tuning, or review touching attacks, weapons, equipment, abilities, damage, hit reactions, progression, runes, portal combat, or Dungeonbreak.
 ---
 
 # SurvivalRpg Combat Foundation

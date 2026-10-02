@@ -1,0 +1,40 @@
+[
+  {
+    "id": "orchestrator-merchant",
+    "skills": ["survival-rpg-orchestrator", "survival-rpg-project"],
+    "excluded_skills": ["unreal-gasp-expert"],
+    "query": "Neues System: ein Händler-NPC, bei dem Spieler Materialien gegen Ausrüstung tauschen können. Leg los.",
+    "expected_behavior": [
+      "Writes an explicit C++ boundary decision before proposing code or assets, covering classification, runtime truth, existing seam, ownership, and the count and justification of new native classes.",
+      "Reuses existing seams after inspecting them, such as Lyra Interaction and the inventory transaction logic, instead of a parallel trade or inventory manager.",
+      "Keeps the authoritative exchange on the server in native code, and stock, prices, NPC variants, text, and screens in DataAssets and Widget Blueprints.",
+      "Notes that merchants are not part of the first-playable scope in `docs/game-vision.md` and proposes the smallest slice or asks whether to build them now.",
+      "Keeps trade truth out of the UI."
+    ]
+  },
+  {
+    "id": "orchestrator-portal-world-event",
+    "skills": ["survival-rpg-orchestrator", "survival-rpg-project"],
+    "query": "Plane ein Weltereignis-System: Portale öffnen sich zufällig in der Oberwelt, spawnen Gegnerwellen, zeigen eine UI-Warnung und geben beim Schließen Belohnungen.",
+    "expected_behavior": [
+      "Splits the request into its systems and chooses the smallest verifiable slice, such as one portal encounter that spawns enemies and can be closed.",
+      "Records the C++ boundary decision: native lifecycle, authority, replication, and scheduling; encounter variants, waves, rewards, visuals, and tuning in feature assets.",
+      "Inspects and extends the existing portal code in `Plugins/GameFeatures/GF_Portals_Core` instead of proposing a new manager.",
+      "Keeps the warning a Widget Blueprint that reflects replicated event state.",
+      "Defers or flags breadth beyond the first playable, such as a full Dungeonbreak or world-state simulation.",
+      "Reports the skills used, the chosen slice, and the remaining risks."
+    ]
+  },
+  {
+    "id": "orchestrator-tuning-only",
+    "skills": ["survival-rpg-combat-foundation"],
+    "excluded_skills": ["survival-rpg-orchestrator", "unreal-gasp-expert"],
+    "query": "Das Testschwert soll 25 Prozent mehr Grundschaden machen.",
+    "expected_behavior": [
+      "Treats the request as tuning of existing content and does not produce a C++ boundary decision or slice plan for it.",
+      "Looks for where the sword's damage is defined, such as the ItemDefinition, AbilitySet, GameplayEffect, or ability defaults, before proposing the change.",
+      "Plans the change as an asset edit through the Unreal MCP workflow and adds no native class or code constant.",
+      "Plans to save and validate the changed asset."
+    ]
+  }
+]
