@@ -17,6 +17,8 @@
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillGameplayTags.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillProgressionComponent.h"
+#include "SurvivalRpg/UI/IndicatorSystem/RpgIndicatorManagerComponent.h"
+#include "Blueprint/UserWidget.h"
 
 #include "Animation/AnimMontage.h"
 #include "Components/BoxComponent.h"
@@ -570,6 +572,102 @@ bool FRpgHarvestAbilityToolAndPreviewTest::RunTest(const FString& Parameters)
 	Harvester.AbilitySystem->ClearAbility(ToolSwing.Handle);
 	Targeting->RefreshPreview();
 	TestFalse(TEXT("Without a primary harvest ability the preview is empty"), Targeting->GetCurrentPreview().HasAbility());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestAbilityIndicatorTest,
+	"SurvivalRpg.Harvesting.Ability.TargetStatusAndIndicatorLifecycle",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestAbilityIndicatorTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestAbilityTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	const float EyeHeight = Harvester.Pawn->BaseEyeHeight;
+	ARpgHarvestAutomationCollidableNodeActor* Node =
+		SpawnNode(World, FVector(150.0, 0.0, EyeHeight), MakeProfile(World, 4));
+	URpgEquipmentInstance* Equipment = NewObject<URpgEquipmentInstance>(Harvester.Pawn);
+	const FGrantedAbility Swing = GrantAbility(Harvester.AbilitySystem, Equipment, true);
+	if (!TestNotNull(TEXT("Indicator node exists"), Node) ||
+		!TestNotNull(TEXT("Primary swing exists"), Swing.Instance))
+	{
+		return false;
+	}
+
+	FActorSpawnParameters ControllerParameters;
+	ControllerParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	APlayerController* Controller = World->SpawnActor<APlayerController>(
+		APlayerController::StaticClass(),
+		FTransform::Identity,
+		ControllerParameters);
+	if (!TestNotNull(TEXT("Local controller exists"), Controller))
+	{
+		return false;
+	}
+	Controller->SetAsLocalPlayerController();
+	Controller->PlayerState = Harvester.PlayerState;
+	URpgIndicatorManagerComponent* IndicatorManager = NewObject<URpgIndicatorManagerComponent>(Controller);
+	IndicatorManager->RegisterComponent();
+	URpgHarvestAutomationTargetingComponent* Targeting = NewObject<URpgHarvestAutomationTargetingComponent>(Controller);
+	Targeting->ConfigureIndicator(TSoftClassPtr<UUserWidget>(UUserWidget::StaticClass()));
+	Targeting->RegisterComponent();
+
+	ERpgHarvestTargetStatus Status = ERpgHarvestTargetStatus::None;
+	int32 Remaining = 0;
+	int32 SectionCount = 0;
+	int32 ToTake = 0;
+	TestFalse(TEXT("Nothing is summarized before the first refresh"), Targeting->GetPrimaryTargetStatus(Status, Remaining, SectionCount, ToTake));
+
+	Targeting->RefreshPreview();
+	TestTrue(TEXT("The primary target is summarized"), Targeting->GetPrimaryTargetStatus(Status, Remaining, SectionCount, ToTake));
+	TestTrue(TEXT("A reachable stocked target is harvestable"), Status == ERpgHarvestTargetStatus::Harvestable);
+	TestEqual(TEXT("The summary reports the current stock"), Remaining, 4);
+	TestEqual(TEXT("The summary reports the section count"), SectionCount, 4);
+	TestEqual(TEXT("The summary reports the sections a swing takes"), ToTake, 1);
+	if (!TestEqual(TEXT("One indicator is registered for the target"), IndicatorManager->GetIndicators().Num(), 1))
+	{
+		return false;
+	}
+	UIndicatorDescriptor* FirstIndicator = IndicatorManager->GetIndicators()[0];
+	TestTrue(TEXT("The indicator anchors to the hit component"), FirstIndicator->GetSceneComponent() == Node->Collision);
+	TestTrue(TEXT("The indicator exposes the targeting read model"), FirstIndicator->GetDataObject() == Targeting);
+
+	Targeting->RefreshPreview();
+	TestEqual(TEXT("An unchanged target keeps its single indicator"), IndicatorManager->GetIndicators().Num(), 1);
+	TestTrue(TEXT("An unchanged target keeps the same descriptor"), IndicatorManager->GetIndicators()[0] == FirstIndicator);
+
+	Node->SetActorLocation(FVector(600.0, 0.0, EyeHeight));
+	Targeting->RefreshPreview();
+	TestTrue(TEXT("A distant target is summarized as out of reach"), Targeting->GetPrimaryTargetStatus(Status, Remaining, SectionCount, ToTake));
+	TestTrue(TEXT("The distant target reports OutOfReach"), Status == ERpgHarvestTargetStatus::OutOfReach);
+	TestEqual(TEXT("An out-of-reach target takes nothing"), ToTake, 0);
+
+	Node->SetActorLocation(FVector(150.0, 0.0, EyeHeight));
+	FRpgHarvestRequest Request;
+	Request.Harvester = Harvester.Pawn;
+	Request.AbilityId = RpgHarvestingMagicGameplayTags::Ability_Harvesting_Manual;
+	Request.RequestedSections = 4;
+	Request.Hit = FHitResult(Node, Node->Collision.Get(), Node->GetActorLocation(), FVector::UpVector);
+	Request.ExpectedRevision = 0;
+	TestTrue(TEXT("Another harvester empties the node"), Node->HarvestableNode->CommitHarvest_Implementation(Request).bDepleted);
+	Targeting->RefreshPreview();
+	TestTrue(TEXT("The emptied target is still summarized"), Targeting->GetPrimaryTargetStatus(Status, Remaining, SectionCount, ToTake));
+	TestTrue(TEXT("The emptied target reports Depleted"), Status == ERpgHarvestTargetStatus::Depleted);
+	TestEqual(TEXT("The emptied target reports no stock"), Remaining, 0);
+
+	Harvester.AbilitySystem->ClearAbility(Swing.Handle);
+	Targeting->RefreshPreview();
+	TestFalse(TEXT("Without a harvest ability nothing is summarized"), Targeting->GetPrimaryTargetStatus(Status, Remaining, SectionCount, ToTake));
+	TestEqual(TEXT("Without a target the indicator is removed"), IndicatorManager->GetIndicators().Num(), 0);
 	return true;
 }
 

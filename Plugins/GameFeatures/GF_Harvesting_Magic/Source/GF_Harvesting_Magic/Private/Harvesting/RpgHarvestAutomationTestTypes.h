@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AbilitySystem/Abilities/RpgGameplayAbility_Harvest.h"
+#include "Harvesting/RpgHarvestTargetingComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Inventory/RpgDroppedInventoryActor.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
@@ -201,4 +202,14 @@ public:
 
 	int32 EventCount = 0;
 	FRpgHarvestPreview LastPreview;
+};
+
+/** Targeting component fixture that can enable the projected indicator without a designer asset. */
+UCLASS(NotBlueprintable, Transient)
+class URpgHarvestAutomationTargetingComponent final : public URpgHarvestTargetingComponent
+{
+	GENERATED_BODY()
+
+public:
+	void ConfigureIndicator(const TSoftClassPtr<UUserWidget>& InWidgetClass) { IndicatorWidgetClass = InWidgetClass; }
 };

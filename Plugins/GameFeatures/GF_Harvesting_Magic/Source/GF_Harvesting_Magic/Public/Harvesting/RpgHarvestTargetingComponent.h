@@ -3,16 +3,44 @@
 #include "Components/ActorComponent.h"
 #include "GameplayAbilitySpecHandle.h"
 #include "Harvesting/RpgHarvestTargeting.h"
+#include "SurvivalRpg/UI/IndicatorSystem/IndicatorDescriptor.h"
 #include "TimerManager.h"
 
 #include "RpgHarvestTargetingComponent.generated.h"
 
 class AController;
 class UAbilitySystemComponent;
+class UUserWidget;
 struct FGameplayAbilitySpec;
 
 /** Cosmetic notification fired on the owning client when the previewed harvest targets change. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRpgHarvestPreviewChangedEvent, const FRpgHarvestPreview&, Preview);
+
+/** Presentation state of the primary previewed target, derived from its evaluation. UI-read-only. */
+UENUM(BlueprintType)
+enum class ERpgHarvestTargetStatus : uint8
+{
+	/** No harvest ability or no target is previewed. */
+	None,
+
+	/** A commit would extract stock from the target. */
+	Harvestable,
+
+	/** The target lies beyond the ability's reach. */
+	OutOfReach,
+
+	/** The target is inactive or has no stock left. */
+	Depleted,
+
+	/** The target requires a tool the ability does not provide. */
+	WrongTool,
+
+	/** The harvester's trade skill is too low for the target. */
+	SkillLocked,
+
+	/** The target rejected the request for another reason. */
+	Unavailable
+};
 
 /**
  * Local-only read model of what the player's harvest abilities would hit, for target indicators.
@@ -23,9 +51,12 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRpgHarvestPreviewChangedEvent, cons
  * - Otherwise the harvest ability bound to the active main-hand tool's primary input is previewed.
  * OnPreviewChanged fires only when the presentation-relevant content changes. The preview never grants or
  * mutates anything; presentation Blueprints and widgets read it.
+ *
+ * When IndicatorWidgetClass is set, the component anchors one projected indicator over the primary target through
+ * the controller's indicator manager. The Widget Blueprint owns all presentation and reads GetPrimaryTargetStatus.
  */
-UCLASS(BlueprintType, ClassGroup = (Rpg), meta = (BlueprintSpawnableComponent, DisplayName = "RPG Harvest Targeting"))
-class GF_HARVESTING_MAGIC_API URpgHarvestTargetingComponent final : public UActorComponent
+UCLASS(Blueprintable, BlueprintType, ClassGroup = (Rpg), meta = (BlueprintSpawnableComponent, DisplayName = "RPG Harvest Targeting"))
+class GF_HARVESTING_MAGIC_API URpgHarvestTargetingComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
@@ -38,6 +69,17 @@ public:
 	/** Returns the latest local preview; empty when no harvest ability is available. */
 	UFUNCTION(BlueprintPure, Category = "Rpg|Harvesting|Targeting")
 	FRpgHarvestPreview GetCurrentPreview() const { return CurrentPreview; }
+
+	/**
+	 * Summarizes the primary previewed target for indicators. Returns false when nothing is previewed.
+	 * OutRemainingSections is the target's current stock; OutSectionsToTake is what the ability would extract.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Harvesting|Targeting")
+	bool GetPrimaryTargetStatus(
+		ERpgHarvestTargetStatus& OutStatus,
+		int32& OutRemainingSections,
+		int32& OutSectionCount,
+		int32& OutSectionsToTake) const;
 
 	/** Re-evaluates immediately and notifies listeners when the preview changed. Does nothing on non-local controllers. */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Harvesting|Targeting")
@@ -60,16 +102,42 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Targeting", meta = (ClampMin = "1.0", ClampMax = "60.0", UIMin = "5.0", UIMax = "30.0"))
 	float UpdateRateHz = 15.0f;
 
+	/** Designer-owned widget shown over the primary target; empty disables the projected indicator. Cosmetic. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Indicator")
+	TSoftClassPtr<UUserWidget> IndicatorWidgetClass;
+
+	/** How the indicator is projected onto the target's hit component. Cosmetic. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Indicator")
+	EActorCanvasProjectionMode ProjectionMode = EActorCanvasProjectionMode::ComponentBoundingBox;
+
+	/** Normalized anchor inside the projected bounding box; (0.5, 0.5, 1) is the top center. Cosmetic. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Indicator")
+	FVector BoundingBoxAnchor = FVector(0.5, 0.5, 1.0);
+
+	/** Screen-space offset of the indicator in pixels after projection. Cosmetic. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Indicator")
+	FVector2D ScreenSpaceOffset = FVector2D(0.0, -24.0);
+
+	/** Indicator layer priority; higher values draw above lower ones. Cosmetic. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Indicator")
+	int32 IndicatorPriority = 10;
+
 private:
 	bool IsLocallyControlled() const;
 	UAbilitySystemComponent* FindAbilitySystem() const;
 	const FGameplayAbilitySpec* FindPreviewSpec(UAbilitySystemComponent& AbilitySystem, bool& bOutAiming) const;
+	void UpdateTargetIndicator();
+	void RemoveTargetIndicator();
 
 	/** Latest local preview, compared on refresh to suppress redundant notifications. */
 	FRpgHarvestPreview CurrentPreview;
 
 	/** Hold-to-aim ability currently held on this client, if any. */
 	FGameplayAbilitySpecHandle AimingSpecHandle;
+
+	/** Projected indicator over the primary target; recreated when the target component changes. */
+	UPROPERTY(Transient)
+	TObjectPtr<UIndicatorDescriptor> TargetIndicator;
 
 	FTimerHandle RefreshTimerHandle;
 };
