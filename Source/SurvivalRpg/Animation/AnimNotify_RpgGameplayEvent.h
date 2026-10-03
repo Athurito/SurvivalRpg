@@ -20,6 +20,9 @@ public:
 	virtual void Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, const FAnimNotifyEventReference& EventReference) override;
 	virtual FString GetNotifyName_Implementation() const override;
 
+	/** Returns the authored GameplayEvent tag; abilities read it to schedule server work at the notify's montage time. */
+	FGameplayTag GetEventTag() const { return EventTag; }
+
 protected:
 	/** GameplayEvent tag sent to the mesh owner's ASC when this notify fires. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gameplay Event", meta = (Categories = "GameplayEvent"))

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AbilitySystem/Abilities/RpgGameplayAbility_Harvest.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Inventory/RpgDroppedInventoryActor.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
@@ -9,6 +10,7 @@
 class URpgCorpseLifecycleComponent;
 class URpgHarvestableComponent;
 class URpgHarvestableCorpseComponent;
+class UBoxComponent;
 class USceneComponent;
 
 /** Drop fixture that deliberately materializes only part of a payload before reporting failure. */
@@ -147,4 +149,56 @@ public:
 	int32 LastSectionCount = INDEX_NONE;
 	bool bLastActive = false;
 	bool bLastInitialState = false;
+};
+
+/** Resource fixture with a blocking collision box so harvest targeting queries can select it. */
+UCLASS(NotBlueprintable, Transient)
+class ARpgHarvestAutomationCollidableNodeActor final : public AActor
+{
+	GENERATED_BODY()
+
+public:
+	explicit ARpgHarvestAutomationCollidableNodeActor(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<UBoxComponent> Collision;
+
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<URpgHarvestableComponent> HarvestableNode;
+};
+
+/** Concrete test-only harvest ability whose tuning tests set on the granted instance. */
+UCLASS(NotBlueprintable)
+class URpgHarvestAutomationTestAbility final : public URpgGameplayAbility_Harvest
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgHarvestAutomationTestAbility(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	void ConfigureTargeting(const FRpgHarvestTargetingParams& InTargeting) { Targeting = InTargeting; }
+	void ConfigureSections(const int32 InSectionsPerTarget) { SectionsPerTarget = InSectionsPerTarget; }
+	void ConfigureCommitDelay(const float InCommitDelaySeconds) { CommitDelaySeconds = InCommitDelaySeconds; }
+	void ConfigureAimWhileInputHeld(const bool bInAim) { bAimWhileInputHeld = bInAim; }
+	void ConfigureSkillUnlock(const FGameplayTag InSkillTag, const int32 InMinimumLevel)
+	{
+		RequiredSkillTag = InSkillTag;
+		MinimumSkillLevel = InMinimumLevel;
+	}
+};
+
+/** Records preview notifications so tests can assert change-only broadcasting. */
+UCLASS(Transient)
+class URpgHarvestAutomationPreviewListener final : public UObject
+{
+	GENERATED_BODY()
+
+public:
+	UFUNCTION()
+	void HandlePreviewChanged(const FRpgHarvestPreview& Preview);
+
+	int32 EventCount = 0;
+	FRpgHarvestPreview LastPreview;
 };
