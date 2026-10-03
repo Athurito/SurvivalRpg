@@ -119,6 +119,44 @@ stock rules are kept separate.
   of falling again.
 - `OnHarvested` is server-only telemetry. Neither event may grant loot.
 
+## Harvest abilities and target preview (HARV-02)
+
+- **Base class:** concrete harvest abilities are `GA_*` Blueprints derived from
+  the abstract `URpgGameplayAbility_Harvest`. They configure:
+  - `HarvestAbilityId` and `Targeting` (single target or area at the aim point,
+    aim distance, aim radius, reach from the avatar, area radius, maximum
+    targets, trace channel).
+  - `SectionsPerTarget` and `HarvestPowerScale`.
+  - An optional trade-skill unlock (`RequiredSkillTag`, `MinimumSkillLevel`).
+  - `bAimWhileInputHeld`, the montage and its play rate, the commit event tag
+    (or `CommitDelaySeconds` without a montage), and the success and no-yield
+    cues.
+  - Costs and cooldowns as usual for GAS.
+- **Blueprint children:** they do not implement the ActivateAbility event.
+  They use `On Harvest Resolved` and cues for feedback.
+- **Tool context:** the tool category and harvest power come from the source
+  equipment's item (`URpgInventoryFragment_HarvestingTool`). Input-bound tool
+  abilities only activate while their equipment holds the matching hand role.
+- **Commit timing:** the server commits exactly once, at the time of the single
+  `RPG Gameplay Event` notify that sends the commit tag. The time is resolved
+  from the montage data, not from server-side notify delivery. Ending or
+  cancelling the ability before that moment, for example by switching tools or
+  by an interrupted montage, yields nothing.
+- **Hold to aim:** the ability previews while its input is held, executes on
+  release, and spends its cooldown only on execution.
+- **Target preview:** `URpgHarvestTargetingComponent` is added to player
+  controllers by the harvesting GameFeature (HARV-03 content).
+  - On the local controller it re-evaluates at `UpdateRateHz` with the same
+    query the server uses.
+  - It previews either the held aim ability or the primary-input ability of
+    the active main-hand tool.
+  - `OnPreviewChanged` fires only on presentation-relevant changes. It carries
+    the targets, the sections each would take, the stock left, the outcome,
+    reach, the aim point and the area.
+  - Presentation (highlight, section pips, state text, area decal) belongs in
+    Blueprints and widgets, preferably on the existing indicator system
+    (`URpgIndicatorManagerComponent`).
+
 ## Performance guardrails
 
 - Resources never tick. Respawn uses a timer. Replicated state is a revision,
@@ -133,8 +171,8 @@ stock rules are kept separate.
 
 | ID | Scope | Status |
 | --- | --- | --- |
-| HARV-01 | Stock core: request/result contract, profile sections and tool requirement, `URpgHarvestableComponent`, multi-section reward batching, tests | Implemented on `claude/harv-01-harvest-stock-core` |
-| HARV-02 | `URpgGameplayAbility_Harvest` base, shared targeting query, local `URpgHarvestTargetingComponent` preview read model | Next |
+| HARV-01 | Stock core: request/result contract, profile sections and tool requirement, `URpgHarvestableComponent`, multi-section reward batching, tests | In review: [#178](https://github.com/Athurito/SurvivalRpg/pull/178) |
+| HARV-02 | `URpgGameplayAbility_Harvest` base, shared targeting query, local `URpgHarvestTargetingComponent` preview read model | Implemented on `claude/harv-02-harvest-ability-targeting` (stacked on HARV-01) |
 | HARV-03 | M0 pickaxe content: tool item, equipment and abilities, iron vein, indicator presentation, `Lvl_HarvestPickaxe` test map | Planned (needs the editor with Unreal MCP) |
 | HARV-04 | M1 Rift Grip: hold to aim, Mining 2 gate, cooldown; replaces Stoneburst | Planned |
 | HARV-05 | M1 weak-point crit: bonus sections from a readable weak point | Planned |

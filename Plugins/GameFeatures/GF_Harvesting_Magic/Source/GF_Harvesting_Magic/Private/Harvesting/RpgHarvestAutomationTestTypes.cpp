@@ -2,6 +2,8 @@
 
 #include "GameplayTags/RpgHarvestingMagicGameplayTags.h"
 #include "Inventory/RpgInventoryFragment_HarvestingTool.h"
+#include "Components/BoxComponent.h"
+#include "Engine/CollisionProfile.h"
 #include "Components/SceneComponent.h"
 #include "Harvesting/RpgHarvestableComponent.h"
 #include "Harvesting/RpgHarvestableCorpseComponent.h"
@@ -170,4 +172,30 @@ void URpgHarvestAutomationNodeStateListener::HandleStateChanged(
 	LastSectionCount = SectionCount;
 	bLastActive = bActive;
 	bLastInitialState = bInitialState;
+}
+
+ARpgHarvestAutomationCollidableNodeActor::ARpgHarvestAutomationCollidableNodeActor(
+	const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	bReplicates = true;
+	SetReplicateMovement(false);
+	Collision = CreateDefaultSubobject<UBoxComponent>(TEXT("Collision"));
+	Collision->InitBoxExtent(FVector(40.0f));
+	Collision->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
+	SetRootComponent(Collision);
+	HarvestableNode = CreateDefaultSubobject<URpgHarvestableComponent>(TEXT("HarvestableNode"));
+}
+
+URpgHarvestAutomationTestAbility::URpgHarvestAutomationTestAbility(
+	const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	HarvestAbilityId = RpgHarvestingMagicGameplayTags::Ability_Harvesting_Manual;
+}
+
+void URpgHarvestAutomationPreviewListener::HandlePreviewChanged(const FRpgHarvestPreview& Preview)
+{
+	++EventCount;
+	LastPreview = Preview;
 }
