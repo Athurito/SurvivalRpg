@@ -34,6 +34,12 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestRewardRequest
 
 	/** Stable target-specific entropy such as a HISM index/revision or corpse revision. */
 	int32 SeedSalt = 0;
+
+	/**
+	 * Number of independent loot-table rolls merged into the one delivered batch, normally one per harvested stock
+	 * section. Values below one are rejected.
+	 */
+	int32 RollCount = 1;
 };
 
 /** Shared stateless harvest rules used by HISM resources and actor-backed corpses. */
@@ -46,11 +52,11 @@ public:
 	/** Checks the profile's authoritative trade-skill requirement without mutating progression. */
 	static bool MeetsSkillGate(const URpgHarvestRewardProfile* Profile, AActor* Harvester);
 
-	/** Rolls once and atomically delivers the entire batch to inventory or one replicated world drop. */
+	/** Rolls RollCount times and atomically delivers the merged batch to inventory or one replicated world drop. */
 	static ERpgHarvestRewardDeliveryResult DeliverReward(
 		const URpgHarvestRewardProfile* Profile,
 		const FRpgHarvestRewardRequest& Request);
 
-	/** Awards the profile's trade-skill XP after a target has accepted successful delivery. */
-	static void AwardExperience(const URpgHarvestRewardProfile* Profile, AActor* Harvester);
+	/** Awards the profile's trade-skill XP once per harvested unit after a target has accepted successful delivery. */
+	static void AwardExperience(const URpgHarvestRewardProfile* Profile, AActor* Harvester, int32 HarvestedUnits = 1);
 };

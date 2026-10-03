@@ -8,7 +8,6 @@
 #include "GameFramework/Controller.h"
 #include "GameplayEffectTypes.h"
 #include "GameplayTags/RpgHarvestingMagicGameplayTags.h"
-#include "Harvesting/RpgHarvestableInstancedMeshComponent.h"
 #include "Harvesting/RpgHarvestableTarget.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgGameplayAbility_Stoneburst)
@@ -71,7 +70,7 @@ void URpgGameplayAbility_Stoneburst::ActivateAbility(
 		return;
 	}
 
-	const bool bHarvestSucceeded = IRpgHarvestableTarget::Execute_CommitHarvest(HarvestReceiver, Request);
+	const bool bHarvestSucceeded = IRpgHarvestableTarget::Execute_CommitHarvest(HarvestReceiver, Request).IsSuccess();
 	if (bHarvestSucceeded && SuccessGameplayCue.IsValid())
 	{
 		FGameplayCueParameters CueParameters;
@@ -153,13 +152,9 @@ bool URpgGameplayAbility_Stoneburst::FindHarvestTarget(
 		CandidateRequest.TraceOrigin = ViewLocation;
 		CandidateRequest.Hit = Hit;
 		CandidateRequest.HarvestPower = FMath::Max(0.0f, HarvestPower);
-		if (const URpgHarvestableInstancedMeshComponent* ResourceInstances =
-			Cast<URpgHarvestableInstancedMeshComponent>(CandidateReceiver))
-		{
-			CandidateRequest.ExpectedRevision =
-				ResourceInstances->GetResourceInstanceRevision(Hit.Item);
-		}
-		if (!IRpgHarvestableTarget::Execute_CanAcceptHarvest(CandidateReceiver, CandidateRequest))
+		CandidateRequest.ExpectedRevision =
+			IRpgHarvestableTarget::Execute_GetHarvestRevision(CandidateReceiver, Hit);
+		if (!IRpgHarvestableTarget::Execute_EvaluateHarvest(CandidateReceiver, CandidateRequest).IsSuccess())
 		{
 			continue;
 		}

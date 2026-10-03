@@ -1,6 +1,7 @@
 #include "Network/RpgLootHarvestNetworkTestTypes.h"
 
 #include "Components/SceneComponent.h"
+#include "Harvesting/RpgHarvestableComponent.h"
 #include "Harvesting/RpgHarvestableInstancedMeshComponent.h"
 #include "Harvesting/RpgHarvestProfile.h"
 #include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
@@ -121,6 +122,39 @@ bool ARpgNetworkAutomationHarvestFixture::ConfigureHarvestProfile(
 
 	HarvestProfileProperty->SetObjectPropertyValue_InContainer(
 		HarvestableInstances,
+		InProfile);
+	return true;
+}
+
+ARpgNetworkAutomationHarvestNodeFixture::ARpgNetworkAutomationHarvestNodeFixture(
+	const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	bReplicates = true;
+	bAlwaysRelevant = true;
+	SetReplicateMovement(false);
+	// Mirrors the recommended resource setup: dormant until a harvest flushes a state change.
+	NetDormancy = DORM_DormantAll;
+	SetNetUpdateFrequency(2.0f);
+
+	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
+	SetRootComponent(SceneRoot);
+	HarvestableNode = CreateDefaultSubobject<URpgHarvestableComponent>(TEXT("HarvestableNode"));
+}
+
+bool ARpgNetworkAutomationHarvestNodeFixture::ConfigureHarvestProfile(
+	URpgHarvestProfile* InProfile)
+{
+	FObjectProperty* HarvestProfileProperty = FindFProperty<FObjectProperty>(
+		URpgHarvestableComponent::StaticClass(),
+		TEXT("HarvestProfile"));
+	if (!HarvestableNode || !HarvestProfileProperty || !InProfile)
+	{
+		return false;
+	}
+
+	HarvestProfileProperty->SetObjectPropertyValue_InContainer(
+		HarvestableNode,
 		InProfile);
 	return true;
 }

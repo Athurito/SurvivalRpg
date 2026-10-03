@@ -4,6 +4,7 @@
 
 #include "Harvesting/RpgHarvestableInstancedMeshActor.h"
 #include "Harvesting/RpgHarvestAutomationTestTypes.h"
+#include "Harvesting/RpgHarvestAutomationTestWorld.h"
 #include "Harvesting/RpgHarvestableInstancedMeshComponent.h"
 #include "Harvesting/RpgHarvestProfile.h"
 #include "GameplayTags/RpgHarvestingMagicGameplayTags.h"
@@ -25,78 +26,7 @@
 
 namespace RpgHarvestableInstancedMeshTests
 {
-	class FScopedTestWorld
-	{
-	public:
-		FScopedTestWorld()
-		{
-			GameInstance = NewObject<UGameInstance>(GEngine, NAME_None, RF_Transient);
-			if (!GameInstance)
-			{
-				return;
-			}
-
-			GameInstance->AddToRoot();
-			GameInstance->InitializeStandalone();
-			World = GameInstance->GetWorld();
-		}
-
-		~FScopedTestWorld()
-		{
-			UWorld* WorldToDestroy = World;
-			if (GameInstance)
-			{
-				GameInstance->Shutdown();
-			}
-
-			if (WorldToDestroy)
-			{
-				GEngine->DestroyWorldContext(WorldToDestroy);
-				WorldToDestroy->DestroyWorld(false);
-			}
-
-			if (GameInstance)
-			{
-				GameInstance->RemoveFromRoot();
-			}
-			GFrameCounter = CachedFrameCounter;
-		}
-
-		UWorld* GetWorld() const
-		{
-			return World;
-		}
-
-		void PrimeTimerManager() const
-		{
-			if (World)
-			{
-				++GFrameCounter;
-				World->GetTimerManager().Tick(0.0f);
-			}
-		}
-
-		void AdvanceTimers(float DeltaSeconds) const
-		{
-			if (World)
-			{
-				// Respawn deadlines intentionally use authoritative world time while
-				// FTimerManager owns the tick-free wakeup queue. A standalone test
-				// world does not advance either clock automatically, so keep them in
-				// lockstep without ticking unrelated actors.
-				World->TimeSeconds += DeltaSeconds;
-				World->UnpausedTimeSeconds += DeltaSeconds;
-				World->RealTimeSeconds += DeltaSeconds;
-				++GFrameCounter;
-				World->GetTimerManager().Tick(DeltaSeconds);
-			}
-		}
-
-	private:
-		const uint64 CachedFrameCounter = GFrameCounter;
-		TObjectPtr<UGameInstance> GameInstance = nullptr;
-		TObjectPtr<UWorld> World = nullptr;
-	};
+	using RpgHarvestAutomation::FScopedTestWorld;
 
 	ARpgHarvestableInstancedMeshActor* SpawnThreeInstanceFixture(UWorld* World)
 	{
@@ -484,7 +414,7 @@ bool FRpgHarvestRewardExperienceRespawnTest::RunTest(
 	InitialHarvestRequest.HarvestPower = 1.0f;
 	TestTrue(
 		TEXT("The direct request accepts the exact server-observed revision"),
-		Component->CanAcceptHarvest_Implementation(InitialHarvestRequest));
+		Component->EvaluateHarvest_Implementation(InitialHarvestRequest).IsSuccess());
 	TestTrue(
 		TEXT("First current-revision request atomically commits"),
 		Component->CommitInteraction(AuthorityQuery, InitialOption));
@@ -520,10 +450,10 @@ bool FRpgHarvestRewardExperienceRespawnTest::RunTest(
 	TestEqual(TEXT("Respawn advances the stable revision"), Component->GetResourceInstanceRevision(0), 2);
 	TestFalse(
 		TEXT("CanAccept rejects a pre-respawn direct request against the fresh active revision"),
-		Component->CanAcceptHarvest_Implementation(InitialHarvestRequest));
+		Component->EvaluateHarvest_Implementation(InitialHarvestRequest).IsSuccess());
 	TestFalse(
 		TEXT("Commit rechecks and rejects a pre-respawn direct request against the fresh active revision"),
-		Component->CommitHarvest_Implementation(InitialHarvestRequest));
+		Component->CommitHarvest_Implementation(InitialHarvestRequest).IsSuccess());
 	TestFalse(
 		TEXT("The pre-respawn interaction revision remains stale after reactivation"),
 		Component->CommitInteraction(AuthorityQuery, InitialOption));
@@ -865,6 +795,82 @@ bool FRpgHarvestSkillGateGatheringBonusTest::RunTest(const FString& Parameters)
 		10.0f);
 	TestFalse(TEXT("Successful gated harvest depletes the node"), Component->IsResourceInstanceActive(2));
 	TestEqual(TEXT("Successful gated harvest advances the revision once"), Component->GetResourceInstanceRevision(2), 1);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestRequiredToolTest,
+	"SurvivalRpg.Interaction.Harvesting.HISM.RequiredToolSuppressesManualHarvest",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestRequiredToolTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestableInstancedMeshTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	ARpgHarvestableInstancedMeshActor* ResourceActor = SpawnThreeInstanceFixture(World);
+	URpgHarvestableInstancedMeshComponent* Component =
+		ResourceActor ? ResourceActor->HarvestableInstances : nullptr;
+	ARpgHarvestAutomationTestPlayerState* Harvester = SpawnHarvester(World);
+	if (!TestNotNull(TEXT("Tool-bound resource component exists"), Component) ||
+		!TestNotNull(TEXT("Tool-bound harvester exists"), Harvester))
+	{
+		return false;
+	}
+
+	URpgHarvestProfile* Profile = MakeHarvestProfile(
+		ResourceActor,
+		{
+			TPair<TSubclassOf<URpgInventoryItemDefinition>, int32>(
+				URpgHarvestAutomationTestStackItemDefinition::StaticClass(),
+				2)
+		},
+		0.0f);
+	Profile->RequiredToolTag = RpgHarvestingMagicGameplayTags::Tool_Harvesting_Skinning;
+	if (!TestTrue(TEXT("Tool-bound harvest profile is attached"), SetHarvestProfile(Component, Profile)))
+	{
+		return false;
+	}
+
+	FInteractionOption ManualOption;
+	TestFalse(
+		TEXT("A tool-bound resource offers no manual interaction harvest"),
+		GatherInstanceOption(Component, Harvester, 0, ManualOption));
+
+	FTransform InstanceTransform;
+	Component->GetInstanceTransform(0, InstanceTransform, true);
+	FRpgHarvestRequest Request;
+	Request.Harvester = Harvester;
+	Request.AbilityId = RpgHarvestingMagicGameplayTags::Ability_Harvesting_Manual;
+	Request.Hit = FHitResult(ResourceActor, Component, InstanceTransform.GetLocation(), FVector::UpVector);
+	Request.Hit.Item = 0;
+	Request.ExpectedRevision = IRpgHarvestableTarget::Execute_GetHarvestRevision(Component, Request.Hit);
+	TestEqual(TEXT("The interface reports the instance revision for its hit"), Request.ExpectedRevision, 0);
+
+	const FRpgHarvestResult ToolLessResult = Component->CommitHarvest_Implementation(Request);
+	TestTrue(TEXT("A tool-less request is rejected as WrongTool"), ToolLessResult.Outcome == ERpgHarvestOutcome::WrongTool);
+	TestTrue(TEXT("The rejected request leaves the instance active"), Component->IsResourceInstanceActive(0));
+
+	Request.ToolTag = RpgHarvestingMagicGameplayTags::Tool_Harvesting;
+	TestTrue(
+		TEXT("A parent tool category does not satisfy a specific tool requirement"),
+		Component->EvaluateHarvest_Implementation(Request).Outcome == ERpgHarvestOutcome::WrongTool);
+
+	Request.ToolTag = RpgHarvestingMagicGameplayTags::Tool_Harvesting_Skinning;
+	const FRpgHarvestResult ToolResult = Component->CommitHarvest_Implementation(Request);
+	TestTrue(TEXT("The matching tool harvests the instance"), ToolResult.IsSuccess());
+	TestTrue(TEXT("The single-section instance reports depletion"), ToolResult.bDepleted);
+	TestTrue(TEXT("The reward reached the inventory"), ToolResult.Delivery == ERpgHarvestDelivery::Inventory);
+	TestEqual(
+		TEXT("The tool harvest grants the complete batch"),
+		Harvester->GetInventoryManagerComponent()->GetTotalItemCountByDefinition(
+			URpgHarvestAutomationTestStackItemDefinition::StaticClass()),
+		2);
+	TestTrue(
+		TEXT("A repeated request reports the depleted instance"),
+		Component->EvaluateHarvest_Implementation(Request).Outcome == ERpgHarvestOutcome::Depleted);
 	return true;
 }
 

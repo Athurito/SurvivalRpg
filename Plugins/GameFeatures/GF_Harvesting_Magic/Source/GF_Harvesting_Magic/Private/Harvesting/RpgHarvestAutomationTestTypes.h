@@ -7,7 +7,9 @@
 #include "RpgHarvestAutomationTestTypes.generated.h"
 
 class URpgCorpseLifecycleComponent;
+class URpgHarvestableComponent;
 class URpgHarvestableCorpseComponent;
+class USceneComponent;
 
 /** Drop fixture that deliberately materializes only part of a payload before reporting failure. */
 UCLASS(NotBlueprintable, Transient)
@@ -106,4 +108,43 @@ public:
 
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<URpgHarvestableCorpseComponent> HarvestableCorpse;
+};
+
+/** Asset-free replicated resource fixture with the real actor-backed harvestable node component. */
+UCLASS(NotBlueprintable, Transient)
+class ARpgHarvestAutomationNodeActor final : public AActor
+{
+	GENERATED_BODY()
+
+public:
+	explicit ARpgHarvestAutomationNodeActor(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<USceneComponent> SceneRoot;
+
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<URpgHarvestableComponent> HarvestableNode;
+};
+
+/** Records harvest-node presentation events so tests can assert initial and live notifications. */
+UCLASS(Transient)
+class URpgHarvestAutomationNodeStateListener final : public UObject
+{
+	GENERATED_BODY()
+
+public:
+	UFUNCTION()
+	void HandleStateChanged(
+		URpgHarvestableComponent* Component,
+		int32 RemainingSections,
+		int32 SectionCount,
+		bool bActive,
+		bool bInitialState);
+
+	int32 EventCount = 0;
+	int32 LastRemainingSections = INDEX_NONE;
+	int32 LastSectionCount = INDEX_NONE;
+	bool bLastActive = false;
+	bool bLastInitialState = false;
 };
