@@ -2,6 +2,8 @@
 
 #include "GameplayTags/RpgHarvestingMagicGameplayTags.h"
 #include "Inventory/RpgInventoryFragment_HarvestingTool.h"
+#include "Components/SceneComponent.h"
+#include "Harvesting/RpgHarvestableComponent.h"
 #include "Harvesting/RpgHarvestableCorpseComponent.h"
 #include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
 #include "SurvivalRpg/Core/Corpse/RpgCorpseLifecycleComponent.h"
@@ -142,4 +144,30 @@ ARpgHarvestAutomationCorpseActor::ARpgHarvestAutomationCorpseActor(
 	CorpseLifecycle = CreateDefaultSubobject<URpgCorpseLifecycleComponent>(TEXT("CorpseLifecycle"));
 	SetRootComponent(CorpseLifecycle);
 	HarvestableCorpse = CreateDefaultSubobject<URpgHarvestableCorpseComponent>(TEXT("HarvestableCorpse"));
+}
+
+ARpgHarvestAutomationNodeActor::ARpgHarvestAutomationNodeActor(
+	const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	bReplicates = true;
+	SetReplicateMovement(false);
+	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
+	SetRootComponent(SceneRoot);
+	HarvestableNode = CreateDefaultSubobject<URpgHarvestableComponent>(TEXT("HarvestableNode"));
+}
+
+void URpgHarvestAutomationNodeStateListener::HandleStateChanged(
+	URpgHarvestableComponent* Component,
+	const int32 RemainingSections,
+	const int32 SectionCount,
+	const bool bActive,
+	const bool bInitialState)
+{
+	(void)Component;
+	++EventCount;
+	LastRemainingSections = RemainingSections;
+	LastSectionCount = SectionCount;
+	bLastActive = bActive;
+	bLastInitialState = bInitialState;
 }

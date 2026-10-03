@@ -1,5 +1,6 @@
 #include "Harvesting/RpgHarvestProfile.h"
 
+#include "GameplayTags/RpgHarvestingMagicGameplayTags.h"
 #include "Misc/DataValidation.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgHarvestProfile)
@@ -22,6 +23,17 @@ EDataValidationResult URpgHarvestProfile::IsDataValid(FDataValidationContext& Co
 	if (MinimumRespawnSeconds < 0.0f || MaximumRespawnSeconds < MinimumRespawnSeconds)
 	{
 		MarkInvalid(NSLOCTEXT("RpgHarvestProfile", "InvalidRespawnRange", "Respawn seconds must be non-negative and Maximum must not be below Minimum."));
+	}
+	if (SectionCount < 1 || SectionCount > MaxSectionCount)
+	{
+		MarkInvalid(FText::Format(
+			NSLOCTEXT("RpgHarvestProfile", "InvalidSectionCount", "SectionCount must be between 1 and {0}."),
+			FText::AsNumber(MaxSectionCount)));
+	}
+	if (RequiredToolTag.IsValid() &&
+		!RequiredToolTag.MatchesTag(RpgHarvestingMagicGameplayTags::Tool_Harvesting))
+	{
+		MarkInvalid(NSLOCTEXT("RpgHarvestProfile", "InvalidRequiredToolTag", "RequiredToolTag must be empty or a registered Tool.Harvesting.* tag."));
 	}
 	return Result;
 }

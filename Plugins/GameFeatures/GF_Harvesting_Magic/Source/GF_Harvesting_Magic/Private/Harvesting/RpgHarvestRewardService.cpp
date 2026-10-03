@@ -63,7 +63,7 @@ ERpgHarvestRewardDeliveryResult FRpgHarvestRewardService::DeliverReward(
 	AActor* Harvester = Request.Harvester.Get();
 	UWorld* World = SourceActor ? SourceActor->GetWorld() : nullptr;
 	if (!Profile || !Profile->LootTable || !SourceActor || !SourceActor->HasAuthority() || !Harvester || !World ||
-		!FMath::IsFinite(Request.HarvestPower) || Request.HarvestPower <= 0.0f)
+		!FMath::IsFinite(Request.HarvestPower) || Request.HarvestPower <= 0.0f || Request.RollCount < 1)
 	{
 		return ERpgHarvestRewardDeliveryResult::Failed;
 	}
@@ -107,8 +107,26 @@ ERpgHarvestRewardDeliveryResult FRpgHarvestRewardService::DeliverReward(
 		static_cast<uint32>(Request.SeedSalt);
 	LootContext.Seed = static_cast<int32>(Entropy ^ (Entropy >> 32));
 
+	// Every stock section rolls independently; the rows are merged before materialization so the
+	// complete multi-section reward is delivered as one atomic batch. The first roll keeps the base seed.
+	const int32 BaseSeed = LootContext.Seed;
+	FRpgLootRollResult CombinedRoll;
+	CombinedRoll.Seed = BaseSeed;
+	for (int32 RollIndex = 0; RollIndex < Request.RollCount; ++RollIndex)
+	{
+		LootContext.Seed = RollIndex == 0
+			? BaseSeed
+			: static_cast<int32>(HashCombine(static_cast<uint32>(BaseSeed), static_cast<uint32>(RollIndex)));
+		FRpgLootRollResult SectionRoll;
+		if (!FRpgLootResolver::RollLoot(Profile->LootTable, LootContext, SectionRoll))
+		{
+			return ERpgHarvestRewardDeliveryResult::Failed;
+		}
+		CombinedRoll.Items.Append(MoveTemp(SectionRoll.Items));
+	}
+
 	FInventoryPickup Reward;
-	if (!FRpgLootResolver::RollAndMaterialize(Profile->LootTable, LootContext, SourceActor, Reward))
+	if (!FRpgLootResolver::MaterializeLoot(SourceActor, CombinedRoll, Reward))
 	{
 		return ERpgHarvestRewardDeliveryResult::Failed;
 	}
@@ -179,9 +197,10 @@ ERpgHarvestRewardDeliveryResult FRpgHarvestRewardService::DeliverReward(
 
 void FRpgHarvestRewardService::AwardExperience(
 	const URpgHarvestRewardProfile* Profile,
-	AActor* Harvester)
+	AActor* Harvester,
+	const int32 HarvestedUnits)
 {
-	if (!Profile || !Profile->SkillTag.IsValid() || Profile->SkillExperience <= 0)
+	if (!Profile || !Profile->SkillTag.IsValid() || Profile->SkillExperience <= 0 || HarvestedUnits <= 0)
 	{
 		return;
 	}
@@ -190,6 +209,8 @@ void FRpgHarvestRewardService::AwardExperience(
 	if (URpgTradeSkillProgressionComponent* TradeSkills =
 			PlayerState ? PlayerState->GetTradeSkillProgressionComponent() : nullptr)
 	{
-		TradeSkills->AddSkillXPByTag(Profile->SkillTag, Profile->SkillExperience);
+		TradeSkills->AddSkillXPByTag(
+			Profile->SkillTag,
+			static_cast<float>(Profile->SkillExperience) * static_cast<float>(HarvestedUnits));
 	}
 }

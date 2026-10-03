@@ -18,7 +18,7 @@ class GF_HARVESTING_MAGIC_API URpgHarvestRewardProfile : public UPrimaryDataAsse
 	GENERATED_BODY()
 
 public:
-	/** Shared loot table evaluated exactly once on the server for each successful harvest. */
+	/** Shared loot table evaluated on the server once per harvested stock section (once per corpse). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Harvesting|Rewards")
 	TObjectPtr<URpgLootTable> LootTable;
 
@@ -30,7 +30,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Harvesting|Progression", meta = (ClampMin = "1", UIMin = "1", UIMax = "100"))
 	int32 MinimumSkillLevel = 1;
 
-	/** Skill XP awarded exactly once after the complete reward reaches inventory or a world drop. */
+	/**
+	 * Skill XP awarded per harvested stock section (once per corpse), only after the complete reward reaches
+	 * inventory or a world drop.
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Harvesting|Progression", meta = (ClampMin = "0", UIMin = "0"))
 	int32 SkillExperience = 0;
 

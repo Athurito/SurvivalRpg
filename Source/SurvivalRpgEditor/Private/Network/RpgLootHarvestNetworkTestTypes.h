@@ -7,6 +7,7 @@
 
 #include "RpgLootHarvestNetworkTestTypes.generated.h"
 
+class URpgHarvestableComponent;
 class URpgHarvestableInstancedMeshComponent;
 class URpgHarvestProfile;
 class URpgInventoryManagerComponent;
@@ -103,4 +104,30 @@ public:
 private:
 	UPROPERTY()
 	TObjectPtr<URpgHarvestableInstancedMeshComponent> HarvestableInstances;
+};
+
+/** Dormant replicated actor-backed resource node with the real harvestable node component. */
+UCLASS(NotBlueprintable, Transient)
+class ARpgNetworkAutomationHarvestNodeFixture final : public AActor
+{
+	GENERATED_BODY()
+
+public:
+	explicit ARpgNetworkAutomationHarvestNodeFixture(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	URpgHarvestableComponent* GetHarvestableNode() const
+	{
+		return HarvestableNode;
+	}
+
+	/** Assigns the static designer profile; tests call it on every machine, as content would load it everywhere. */
+	bool ConfigureHarvestProfile(URpgHarvestProfile* InProfile);
+
+private:
+	UPROPERTY()
+	TObjectPtr<USceneComponent> SceneRoot;
+
+	UPROPERTY()
+	TObjectPtr<URpgHarvestableComponent> HarvestableNode;
 };

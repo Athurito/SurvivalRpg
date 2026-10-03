@@ -5,8 +5,8 @@
 #include "RpgHarvestProfile.generated.h"
 
 /**
- * Static designer-authored rules shared by every instance in one harvestable HISM component.
- * Runtime availability remains server-owned by the component and is not persisted between sessions.
+ * Static designer-authored rules for harvestable resources such as ore veins, trees, and bushes.
+ * Runtime stock and availability remain server-owned by the target component and are not persisted between sessions.
  */
 UCLASS(BlueprintType, Const)
 class GF_HARVESTING_MAGIC_API URpgHarvestProfile : public URpgHarvestRewardProfile
@@ -14,13 +14,38 @@ class GF_HARVESTING_MAGIC_API URpgHarvestProfile : public URpgHarvestRewardProfi
 	GENERATED_BODY()
 
 public:
-	/** Earliest server-only respawn delay in seconds. Zero keeps the instance depleted for the session. */
+	/** Upper bound for SectionCount; keeps replicated stock compact and reward batches bounded. */
+	static constexpr int32 MaxSectionCount = 16;
+
+	/**
+	 * Number of logical stock sections in one resource. Every harvested section rolls LootTable once and awards
+	 * SkillExperience once, so all harvest methods share the same total stock. One keeps single-hit depletion.
+	 * Designer-tuned static data; instanced HISM resources currently support only one section.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Harvesting|Stock", meta = (ClampMin = "1", ClampMax = "16", UIMin = "1", UIMax = "16"))
+	int32 SectionCount = 1;
+
+	/**
+	 * Harvesting tool category a request must carry, for example a pickaxe for ore. Requests match when their
+	 * ToolTag equals or is a child of this tag. Empty accepts tool-less harvesting, including manual interaction;
+	 * when set, resources do not offer the manual interaction harvest.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Harvesting|Tools", meta = (Categories = "Tool.Harvesting"))
+	FGameplayTag RequiredToolTag;
+
+	/** Earliest server-only respawn delay in seconds. Zero keeps the resource depleted for the session. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Harvesting|Respawn", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "s"))
 	float MinimumRespawnSeconds = 0.0f;
 
 	/** Latest server-only respawn delay in seconds; values below the minimum are clamped at runtime. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Harvesting|Respawn", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "s"))
 	float MaximumRespawnSeconds = 0.0f;
+
+	/** Returns SectionCount clamped to the supported range. */
+	int32 GetClampedSectionCount() const
+	{
+		return FMath::Clamp(SectionCount, 1, MaxSectionCount);
+	}
 
 	virtual FPrimaryAssetId GetPrimaryAssetId() const override;
 

@@ -5,6 +5,7 @@
 #include "GameplayTags/RpgHarvestingMagicGameplayTags.h"
 #include "Harvesting/RpgHarvestProfile.h"
 #include "Harvesting/RpgHarvestRewardService.h"
+#include "Harvesting/RpgHarvestStockRules.h"
 #include "Misc/ScopeExit.h"
 #include "Net/UnrealNetwork.h"
 #include "SurvivalRpg/Interaction/InteractionOption.h"
@@ -172,6 +173,17 @@ void URpgHarvestableInstancedMeshComponent::BeginPlay()
 	ReplicatedInstanceStates.OwnerComponent = this;
 	CacheAuthoredInstanceTransforms();
 	ApplyAllReplicatedInstanceStates();
+
+	if (HarvestProfile && HarvestProfile->GetClampedSectionCount() > 1)
+	{
+		UE_LOG(
+			LogRpgHarvesting,
+			Warning,
+			TEXT("%s uses harvest profile %s with %d sections; instanced resources support one section and deplete on the first harvest."),
+			*GetPathName(),
+			*GetNameSafe(HarvestProfile),
+			HarvestProfile->GetClampedSectionCount());
+	}
 }
 
 void URpgHarvestableInstancedMeshComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -253,35 +265,57 @@ bool URpgHarvestableInstancedMeshComponent::CommitInteraction(
 	Request.ExpectedRevision = ValidatedOption.TargetRef.Revision;
 	Request.HarvestPower = 1.0f;
 
-	return IRpgHarvestableTarget::Execute_CanAcceptHarvest(this, Request) &&
-		IRpgHarvestableTarget::Execute_CommitHarvest(this, Request);
+	return IRpgHarvestableTarget::Execute_CommitHarvest(this, Request).IsSuccess();
 }
 
-bool URpgHarvestableInstancedMeshComponent::CanAcceptHarvest_Implementation(const FRpgHarvestRequest& Request) const
+int32 URpgHarvestableInstancedMeshComponent::GetHarvestRevision_Implementation(const FHitResult& Hit) const
+{
+	return Hit.GetComponent() == this
+		? GetResourceInstanceRevision(Hit.Item)
+		: INDEX_NONE;
+}
+
+FRpgHarvestResult URpgHarvestableInstancedMeshComponent::EvaluateHarvest_Implementation(
+	const FRpgHarvestRequest& Request) const
 {
 	const AActor* OwningActor = GetOwner();
-	return OwningActor &&
-		OwningActor->HasAuthority() &&
-		Request.Harvester != nullptr &&
-		FMath::IsFinite(Request.HarvestPower) &&
-		Request.HarvestPower > 0.0f &&
-		Request.AbilityId.MatchesTag(RpgHarvestingMagicGameplayTags::Ability_Harvesting) &&
-		Request.Hit.GetActor() == OwningActor &&
-		Request.Hit.GetComponent() == this &&
-		Request.ExpectedRevision != INDEX_NONE &&
-		Request.ExpectedRevision == GetResourceInstanceRevision(Request.Hit.Item) &&
-		IsResourceInstanceActive(Request.Hit.Item) &&
-		!HarvestsInProgress.Contains(Request.Hit.Item) &&
-		CanHarvesterMeetSkillGate(Request);
+	const int32 InstanceIndex = Request.Hit.Item;
+	if (!OwningActor ||
+		Request.Hit.GetActor() != OwningActor ||
+		Request.Hit.GetComponent() != this ||
+		!IsValidResourceInstanceIndex(InstanceIndex))
+	{
+		return FRpgHarvestResult::MakeRejected(ERpgHarvestOutcome::Invalid);
+	}
+
+	// Instances keep a single section: an active instance holds its complete stock.
+	FRpgHarvestStockSnapshot Stock;
+	Stock.Revision = GetResourceInstanceRevision(InstanceIndex);
+	Stock.SectionCount = 1;
+	Stock.bActive = IsResourceInstanceActive(InstanceIndex);
+	Stock.HarvestedSections = Stock.bActive ? 0 : 1;
+	FRpgHarvestResult Result = FRpgHarvestStockRules::Evaluate(HarvestProfile, Request, Stock);
+	if (Result.IsSuccess() && HarvestsInProgress.Contains(InstanceIndex))
+	{
+		return FRpgHarvestResult::MakeRejected(ERpgHarvestOutcome::Stale, 1, 1);
+	}
+	return Result;
 }
 
-bool URpgHarvestableInstancedMeshComponent::CommitHarvest_Implementation(const FRpgHarvestRequest& Request)
+FRpgHarvestResult URpgHarvestableInstancedMeshComponent::CommitHarvest_Implementation(const FRpgHarvestRequest& Request)
 {
+	const AActor* OwningActor = GetOwner();
+	if (!OwningActor || !OwningActor->HasAuthority())
+	{
+		return FRpgHarvestResult::MakeRejected(ERpgHarvestOutcome::Invalid);
+	}
+
 	// Re-run the complete validation after any ability cost/commit work. This includes
 	// the exact resource revision observed when the authoritative target was selected.
-	if (!CanAcceptHarvest_Implementation(Request))
+	FRpgHarvestResult Result = EvaluateHarvest_Implementation(Request);
+	if (!Result.IsSuccess())
 	{
-		return false;
+		return Result;
 	}
 	const int32 InstanceIndex = Request.Hit.Item;
 	HarvestsInProgress.Add(InstanceIndex);
@@ -292,20 +326,28 @@ bool URpgHarvestableInstancedMeshComponent::CommitHarvest_Implementation(const F
 
 	// Existing reference nodes without a profile retain their deplete-only behavior.
 	// Profile-backed nodes must establish an inventory grant or complete world-drop fallback first.
-	if (HarvestProfile && !TryDeliverHarvestReward(Request))
+	ERpgHarvestDelivery Delivery = ERpgHarvestDelivery::None;
+	if (HarvestProfile)
 	{
-		return false;
+		const ERpgHarvestRewardDeliveryResult DeliveryResult = TryDeliverHarvestReward(Request);
+		if (DeliveryResult == ERpgHarvestRewardDeliveryResult::Failed)
+		{
+			return FRpgHarvestResult::MakeRejected(ERpgHarvestOutcome::DeliveryFailed, 1, 1);
+		}
+		Delivery = FRpgHarvestStockRules::ToDelivery(DeliveryResult);
 	}
 	if (!SetResourceInstanceActive(InstanceIndex, false))
 	{
-		return false;
+		return FRpgHarvestResult::MakeRejected(ERpgHarvestOutcome::Invalid, 1, 1);
 	}
 
 	AwardHarvestExperience(Request);
 	ScheduleResourceRespawn(InstanceIndex);
 
 	OnResourceInstanceHarvested.Broadcast(InstanceIndex, GetResourceInstanceRevision(InstanceIndex), Request);
-	return true;
+	Result.Delivery = Delivery;
+	Result.bDepleted = true;
+	return Result;
 }
 
 bool URpgHarvestableInstancedMeshComponent::IsResourceInstanceActive(const int32 InstanceIndex) const
@@ -391,6 +433,11 @@ bool URpgHarvestableInstancedMeshComponent::BuildInteractionOption(
 	{
 		return false;
 	}
+	if (HarvestProfile && HarvestProfile->RequiredToolTag.IsValid())
+	{
+		// Tool-bound resources are harvested through tool abilities, never through the manual interaction.
+		return false;
+	}
 
 	FTransform InstanceWorldTransform;
 	if (!GetInstanceTransform(InstanceIndex, InstanceWorldTransform, true))
@@ -466,17 +513,13 @@ void URpgHarvestableInstancedMeshComponent::ApplyReplicatedInstanceState(
 	OnResourceInstanceStateChanged.Broadcast(InstanceIndex, bInstanceActive, Revision);
 }
 
-bool URpgHarvestableInstancedMeshComponent::CanHarvesterMeetSkillGate(const FRpgHarvestRequest& Request) const
-{
-	return FRpgHarvestRewardService::MeetsSkillGate(HarvestProfile, Request.Harvester);
-}
-
-bool URpgHarvestableInstancedMeshComponent::TryDeliverHarvestReward(const FRpgHarvestRequest& Request)
+ERpgHarvestRewardDeliveryResult URpgHarvestableInstancedMeshComponent::TryDeliverHarvestReward(
+	const FRpgHarvestRequest& Request)
 {
 	AActor* OwningActor = GetOwner();
 	if (!HarvestProfile || !OwningActor || !OwningActor->HasAuthority())
 	{
-		return false;
+		return ERpgHarvestRewardDeliveryResult::Failed;
 	}
 
 	FTransform DropTransform = FTransform::Identity;
@@ -493,8 +536,7 @@ bool URpgHarvestableInstancedMeshComponent::TryDeliverHarvestReward(const FRpgHa
 	RewardRequest.SeedSalt = HashCombine(
 		GetTypeHash(Request.Hit.Item),
 		GetTypeHash(GetResourceInstanceRevision(Request.Hit.Item)));
-	return FRpgHarvestRewardService::DeliverReward(HarvestProfile, RewardRequest) !=
-		ERpgHarvestRewardDeliveryResult::Failed;
+	return FRpgHarvestRewardService::DeliverReward(HarvestProfile, RewardRequest);
 }
 
 void URpgHarvestableInstancedMeshComponent::AwardHarvestExperience(const FRpgHarvestRequest& Request) const

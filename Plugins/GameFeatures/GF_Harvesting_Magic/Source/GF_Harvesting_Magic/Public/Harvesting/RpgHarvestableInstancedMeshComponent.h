@@ -10,6 +10,7 @@
 
 class URpgHarvestableInstancedMeshComponent;
 class URpgHarvestProfile;
+enum class ERpgHarvestRewardDeliveryResult : uint8;
 class FLifetimeProperty;
 struct FInteractionQuery;
 struct FInteractionOption;
@@ -127,8 +128,9 @@ public:
 	//~ End IInteractableTarget interface
 
 	//~ IRpgHarvestableTarget interface
-	virtual bool CanAcceptHarvest_Implementation(const FRpgHarvestRequest& Request) const override;
-	virtual bool CommitHarvest_Implementation(const FRpgHarvestRequest& Request) override;
+	virtual int32 GetHarvestRevision_Implementation(const FHitResult& Hit) const override;
+	virtual FRpgHarvestResult EvaluateHarvest_Implementation(const FRpgHarvestRequest& Request) const override;
+	virtual FRpgHarvestResult CommitHarvest_Implementation(const FRpgHarvestRequest& Request) override;
 	//~ End IRpgHarvestableTarget interface
 
 	/** Returns whether the server-authored instance is available for focus or harvesting. */
@@ -175,7 +177,8 @@ protected:
 	FRpgInteractionPromptDefinition InteractionPrompt;
 
 	/**
-	 * Static rewards, progression gate, and respawn tuning for every instance in this component.
+	 * Static rewards, progression gate, tool requirement, and respawn tuning for every instance in this component.
+	 * Instances support a single stock section; SectionCount above one is treated as one with a warning.
 	 * When unset, the component retains its legacy deplete-only behavior for existing reference content.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rpg|Harvesting|Rewards")
@@ -190,8 +193,7 @@ private:
 	void CacheAuthoredInstanceTransforms();
 	void ApplyAllReplicatedInstanceStates();
 	void ApplyReplicatedInstanceState(int32 InstanceIndex, bool bInstanceActive, int32 Revision);
-	bool CanHarvesterMeetSkillGate(const FRpgHarvestRequest& Request) const;
-	bool TryDeliverHarvestReward(const FRpgHarvestRequest& Request);
+	ERpgHarvestRewardDeliveryResult TryDeliverHarvestReward(const FRpgHarvestRequest& Request);
 	void AwardHarvestExperience(const FRpgHarvestRequest& Request) const;
 	void ScheduleResourceRespawn(int32 InstanceIndex);
 	void ArmNextRespawnTimer();

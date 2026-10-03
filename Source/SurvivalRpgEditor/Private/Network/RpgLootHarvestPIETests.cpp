@@ -15,6 +15,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFeaturesSubsystem.h"
 #include "GameplayTags/RpgHarvestingMagicGameplayTags.h"
+#include "Harvesting/RpgHarvestableComponent.h"
 #include "Harvesting/RpgHarvestableInstancedMeshComponent.h"
 #include "Harvesting/RpgHarvestProfile.h"
 #include "SurvivalRpg/Inventory/Loot/RpgLootTable.h"
@@ -33,12 +34,14 @@ namespace RpgLootHarvestPIETests
 	constexpr int32 FirstOverflowQuantity = 3;
 	constexpr int32 SecondOverflowQuantity = 2;
 	constexpr int32 HarvestExperience = 10;
+	constexpr int32 NodeSectionCount = 4;
 
 	struct FNetworkState : public FBasePIENetworkComponentState
 	{
 		ARpgNetworkAutomationLootFixture* LootFixture = nullptr;
 		ARpgNetworkAutomationHarvesterState* Harvester = nullptr;
 		ARpgNetworkAutomationHarvestFixture* HarvestFixture = nullptr;
+		ARpgNetworkAutomationHarvestNodeFixture* HarvestNode = nullptr;
 	};
 
 	FTimespan NetworkTimeout()
@@ -96,6 +99,67 @@ namespace RpgLootHarvestPIETests
 		Profile->MaximumRespawnSeconds = 0.0f;
 		Profile->OverflowDropClass = ARpgDroppedInventoryActor::StaticClass();
 		return Profile;
+	}
+
+	URpgHarvestProfile* MakeSectionedNodeProfile(UObject* Outer)
+	{
+		URpgHarvestProfile* Profile = NewObject<URpgHarvestProfile>(Outer);
+		if (!Profile)
+		{
+			return nullptr;
+		}
+
+		Profile->LootTable = MakeGuaranteedLootTable(
+			Profile,
+			{
+				TPair<TSubclassOf<URpgInventoryItemDefinition>, int32>(
+					URpgNetworkAutomationMaterialDefinition::StaticClass(),
+					LootQuantity)
+			});
+		Profile->SkillTag = RpgTradeSkillGameplayTags::Skill_Gathering_Foraging;
+		Profile->MinimumSkillLevel = 1;
+		Profile->SkillExperience = HarvestExperience;
+		Profile->SectionCount = NodeSectionCount;
+		Profile->MinimumRespawnSeconds = 0.0f;
+		Profile->MaximumRespawnSeconds = 0.0f;
+		return Profile;
+	}
+
+	FRpgHarvestRequest MakeNodeRequest(
+		ARpgNetworkAutomationHarvestNodeFixture* Node,
+		AActor* Harvester,
+		const int32 RequestedSections)
+	{
+		FRpgHarvestRequest Request;
+		Request.Harvester = Harvester;
+		Request.AbilityId = RpgHarvestingMagicGameplayTags::Ability_Harvesting_Manual;
+		Request.HarvestPower = 1.0f;
+		Request.RequestedSections = RequestedSections;
+		Request.Hit = FHitResult(
+			Node,
+			nullptr,
+			Node ? Node->GetActorLocation() : FVector::ZeroVector,
+			FVector::UpVector);
+		Request.ExpectedRevision = Node && Node->GetHarvestableNode()
+			? IRpgHarvestableTarget::Execute_GetHarvestRevision(Node->GetHarvestableNode(), Request.Hit)
+			: INDEX_NONE;
+		return Request;
+	}
+
+	bool HasReplicatedNodeState(
+		const FNetworkState& State,
+		const int32 ExpectedRemainingSections,
+		const int32 ExpectedRevision,
+		const bool bExpectedActive)
+	{
+		const URpgHarvestableComponent* Node = IsValid(State.HarvestNode)
+			? State.HarvestNode->GetHarvestableNode()
+			: nullptr;
+		return Node && !State.HarvestNode->HasAuthority() &&
+			Node->GetSectionCount() == NodeSectionCount &&
+			Node->GetRemainingSections() == ExpectedRemainingSections &&
+			Node->GetHarvestState().Revision == ExpectedRevision &&
+			Node->GetHarvestState().bActive == bExpectedActive;
 	}
 
 	bool IsServerReady(const FNetworkState& State, const int32 ExpectedClients)
@@ -430,7 +494,7 @@ NETWORK_TEST_CLASS(LootHarvestPIE, "SurvivalRpg.Network")
 						State.HarvestFixture,
 						State.Harvester);
 					ASSERT_THAT(IsTrue(
-						!Component->CommitHarvest_Implementation(Request)));
+						!Component->CommitHarvest_Implementation(Request).IsSuccess()));
 					ASSERT_THAT(IsTrue(Component->IsResourceInstanceActive(0)));
 					ASSERT_THAT(AreEqual(
 						Component->GetResourceInstanceRevision(0),
@@ -457,9 +521,9 @@ NETWORK_TEST_CLASS(LootHarvestPIE, "SurvivalRpg.Network")
 						State.HarvestFixture,
 						State.Harvester);
 					ASSERT_THAT(IsTrue(
-						Component->CanAcceptHarvest_Implementation(Request)));
+						Component->EvaluateHarvest_Implementation(Request).IsSuccess()));
 					ASSERT_THAT(IsTrue(
-						Component->CommitHarvest_Implementation(Request)));
+						Component->CommitHarvest_Implementation(Request).IsSuccess()));
 					ASSERT_THAT(IsTrue(
 						!Component->IsResourceInstanceActive(0)));
 					ASSERT_THAT(AreEqual(
@@ -476,7 +540,7 @@ NETWORK_TEST_CLASS(LootHarvestPIE, "SurvivalRpg.Network")
 						static_cast<float>(HarvestExperience))));
 
 					ASSERT_THAT(IsTrue(
-						!Component->CommitHarvest_Implementation(Request)));
+						!Component->CommitHarvest_Implementation(Request).IsSuccess()));
 					ASSERT_THAT(AreEqual(CountWorldDrops(State.World), 1));
 					ASSERT_THAT(IsTrue(FMath::IsNearlyEqual(
 						TradeSkills->GetSkillXPByTag(
@@ -541,6 +605,155 @@ NETWORK_TEST_CLASS(LootHarvestPIE, "SurvivalRpg.Network")
 					ASSERT_THAT(IsTrue(HasReplicatedHarvestState(State)));
 					ASSERT_THAT(IsTrue(HasCompleteOverflowDrop(State.World)));
 				});
+	}
+
+	TEST_METHOD(ActorNodeSectionsReplicateAndLateJoin)
+	{
+		using namespace RpgLootHarvestPIETests;
+
+		// SpawnAndReplicate begins play before the fixture's profile is assigned; content assigns it beforehand.
+		TestRunner->AddExpectedMessage(
+			TEXT("has no harvest profile and rejects every harvest request"),
+			ELogVerbosity::Warning,
+			EAutomationExpectedMessageFlags::Contains,
+			1);
+
+		Network
+			.UntilServer(
+				TEXT("Dedicated server and first connection are ready for the node test"),
+				[](FNetworkState& State)
+				{
+					return IsServerReady(State, 1);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Initial PIE client is ready for the node test"),
+				[](FNetworkState& State)
+				{
+					return IsClientReady(State);
+				},
+				NetworkTimeout())
+			.SpawnAndReplicate<
+				ARpgNetworkAutomationHarvesterState,
+				&FNetworkState::Harvester>(
+				[](ARpgNetworkAutomationHarvesterState& Harvester)
+				{
+					(void)Harvester;
+				},
+				NetworkTimeout())
+			.SpawnAndReplicate<
+				ARpgNetworkAutomationHarvestNodeFixture,
+				&FNetworkState::HarvestNode>(
+				[this](ARpgNetworkAutomationHarvestNodeFixture& Node)
+				{
+					if (!Node.ConfigureHarvestProfile(MakeSectionedNodeProfile(&Node)))
+					{
+						TestRunner->AddError(TEXT("Failed to configure the server node profile."));
+					}
+				},
+				NetworkTimeout())
+			.ThenClients(
+				TEXT("Clients load the same static node profile and see the full stock"),
+				[this](FNetworkState& State)
+				{
+					ASSERT_THAT(IsNotNull(State.HarvestNode));
+					ASSERT_THAT(IsTrue(State.HarvestNode->ConfigureHarvestProfile(
+						MakeSectionedNodeProfile(State.HarvestNode))));
+					ASSERT_THAT(IsTrue(HasReplicatedNodeState(State, NodeSectionCount, 0, true)));
+				})
+			.ThenClient(
+				TEXT("A client cannot extract stock"),
+				0,
+				[this](FNetworkState& State)
+				{
+					URpgHarvestableComponent* Node = State.HarvestNode->GetHarvestableNode();
+					const FRpgHarvestRequest Request = MakeNodeRequest(State.HarvestNode, State.Harvester, 1);
+					ASSERT_THAT(IsTrue(Node->EvaluateHarvest_Implementation(Request).IsSuccess()));
+					ASSERT_THAT(IsTrue(
+						Node->CommitHarvest_Implementation(Request).Outcome == ERpgHarvestOutcome::Invalid));
+					ASSERT_THAT(AreEqual(Node->GetRemainingSections(), NodeSectionCount));
+				})
+			.ThenServer(
+				TEXT("Two concurrent server hits share the stock of the dormant node"),
+				[this](FNetworkState& State)
+				{
+					ASSERT_THAT(IsNotNull(State.HarvestNode));
+					ASSERT_THAT(IsNotNull(State.Harvester));
+					URpgHarvestableComponent* Node = State.HarvestNode->GetHarvestableNode();
+					const FRpgHarvestRequest First = MakeNodeRequest(State.HarvestNode, State.Harvester, 1);
+					const FRpgHarvestRequest Second = MakeNodeRequest(State.HarvestNode, State.Harvester, 1);
+					ASSERT_THAT(IsTrue(Node->CommitHarvest_Implementation(First).IsSuccess()));
+					ASSERT_THAT(IsTrue(Node->CommitHarvest_Implementation(Second).IsSuccess()));
+					ASSERT_THAT(AreEqual(Node->GetRemainingSections(), NodeSectionCount - 2));
+					ASSERT_THAT(AreEqual(Node->GetHarvestState().Revision, 0));
+					ASSERT_THAT(AreEqual(
+						State.Harvester->GetInventoryManagerComponent()->GetTotalItemCountByDefinition(
+							URpgNetworkAutomationMaterialDefinition::StaticClass()),
+						2 * LootQuantity));
+				})
+			.UntilClient(
+				TEXT("The flushed dormant node replicates its partial stock"),
+				0,
+				[](FNetworkState& State)
+				{
+					return HasReplicatedNodeState(State, NodeSectionCount - 2, 0, true);
+				},
+				NetworkTimeout())
+			.ThenClientJoins(NetworkTimeout())
+			.UntilServer(
+				TEXT("Late join establishes the second connection for the node test"),
+				[](FNetworkState& State)
+				{
+					return IsServerReady(State, 2);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Late-joining client is ready and received the node"),
+				1,
+				[](FNetworkState& State)
+				{
+					return IsClientReady(State) && IsValid(State.HarvestNode);
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("Late-joining client loads the static node profile"),
+				1,
+				[this](FNetworkState& State)
+				{
+					ASSERT_THAT(IsTrue(State.HarvestNode->ConfigureHarvestProfile(
+						MakeSectionedNodeProfile(State.HarvestNode))));
+				})
+			.UntilClient(
+				TEXT("Late join reconstructs the partial stock"),
+				1,
+				[](FNetworkState& State)
+				{
+					return HasReplicatedNodeState(State, NodeSectionCount - 2, 0, true);
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("An oversized request takes the remaining stock and depletes the node"),
+				[this](FNetworkState& State)
+				{
+					URpgHarvestableComponent* Node = State.HarvestNode->GetHarvestableNode();
+					const FRpgHarvestResult Result =
+						Node->CommitHarvest_Implementation(MakeNodeRequest(State.HarvestNode, State.Harvester, 3));
+					ASSERT_THAT(IsTrue(Result.IsSuccess()));
+					ASSERT_THAT(AreEqual(Result.SectionsTaken, 2));
+					ASSERT_THAT(IsTrue(Result.bDepleted));
+					ASSERT_THAT(AreEqual(Node->GetHarvestState().Revision, 1));
+					ASSERT_THAT(AreEqual(
+						State.Harvester->GetInventoryManagerComponent()->GetTotalItemCountByDefinition(
+							URpgNetworkAutomationMaterialDefinition::StaticClass()),
+						NodeSectionCount * LootQuantity));
+				})
+			.UntilClients(
+				TEXT("Both clients see the depleted node"),
+				[](FNetworkState& State)
+				{
+					return HasReplicatedNodeState(State, 0, 1, false);
+				},
+				NetworkTimeout());
 	}
 
 	TEST_METHOD(GatheringSetGameFeatureReactivationIsIdempotent)
