@@ -15,6 +15,7 @@ public class GF_Harvesting_Magic : ModuleRules
 			"GameplayTags",
 			"GameplayTasks",
 			"NetCore",
+			"SlateCore",
 			"SurvivalRpg",
 		});
 
@@ -22,6 +23,7 @@ public class GF_Harvesting_Magic : ModuleRules
 		{
 			"ModularGameplayActors",
 			"PhysicsCore",
+			"UMG",
 		});
 	}
 }

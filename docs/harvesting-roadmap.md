@@ -43,7 +43,7 @@ stock rules are kept separate.
 
 | Plan element | Project seam | Status |
 | --- | --- | --- |
-| Tool item → equipment → ability set → ability | `URpgInventoryFragment_EquippableItem`, `URpgEquipmentDefinition::SlotAbilitySetsToGrant`, `URpgAbilitySet`, `URpgGameplayAbility_FromEquipment` | Exists; tool content comes in HARV-03 |
+| Tool item → equipment → ability set → ability | `URpgInventoryFragment_EquippableItem`, `URpgEquipmentDefinition::SlotAbilitySetsToGrant`, `URpgAbilitySet`, `URpgGameplayAbility_FromEquipment` | Exists; the pickaxe chain is authored in HARV-03 |
 | Harvestable component and definition | `URpgHarvestableComponent`, `URpgHarvestProfile` | HARV-01 |
 | Harvest request and result | `FRpgHarvestRequest`, `FRpgHarvestResult`, `IRpgHarvestableTarget` | HARV-01 |
 | Auto pickup and overflow container | `FRpgHarvestRewardService`: atomic inventory batch or one replicated drop | Exists; multi-section batching added in HARV-01 |
@@ -157,6 +157,63 @@ stock rules are kept separate.
     Blueprints and widgets, preferably on the existing indicator system
     (`URpgIndicatorManagerComponent`).
 
+## Pickaxe content (HARV-03)
+
+All assets live in `GF_Harvesting_Magic` and are authored through Unreal MCP.
+
+- **Tool chain:**
+  - `ID_Tool_Pickaxe` configures the native fragments `EquippableItem`
+    (`ED_Tool_Pickaxe`), `HarvestingTool` (`Tool.Harvesting.Pickaxe`, power 1),
+    `ItemTraits`, `UIData` and `SpatialItem`.
+  - `ED_Tool_Pickaxe` allows the main hand only, spawns the placeholder
+    `BP_Tool_PickaxeActor` at `hand_r` and grants `AS_Tool_Pickaxe` while the
+    tool holds the main hand.
+  - `AS_Tool_Pickaxe` binds `GA_Harvest_PickaxeStrike` to
+    `InputTag.Weapon.Primary` with the id `Ability.Harvesting.PickaxeStrike`.
+- **Pickaxe Strike:** `GA_Harvest_PickaxeStrike` takes one section per swing.
+  It reaches 250 cm from the pawn and aims up to 900 cm from the camera. The
+  longer aim distance only lets the indicator report targets that are out of
+  reach; the commit still requires the 250 cm reach.
+- **Swing animation:** `AM_Harvest_PickaxeSwing` commits at 0.3 s through one
+  `RPG Gameplay Event` notify. Its sequence `MM_Harvest_PickaxeSwing` is a copy
+  of the core unarmed `MM_Attack_01` with root motion disabled. With root
+  motion, the swing pushed the pawn into the vein and later swings missed.
+  UE 5.8 montages have no per-montage root-motion override. The feature does
+  not depend on `GF_Combat_Core`.
+- **Item category:** the pickaxe uses the item category `Weapon`. The carry
+  weapon slots accept only that category, and the asset contract allows one
+  category per item. Its tool identity comes from the `Tool.Harvesting.Pickaxe`
+  item tag and the `HarvestingTool` fragment.
+- **Pickup:** `BP_Pickup_Pickaxe` uses `GA_Harvest_CollectTool`, a
+  `URpgGameplayAbility_Collect` Blueprint that assigns collected equippable
+  items to equipment. The interact key is F.
+- **Iron vein:**
+  - `HP_IronVein` has 4 sections and requires the pickaxe, with Mining XP 9
+    per section and a respawn after 120–180 s.
+  - `LT_IronVein` yields 6 `ID_Ore` per section.
+  - `BP_HarvestNode_StaticMeshBase` is the reusable static-mesh resource
+    actor: dormant, no tick, and it shrinks the mesh per section through
+    `OnHarvestStateChanged`.
+  - `BP_HarvestNode_IronVein` assigns the profile and the rock mesh.
+- **Target indicator:**
+  - `URpgHarvestTargetingComponent` exposes `GetPrimaryTargetStatus` and
+    anchors one projected indicator over the primary target through the
+    controller's `URpgIndicatorManagerComponent`.
+  - `ERpgHarvestTargetStatus` summarizes the target as harvestable, out of
+    reach, depleted, wrong tool, skill locked or unavailable.
+  - `BPC_HarvestTargeting` selects `WBP_HarvestTargetIndicator`. The widget
+    shows the remaining stock (`3/4`) or the blocking state.
+  - The GameFeature adds `BPC_HarvestTargeting` to client player controllers
+    only.
+- **Test map:** `Lvl_HarvestPickaxe` uses the `Lvl_RpgGaspMantle`
+  presentation. It contains the pickup, three iron veins and one comparison
+  vein.
+- **Deferred to HARV-04:**
+  - `HP_MiningNode` stays ungated so Stoneburst keeps working until Rift Grip
+    replaces it.
+  - Adding the tool requirement and a pickaxe pickup to
+    `Lvl_LootHarvestSandbox`.
+
 ## Performance guardrails
 
 - Resources never tick. Respawn uses a timer. Replicated state is a revision,
@@ -171,9 +228,9 @@ stock rules are kept separate.
 
 | ID | Scope | Status |
 | --- | --- | --- |
-| HARV-01 | Stock core: request/result contract, profile sections and tool requirement, `URpgHarvestableComponent`, multi-section reward batching, tests | In review: [#178](https://github.com/Athurito/SurvivalRpg/pull/178) |
-| HARV-02 | `URpgGameplayAbility_Harvest` base, shared targeting query, local `URpgHarvestTargetingComponent` preview read model | Implemented on `claude/harv-02-harvest-ability-targeting` (stacked on HARV-01) |
-| HARV-03 | M0 pickaxe content: tool item, equipment and abilities, iron vein, indicator presentation, `Lvl_HarvestPickaxe` test map | Planned (needs the editor with Unreal MCP) |
+| HARV-01 | Stock core: request/result contract, profile sections and tool requirement, `URpgHarvestableComponent`, multi-section reward batching, tests | Merged: [#178](https://github.com/Athurito/SurvivalRpg/pull/178) |
+| HARV-02 | `URpgGameplayAbility_Harvest` base, shared targeting query, local `URpgHarvestTargetingComponent` preview read model | Merged: [#179](https://github.com/Athurito/SurvivalRpg/pull/179) |
+| HARV-03 | M0 pickaxe content: tool item, equipment and abilities, iron vein, indicator presentation, `Lvl_HarvestPickaxe` test map | In review on `claude/harv-03-pickaxe-content` |
 | HARV-04 | M1 Rift Grip: hold to aim, Mining 2 gate, cooldown; replaces Stoneburst | Planned |
 | HARV-05 | M1 weak-point crit: bonus sections from a readable weak point | Planned |
 | HARV-06 | PCG resource bridge: harvestable PCG instances with sparse state and a measured budget | Planned, before M2 |
@@ -184,8 +241,9 @@ stock rules are kept separate.
 
 ## Open questions
 
-- Should a swing sequence move into Core for the pickaxe montage, or should
-  `GF_Harvesting_Magic` declare a dependency on `GF_Combat_Core`?
+- Should the primary target also get an outline highlight? The project has
+  no custom-depth outline yet, so HARV-03 marks the target with the projected
+  label only.
 - Can a static `InputTag.Weapon.Ability.1` binding in an ability set coexist
   with `URpgWeaponAbilityLoadoutComponent`?
 - For HARV-06: do ISKMC instances support per-instance traces, or are
