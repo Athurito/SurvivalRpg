@@ -225,6 +225,11 @@
 			"Name": "MovieSceneAnimMixer",
 			"Enabled": true,
 			"Description": "GASP-Migration: D:/Repos/GameAnimationSample/GameAnimationSample.uproject (EngineAssociation 5.8; sample build unspecified). Required by the serialized AnimSubsystem_SequencerMixer in SandboxCharacter_CMC_ABP and SandboxCharacter_Mover_ABP. Matches the sample; supplies runtime and editor struct types through the plugin's declared dependencies."
+		},
+		{
+			"Name": "ProceduralVegetationEditor",
+			"Enabled": true,
+			"Description": "Required by Megaplant Library tree assets, their foliage master material, procedural vegetation data, and DynamicWind dependencies."
 		}
 	]
 }
