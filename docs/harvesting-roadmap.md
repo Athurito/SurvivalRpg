@@ -222,6 +222,8 @@ All assets live in `GF_Harvesting_Magic` and are authored through Unreal MCP.
 - **Ability:** `GA_Harvest_RiftGrip` derives from `URpgGameplayAbility_Harvest`.
   - The player holds Q to aim at an area and releases to harvest.
   - It takes 3 sections from up to 3 ore veins within 300 cm of the aim point.
+    A vein counts as soon as its collision touches the area, even when it is
+    only partly inside the ring (accepted in playtest).
     The aim reaches 1500 cm from the camera; the aim point must be within
     800 cm of the pawn.
   - When the view ray hits nothing, as with a level camera over open ground,
