@@ -76,6 +76,9 @@ public:
 	/** True while the current preview belongs to a held aim ability. */
 	bool IsPreviewAiming() const { return CurrentPreview.bIsAiming; }
 
+	/** Returns the previewed evaluation whose hit component is TargetComponent, or null when it is not previewed. */
+	const FRpgHarvestTargetEvaluation* FindTargetEvaluation(const USceneComponent* TargetComponent) const;
+
 	/**
 	 * Summarizes the primary previewed target for indicators. Returns false when nothing is previewed.
 	 * OutRemainingSections is the target's current stock; OutSectionsToTake is what the ability would extract.

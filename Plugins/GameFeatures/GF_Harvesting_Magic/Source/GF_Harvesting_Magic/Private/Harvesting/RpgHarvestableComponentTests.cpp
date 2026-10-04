@@ -541,4 +541,132 @@ bool FRpgHarvestNodeAuthorityAndEventsTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestNodeWeakPointTest,
+	"SurvivalRpg.Harvesting.Node.WeakPointBonusUsesSameStock",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestNodeWeakPointTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestableComponentTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	URpgHarvestProfile* Profile = MakeSectionedProfile(World, 4, 0.0f);
+	Profile->WeakPointBonusSections = 1;
+	ARpgHarvestAutomationNodeActor* Node = SpawnNode(World, Profile);
+	ARpgHarvestAutomationTestPlayerState* Harvester = SpawnHarvester(World);
+	if (!TestNotNull(TEXT("Weak point node exists"), Node) ||
+		!TestNotNull(TEXT("Harvester exists"), Harvester) ||
+		!TestTrue(
+			TEXT("Weak points are configured"),
+			RpgHarvestAutomation::ConfigureWeakPoints(
+				Node->HarvestableNode,
+				{FVector(0.0, 0.0, 50.0), FVector(100.0, 0.0, 50.0), FVector(0.0, 100.0, 50.0)},
+				30.0f)))
+	{
+		return false;
+	}
+	Node->SetActorLocation(FVector(1000.0, 0.0, 0.0));
+	URpgHarvestableComponent* Harvestable = Node->HarvestableNode;
+
+	FVector WeakPoint;
+	float Radius = 0.0f;
+	TestTrue(TEXT("A stocked node with weak points has an active one"), Harvestable->GetActiveWeakPoint(WeakPoint, Radius));
+	TestTrue(TEXT("Weak points follow the node's transform"), WeakPoint.Equals(FVector(1000.0, 0.0, 50.0)));
+	TestTrue(TEXT("The active weak point reports its hit radius"), FMath::IsNearlyEqual(Radius, 30.0f));
+
+	// A swing traced along +X that stops at ImpactPoint, or at StopPoint when the collision ends the ray elsewhere.
+	auto MakeRaySwing = [Node, Harvester](const FVector& AimPoint, const FVector& StopPoint, const bool bCanHitWeakPoint)
+	{
+		FRpgHarvestRequest Request = MakeRequest(Node, Harvester);
+		Request.Hit.TraceStart = AimPoint - FVector(300.0, 0.0, 0.0);
+		Request.Hit.Location = StopPoint;
+		Request.Hit.ImpactPoint = StopPoint;
+		Request.bCanHitWeakPoint = bCanHitWeakPoint;
+		return Request;
+	};
+	auto MakeSwing = [&MakeRaySwing](const FVector& ImpactPoint, const bool bCanHitWeakPoint)
+	{
+		return MakeRaySwing(ImpactPoint, ImpactPoint, bCanHitWeakPoint);
+	};
+
+	FRpgHarvestResult Evaluation = Harvestable->EvaluateHarvest_Implementation(MakeSwing(WeakPoint, false));
+	TestTrue(
+		TEXT("A request that cannot hit weak points takes its sections only"),
+		Evaluation.SectionsTaken == 1 && !Evaluation.bWeakPointHit);
+	Evaluation = Harvestable->EvaluateHarvest_Implementation(MakeSwing(WeakPoint + FVector(0.0, 0.0, 40.0), true));
+	TestTrue(
+		TEXT("A swing outside the weak point radius takes its sections only"),
+		Evaluation.SectionsTaken == 1 && !Evaluation.bWeakPointHit);
+	Evaluation = Harvestable->EvaluateHarvest_Implementation(MakeSwing(WeakPoint, true));
+	TestTrue(
+		TEXT("A swing on the active weak point previews the bonus section"),
+		Evaluation.SectionsTaken == 2 && Evaluation.bWeakPointHit);
+	Evaluation = Harvestable->EvaluateHarvest_Implementation(
+		MakeRaySwing(WeakPoint, WeakPoint - FVector(40.0, 0.0, 0.0), true));
+	TestTrue(
+		TEXT("Aiming through the weak point counts when a coarser hull stops the ray just before it"),
+		Evaluation.SectionsTaken == 2 && Evaluation.bWeakPointHit);
+	Evaluation = Harvestable->EvaluateHarvest_Implementation(
+		MakeRaySwing(WeakPoint, WeakPoint - FVector(100.0, 0.0, 0.0), true));
+	TestTrue(
+		TEXT("A weak point deep behind the impact does not count"),
+		Evaluation.SectionsTaken == 1 && !Evaluation.bWeakPointHit);
+	Evaluation = Harvestable->EvaluateHarvest_Implementation(MakeRaySwing(
+		WeakPoint + FVector(0.0, 50.0, 0.0),
+		WeakPoint + FVector(-40.0, 50.0, 0.0),
+		true));
+	TestTrue(
+		TEXT("Aiming beside the weak point does not count"),
+		Evaluation.SectionsTaken == 1 && !Evaluation.bWeakPointHit);
+
+	const FRpgHarvestResult Critical = Harvestable->CommitHarvest_Implementation(MakeSwing(WeakPoint, true));
+	TestTrue(TEXT("The weak point hit is committed"), Critical.IsSuccess() && Critical.bWeakPointHit);
+	TestEqual(TEXT("It extracts the bonus from the same stock"), Critical.SectionsTaken, 2);
+	TestEqual(TEXT("Two sections remain"), Harvestable->GetRemainingSections(), 2);
+	TestEqual(TEXT("Both sections are rewarded"), CountMaterial(Harvester), 2 * YieldPerSection);
+	TestTrue(
+		TEXT("Both sections award experience"),
+		FMath::IsNearlyEqual(GetMiningXP(Harvester), static_cast<float>(2 * ExperiencePerSection)));
+
+	const FVector PreviousWeakPoint = WeakPoint;
+	Harvestable->GetActiveWeakPoint(WeakPoint, Radius);
+	TestTrue(TEXT("The active weak point moves on with the extracted sections"), WeakPoint.Equals(FVector(1000.0, 100.0, 50.0)));
+	const FRpgHarvestResult Normal = Harvestable->CommitHarvest_Implementation(MakeSwing(PreviousWeakPoint, true));
+	TestTrue(
+		TEXT("The previous weak point is an ordinary hit"),
+		Normal.IsSuccess() && Normal.SectionsTaken == 1 && !Normal.bWeakPointHit);
+
+	Harvestable->GetActiveWeakPoint(WeakPoint, Radius);
+	const FRpgHarvestResult Clamped = Harvestable->CommitHarvest_Implementation(MakeSwing(WeakPoint, true));
+	TestTrue(TEXT("A weak point hit on the last section still counts"), Clamped.IsSuccess() && Clamped.bWeakPointHit);
+	TestEqual(TEXT("Its bonus is clamped to the remaining stock"), Clamped.SectionsTaken, 1);
+	TestTrue(TEXT("The node is depleted"), Clamped.bDepleted);
+	TestEqual(TEXT("Weak point hits never add yield beyond the defined stock"), CountMaterial(Harvester), 4 * YieldPerSection);
+	TestFalse(TEXT("A depleted node has no active weak point"), Harvestable->GetActiveWeakPoint(WeakPoint, Radius));
+
+	ARpgHarvestAutomationNodeActor* PlainNode = SpawnNode(World, MakeSectionedProfile(World, 4, 0.0f));
+	if (!TestNotNull(TEXT("Node without bonus exists"), PlainNode) ||
+		!TestTrue(
+			TEXT("Its weak points are configured"),
+			RpgHarvestAutomation::ConfigureWeakPoints(PlainNode->HarvestableNode, {FVector::ZeroVector}, 30.0f)))
+	{
+		return false;
+	}
+	TestFalse(
+		TEXT("A profile without weak point bonus shows no weak point"),
+		PlainNode->HarvestableNode->GetActiveWeakPoint(WeakPoint, Radius));
+	FRpgHarvestRequest PlainSwing = MakeRequest(PlainNode, Harvester);
+	PlainSwing.Hit.ImpactPoint = PlainNode->GetActorLocation();
+	PlainSwing.Hit.Location = PlainNode->GetActorLocation();
+	PlainSwing.bCanHitWeakPoint = true;
+	Evaluation = PlainNode->HarvestableNode->EvaluateHarvest_Implementation(PlainSwing);
+	TestTrue(
+		TEXT("Without a profile bonus a weak point position grants nothing extra"),
+		Evaluation.SectionsTaken == 1 && !Evaluation.bWeakPointHit);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

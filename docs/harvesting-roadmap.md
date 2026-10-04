@@ -304,6 +304,48 @@ All assets live in `GF_Harvesting_Magic` and are authored through Unreal MCP.
     enable it there, the client first has to send its aim with the activation
     as target data.
 
+## Weak points (HARV-05)
+
+The plan's crit is a readable weak point: a precise swing on it extracts more
+of the same stock, so it saves work without adding yield.
+
+- **Rule:** a swing that strikes the active weak point takes
+  `URpgHarvestProfile::WeakPointBonusSections` extra sections, clamped to the
+  remaining stock. The total yield and XP of a resource never change, and normal
+  swings stay fully worthwhile. Zero disables weak points for a resource type.
+- **Placement:** `URpgHarvestableComponent::WeakPointLocations` lists points in
+  the local space of `WeakPointFrame`, usually the resource mesh. Weak points
+  follow the mesh's placement and its section scaling.
+  `WeakPointRadius` (35 cm) is the hit tolerance.
+- **Active weak point:** one point is active at a time. It is
+  `(Revision + HarvestedSections) % Num`, derived only from replicated stock
+  state. The server and every client agree without extra replication, and the
+  point moves on after every extracted section and every respawn.
+- **Hit test:** a swing counts when its aim ray passes within the radius of the
+  active point, and the point lies at most two radii beyond where the ray
+  stopped. The marked point sits on the visible surface; a coarser collision
+  hull or a swept contact can stop the ray before it. Points deeper inside or
+  behind the resource never count. Hits without trace data fall back to the
+  impact point.
+- **Who can crit:** abilities opt in with `bCanHitWeakPoints`, and only
+  single-target targeting uses it. Pickaxe Strike can crit. Rift Grip and other
+  area powers never do; their area hits carry no aim ray.
+- **Commit and preview:** the stock rules evaluate the bonus, so the server
+  commit and the owning client's preview agree. `FRpgHarvestResult::bWeakPointHit`
+  reports it. `URpgHarvestTargetIndicatorWidget::IsWeakPointTargeted` lets the
+  indicator show `4/4  -2  Weak point` before the swing.
+- **Content:**
+  - `HP_IronVein` awards one bonus section, so the plan's "up to 2 remaining
+    sections" holds.
+  - `BP_HarvestNode_IronVein` places three points on the front face of
+    `SM_RP_Vol_01_03`: left, upper middle and right.
+  - `BP_HarvestNode_StaticMeshBase` shows the active point with
+    `WeakPointMarker`, a small pulsing ember (`M_HarvestWeakPoint`) without
+    collision or shadow. Every player sees it; it hides on depletion.
+- **Multiplayer:** in a listen-server session the client saw the same marker
+  as the server, previewed `-2` on it, and its swing took two sections on both
+  sides. Two weak-point swings emptied a vein with the full stock of 24 ore.
+
 ## Performance guardrails
 
 - Resources never tick. Respawn uses a timer. Replicated state is a revision,
@@ -321,8 +363,8 @@ All assets live in `GF_Harvesting_Magic` and are authored through Unreal MCP.
 | HARV-01 | Stock core: request/result contract, profile sections and tool requirement, `URpgHarvestableComponent`, multi-section reward batching, tests | Merged: [#178](https://github.com/Athurito/SurvivalRpg/pull/178) |
 | HARV-02 | `URpgGameplayAbility_Harvest` base, shared targeting query, local `URpgHarvestTargetingComponent` preview read model | Merged: [#179](https://github.com/Athurito/SurvivalRpg/pull/179) |
 | HARV-03 | M0 pickaxe content: tool item, equipment and abilities, iron vein, indicator presentation, `Lvl_HarvestPickaxe` test map | Merged: [#180](https://github.com/Athurito/SurvivalRpg/pull/180) |
-| HARV-04 | M1 Rift Grip: hold to aim, Mining 2 gate, cooldown, Q/E/R ability-set defaults, area indicators; replaces Stoneburst | In review: [#181](https://github.com/Athurito/SurvivalRpg/pull/181) |
-| HARV-05 | M1 weak-point crit: bonus sections from a readable weak point | Planned |
+| HARV-04 | M1 Rift Grip: hold to aim, Mining 2 gate, cooldown, Q/E/R ability-set defaults, area indicators; replaces Stoneburst | Merged: [#181](https://github.com/Athurito/SurvivalRpg/pull/181) |
+| HARV-05 | M1 weak-point crit: bonus sections from a readable weak point | In review: [#183](https://github.com/Athurito/SurvivalRpg/pull/183) |
 | HARV-06 | PCG resource bridge: harvestable PCG instances with sparse state and a measured budget | Planned, before M2 |
 | HARV-07 | M2 axe and Death Wave area harvest, aggregated delivery, protected objects | Planned |
 | HARV-08 | M3 grave swarm with separate beneficiary and physical harvester | Planned |

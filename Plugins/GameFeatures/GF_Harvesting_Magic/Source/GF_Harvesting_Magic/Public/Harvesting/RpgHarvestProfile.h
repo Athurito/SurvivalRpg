@@ -33,6 +33,15 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Harvesting|Tools", meta = (Categories = "Tool.Harvesting"))
 	FGameplayTag RequiredToolTag;
 
+	/**
+	 * Extra stock sections a precise swing extracts when it strikes the resource's active weak point. The bonus comes
+	 * from the same stock and is clamped to what remains, so the total yield never depends on weak-point hits.
+	 * Zero disables weak points. The resource actor places its weak points (URpgHarvestableComponent).
+	 * Designer-tuned static data.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Harvesting|Stock", meta = (ClampMin = "0", ClampMax = "15", UIMin = "0", UIMax = "4"))
+	int32 WeakPointBonusSections = 0;
+
 	/** Earliest server-only respawn delay in seconds. Zero keeps the resource depleted for the session. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Harvesting|Respawn", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "s"))
 	float MinimumRespawnSeconds = 0.0f;
@@ -45,6 +54,12 @@ public:
 	int32 GetClampedSectionCount() const
 	{
 		return FMath::Clamp(SectionCount, 1, MaxSectionCount);
+	}
+
+	/** Returns WeakPointBonusSections clamped to the supported range. */
+	int32 GetClampedWeakPointBonusSections() const
+	{
+		return FMath::Clamp(WeakPointBonusSections, 0, MaxSectionCount - 1);
 	}
 
 	virtual FPrimaryAssetId GetPrimaryAssetId() const override;

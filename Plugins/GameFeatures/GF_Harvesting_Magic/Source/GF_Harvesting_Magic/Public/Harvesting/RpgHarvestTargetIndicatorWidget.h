@@ -42,6 +42,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rpg|Harvesting|Indicator")
 	bool IsAimingPreview() const;
 
+	/**
+	 * True while the previewed swing would strike the active weak point of the target this indicator marks; the
+	 * sections to take then include the weak-point bonus.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Harvesting|Indicator")
+	bool IsWeakPointTargeted() const;
+
 private:
 	/** Read model that created the bound indicator. */
 	TWeakObjectPtr<const URpgHarvestTargetingComponent> Targeting;

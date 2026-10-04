@@ -5,6 +5,8 @@
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "Harvesting/RpgHarvestableComponent.h"
+#include "UObject/UnrealType.h"
 
 namespace RpgHarvestAutomation
 {
@@ -81,6 +83,22 @@ namespace RpgHarvestAutomation
 		TObjectPtr<UGameInstance> GameInstance = nullptr;
 		TObjectPtr<UWorld> World = nullptr;
 	};
+
+	/** Writes the designer-placed weak points of Node, which are protected editor data, the way a Blueprint default does. */
+	inline bool ConfigureWeakPoints(URpgHarvestableComponent* Node, const TArray<FVector>& Locations, const float Radius)
+	{
+		const FArrayProperty* LocationsProperty =
+			FindFProperty<FArrayProperty>(URpgHarvestableComponent::StaticClass(), TEXT("WeakPointLocations"));
+		const FFloatProperty* RadiusProperty =
+			FindFProperty<FFloatProperty>(URpgHarvestableComponent::StaticClass(), TEXT("WeakPointRadius"));
+		if (!Node || !LocationsProperty || !RadiusProperty)
+		{
+			return false;
+		}
+		*LocationsProperty->ContainerPtrToValuePtr<TArray<FVector>>(Node) = Locations;
+		RadiusProperty->SetPropertyValue_InContainer(Node, Radius);
+		return true;
+	}
 }
 
 #endif // WITH_DEV_AUTOMATION_TESTS

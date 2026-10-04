@@ -45,6 +45,9 @@ public:
 	/** Returns whether this ability previews while its input is held and executes on release. */
 	bool IsAimWhileInputHeld() const { return bAimWhileInputHeld; }
 
+	/** Returns whether this ability's swings can strike a resource's active weak point for bonus sections. */
+	bool CanHitWeakPoints() const { return bCanHitWeakPoints && Targeting.Shape == ERpgHarvestTargetShape::SingleTarget; }
+
 	/** Returns the stable harvest ability id carried by every request of this ability. */
 	FGameplayTag GetHarvestAbilityId() const { return HarvestAbilityId; }
 
@@ -98,6 +101,13 @@ protected:
 	/** Stock sections this ability requests from each target; targets clamp it to their remaining stock. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Yield", meta = (ClampMin = "1", UIMin = "1", UIMax = "16"))
 	int32 SectionsPerTarget = 1;
+
+	/**
+	 * When true, a single-target swing that strikes a resource's active weak point takes that resource's weak-point
+	 * bonus sections in addition, from the same stock. Ignored for area targeting. Designer-tuned static data.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Yield")
+	bool bCanHitWeakPoints = false;
 
 	/** Multiplier applied to the source tool's HarvestPower; scales yield-sensitive loot rows. One keeps the tool's power. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Yield", meta = (ClampMin = "0.01", UIMin = "0.1", UIMax = "5.0"))

@@ -35,6 +35,19 @@ EDataValidationResult URpgHarvestProfile::IsDataValid(FDataValidationContext& Co
 	{
 		MarkInvalid(NSLOCTEXT("RpgHarvestProfile", "InvalidRequiredToolTag", "RequiredToolTag must be empty or a registered Tool.Harvesting.* tag."));
 	}
+	if (WeakPointBonusSections < 0 || WeakPointBonusSections >= MaxSectionCount)
+	{
+		MarkInvalid(FText::Format(
+			NSLOCTEXT("RpgHarvestProfile", "InvalidWeakPointBonus", "WeakPointBonusSections must be between 0 and {0}."),
+			FText::AsNumber(MaxSectionCount - 1)));
+	}
+	else if (WeakPointBonusSections > 0 && GetClampedSectionCount() < 2)
+	{
+		Context.AddWarning(NSLOCTEXT(
+			"RpgHarvestProfile",
+			"WeakPointBonusWithoutSections",
+			"WeakPointBonusSections has no effect with a single section; a weak-point hit cannot take more than the whole stock."));
+	}
 	return Result;
 }
 #endif
