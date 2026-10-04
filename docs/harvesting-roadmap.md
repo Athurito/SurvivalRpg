@@ -278,7 +278,7 @@ All assets live in `GF_Harvesting_Magic` and are authored through Unreal MCP.
 | HARV-01 | Stock core: request/result contract, profile sections and tool requirement, `URpgHarvestableComponent`, multi-section reward batching, tests | Merged: [#178](https://github.com/Athurito/SurvivalRpg/pull/178) |
 | HARV-02 | `URpgGameplayAbility_Harvest` base, shared targeting query, local `URpgHarvestTargetingComponent` preview read model | Merged: [#179](https://github.com/Athurito/SurvivalRpg/pull/179) |
 | HARV-03 | M0 pickaxe content: tool item, equipment and abilities, iron vein, indicator presentation, `Lvl_HarvestPickaxe` test map | Merged: [#180](https://github.com/Athurito/SurvivalRpg/pull/180) |
-| HARV-04 | M1 Rift Grip: hold to aim, Mining 2 gate, cooldown, Q/E/R ability-set defaults, area indicators; replaces Stoneburst | In review on `claude/harv-04-rift-grip` |
+| HARV-04 | M1 Rift Grip: hold to aim, Mining 2 gate, cooldown, Q/E/R ability-set defaults, area indicators; replaces Stoneburst | In review: [#181](https://github.com/Athurito/SurvivalRpg/pull/181) |
 | HARV-05 | M1 weak-point crit: bonus sections from a readable weak point | Planned |
 | HARV-06 | PCG resource bridge: harvestable PCG instances with sparse state and a measured budget | Planned, before M2 |
 | HARV-07 | M2 axe and Death Wave area harvest, aggregated delivery, protected objects | Planned |
