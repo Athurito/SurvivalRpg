@@ -212,4 +212,6 @@ class URpgHarvestAutomationTargetingComponent final : public URpgHarvestTargetin
 
 public:
 	void ConfigureIndicator(const TSoftClassPtr<UUserWidget>& InWidgetClass) { IndicatorWidgetClass = InWidgetClass; }
+	void ConfigureAreaMarker(const TSoftClassPtr<AActor>& InMarkerClass) { AreaMarkerClass = InMarkerClass; }
+	AActor* GetAreaMarkerForTest() const { return AreaMarker; }
 };

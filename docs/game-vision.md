@@ -208,7 +208,7 @@ Ressourcen sollen mit magischen Fähigkeiten und Runen gesammelt werden können.
 
 Beispiele:
 
-- **Stoneburst**: Felsen explodieren und legen Erz frei.
+- **Rissgriff** (früher Stoneburst): Die erwachte Spitzhacke reißt mehrere Abschnitte aus allen Erzadern im Zielbereich; zielen beim Halten, auslösen beim Loslassen.
 - **Astral Axe**: magische Axt wird geworfen, trifft Bäume und kehrt zurück.
 - **Ore Sense**: zeigt versteckte Erzadern.
 - **Root Call**: zieht seltene Pflanzen oder Wurzeln hervor.
@@ -368,7 +368,7 @@ Für den First Playable reichen reduzierte Gruppen:
 
 ### Magical Harvesting
 
-- Level 1: Stoneburst
+- Level 2: Rissgriff (Bergbau)
 - Level 3: Astral Axe
 - Level 5: Wahl zwischen mehr Ertrag, schnellerem Harvesting oder selteneren Materialien
 - Level 10: Miner, Forager oder Arcane Lumberjack
@@ -562,7 +562,7 @@ Die erste Entwicklungspriorität ist ein kleiner, starker Vertical Slice.
 - ein Portal, das Gegner spawnt oder in Sublevel führt
 - ein Portalabschluss oder Bosszustand
 - eine Rune, die eine Waffe sichtbar verändert
-- eine magische Harvesting-Fähigkeit wie Stoneburst
+- eine magische Harvesting-Fähigkeit wie Rissgriff
 - 2-3 Ressourcen
 - 1-2 Craftingstationen
 

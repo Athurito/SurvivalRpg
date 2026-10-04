@@ -37,7 +37,11 @@ public:
 	UPROPERTY(EditAnywhere, Meta = (Categories = "Ability"))
 	FGameplayTag AbilityIdTag;
 
-	// Optional input tag used by the input component to trigger this ability.
+	/**
+	 * Optional input tag used by the input component to trigger this ability.
+	 * InputTag.Weapon.Ability.1..3 are owned by the Q/E/R weapon ability loadout: such an entry declares the default
+	 * occupant of that slot and requires AbilityIdTag. The loadout binds it while the slot has no player selection.
+	 */
 	UPROPERTY(EditAnywhere, Meta = (Categories = "InputTag"))
 	FGameplayTag InputTag;
 };

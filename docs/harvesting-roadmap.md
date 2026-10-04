@@ -26,7 +26,7 @@ harvesting abilities into Blueprint content belongs to issue
 
 | Topic | Decision |
 | --- | --- |
-| Stoneburst | Becomes Rift Grip, the pickaxe's awakened multi-section ability. The native leaf is replaced by a `GA_*` Blueprint in HARV-04. |
+| Stoneburst | Replaced by Rift Grip (`GA_Harvest_RiftGrip`), the pickaxe's awakened multi-section ability. HARV-04 removed the native leaf, its tag and its PlayerState grant. |
 | Manual harvest | Profiles with `RequiredToolTag` offer no interaction harvest. Bushes keep the interaction harvest. |
 | First unlock | Rift Grip requires `Skill.Gathering.Mining` level 2. This reuses saved, replicated trade-skill progression. |
 | Costs | Rift Grip uses only a short cooldown GameplayEffect on the character, with no mana. Re-equipping cannot reset it. |
@@ -47,7 +47,7 @@ stock rules are kept separate.
 | Harvestable component and definition | `URpgHarvestableComponent`, `URpgHarvestProfile` | HARV-01 |
 | Harvest request and result | `FRpgHarvestRequest`, `FRpgHarvestResult`, `IRpgHarvestableTarget` | HARV-01 |
 | Auto pickup and overflow container | `FRpgHarvestRewardService`: atomic inventory batch or one replicated drop | Exists; multi-section batching added in HARV-01 |
-| Harvest input tags | `InputTag.Weapon.Primary` on the main-hand tool, and the weapon-ability and quick-access slots | Existing routing; no new input tags |
+| Harvest input tags | `InputTag.Weapon.Primary` on the main-hand tool; Q/E/R defaults declared by ability sets | No new input tags; ability-set defaults for Q/E/R added in HARV-04 |
 | Harvesting progression | `URpgTradeSkillProgressionComponent` (`Skill.Gathering.*`, saved) | Exists; talents come later |
 | World persistence of resources | none (depletion is session-scoped) | HARV-10 |
 
@@ -72,7 +72,9 @@ stock rules are kept separate.
   - The local `URpgHarvestTargetingComponent` (HARV-02).
   - The non-reflected `FRpgHarvestStockRules`, shared with the future PCG
     bridge.
-  - HARV-04 removes the native `URpgGameplayAbility_Stoneburst` leaf.
+  - The abstract `URpgHarvestTargetIndicatorWidget` (HARV-04), which binds an
+    indicator widget to exactly one previewed target.
+  - HARV-04 removed the native `URpgGameplayAbility_Stoneburst` leaf.
 - **Designer assets:** item, equipment and ability set definitions, `GA_*`
   abilities, `HP_*` profiles, `LT_*` loot tables, resource actor Blueprints,
   montages, cues, cooldown effects, indicator widgets, tags and test maps.
@@ -208,11 +210,56 @@ All assets live in `GF_Harvesting_Magic` and are authored through Unreal MCP.
 - **Test map:** `Lvl_HarvestPickaxe` uses the `Lvl_RpgGaspMantle`
   presentation. It contains the pickup, three iron veins and one comparison
   vein.
-- **Deferred to HARV-04:**
-  - `HP_MiningNode` stays ungated so Stoneburst keeps working until Rift Grip
-    replaces it.
-  - Adding the tool requirement and a pickaxe pickup to
-    `Lvl_LootHarvestSandbox`.
+- **Sandbox:** HARV-04 added the pickaxe requirement to `HP_MiningNode` and a
+  pickaxe pickup to `Lvl_LootHarvestSandbox`.
+
+## Rift Grip (HARV-04)
+
+- **Ability:** `GA_Harvest_RiftGrip` derives from `URpgGameplayAbility_Harvest`.
+  - The player holds Q to aim at an area and releases to harvest.
+  - It takes 3 sections from up to 3 ore veins within 300 cm of the aim point.
+    The aim reaches 1500 cm from the camera; the aim point must be within
+    1200 cm of the pawn.
+  - It needs `Skill.Gathering.Mining` level 2. Below that, activation fails with
+    "Mining 2 required".
+  - It costs only `GE_Cooldown_Harvest_RiftGrip`: 4 s, granting
+    `Cooldown.Harvesting.RiftGrip` on the character. Re-equipping cannot reset
+    it.
+  - It reuses the pickaxe swing montage and its commit notify.
+- **Q/E/R defaults:** `AS_Tool_Pickaxe` grants Rift Grip with
+  `InputTag.Weapon.Ability.1`.
+  - Weapon ability input belongs to `URpgWeaponAbilityLoadoutComponent`. An
+    ability set entry with `InputTag.Weapon.Ability.N` therefore does not bind
+    statically. It marks its spec as the default of slot N
+    (`Rpg.WeaponAbilityLoadout.DefaultSlot.N`) and needs an `AbilityIdTag`.
+  - A slot without a player selection follows the default of the currently
+    granted abilities. A player selection always wins; clearing it hands the
+    slot back to the default.
+  - Two different defaults for one slot block it and log a content error.
+  - `URpgEquipmentManagerComponent` re-resolves the controller's Q/E/R and
+    quick-access bindings on the next tick whenever equipment grants change.
+    Grants made inside an executing ability, such as the collect interaction
+    that picks up the pickaxe, stay pending until the ability list unlocks.
+  - `IA_WeaponAbility01`–`03` no longer use a Pressed trigger. With it, Enhanced
+    Input reported a release one frame after the press, so a held Q could
+    never aim. The native Started and Completed bindings still deliver exactly
+    one press and one release per key press.
+- **Indicators while aiming:**
+  - Every target in the area gets its own projected indicator. The indicator
+    widget derives from `URpgHarvestTargetIndicatorWidget`. It reads the
+    status of exactly its target: stock, plus the sections it would take while
+    aiming (`4/4  -3`).
+  - `BP_HarvestAreaMarker` shows the area with the decal material
+    `M_HarvestAreaRing`. `URpgHarvestTargetingComponent::AreaMarkerClass`
+    spawns it locally, scales it to the area radius and hides it on release.
+- **Removed:**
+  - `URpgGameplayAbility_Stoneburst` and the native tag
+    `Ability.Harvesting.Stoneburst`.
+  - The Stoneburst grant in the GameFeature. The same action still grants
+    `RpgGatheringSet` to player states.
+  - Saved quick-access bindings to Stoneburst resolve as missing.
+- **Test map:** `Lvl_HarvestPickaxe` adds two veins next to the comparison
+  vein, so one Rift Grip covers three veins.
 
 ## Performance guardrails
 
@@ -230,8 +277,8 @@ All assets live in `GF_Harvesting_Magic` and are authored through Unreal MCP.
 | --- | --- | --- |
 | HARV-01 | Stock core: request/result contract, profile sections and tool requirement, `URpgHarvestableComponent`, multi-section reward batching, tests | Merged: [#178](https://github.com/Athurito/SurvivalRpg/pull/178) |
 | HARV-02 | `URpgGameplayAbility_Harvest` base, shared targeting query, local `URpgHarvestTargetingComponent` preview read model | Merged: [#179](https://github.com/Athurito/SurvivalRpg/pull/179) |
-| HARV-03 | M0 pickaxe content: tool item, equipment and abilities, iron vein, indicator presentation, `Lvl_HarvestPickaxe` test map | In review: [#180](https://github.com/Athurito/SurvivalRpg/pull/180) |
-| HARV-04 | M1 Rift Grip: hold to aim, Mining 2 gate, cooldown; replaces Stoneburst | Planned |
+| HARV-03 | M0 pickaxe content: tool item, equipment and abilities, iron vein, indicator presentation, `Lvl_HarvestPickaxe` test map | Merged: [#180](https://github.com/Athurito/SurvivalRpg/pull/180) |
+| HARV-04 | M1 Rift Grip: hold to aim, Mining 2 gate, cooldown, Q/E/R ability-set defaults, area indicators; replaces Stoneburst | In review on `claude/harv-04-rift-grip` |
 | HARV-05 | M1 weak-point crit: bonus sections from a readable weak point | Planned |
 | HARV-06 | PCG resource bridge: harvestable PCG instances with sparse state and a measured budget | Planned, before M2 |
 | HARV-07 | M2 axe and Death Wave area harvest, aggregated delivery, protected objects | Planned |
@@ -244,8 +291,6 @@ All assets live in `GF_Harvesting_Magic` and are authored through Unreal MCP.
 - Should the primary target also get an outline highlight? The project has
   no custom-depth outline yet, so HARV-03 marks the target with the projected
   label only.
-- Can a static `InputTag.Weapon.Ability.1` binding in an ability set coexist
-  with `URpgWeaponAbilityLoadoutComponent`?
 - For HARV-06: do ISKMC instances support per-instance traces, or are
   collision proxies needed? How are stable PCG instance keys kept under
   World Partition streaming?

@@ -17,13 +17,13 @@ public class GF_Harvesting_Magic : ModuleRules
 			"NetCore",
 			"SlateCore",
 			"SurvivalRpg",
+			"UMG",
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
 			"ModularGameplayActors",
 			"PhysicsCore",
-			"UMG",
 		});
 	}
 }

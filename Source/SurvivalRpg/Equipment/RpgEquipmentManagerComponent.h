@@ -209,6 +209,9 @@ private:
 	void RebuildEquipmentItemizationEffects();
 	void RebuildEquipmentAbilityGrants();
 
+	/** Re-resolves the owning controller's runtime ability bindings on the next tick after equipment grants changed. Authority only. */
+	void RefreshOwnerAbilityBindings() const;
+
 	UPROPERTY(Replicated)
 	FRpgEquipmentList EquipmentList;
 };

@@ -190,7 +190,7 @@ void URpgGameFeatureAction_AddAbilities::AddActorAbilities(AActor* Actor, const 
 
 	// Direct GameFeature grants bypass URpgAbilitySet's normal notification seam.
 	// Refresh owner-facing quick-access bindings after the complete grant batch so
-	// saved ability IDs (for example Stoneburst) resolve immediately and uniquely.
+	// saved ability IDs resolve immediately and uniquely.
 	if (ARpgBasePlayerState* PlayerState = Cast<ARpgBasePlayerState>(Actor))
 	{
 		PlayerState->SendAbilitiesChangedEvent();

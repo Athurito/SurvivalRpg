@@ -10,9 +10,6 @@ namespace RpgHarvestingMagicGameplayTags
 	/** Stable ability id supplied when the generic interaction ability manually harvests a resource instance. */
 	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Harvesting_Manual);
 
-	/** Stable quick-access/progression id for the Stoneburst harvesting spell. */
-	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Harvesting_Stoneburst);
-
 	/** Activation failure reported when a harvest ability's trade-skill unlock level is not reached. */
 	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_ActivateFail_Harvesting_SkillLevel);
 
