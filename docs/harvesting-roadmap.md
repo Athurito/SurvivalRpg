@@ -229,6 +229,10 @@ All assets live in `GF_Harvesting_Magic` and are authored through Unreal MCP.
     `Cooldown.Harvesting.RiftGrip` on the character. Re-equipping cannot reset
     it.
   - It reuses the pickaxe swing montage and its commit notify.
+  - While Q is held, `AimCameraMode` (`CM_Harvest_Aim`) gives the owning
+    client a higher view that looks at least 20 degrees down, so the ring and
+    the targets stay readable. Lyra's ability camera mode seam sets it, and it
+    is cleared on release or when the ability ends.
 - **Q/E/R defaults:** `AS_Tool_Pickaxe` grants Rift Grip with
   `InputTag.Weapon.Ability.1`.
   - Weapon ability input belongs to `URpgWeaponAbilityLoadoutComponent`. An

@@ -14,6 +14,7 @@
 #include "Harvesting/RpgHarvestTargetingComponent.h"
 #include "Inventory/RpgInventoryFragment_HarvestingTool.h"
 #include "SurvivalRpg/Animation/AnimNotify_RpgGameplayEvent.h"
+#include "SurvivalRpg/Camera/RpgCameraMode.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
@@ -84,6 +85,10 @@ void URpgGameplayAbility_Harvest::ActivateAbility(
 	if (bAimWhileInputHeld)
 	{
 		SetLocalAimPreview(true);
+		if (AimCameraMode && IsLocallyControlled())
+		{
+			SetCameraMode(AimCameraMode);
+		}
 		UAbilityTask_WaitInputRelease* ReleaseTask = UAbilityTask_WaitInputRelease::WaitInputRelease(this, true);
 		ReleaseTask->OnRelease.AddDynamic(this, &ThisClass::HandleAimInputReleased);
 		ReleaseTask->ReadyForActivation();
@@ -130,6 +135,7 @@ void URpgGameplayAbility_Harvest::HandleMontageInterrupted()
 void URpgGameplayAbility_Harvest::BeginHarvestExecution()
 {
 	SetLocalAimPreview(false);
+	ClearCameraMode();
 	if (!CommitAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo))
 	{
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);

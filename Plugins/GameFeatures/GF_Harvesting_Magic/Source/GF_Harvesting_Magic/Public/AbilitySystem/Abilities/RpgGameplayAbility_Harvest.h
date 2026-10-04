@@ -7,6 +7,7 @@
 #include "RpgGameplayAbility_Harvest.generated.h"
 
 class UAnimMontage;
+class URpgCameraMode;
 
 /**
  * Abstract mechanism for tool swings and harvesting powers. Concrete abilities are GA_* Blueprint assets that only
@@ -111,6 +112,13 @@ protected:
 	/** When true, the ability previews its targets while the input is held and executes on release. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Execution")
 	bool bAimWhileInputHeld = false;
+
+	/**
+	 * Camera mode the owning client uses while a hold-to-aim harvest is held, for example a higher view onto the
+	 * ground; it is cleared on release or when the ability ends. Empty keeps the pawn camera. Cosmetic.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Execution", meta = (EditCondition = "bAimWhileInputHeld"))
+	TSubclassOf<URpgCameraMode> AimCameraMode;
 
 	/** Montage played on execution. Must contain exactly one RPG Gameplay Event notify sending CommitEventTag. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Execution")
