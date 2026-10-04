@@ -3,6 +3,7 @@
 #include "RpgEquipmentInstance.h"
 
 #if WITH_EDITOR
+#include "GameFramework/Actor.h"
 #include "Misc/DataValidation.h"
 #include "RpgWeaponInstance.h"
 #endif
@@ -266,6 +267,27 @@ EDataValidationResult URpgEquipmentDefinition::IsDataValid(
 							static_cast<int64>(
 								SlotAbilitySet.EquippedSlot))),
 					FText::AsNumber(GrantIndex)));
+		}
+	}
+
+	for (int32 ActorIndex = 0; ActorIndex < ActorsToSpawn.Num(); ++ActorIndex)
+	{
+		const TSubclassOf<AActor> ActorClass = ActorsToSpawn[ActorIndex].ActorToSpawn;
+		const AActor* ActorDefaults = ActorClass ? ActorClass->GetDefaultObject<AActor>() : nullptr;
+		// Equipment actors are spawned by the server only; without replication no client ever sees them.
+		if (ActorDefaults && !ActorDefaults->GetIsReplicated())
+		{
+			Result = EDataValidationResult::Invalid;
+			Context.AddError(
+				FText::Format(
+					LOCTEXT(
+						"NonReplicatedEquipmentActor",
+						"Equipment definition '{0}' spawns '{1}' at ActorsToSpawn[{2}], but that actor class does not "
+						"replicate. The server spawns equipment actors, so clients never see it; enable Replicates on "
+						"the actor class."),
+					DefinitionPath,
+					FText::FromString(GetNameSafe(ActorClass.Get())),
+					FText::AsNumber(ActorIndex)));
 		}
 	}
 

@@ -280,6 +280,23 @@ All assets live in `GF_Harvesting_Magic` and are authored through Unreal MCP.
   - Saved quick-access bindings to Stoneburst resolve as missing.
 - **Test map:** `Lvl_HarvestPickaxe` adds two veins next to the comparison
   vein, so one Rift Grip covers three veins.
+- **Multiplayer:** checked in a listen-server PIE session with one client.
+  - The pickaxe's equipment actor `BP_Tool_PickaxeActor` did not replicate, so
+    clients never saw a picked-up pickaxe. It replicates now. Only the server
+    spawns equipment actors, so `URpgEquipmentDefinition` data validation now
+    rejects `ActorsToSpawn` classes that do not replicate.
+  - Verified for the client and the host: pickup and equip, the primary
+    indicator, the pickaxe strike with replicated stock and ore, the swing
+    montage seen by the other player, the "Mining 2 required" toast, and Rift
+    Grip. The server harvested exactly the veins the client indicated.
+  - The server selects a remote player's targets from the camera that player
+    reports through `ServerUpdateCamera`. The character movement component
+    sends it with its moves, so it is at most one move interval old (12 Hz
+    while standing still).
+  - Pawns without a `UPawnMovementComponent`, such as the Mover pawns, never
+    report their camera. Harvesting is not enabled in those experiences. To
+    enable it there, the client first has to send its aim with the activation
+    as target data.
 
 ## Performance guardrails
 

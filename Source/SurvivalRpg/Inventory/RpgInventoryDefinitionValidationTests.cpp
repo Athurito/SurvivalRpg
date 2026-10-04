@@ -10,6 +10,7 @@
 #include "AssetRegistry/IAssetRegistry.h"
 #include "Blueprint/BlueprintSupport.h"
 #include "Engine/Blueprint.h"
+#include "GameFramework/Pawn.h"
 #include "Interfaces/IPluginManager.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/DataValidation.h"
@@ -826,6 +827,56 @@ bool FRpgEquipmentDefinitionSlotReferenceDataValidationTest::RunTest(
 		ErrorText.Contains(TEXT("HandOccupancy")) &&
 			ErrorText.Contains(TEXT("255")));
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgEquipmentDefinitionSpawnedActorReplicationDataValidationTest,
+	"SurvivalRpg.Equipment.Definition.DataValidation.SpawnedActorsReplicate",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgEquipmentDefinitionSpawnedActorReplicationDataValidationTest::RunTest(
+	const FString& Parameters)
+{
+	URpgInventoryAutomationTestWeaponEquipmentDefinition* Definition =
+		NewObject<
+			URpgInventoryAutomationTestWeaponEquipmentDefinition>();
+	Definition->ActorsToSpawn.SetNum(1);
+
+	// Only the server spawns equipment actors; a class without replication is never visible to clients.
+	Definition->ActorsToSpawn[0].ActorToSpawn = AActor::StaticClass();
+	FDataValidationContext NonReplicatedContext;
+	TestTrue(
+		TEXT("A non-replicating equipment actor class is invalid editor data"),
+		ValidateAs(
+			Definition,
+			EDataValidationResult::Invalid,
+			NonReplicatedContext));
+	const FString ErrorText = CollectValidationErrors(NonReplicatedContext);
+	TestTrue(
+		TEXT("The replication error names the definition and the exact ActorsToSpawn row"),
+		ErrorText.Contains(Definition->GetPathName()) &&
+			ErrorText.Contains(TEXT("ActorsToSpawn[0]")) &&
+			ErrorText.Contains(TEXT("does not replicate")));
+
+	Definition->ActorsToSpawn[0].ActorToSpawn = APawn::StaticClass();
+	FDataValidationContext ReplicatedContext;
+	TestTrue(
+		TEXT("A replicating equipment actor class validates"),
+		ValidateAs(
+			Definition,
+			EDataValidationResult::Valid,
+			ReplicatedContext));
+
+	Definition->ActorsToSpawn[0].ActorToSpawn = nullptr;
+	FDataValidationContext EmptyContext;
+	TestTrue(
+		TEXT("An empty ActorsToSpawn row is not reported as a replication error"),
+		ValidateAs(
+			Definition,
+			EDataValidationResult::Valid,
+			EmptyContext));
 	return true;
 }
 
