@@ -188,6 +188,7 @@ public:
 		RequiredSkillTag = InSkillTag;
 		MinimumSkillLevel = InMinimumLevel;
 	}
+	void ConfigureWeakPointHits(const bool bInCanHitWeakPoints) { bCanHitWeakPoints = bInCanHitWeakPoints; }
 };
 
 /** Records preview notifications so tests can assert change-only broadcasting. */

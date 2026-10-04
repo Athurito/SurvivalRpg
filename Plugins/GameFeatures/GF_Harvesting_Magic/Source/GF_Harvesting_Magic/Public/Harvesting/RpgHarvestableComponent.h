@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Components/ActorComponent.h"
+#include "Engine/EngineTypes.h"
 #include "Harvesting/RpgHarvestableTarget.h"
 #include "TimerManager.h"
 
@@ -9,6 +10,7 @@
 class URpgHarvestableComponent;
 class URpgHarvestProfile;
 class FLifetimeProperty;
+struct FRpgHarvestStockSnapshot;
 
 /** Replicated stock of one actor-backed harvestable resource. Server-authored; clients only read it. */
 USTRUCT(BlueprintType)
@@ -101,6 +103,14 @@ public:
 	bool IsHarvestable() const;
 
 	/**
+	 * Returns the active weak point in world space and its hit radius in centimeters. False while the resource has no
+	 * weak points or stock, or its profile awards no weak-point bonus. Derived from replicated state, so presentation
+	 * on every client marks the same point the server checks swings against.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Harvesting")
+	bool GetActiveWeakPoint(FVector& OutWorldLocation, float& OutRadius) const;
+
+	/**
 	 * Restores the complete stock immediately and cancels a pending respawn, for scripted events or debugging.
 	 * Authority only; returns false when nothing changed or the caller lacks authority.
 	 */
@@ -129,12 +139,32 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rpg|Harvesting")
 	TObjectPtr<URpgHarvestProfile> HarvestProfile;
 
+	/**
+	 * Weak point locations in the local space of WeakPointFrame, for example points on the resource mesh surface in
+	 * mesh units. One is active at a time and moves on with every extracted section. Empty disables weak points; the
+	 * profile's WeakPointBonusSections sets what a hit is worth. Designer-placed static data.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rpg|Harvesting|Weak Points")
+	TArray<FVector> WeakPointLocations;
+
+	/** Hit tolerance in centimeters around the active weak point; swing impacts within it strike the weak point. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rpg|Harvesting|Weak Points", meta = (ClampMin = "1.0", UIMin = "10.0", UIMax = "100.0", Units = "cm"))
+	float WeakPointRadius = 35.0f;
+
+	/**
+	 * Scene component whose transform places WeakPointLocations, usually the resource mesh, so weak points follow its
+	 * placement and its section scaling. Empty uses the owning actor's transform. Designer-assigned per actor class.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Rpg|Harvesting|Weak Points", meta = (UseComponentPicker, AllowedClasses = "/Script/Engine.SceneComponent"))
+	FComponentReference WeakPointFrame;
+
 private:
 	UFUNCTION()
 	void OnRep_HarvestState();
 
 	/** Writes a new authoritative state, wakes the dormant owner for replication, and presents it locally. */
 	void SetAuthoritativeState(const FRpgHarvestNodeState& NewState);
+	FRpgHarvestStockSnapshot MakeStockSnapshot() const;
 	void BroadcastStateChanged(bool bInitialState);
 	float GetServerWorldTimeSeconds() const;
 	void ScheduleRespawn();

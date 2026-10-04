@@ -45,3 +45,11 @@ bool URpgHarvestTargetIndicatorWidget::IsAimingPreview() const
 	const URpgHarvestTargetingComponent* TargetingComponent = Targeting.Get();
 	return TargetingComponent && TargetingComponent->IsPreviewAiming();
 }
+
+bool URpgHarvestTargetIndicatorWidget::IsWeakPointTargeted() const
+{
+	const URpgHarvestTargetingComponent* TargetingComponent = Targeting.Get();
+	const FRpgHarvestTargetEvaluation* Target =
+		TargetingComponent ? TargetingComponent->FindTargetEvaluation(TargetComponent.Get()) : nullptr;
+	return Target && Target->WouldHarvest() && Target->Result.bWeakPointHit;
+}

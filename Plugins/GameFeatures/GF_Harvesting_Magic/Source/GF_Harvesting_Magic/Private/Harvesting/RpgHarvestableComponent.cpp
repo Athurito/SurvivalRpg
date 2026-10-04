@@ -1,5 +1,6 @@
 #include "Harvesting/RpgHarvestableComponent.h"
 
+#include "Components/SceneComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/GameStateBase.h"
@@ -75,12 +76,13 @@ FRpgHarvestResult URpgHarvestableComponent::EvaluateHarvest_Implementation(const
 		return FRpgHarvestResult::MakeRejected(ERpgHarvestOutcome::Invalid, GetRemainingSections(), GetSectionCount());
 	}
 
-	FRpgHarvestStockSnapshot Stock;
-	Stock.Revision = HarvestState.Revision;
-	Stock.SectionCount = GetSectionCount();
-	Stock.HarvestedSections = HarvestState.HarvestedSections;
-	Stock.bActive = HarvestState.bActive;
-	const FRpgHarvestResult Result = FRpgHarvestStockRules::Evaluate(HarvestProfile, Request, Stock);
+	FRpgHarvestWeakPoint WeakPoint;
+	const bool bHasWeakPoint = GetActiveWeakPoint(WeakPoint.Location, WeakPoint.Radius);
+	const FRpgHarvestResult Result = FRpgHarvestStockRules::Evaluate(
+		HarvestProfile,
+		Request,
+		MakeStockSnapshot(),
+		bHasWeakPoint ? &WeakPoint : nullptr);
 	if (Result.IsSuccess() && bCommitInProgress)
 	{
 		return FRpgHarvestResult::MakeRejected(ERpgHarvestOutcome::Stale, GetRemainingSections(), GetSectionCount());
@@ -172,6 +174,29 @@ bool URpgHarvestableComponent::IsHarvestable() const
 	return GetRemainingSections() > 0;
 }
 
+bool URpgHarvestableComponent::GetActiveWeakPoint(FVector& OutWorldLocation, float& OutRadius) const
+{
+	OutWorldLocation = FVector::ZeroVector;
+	OutRadius = 0.0f;
+	AActor* OwningActor = GetOwner();
+	if (!OwningActor || !HarvestProfile || HarvestProfile->GetClampedWeakPointBonusSections() <= 0 || WeakPointRadius <= 0.0f)
+	{
+		return false;
+	}
+
+	const int32 WeakPointIndex = FRpgHarvestStockRules::GetActiveWeakPointIndex(MakeStockSnapshot(), WeakPointLocations.Num());
+	if (!WeakPointLocations.IsValidIndex(WeakPointIndex))
+	{
+		return false;
+	}
+
+	const USceneComponent* Frame = Cast<USceneComponent>(WeakPointFrame.GetComponent(OwningActor));
+	const FTransform FrameTransform = Frame ? Frame->GetComponentTransform() : OwningActor->GetActorTransform();
+	OutWorldLocation = FrameTransform.TransformPosition(WeakPointLocations[WeakPointIndex]);
+	OutRadius = WeakPointRadius;
+	return true;
+}
+
 bool URpgHarvestableComponent::RestoreHarvestStock()
 {
 	const AActor* OwningActor = GetOwner();
@@ -194,6 +219,16 @@ bool URpgHarvestableComponent::RestoreHarvestStock()
 	NewState.HarvestedSections = 0;
 	SetAuthoritativeState(NewState);
 	return true;
+}
+
+FRpgHarvestStockSnapshot URpgHarvestableComponent::MakeStockSnapshot() const
+{
+	FRpgHarvestStockSnapshot Stock;
+	Stock.Revision = HarvestState.Revision;
+	Stock.SectionCount = GetSectionCount();
+	Stock.HarvestedSections = HarvestState.HarvestedSections;
+	Stock.bActive = HarvestState.bActive;
+	return Stock;
 }
 
 void URpgHarvestableComponent::OnRep_HarvestState()

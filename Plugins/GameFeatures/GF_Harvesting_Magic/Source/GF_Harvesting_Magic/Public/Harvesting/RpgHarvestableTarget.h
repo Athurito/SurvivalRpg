@@ -54,6 +54,14 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestRequest
 	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Harvesting", meta = (Categories = "Tool.Harvesting"))
 	FGameplayTag ToolTag;
+
+	/**
+	 * True for precise single-target swings that may strike a target's active weak point. When the swing's aim from
+	 * Hit.TraceStart passes through it, or Hit.ImpactPoint lies on it, the target extracts its profile's weak-point
+	 * bonus sections in addition to RequestedSections, from the same stock. False for area powers and manual harvesting.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
+	bool bCanHitWeakPoint = false;
 };
 
 /** Authoritative or previewed outcome of one harvest request against one target. */
@@ -124,6 +132,10 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestResult
 	/** True when a commit emptied the target's stock and depleted it. */
 	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
 	bool bDepleted = false;
+
+	/** True when the request struck the target's active weak point; SectionsTaken then includes the bonus. */
+	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
+	bool bWeakPointHit = false;
 
 	/** Delivery path of a committed reward; None for evaluations and rejections. */
 	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")

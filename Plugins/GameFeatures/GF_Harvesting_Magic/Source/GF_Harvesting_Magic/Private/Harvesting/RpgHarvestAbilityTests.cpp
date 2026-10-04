@@ -913,4 +913,80 @@ bool FRpgHarvestAbilityCommitAimTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestAbilityWeakPointTest,
+	"SurvivalRpg.Harvesting.Ability.SwingStrikesWeakPoint",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestAbilityWeakPointTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestAbilityTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	URpgHarvestProfile* Profile = MakeProfile(World, 4);
+	Profile->WeakPointBonusSections = 1;
+	ARpgHarvestAutomationCollidableNodeActor* Node =
+		SpawnNode(World, FVector(150.0, 0.0, Harvester.Pawn->BaseEyeHeight), Profile);
+	const FGrantedAbility Granted = GrantAbility(Harvester.AbilitySystem);
+	// The view ray strikes the node's front face at its center, 40 cm in front of the actor location.
+	if (!TestNotNull(TEXT("Weak point node exists"), Node) ||
+		!TestNotNull(TEXT("Granted test ability instance exists"), Granted.Instance) ||
+		!TestTrue(
+			TEXT("Weak points are configured"),
+			RpgHarvestAutomation::ConfigureWeakPoints(
+				Node->HarvestableNode,
+				{FVector(-40.0, 0.0, 0.0), FVector(-40.0, 0.0, 60.0), FVector(-40.0, 0.0, -60.0)},
+				20.0f)))
+	{
+		return false;
+	}
+
+	FRpgHarvestTargetingParams Single;
+	Single.MaxAimDistance = 1000.0f;
+	Single.MaxReachFromAvatar = 250.0f;
+	Granted.Instance->ConfigureTargeting(Single);
+
+	FRpgHarvestPreview Preview = Evaluate(Harvester.AbilitySystem, Granted);
+	TestTrue(
+		TEXT("An ability that cannot hit weak points previews its sections only"),
+		Preview.Targets.Num() == 1 && Preview.Targets[0].Result.SectionsTaken == 1 && !Preview.Targets[0].Result.bWeakPointHit);
+
+	Granted.Instance->ConfigureWeakPointHits(true);
+	Preview = Evaluate(Harvester.AbilitySystem, Granted);
+	TestTrue(
+		TEXT("A swing aimed at the weak point previews the bonus section"),
+		Preview.Targets.Num() == 1 && Preview.Targets[0].Result.SectionsTaken == 2 && Preview.Targets[0].Result.bWeakPointHit);
+
+	TestTrue(TEXT("The swing activates"), Harvester.AbilitySystem->TryActivateAbility(Granted.Handle));
+	TestEqual(TEXT("The swing extracts the bonus section"), Node->HarvestableNode->GetRemainingSections(), 2);
+	TestEqual(TEXT("Both sections are rewarded"), CountMaterial(Harvester.PlayerState), 2 * YieldPerSection);
+
+	Preview = Evaluate(Harvester.AbilitySystem, Granted);
+	TestTrue(
+		TEXT("The weak point moved away from the aim"),
+		Preview.Targets.Num() == 1 && Preview.Targets[0].Result.SectionsTaken == 1 && !Preview.Targets[0].Result.bWeakPointHit);
+
+	// An area power selects the node through its actor location; a weak point exactly there must not count.
+	RpgHarvestAutomation::ConfigureWeakPoints(Node->HarvestableNode, {FVector::ZeroVector}, 20.0f);
+	FRpgHarvestTargetingParams Area;
+	Area.Shape = ERpgHarvestTargetShape::AreaAtAimPoint;
+	Area.MaxAimDistance = 1000.0f;
+	Area.MaxReachFromAvatar = 700.0f;
+	Area.AreaRadius = 300.0f;
+	Area.MaxTargets = 1;
+	Granted.Instance->ConfigureTargeting(Area);
+	Preview = Evaluate(Harvester.AbilitySystem, Granted);
+	TestTrue(
+		TEXT("Area powers never strike weak points"),
+		Preview.Targets.Num() == 1 && Preview.Targets[0].Result.SectionsTaken == 1 && !Preview.Targets[0].Result.bWeakPointHit);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

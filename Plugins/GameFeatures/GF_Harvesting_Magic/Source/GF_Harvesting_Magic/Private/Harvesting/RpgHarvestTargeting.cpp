@@ -81,6 +81,7 @@ bool FRpgHarvestPreview::IsEquivalent(const FRpgHarvestPreview& Other, const flo
 			A.bInReach != B.bInReach ||
 			A.Result.Outcome != B.Result.Outcome ||
 			A.Result.SectionsTaken != B.Result.SectionsTaken ||
+			A.Result.bWeakPointHit != B.Result.bWeakPointHit ||
 			A.Result.RemainingSections != B.Result.RemainingSections ||
 			A.Result.SectionCount != B.Result.SectionCount)
 		{

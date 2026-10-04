@@ -428,6 +428,7 @@ void URpgGameplayAbility_Harvest::BuildRequestTemplate(
 	OutRequest.Harvester = ActorInfo.AvatarActor.Get();
 	OutRequest.AbilityId = HarvestAbilityId;
 	OutRequest.RequestedSections = FMath::Max(1, SectionsPerTarget);
+	OutRequest.bCanHitWeakPoint = bCanHitWeakPoints && Targeting.Shape == ERpgHarvestTargetShape::SingleTarget;
 
 	float ToolPower = 1.0f;
 	const URpgEquipmentInstance* Equipment = Cast<URpgEquipmentInstance>(Spec.SourceObject.Get());

@@ -164,18 +164,23 @@ bool URpgHarvestTargetingComponent::GetTargetStatus(
 	int32& OutSectionCount,
 	int32& OutSectionsToTake) const
 {
-	const FRpgHarvestTargetEvaluation* Target = TargetComponent
+	return RpgHarvestTargetingComponent::SummarizeTarget(
+		FindTargetEvaluation(TargetComponent),
+		OutStatus,
+		OutRemainingSections,
+		OutSectionCount,
+		OutSectionsToTake);
+}
+
+const FRpgHarvestTargetEvaluation* URpgHarvestTargetingComponent::FindTargetEvaluation(
+	const USceneComponent* TargetComponent) const
+{
+	return TargetComponent
 		? CurrentPreview.Targets.FindByPredicate([TargetComponent](const FRpgHarvestTargetEvaluation& Candidate)
 		{
 			return Candidate.Hit.GetComponent() == TargetComponent;
 		})
 		: nullptr;
-	return RpgHarvestTargetingComponent::SummarizeTarget(
-		Target,
-		OutStatus,
-		OutRemainingSections,
-		OutSectionCount,
-		OutSectionsToTake);
 }
 
 void URpgHarvestTargetingComponent::UpdateTargetIndicators()
