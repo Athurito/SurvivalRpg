@@ -3,19 +3,28 @@
 #include "Misc/AutomationTest.h"
 
 #include "AbilitySystem/Abilities/RpgGameplayAbility_Harvest.h"
+#include "GameFeatureData.h"
 #include "GameFramework/Actor.h"
+#include "GameFramework/GameStateBase.h"
 #include "Harvesting/RpgHarvestAutomationTestWorld.h"
 #include "Harvesting/RpgHarvestProfile.h"
 #include "Harvesting/RpgHarvestableComponent.h"
+#include "Harvesting/RpgHarvestableInstancesComponent.h"
+#include "Harvesting/RpgHarvestInstanceStockComponent.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Equipment/RpgAbilityBindingResolver.h"
 #include "SurvivalRpg/Equipment/RpgWeaponAbilityLoadoutComponent.h"
+#include "SurvivalRpg/GameFeatures/RpgGameFeatureAction_AddComponents.h"
 
 namespace RpgHarvestContentContractTests
 {
 	const TCHAR* PickaxeAbilitySetPath = TEXT("/GF_Harvesting_Magic/GAS/AbilitySets/AS_Tool_Pickaxe.AS_Tool_Pickaxe");
 	const TCHAR* IronVeinClassPath = TEXT("/GF_Harvesting_Magic/Harvesting/Nodes/BP_HarvestNode_IronVein.BP_HarvestNode_IronVein_C");
+	const TCHAR* IronVeinInstancesClassPath =
+		TEXT("/GF_Harvesting_Magic/Harvesting/Instances/BPC_HarvestInstances_IronVein.BPC_HarvestInstances_IronVein_C");
+	const TCHAR* IronVeinProfilePath = TEXT("/GF_Harvesting_Magic/Harvesting/Profiles/HP_IronVein.HP_IronVein");
+	const TCHAR* HarvestingFeatureDataPath = TEXT("/GF_Harvesting_Magic/GF_Harvesting_Magic.GF_Harvesting_Magic");
 
 	const FGameplayAbilitySpec* FindSpecWithId(const URpgAbilitySystemComponent& AbilitySystem, const FGameplayTag AbilityId)
 	{
@@ -153,6 +162,65 @@ bool FRpgHarvestIronVeinWeakPointContractTest::RunTest(const FString& Parameters
 	// Colliding components only: the swing has to reach the weak point on the resource, not on a cosmetic marker.
 	const FBox Bounds = Vein->GetComponentsBoundingBox(false).ExpandBy(Radius);
 	TestTrue(TEXT("The active weak point lies on the vein's collision"), Bounds.IsValid && Bounds.IsInside(WeakPoint));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestPcgIronVeinContractTest,
+	"SurvivalRpg.Harvesting.Content.PcgIronVeinInstancesContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestPcgIronVeinContractTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestContentContractTests;
+
+	// The PCG spawner's component class: every spawned instance is a harvestable iron vein.
+	UClass* InstancesClass = LoadClass<URpgHarvestableInstancesComponent>(nullptr, IronVeinInstancesClassPath);
+	if (!TestNotNull(TEXT("The iron vein instances class loads"), InstancesClass))
+	{
+		return false;
+	}
+	const URpgHarvestableInstancesComponent* Instances = GetDefault<URpgHarvestableInstancesComponent>(InstancesClass);
+	const URpgHarvestProfile* Profile = Instances ? Instances->GetHarvestProfile() : nullptr;
+	if (!TestNotNull(TEXT("The iron vein instances have a harvest profile"), Profile))
+	{
+		return false;
+	}
+	TestTrue(
+		TEXT("The instances share the actor veins' profile"),
+		Profile->GetPathName() == FString(IronVeinProfilePath));
+	TestTrue(
+		TEXT("The instances require the pickaxe"),
+		Profile->RequiredToolTag.MatchesTagExact(FGameplayTag::RequestGameplayTag(TEXT("Tool.Harvesting.Pickaxe"))));
+
+	// The harvesting GameFeature adds the replicated instance stock to the GameState on server and clients.
+	const UGameFeatureData* FeatureData = LoadObject<UGameFeatureData>(nullptr, HarvestingFeatureDataPath);
+	if (!TestNotNull(TEXT("The harvesting GameFeature data loads"), FeatureData))
+	{
+		return false;
+	}
+	int32 StockRegistrations = 0;
+	for (const UGameFeatureAction* Action : FeatureData->GetActions())
+	{
+		const URpgGameFeatureAction_AddComponents* AddComponents = Cast<URpgGameFeatureAction_AddComponents>(Action);
+		if (!AddComponents)
+		{
+			continue;
+		}
+		for (const FRpgGameFeatureComponentEntry& Entry : AddComponents->ComponentList)
+		{
+			if (Entry.ComponentClass.ToSoftObjectPath() != FSoftObjectPath(URpgHarvestInstanceStockComponent::StaticClass()))
+			{
+				continue;
+			}
+			++StockRegistrations;
+			const UClass* ActorClass = Entry.ActorClass.LoadSynchronous();
+			TestTrue(TEXT("The instance stock targets a GameState"), ActorClass && ActorClass->IsChildOf<AGameStateBase>());
+			TestTrue(TEXT("The server creates the instance stock"), Entry.bServerComponent);
+		}
+	}
+	TestEqual(TEXT("The GameFeature registers the instance stock exactly once"), StockRegistrations, 1);
 	return true;
 }
 

@@ -14,6 +14,7 @@ public class GF_Harvesting_Magic : ModuleRules
 			"GameplayAbilities",
 			"GameplayTags",
 			"GameplayTasks",
+			"ModularGameplay",
 			"NetCore",
 			"SlateCore",
 			"SurvivalRpg",
@@ -22,6 +23,7 @@ public class GF_Harvesting_Magic : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
+			"GameFeatures",
 			"ModularGameplayActors",
 			"PhysicsCore",
 		});

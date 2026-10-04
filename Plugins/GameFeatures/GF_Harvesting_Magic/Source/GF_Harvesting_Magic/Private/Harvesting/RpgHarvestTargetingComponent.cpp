@@ -3,6 +3,8 @@
 #include "AbilitySystem/Abilities/RpgGameplayAbility_Harvest.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
+#include "Components/InstancedStaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
@@ -20,6 +22,12 @@ namespace RpgHarvestTargetingComponent
 	{
 		static const FGameplayTag PrimaryInputTag = FGameplayTag::RequestGameplayTag(TEXT("InputTag.Weapon.Primary"));
 		return PrimaryInputTag;
+	}
+
+	/** Returns the instance Target addresses within an instanced component, or INDEX_NONE for other components. */
+	int32 GetTargetInstanceIndex(const FRpgHarvestTargetEvaluation& Target)
+	{
+		return Cast<UInstancedStaticMeshComponent>(Target.Hit.GetComponent()) ? Target.Hit.Item : INDEX_NONE;
 	}
 
 	/** Presentation summary of one evaluated target; false and empty outputs for no target. */
@@ -183,20 +191,59 @@ const FRpgHarvestTargetEvaluation* URpgHarvestTargetingComponent::FindTargetEval
 		: nullptr;
 }
 
+const FRpgHarvestTargetEvaluation* URpgHarvestTargetingComponent::FindIndicatedTarget(
+	const UIndicatorDescriptor* Indicator) const
+{
+	const FRpgHarvestTargetIndicator* Indicated = Indicator
+		? TargetIndicators.FindByPredicate([Indicator](const FRpgHarvestTargetIndicator& Candidate)
+		{
+			return Candidate.Indicator == Indicator;
+		})
+		: nullptr;
+	if (!Indicated)
+	{
+		return nullptr;
+	}
+
+	const USceneComponent* TargetComponent = Indicator->GetSceneComponent();
+	return CurrentPreview.Targets.FindByPredicate([TargetComponent, Indicated](const FRpgHarvestTargetEvaluation& Candidate)
+	{
+		return Candidate.Hit.GetComponent() == TargetComponent &&
+			RpgHarvestTargetingComponent::GetTargetInstanceIndex(Candidate) == Indicated->InstanceIndex;
+	});
+}
+
+bool URpgHarvestTargetingComponent::GetIndicatedTargetStatus(
+	const UIndicatorDescriptor* Indicator,
+	ERpgHarvestTargetStatus& OutStatus,
+	int32& OutRemainingSections,
+	int32& OutSectionCount,
+	int32& OutSectionsToTake) const
+{
+	return RpgHarvestTargetingComponent::SummarizeTarget(
+		FindIndicatedTarget(Indicator),
+		OutStatus,
+		OutRemainingSections,
+		OutSectionCount,
+		OutSectionsToTake);
+}
+
 void URpgHarvestTargetingComponent::UpdateTargetIndicators()
 {
+	using namespace RpgHarvestTargetingComponent;
+
 	if (IndicatorWidgetClass.IsNull())
 	{
 		return;
 	}
 
 	// The primary swing marks its target; a held aim ability marks every target it would hit.
-	TArray<USceneComponent*, TInlineAllocator<8>> IndicatedComponents;
+	TArray<const FRpgHarvestTargetEvaluation*, TInlineAllocator<8>> IndicatedTargets;
 	for (const FRpgHarvestTargetEvaluation& Target : CurrentPreview.Targets)
 	{
-		if (USceneComponent* TargetComponent = Target.Hit.GetComponent())
+		if (Target.Hit.GetComponent())
 		{
-			IndicatedComponents.AddUnique(TargetComponent);
+			IndicatedTargets.Add(&Target);
 		}
 		if (!CurrentPreview.bIsAiming)
 		{
@@ -208,10 +255,21 @@ void URpgHarvestTargetingComponent::UpdateTargetIndicators()
 		URpgIndicatorManagerComponent::GetComponent(Cast<AController>(GetOwner()));
 	for (int32 Index = TargetIndicators.Num() - 1; Index >= 0; --Index)
 	{
-		UIndicatorDescriptor* Indicator = TargetIndicators[Index];
-		USceneComponent* IndicatedComponent = Indicator ? Indicator->GetSceneComponent() : nullptr;
-		if (IndicatedComponent && IndicatedComponents.Remove(IndicatedComponent) > 0)
+		const FRpgHarvestTargetIndicator& Indicated = TargetIndicators[Index];
+		UIndicatorDescriptor* Indicator = Indicated.Indicator;
+		const USceneComponent* IndicatedComponent = Indicator ? Indicator->GetSceneComponent() : nullptr;
+		const int32 TargetIndex = IndicatedComponent
+			? IndicatedTargets.IndexOfByPredicate([IndicatedComponent, &Indicated](const FRpgHarvestTargetEvaluation* Target)
+			{
+				return Target->Hit.GetComponent() == IndicatedComponent &&
+					GetTargetInstanceIndex(*Target) == Indicated.InstanceIndex;
+			})
+			: INDEX_NONE;
+		if (TargetIndex != INDEX_NONE)
 		{
+			// Keep the placement current, for example while a resource shrinks with its sections.
+			PlaceTargetIndicator(*Indicator, *IndicatedTargets[TargetIndex]);
+			IndicatedTargets.RemoveAt(TargetIndex);
 			continue;
 		}
 		if (Indicator && IndicatorManager)
@@ -225,31 +283,59 @@ void URpgHarvestTargetingComponent::UpdateTargetIndicators()
 	{
 		return;
 	}
-	for (USceneComponent* TargetComponent : IndicatedComponents)
+	for (const FRpgHarvestTargetEvaluation* Target : IndicatedTargets)
 	{
 		UIndicatorDescriptor* Indicator = NewObject<UIndicatorDescriptor>(this);
 		Indicator->SetDataObject(this);
-		Indicator->SetSceneComponent(TargetComponent);
 		Indicator->SetIndicatorClass(IndicatorWidgetClass);
-		Indicator->SetProjectionMode(ProjectionMode);
 		Indicator->SetBoundingBoxAnchor(BoundingBoxAnchor);
 		Indicator->SetScreenSpaceOffset(ScreenSpaceOffset);
 		Indicator->SetPriority(IndicatorPriority);
 		Indicator->SetAutoRemoveWhenIndicatorComponentIsNull(true);
+		PlaceTargetIndicator(*Indicator, *Target);
+
+		FRpgHarvestTargetIndicator& Indicated = TargetIndicators.AddDefaulted_GetRef();
+		Indicated.Indicator = Indicator;
+		Indicated.InstanceIndex = GetTargetInstanceIndex(*Target);
 		IndicatorManager->AddIndicator(Indicator);
-		TargetIndicators.Add(Indicator);
 	}
+}
+
+void URpgHarvestTargetingComponent::PlaceTargetIndicator(
+	UIndicatorDescriptor& Indicator,
+	const FRpgHarvestTargetEvaluation& Target) const
+{
+	USceneComponent* TargetComponent = Target.Hit.GetComponent();
+	Indicator.SetSceneComponent(TargetComponent);
+
+	const UInstancedStaticMeshComponent* Instances = Cast<UInstancedStaticMeshComponent>(TargetComponent);
+	FTransform InstanceTransform;
+	if (Instances && Instances->GetInstanceTransform(Target.Hit.Item, InstanceTransform, true))
+	{
+		// The component's bounds span every instance, so the indicator marks the anchor of the targeted instance.
+		const UStaticMesh* Mesh = Instances->GetStaticMesh();
+		const FBox InstanceBox = Mesh
+			? Mesh->GetBounds().GetBox().TransformBy(InstanceTransform)
+			: FBox(InstanceTransform.GetLocation(), InstanceTransform.GetLocation());
+		Indicator.SetProjectionMode(EActorCanvasProjectionMode::ComponentPoint);
+		Indicator.SetWorldPositionOverride(
+			InstanceBox.GetCenter() + InstanceBox.GetSize() * (BoundingBoxAnchor - FVector(0.5)));
+		return;
+	}
+
+	Indicator.ClearWorldPositionOverride();
+	Indicator.SetProjectionMode(ProjectionMode);
 }
 
 void URpgHarvestTargetingComponent::RemoveTargetIndicators()
 {
 	URpgIndicatorManagerComponent* IndicatorManager =
 		URpgIndicatorManagerComponent::GetComponent(Cast<AController>(GetOwner()));
-	for (UIndicatorDescriptor* Indicator : TargetIndicators)
+	for (const FRpgHarvestTargetIndicator& Indicated : TargetIndicators)
 	{
-		if (Indicator && IndicatorManager)
+		if (Indicated.Indicator && IndicatorManager)
 		{
-			IndicatorManager->RemoveIndicator(Indicator);
+			IndicatorManager->RemoveIndicator(Indicated.Indicator);
 		}
 	}
 	TargetIndicators.Reset();

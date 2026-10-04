@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AbilitySystem/Abilities/RpgGameplayAbility_Harvest.h"
+#include "Harvesting/RpgHarvestableInstancesComponent.h"
 #include "Harvesting/RpgHarvestTargetingComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Inventory/RpgDroppedInventoryActor.h"
@@ -167,6 +168,44 @@ public:
 
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<URpgHarvestableComponent> HarvestableNode;
+};
+
+/** Harvestable instances that record their presentation events and accept a profile from tests. */
+UCLASS(NotBlueprintable, Transient)
+class URpgHarvestAutomationInstancesComponent final : public URpgHarvestableInstancesComponent
+{
+	GENERATED_BODY()
+
+public:
+	void ConfigureProfile(URpgHarvestProfile* InProfile) { HarvestProfile = InProfile; }
+
+	int32 EventCount = 0;
+	int32 LastInstanceIndex = INDEX_NONE;
+	int32 LastRemainingSections = INDEX_NONE;
+	bool bLastActive = false;
+	bool bLastInitialState = false;
+
+protected:
+	virtual void OnInstanceStockChanged_Implementation(
+		int32 InstanceIndex,
+		int32 RemainingSections,
+		int32 SectionCount,
+		bool bActive,
+		bool bInitialState) override;
+};
+
+/** Non-replicated owner of harvestable instances, like a PCG partition actor loaded on every machine. */
+UCLASS(NotBlueprintable, Transient)
+class ARpgHarvestAutomationInstancesActor final : public AActor
+{
+	GENERATED_BODY()
+
+public:
+	explicit ARpgHarvestAutomationInstancesActor(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<URpgHarvestAutomationInstancesComponent> Instances;
 };
 
 /** Concrete test-only harvest ability whose tuning tests set on the granted instance. */

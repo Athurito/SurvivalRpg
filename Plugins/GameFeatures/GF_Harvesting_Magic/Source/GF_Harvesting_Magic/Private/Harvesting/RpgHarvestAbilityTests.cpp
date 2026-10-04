@@ -989,4 +989,145 @@ bool FRpgHarvestAbilityWeakPointTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestAbilityInstancesTest,
+	"SurvivalRpg.Harvesting.Ability.InstancedTargetsAndIndicators",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestAbilityInstancesTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestAbilityTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	const float EyeHeight = Harvester.Pawn->BaseEyeHeight;
+	URpgHarvestInstanceStockComponent* Stock = RpgHarvestAutomation::AddInstanceStock(World);
+	// Three 100 cm cubes in one instanced component, like one PCG mesh entry in one partition cell.
+	ARpgHarvestAutomationInstancesActor* Field = RpgHarvestAutomation::SpawnInstances(
+		World,
+		MakeProfile(World, 4),
+		{FVector(0.0, 0.0, 0.0), FVector(0.0, 160.0, 0.0), FVector(0.0, -160.0, 0.0)},
+		FVector(150.0, 0.0, EyeHeight));
+	const FGrantedAbility Swing = GrantAbility(Harvester.AbilitySystem);
+	const FGrantedAbility Area = GrantAbility(Harvester.AbilitySystem);
+	if (!TestNotNull(TEXT("Instance stock exists"), Stock) ||
+		!TestNotNull(TEXT("Instanced field exists"), Field) ||
+		!TestNotNull(TEXT("Swing exists"), Swing.Instance) ||
+		!TestNotNull(TEXT("Area ability exists"), Area.Instance))
+	{
+		return false;
+	}
+	URpgHarvestableInstancesComponent* Instances = Field->Instances;
+
+	FRpgHarvestTargetingParams Single;
+	Single.MaxAimDistance = 1000.0f;
+	Single.MaxReachFromAvatar = 250.0f;
+	Swing.Instance->ConfigureTargeting(Single);
+	FRpgHarvestPreview Preview = Evaluate(Harvester.AbilitySystem, Swing);
+	if (!TestEqual(TEXT("The swing selects one instance"), Preview.Targets.Num(), 1))
+	{
+		return false;
+	}
+	TestTrue(TEXT("The swing targets the instanced component"), Preview.Targets[0].Receiver.Get() == Instances);
+	TestEqual(TEXT("The swing targets the instance in its view"), Preview.Targets[0].Hit.Item, 0);
+	TestTrue(
+		TEXT("The swing previews one section of the instance's stock"),
+		Preview.Targets[0].WouldHarvest() && Preview.Targets[0].Result.SectionsTaken == 1 &&
+			Preview.Targets[0].Result.RemainingSections == 3);
+	TestTrue(TEXT("The swing activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	TestEqual(TEXT("The swing extracts one section"), Instances->GetRemainingSections(0), 3);
+	TestEqual(TEXT("The swing rewards one section"), CountMaterial(Harvester.PlayerState), YieldPerSection);
+
+	FRpgHarvestTargetingParams AreaTargeting;
+	AreaTargeting.Shape = ERpgHarvestTargetShape::AreaAtAimPoint;
+	AreaTargeting.MaxAimDistance = 1000.0f;
+	AreaTargeting.MaxReachFromAvatar = 700.0f;
+	AreaTargeting.AreaRadius = 300.0f;
+	AreaTargeting.MaxTargets = 3;
+	Area.Instance->ConfigureTargeting(AreaTargeting);
+	Area.Instance->ConfigureSections(3);
+	Area.Instance->ConfigureAimWhileInputHeld(true);
+
+	FActorSpawnParameters ControllerParameters;
+	ControllerParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	APlayerController* Controller = World->SpawnActor<APlayerController>(
+		APlayerController::StaticClass(),
+		FTransform::Identity,
+		ControllerParameters);
+	if (!TestNotNull(TEXT("Local controller exists"), Controller))
+	{
+		return false;
+	}
+	Controller->SetAsLocalPlayerController();
+	Controller->PlayerState = Harvester.PlayerState;
+	URpgIndicatorManagerComponent* IndicatorManager = NewObject<URpgIndicatorManagerComponent>(Controller);
+	IndicatorManager->RegisterComponent();
+	URpgHarvestAutomationTargetingComponent* Targeting = NewObject<URpgHarvestAutomationTargetingComponent>(Controller);
+	Targeting->ConfigureIndicator(TSoftClassPtr<UUserWidget>(UUserWidget::StaticClass()));
+	Targeting->RegisterComponent();
+
+	Targeting->SetAimingAbility(Area.Handle, true);
+	Preview = Targeting->GetCurrentPreview();
+	if (!TestEqual(TEXT("The area selects every instance in range"), Preview.Targets.Num(), 3) ||
+		!TestEqual(TEXT("Every instance gets its own indicator"), IndicatorManager->GetIndicators().Num(), 3))
+	{
+		return false;
+	}
+	TSet<int32> PreviewedInstances;
+	for (const FRpgHarvestTargetEvaluation& Target : Preview.Targets)
+	{
+		PreviewedInstances.Add(Target.Hit.Item);
+	}
+	TestEqual(TEXT("Instances of one component stay distinct targets"), PreviewedInstances.Num(), 3);
+
+	TSet<int32> IndicatedInstances;
+	for (UIndicatorDescriptor* Indicator : IndicatorManager->GetIndicators())
+	{
+		const FRpgHarvestTargetEvaluation* Target = Targeting->FindIndicatedTarget(Indicator);
+		FTransform InstanceTransform;
+		if (!TestNotNull(TEXT("Each indicator resolves its target"), Target) ||
+			!TestTrue(TEXT("Each indicator anchors to the instanced component"), Indicator->GetSceneComponent() == Instances) ||
+			!TestTrue(TEXT("Each indicated target is an instance"), Instances->GetInstanceTransform(Target->Hit.Item, InstanceTransform, true)))
+		{
+			continue;
+		}
+		IndicatedInstances.Add(Target->Hit.Item);
+		TestTrue(TEXT("Instance indicators project from a point"), Indicator->GetProjectionMode() == EActorCanvasProjectionMode::ComponentPoint);
+		TestTrue(
+			TEXT("Each indicator marks the top of its own instance"),
+			Indicator->HasWorldPositionOverride() &&
+				Indicator->GetWorldPositionOverride().Equals(InstanceTransform.GetLocation() + FVector(0.0, 0.0, 50.0), 0.5));
+
+		ERpgHarvestTargetStatus Status = ERpgHarvestTargetStatus::None;
+		int32 Remaining = 0;
+		int32 SectionCount = 0;
+		int32 ToTake = 0;
+		TestTrue(
+			TEXT("Each indicator summarizes its own instance"),
+			Targeting->GetIndicatedTargetStatus(Indicator, Status, Remaining, SectionCount, ToTake) &&
+				Status == ERpgHarvestTargetStatus::Harvestable &&
+				Remaining == Instances->GetRemainingSections(Target->Hit.Item) &&
+				ToTake == FMath::Min(3, Remaining));
+	}
+	TestEqual(TEXT("The indicators mark three different instances"), IndicatedInstances.Num(), 3);
+
+	Targeting->SetAimingAbility(Area.Handle, false);
+	TestEqual(TEXT("Releasing the aim removes the instance indicators"), IndicatorManager->GetIndicators().Num(), 0);
+
+	Area.Instance->ConfigureAimWhileInputHeld(false);
+	TestTrue(TEXT("The area ability activates"), Harvester.AbilitySystem->TryActivateAbility(Area.Handle));
+	TestEqual(TEXT("The area takes the swung instance's last sections"), Instances->GetRemainingSections(0), 0);
+	TestEqual(TEXT("The area takes three sections from a side instance"), Instances->GetRemainingSections(1), 1);
+	TestEqual(TEXT("The area takes three sections from the other side instance"), Instances->GetRemainingSections(2), 1);
+	TestEqual(TEXT("Every harvested instance is stored"), Stock->GetNumChangedInstances(), 3);
+	TestEqual(TEXT("Every extracted section is rewarded"), CountMaterial(Harvester.PlayerState), 10 * YieldPerSection);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

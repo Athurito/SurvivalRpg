@@ -6,7 +6,6 @@
 
 #include "RpgHarvestTargetIndicatorWidget.generated.h"
 
-class USceneComponent;
 class UIndicatorDescriptor;
 
 /**
@@ -53,6 +52,6 @@ private:
 	/** Read model that created the bound indicator. */
 	TWeakObjectPtr<const URpgHarvestTargetingComponent> Targeting;
 
-	/** Hit component the bound indicator is anchored to. */
-	TWeakObjectPtr<const USceneComponent> TargetComponent;
+	/** Bound indicator; identifies the marked target, including its instance for instanced targets. */
+	TWeakObjectPtr<const UIndicatorDescriptor> BoundIndicator;
 };
