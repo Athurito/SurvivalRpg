@@ -70,7 +70,9 @@ void ARpgFrontendHUD::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		{
 			if (URpgUIScreenSubsystem* ScreenSubsystem = BoundLocalPlayer->GetSubsystem<URpgUIScreenSubsystem>())
 			{
-				ScreenSubsystem->CloseScreen(OpenedScreenTag);
+				// CommonGame retains the local player's layout across map travel.
+				// This frontend owns its root, navigation pages and modal screens.
+				ScreenSubsystem->CloseAllScreens();
 			}
 		}
 	}
