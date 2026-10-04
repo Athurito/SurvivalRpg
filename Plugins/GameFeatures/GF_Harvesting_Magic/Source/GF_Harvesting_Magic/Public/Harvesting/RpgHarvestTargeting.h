@@ -16,7 +16,10 @@ enum class ERpgHarvestTargetShape : uint8
 	/** The first harvestable hit along the view ray, such as a tool swing or a focused spell. */
 	SingleTarget,
 
-	/** Every harvestable within AreaRadius around the point the view ray hits, such as an area power. */
+	/**
+	 * Every harvestable within AreaRadius around the point the view ray hits, such as an area power. When the ray
+	 * hits nothing, the aim point is the ground below the ray end, kept within MaxReachFromAvatar.
+	 */
 	AreaAtAimPoint
 };
 

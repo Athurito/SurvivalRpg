@@ -21,6 +21,50 @@ namespace RpgHarvestTargetingComponent
 		static const FGameplayTag PrimaryInputTag = FGameplayTag::RequestGameplayTag(TEXT("InputTag.Weapon.Primary"));
 		return PrimaryInputTag;
 	}
+
+	/** Presentation summary of one evaluated target; false and empty outputs for no target. */
+	bool SummarizeTarget(
+		const FRpgHarvestTargetEvaluation* Target,
+		ERpgHarvestTargetStatus& OutStatus,
+		int32& OutRemainingSections,
+		int32& OutSectionCount,
+		int32& OutSectionsToTake)
+	{
+		OutStatus = ERpgHarvestTargetStatus::None;
+		OutRemainingSections = 0;
+		OutSectionCount = 0;
+		OutSectionsToTake = 0;
+		if (!Target)
+		{
+			return false;
+		}
+
+		const FRpgHarvestResult& Result = Target->Result;
+		OutSectionCount = Result.SectionCount;
+		OutRemainingSections = Result.IsSuccess()
+			? Result.RemainingSections + Result.SectionsTaken
+			: Result.RemainingSections;
+		OutSectionsToTake = Target->WouldHarvest() ? Result.SectionsTaken : 0;
+		switch (Result.Outcome)
+		{
+		case ERpgHarvestOutcome::Harvested:
+			OutStatus = Target->bInReach ? ERpgHarvestTargetStatus::Harvestable : ERpgHarvestTargetStatus::OutOfReach;
+			break;
+		case ERpgHarvestOutcome::Depleted:
+			OutStatus = ERpgHarvestTargetStatus::Depleted;
+			break;
+		case ERpgHarvestOutcome::WrongTool:
+			OutStatus = ERpgHarvestTargetStatus::WrongTool;
+			break;
+		case ERpgHarvestOutcome::SkillGate:
+			OutStatus = ERpgHarvestTargetStatus::SkillLocked;
+			break;
+		default:
+			OutStatus = ERpgHarvestTargetStatus::Unavailable;
+			break;
+		}
+		return true;
+	}
 }
 
 URpgHarvestTargetingComponent::URpgHarvestTargetingComponent(const FObjectInitializer& ObjectInitializer)
@@ -58,7 +102,8 @@ void URpgHarvestTargetingComponent::EndPlay(const EEndPlayReason::Type EndPlayRe
 		World->GetTimerManager().ClearTimer(RefreshTimerHandle);
 	}
 	AimingSpecHandle = FGameplayAbilitySpecHandle();
-	RemoveTargetIndicator();
+	RemoveTargetIndicators();
+	DestroyAreaMarker();
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -90,7 +135,8 @@ void URpgHarvestTargetingComponent::RefreshPreview()
 
 	const bool bChanged = !NewPreview.IsEquivalent(CurrentPreview);
 	CurrentPreview = MoveTemp(NewPreview);
-	UpdateTargetIndicator();
+	UpdateTargetIndicators();
+	UpdateAreaMarker();
 	if (bChanged)
 	{
 		OnPreviewChanged.Broadcast(CurrentPreview);
@@ -103,93 +149,154 @@ bool URpgHarvestTargetingComponent::GetPrimaryTargetStatus(
 	int32& OutSectionCount,
 	int32& OutSectionsToTake) const
 {
-	OutStatus = ERpgHarvestTargetStatus::None;
-	OutRemainingSections = 0;
-	OutSectionCount = 0;
-	OutSectionsToTake = 0;
-	if (CurrentPreview.Targets.IsEmpty())
-	{
-		return false;
-	}
-
-	const FRpgHarvestTargetEvaluation& Target = CurrentPreview.Targets[0];
-	const FRpgHarvestResult& Result = Target.Result;
-	OutSectionCount = Result.SectionCount;
-	OutRemainingSections = Result.IsSuccess()
-		? Result.RemainingSections + Result.SectionsTaken
-		: Result.RemainingSections;
-	OutSectionsToTake = Target.WouldHarvest() ? Result.SectionsTaken : 0;
-	switch (Result.Outcome)
-	{
-	case ERpgHarvestOutcome::Harvested:
-		OutStatus = Target.bInReach ? ERpgHarvestTargetStatus::Harvestable : ERpgHarvestTargetStatus::OutOfReach;
-		break;
-	case ERpgHarvestOutcome::Depleted:
-		OutStatus = ERpgHarvestTargetStatus::Depleted;
-		break;
-	case ERpgHarvestOutcome::WrongTool:
-		OutStatus = ERpgHarvestTargetStatus::WrongTool;
-		break;
-	case ERpgHarvestOutcome::SkillGate:
-		OutStatus = ERpgHarvestTargetStatus::SkillLocked;
-		break;
-	default:
-		OutStatus = ERpgHarvestTargetStatus::Unavailable;
-		break;
-	}
-	return true;
+	return RpgHarvestTargetingComponent::SummarizeTarget(
+		CurrentPreview.Targets.IsEmpty() ? nullptr : &CurrentPreview.Targets[0],
+		OutStatus,
+		OutRemainingSections,
+		OutSectionCount,
+		OutSectionsToTake);
 }
 
-void URpgHarvestTargetingComponent::UpdateTargetIndicator()
+bool URpgHarvestTargetingComponent::GetTargetStatus(
+	const USceneComponent* TargetComponent,
+	ERpgHarvestTargetStatus& OutStatus,
+	int32& OutRemainingSections,
+	int32& OutSectionCount,
+	int32& OutSectionsToTake) const
+{
+	const FRpgHarvestTargetEvaluation* Target = TargetComponent
+		? CurrentPreview.Targets.FindByPredicate([TargetComponent](const FRpgHarvestTargetEvaluation& Candidate)
+		{
+			return Candidate.Hit.GetComponent() == TargetComponent;
+		})
+		: nullptr;
+	return RpgHarvestTargetingComponent::SummarizeTarget(
+		Target,
+		OutStatus,
+		OutRemainingSections,
+		OutSectionCount,
+		OutSectionsToTake);
+}
+
+void URpgHarvestTargetingComponent::UpdateTargetIndicators()
 {
 	if (IndicatorWidgetClass.IsNull())
 	{
 		return;
 	}
 
-	USceneComponent* TargetComponent = CurrentPreview.Targets.IsEmpty()
-		? nullptr
-		: CurrentPreview.Targets[0].Hit.GetComponent();
-	if (!TargetComponent)
+	// The primary swing marks its target; a held aim ability marks every target it would hit.
+	TArray<USceneComponent*, TInlineAllocator<8>> IndicatedComponents;
+	for (const FRpgHarvestTargetEvaluation& Target : CurrentPreview.Targets)
 	{
-		RemoveTargetIndicator();
-		return;
-	}
-	if (TargetIndicator && TargetIndicator->GetSceneComponent() == TargetComponent)
-	{
-		return;
+		if (USceneComponent* TargetComponent = Target.Hit.GetComponent())
+		{
+			IndicatedComponents.AddUnique(TargetComponent);
+		}
+		if (!CurrentPreview.bIsAiming)
+		{
+			break;
+		}
 	}
 
-	RemoveTargetIndicator();
 	URpgIndicatorManagerComponent* IndicatorManager =
 		URpgIndicatorManagerComponent::GetComponent(Cast<AController>(GetOwner()));
+	for (int32 Index = TargetIndicators.Num() - 1; Index >= 0; --Index)
+	{
+		UIndicatorDescriptor* Indicator = TargetIndicators[Index];
+		USceneComponent* IndicatedComponent = Indicator ? Indicator->GetSceneComponent() : nullptr;
+		if (IndicatedComponent && IndicatedComponents.Remove(IndicatedComponent) > 0)
+		{
+			continue;
+		}
+		if (Indicator && IndicatorManager)
+		{
+			IndicatorManager->RemoveIndicator(Indicator);
+		}
+		TargetIndicators.RemoveAt(Index);
+	}
+
 	if (!IndicatorManager)
 	{
 		return;
 	}
-
-	TargetIndicator = NewObject<UIndicatorDescriptor>(this);
-	TargetIndicator->SetDataObject(this);
-	TargetIndicator->SetSceneComponent(TargetComponent);
-	TargetIndicator->SetIndicatorClass(IndicatorWidgetClass);
-	TargetIndicator->SetProjectionMode(ProjectionMode);
-	TargetIndicator->SetBoundingBoxAnchor(BoundingBoxAnchor);
-	TargetIndicator->SetScreenSpaceOffset(ScreenSpaceOffset);
-	TargetIndicator->SetPriority(IndicatorPriority);
-	TargetIndicator->SetAutoRemoveWhenIndicatorComponentIsNull(true);
-	IndicatorManager->AddIndicator(TargetIndicator);
+	for (USceneComponent* TargetComponent : IndicatedComponents)
+	{
+		UIndicatorDescriptor* Indicator = NewObject<UIndicatorDescriptor>(this);
+		Indicator->SetDataObject(this);
+		Indicator->SetSceneComponent(TargetComponent);
+		Indicator->SetIndicatorClass(IndicatorWidgetClass);
+		Indicator->SetProjectionMode(ProjectionMode);
+		Indicator->SetBoundingBoxAnchor(BoundingBoxAnchor);
+		Indicator->SetScreenSpaceOffset(ScreenSpaceOffset);
+		Indicator->SetPriority(IndicatorPriority);
+		Indicator->SetAutoRemoveWhenIndicatorComponentIsNull(true);
+		IndicatorManager->AddIndicator(Indicator);
+		TargetIndicators.Add(Indicator);
+	}
 }
 
-void URpgHarvestTargetingComponent::RemoveTargetIndicator()
+void URpgHarvestTargetingComponent::RemoveTargetIndicators()
 {
-	if (TargetIndicator)
+	URpgIndicatorManagerComponent* IndicatorManager =
+		URpgIndicatorManagerComponent::GetComponent(Cast<AController>(GetOwner()));
+	for (UIndicatorDescriptor* Indicator : TargetIndicators)
 	{
-		if (URpgIndicatorManagerComponent* IndicatorManager =
-				URpgIndicatorManagerComponent::GetComponent(Cast<AController>(GetOwner())))
+		if (Indicator && IndicatorManager)
 		{
-			IndicatorManager->RemoveIndicator(TargetIndicator);
+			IndicatorManager->RemoveIndicator(Indicator);
 		}
-		TargetIndicator = nullptr;
+	}
+	TargetIndicators.Reset();
+}
+
+void URpgHarvestTargetingComponent::UpdateAreaMarker()
+{
+	if (AreaMarkerClass.IsNull())
+	{
+		return;
+	}
+
+	const bool bShowArea = CurrentPreview.bIsAiming && CurrentPreview.bHasArea && CurrentPreview.AreaRadius > 0.0f;
+	if (!bShowArea)
+	{
+		if (AreaMarker)
+		{
+			AreaMarker->SetActorHiddenInGame(true);
+		}
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!AreaMarker && World)
+	{
+		// One small cosmetic class, loaded on the first held aim and reused afterwards.
+		if (UClass* MarkerClass = AreaMarkerClass.LoadSynchronous())
+		{
+			FActorSpawnParameters SpawnParameters;
+			SpawnParameters.Owner = GetOwner();
+			SpawnParameters.ObjectFlags |= RF_Transient;
+			SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AreaMarker = World->SpawnActor<AActor>(MarkerClass, FTransform(CurrentPreview.AimPoint), SpawnParameters);
+		}
+	}
+	if (!AreaMarker)
+	{
+		return;
+	}
+
+	const double RadiusScale = CurrentPreview.AreaRadius / 100.0;
+	AreaMarker->SetActorLocation(CurrentPreview.AimPoint);
+	AreaMarker->SetActorScale3D(FVector(RadiusScale));
+	AreaMarker->SetActorHiddenInGame(false);
+}
+
+void URpgHarvestTargetingComponent::DestroyAreaMarker()
+{
+	if (AreaMarker)
+	{
+		AreaMarker->Destroy();
+		AreaMarker = nullptr;
 	}
 }
 

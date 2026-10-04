@@ -37,6 +37,8 @@ void URpgWeaponAbilityLoadoutViewModel::BindPlayerController(APlayerController* 
 	BindWeaponAbilityLoadoutWithAbilitySystem(
 		RpgPlayerController ? RpgPlayerController->GetWeaponAbilityLoadoutComponent() : nullptr,
 		RpgPlayerController ? RpgPlayerController->GetRpgAbilitySystemComponent() : nullptr);
+	// A client HUD can bind before its PlayerState replicates; the controller supplies the ability system later.
+	ObservedPlayerController = RpgPlayerController;
 }
 
 void URpgWeaponAbilityLoadoutViewModel::BindWeaponAbilityLoadout(URpgWeaponAbilityLoadoutComponent* InLoadout)
@@ -48,6 +50,7 @@ void URpgWeaponAbilityLoadoutViewModel::BindWeaponAbilityLoadoutWithAbilitySyste
 	URpgWeaponAbilityLoadoutComponent* InLoadout,
 	URpgAbilitySystemComponent* InAbilitySystem)
 {
+	ObservedPlayerController.Reset();
 	if (ObservedLoadout.Get() == InLoadout && ObservedAbilitySystem.Get() == InAbilitySystem)
 	{
 		RefreshSlots();
@@ -69,11 +72,13 @@ void URpgWeaponAbilityLoadoutViewModel::UnbindWeaponAbilityLoadout()
 	UnregisterMessageListener();
 	ObservedLoadout.Reset();
 	ObservedAbilitySystem.Reset();
+	ObservedPlayerController.Reset();
 	RefreshSlots();
 }
 
 void URpgWeaponAbilityLoadoutViewModel::RefreshSlots()
 {
+	TryBindLateAbilitySystem();
 	const URpgWeaponAbilityLoadoutComponent* Loadout = ObservedLoadout.Get();
 	const TArray<FRpgWeaponAbilityLoadoutSlot> SourceSlots = Loadout ? Loadout->GetSlots() : TArray<FRpgWeaponAbilityLoadoutSlot>();
 	const int32 SlotCount = Loadout ? FMath::Max(Loadout->GetNumSlots(), SourceSlots.Num()) : 3;
@@ -105,6 +110,13 @@ void URpgWeaponAbilityLoadoutViewModel::RefreshSlots()
 
 void URpgWeaponAbilityLoadoutViewModel::RefreshCooldowns()
 {
+	// Also covers a PlayerState that replicates after the slots without any later slot change.
+	if (TryBindLateAbilitySystem())
+	{
+		RefreshSlots();
+		return;
+	}
+
 	const URpgAbilitySystemComponent* AbilitySystem = ObservedAbilitySystem.Get();
 	for (URpgWeaponAbilitySlotViewModel* Slot : Slots)
 	{
@@ -142,6 +154,8 @@ void URpgWeaponAbilityLoadoutViewModel::RegisterMessageListener()
 {
 	UnregisterMessageListener();
 
+	SubscribeToAbilitySystem();
+
 	URpgWeaponAbilityLoadoutComponent* Loadout = ObservedLoadout.Get();
 	UWorld* World = Loadout ? Loadout->GetWorld() : nullptr;
 	if (!World)
@@ -161,6 +175,15 @@ void URpgWeaponAbilityLoadoutViewModel::UnregisterMessageListener()
 	if (SlotsChangedHandle.IsValid())
 	{
 		SlotsChangedHandle.Unregister();
+	}
+
+	if (AbilitySpecsReplicatedHandle.IsValid())
+	{
+		if (URpgAbilitySystemComponent* AbilitySystem = ObservedAbilitySystem.Get())
+		{
+			AbilitySystem->OnAbilitySpecsReplicated().Remove(AbilitySpecsReplicatedHandle);
+		}
+		AbilitySpecsReplicatedHandle.Reset();
 	}
 }
 
@@ -217,4 +240,42 @@ void URpgWeaponAbilityLoadoutViewModel::HandleWeaponAbilityLoadoutChanged(FGamep
 	{
 		RefreshSlots();
 	}
+}
+
+void URpgWeaponAbilityLoadoutViewModel::HandleAbilitySpecsReplicated()
+{
+	RefreshSlots();
+}
+
+void URpgWeaponAbilityLoadoutViewModel::SubscribeToAbilitySystem()
+{
+	// On clients a slot's ability id can arrive before the granted spec it names; resolve presentation again then.
+	URpgAbilitySystemComponent* AbilitySystem = ObservedAbilitySystem.Get();
+	if (AbilitySystem && !AbilitySpecsReplicatedHandle.IsValid())
+	{
+		AbilitySpecsReplicatedHandle = AbilitySystem->OnAbilitySpecsReplicated().AddUObject(
+			this,
+			&ThisClass::HandleAbilitySpecsReplicated);
+	}
+}
+
+bool URpgWeaponAbilityLoadoutViewModel::TryBindLateAbilitySystem()
+{
+	if (ObservedAbilitySystem.IsValid())
+	{
+		return false;
+	}
+
+	const ARpgPlayerController* PlayerController = ObservedPlayerController.Get();
+	URpgAbilitySystemComponent* AbilitySystem = PlayerController ? PlayerController->GetRpgAbilitySystemComponent() : nullptr;
+	if (!AbilitySystem)
+	{
+		return false;
+	}
+
+	// A handle into a destroyed ability system cannot be removed and is dropped with it.
+	AbilitySpecsReplicatedHandle.Reset();
+	ObservedAbilitySystem = AbilitySystem;
+	SubscribeToAbilitySystem();
+	return true;
 }

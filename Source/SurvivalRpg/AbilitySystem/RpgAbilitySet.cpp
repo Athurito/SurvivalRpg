@@ -5,6 +5,7 @@
 
 #include "RpgAbilitySystemComponent.h"
 #include "Abilities/RpgGameplayAbility.h"
+#include "SurvivalRpg/Equipment/RpgWeaponAbilityLoadoutComponent.h"
 
 
 void FRpgAbilitySet_GrantedHandles::AddAbilitySpecHandle(const FGameplayAbilitySpecHandle& Handle)
@@ -87,7 +88,18 @@ void URpgAbilitySet::GiveToAbilitySystem(
 
 		FGameplayAbilitySpec AbilitySpec(AbilityCDO, AbilityToGrant.AbilityLevel);
 		AbilitySpec.SourceObject = SourceObject;
-		AbilitySpec.GetDynamicSpecSourceTags().AddTag(AbilityToGrant.InputTag);
+		const int32 DefaultWeaponAbilitySlot = URpgWeaponAbilityLoadoutComponent::GetSlotIndexForInputTag(AbilityToGrant.InputTag);
+		if (DefaultWeaponAbilitySlot != INDEX_NONE)
+		{
+			// Q/E/R input tags are bound at runtime by the weapon ability loadout; a static binding would be cleared
+			// on its next refresh. The entry therefore only declares the slot's default occupant.
+			AbilitySpec.GetDynamicSpecSourceTags().AddTag(
+				URpgWeaponAbilityLoadoutComponent::GetDefaultSelectionTagForSlotIndex(DefaultWeaponAbilitySlot));
+		}
+		else
+		{
+			AbilitySpec.GetDynamicSpecSourceTags().AddTag(AbilityToGrant.InputTag);
+		}
 		AbilitySpec.GetDynamicSpecSourceTags().AddTag(AbilityToGrant.AbilityIdTag);
 
 		const FGameplayAbilitySpecHandle AbilitySpecHandle = RpgASC->GiveAbility(AbilitySpec);

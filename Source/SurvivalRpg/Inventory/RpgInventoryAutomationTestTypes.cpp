@@ -440,6 +440,14 @@ URpgInventoryAutomationTestContainedContainerDefinition::
 	Fragments.Add(ContainmentProfile);
 }
 
+URpgInventoryAutomationTestPresentedAbility::URpgInventoryAutomationTestPresentedAbility(
+	const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	AbilityDisplayName = FText::FromString(TEXT("Automation Presented Ability"));
+	AbilityIcon = TSoftObjectPtr<UTexture2D>(FSoftObjectPath(TEXT("/Engine/EngineResources/DefaultTexture.DefaultTexture")));
+}
+
 URpgInventoryAutomationTestStatefulMaterialDefinition::
 	URpgInventoryAutomationTestStatefulMaterialDefinition(
 		const FObjectInitializer& ObjectInitializer)

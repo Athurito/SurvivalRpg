@@ -13,11 +13,6 @@ namespace RpgHarvestingMagicGameplayTags
 		"Stable id for a manual harvest committed through the generic interaction ability.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
-		Ability_Harvesting_Stoneburst,
-		"Ability.Harvesting.Stoneburst",
-		"Stable progression and quick-access id for the Stoneburst magical harvesting ability.");
-
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
 		Ability_ActivateFail_Harvesting_SkillLevel,
 		"Ability.ActivateFail.Harvesting.SkillLevel",
 		"A harvest ability is locked until its required trade-skill level is reached.");

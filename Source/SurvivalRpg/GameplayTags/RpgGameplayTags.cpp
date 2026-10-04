@@ -124,6 +124,9 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Combat_Message_ActorKilled, "Rpg.Combat.Message.ActorKilled", "Gameplay message sent by combat when an actor is killed.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_ActionBar_Message_SlotsChanged, "Rpg.ActionBar.Message.SlotsChanged", "Gameplay message sent when a controller-owned general action bar slot changes.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_WeaponAbilityLoadout_Message_SlotsChanged, "Rpg.WeaponAbilityLoadout.Message.SlotsChanged", "Gameplay message sent when a controller-owned weapon ability binding changes.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_WeaponAbilityLoadout_DefaultSlot_1, "Rpg.WeaponAbilityLoadout.DefaultSlot.1", "Spec-source marker: the granting ability set declares this ability as the default occupant of weapon ability slot 1.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_WeaponAbilityLoadout_DefaultSlot_2, "Rpg.WeaponAbilityLoadout.DefaultSlot.2", "Spec-source marker: the granting ability set declares this ability as the default occupant of weapon ability slot 2.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_WeaponAbilityLoadout_DefaultSlot_3, "Rpg.WeaponAbilityLoadout.DefaultSlot.3", "Spec-source marker: the granting ability set declares this ability as the default occupant of weapon ability slot 3.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_EquipmentLoadout_Message_SlotsChanged, "Rpg.EquipmentLoadout.Message.SlotsChanged", "Gameplay message sent when a controller-owned dedicated equipment slot assignment changes.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_InventoryLayout_Message_Changed, "Rpg.InventoryLayout.Message.Changed", "Gameplay message sent when the player inventory layout or slot capacity changes.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Layout_Role_Content_Primary, "Rpg.Inventory.Layout.Role.Content.Primary", "Unique static content group used as the player's primary always-available storage.");

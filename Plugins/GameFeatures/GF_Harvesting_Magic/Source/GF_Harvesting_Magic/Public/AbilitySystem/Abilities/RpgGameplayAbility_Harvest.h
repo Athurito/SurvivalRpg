@@ -7,6 +7,7 @@
 #include "RpgGameplayAbility_Harvest.generated.h"
 
 class UAnimMontage;
+class URpgCameraMode;
 
 /**
  * Abstract mechanism for tool swings and harvesting powers. Concrete abilities are GA_* Blueprint assets that only
@@ -32,7 +33,9 @@ public:
 
 	/**
 	 * Selects and evaluates this ability's current targets for Spec without mutating anything.
-	 * Valid on the server and on the owning client; the targeting preview and the server commit both use it.
+	 * Valid on the server and on the owning client; the targeting preview uses it. The server commit runs the same
+	 * query from the aim captured when execution started (press, or release of a held aim), so turning the camera
+	 * during the swing does not change what is hit.
 	 */
 	void EvaluateTargets(
 		const FGameplayAbilitySpec& Spec,
@@ -112,6 +115,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Execution")
 	bool bAimWhileInputHeld = false;
 
+	/**
+	 * Camera mode the owning client uses while a hold-to-aim harvest is held, for example a higher view onto the
+	 * ground; it is cleared on release or when the ability ends. Empty keeps the pawn camera. Cosmetic.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Execution", meta = (EditCondition = "bAimWhileInputHeld"))
+	TSubclassOf<URpgCameraMode> AimCameraMode;
+
 	/** Montage played on execution. Must contain exactly one RPG Gameplay Event notify sending CommitEventTag. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Execution")
 	TObjectPtr<UAnimMontage> HarvestMontage;
@@ -157,10 +167,21 @@ private:
 		const FGameplayAbilityActorInfo& ActorInfo,
 		FRpgHarvestRequest& OutRequest) const;
 	static bool GetViewPoint(const FGameplayAbilityActorInfo& ActorInfo, FVector& OutLocation, FRotator& OutRotation);
+	void EvaluateTargetsFromView(
+		const FGameplayAbilitySpec& Spec,
+		const FGameplayAbilityActorInfo& ActorInfo,
+		const FVector& ViewLocation,
+		const FRotator& ViewRotation,
+		FRpgHarvestPreview& OutPreview) const;
 
 	/** Server-only wakeup for the pending commit of the current activation. */
 	FTimerHandle CommitTimerHandle;
 
 	/** True between a scheduled and an executed or cancelled commit of the current activation. */
 	bool bCommitPending = false;
+
+	/** Authority-only aim captured when execution starts; the commit selects its targets from it. */
+	FVector CommitViewLocation = FVector::ZeroVector;
+	FRotator CommitViewRotation = FRotator::ZeroRotator;
+	bool bHasCommitView = false;
 };

@@ -10,6 +10,7 @@
 
 class AController;
 class UAbilitySystemComponent;
+class USceneComponent;
 class UUserWidget;
 struct FGameplayAbilitySpec;
 
@@ -52,8 +53,10 @@ enum class ERpgHarvestTargetStatus : uint8
  * OnPreviewChanged fires only when the presentation-relevant content changes. The preview never grants or
  * mutates anything; presentation Blueprints and widgets read it.
  *
- * When IndicatorWidgetClass is set, the component anchors one projected indicator over the primary target through
- * the controller's indicator manager. The Widget Blueprint owns all presentation and reads GetPrimaryTargetStatus.
+ * When IndicatorWidgetClass is set, the component anchors projected indicators through the controller's indicator
+ * manager: over the primary target, and over every target while a hold-to-aim ability is held. The Widget Blueprint
+ * owns all presentation and reads its target through GetTargetStatus. While an area ability is held, an optional
+ * AreaMarkerClass actor marks the area on the ground.
  */
 UCLASS(Blueprintable, BlueprintType, ClassGroup = (Rpg), meta = (BlueprintSpawnableComponent, DisplayName = "RPG Harvest Targeting"))
 class GF_HARVESTING_MAGIC_API URpgHarvestTargetingComponent : public UActorComponent
@@ -70,12 +73,27 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rpg|Harvesting|Targeting")
 	FRpgHarvestPreview GetCurrentPreview() const { return CurrentPreview; }
 
+	/** True while the current preview belongs to a held aim ability. */
+	bool IsPreviewAiming() const { return CurrentPreview.bIsAiming; }
+
 	/**
 	 * Summarizes the primary previewed target for indicators. Returns false when nothing is previewed.
 	 * OutRemainingSections is the target's current stock; OutSectionsToTake is what the ability would extract.
 	 */
 	UFUNCTION(BlueprintPure, Category = "Rpg|Harvesting|Targeting")
 	bool GetPrimaryTargetStatus(
+		ERpgHarvestTargetStatus& OutStatus,
+		int32& OutRemainingSections,
+		int32& OutSectionCount,
+		int32& OutSectionsToTake) const;
+
+	/**
+	 * Summarizes the previewed target whose hit component is TargetComponent, as GetPrimaryTargetStatus does.
+	 * Returns false when that component is not part of the current preview.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Harvesting|Targeting")
+	bool GetTargetStatus(
+		const USceneComponent* TargetComponent,
 		ERpgHarvestTargetStatus& OutStatus,
 		int32& OutRemainingSections,
 		int32& OutSectionCount,
@@ -122,12 +140,26 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Indicator")
 	int32 IndicatorPriority = 10;
 
+	/**
+	 * Designer-owned actor shown at the aim point while a hold-to-aim area ability is held; empty disables it.
+	 * Author it for a 100 cm radius: the component scales it uniformly to the previewed area radius.
+	 * Spawned locally, never replicated, cosmetic.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Indicator")
+	TSoftClassPtr<AActor> AreaMarkerClass;
+
+	/** Local area marker instance; hidden while no area is previewed. */
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Rpg|Harvesting|Indicator")
+	TObjectPtr<AActor> AreaMarker;
+
 private:
 	bool IsLocallyControlled() const;
 	UAbilitySystemComponent* FindAbilitySystem() const;
 	const FGameplayAbilitySpec* FindPreviewSpec(UAbilitySystemComponent& AbilitySystem, bool& bOutAiming) const;
-	void UpdateTargetIndicator();
-	void RemoveTargetIndicator();
+	void UpdateTargetIndicators();
+	void RemoveTargetIndicators();
+	void UpdateAreaMarker();
+	void DestroyAreaMarker();
 
 	/** Latest local preview, compared on refresh to suppress redundant notifications. */
 	FRpgHarvestPreview CurrentPreview;
@@ -135,9 +167,9 @@ private:
 	/** Hold-to-aim ability currently held on this client, if any. */
 	FGameplayAbilitySpecHandle AimingSpecHandle;
 
-	/** Projected indicator over the primary target; recreated when the target component changes. */
+	/** Projected indicators, one per indicated target component; kept while their target stays indicated. */
 	UPROPERTY(Transient)
-	TObjectPtr<UIndicatorDescriptor> TargetIndicator;
+	TArray<TObjectPtr<UIndicatorDescriptor>> TargetIndicators;
 
 	FTimerHandle RefreshTimerHandle;
 };

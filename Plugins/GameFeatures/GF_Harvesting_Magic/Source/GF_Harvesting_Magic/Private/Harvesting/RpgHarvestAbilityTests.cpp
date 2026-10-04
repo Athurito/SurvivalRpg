@@ -22,6 +22,9 @@
 
 #include "Animation/AnimMontage.h"
 #include "Components/BoxComponent.h"
+#include "Components/SceneComponent.h"
+#include "Engine/CollisionProfile.h"
+#include "Engine/DecalActor.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
@@ -668,6 +671,245 @@ bool FRpgHarvestAbilityIndicatorTest::RunTest(const FString& Parameters)
 	Targeting->RefreshPreview();
 	TestFalse(TEXT("Without a harvest ability nothing is summarized"), Targeting->GetPrimaryTargetStatus(Status, Remaining, SectionCount, ToTake));
 	TestEqual(TEXT("Without a target the indicator is removed"), IndicatorManager->GetIndicators().Num(), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestAbilityAimedAreaIndicatorTest,
+	"SurvivalRpg.Harvesting.Ability.AimedAreaIndicatesEveryTarget",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestAbilityAimedAreaIndicatorTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestAbilityTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	const float EyeHeight = Harvester.Pawn->BaseEyeHeight;
+	ARpgHarvestAutomationCollidableNodeActor* Near =
+		SpawnNode(World, FVector(600.0, 0.0, EyeHeight), MakeProfile(World, 4));
+	ARpgHarvestAutomationCollidableNodeActor* Side =
+		SpawnNode(World, FVector(600.0, 160.0, EyeHeight), MakeProfile(World, 4));
+	const FGrantedAbility Aimed = GrantAbility(Harvester.AbilitySystem);
+	if (!TestNotNull(TEXT("Near node exists"), Near) ||
+		!TestNotNull(TEXT("Side node exists"), Side) ||
+		!TestNotNull(TEXT("Aimed ability exists"), Aimed.Instance))
+	{
+		return false;
+	}
+	FRpgHarvestTargetingParams Area;
+	Area.Shape = ERpgHarvestTargetShape::AreaAtAimPoint;
+	Area.MaxAimDistance = 1000.0f;
+	Area.MaxReachFromAvatar = 700.0f;
+	Area.AreaRadius = 300.0f;
+	Area.MaxTargets = 3;
+	Aimed.Instance->ConfigureTargeting(Area);
+	Aimed.Instance->ConfigureSections(3);
+	Aimed.Instance->ConfigureAimWhileInputHeld(true);
+
+	FActorSpawnParameters ControllerParameters;
+	ControllerParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	APlayerController* Controller = World->SpawnActor<APlayerController>(
+		APlayerController::StaticClass(),
+		FTransform::Identity,
+		ControllerParameters);
+	if (!TestNotNull(TEXT("Local controller exists"), Controller))
+	{
+		return false;
+	}
+	Controller->SetAsLocalPlayerController();
+	Controller->PlayerState = Harvester.PlayerState;
+	URpgIndicatorManagerComponent* IndicatorManager = NewObject<URpgIndicatorManagerComponent>(Controller);
+	IndicatorManager->RegisterComponent();
+	URpgHarvestAutomationTargetingComponent* Targeting = NewObject<URpgHarvestAutomationTargetingComponent>(Controller);
+	Targeting->ConfigureIndicator(TSoftClassPtr<UUserWidget>(UUserWidget::StaticClass()));
+	Targeting->ConfigureAreaMarker(TSoftClassPtr<AActor>(ADecalActor::StaticClass()));
+	Targeting->RegisterComponent();
+
+	Targeting->RefreshPreview();
+	TestEqual(TEXT("An unheld aim ability indicates nothing"), IndicatorManager->GetIndicators().Num(), 0);
+	TestNull(TEXT("An unheld aim ability shows no area marker"), Targeting->GetAreaMarkerForTest());
+
+	Targeting->SetAimingAbility(Aimed.Handle, true);
+	if (!TestEqual(TEXT("Holding the aim ability indicates every target in the area"), IndicatorManager->GetIndicators().Num(), 2))
+	{
+		return false;
+	}
+	ERpgHarvestTargetStatus Status = ERpgHarvestTargetStatus::None;
+	int32 Remaining = 0;
+	int32 SectionCount = 0;
+	int32 ToTake = 0;
+	TestTrue(TEXT("The side target is summarized by its component"), Targeting->GetTargetStatus(Side->Collision, Status, Remaining, SectionCount, ToTake));
+	TestTrue(TEXT("The side target is harvestable"), Status == ERpgHarvestTargetStatus::Harvestable);
+	TestEqual(TEXT("The side target shows the sections the aimed ability takes"), ToTake, 3);
+	TestEqual(TEXT("The side target shows its stock"), Remaining, 4);
+	TestFalse(
+		TEXT("A component outside the preview is not summarized"),
+		Targeting->GetTargetStatus(Harvester.Pawn->GetRootComponent(), Status, Remaining, SectionCount, ToTake));
+
+	UIndicatorDescriptor* NearIndicator = nullptr;
+	for (UIndicatorDescriptor* Indicator : IndicatorManager->GetIndicators())
+	{
+		if (Indicator && Indicator->GetSceneComponent() == Near->Collision)
+		{
+			NearIndicator = Indicator;
+		}
+	}
+	TestNotNull(TEXT("The aimed node has its own indicator"), NearIndicator);
+	AActor* AreaMarker = Targeting->GetAreaMarkerForTest();
+	if (TestNotNull(TEXT("Holding an area ability shows the area marker"), AreaMarker))
+	{
+		TestFalse(TEXT("The area marker is visible while aiming"), AreaMarker->IsHidden());
+		TestTrue(
+			TEXT("The area marker sits at the aim point"),
+			AreaMarker->GetActorLocation().Equals(Targeting->GetCurrentPreview().AimPoint, 0.1));
+		TestTrue(
+			TEXT("The area marker is scaled to the area radius"),
+			AreaMarker->GetActorScale3D().Equals(FVector(3.0), KINDA_SMALL_NUMBER));
+	}
+	Targeting->RefreshPreview();
+	TestEqual(TEXT("An unchanged area keeps its indicators"), IndicatorManager->GetIndicators().Num(), 2);
+	TestTrue(TEXT("An unchanged target keeps its descriptor"), IndicatorManager->GetIndicators().Contains(NearIndicator));
+
+	Targeting->SetAimingAbility(Aimed.Handle, false);
+	TestEqual(TEXT("Releasing the aim removes the area indicators"), IndicatorManager->GetIndicators().Num(), 0);
+	TestTrue(TEXT("Releasing the aim hides the area marker"), AreaMarker && AreaMarker->IsHidden());
+	TestTrue(TEXT("The hidden marker is kept for the next aim"), Targeting->GetAreaMarkerForTest() == AreaMarker);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestAbilityAreaGroundFallbackTest,
+	"SurvivalRpg.Harvesting.Ability.AreaAimFallsBackToGround",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestAbilityAreaGroundFallbackTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestAbilityTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+
+	// Open ground below a level view ray: the ray itself hits nothing.
+	AActor* Floor = World->SpawnActor<AActor>();
+	UBoxComponent* FloorBox = Floor ? NewObject<UBoxComponent>(Floor) : nullptr;
+	if (!TestNotNull(TEXT("Floor exists"), FloorBox))
+	{
+		return false;
+	}
+	FloorBox->InitBoxExtent(FVector(5000.0, 5000.0, 50.0));
+	FloorBox->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
+	Floor->SetRootComponent(FloorBox);
+	FloorBox->RegisterComponent();
+	Floor->SetActorLocation(FVector(0.0, 0.0, -150.0));
+	ARpgHarvestAutomationCollidableNodeActor* Node =
+		SpawnNode(World, FVector(600.0, 0.0, -60.0), MakeProfile(World, 4));
+	const FGrantedAbility Area = GrantAbility(Harvester.AbilitySystem);
+	if (!TestNotNull(TEXT("Ground node exists"), Node) || !TestNotNull(TEXT("Area ability exists"), Area.Instance))
+	{
+		return false;
+	}
+
+	FRpgHarvestTargetingParams Params;
+	Params.Shape = ERpgHarvestTargetShape::AreaAtAimPoint;
+	Params.MaxAimDistance = 1000.0f;
+	Params.MaxReachFromAvatar = 700.0f;
+	Params.AreaRadius = 300.0f;
+	Params.MaxTargets = 3;
+	Area.Instance->ConfigureTargeting(Params);
+	const FRpgHarvestPreview Preview = Evaluate(Harvester.AbilitySystem, Area);
+	const FVector AvatarLocation = Harvester.Pawn->GetActorLocation();
+	TestTrue(TEXT("An unaimed area still reports its area"), Preview.bHasArea);
+	TestTrue(TEXT("The aim point drops onto the ground"), FMath::IsNearlyEqual(Preview.AimPoint.Z, -100.0, 2.0));
+	TestTrue(
+		TEXT("The dropped aim point stays within reach"),
+		FVector::Dist(AvatarLocation, Preview.AimPoint) <= Params.MaxReachFromAvatar + 1.0);
+	if (!TestEqual(TEXT("The ground area collects the nearby node"), Preview.Targets.Num(), 1))
+	{
+		return false;
+	}
+	TestTrue(TEXT("The ground area target is the node"), Preview.Targets[0].Receiver.Get() == Node->HarvestableNode);
+	TestTrue(TEXT("The ground area target is in reach"), Preview.Targets[0].bInReach);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestAbilityCommitAimTest,
+	"SurvivalRpg.Harvesting.Ability.CommitUsesAimAtExecution",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestAbilityCommitAimTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestAbilityTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	ARpgHarvestAutomationCollidableNodeActor* Node =
+		SpawnNode(World, FVector(150.0, 0.0, Harvester.Pawn->BaseEyeHeight), MakeProfile(World, 4));
+	const FGrantedAbility Granted = GrantAbility(Harvester.AbilitySystem);
+	if (!TestNotNull(TEXT("Aim node exists"), Node) || !TestNotNull(TEXT("Aim ability instance exists"), Granted.Instance))
+	{
+		return false;
+	}
+	Granted.Instance->ConfigureCommitDelay(0.3f);
+	TestWorld.PrimeTimerManager();
+
+	// The bare test pawn has no root; give it one so turning it turns its eyes view.
+	USceneComponent* PawnRoot = NewObject<USceneComponent>(Harvester.Pawn);
+	Harvester.Pawn->SetRootComponent(PawnRoot);
+	PawnRoot->RegisterComponent();
+	const FRotator AimRotation = Harvester.Pawn->GetActorRotation();
+	const FRotator AwayRotation = AimRotation + FRotator(0.0, 180.0, 0.0);
+
+	// A swing commits on what was aimed at when it started, even if the view turns before the commit time.
+	TestTrue(TEXT("The swing activates while aiming at the node"), Harvester.AbilitySystem->TryActivateAbility(Granted.Handle));
+	Harvester.Pawn->SetActorRotation(AwayRotation);
+	TestWorld.AdvanceTimers(0.4f);
+	TestEqual(TEXT("The swing harvests the node it started on"), Node->HarvestableNode->GetRemainingSections(), 3);
+
+	// A held aim commits on what was aimed at when the input was released.
+	Harvester.Pawn->SetActorRotation(AimRotation);
+	Granted.Instance->ConfigureAimWhileInputHeld(true);
+	FGameplayAbilitySpec* Spec = Harvester.AbilitySystem->FindAbilitySpecFromHandle(Granted.Handle);
+	if (!TestNotNull(TEXT("Aim ability spec exists"), Spec))
+	{
+		return false;
+	}
+	Spec->InputPressed = true;
+	TestTrue(TEXT("The held aim activates"), Harvester.AbilitySystem->TryActivateAbility(Granted.Handle));
+	static_cast<UAbilitySystemComponent*>(Harvester.AbilitySystem)->AbilitySpecInputReleased(*Spec);
+	Harvester.Pawn->SetActorRotation(AwayRotation);
+	TestWorld.AdvanceTimers(0.4f);
+	TestEqual(TEXT("The released aim harvests the node it was aimed at"), Node->HarvestableNode->GetRemainingSections(), 2);
+
+	// Turning away before the release aims elsewhere: the commit follows the aim at release.
+	Spec = Harvester.AbilitySystem->FindAbilitySpecFromHandle(Granted.Handle);
+	Spec->InputPressed = true;
+	Harvester.Pawn->SetActorRotation(AimRotation);
+	TestTrue(TEXT("The held aim activates again"), Harvester.AbilitySystem->TryActivateAbility(Granted.Handle));
+	Harvester.Pawn->SetActorRotation(AwayRotation);
+	static_cast<UAbilitySystemComponent*>(Harvester.AbilitySystem)->AbilitySpecInputReleased(*Spec);
+	Harvester.Pawn->SetActorRotation(AimRotation);
+	TestWorld.AdvanceTimers(0.4f);
+	TestEqual(TEXT("An aim released while looking away harvests nothing"), Node->HarvestableNode->GetRemainingSections(), 2);
 	return true;
 }
 

@@ -325,6 +325,19 @@ public:
 	virtual bool IsEditorOnly() const override { return true; }
 };
 
+/** Editor-only no-op ability with an authored name and icon, for read models that present granted abilities. */
+UCLASS(NotBlueprintable, Transient)
+class URpgInventoryAutomationTestPresentedAbility final : public URpgGameplayAbility
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgInventoryAutomationTestPresentedAbility(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	virtual bool IsEditorOnly() const override { return true; }
+};
+
 /** Editor-only usable item restricted to the owning player's inventory. */
 UCLASS(NotBlueprintable, Transient)
 class URpgInventoryAutomationTestUsableItemDefinition final : public URpgInventoryItemDefinition

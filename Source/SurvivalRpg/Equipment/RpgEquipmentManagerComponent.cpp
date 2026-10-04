@@ -4,10 +4,15 @@
 #include "Animation/AnimInstance.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/ActorChannel.h"
+#include "Engine/World.h"
+#include "GameFramework/Controller.h"
 #include "Net/UnrealNetwork.h"
+#include "TimerManager.h"
 #include "RpgEquipmentDefinition.h"
 #include "RpgEquipmentInstance.h"
 #include "RpgWeaponInstance.h"
+#include "RpgWeaponAbilityLoadoutComponent.h"
+#include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
 #include "SurvivalRpg/AbilitySystem/Effects/RpgItemizationEquipmentEffect.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
@@ -726,6 +731,7 @@ void URpgEquipmentManagerComponent::RebuildEquipmentAbilityGrants()
 	}
 
 	const URpgEquipmentInstance* ActiveBlockSource = GetActiveBlockSource();
+	bool bGrantsChanged = false;
 
 	for (FRpgAppliedEquipmentEntry& Entry : EquipmentList.Entries)
 	{
@@ -760,6 +766,7 @@ void URpgEquipmentManagerComponent::RebuildEquipmentAbilityGrants()
 			{
 				GrantIt.Value().GrantedHandles.TakeFromAbilitySystem(AbilitySystemComponent);
 				GrantIt.RemoveCurrent();
+				bGrantsChanged = true;
 			}
 		}
 
@@ -770,7 +777,48 @@ void URpgEquipmentManagerComponent::RebuildEquipmentAbilityGrants()
 				FRpgAppliedEquipmentAbilityGrant& NewGrant = Entry.AbilitySetGrants.Add(DesiredGrant.Key);
 				NewGrant.AbilitySet = DesiredGrant.Value;
 				DesiredGrant.Value->GiveToAbilitySystem(AbilitySystemComponent, &NewGrant.GrantedHandles, Entry.Instance);
+				bGrantsChanged = true;
 			}
 		}
 	}
+
+	// Q/E/R and quick-access bindings resolve against the granted specs, whichever equip path changed them.
+	if (bGrantsChanged)
+	{
+		RefreshOwnerAbilityBindings();
+	}
+}
+
+void URpgEquipmentManagerComponent::RefreshOwnerAbilityBindings() const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// Grants made inside an executing ability (for example a collect interaction) stay pending until the ability
+	// list unlocks, so the controller re-resolves its bindings on the next tick.
+	World->GetTimerManager().SetTimerForNextTick(
+		FTimerDelegate::CreateWeakLambda(
+			this,
+			[this]()
+			{
+				const APawn* Pawn = GetPawn<APawn>();
+				const AController* Controller = Pawn ? Pawn->GetController() : nullptr;
+				if (!Controller || !Controller->HasAuthority())
+				{
+					return;
+				}
+
+				if (URpgWeaponAbilityLoadoutComponent* WeaponAbilityLoadout =
+						Controller->FindComponentByClass<URpgWeaponAbilityLoadoutComponent>())
+				{
+					WeaponAbilityLoadout->RefreshAbilityBindings();
+				}
+				if (URpgActionBarComponent* ActionBar = Controller->FindComponentByClass<URpgActionBarComponent>())
+				{
+					ActionBar->RefreshBindings();
+				}
+			}));
 }

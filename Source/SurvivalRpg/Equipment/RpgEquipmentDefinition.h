@@ -124,6 +124,7 @@ struct SURVIVALRPG_API FRpgEquipmentActorToSpawn
 	GENERATED_BODY()
 
 	// Actor class spawned when the equipment is equipped, usually the visible weapon or shield actor.
+	// Only the server spawns it, so the class must replicate for clients to see it; data validation enforces this.
 	UPROPERTY(EditAnywhere, Category = "Equipment")
 	TSubclassOf<AActor> ActorToSpawn;
 
@@ -213,7 +214,8 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Equipment|Slot Grants", meta = (TitleProperty = "AbilitySet"))
 	TArray<FRpgEquipmentSlotAbilitySet> SlotAbilitySetsToGrant;
 
-	// Visual or gameplay-presentational actors spawned and attached while this equipment is active.
+	// Visual or gameplay-presentational actors the server spawns and attaches while this equipment is active.
+	// Each actor class must replicate; clients only see these actors through replication.
 	UPROPERTY(EditDefaultsOnly, Category = "Equipment")
 	TArray<FRpgEquipmentActorToSpawn> ActorsToSpawn;
 };
