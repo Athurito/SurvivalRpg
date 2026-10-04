@@ -15,7 +15,7 @@ class URpgInventoryItemDefinition;
 class URpgInventoryManagerComponent;
 
 /**
- * Implemented by activatable screens that accept an optional UObject payload after they are pushed.
+ * Implemented by activatable screens that accept optional local context before their first activation.
  */
 UINTERFACE(BlueprintType)
 class URpgUIScreenPayloadReceiver : public UInterface
@@ -28,15 +28,16 @@ class SURVIVALRPG_API IRpgUIScreenPayloadReceiver
 	GENERATED_BODY()
 
 public:
-	/** Called by URpgUIScreenSubsystem after a screen is created or an existing single-instance screen is reused. */
+	/** Called before a newly pushed screen activates, or when an existing single-instance screen is reused. */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "UI|Screens")
 	void ReceiveScreenPayload(UObject* Payload);
 };
 
 /**
  * Base payload object for screen-opening context that should stay local to the owning player UI.
+ * Blueprint subclasses can carry a transient snapshot of designer-authored screen context.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, Blueprintable)
 class SURVIVALRPG_API URpgUIScreenPayload : public UObject
 {
 	GENERATED_BODY()

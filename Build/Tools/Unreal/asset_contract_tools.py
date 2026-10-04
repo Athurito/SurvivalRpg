@@ -38,6 +38,113 @@ def _status():
 class AssetContractTools(unreal.ToolsetDefinition):
     @toolset_registry.tool_call
     @staticmethod
+    def implement_blueprint_interface(blueprint_path: str, interface_class_path: str) -> bool:
+        """Implement a native or compiled Blueprint interface on a project-owned Blueprint.
+
+        Pass a native class path or a generated Blueprint interface class path
+        ending in _C. Already implemented or inherited interfaces are unchanged.
+        The native helper owns the transaction; compile and save explicitly afterwards.
+        """
+        _guard()
+        if (not isinstance(blueprint_path, str)
+                or not unreal.RpgAnimationAssetTools.is_project_content_package(
+                    blueprint_path.split('.', 1)[0])):
+            raise RuntimeError('Expected a Blueprint inside this project or its plugins')
+        blueprint = _asset(blueprint_path)
+        if not isinstance(blueprint, unreal.Blueprint):
+            raise ValueError('Expected a Blueprint')
+        if not unreal.RpgAnimationAssetTools.is_project_content_package(blueprint.get_outermost().get_name()):
+            raise RuntimeError('Resolved Blueprint is not owned by this project or its plugins')
+        interface = unreal.load_class(None, interface_class_path)
+        interface_base = unreal.load_class(None, '/Script/CoreUObject.Interface')
+        if (not interface or not interface_base
+                or not unreal.MathLibrary.class_is_child_of(interface, interface_base)):
+            raise ValueError('Expected a native or compiled Blueprint interface class: ' + interface_class_path)
+        if not unreal.RpgBlueprintAssetTools.implement_interface(blueprint, interface):
+            raise RuntimeError('Blueprint interface implementation failed')
+        return True
+
+    @toolset_registry.tool_call
+    @staticmethod
+    def set_blueprint_variable_tooltips(blueprint_path: str, tooltips_json: str) -> bool:
+        """Document locally authored Blueprint members from a name-to-tooltip JSON object; no compile or save."""
+        _guard()
+        if not blueprint_path.startswith('/Game/'):
+            raise RuntimeError('Only project-owned assets can be edited')
+        tooltips = json.loads(tooltips_json)
+        if (not isinstance(tooltips, dict) or not tooltips
+                or any(not isinstance(name, str) or not name.strip()
+                       or not isinstance(tooltip, str) or not tooltip.strip()
+                       for name, tooltip in tooltips.items())):
+            raise ValueError('Expected a nonempty mapping of variable names to nonempty tooltip strings')
+        blueprint = _asset(blueprint_path)
+        if not isinstance(blueprint, unreal.Blueprint):
+            raise ValueError('Expected a Blueprint')
+        own_names = {str(name).lower()
+                     for name in unreal.BlueprintEditorLibrary.list_member_variable_names(blueprint, False)}
+        if any(name.lower() not in own_names for name in tooltips):
+            raise ValueError('All tooltip targets must be locally authored Blueprint variables')
+        if len({name.lower() for name in tooltips}) != len(tooltips):
+            raise ValueError('Variable names must be unique ignoring case')
+        with unreal.ScopedEditorTransaction('Set Blueprint Variable Tooltips'):
+            blueprint.modify()
+            for name, tooltip in tooltips.items():
+                if not unreal.RpgAnimationAssetTools.set_variable_tooltip(blueprint, name, tooltip):
+                    raise RuntimeError('Could not set variable tooltip; undo the last transaction: ' + name)
+        return True
+
+    @toolset_registry.tool_call
+    @staticmethod
+    def add_soft_class_variable(blueprint_path: str, variable_name: str,
+                                base_class_path: str, tooltip: str) -> bool:
+        """Add an instance-editable soft class member with serialized tooltip metadata.
+
+        Use a native or generated class object path for base_class_path. The
+        member starts empty; compile, assign its soft class default and save
+        explicitly using the standard tools. Existing names are never replaced.
+        """
+        _guard()
+        if not blueprint_path.startswith('/Game/'):
+            raise RuntimeError('Only project-owned assets can be edited')
+        if not variable_name.isidentifier() or variable_name.lower() == 'none' or not tooltip.strip():
+            raise ValueError('Expected an identifier for the new variable and a nonempty tooltip')
+        blueprint = _asset(blueprint_path)
+        if not isinstance(blueprint, unreal.Blueprint):
+            raise ValueError('Expected a Blueprint')
+        base_class = unreal.load_class(None, base_class_path)
+        if not base_class:
+            raise ValueError('Cannot load base class: ' + base_class_path)
+        library = unreal.BlueprintEditorLibrary
+        pin_type = library.get_class_reference_type(base_class)
+        pin_text = pin_type.export_text()
+        if 'PinCategory="class"' not in pin_text:
+            raise ValueError('Base class does not support Blueprint variables: ' + base_class_path)
+        # AddMemberVariable otherwise silently picks a different, unique name.
+        names = [str(name).rsplit('.', 1)[-1] for name in library.list_member_variable_names(blueprint)]
+        names.extend(str(name) for name in library.list_graph_names(blueprint))
+        names.extend(str(info.get_editor_property('name'))
+                     for info in list(library.list_functions(blueprint)) + list(library.list_events(blueprint)))
+        if variable_name.lower() in {name.lower() for name in names}:
+            raise ValueError('Blueprint member or graph name is already in use: ' + variable_name)
+        # FEdGraphPinType fields are not Python editor properties in UE 5.8.
+        # Struct text import preserves the base class and all remaining type data.
+        pin_type.import_text(pin_text.replace('PinCategory="class"', 'PinCategory="softclass"', 1))
+        if 'PinCategory="softclass"' not in pin_type.export_text():
+            raise RuntimeError('Could not construct a soft class pin type')
+        with unreal.ScopedEditorTransaction('Add Blueprint Soft Class Variable'):
+            blueprint.modify()
+            if not library.add_member_variable(blueprint, variable_name, pin_type):
+                raise RuntimeError('Could not add soft class variable: ' + variable_name)
+            added_type = library.get_member_variable_type(blueprint, variable_name)
+            if added_type is None or 'PinCategory="softclass"' not in added_type.export_text():
+                raise RuntimeError('Editor did not create the requested soft class member; undo the last transaction')
+            library.set_blueprint_variable_instance_editable(blueprint, variable_name, True)
+            if not unreal.RpgAnimationAssetTools.set_variable_tooltip(blueprint, variable_name, tooltip):
+                raise RuntimeError('Could not set variable tooltip; undo the last transaction')
+        return True
+
+    @toolset_registry.tool_call
+    @staticmethod
     def editable_blueprint_component(blueprint_path: str, component_name: str) -> unreal.ActorComponent:
         """Resolve one editable component for this Blueprint, creating an inherited override when necessary.
 

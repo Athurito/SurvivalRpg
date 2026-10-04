@@ -7,6 +7,7 @@
 #include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
 #include "SurvivalRpg/UI/RpgPlayerInventoryWidget.h"
 #include "SurvivalRpg/UI/RpgStorageInventoryWidget.h"
+#include "SurvivalRpg/UI/RpgUIScreenPayload.h"
 #include "SurvivalRpg/UI/RpgUIScreenSubsystem.h"
 #include "SurvivalRpg/UI/RpgUISettings.h"
 
@@ -16,16 +17,21 @@
 #include "Blueprint/WidgetTree.h"
 #include "CommonActivatableWidget.h"
 #include "CommonLocalPlayer.h"
+#include "Components/Overlay.h"
 #include "Components/PanelWidget.h"
 #include "Engine/AssetManager.h"
 #include "Engine/Engine.h"
+#include "Engine/GameInstance.h"
 #include "Engine/StreamableManager.h"
+#include "Engine/World.h"
 #include "Interfaces/IPluginManager.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/PackageName.h"
+#include "Misc/ScopeExit.h"
 #include "Modules/ModuleManager.h"
 #include "PrimaryGameLayout.h"
 #include "UObject/UnrealType.h"
+#include "Widgets/CommonActivatableWidgetContainer.h"
 
 namespace
 {
@@ -493,6 +499,310 @@ bool FRpgUIScreenRegistryExactResolutionTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgUIScreenRetainedStackLifecycleTest,
+	"SurvivalRpg.UI.ScreenRouter.RetainedStackLifecycle",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgUIScreenRetainedStackLifecycleTest::RunTest(const FString& Parameters)
+{
+	if (!TestNotNull(TEXT("Engine exists"), GEngine))
+	{
+		return false;
+	}
+	UGameInstance* GameInstance = NewObject<UGameInstance>(GEngine);
+	GameInstance->AddToRoot();
+	GameInstance->InitializeStandalone();
+	UWorld* World = GameInstance->GetWorld();
+	ON_SCOPE_EXIT
+	{
+		GameInstance->Shutdown();
+		if (World)
+		{
+			GEngine->DestroyWorldContext(World);
+			World->DestroyWorld(false);
+		}
+		GameInstance->RemoveFromRoot();
+	};
+	if (!TestNotNull(TEXT("Widget fixture world exists"), World))
+	{
+		return false;
+	}
+	UCommonLocalPlayer* LocalPlayer = NewObject<UCommonLocalPlayer>(GEngine);
+	URpgUIScreenSubsystem* Router = NewObject<URpgUIScreenSubsystem>(LocalPlayer);
+	UCommonActivatableWidget* Host = CreateWidget<UCommonActivatableWidget>(World);
+	if (!TestNotNull(TEXT("Native host widget initializes"), Host))
+	{
+		return false;
+	}
+	if (!TestNotNull(TEXT("Native host has an initialized widget tree"), Host->WidgetTree.Get()))
+	{
+		return false;
+	}
+	// CommonUI creates pooled pages through the stack's WidgetTree owner.
+	UCommonActivatableWidgetStack* Stack = Host->WidgetTree->ConstructWidget<UCommonActivatableWidgetStack>();
+	Host->WidgetTree->RootWidget = Stack;
+	Stack->SetTransitionDuration(0.0f);
+	TSharedPtr<SWidget> HostSlate = Host->TakeWidget();
+	ON_SCOPE_EXIT
+	{
+		Router->Deinitialize();
+		HostSlate.Reset();
+	};
+
+	const FGameplayTag MainTag = RpgGameplayTags::UI_Screen_MainMenu;
+	const FGameplayTag SettingsTag = RpgGameplayTags::UI_Screen_Settings;
+	// Exercise the real CommonUI pool, activation and container events while
+	// keeping the asynchronous asset loader out of this native lifecycle test.
+	const auto PushScreen = [Router, Stack](FGameplayTag Tag)
+	{
+		Router->PendingScreenTags.Add(Tag);
+		UCommonActivatableWidget* Widget = Stack->AddWidget<UCommonActivatableWidget>(
+			UCommonActivatableWidget::StaticClass(),
+			[Router, Stack, Tag](UCommonActivatableWidget& Instance)
+			{
+				Router->HandleScreenPushState(Router->ScreenGeneration, Tag, EAsyncWidgetLayerState::Initialize, &Instance, Stack);
+			});
+		Router->HandleScreenPushState(Router->ScreenGeneration, Tag, EAsyncWidgetLayerState::AfterPush, Widget, Stack);
+		return Widget;
+	};
+	UCommonActivatableWidget* Main = PushScreen(MainTag);
+	UCommonActivatableWidget* Settings = PushScreen(SettingsTag);
+	if (!TestNotNull(TEXT("Main screen created"), Main) ||
+		!TestNotNull(TEXT("Settings screen created"), Settings))
+	{
+		return false;
+	}
+	TestNull(TEXT("A covered main screen is not reported active"), Router->GetActiveScreen(MainTag));
+	TestFalse(TEXT("The legacy active query excludes a covered page"), Router->IsScreenActiveOrPending(MainTag));
+	TestTrue(TEXT("The open query includes retained history"), Router->IsScreenOpenOrPending(MainTag));
+	TestTrue(TEXT("Opening a covered tag returns its existing checkout"), Router->OpenScreen(MainTag) == Main);
+	TestTrue(TEXT("Opening the visible tag returns its existing checkout"), Router->OpenScreen(SettingsTag) == Settings);
+	TestEqual(TEXT("Duplicate requests do not add pages"), Stack->GetNumWidgets(), 2);
+
+	for (int32 ReopenIndex = 0; ReopenIndex < 4; ++ReopenIndex)
+	{
+		Router->CloseScreen(SettingsTag);
+		TestTrue(TEXT("Closing settings reveals the tracked main menu"), Router->GetActiveScreen(MainTag) == Main);
+		TestFalse(TEXT("A popped screen is no longer open"), Router->IsScreenOpenOrPending(SettingsTag));
+		TestFalse(TEXT("A popped checkout releases widget callbacks"), Settings->OnDeactivated().IsBoundToObject(Router));
+		UCommonActivatableWidget* Reused = PushScreen(SettingsTag);
+		TestTrue(TEXT("CommonUI reuses the pooled settings UObject"), Reused == Settings);
+		TestEqual(TEXT("Reopening retains exactly two checkouts"), Router->ScreenDeactivationBindings.Num(), 2);
+	}
+
+	Router->CloseScreen(MainTag);
+	TestEqual(TEXT("Closing a covered entry removes it without popping settings"), Stack->GetNumWidgets(), 1);
+	TestTrue(TEXT("Settings remains active after covered close"), Router->GetActiveScreen(SettingsTag) == Settings);
+	TestFalse(TEXT("Covered close releases its checkout"), Router->IsScreenOpenOrPending(MainTag));
+	Settings->DeactivateWidget();
+	TestEqual(TEXT("Widget-driven back removes the top entry"), Stack->GetNumWidgets(), 0);
+	TestFalse(TEXT("Widget-driven back clears router ownership"), Router->IsScreenOpenOrPending(SettingsTag));
+	TestEqual(TEXT("An empty layer retains no checkout delegates"), Router->ScreenDeactivationBindings.Num(), 0);
+
+	Main = PushScreen(MainTag);
+	Settings = PushScreen(SettingsTag);
+	bool bReentered = false;
+	const FDelegateHandle ReopenOnReveal = Main->OnActivated().AddLambda([&]()
+	{
+		if (!bReentered)
+		{
+			bReentered = true;
+			Settings = PushScreen(SettingsTag);
+		}
+	});
+	Router->CloseScreen(SettingsTag);
+	Main->OnActivated().Remove(ReopenOnReveal);
+	TestTrue(TEXT("Reveal can synchronously push a pooled screen"), bReentered);
+	TestTrue(TEXT("The old close cannot clear the new pooled checkout"), Router->GetActiveScreen(SettingsTag) == Settings);
+	TestEqual(TEXT("Reentrant pool reuse has one checkout per screen"), Router->ScreenDeactivationBindings.Num(), 2);
+
+	const uint64 MainCheckoutId = Router->ActiveScreenCheckoutIds.FindRef(MainTag);
+	Router->HandleScreenDestructed(Main, MainCheckoutId);
+	TestTrue(TEXT("Slate teardown alone does not close retained history"), Router->IsScreenOpenOrPending(MainTag));
+	Router->Deinitialize();
+	TestEqual(TEXT("Teardown removes visible and covered entries"), Stack->GetNumWidgets(), 0);
+	TestFalse(TEXT("Teardown detaches layer callbacks"), Stack->OnDisplayedWidgetChanged().IsBoundToObject(Router));
+	TestFalse(TEXT("Teardown detaches widget destruction callbacks"), Settings->OnNativeDestruct.IsBoundToObject(Router));
+	TestEqual(TEXT("Teardown leaves no checkout identity"), Router->ScreenDeactivationBindings.Num(), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgUIScreenCloseAllLifecycleTest,
+	"SurvivalRpg.UI.ScreenRouter.CloseAllLifecycle",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgUIScreenCloseAllLifecycleTest::RunTest(const FString& Parameters)
+{
+	if (!TestNotNull(TEXT("Engine exists"), GEngine))
+	{
+		return false;
+	}
+	UGameInstance* GameInstance = NewObject<UGameInstance>(GEngine);
+	GameInstance->AddToRoot();
+	GameInstance->InitializeStandalone();
+	UWorld* World = GameInstance->GetWorld();
+	ON_SCOPE_EXIT
+	{
+		GameInstance->Shutdown();
+		if (World)
+		{
+			GEngine->DestroyWorldContext(World);
+			World->DestroyWorld(false);
+		}
+		GameInstance->RemoveFromRoot();
+	};
+	if (!TestNotNull(TEXT("Widget fixture world exists"), World))
+	{
+		return false;
+	}
+	UCommonLocalPlayer* LocalPlayer = NewObject<UCommonLocalPlayer>(GEngine);
+	URpgUIScreenSubsystem* Router = NewObject<URpgUIScreenSubsystem>(LocalPlayer);
+	UCommonActivatableWidget* Host = CreateWidget<UCommonActivatableWidget>(World);
+	if (!TestNotNull(TEXT("Native host initializes"), Host) ||
+		!TestNotNull(TEXT("Native host owns a widget tree"), Host->WidgetTree.Get()))
+	{
+		return false;
+	}
+	UOverlay* Overlay = Host->WidgetTree->ConstructWidget<UOverlay>();
+	Host->WidgetTree->RootWidget = Overlay;
+	UCommonActivatableWidgetStack* Menu = Host->WidgetTree->ConstructWidget<UCommonActivatableWidgetStack>();
+	UCommonActivatableWidgetStack* Modal = Host->WidgetTree->ConstructWidget<UCommonActivatableWidgetStack>();
+	Overlay->AddChild(Menu);
+	Overlay->AddChild(Modal);
+	Menu->SetTransitionDuration(0.0f);
+	Modal->SetTransitionDuration(0.0f);
+	TSharedPtr<SWidget> HostSlate = Host->TakeWidget();
+	ON_SCOPE_EXIT
+	{
+		Router->Deinitialize();
+		HostSlate.Reset();
+	};
+
+	const auto PushScreen = [Router](UCommonActivatableWidgetStack* Layer, FGameplayTag Tag)
+	{
+		const uint64 Generation = Router->ScreenGeneration;
+		Router->PendingScreenTags.Add(Tag);
+		UCommonActivatableWidget* Widget = Layer->AddWidget<UCommonActivatableWidget>(
+			UCommonActivatableWidget::StaticClass(),
+			[Router, Layer, Tag, Generation](UCommonActivatableWidget& Instance)
+			{
+				Router->HandleScreenPushState(Generation, Tag, EAsyncWidgetLayerState::Initialize, &Instance, Layer);
+			});
+		Router->HandleScreenPushState(Generation, Tag, EAsyncWidgetLayerState::AfterPush, Widget, Layer);
+		return Widget;
+	};
+	const FGameplayTag MainTag = RpgGameplayTags::UI_Screen_MainMenu;
+	const FGameplayTag SettingsTag = RpgGameplayTags::UI_Screen_Settings;
+	const FGameplayTag ModalTag = RpgGameplayTags::UI_Screen_Respawn;
+	const FGameplayTag PendingTag = RpgGameplayTags::UI_Screen_Boot;
+	const FGameplayTag CompletedTag = RpgGameplayTags::UI_Screen_Inventory;
+	UCommonActivatableWidget* Main = PushScreen(Menu, MainTag);
+	UCommonActivatableWidget* Settings = PushScreen(Menu, SettingsTag);
+	UCommonActivatableWidget* Dialog = PushScreen(Modal, ModalTag);
+	if (!TestNotNull(TEXT("Main screen exists"), Main) ||
+		!TestNotNull(TEXT("Settings screen exists"), Settings) ||
+		!TestNotNull(TEXT("Modal screen exists"), Dialog))
+	{
+		return false;
+	}
+
+	int32 MainReactivations = 0;
+	const FDelegateHandle MainActivated = Main->OnActivated().AddLambda([&]() { ++MainReactivations; });
+	bool bSuppressedReentrantOpen = false;
+	const FDelegateHandle SettingsDeactivated = Settings->OnDeactivated().AddLambda([&]()
+	{
+		bSuppressedReentrantOpen = Router->bIsClosingAllScreens &&
+			Router->OpenScreen(MainTag) == nullptr && Router->ToggleScreen(MainTag) == nullptr;
+		Router->CloseAllScreens();
+	});
+
+	FStreamableManager& StreamableManager = UAssetManager::Get().GetStreamableManager();
+	const FSoftObjectPath WidgetClassPath(UCommonActivatableWidget::StaticClass());
+	TSharedPtr<FStreamableHandle> CompletedHandle = StreamableManager.RequestSyncLoad(WidgetClassPath);
+	TSharedPtr<FStreamableHandle> StalledHandle = StreamableManager.RequestAsyncLoad(
+		WidgetClassPath, FStreamableDelegate(), FStreamableManager::DefaultAsyncLoadPriority,
+		/*bManageActiveHandle=*/ false, /*bStartStalled=*/ true);
+	if (!TestTrue(TEXT("Completed and stalled load fixtures exist"),
+		CompletedHandle.IsValid() && CompletedHandle->HasLoadCompleted() &&
+		StalledHandle.IsValid() && !StalledHandle->HasLoadCompleted()))
+	{
+		Main->OnActivated().Remove(MainActivated);
+		Settings->OnDeactivated().Remove(SettingsDeactivated);
+		return false;
+	}
+	Router->PendingScreenTags.Add(PendingTag);
+	Router->PendingScreenTags.Add(CompletedTag);
+	Router->PendingScreenLoads.Add(PendingTag, StalledHandle);
+	Router->PendingScreenLoads.Add(CompletedTag, CompletedHandle);
+	Router->PendingPayloads.Add(PendingTag, NewObject<URpgUIScreenPayload>(Router));
+	const uint64 OldGeneration = Router->ScreenGeneration;
+
+	// Draining must finish synchronously even if authored durations later change.
+	Menu->SetTransitionDuration(0.4f);
+	Modal->SetTransitionDuration(0.4f);
+	Router->CloseAllScreens();
+	Main->OnActivated().Remove(MainActivated);
+	Settings->OnDeactivated().Remove(SettingsDeactivated);
+	TestEqual(TEXT("Draining never reveals the covered main page"), MainReactivations, 0);
+	TestTrue(TEXT("Deactivation cannot reopen or recursively drain screens"), bSuppressedReentrantOpen);
+	TestEqual(TEXT("Menu history is fully removed"), Menu->GetNumWidgets(), 0);
+	TestEqual(TEXT("Modal history is fully removed"), Modal->GetNumWidgets(), 0);
+	TestFalse(TEXT("The visible page is inactive"), Settings->IsActivated());
+	TestFalse(TEXT("The modal is inactive"), Dialog->IsActivated());
+	TestTrue(TEXT("Incomplete streaming requests are canceled"), StalledHandle->WasCanceled());
+	TestFalse(TEXT("Completed callbacks remain queued to release CommonGame input suspension"), CompletedHandle->WasCanceled());
+	TestEqual(TEXT("No pending loads remain"), Router->PendingScreenLoads.Num(), 0);
+	TestEqual(TEXT("No pending tags remain"), Router->PendingScreenTags.Num(), 0);
+	TestEqual(TEXT("No pending payloads remain"), Router->PendingPayloads.Num(), 0);
+	TestEqual(TEXT("No active mappings remain"), Router->ActiveScreens.Num(), 0);
+	TestEqual(TEXT("No checkout delegates remain"), Router->ScreenDeactivationBindings.Num(), 0);
+	TestFalse(TEXT("Menu router delegate is detached"), Menu->OnDisplayedWidgetChanged().IsBoundToObject(Router));
+	TestFalse(TEXT("Modal router delegate is detached"), Modal->OnDisplayedWidgetChanged().IsBoundToObject(Router));
+	TestFalse(TEXT("Widget destruction delegate is detached"), Settings->OnNativeDestruct.IsBoundToObject(Router));
+	TestEqual(TEXT("Authored transition duration is restored"), Menu->GetTransitionDuration(), 0.4f);
+	TestFalse(TEXT("A reusable drain does not deinitialize the local player router"), Router->bIsDeinitializing);
+	Router->CloseAllScreens();
+	TestEqual(TEXT("Repeated drain remains empty"), Router->ActiveScreenCheckoutIds.Num(), 0);
+	Menu->SetTransitionDuration(0.0f);
+	Modal->SetTransitionDuration(0.0f);
+
+	// A new map can reuse a tag while the old streamable cancel is frame-delayed.
+	UObject* NewPayload = NewObject<URpgUIScreenPayload>(Router);
+	Router->PendingScreenTags.Add(PendingTag);
+	Router->PendingPayloads.Add(PendingTag, NewPayload);
+	Router->HandleScreenPushState(OldGeneration, PendingTag, EAsyncWidgetLayerState::Canceled, nullptr);
+	TestTrue(TEXT("An old cancellation preserves the new same-tag request"), Router->PendingScreenTags.Contains(PendingTag));
+	TestTrue(TEXT("An old cancellation preserves the new payload"), Router->PendingPayloads.FindRef(PendingTag) == NewPayload);
+
+	// This pool has one inactive widget, so reuse does not depend on the ordering
+	// of the two main-menu widgets retained by the other pool.
+	UCommonActivatableWidget* LateWidget = Modal->AddWidget<UCommonActivatableWidget>(
+		UCommonActivatableWidget::StaticClass(),
+		[&](UCommonActivatableWidget& Instance)
+		{
+			Router->HandleScreenPushState(OldGeneration, PendingTag, EAsyncWidgetLayerState::Initialize, &Instance, Modal);
+		});
+	TestFalse(TEXT("An old initialization never registers a checkout"), Router->ActiveScreens.Contains(PendingTag));
+	Router->HandleScreenPushState(OldGeneration, PendingTag, EAsyncWidgetLayerState::AfterPush, LateWidget, Modal);
+	TestEqual(TEXT("A dispatched old push is removed from the real container"), Modal->GetNumWidgets(), 0);
+	TestTrue(TEXT("An old completion preserves the new same-tag request"), Router->PendingScreenTags.Contains(PendingTag));
+
+	UCommonActivatableWidget* Reopened = PushScreen(Modal, PendingTag);
+	TestTrue(TEXT("A later checkout can reuse the discarded pooled widget"), Reopened == LateWidget);
+	Router->HandleScreenPushState(OldGeneration, PendingTag, EAsyncWidgetLayerState::AfterPush, LateWidget, Modal);
+	TestTrue(TEXT("A late callback cannot remove a newer pooled checkout"), Router->GetActiveScreen(PendingTag) == Reopened);
+	TestTrue(TEXT("The public router accepts opens after a nonfinal drain"), Router->OpenScreen(PendingTag) == Reopened);
+	TestEqual(TEXT("Reopening has exactly one owned page"), Modal->GetNumWidgets(), 1);
+	Modal->SetTransitionDuration(0.4f);
+	Reopened->DeactivateWidget();
+	TestEqual(TEXT("An animated close retains its inactive page until transition completion"), Modal->GetNumWidgets(), 1);
+	Router->CloseAllScreens();
+	TestEqual(TEXT("Drain completes an already-deactivated page's transition immediately"), Modal->GetNumWidgets(), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgUIScreenAsyncCloseLifecycleTest,
 	"SurvivalRpg.UI.ScreenRouter.AsyncCloseLifecycle",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -547,6 +857,7 @@ bool FRpgUIScreenAsyncCloseLifecycleTest::RunTest(const FString& Parameters)
 		ScreenSubsystem->CanceledPendingScreenTags.Contains(ScreenTag));
 
 	ScreenSubsystem->HandleScreenPushState(
+		ScreenSubsystem->ScreenGeneration,
 		ScreenTag,
 		EAsyncWidgetLayerState::Initialize,
 		WidgetBeforeInitialize);
@@ -558,6 +869,7 @@ bool FRpgUIScreenAsyncCloseLifecycleTest::RunTest(const FString& Parameters)
 		ScreenSubsystem->PendingScreenTags.Contains(ScreenTag));
 
 	ScreenSubsystem->HandleScreenPushState(
+		ScreenSubsystem->ScreenGeneration,
 		ScreenTag,
 		EAsyncWidgetLayerState::AfterPush,
 		WidgetBeforeInitialize);
@@ -576,6 +888,7 @@ bool FRpgUIScreenAsyncCloseLifecycleTest::RunTest(const FString& Parameters)
 		NewObject<UCommonActivatableWidget>(LocalPlayer);
 	ScreenSubsystem->PendingScreenTags.Add(ScreenTag);
 	ScreenSubsystem->HandleScreenPushState(
+		ScreenSubsystem->ScreenGeneration,
 		ScreenTag,
 		EAsyncWidgetLayerState::Initialize,
 		WidgetDuringInitialize);
@@ -594,6 +907,7 @@ bool FRpgUIScreenAsyncCloseLifecycleTest::RunTest(const FString& Parameters)
 		ScreenSubsystem->CanceledPendingScreenTags.Contains(ScreenTag));
 
 	ScreenSubsystem->HandleScreenPushState(
+		ScreenSubsystem->ScreenGeneration,
 		ScreenTag,
 		EAsyncWidgetLayerState::AfterPush,
 		WidgetDuringInitialize);
@@ -645,6 +959,7 @@ bool FRpgUIScreenAsyncCloseLifecycleTest::RunTest(const FString& Parameters)
 	// Streamable delegates are frame-delayed by default, so exercise the state
 	// transition explicitly after proving that the real handle was canceled.
 	ScreenSubsystem->HandleScreenPushState(
+		ScreenSubsystem->ScreenGeneration,
 		StalledScreenTag,
 		EAsyncWidgetLayerState::Canceled,
 		nullptr);
@@ -664,6 +979,7 @@ bool FRpgUIScreenAsyncCloseLifecycleTest::RunTest(const FString& Parameters)
 	UCommonActivatableWidget* PooledWidget =
 		NewObject<UCommonActivatableWidget>(LocalPlayer);
 	ScreenSubsystem->HandleScreenPushState(
+		ScreenSubsystem->ScreenGeneration,
 		FirstPooledTag,
 		EAsyncWidgetLayerState::Initialize,
 		PooledWidget);
@@ -684,6 +1000,7 @@ bool FRpgUIScreenAsyncCloseLifecycleTest::RunTest(const FString& Parameters)
 
 				bReusedDuringFirstDeactivation = true;
 				ScreenSubsystem->HandleScreenPushState(
+					ScreenSubsystem->ScreenGeneration,
 					SecondPooledTag,
 					EAsyncWidgetLayerState::Initialize,
 					PooledWidget);
@@ -725,6 +1042,7 @@ bool FRpgUIScreenAsyncCloseLifecycleTest::RunTest(const FString& Parameters)
 	UCommonActivatableWidget* SameTagPooledWidget =
 		NewObject<UCommonActivatableWidget>(LocalPlayer);
 	ScreenSubsystem->HandleScreenPushState(
+		ScreenSubsystem->ScreenGeneration,
 		ReentrantSameTag,
 		EAsyncWidgetLayerState::Initialize,
 		SameTagPooledWidget);
@@ -741,6 +1059,7 @@ bool FRpgUIScreenAsyncCloseLifecycleTest::RunTest(const FString& Parameters)
 
 				bReusedForSameTagDuringDeactivation = true;
 				ScreenSubsystem->HandleScreenPushState(
+					ScreenSubsystem->ScreenGeneration,
 					ReentrantSameTag,
 					EAsyncWidgetLayerState::Initialize,
 					SameTagPooledWidget);
@@ -775,6 +1094,7 @@ bool FRpgUIScreenAsyncCloseLifecycleTest::RunTest(const FString& Parameters)
 	UCommonActivatableWidget* TeardownWidget =
 		NewObject<UCommonActivatableWidget>(LocalPlayer);
 	ScreenSubsystem->HandleScreenPushState(
+		ScreenSubsystem->ScreenGeneration,
 		RpgGameplayTags::UI_Screen_Loot,
 		EAsyncWidgetLayerState::Initialize,
 		TeardownWidget);
@@ -797,6 +1117,7 @@ bool FRpgUIScreenAsyncCloseLifecycleTest::RunTest(const FString& Parameters)
 	UCommonActivatableWidget* LateInitializeWidget =
 		NewObject<UCommonActivatableWidget>(LocalPlayer);
 	ScreenSubsystem->HandleScreenPushState(
+		ScreenSubsystem->ScreenGeneration,
 		RpgGameplayTags::UI_Screen_Crafting,
 		EAsyncWidgetLayerState::Initialize,
 		LateInitializeWidget);
@@ -811,6 +1132,7 @@ bool FRpgUIScreenAsyncCloseLifecycleTest::RunTest(const FString& Parameters)
 
 	LateInitializeWidget->ActivateWidget();
 	ScreenSubsystem->HandleScreenPushState(
+		ScreenSubsystem->ScreenGeneration,
 		RpgGameplayTags::UI_Screen_Crafting,
 		EAsyncWidgetLayerState::AfterPush,
 		LateInitializeWidget);

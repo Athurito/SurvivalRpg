@@ -12,41 +12,89 @@ DEFINE_LOG_CATEGORY_STATIC(LogRpgUIScreenSubsystem, Log, All);
 void URpgUIScreenSubsystem::Deinitialize()
 {
 	bIsDeinitializing = true;
+	CloseAllScreens();
+	Super::Deinitialize();
+}
+
+void URpgUIScreenSubsystem::CloseAllScreens()
+{
+	if (bIsClosingAllScreens)
+	{
+		return;
+	}
+	TGuardValue<bool> DrainGuard(bIsClosingAllScreens, true);
+	++ScreenGeneration;
 
 	TArray<TSharedPtr<FStreamableHandle>> StreamingHandles;
 	PendingScreenLoads.GenerateValueArray(StreamingHandles);
 	for (const TSharedPtr<FStreamableHandle>& StreamingHandle : StreamingHandles)
 	{
-		if (StreamingHandle.IsValid())
+		if (StreamingHandle.IsValid() && !StreamingHandle->HasLoadCompleted())
 		{
 			StreamingHandle->CancelHandle();
 		}
 	}
+	// Completed loads can lack a cancel delegate. Keep their queued completion
+	// so CommonGame resumes input; the generation check discards the stale push.
 
-	TSet<TObjectPtr<UCommonActivatableWidget>> WidgetsToRelease;
-	for (const TPair<FGameplayTag, TObjectPtr<UCommonActivatableWidget>>& ActiveScreen :
-		ActiveScreens)
-	{
-		if (ActiveScreen.Value)
-		{
-			WidgetsToRelease.Add(ActiveScreen.Value);
-		}
-	}
+	TArray<FScreenDeactivationBinding> ScreensToRelease;
+	ScreenDeactivationBindings.GenerateValueArray(ScreensToRelease);
 	TArray<uint64> CheckoutIds;
 	ScreenDeactivationBindings.GenerateKeyArray(CheckoutIds);
 	for (const uint64 CheckoutId : CheckoutIds)
 	{
 		ReleaseScreenDeactivationBinding(CheckoutId);
 	}
-	for (UCommonActivatableWidget* Widget : WidgetsToRelease)
+	TMap<UCommonActivatableWidgetContainerBase*, float> TransitionDurations;
+	for (const FScreenDeactivationBinding& Screen : ScreensToRelease)
 	{
-		// The layout can retain this UObject for pooling after the subsystem is
-		// gone. Router callbacks were removed by exact handle above, so widget
-		// cleanup cannot re-enter this subsystem with stale checkout identity.
-		if (Widget->IsActivated())
+		if (UCommonActivatableWidgetContainerBase* Layer = Screen.Layer.Get())
 		{
-			Widget->DeactivateWidget();
+			if (!TransitionDurations.Contains(Layer))
+			{
+				TransitionDurations.Add(Layer, Layer->GetTransitionDuration());
+				Layer->SetTransitionDuration(0.0f);
+			}
 		}
+	}
+	// Remove covered entries first so removing the visible page cannot reactivate
+	// a screen whose owning frontend or local-player lifetime has ended.
+	for (const bool bRemoveVisible : {false, true})
+	{
+		for (const FScreenDeactivationBinding& Screen : ScreensToRelease)
+		{
+			UCommonActivatableWidget* Widget = Screen.Widget.Get();
+			if (!Widget)
+			{
+				continue;
+			}
+			if (UCommonActivatableWidgetContainerBase* Layer = Screen.Layer.Get())
+			{
+				if ((Layer->GetActiveWidget() == Widget) == bRemoveVisible)
+				{
+					if (bRemoveVisible && Layer->GetWidgetList().Num() == 1 &&
+						Layer->GetWidgetList().Contains(Widget))
+					{
+						// Also completes removal when the last owned page already
+						// deactivated into an unfinished transition. Never clear
+						// a layer that still contains an unrelated direct push.
+						Layer->ClearWidgets();
+					}
+					else
+					{
+						Layer->RemoveWidget(*Widget);
+					}
+				}
+			}
+			else if (bRemoveVisible)
+			{
+				Widget->DeactivateWidget();
+			}
+		}
+	}
+	for (const TPair<UCommonActivatableWidgetContainerBase*, float>& Layer : TransitionDurations)
+	{
+		Layer.Key->SetTransitionDuration(Layer.Value);
 	}
 
 	ActiveScreens.Reset();
@@ -56,13 +104,11 @@ void URpgUIScreenSubsystem::Deinitialize()
 	PendingScreenTags.Reset();
 	PendingScreenLoads.Reset();
 	CanceledPendingScreenTags.Reset();
-
-	Super::Deinitialize();
 }
 
 UCommonActivatableWidget* URpgUIScreenSubsystem::OpenScreen(FGameplayTag ScreenTag, UObject* Payload)
 {
-	if (bIsDeinitializing)
+	if (bIsDeinitializing || bIsClosingAllScreens)
 	{
 		return nullptr;
 	}
@@ -71,6 +117,22 @@ UCommonActivatableWidget* URpgUIScreenSubsystem::OpenScreen(FGameplayTag ScreenT
 	{
 		UE_LOG(LogRpgUIScreenSubsystem, Warning, TEXT("OpenScreen called with an invalid ScreenTag."));
 		return nullptr;
+	}
+
+	if (PendingScreenTags.Contains(ScreenTag))
+	{
+		return nullptr;
+	}
+	if (UCommonActivatableWidget* ExistingWidget = GetOpenScreen(ScreenTag))
+	{
+		const FScreenDeactivationBinding* Binding =
+			ScreenDeactivationBindings.Find(ActiveScreenCheckoutIds.FindRef(ScreenTag));
+		if (Binding && Binding->bClosing)
+		{
+			return nullptr;
+		}
+		ApplyPayloadToWidget(ExistingWidget, Payload);
+		return ExistingWidget;
 	}
 
 	FRpgUIScreenRegistryEntry Entry;
@@ -93,17 +155,6 @@ UCommonActivatableWidget* URpgUIScreenSubsystem::OpenScreen(FGameplayTag ScreenT
 			*ScreenTag.ToString());
 	}
 
-	if (UCommonActivatableWidget* ExistingWidget = GetActiveScreen(ScreenTag))
-	{
-		ApplyPayloadToWidget(ExistingWidget, Payload);
-		return ExistingWidget;
-	}
-
-	if (PendingScreenTags.Contains(ScreenTag))
-	{
-		return nullptr;
-	}
-
 	ULocalPlayer* LocalPlayer = GetLocalPlayer();
 	if (!LocalPlayer)
 	{
@@ -119,7 +170,8 @@ UCommonActivatableWidget* URpgUIScreenSubsystem::OpenScreen(FGameplayTag ScreenT
 		return nullptr;
 	}
 
-	if (!RootLayout->GetLayerWidget(Entry.LayerTag))
+	UCommonActivatableWidgetContainerBase* Layer = RootLayout->GetLayerWidget(Entry.LayerTag);
+	if (!Layer)
 	{
 		UE_LOG(LogRpgUIScreenSubsystem, Warning, TEXT("Cannot open [%s]: PrimaryGameLayout [%s] has no registered layer [%s]. Check the root layout's CommonActivatableWidgetStack bindings."),
 			*ScreenTag.ToString(),
@@ -145,22 +197,28 @@ UCommonActivatableWidget* URpgUIScreenSubsystem::OpenScreen(FGameplayTag ScreenT
 		*Entry.WidgetClass.ToString());
 
 	const TWeakObjectPtr<URpgUIScreenSubsystem> WeakThis(this);
+	const TWeakObjectPtr<UPrimaryGameLayout> WeakRootLayout(RootLayout);
+	const FGameplayTag RequestedLayerTag = Entry.LayerTag;
+	const uint64 RequestGeneration = ScreenGeneration;
 	TSharedPtr<FStreamableHandle> StreamingHandle =
 		RootLayout->PushWidgetToLayerStackAsync<UCommonActivatableWidget>(
 		Entry.LayerTag,
 		Entry.bSuspendInputUntilLoaded,
 		Entry.WidgetClass,
-		[WeakThis, ScreenTag](EAsyncWidgetLayerState State, UCommonActivatableWidget* Widget)
+		[WeakThis, WeakRootLayout, RequestedLayerTag, RequestGeneration, ScreenTag](EAsyncWidgetLayerState State, UCommonActivatableWidget* Widget)
 		{
 			if (URpgUIScreenSubsystem* ScreenSubsystem = WeakThis.Get())
 			{
-				ScreenSubsystem->HandleScreenPushState(ScreenTag, State, Widget);
+				UPrimaryGameLayout* CurrentLayout = WeakRootLayout.Get();
+				UCommonActivatableWidgetContainerBase* CurrentLayer = CurrentLayout
+					? CurrentLayout->GetLayerWidget(RequestedLayerTag) : nullptr;
+				ScreenSubsystem->HandleScreenPushState(RequestGeneration, ScreenTag, State, Widget, CurrentLayer);
 			}
 		});
 
 	// RequestAsyncLoad can complete inline for an already-loaded class. Only retain
 	// the handle when the completion callback has not already cleared this tag.
-	if (PendingScreenTags.Contains(ScreenTag) && StreamingHandle.IsValid())
+	if (RequestGeneration == ScreenGeneration && PendingScreenTags.Contains(ScreenTag) && StreamingHandle.IsValid())
 	{
 		PendingScreenLoads.Add(ScreenTag, MoveTemp(StreamingHandle));
 	}
@@ -176,12 +234,12 @@ UPrimaryGameLayout* URpgUIScreenSubsystem::GetPrimaryGameLayout() const
 
 UCommonActivatableWidget* URpgUIScreenSubsystem::ToggleScreen(FGameplayTag ScreenTag, UObject* Payload)
 {
-	if (bIsDeinitializing)
+	if (bIsDeinitializing || bIsClosingAllScreens)
 	{
 		return nullptr;
 	}
 
-	if (UCommonActivatableWidget* ActiveWidget = GetActiveScreen(ScreenTag))
+	if (UCommonActivatableWidget* ActiveWidget = GetOpenScreen(ScreenTag))
 	{
 		CloseScreen(ScreenTag);
 		return ActiveWidget;
@@ -197,13 +255,26 @@ UCommonActivatableWidget* URpgUIScreenSubsystem::ToggleScreen(FGameplayTag Scree
 
 void URpgUIScreenSubsystem::CloseScreen(FGameplayTag ScreenTag)
 {
-	if (bIsDeinitializing)
+	if (bIsDeinitializing || bIsClosingAllScreens)
 	{
 		return;
 	}
 
-	if (UCommonActivatableWidget* ActiveWidget = GetActiveScreen(ScreenTag))
+	if (UCommonActivatableWidget* ActiveWidget = GetOpenScreen(ScreenTag))
 	{
+		const uint64 CheckoutId = ActiveScreenCheckoutIds.FindRef(ScreenTag);
+		FScreenDeactivationBinding* Binding = ScreenDeactivationBindings.Find(CheckoutId);
+		if (Binding)
+		{
+			Binding->bClosing = true;
+			if (UCommonActivatableWidgetContainerBase* Layer = Binding->Layer.Get())
+			{
+				Layer->RemoveWidget(*ActiveWidget);
+				// Removing a covered entry does not change the displayed widget.
+				HandleScreenLayerChanged(Layer->GetActiveWidget(), CheckoutId);
+				return;
+			}
+		}
 		ActiveWidget->DeactivateWidget();
 		return;
 	}
@@ -225,23 +296,34 @@ void URpgUIScreenSubsystem::CloseScreen(FGameplayTag ScreenTag)
 
 UCommonActivatableWidget* URpgUIScreenSubsystem::GetActiveScreen(FGameplayTag ScreenTag) const
 {
-	if (const TObjectPtr<UCommonActivatableWidget>* FoundWidget = ActiveScreens.Find(ScreenTag))
-	{
-		if (UCommonActivatableWidget* Widget = FoundWidget->Get())
-		{
-			if (Widget->IsActivated())
-			{
-				return Widget;
-			}
-		}
-	}
-
-	return nullptr;
+	UCommonActivatableWidget* Widget = GetOpenScreen(ScreenTag);
+	return Widget && Widget->IsActivated() ? Widget : nullptr;
 }
 
 bool URpgUIScreenSubsystem::IsScreenActiveOrPending(FGameplayTag ScreenTag) const
 {
 	return PendingScreenTags.Contains(ScreenTag) || GetActiveScreen(ScreenTag) != nullptr;
+}
+
+UCommonActivatableWidget* URpgUIScreenSubsystem::GetOpenScreen(FGameplayTag ScreenTag) const
+{
+	const FScreenDeactivationBinding* Binding =
+		ScreenDeactivationBindings.Find(ActiveScreenCheckoutIds.FindRef(ScreenTag));
+	if (Binding)
+	{
+		UCommonActivatableWidget* Widget = Binding->Widget.Get();
+		if (const UCommonActivatableWidgetContainerBase* Layer = Binding->Layer.Get())
+		{
+			return Layer->GetWidgetList().Contains(Widget) ? Widget : nullptr;
+		}
+		return Widget && Widget->IsActivated() ? Widget : nullptr;
+	}
+	return nullptr;
+}
+
+bool URpgUIScreenSubsystem::IsScreenOpenOrPending(FGameplayTag ScreenTag) const
+{
+	return PendingScreenTags.Contains(ScreenTag) || GetOpenScreen(ScreenTag) != nullptr;
 }
 
 const URpgUIScreenRegistry* URpgUIScreenSubsystem::GetScreenRegistry() const
@@ -292,19 +374,41 @@ void URpgUIScreenSubsystem::ApplyPayloadToWidget(UCommonActivatableWidget* Widge
 }
 
 void URpgUIScreenSubsystem::HandleScreenPushState(
+	uint64 RequestGeneration,
 	FGameplayTag ScreenTag,
 	EAsyncWidgetLayerState State,
-	UCommonActivatableWidget* Widget)
+	UCommonActivatableWidget* Widget,
+	UCommonActivatableWidgetContainerBase* Layer)
 {
-	if (bIsDeinitializing)
+	if (bIsDeinitializing || bIsClosingAllScreens || RequestGeneration != ScreenGeneration)
 	{
-		ReleaseScreenDeactivationBindings(ScreenTag, Widget);
 		if (State == EAsyncWidgetLayerState::AfterPush && Widget)
 		{
-			// An already-dispatched async push can finish while LocalPlayer
-			// teardown is in progress. Do not leave its now-untracked widget
-			// active in the CommonUI layer.
-			if (UPrimaryGameLayout* RootLayout = GetPrimaryGameLayout())
+			// A pooled UObject may already belong to a newer checkout. A late
+			// callback owns only its old request, never that replacement screen.
+			for (const TPair<uint64, FScreenDeactivationBinding>& Binding : ScreenDeactivationBindings)
+			{
+				if (Binding.Value.Widget.Get() == Widget)
+				{
+					return;
+				}
+			}
+			TGuardValue<bool> DiscardGuard(bIsClosingAllScreens, true);
+			if (Layer)
+			{
+				const float TransitionDuration = Layer->GetTransitionDuration();
+				Layer->SetTransitionDuration(0.0f);
+				if (Layer->GetWidgetList().Num() == 1 && Layer->GetWidgetList().Contains(Widget))
+				{
+					Layer->ClearWidgets();
+				}
+				else
+				{
+					Layer->RemoveWidget(*Widget);
+				}
+				Layer->SetTransitionDuration(TransitionDuration);
+			}
+			else if (UPrimaryGameLayout* RootLayout = GetPrimaryGameLayout())
 			{
 				RootLayout->FindAndRemoveWidgetFromLayer(Widget);
 			}
@@ -313,8 +417,8 @@ void URpgUIScreenSubsystem::HandleScreenPushState(
 				Widget->DeactivateWidget();
 			}
 		}
-		CanceledPendingScreenTags.Remove(ScreenTag);
-		ClearPendingScreenState(ScreenTag);
+		// The drain already released this generation. In particular, a delayed
+		// cancel must not clear a same-tag request opened by the next map.
 		return;
 	}
 
@@ -339,8 +443,15 @@ void URpgUIScreenSubsystem::HandleScreenPushState(
 		}
 
 		ApplyPayloadToWidget(Widget, PayloadToApply);
+		// Designer payload handlers can synchronously travel or close the UI.
+		// Do not attach a new checkout after such a drain has invalidated us.
+		if (bIsDeinitializing || bIsClosingAllScreens || RequestGeneration != ScreenGeneration ||
+			CanceledPendingScreenTags.Contains(ScreenTag))
+		{
+			return;
+		}
 		const uint64 CheckoutId =
-			RegisterScreenDeactivationBinding(ScreenTag, Widget);
+			RegisterScreenDeactivationBinding(ScreenTag, Widget, Layer);
 		ActiveScreens.Add(ScreenTag, Widget);
 		ActiveScreenCheckoutIds.Add(ScreenTag, CheckoutId);
 		UE_LOG(LogRpgUIScreenSubsystem, Log, TEXT("Initialized screen [%s] as widget [%s]."),
@@ -389,7 +500,7 @@ void URpgUIScreenSubsystem::HandleScreenDeactivated(
 	UCommonActivatableWidget* Widget,
 	uint64 CheckoutId)
 {
-	const FScreenDeactivationBinding* Binding =
+	FScreenDeactivationBinding* Binding =
 		ScreenDeactivationBindings.Find(CheckoutId);
 	if (!Binding ||
 		Binding->ScreenTag != ScreenTag ||
@@ -397,6 +508,53 @@ void URpgUIScreenSubsystem::HandleScreenDeactivated(
 	{
 		return;
 	}
+	if (const UCommonActivatableWidgetContainerBase* Layer = Binding->Layer.Get())
+	{
+		// Deactivation also happens when another page covers this one. The
+		// container's displayed-change event runs after its membership update,
+		// so only that event can distinguish a pop from a retained history entry.
+		const TArray<UCommonActivatableWidget*>& Widgets = Layer->GetWidgetList();
+		if (Widgets.Num() > 0 && Widgets.Last() == Widget)
+		{
+			Binding->bClosing = true;
+		}
+		return;
+	}
+	CompleteScreenCheckout(CheckoutId);
+}
+
+void URpgUIScreenSubsystem::HandleScreenLayerChanged(
+	UCommonActivatableWidget* DisplayedWidget,
+	uint64 CheckoutId)
+{
+	const FScreenDeactivationBinding* Binding = ScreenDeactivationBindings.Find(CheckoutId);
+	if (!Binding)
+	{
+		return;
+	}
+	const UCommonActivatableWidgetContainerBase* Layer = Binding->Layer.Get();
+	if (!Layer || !Layer->GetWidgetList().Contains(Binding->Widget.Get()))
+	{
+		CompleteScreenCheckout(CheckoutId);
+	}
+}
+
+void URpgUIScreenSubsystem::HandleScreenDestructed(UUserWidget* Widget, uint64 CheckoutId)
+{
+	// Slate rebuilding is not a close while the container still retains this
+	// checkout. A removed pooled widget must no longer retain router callbacks.
+	HandleScreenLayerChanged(nullptr, CheckoutId);
+}
+
+void URpgUIScreenSubsystem::CompleteScreenCheckout(uint64 CheckoutId)
+{
+	const FScreenDeactivationBinding* Binding = ScreenDeactivationBindings.Find(CheckoutId);
+	if (!Binding)
+	{
+		return;
+	}
+	const FGameplayTag ScreenTag = Binding->ScreenTag;
+	UCommonActivatableWidget* Widget = Binding->Widget.Get();
 
 	ReleaseScreenDeactivationBinding(CheckoutId);
 
@@ -426,9 +584,26 @@ void URpgUIScreenSubsystem::HandleScreenDeactivated(
 
 uint64 URpgUIScreenSubsystem::RegisterScreenDeactivationBinding(
 	FGameplayTag ScreenTag,
-	UCommonActivatableWidget* Widget)
+	UCommonActivatableWidget* Widget,
+	UCommonActivatableWidgetContainerBase* Layer)
 {
 	check(Widget);
+
+	// A removed entry can return from the pool inside another screen's
+	// activation before the container emits its displayed-change notification.
+	// Retire that checkout before attaching callbacks to the reused UObject.
+	TArray<uint64> ReusedCheckoutIds;
+	for (const TPair<uint64, FScreenDeactivationBinding>& Existing : ScreenDeactivationBindings)
+	{
+		if (Existing.Value.Widget.Get() == Widget && Existing.Value.Layer.IsValid())
+		{
+			ReusedCheckoutIds.Add(Existing.Key);
+		}
+	}
+	for (const uint64 CheckoutId : ReusedCheckoutIds)
+	{
+		CompleteScreenCheckout(CheckoutId);
+	}
 
 	++NextScreenCheckoutId;
 	if (NextScreenCheckoutId == 0)
@@ -439,12 +614,20 @@ uint64 URpgUIScreenSubsystem::RegisterScreenDeactivationBinding(
 	FScreenDeactivationBinding Binding;
 	Binding.ScreenTag = ScreenTag;
 	Binding.Widget = Widget;
+	Binding.Layer = Layer;
 	Binding.DelegateHandle = Widget->OnDeactivated().AddUObject(
 		this,
 		&ThisClass::HandleScreenDeactivated,
 		ScreenTag,
 		Widget,
 		NextScreenCheckoutId);
+	Binding.DestructDelegateHandle = Widget->OnNativeDestruct.AddUObject(
+		this, &ThisClass::HandleScreenDestructed, NextScreenCheckoutId);
+	if (Layer)
+	{
+		Binding.LayerDelegateHandle = Layer->OnDisplayedWidgetChanged().AddUObject(
+			this, &ThisClass::HandleScreenLayerChanged, NextScreenCheckoutId);
+	}
 	ScreenDeactivationBindings.Add(
 		NextScreenCheckoutId,
 		MoveTemp(Binding));
@@ -465,6 +648,11 @@ void URpgUIScreenSubsystem::ReleaseScreenDeactivationBinding(
 	if (UCommonActivatableWidget* Widget = Binding.Widget.Get())
 	{
 		Widget->OnDeactivated().Remove(Binding.DelegateHandle);
+		Widget->OnNativeDestruct.Remove(Binding.DestructDelegateHandle);
+	}
+	if (UCommonActivatableWidgetContainerBase* Layer = Binding.Layer.Get())
+	{
+		Layer->OnDisplayedWidgetChanged().Remove(Binding.LayerDelegateHandle);
 	}
 }
 

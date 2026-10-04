@@ -5,7 +5,10 @@
 #include "SurvivalRpg/UI/RpgFrontendHUD.h"
 #include "SurvivalRpg/UI/RpgFrontendWidgets.h"
 #include "SurvivalRpg/UI/RpgMainMenuNavigationLibrary.h"
+#include "SurvivalRpg/UI/RpgUIScreenBlueprintLibrary.h"
+#include "SurvivalRpg/UI/RpgUIScreenPayload.h"
 #include "SurvivalRpg/UI/RpgUIScreenRegistry.h"
+#include "SurvivalRpg/UI/RpgUIScreenSubsystem.h"
 
 #include "AssetRegistry/AssetData.h"
 #include "AssetRegistry/AssetRegistryModule.h"
@@ -15,6 +18,7 @@
 #include "Blueprint/WidgetTree.h"
 #include "Components/Widget.h"
 #include "Components/WidgetSwitcher.h"
+#include "CommonActivatableWidget.h"
 #include "CommonPlayerController.h"
 #include "EdGraph/EdGraph.h"
 #include "EdGraphSchema_K2.h"
@@ -24,7 +28,9 @@
 #include "Input/UIActionBindingHandle.h"
 #include "Internationalization/Text.h"
 #include "K2Node_CallFunction.h"
+#include "K2Node_Event.h"
 #include "K2Node_FunctionEntry.h"
+#include "K2Node_Tunnel.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/ConfigCacheIni.h"
 #include "Misc/PackageName.h"
@@ -105,10 +111,14 @@ namespace RpgFrontendCompositionAssetTests
 		TEXT(
 			"/Game/SurvivalRpg/UI/Popup/"
 			"CUI_BackToMainMenu.CUI_BackToMainMenu_C");
-	constexpr TCHAR SettingsMenuBlueprintPath[] =
+	constexpr TCHAR SettingsMenuClassPath[] =
 		TEXT(
 			"/Game/SurvivalRpg/UI/SettingsMenu/"
-			"CUI_SettingsMenu.CUI_SettingsMenu");
+			"CUI_SettingsMenu.CUI_SettingsMenu_C");
+	constexpr TCHAR LazySettingsPageClassPath[] =
+		TEXT(
+			"/Game/SurvivalRpg/UI/SettingsMenu/Modular/"
+			"CUI_LazySettingsPage.CUI_LazySettingsPage_C");
 	constexpr TCHAR AudioSettingsClassPath[] =
 		TEXT(
 			"/Game/SurvivalRpg/UI/SettingsMenu/ChildSettings/"
@@ -547,13 +557,6 @@ namespace RpgFrontendCompositionAssetTests
 		}
 	};
 
-	constexpr const TCHAR* SettingsTabKeys[] = {
-		TEXT("Settings_Tablist_AudioButton"),
-		TEXT("Settings_Tablist_ControlButton"),
-		TEXT("Settings_Tablist_GameButton"),
-		TEXT("Settings_Tablist_GraphicButton")
-	};
-
 	const UWidgetTree* LoadAuthoredWidgetTree(
 		FAutomationTestBase& Test,
 		const TCHAR* WidgetClassPath)
@@ -677,108 +680,110 @@ namespace RpgFrontendCompositionAssetTests
 			Expected.Key);
 	}
 
-	void TestSettingsTabLocalDefaults(
+	void TestSettingsPageComposition(
 		FAutomationTestBase& Test)
 	{
-		const UBlueprint* SettingsBlueprint =
-			LoadObject<UBlueprint>(
-				nullptr,
-				SettingsMenuBlueprintPath);
+		UClass* LazyPageClass = LoadClass<UCommonActivatableWidget>(
+			nullptr,
+			LazySettingsPageClassPath);
+		const UWidgetTree* SettingsTree =
+			LoadAuthoredWidgetTree(Test, SettingsMenuClassPath);
 		if (!Test.TestNotNull(
-				TEXT("Settings Blueprint loads for tab labels"),
-				SettingsBlueprint))
+				TEXT("Lazy Settings page inherits CommonActivatableWidget"),
+				LazyPageClass) || !SettingsTree)
 		{
 			return;
 		}
 
-		const UEdGraph* CreateTabsGraph = nullptr;
-		for (const UEdGraph* FunctionGraph :
-			SettingsBlueprint->FunctionGraphs)
-		{
-			if (FunctionGraph &&
-				FunctionGraph->GetFName() == TEXT("F_CreateTabs"))
-			{
-				CreateTabsGraph = FunctionGraph;
-				break;
-			}
-		}
+		const FSoftClassProperty* ContentClassProperty =
+			FindFProperty<FSoftClassProperty>(LazyPageClass, TEXT("ContentClass"));
+		const FNameProperty* TabIdProperty =
+			FindFProperty<FNameProperty>(LazyPageClass, TEXT("TabId"));
+		const FTextProperty* TabLabelProperty =
+			FindFProperty<FTextProperty>(LazyPageClass, TEXT("TabLabel"));
 		if (!Test.TestNotNull(
-				TEXT("Settings owns the F_CreateTabs graph"),
-				CreateTabsGraph))
+				TEXT("Lazy Settings page exposes a soft ContentClass"),
+				ContentClassProperty) ||
+			!Test.TestNotNull(
+				TEXT("Lazy Settings page exposes a name TabId"),
+				TabIdProperty) ||
+			!Test.TestNotNull(
+				TEXT("Lazy Settings page exposes an FText TabLabel"),
+				TabLabelProperty))
 		{
 			return;
 		}
 
-		const UK2Node_FunctionEntry* FunctionEntry = nullptr;
-		for (const UEdGraphNode* Node : CreateTabsGraph->Nodes)
-		{
-			if (const UK2Node_FunctionEntry* Candidate =
-				Cast<UK2Node_FunctionEntry>(Node))
-			{
-				FunctionEntry = Candidate;
-				break;
-			}
-		}
-		if (!Test.TestNotNull(
-				TEXT("F_CreateTabs owns a function entry"),
-				FunctionEntry))
-		{
-			return;
-		}
-
-		const FBPVariableDescription* TabNames =
-			FunctionEntry->LocalVariables.FindByPredicate(
-				[](const FBPVariableDescription& Variable)
-				{
-					return Variable.VarName ==
-						TEXT("TabButtonNames");
-				});
-		if (!Test.TestNotNull(
-				TEXT(
-					"F_CreateTabs owns the TabButtonNames "
-					"local variable"),
-				TabNames))
-		{
-			return;
-		}
-
-		Test.TestEqual(
-			TEXT("TabButtonNames stores FText values"),
-			TabNames->VarType.PinCategory,
-			UEdGraphSchema_K2::PC_Text);
-		Test.TestEqual(
-			TEXT("TabButtonNames is an array"),
-			TabNames->VarType.ContainerType,
-			EPinContainerType::Array);
-		Test.TestFalse(
-			TEXT("TabButtonNames has authored defaults"),
-			TabNames->DefaultValue.IsEmpty());
-
-		const bool bUsesCurrentTable =
-			TabNames->DefaultValue.Contains(
-				SettingsTabListTableId);
-		const bool bUsesLegacyTable =
-			TabNames->DefaultValue.Contains(
-				LegacySettingsTabListTableId);
 		Test.TestTrue(
-			TEXT(
-				"Settings tab defaults use the current table or "
-				"its redirected legacy ID"),
-			bUsesCurrentTable || bUsesLegacyTable);
-
-		for (const TCHAR* ExpectedKey : SettingsTabKeys)
+			TEXT("Lazy Settings page content accepts activatable widget classes"),
+			ContentClassProperty->MetaClass &&
+				ContentClassProperty->MetaClass->IsChildOf(
+					UCommonActivatableWidget::StaticClass()));
+		for (const FProperty* Property :
+			{
+				static_cast<const FProperty*>(ContentClassProperty),
+				static_cast<const FProperty*>(TabIdProperty),
+				static_cast<const FProperty*>(TabLabelProperty)
+			})
 		{
 			Test.TestTrue(
 				*FString::Printf(
-					TEXT(
-						"Settings tab defaults contain key: %s"),
-					ExpectedKey),
-				TabNames->DefaultValue.Contains(ExpectedKey));
+					TEXT("Lazy Settings page %s is designer-editable Blueprint data"),
+					*Property->GetName()),
+				Property->HasAllPropertyFlags(CPF_Edit | CPF_BlueprintVisible) &&
+					!Property->HasAnyPropertyFlags(CPF_DisableEditOnInstance));
 		}
 
-		Test.TestTrue(
-			TEXT("The Input tab retains a non-empty label"),
-			TabNames->DefaultValue.Contains(TEXT("\"Input\"")));
+		int32 PageCount = 0;
+		TSet<FName> TabIds;
+		bool bUsesLegacyTable = false;
+		SettingsTree->ForEachWidget(
+			[&](UWidget* Widget)
+			{
+				if (!Widget || !Widget->IsA(LazyPageClass))
+				{
+					return;
+				}
+
+				++PageCount;
+				const FString PageLabel = Widget->GetName();
+				const FName TabId = TabIdProperty->GetPropertyValue_InContainer(Widget);
+				Test.TestFalse(
+					*FString::Printf(TEXT("%s has a non-empty tab ID"), *PageLabel),
+					TabId.IsNone());
+				Test.TestFalse(
+					*FString::Printf(TEXT("%s has a unique tab ID"), *PageLabel),
+					TabIds.Contains(TabId));
+				TabIds.Add(TabId);
+
+				const FText TabLabel =
+					TabLabelProperty->GetPropertyValue_InContainer(Widget);
+				Test.TestFalse(
+					*FString::Printf(TEXT("%s resolves to a non-empty tab label"), *PageLabel),
+					TabLabel.IsEmpty());
+				FName TableId;
+				FString TableKey;
+				if (FTextInspector::GetTableIdAndKey(TabLabel, TableId, TableKey))
+				{
+					bUsesLegacyTable |= TableId == FName(LegacySettingsTabListTableId);
+				}
+
+				const FSoftObjectPtr ContentClass =
+					ContentClassProperty->GetPropertyValue_InContainer(Widget);
+				UClass* PageClass = Cast<UClass>(ContentClass.ToSoftObjectPath().TryLoad());
+				if (Test.TestNotNull(
+						*FString::Printf(TEXT("%s soft page class loads"), *PageLabel),
+						PageClass))
+				{
+					Test.TestTrue(
+						*FString::Printf(TEXT("%s page is activatable"), *PageLabel),
+						PageClass->IsChildOf(UCommonActivatableWidget::StaticClass()));
+					Test.TestFalse(
+						*FString::Printf(TEXT("%s page is concrete"), *PageLabel),
+						PageClass->HasAnyClassFlags(CLASS_Abstract));
+				}
+			});
+		Test.TestTrue(TEXT("Settings authors at least one lazy page"), PageCount > 0);
 
 		if (bUsesLegacyTable)
 		{
@@ -845,6 +850,61 @@ namespace RpgFrontendCompositionAssetTests
 			"BP_MainMenuController")
 	};
 
+	struct FPromotedScreenExpectation
+	{
+		const TCHAR* ScreenTag;
+		const TCHAR* WidgetPackage;
+		bool bModal = false;
+		bool bPayloadReceiver = false;
+	};
+
+	const FPromotedScreenExpectation PromotedScreens[] = {
+		{TEXT("UI.Screen.Play"), TEXT("/Game/SurvivalRpg/UI/PlayMenu/CUI_PlayMenu")},
+		{TEXT("UI.Screen.Credits"), TEXT("/Game/SurvivalRpg/UI/Credits/CUI_Credits")},
+		{TEXT("UI.Screen.LoadGame"), TEXT("/Game/SurvivalRpg/UI/Menus/LoadingMenu/CUI_LoadingMenu")},
+		{TEXT("UI.Screen.NewGame.SinglePlayer"), TEXT("/Game/SurvivalRpg/UI/Menus/NewGameMenu/Singleplayer/CUI_NewGameSinglePlayer")},
+		{TEXT("UI.Screen.NewGame.CreateSession"), TEXT("/Game/SurvivalRpg/UI/Menus/NewGameMenu/Multiplayer/CUI_NewGameCreateSession")},
+		{TEXT("UI.Screen.ServerBrowser"), TEXT("/Game/SurvivalRpg/UI/PlayMenu/Sessions/CUI_ServerBrowser")},
+		{TEXT("UI.Screen.LoadGame.SinglePlayer"), TEXT("/Game/SurvivalRpg/UI/Menus/LoadingMenu/Singleplayer/CUI_SinglePlayerLoading")},
+		{TEXT("UI.Screen.LoadGame.Multiplayer"), TEXT("/Game/SurvivalRpg/UI/Menus/LoadingMenu/Multiplayer/CUI_MultiplayerLoading")},
+		{TEXT("UI.Screen.LoadGame.SinglePlayer.Settings"), TEXT("/Game/SurvivalRpg/UI/Menus/LoadingMenu/Singleplayer/CUI_SinglePlayerLoadingSettings"), false, true},
+		{TEXT("UI.Screen.LoadGame.Multiplayer.Settings"), TEXT("/Game/SurvivalRpg/UI/Menus/LoadingMenu/Multiplayer/CUI_MultiplayerLoadingSettings"), false, true},
+		{TEXT("UI.Screen.ExitDesktop"), TEXT("/Game/SurvivalRpg/UI/Popup/CUI_ExitDesktop"), true},
+		{TEXT("UI.Screen.BackToMainMenu"), TEXT("/Game/SurvivalRpg/UI/Popup/CUI_BackToMainMenu"), true}
+	};
+
+	TSet<const UEdGraphNode*> FindExecutableNodes(const UEdGraph& Graph)
+	{
+		TArray<const UEdGraphNode*> Pending;
+		for (const UEdGraphNode* Node : Graph.Nodes)
+		{
+			const UK2Node_Tunnel* Tunnel = Cast<UK2Node_Tunnel>(Node);
+			if (Node && (Node->IsA<UK2Node_Event>() || Node->IsA<UK2Node_FunctionEntry>() ||
+				(Tunnel && Tunnel->bCanHaveOutputs && !Tunnel->bCanHaveInputs)))
+			{
+				Pending.Add(Node);
+			}
+		}
+		TSet<const UEdGraphNode*> Executable;
+		while (!Pending.IsEmpty())
+		{
+			const UEdGraphNode* Node = Pending.Pop(EAllowShrinking::No);
+			if (!Node || Executable.Contains(Node)) continue;
+			Executable.Add(Node);
+			for (const UEdGraphPin* Pin : Node->Pins)
+			{
+				if (Pin && Pin->Direction == EGPD_Output && Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Exec)
+				{
+					for (const UEdGraphPin* Linked : Pin->LinkedTo)
+					{
+						if (Linked) Pending.Add(Linked->GetOwningNode());
+					}
+				}
+			}
+		}
+		return Executable;
+	}
+
 	bool IsNavigationFunction(const FName FunctionName)
 	{
 		for (const TCHAR* Candidate : NavigationFunctionNames)
@@ -853,6 +913,12 @@ namespace RpgFrontendCompositionAssetTests
 			{
 				return true;
 			}
+		}
+		for (const TCHAR* Candidate :
+			{TEXT("PushToMainStack"), TEXT("PushToOptionStack"), TEXT("PushToPopupStack"),
+			 TEXT("PushToOption1Stack"), TEXT("PushToOption2Stack")})
+		{
+			if (FunctionName == Candidate) return true;
 		}
 		return false;
 	}
@@ -891,6 +957,10 @@ bool FRpgFrontendCommonUICompositionAssetTest::RunTest(
 		LoadClass<UCommonActivatableWidget>(
 			nullptr,
 			MainScreenClassPath);
+	UClass* SettingsScreenClass =
+		LoadClass<URpgFrontendScreenWidget>(
+			nullptr,
+			SettingsMenuClassPath);
 	const UWidgetBlueprint* MainStackBlueprint =
 		LoadObject<UWidgetBlueprint>(
 			nullptr,
@@ -909,6 +979,9 @@ bool FRpgFrontendCommonUICompositionAssetTest::RunTest(
 	const FGameplayTag MainMenuTag =
 		FGameplayTag::RequestGameplayTag(
 			TEXT("UI.Screen.MainMenu"));
+	const FGameplayTag SettingsTag =
+		FGameplayTag::RequestGameplayTag(
+			TEXT("UI.Screen.Settings"));
 	const FGameplayTag MenuLayerTag =
 		FGameplayTag::RequestGameplayTag(
 			TEXT("UI.Layer.Menu"));
@@ -929,6 +1002,9 @@ bool FRpgFrontendCommonUICompositionAssetTest::RunTest(
 		!TestNotNull(
 			TEXT("Initial Main Menu page loads"),
 			MainScreenClass) ||
+		!TestNotNull(
+			TEXT("Settings inherits the frontend screen input contract"),
+			SettingsScreenClass) ||
 		!TestNotNull(
 			TEXT("Main Menu stack Blueprint loads"),
 			MainStackBlueprint) ||
@@ -974,7 +1050,11 @@ bool FRpgFrontendCommonUICompositionAssetTest::RunTest(
 			MakeTuple(
 				MainMenuTag,
 				FString(MainStackClassPath),
-				MainStackClass)
+				MainStackClass),
+			MakeTuple(
+				SettingsTag,
+				FString(SettingsMenuClassPath),
+				SettingsScreenClass)
 		})
 	{
 		int32 EntryCount = 0;
@@ -1070,8 +1150,47 @@ bool FRpgFrontendCommonUICompositionAssetTest::RunTest(
 				Expected.Get<1>());
 	}
 
-	for (UClass* FrontendScreenClass :
-		{BootScreenClass, MainStackClass})
+	TArray<UClass*> FrontendScreenClasses = {BootScreenClass, MainStackClass, SettingsScreenClass};
+	for (const FPromotedScreenExpectation& Expected : PromotedScreens)
+	{
+		const FGameplayTag ScreenTag = FGameplayTag::RequestGameplayTag(Expected.ScreenTag, false);
+		const FGameplayTag LayerTag = FGameplayTag::RequestGameplayTag(
+			Expected.bModal ? TEXT("UI.Layer.Modal") : TEXT("UI.Layer.Menu"), false);
+		TestTrue(*FString::Printf(TEXT("%s is a registered gameplay tag"), Expected.ScreenTag), ScreenTag.IsValid());
+		int32 EntryCount = 0;
+		for (const FRpgUIScreenRegistryEntry& Candidate : Registry->Screens)
+			EntryCount += Candidate.ScreenTag == ScreenTag ? 1 : 0;
+		TestEqual(*FString::Printf(TEXT("%s has exactly one registry entry"), Expected.ScreenTag), EntryCount, 1);
+		FRpgUIScreenRegistryEntry Entry;
+		if (!TestTrue(*FString::Printf(TEXT("%s resolves exactly"), Expected.ScreenTag), Registry->FindScreen(ScreenTag, Entry)))
+			continue;
+		const FString ClassPath = FString::Printf(TEXT("%s.%s_C"), Expected.WidgetPackage,
+			*FPackageName::GetShortName(Expected.WidgetPackage));
+		TestEqual(*FString::Printf(TEXT("%s targets its authored screen"), Expected.ScreenTag),
+			Entry.WidgetClass.ToSoftObjectPath().ToString(), ClassPath);
+		TestTrue(*FString::Printf(TEXT("%s uses its menu or modal layer"), Expected.ScreenTag), Entry.LayerTag == LayerTag);
+		TestTrue(*FString::Printf(TEXT("%s suspends input while streaming"), Expected.ScreenTag), Entry.bSuspendInputUntilLoaded);
+		TestTrue(*FString::Printf(TEXT("%s retains a single local-player instance"), Expected.ScreenTag), Entry.bSingleInstance);
+		UClass* ScreenClass = Entry.WidgetClass.LoadSynchronous();
+		if (!TestNotNull(*FString::Printf(TEXT("%s soft class loads"), Expected.ScreenTag), ScreenClass)) continue;
+		TestTrue(*FString::Printf(TEXT("%s inherits the frontend input contract"), Expected.ScreenTag),
+			ScreenClass->IsChildOf(URpgFrontendScreenWidget::StaticClass()));
+		TestFalse(*FString::Printf(TEXT("%s is concrete"), Expected.ScreenTag), ScreenClass->HasAnyClassFlags(CLASS_Abstract));
+		const UBlueprint* ScreenBlueprint = Cast<UBlueprint>(ScreenClass->ClassGeneratedBy);
+		if (TestNotNull(*FString::Printf(TEXT("%s is designer-authored"), Expected.ScreenTag), ScreenBlueprint))
+		{
+			TestTrue(*FString::Printf(TEXT("%s is compiled"), Expected.ScreenTag),
+				ScreenBlueprint->Status == BS_UpToDate || ScreenBlueprint->Status == BS_UpToDateWithWarnings);
+		}
+		if (Expected.bPayloadReceiver)
+		{
+			TestTrue(*FString::Printf(TEXT("%s accepts the selected-save payload"), Expected.ScreenTag),
+				ScreenClass->ImplementsInterface(URpgUIScreenPayloadReceiver::StaticClass()));
+		}
+		FrontendScreenClasses.AddUnique(ScreenClass);
+	}
+
+	for (UClass* FrontendScreenClass : FrontendScreenClasses)
 	{
 		const URpgFrontendScreenWidget* Defaults =
 			Cast<URpgFrontendScreenWidget>(
@@ -1251,9 +1370,7 @@ bool FRpgFrontendCommonUICompositionAssetTest::RunTest(
 				: nullptr);
 	}
 
-	int32 NavigationCallCount = 0;
-	int32 UnresolvedNavigationCallCount = 0;
-	int32 NonNativeNavigationCallCount = 0;
+	int32 ReachableLegacyPushCount = 0;
 	for (const TCHAR* ConsumerPath : NavigationConsumerPaths)
 	{
 		const UBlueprint* Consumer =
@@ -1277,6 +1394,7 @@ bool FRpgFrontendCommonUICompositionAssetTest::RunTest(
 
 		TArray<UEdGraph*> Graphs;
 		Consumer->GetAllGraphs(Graphs);
+		bool bUsesScreenRouter = false;
 		for (const UEdGraph* Graph : Graphs)
 		{
 			if (!Graph)
@@ -1284,47 +1402,51 @@ bool FRpgFrontendCommonUICompositionAssetTest::RunTest(
 				continue;
 			}
 
-			for (const UEdGraphNode* Node : Graph->Nodes)
+			// Disconnected editor leftovers cannot execute and do not define a route.
+			for (const UEdGraphNode* Node : FindExecutableNodes(*Graph))
 			{
 				const UK2Node_CallFunction* CallNode =
 					Cast<UK2Node_CallFunction>(Node);
-				if (!CallNode ||
-					!IsNavigationFunction(
-						CallNode->GetFunctionName()))
+				if (!CallNode || !CallNode->IsNodeEnabled())
 				{
 					continue;
 				}
-
-				++NavigationCallCount;
+				if (IsNavigationFunction(CallNode->GetFunctionName()))
+				{
+					++ReachableLegacyPushCount;
+					AddError(FString::Printf(TEXT("%s still executes legacy navigation %s"),
+						ConsumerPath, *CallNode->GetFunctionName().ToString()));
+					continue;
+				}
+				const bool bSubsystemCall = CallNode->GetFunctionName() ==
+					GET_FUNCTION_NAME_CHECKED(URpgUIScreenSubsystem, OpenScreen);
+				const bool bLibraryCall = CallNode->GetFunctionName() ==
+					GET_FUNCTION_NAME_CHECKED(URpgUIScreenBlueprintLibrary, OpenUIScreen);
+				if (!bSubsystemCall && !bLibraryCall)
+					continue;
 				const UFunction* TargetFunction =
 					CallNode->GetTargetFunction();
-				if (!TargetFunction)
+				const bool bResolvedRouter = TargetFunction &&
+					((bSubsystemCall && TargetFunction->GetOuterUClass() == URpgUIScreenSubsystem::StaticClass()) ||
+					 (bLibraryCall && TargetFunction->GetOuterUClass() == URpgUIScreenBlueprintLibrary::StaticClass()));
+				TestTrue(*FString::Printf(TEXT("%s screen-opening call resolves to the local-player router"), ConsumerPath), bResolvedRouter);
+				bUsesScreenRouter |= bResolvedRouter;
+				const UEdGraphPin* TagPin = CallNode->FindPin(TEXT("ScreenTag"), EGPD_Input);
+				if (TagPin && TagPin->LinkedTo.IsEmpty())
 				{
-					++UnresolvedNavigationCallCount;
-				}
-				else if (TargetFunction->GetOuterUClass() !=
-					URpgMainMenuNavigationLibrary::
-						StaticClass())
-				{
-					++NonNativeNavigationCallCount;
+					FGameplayTag RouteTag;
+					RouteTag.FromExportString(TagPin->DefaultValue);
+					FRpgUIScreenRegistryEntry RouteEntry;
+					TestTrue(*FString::Printf(TEXT("%s literal route %s resolves in the registry"), ConsumerPath, *RouteTag.ToString()),
+						RouteTag.IsValid() && Registry->FindScreen(RouteTag, RouteEntry));
 				}
 			}
 		}
+		TestTrue(*FString::Printf(TEXT("%s opens screens through the local-player registry"), ConsumerPath), bUsesScreenRouter);
 	}
-	TestTrue(
-		TEXT(
-			"Existing Main Menu navigation calls were retained"),
-		NavigationCallCount > 0);
 	TestEqual(
-		TEXT(
-			"Every retained Main Menu navigation call resolves"),
-		UnresolvedNavigationCallCount,
-		0);
-	TestEqual(
-		TEXT(
-			"Every retained Main Menu call resolves to native "
-			"local-player routing"),
-		NonNativeNavigationCallCount,
+		TEXT("Main Menu consumers have no reachable legacy stack pushes"),
+		ReachableLegacyPushCount,
 		0);
 
 	const UWorld* BootWorld =
@@ -1425,7 +1547,7 @@ bool FRpgFrontendLocalizedTextBindingsAssetTest::RunTest(
 		}
 	}
 
-	TestSettingsTabLocalDefaults(*this);
+	TestSettingsPageComposition(*this);
 
 	return true;
 }
