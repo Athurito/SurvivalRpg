@@ -364,7 +364,7 @@ of the same stock, so it saves work without adding yield.
 | HARV-02 | `URpgGameplayAbility_Harvest` base, shared targeting query, local `URpgHarvestTargetingComponent` preview read model | Merged: [#179](https://github.com/Athurito/SurvivalRpg/pull/179) |
 | HARV-03 | M0 pickaxe content: tool item, equipment and abilities, iron vein, indicator presentation, `Lvl_HarvestPickaxe` test map | Merged: [#180](https://github.com/Athurito/SurvivalRpg/pull/180) |
 | HARV-04 | M1 Rift Grip: hold to aim, Mining 2 gate, cooldown, Q/E/R ability-set defaults, area indicators; replaces Stoneburst | Merged: [#181](https://github.com/Athurito/SurvivalRpg/pull/181) |
-| HARV-05 | M1 weak-point crit: bonus sections from a readable weak point | In review |
+| HARV-05 | M1 weak-point crit: bonus sections from a readable weak point | In review: [#183](https://github.com/Athurito/SurvivalRpg/pull/183) |
 | HARV-06 | PCG resource bridge: harvestable PCG instances with sparse state and a measured budget | Planned, before M2 |
 | HARV-07 | M2 axe and Death Wave area harvest, aggregated delivery, protected objects | Planned |
 | HARV-08 | M3 grave swarm with separate beneficiary and physical harvester | Planned |
