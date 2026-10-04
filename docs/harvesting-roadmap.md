@@ -285,6 +285,12 @@ All assets live in `GF_Harvesting_Magic` and are authored through Unreal MCP.
     clients never saw a picked-up pickaxe. It replicates now. Only the server
     spawns equipment actors, so `URpgEquipmentDefinition` data validation now
     rejects `ActorsToSpawn` classes that do not replicate.
+  - Clients showed no Q/E/R icons. The HUD binds the weapon ability view
+    model when it is constructed, which on a client can happen before the
+    PlayerState and its ability system replicate. The view model now adopts
+    the controller's ability system once it exists. It also refreshes when
+    replicated ability specs arrive, because a slot's ability id can arrive
+    before the spec it names.
   - Verified for the client and the host: pickup and equip, the primary
     indicator, the pickaxe strike with replicated stock and ore, the swing
     montage seen by the other player, the "Mining 2 required" toast, and Rift

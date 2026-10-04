@@ -1549,6 +1549,7 @@ void URpgAbilitySystemComponent::BeginPlay()
 void URpgAbilitySystemComponent::OnRep_ActivateAbilities()
 {
 	Super::OnRep_ActivateAbilities();
+	AbilitySpecsReplicatedDelegate.Broadcast();
 	
 	if (!OwnerPlayerState) return;
 	

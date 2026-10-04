@@ -10,6 +10,7 @@
 #include "RpgWeaponAbilityLoadoutViewModel.generated.h"
 
 class APlayerController;
+class ARpgPlayerController;
 class URpgAbilitySystemComponent;
 
 /** Broadcast when the weapon ability slot list changes. */
@@ -71,9 +72,14 @@ private:
 	void StartCooldownRefreshTimer();
 	void StopCooldownRefreshTimer();
 	void HandleWeaponAbilityLoadoutChanged(FGameplayTag Channel, const FRpgWeaponAbilityLoadoutChangedMessage& Message);
+	void HandleAbilitySpecsReplicated();
+	void SubscribeToAbilitySystem();
+	bool TryBindLateAbilitySystem();
 
 	TWeakObjectPtr<URpgWeaponAbilityLoadoutComponent> ObservedLoadout;
 	TWeakObjectPtr<URpgAbilitySystemComponent> ObservedAbilitySystem;
+	TWeakObjectPtr<const ARpgPlayerController> ObservedPlayerController;
 	FGameplayMessageListenerHandle SlotsChangedHandle;
+	FDelegateHandle AbilitySpecsReplicatedHandle;
 	FTimerHandle CooldownRefreshTimerHandle;
 };

@@ -192,6 +192,13 @@ public:
 	UFUNCTION(BlueprintPure, Category="RPG|AbilitySet")
 	const URpgGameplayAbility* FindAbilityCDOByAbilityId(FGameplayTag AbilityIdTag) const;
 
+	/**
+	 * Fires on clients after replicated ability specs changed: granted, removed, or with updated tags. Specs replicate
+	 * independently of controller-owned bindings, so read models that resolve abilities by id refresh from it.
+	 * Cosmetic only; it carries no authority.
+	 */
+	FSimpleMulticastDelegate& OnAbilitySpecsReplicated() { return AbilitySpecsReplicatedDelegate; }
+
 	/** Reads the longest active cooldown matching the ability's cooldown tags. Output is seconds and is UI-read-only. */
 	UFUNCTION(BlueprintPure, Category="RPG|AbilitySet")
 	bool GetCooldownTimeRemainingAndDurationForAbilityId(FGameplayTag AbilityIdTag, float& OutRemainingTime, float& OutDuration) const;
@@ -232,6 +239,8 @@ protected:
 	TArray<FGameplayAbilitySpec> LastActiveAbilities;
 	
 private:
+	FSimpleMulticastDelegate AbilitySpecsReplicatedDelegate;
+
 	void ResetSprintMovement();
 	TWeakObjectPtr<UGameplayAbility> SprintMovementAbility;
 	TWeakObjectPtr<AActor> SprintMovementAvatar;

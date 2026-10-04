@@ -11,6 +11,8 @@
 #include "SurvivalRpg/Equipment/RpgWeaponAbilityLoadoutComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgWeaponAbilityLoadoutViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgWeaponAbilitySlotViewModel.h"
 
 namespace RpgWeaponAbilityLoadoutTests
 {
@@ -85,10 +87,13 @@ namespace RpgWeaponAbilityLoadoutTests
 		return Test.TestTrue(TEXT("Ability actor info is initialized"), OutFixture.AbilitySystem->AbilityActorInfo.IsValid());
 	}
 
-	URpgAbilitySet* MakeAbilitySet(const FGameplayTag InputTag, const FGameplayTag AbilityId)
+	URpgAbilitySet* MakeAbilitySet(
+		const FGameplayTag InputTag,
+		const FGameplayTag AbilityId,
+		const TSubclassOf<URpgGameplayAbility> AbilityClass = URpgInventoryAutomationTestUseAbility::StaticClass())
 	{
 		URpgAbilitySet* AbilitySet = NewObject<URpgAbilitySet>(GetTransientPackage(), NAME_None, RF_Transient);
-		AbilitySet->AddGrantedGameplayAbility(URpgInventoryAutomationTestUseAbility::StaticClass(), 1, InputTag, AbilityId);
+		AbilitySet->AddGrantedGameplayAbility(AbilityClass, 1, InputTag, AbilityId);
 		return AbilitySet;
 	}
 
@@ -253,6 +258,121 @@ bool FRpgWeaponAbilityLoadoutConflictingDefaultsTest::RunTest(const FString& Par
 	Fixture.Loadout->ApplyAbilityBindings(*Fixture.AbilitySystem);
 	TestEqual(TEXT("Removing the conflict restores the remaining default"), Fixture.Loadout->GetSlot(1).AbilityIdTag, FirstId);
 	TestTrue(TEXT("The remaining default is available"), Fixture.Loadout->GetSlot(1).bAvailable);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgWeaponAbilityLoadoutViewModelLateSpecTest,
+	"SurvivalRpg.Equipment.WeaponAbilityLoadout.ViewModelResolvesLateSpecs",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgWeaponAbilityLoadoutViewModelLateSpecTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgWeaponAbilityLoadoutTests;
+
+	FScopedTestWorld TestWorld;
+	FFixture Fixture;
+	if (!MakeFixture(*this, TestWorld.GetWorld(), Fixture))
+	{
+		return false;
+	}
+
+	const FGameplayTag AbilityId = FGameplayTag::RequestGameplayTag(TEXT("Ability.Test"));
+	URpgAbilitySet* AbilitySet = MakeAbilitySet(
+		RpgGameplayTags::InputTag_Weapon_Ability_1,
+		AbilityId,
+		URpgInventoryAutomationTestPresentedAbility::StaticClass());
+	FRpgAbilitySet_GrantedHandles Granted;
+	AbilitySet->GiveToAbilitySystem(Fixture.AbilitySystem, &Granted);
+	Fixture.Loadout->ApplyAbilityBindings(*Fixture.AbilitySystem);
+
+	// A client can receive the controller's slot before the PlayerState's spec: keep the slot, drop the spec.
+	Granted.TakeFromAbilitySystem(Fixture.AbilitySystem);
+	TestTrue(TEXT("The slot still names the ability"), Fixture.Loadout->GetSlot(0).AbilityIdTag == AbilityId);
+
+	URpgWeaponAbilityLoadoutViewModel* ViewModel = NewObject<URpgWeaponAbilityLoadoutViewModel>(GetTransientPackage(), NAME_None, RF_Transient);
+	ViewModel->BindWeaponAbilityLoadoutWithAbilitySystem(Fixture.Loadout, Fixture.AbilitySystem);
+	const URpgWeaponAbilitySlotViewModel* SlotViewModel = ViewModel->GetSlotAtIndex(0);
+	if (!TestNotNull(TEXT("The view model exposes slot 1"), SlotViewModel))
+	{
+		return false;
+	}
+	TestEqual(TEXT("Slot 1 shows the ability id"), SlotViewModel->GetAbilityIdTag(), AbilityId);
+	TestTrue(TEXT("Without the spec the icon is unknown"), SlotViewModel->GetIcon().IsNull());
+
+	// The spec arrives later; replication reports it through the ability system.
+	FRpgAbilitySet_GrantedHandles Arrived;
+	AbilitySet->GiveToAbilitySystem(Fixture.AbilitySystem, &Arrived);
+	Fixture.AbilitySystem->OnAbilitySpecsReplicated().Broadcast();
+	SlotViewModel = ViewModel->GetSlotAtIndex(0);
+	const URpgGameplayAbility* AbilityDefaults = GetDefault<URpgInventoryAutomationTestPresentedAbility>();
+	TestTrue(
+		TEXT("The icon resolves once the spec is replicated"),
+		SlotViewModel && SlotViewModel->GetIcon() == AbilityDefaults->GetAbilityIcon() && !SlotViewModel->GetIcon().IsNull());
+	TestTrue(
+		TEXT("The display name resolves once the spec is replicated"),
+		SlotViewModel && SlotViewModel->GetDisplayName().EqualTo(AbilityDefaults->GetAbilityDisplayName()));
+
+	ViewModel->UnbindWeaponAbilityLoadout();
+	Fixture.AbilitySystem->OnAbilitySpecsReplicated().Broadcast();
+	TestFalse(
+		TEXT("A replication signal after unbinding leaves the unbound slots empty"),
+		ViewModel->GetSlotAtIndex(0) && ViewModel->GetSlotAtIndex(0)->GetAbilityIdTag().IsValid());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgWeaponAbilityLoadoutViewModelLatePlayerStateTest,
+	"SurvivalRpg.Equipment.WeaponAbilityLoadout.ViewModelBindsLatePlayerState",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgWeaponAbilityLoadoutViewModelLatePlayerStateTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgWeaponAbilityLoadoutTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	ARpgInventoryAutomationTestPlayerController* PlayerController =
+		World ? World->SpawnActor<ARpgInventoryAutomationTestPlayerController>() : nullptr;
+	URpgWeaponAbilityLoadoutComponent* Loadout = PlayerController ? PlayerController->GetWeaponAbilityLoadoutComponent() : nullptr;
+	if (!TestNotNull(TEXT("The controller owns a weapon ability loadout"), Loadout))
+	{
+		return false;
+	}
+
+	// A client HUD binds while its PlayerState has not replicated yet.
+	URpgWeaponAbilityLoadoutViewModel* ViewModel = NewObject<URpgWeaponAbilityLoadoutViewModel>(GetTransientPackage(), NAME_None, RF_Transient);
+	ViewModel->BindPlayerController(PlayerController);
+	TestNull(TEXT("No ability system exists before the PlayerState"), PlayerController->GetRpgAbilitySystemComponent());
+
+	ARpgInventoryAutomationTestPlayerState* PlayerState = World->SpawnActor<ARpgInventoryAutomationTestPlayerState>();
+	URpgAbilitySystemComponent* AbilitySystem = PlayerState ? PlayerState->GetRpgAbilitySystemComponent() : nullptr;
+	if (!TestNotNull(TEXT("The PlayerState owns an ability system"), AbilitySystem))
+	{
+		return false;
+	}
+	PlayerController->PlayerState = PlayerState;
+	AbilitySystem->InitAbilityActorInfo(PlayerState, PlayerState);
+	AbilitySystem->SetForceGrantAuthorityForTests(true);
+
+	const FGameplayTag AbilityId = FGameplayTag::RequestGameplayTag(TEXT("Ability.Test"));
+	URpgAbilitySet* AbilitySet = MakeAbilitySet(
+		RpgGameplayTags::InputTag_Weapon_Ability_1,
+		AbilityId,
+		URpgInventoryAutomationTestPresentedAbility::StaticClass());
+	FRpgAbilitySet_GrantedHandles Granted;
+	AbilitySet->GiveToAbilitySystem(AbilitySystem, &Granted);
+	Loadout->ApplyAbilityBindings(*AbilitySystem);
+
+	const URpgWeaponAbilitySlotViewModel* SlotViewModel = ViewModel->GetSlotAtIndex(0);
+	const URpgGameplayAbility* AbilityDefaults = GetDefault<URpgInventoryAutomationTestPresentedAbility>();
+	TestTrue(TEXT("The slot change reaches the view model"), SlotViewModel && SlotViewModel->GetAbilityIdTag() == AbilityId);
+	TestTrue(
+		TEXT("The view model adopts the late ability system and resolves the icon"),
+		SlotViewModel && !SlotViewModel->GetIcon().IsNull() && SlotViewModel->GetIcon() == AbilityDefaults->GetAbilityIcon());
+
+	ViewModel->UnbindWeaponAbilityLoadout();
+	Granted.TakeFromAbilitySystem(AbilitySystem);
 	return true;
 }
 
