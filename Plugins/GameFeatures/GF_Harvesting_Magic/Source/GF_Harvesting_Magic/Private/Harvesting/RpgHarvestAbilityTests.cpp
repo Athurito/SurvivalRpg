@@ -22,6 +22,7 @@
 
 #include "Animation/AnimMontage.h"
 #include "Components/BoxComponent.h"
+#include "Engine/CollisionProfile.h"
 #include "Engine/DecalActor.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
@@ -779,6 +780,67 @@ bool FRpgHarvestAbilityAimedAreaIndicatorTest::RunTest(const FString& Parameters
 	TestEqual(TEXT("Releasing the aim removes the area indicators"), IndicatorManager->GetIndicators().Num(), 0);
 	TestTrue(TEXT("Releasing the aim hides the area marker"), AreaMarker && AreaMarker->IsHidden());
 	TestTrue(TEXT("The hidden marker is kept for the next aim"), Targeting->GetAreaMarkerForTest() == AreaMarker);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestAbilityAreaGroundFallbackTest,
+	"SurvivalRpg.Harvesting.Ability.AreaAimFallsBackToGround",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestAbilityAreaGroundFallbackTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestAbilityTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+
+	// Open ground below a level view ray: the ray itself hits nothing.
+	AActor* Floor = World->SpawnActor<AActor>();
+	UBoxComponent* FloorBox = Floor ? NewObject<UBoxComponent>(Floor) : nullptr;
+	if (!TestNotNull(TEXT("Floor exists"), FloorBox))
+	{
+		return false;
+	}
+	FloorBox->InitBoxExtent(FVector(5000.0, 5000.0, 50.0));
+	FloorBox->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
+	Floor->SetRootComponent(FloorBox);
+	FloorBox->RegisterComponent();
+	Floor->SetActorLocation(FVector(0.0, 0.0, -150.0));
+	ARpgHarvestAutomationCollidableNodeActor* Node =
+		SpawnNode(World, FVector(600.0, 0.0, -60.0), MakeProfile(World, 4));
+	const FGrantedAbility Area = GrantAbility(Harvester.AbilitySystem);
+	if (!TestNotNull(TEXT("Ground node exists"), Node) || !TestNotNull(TEXT("Area ability exists"), Area.Instance))
+	{
+		return false;
+	}
+
+	FRpgHarvestTargetingParams Params;
+	Params.Shape = ERpgHarvestTargetShape::AreaAtAimPoint;
+	Params.MaxAimDistance = 1000.0f;
+	Params.MaxReachFromAvatar = 700.0f;
+	Params.AreaRadius = 300.0f;
+	Params.MaxTargets = 3;
+	Area.Instance->ConfigureTargeting(Params);
+	const FRpgHarvestPreview Preview = Evaluate(Harvester.AbilitySystem, Area);
+	const FVector AvatarLocation = Harvester.Pawn->GetActorLocation();
+	TestTrue(TEXT("An unaimed area still reports its area"), Preview.bHasArea);
+	TestTrue(TEXT("The aim point drops onto the ground"), FMath::IsNearlyEqual(Preview.AimPoint.Z, -100.0, 2.0));
+	TestTrue(
+		TEXT("The dropped aim point stays within reach"),
+		FVector::Dist(AvatarLocation, Preview.AimPoint) <= Params.MaxReachFromAvatar + 1.0);
+	if (!TestEqual(TEXT("The ground area collects the nearby node"), Preview.Targets.Num(), 1))
+	{
+		return false;
+	}
+	TestTrue(TEXT("The ground area target is the node"), Preview.Targets[0].Receiver.Get() == Node->HarvestableNode);
+	TestTrue(TEXT("The ground area target is in reach"), Preview.Targets[0].bInReach);
 	return true;
 }
 

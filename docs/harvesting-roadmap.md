@@ -28,7 +28,7 @@ harvesting abilities into Blueprint content belongs to issue
 | --- | --- |
 | Stoneburst | Replaced by Rift Grip (`GA_Harvest_RiftGrip`), the pickaxe's awakened multi-section ability. HARV-04 removed the native leaf, its tag and its PlayerState grant. |
 | Manual harvest | Profiles with `RequiredToolTag` offer no interaction harvest. Bushes keep the interaction harvest. |
-| First unlock | Rift Grip requires `Skill.Gathering.Mining` level 2. This reuses saved, replicated trade-skill progression. |
+| First unlock | Rift Grip requires `Skill.Gathering.Mining` level 2. This reuses saved, replicated trade-skill progression. Later, the player picks such powers in a talent tree whose nodes are gated by the skill level (HARV-09). |
 | Costs | Rift Grip uses only a short cooldown GameplayEffect on the character, with no mana. Re-equipping cannot reset it. |
 | Resource representation | Prototype resources are actors with `URpgHarvestableComponent`. Open-world trees and rocks come from PCG; the PCG bridge in HARV-06 makes those instances harvestable. `URpgHarvestableInstancedMeshComponent` remains the legacy path for bushes and the sandbox. |
 | Indicators | With a tool equipped, the primary-swing target is always highlighted. Special abilities show their area and every target while the input is held, and trigger on release. |
@@ -219,9 +219,12 @@ All assets live in `GF_Harvesting_Magic` and are authored through Unreal MCP.
   - The player holds Q to aim at an area and releases to harvest.
   - It takes 3 sections from up to 3 ore veins within 300 cm of the aim point.
     The aim reaches 1500 cm from the camera; the aim point must be within
-    1200 cm of the pawn.
-  - It needs `Skill.Gathering.Mining` level 2. Below that, activation fails with
-    "Mining 2 required".
+    800 cm of the pawn.
+  - When the view ray hits nothing, as with a level camera over open ground,
+    the aim point is the ground below the ray end, kept within reach. The ring
+    follows the camera pitch.
+  - It needs `Skill.Gathering.Mining` level 2. Below that, activation fails and
+    the HUD shows "Mining 2 required".
   - It costs only `GE_Cooldown_Harvest_RiftGrip`: 4 s, granting
     `Cooldown.Harvesting.RiftGrip` on the character. Re-equipping cannot reset
     it.
@@ -252,6 +255,13 @@ All assets live in `GF_Harvesting_Magic` and are authored through Unreal MCP.
   - `BP_HarvestAreaMarker` shows the area with the decal material
     `M_HarvestAreaRing`. `URpgHarvestTargetingComponent::AreaMarkerClass`
     spawns it locally, scales it to the area radius and hides it on release.
+- **Ability failure toast (core HUD):** abilities already map failure tags to
+  text in `FailureTagToUserFacingMessages`, but nothing displayed them.
+  - `URpgAbilityFailureToastWidget` listens for
+    `Ability.UserFacingSimpleActivateFail.Message` of its owning player.
+  - `CUI_AbilityFailureToast` presents the reason for 2 s.
+  - It sits in the new `UI.HUD.Slot.Notification` extension point of
+    `CUI_RpgHudLayout` and is registered by every experience.
 - **Removed:**
   - `URpgGameplayAbility_Stoneburst` and the native tag
     `Ability.Harvesting.Stoneburst`.
@@ -283,7 +293,7 @@ All assets live in `GF_Harvesting_Magic` and are authored through Unreal MCP.
 | HARV-06 | PCG resource bridge: harvestable PCG instances with sparse state and a measured budget | Planned, before M2 |
 | HARV-07 | M2 axe and Death Wave area harvest, aggregated delivery, protected objects | Planned |
 | HARV-08 | M3 grave swarm with separate beneficiary and physical harvester | Planned |
-| HARV-09 | M4 talents, resource parity across combat styles, Ash Pact conversion | Planned |
+| HARV-09 | M4 talents (powers such as Rift Grip chosen in a level-gated talent tree), resource parity across combat styles, Ash Pact conversion | Planned |
 | HARV-10 | M5 resource persistence with stable IDs, portal variant, co-op load | Planned |
 
 ## Open questions

@@ -12,6 +12,12 @@
 
 namespace RpgHarvestTargeting
 {
+	/** Height above the clamped ray end at which the ground probe of an unaimed area starts, in centimeters. */
+	constexpr double AreaGroundProbeHeight = 200.0;
+
+	/** Depth below the clamped ray end that the ground probe of an unaimed area searches, in centimeters. */
+	constexpr double AreaGroundProbeDepth = 2000.0;
+
 	struct FAreaCandidate
 	{
 		UObject* Receiver = nullptr;
@@ -178,12 +184,32 @@ FVector FRpgHarvestTargeting::SelectAndEvaluate(
 	}
 
 	FVector AimPoint = TraceEnd;
+	bool bAimHit = false;
 	for (const FHitResult& Hit : Hits)
 	{
 		if (Hit.bBlockingHit)
 		{
 			AimPoint = Hit.ImpactPoint;
+			bAimHit = true;
 			break;
+		}
+	}
+	if (!bAimHit)
+	{
+		// A level view ray rarely meets open ground: keep the ray end within reach and drop it onto the ground.
+		const FVector FromAvatar = TraceEnd - AvatarLocation;
+		const FVector ProbeOrigin = AvatarLocation + FromAvatar.GetClampedToMaxSize(FMath::Max(0.0f, Params.MaxReachFromAvatar));
+		FHitResult GroundHit;
+		if (World.LineTraceSingleByChannel(
+				GroundHit,
+				ProbeOrigin + FVector(0.0, 0.0, AreaGroundProbeHeight),
+				ProbeOrigin - FVector(0.0, 0.0, AreaGroundProbeDepth),
+				Params.TraceChannel,
+				QueryParams))
+		{
+			// The drop to the ground can add a little distance; keep the area just inside the reach.
+			AimPoint = AvatarLocation +
+				(GroundHit.ImpactPoint - AvatarLocation).GetClampedToMaxSize(FMath::Max(0.0f, Params.MaxReachFromAvatar - 1.0f));
 		}
 	}
 	const bool bAimInReach = FVector::DistSquared(AvatarLocation, AimPoint) <= MaxReachSquared;
