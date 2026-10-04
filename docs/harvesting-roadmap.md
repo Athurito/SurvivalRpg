@@ -140,7 +140,11 @@ stock rules are kept separate.
   equipment's item (`URpgInventoryFragment_HarvestingTool`). Input-bound tool
   abilities only activate while their equipment holds the matching hand role.
 - **Commit timing:** the server commits exactly once, at the time of the single
-  `RPG Gameplay Event` notify that sends the commit tag. The time is resolved
+  `RPG Gameplay Event` notify that sends the commit tag. Since HARV-04 it
+  selects targets from the aim it captured when execution started: the press
+  of a swing, or the release of a held aim. Turning the camera during the
+  swing no longer changes what is hit; stock and reach are still evaluated at
+  commit time. The time is resolved
   from the montage data, not from server-side notify delivery. Ending or
   cancelling the ability before that moment, for example by switching tools or
   by an interrupted montage, yields nothing.

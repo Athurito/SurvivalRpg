@@ -22,6 +22,7 @@
 
 #include "Animation/AnimMontage.h"
 #include "Components/BoxComponent.h"
+#include "Components/SceneComponent.h"
 #include "Engine/CollisionProfile.h"
 #include "Engine/DecalActor.h"
 #include "Engine/World.h"
@@ -841,6 +842,74 @@ bool FRpgHarvestAbilityAreaGroundFallbackTest::RunTest(const FString& Parameters
 	}
 	TestTrue(TEXT("The ground area target is the node"), Preview.Targets[0].Receiver.Get() == Node->HarvestableNode);
 	TestTrue(TEXT("The ground area target is in reach"), Preview.Targets[0].bInReach);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestAbilityCommitAimTest,
+	"SurvivalRpg.Harvesting.Ability.CommitUsesAimAtExecution",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestAbilityCommitAimTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestAbilityTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	ARpgHarvestAutomationCollidableNodeActor* Node =
+		SpawnNode(World, FVector(150.0, 0.0, Harvester.Pawn->BaseEyeHeight), MakeProfile(World, 4));
+	const FGrantedAbility Granted = GrantAbility(Harvester.AbilitySystem);
+	if (!TestNotNull(TEXT("Aim node exists"), Node) || !TestNotNull(TEXT("Aim ability instance exists"), Granted.Instance))
+	{
+		return false;
+	}
+	Granted.Instance->ConfigureCommitDelay(0.3f);
+	TestWorld.PrimeTimerManager();
+
+	// The bare test pawn has no root; give it one so turning it turns its eyes view.
+	USceneComponent* PawnRoot = NewObject<USceneComponent>(Harvester.Pawn);
+	Harvester.Pawn->SetRootComponent(PawnRoot);
+	PawnRoot->RegisterComponent();
+	const FRotator AimRotation = Harvester.Pawn->GetActorRotation();
+	const FRotator AwayRotation = AimRotation + FRotator(0.0, 180.0, 0.0);
+
+	// A swing commits on what was aimed at when it started, even if the view turns before the commit time.
+	TestTrue(TEXT("The swing activates while aiming at the node"), Harvester.AbilitySystem->TryActivateAbility(Granted.Handle));
+	Harvester.Pawn->SetActorRotation(AwayRotation);
+	TestWorld.AdvanceTimers(0.4f);
+	TestEqual(TEXT("The swing harvests the node it started on"), Node->HarvestableNode->GetRemainingSections(), 3);
+
+	// A held aim commits on what was aimed at when the input was released.
+	Harvester.Pawn->SetActorRotation(AimRotation);
+	Granted.Instance->ConfigureAimWhileInputHeld(true);
+	FGameplayAbilitySpec* Spec = Harvester.AbilitySystem->FindAbilitySpecFromHandle(Granted.Handle);
+	if (!TestNotNull(TEXT("Aim ability spec exists"), Spec))
+	{
+		return false;
+	}
+	Spec->InputPressed = true;
+	TestTrue(TEXT("The held aim activates"), Harvester.AbilitySystem->TryActivateAbility(Granted.Handle));
+	static_cast<UAbilitySystemComponent*>(Harvester.AbilitySystem)->AbilitySpecInputReleased(*Spec);
+	Harvester.Pawn->SetActorRotation(AwayRotation);
+	TestWorld.AdvanceTimers(0.4f);
+	TestEqual(TEXT("The released aim harvests the node it was aimed at"), Node->HarvestableNode->GetRemainingSections(), 2);
+
+	// Turning away before the release aims elsewhere: the commit follows the aim at release.
+	Spec = Harvester.AbilitySystem->FindAbilitySpecFromHandle(Granted.Handle);
+	Spec->InputPressed = true;
+	Harvester.Pawn->SetActorRotation(AimRotation);
+	TestTrue(TEXT("The held aim activates again"), Harvester.AbilitySystem->TryActivateAbility(Granted.Handle));
+	Harvester.Pawn->SetActorRotation(AwayRotation);
+	static_cast<UAbilitySystemComponent*>(Harvester.AbilitySystem)->AbilitySpecInputReleased(*Spec);
+	Harvester.Pawn->SetActorRotation(AimRotation);
+	TestWorld.AdvanceTimers(0.4f);
+	TestEqual(TEXT("An aim released while looking away harvests nothing"), Node->HarvestableNode->GetRemainingSections(), 2);
 	return true;
 }
 

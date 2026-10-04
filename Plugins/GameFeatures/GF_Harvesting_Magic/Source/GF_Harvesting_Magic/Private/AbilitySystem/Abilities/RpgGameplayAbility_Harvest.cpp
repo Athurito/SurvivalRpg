@@ -111,6 +111,7 @@ void URpgGameplayAbility_Harvest::EndAbility(
 		World->GetTimerManager().ClearTimer(CommitTimerHandle);
 	}
 	bCommitPending = false;
+	bHasCommitView = false;
 	SetLocalAimPreview(false);
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
@@ -134,6 +135,10 @@ void URpgGameplayAbility_Harvest::HandleMontageInterrupted()
 
 void URpgGameplayAbility_Harvest::BeginHarvestExecution()
 {
+	// What the player aimed at when committing to the harvest is what the authoritative commit selects from,
+	// even though the commit happens later in the swing and the aim camera blends back right away.
+	bHasCommitView = HasAuthority(&CurrentActivationInfo) && CurrentActorInfo &&
+		GetViewPoint(*CurrentActorInfo, CommitViewLocation, CommitViewRotation);
 	SetLocalAimPreview(false);
 	ClearCameraMode();
 	if (!CommitAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo))
@@ -210,9 +215,17 @@ void URpgGameplayAbility_Harvest::ExecuteAuthorityCommit()
 	}
 	bCommitPending = false;
 
-	// Targets are selected again at the moment of extraction with the same query the client previewed.
+	// Targets are selected again at the moment of extraction with the same query the client previewed, from the
+	// aim captured when execution started; stock and reach are evaluated now.
 	FRpgHarvestPreview Selection;
-	EvaluateTargets(*Spec, *CurrentActorInfo, Selection);
+	if (bHasCommitView)
+	{
+		EvaluateTargetsFromView(*Spec, *CurrentActorInfo, CommitViewLocation, CommitViewRotation, Selection);
+	}
+	else
+	{
+		EvaluateTargets(*Spec, *CurrentActorInfo, Selection);
+	}
 	FRpgHarvestRequest RequestTemplate;
 	BuildRequestTemplate(*Spec, *CurrentActorInfo, RequestTemplate);
 
@@ -262,6 +275,23 @@ void URpgGameplayAbility_Harvest::EvaluateTargets(
 	const FGameplayAbilityActorInfo& ActorInfo,
 	FRpgHarvestPreview& OutPreview) const
 {
+	FVector ViewLocation;
+	FRotator ViewRotation;
+	if (!GetViewPoint(ActorInfo, ViewLocation, ViewRotation))
+	{
+		OutPreview = FRpgHarvestPreview();
+		return;
+	}
+	EvaluateTargetsFromView(Spec, ActorInfo, ViewLocation, ViewRotation, OutPreview);
+}
+
+void URpgGameplayAbility_Harvest::EvaluateTargetsFromView(
+	const FGameplayAbilitySpec& Spec,
+	const FGameplayAbilityActorInfo& ActorInfo,
+	const FVector& ViewLocation,
+	const FRotator& ViewRotation,
+	FRpgHarvestPreview& OutPreview) const
+{
 	OutPreview = FRpgHarvestPreview();
 	OutPreview.AbilityId = HarvestAbilityId;
 	OutPreview.bHasArea = Targeting.Shape == ERpgHarvestTargetShape::AreaAtAimPoint;
@@ -269,9 +299,7 @@ void URpgGameplayAbility_Harvest::EvaluateTargets(
 
 	const AActor* Avatar = ActorInfo.AvatarActor.Get();
 	const UWorld* World = Avatar ? Avatar->GetWorld() : nullptr;
-	FVector ViewLocation;
-	FRotator ViewRotation;
-	if (!World || !GetViewPoint(ActorInfo, ViewLocation, ViewRotation))
+	if (!World)
 	{
 		return;
 	}
