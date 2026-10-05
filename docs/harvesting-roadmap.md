@@ -798,7 +798,7 @@ runs a slow swarm on a dedicated server with clients:
 | HARV-05 | M1 weak-point crit: bonus sections from a readable weak point | Merged: [#183](https://github.com/Athurito/SurvivalRpg/pull/183) |
 | HARV-06 | PCG resource bridge: harvestable PCG instances with sparse state and a measured budget | Merged: [#184](https://github.com/Athurito/SurvivalRpg/pull/184) |
 | HARV-07 | M2 axe and Death Wave area harvest, aggregated delivery, protected objects, PCG trees | Merged: [#185](https://github.com/Athurito/SurvivalRpg/pull/185) |
-| HARV-08 | M3 grave swarm with separate beneficiary and physical harvester | In review |
+| HARV-08 | M3 grave swarm with separate beneficiary and physical harvester | In review: [#186](https://github.com/Athurito/SurvivalRpg/pull/186) |
 | HARV-09 | M4 talents (powers such as Rift Grip chosen in a level-gated talent tree), resource parity across combat styles, Ash Pact conversion | Planned |
 | HARV-10 | M5 resource persistence with stable IDs, portal variant, co-op load | Planned |
 
