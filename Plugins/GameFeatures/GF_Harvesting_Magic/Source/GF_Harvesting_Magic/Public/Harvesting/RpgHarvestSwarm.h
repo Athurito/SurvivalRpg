@@ -19,8 +19,8 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestSwarmParams
 	GENERATED_BODY()
 
 	/**
-	 * Creatures summoned per activation, 1 to 16. Each takes the ability's SectionsPerTarget sections from one resource.
-	 * The creature count also caps how many resources the area preview selects.
+	 * Creatures summoned per activation, 1 to 16. Every strike of a creature takes the ability's SectionsPerTarget
+	 * sections; the creatures keep working until the selected resources are empty.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Swarm", meta = (ClampMin = "1", ClampMax = "16", UIMin = "1", UIMax = "16"))
 	int32 CreatureCount = 6;
@@ -38,18 +38,25 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestSwarmParams
 	float LaunchIntervalSeconds = 0.12f;
 
 	/**
-	 * How often one creature may head for another resource when its own was emptied or removed before it arrived.
-	 * A creature that finds nothing left to take dissipates.
+	 * Seconds a creature rests at a resource after a strike before it strikes again or leaves for the next resource.
+	 * Longer rests make the swarm work through its area more slowly.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Swarm", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "3.0", Units = "s"))
+	float StrikeIntervalSeconds = 0.6f;
+
+	/**
+	 * How often one creature may arrive at a resource that was emptied, removed or protected meanwhile before it gives
+	 * up. After each such miss it heads for the nearest selected resource with stock no other creature reserved.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Swarm", meta = (ClampMin = "0", ClampMax = "8", UIMin = "0", UIMax = "4"))
 	int32 MaxReassignments = 2;
 
-	/** Seconds after the summon at which every creature that has not struck yet dissipates. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Swarm", meta = (ClampMin = "0.5", UIMin = "2.0", UIMax = "20.0", Units = "s"))
-	float MaxLifetimeSeconds = 8.0f;
+	/** Seconds after the summon at which every creature that has not finished dissipates. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Swarm", meta = (ClampMin = "0.5", UIMin = "2.0", UIMax = "30.0", Units = "s"))
+	float MaxLifetimeSeconds = 20.0f;
 
 	/**
-	 * When true, creatures only take resources they can see from the summon point. Walls, buildings and terrain block
+	 * When true, the swarm only takes resources it can see from the summon point. Walls, buildings and terrain block
 	 * them; other resources and pawns do not. Blocked resources are previewed as out of reach.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Swarm")
@@ -63,11 +70,11 @@ enum class ERpgHarvestSwarmCreatureState : uint8
 	/** Rising at its start without a resource; it looks for one when it would leave and dissipates if none is left. */
 	Searching,
 
-	/** On its way to a reserved resource; it harvests the resource when it arrives. */
+	/** On its way to a reserved resource, or resting there before its next strike; it harvests when it arrives. */
 	Flying,
 
-	/** Struck its resource and harvested it. Finished. */
-	Struck,
+	/** Finished after harvesting at least once: nothing it may take is left. */
+	Harvested,
 
 	/** Finished without harvesting: nothing left to take, the summoner died, or the swarm expired. */
 	Dissipated
@@ -79,7 +86,7 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestSwarmCreature
 {
 	GENERATED_BODY()
 
-	/** World-space start of the current leg in centimeters. */
+	/** World-space start of the current leg in centimeters: the summon ring, or the resource it last struck. */
 	UPROPERTY(BlueprintReadOnly, Category = "Swarm")
 	FVector_NetQuantize10 From = FVector::ZeroVector;
 
@@ -99,24 +106,28 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestSwarmCreature
 	UPROPERTY(BlueprintReadOnly, Category = "Swarm")
 	ERpgHarvestSwarmCreatureState State = ERpgHarvestSwarmCreatureState::Searching;
 
-	/** Number of the current leg; it grows each time the creature heads for another resource. */
+	/** Number of the current leg; it grows each time the creature heads for a resource again. */
 	UPROPERTY(BlueprintReadOnly, Category = "Swarm")
 	uint8 Leg = 0;
 
-	/** Stock sections the creature harvested; valid once it struck. */
+	/** Successful strikes so far. */
+	UPROPERTY(BlueprintReadOnly, Category = "Swarm")
+	uint8 Strikes = 0;
+
+	/** Stock sections the creature harvested so far, over all its strikes. */
 	UPROPERTY(BlueprintReadOnly, Category = "Swarm")
 	uint8 SectionsTaken = 0;
 
-	/** Returns whether the creature struck or dissipated. */
+	/** Returns whether the creature finished, with or without harvesting. */
 	bool IsFinished() const
 	{
-		return State == ERpgHarvestSwarmCreatureState::Struck || State == ERpgHarvestSwarmCreatureState::Dissipated;
+		return State == ERpgHarvestSwarmCreatureState::Harvested || State == ERpgHarvestSwarmCreatureState::Dissipated;
 	}
 };
 
 /**
- * Stateless distribution of swarm creatures over resources. The ability preview and the authoritative swarm share it,
- * so the sections the preview shows are the sections the swarm reserves.
+ * Stateless helpers for the swarm. The ability preview and the authoritative swarm share them, so both agree on which
+ * resources the swarm takes and how its creatures start.
  */
 struct GF_HARVESTING_MAGIC_API FRpgHarvestSwarmPlanner
 {
@@ -150,16 +161,19 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestSwarmPlanner
 };
 
 /**
- * A short-lived swarm a harvest ability summons at its aim point. Its creatures rise, spread over the resources in
- * the ability's area, and harvest each resource when they arrive, for the summoner. They need no orders.
+ * A short-lived swarm a harvest ability summons at its aim point. Its creatures rise and work through the resources the
+ * ability selected, resource by resource, until none of their stock is left. They harvest for the summoner and need
+ * no orders.
  *
  * The server owns the swarm:
- * - Creatures reserve stock with FRpgHarvestSwarmPlanner, so the swarm never overbooks a resource. Reservations are
- *   not locks: other players keep harvesting, and only the stock left when a creature arrives counts.
- * - A creature commits exactly once through IRpgHarvestableTarget, like any harvest. The player's player state is the
+ * - Creatures start with FRpgHarvestSwarmPlanner's assignment. After every strike a creature rests briefly, then strikes
+ *   the nearest selected resource that still has stock no other creature reserved, so the swarm never overbooks a
+ *   resource. Reservations are not locks: other players keep harvesting, and only the stock left when a creature
+ *   arrives counts.
+ * - Every strike commits exactly once through IRpgHarvestableTarget, like any harvest. The player's player state is the
  *   request's beneficiary (rewards, XP, skill gate) and the swarm is its physical harvester (felling direction).
- * - A creature whose resource was emptied before it arrived heads for another one with unreserved stock in the area,
- *   or dissipates.
+ * - A creature that arrives at a resource emptied, removed or protected meanwhile heads for another selected resource,
+ *   or gives up.
  * - The rewards of all strikes reach the player as one delivery when the last creature finishes: into the inventory,
  *   or one drop at the player's feet.
  * - The swarm keeps working when the player switches tools or the ability ends. It ends early, without further
@@ -182,17 +196,15 @@ public:
 
 	/**
 	 * Server only. Starts the swarm at its location for Summoner, whose player state becomes the beneficiary.
-	 * RequestTemplate carries the ability id, tool, power and the sections each creature takes. InitialTargets are the
-	 * evaluated targets the ability selected, nearest to the aim point first; SearchRadius and Channel bound later
-	 * searches. Returns false when the swarm was already started or cannot start.
+	 * RequestTemplate carries the ability id, tool, power and the sections each strike takes. The swarm works through
+	 * the Targets that would be harvested, nearest to the aim point first, and through no others. Returns false when the
+	 * swarm was already started or cannot start.
 	 */
 	bool StartSwarm(
 		AActor* Summoner,
 		const FRpgHarvestRequest& RequestTemplate,
 		const FRpgHarvestSwarmParams& Params,
-		float SearchRadius,
-		ECollisionChannel Channel,
-		const TArray<FRpgHarvestTargetEvaluation>& InitialTargets);
+		const TArray<FRpgHarvestTargetEvaluation>& Targets);
 
 	/** Returns the replicated creatures. */
 	UFUNCTION(BlueprintPure, Category = "Rpg|Harvesting|Swarm")
@@ -205,7 +217,7 @@ public:
 	/** Returns where CreatureIndex is at ServerTime: rising at its start, on its arc, or at its strike point. */
 	FVector GetCreatureLocationAt(int32 CreatureIndex, double ServerTime) const;
 
-	/** Returns whether every creature struck or dissipated. Replicated through the creatures. */
+	/** Returns whether every creature finished. Replicated through the creatures. */
 	UFUNCTION(BlueprintPure, Category = "Rpg|Harvesting|Swarm")
 	bool IsFinished() const;
 
@@ -233,16 +245,24 @@ protected:
 	//~ End AActor interface
 
 	/**
-	 * Cosmetic: a creature left for a resource, at its first departure or when it heads for another one. Called on
-	 * every machine with a local player. CreatureActor is the spawned CreatureClass actor and may be null.
+	 * Cosmetic: a creature was sent to a resource, at the summon or after a strike or a miss; it leaves From at the
+	 * leg's launch time, after a strike once it rested. Called on every machine with a local player. CreatureActor is the
+	 * spawned CreatureClass actor and may be null.
 	 */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Rpg|Harvesting|Swarm", DisplayName = "On Creature Launched")
 	void K2_OnCreatureLaunched(int32 CreatureIndex, AActor* CreatureActor, FVector From, FVector To);
 
 	/**
-	 * Cosmetic: a creature struck its resource (bHarvested) or dissipated, at Location. Called on every machine with a
-	 * local player; the creature actor is destroyed CreatureLingerSeconds later. The stock and rewards are already
+	 * Cosmetic: a creature struck a resource at Location and harvested it. Called on every machine with a local player,
+	 * once per replicated change; SectionsTaken is the creature's total so far. The stock and rewards are already
 	 * resolved on the server.
+	 */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Rpg|Harvesting|Swarm", DisplayName = "On Creature Struck")
+	void K2_OnCreatureStruck(int32 CreatureIndex, AActor* CreatureActor, FVector Location, int32 SectionsTaken);
+
+	/**
+	 * Cosmetic: a creature finished at Location, after harvesting (bHarvested) or without. Called on every machine with a
+	 * local player; the creature actor is destroyed CreatureLingerSeconds later.
 	 */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Rpg|Harvesting|Swarm", DisplayName = "On Creature Finished")
 	void K2_OnCreatureFinished(int32 CreatureIndex, AActor* CreatureActor, FVector Location, bool bHarvested);
@@ -267,7 +287,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Swarm", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "400.0", Units = "cm"))
 	float EmergeDepth = 160.0f;
 
-	/** Seconds a finished creature's actor stays for its strike or dissipation presentation. Cosmetic. */
+	/** Seconds a finished creature's actor stays for its dissipation presentation. Cosmetic. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Swarm", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "3.0", Units = "s"))
 	float CreatureLingerSeconds = 0.6f;
 
@@ -279,7 +299,14 @@ private:
 		FHitResult Hit;
 		int32 ExpectedRevision = INDEX_NONE;
 		int32 ReservedSections = 0;
-		int32 Reassignments = 0;
+		int32 Misses = 0;
+	};
+
+	/** Server-only resource the swarm works on. */
+	struct FWorkTarget
+	{
+		TWeakObjectPtr<UObject> Receiver;
+		FHitResult Hit;
 	};
 
 	UFUNCTION()
@@ -289,9 +316,14 @@ private:
 	void Step();
 	void ScheduleStep();
 	void Strike(int32 CreatureIndex, double Now);
-	bool Reassign(int32 CreatureIndex, const FVector& FromLocation, double Now);
-	void Dissipate(int32 CreatureIndex, double Now);
-	void DissipateAll();
+
+	/**
+	 * Server: sends CreatureIndex from FromLocation, leaving at LaunchServerTime, to the nearest work target with stock
+	 * no other creature reserved. Returns false when nothing is left to take.
+	 */
+	bool AssignNextTarget(int32 CreatureIndex, const FVector& FromLocation, double LaunchServerTime);
+	void Finish(int32 CreatureIndex, double Now);
+	void FinishAll();
 	void FinishIfDone();
 	bool IsSummonerAlive() const;
 	void HandleSummonerDeathTagChanged(FGameplayTag Tag, int32 NewCount);
@@ -314,8 +346,9 @@ private:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<AActor>> CreatureActors;
 
-	/** Last creature leg and phase each machine presented. */
+	/** Last creature leg, strike count and phase each machine presented. */
 	TArray<uint8> PresentedLegs;
+	TArray<uint8> PresentedStrikes;
 	TArray<ERpgHarvestSwarmCreatureState> PresentedStates;
 
 	/** Server: request every strike starts from; its Harvester is the beneficiary and PhysicalHarvester this swarm. */
@@ -323,9 +356,8 @@ private:
 	FRpgHarvestRequest RequestTemplate;
 
 	TArray<FAssignment> Assignments;
+	TArray<FWorkTarget> WorkTargets;
 	FRpgHarvestSwarmParams SwarmParams;
-	float SearchRadius = 0.0f;
-	TEnumAsByte<ECollisionChannel> SearchChannel = ECC_Visibility;
 	TWeakObjectPtr<AActor> Summoner;
 	TWeakObjectPtr<UAbilitySystemComponent> SummonerAbilitySystem;
 	FDelegateHandle DeathTagHandle;

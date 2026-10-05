@@ -351,13 +351,7 @@ bool URpgGameplayAbility_Harvest::SummonSwarm(const FRpgHarvestPreview& Selectio
 		FTransform(Selection.AimPoint),
 		SpawnParameters);
 	if (!SummonedSwarm ||
-		!SummonedSwarm->StartSwarm(
-			Avatar,
-			RequestTemplate,
-			Swarm,
-			Targeting.AreaRadius,
-			Targeting.TraceChannel,
-			Selection.Targets))
+		!SummonedSwarm->StartSwarm(Avatar, RequestTemplate, Swarm, Selection.Targets))
 	{
 		if (SummonedSwarm)
 		{
@@ -411,36 +405,15 @@ void URpgGameplayAbility_Harvest::PlanSwarm(
 		}
 	}
 
-	TArray<int32> TargetIndices;
-	TArray<int32> Sections;
-	FRpgHarvestSwarmPlanner::Distribute(InOutSelection.Targets, Swarm.CreatureCount, SectionsPerTarget, TargetIndices, Sections);
-	TArray<int32> ReservedSections;
-	ReservedSections.Init(0, InOutSelection.Targets.Num());
-	for (int32 CreatureIndex = 0; CreatureIndex < TargetIndices.Num(); ++CreatureIndex)
+	// The swarm works until every selected resource is empty, so each one shows its whole remaining stock.
+	for (FRpgHarvestTargetEvaluation& Target : InOutSelection.Targets)
 	{
-		ReservedSections[TargetIndices[CreatureIndex]] += Sections[CreatureIndex];
-	}
-
-	// Every resource shows what its creatures will take, so the preview matches the swarm's plan. Resources no creature
-	// reserved leave the selection; rejected ones stay so the preview can explain them.
-	TArray<FRpgHarvestTargetEvaluation> PlannedTargets;
-	PlannedTargets.Reserve(InOutSelection.Targets.Num());
-	for (int32 TargetIndex = 0; TargetIndex < InOutSelection.Targets.Num(); ++TargetIndex)
-	{
-		FRpgHarvestTargetEvaluation& Target = InOutSelection.Targets[TargetIndex];
 		if (Target.WouldHarvest())
 		{
-			if (ReservedSections[TargetIndex] <= 0)
-			{
-				continue;
-			}
-			const int32 Available = FRpgHarvestSwarmPlanner::GetAvailableSections(Target);
-			Target.Result.SectionsTaken = ReservedSections[TargetIndex];
-			Target.Result.RemainingSections = Available - ReservedSections[TargetIndex];
+			Target.Result.SectionsTaken = FRpgHarvestSwarmPlanner::GetAvailableSections(Target);
+			Target.Result.RemainingSections = 0;
 		}
-		PlannedTargets.Add(MoveTemp(Target));
 	}
-	InOutSelection.Targets = MoveTemp(PlannedTargets);
 }
 
 void URpgGameplayAbility_Harvest::EvaluateTargets(
@@ -479,15 +452,9 @@ void URpgGameplayAbility_Harvest::EvaluateTargetsFromView(
 
 	FRpgHarvestRequest RequestTemplate;
 	BuildRequestTemplate(Spec, ActorInfo, RequestTemplate);
-	FRpgHarvestTargetingParams Params = Targeting;
-	if (SummonsSwarm())
-	{
-		// Every selected resource gets at least one creature.
-		Params.MaxTargets = FMath::Clamp(Swarm.CreatureCount, 1, ARpgHarvestSwarm::MaxCreatures);
-	}
 	OutPreview.AimPoint = FRpgHarvestTargeting::SelectAndEvaluate(
 		*World,
-		Params,
+		Targeting,
 		ViewLocation,
 		ViewRotation,
 		*Avatar,

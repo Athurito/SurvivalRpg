@@ -35,7 +35,7 @@ harvesting abilities into Blueprint content belongs to issue
 | Trees | Open-world trees are PCG instanced skinned meshes without collision. An invisible PCG trunk proxy at the same point holds the stock and is the harvest target (HARV-07). |
 | Protection | Area powers skip resources inside a harvest protection box and report them as protected. A deliberate single-target swing still harvests them (HARV-07). |
 | Area rewards | A multi-target harvest delivers the rewards of all its targets as one batch: into the inventory, or into one drop at the harvester (HARV-07). |
-| Swarm | Grave Swarm is the axe's second awakened power. Its creatures harvest through the same `IRpgHarvestableTarget` path when they arrive. The player's player state receives the rewards; the swarm is the physical harvester. A summoned swarm keeps working after a tool switch and ends when the player dies (HARV-08). |
+| Swarm | Grave Swarm is the axe's second awakened power. Its creatures work through every resource in its area, one strike at a time, through the same `IRpgHarvestableTarget` path. The player's player state receives the rewards; the swarm is the physical harvester. A summoned swarm keeps working after a tool switch and ends when the player dies (HARV-08). |
 
 The trees from #177 are Nanite-assembly skeletal meshes with dynamic wind.
 HISM cannot render them, and the UE 5.8 foliage tool places only static meshes
@@ -91,9 +91,9 @@ stock rules are kept separate.
   - The non-reflected `FRpgHarvestRewardBatch` (HARV-07), which merges the
     rewards of one multi-target commit into one delivery.
   - `ARpgHarvestSwarm` (HARV-08), a short-lived replicated swarm. It owns the
-    reservations, the exactly-once commit at each creature's arrival,
-    reassignment and its lifecycle, and replicates the creature flights in
-    server time. The non-reflected `FRpgHarvestSwarmPlanner` distributes the
+    reservations, the exactly-once commit of every strike, the work through its
+    area and its lifecycle, and replicates the creature flights in server
+    time. The non-reflected `FRpgHarvestSwarmPlanner` distributes the
     creatures for the swarm and the preview alike.
 - **Designer assets:** item, equipment and ability set definitions, `GA_*`
   abilities, `HP_*` profiles, `LT_*` loot tables, resource actor Blueprints,
@@ -657,8 +657,9 @@ the following on the client:
 ## Grave Swarm (HARV-08)
 
 The plan's M3: the awakened axe raises a swarm of grave wisps at a chosen spot.
-The wisps spread over the trees around it and fell them. The wood reaches the
-player without orders, pickups or companion inventories.
+The wisps work through the trees around it one after another until all of them
+have fallen. The wood reaches the player without orders, pickups or companion
+inventories.
 
 ### Beneficiary and physical harvester
 
@@ -677,28 +678,30 @@ player without orders, pickups or companion inventories.
   into a summon. Its commit spawns the swarm at the aim point instead of
   harvesting.
   - `FRpgHarvestSwarmParams` tunes the creature count, flight speed, rise
-    time, launch interval, reassignments, lifetime and line of sight.
-  - `SectionsPerTarget` is what one creature takes.
-- **Plan:** `FRpgHarvestSwarmPlanner` assigns the creatures nearest first.
-  - They cover a resource's remaining stock before the next resource gets any.
-    Several creatures may share a resource but never reserve more than it has
-    left.
-  - The hold-to-aim preview runs the same plan. Each resource shows the
-    sections its creatures will take; resources without a creature are not
-    listed.
-  - The creature count caps how many resources the area selects.
+    time, launch interval, the rest between strikes, misses, lifetime and line
+    of sight.
+  - `SectionsPerTarget` is what one creature takes per strike.
+- **Work:** the swarm takes every resource the area selected, up to the
+  ability's `MaxTargets`, and no others. The hold-to-aim preview marks each of
+  them with its whole remaining stock.
+- **Strikes:** creatures start with `FRpgHarvestSwarmPlanner`'s assignment,
+  nearest first, covering one resource's stock before the next.
+  - After every strike a creature rests briefly. It then strikes the same
+    resource again or flies to the nearest selected resource with stock that no
+    other creature reserved, until nothing is left. The resources therefore
+    fall one after another.
+  - Every strike commits once through `IRpgHarvestableTarget`. Reservations
+    are not locks: other players keep harvesting, and only the stock left when
+    a creature arrives counts.
+- **Misses:** a creature that arrives at a resource emptied, removed or
+  protected meanwhile heads for another selected resource, up to
+  `MaxReassignments` times. Creatures with nothing left to take finish; in an
+  area emptied early they dissipate without harvesting.
 - **Reach and obstacles:** resources must lie in the area, and protected
   resources are skipped like for every area power. With
   `bRequireLineOfSight`, only resources and pawns may lie on the line from the
-  summon point; resources behind anything else are previewed as out of reach.
-- **Arrival:** creatures rise, leave one after another and fly an arc to their
-  resource. Each creature commits once through `IRpgHarvestableTarget` when it
-  arrives. Reservations are not locks: other players keep harvesting, and only
-  the stock left on arrival counts.
-- **Reassignment:** a creature whose resource was emptied, removed or
-  protected before it arrived heads for the nearest resource in the area with
-  stock that no other creature reserved, up to `MaxReassignments` times.
-  Otherwise it dissipates, also when the whole area was emptied early.
+  summon point; resources behind anything else are previewed as out of reach
+  and not taken.
 - **Delivery:** the rewards of all strikes reach the player as one batch when
   the last creature finished: into the inventory, or as one drop at the
   player's feet. The swarm opens its `FRpgHarvestRewardBatch` only around each
@@ -707,17 +710,18 @@ player without orders, pickups or companion inventories.
   - The swarm keeps working when the player switches tools or the ability
     ends. It keeps the tool category and power it was summoned with.
   - When the summoner dies (`Status.Death`) or is gone, the remaining
-    creatures dissipate at once and harvest nothing more. Rewards already
-    harvested are still delivered.
-  - Creatures that have not struck after `MaxLifetimeSeconds` dissipate.
+    creatures stop at once and harvest nothing more. Rewards already harvested
+    are still delivered.
+  - Creatures that have not finished after `MaxLifetimeSeconds` stop.
 - **Presentation:** the swarm replicates each creature's flight with server
   times.
   - Every machine with a local player spawns a non-replicated `CreatureClass`
     actor per creature and moves it along the same arc at the same server
     time.
-  - `On Creature Launched` and `On Creature Finished` let the swarm Blueprint
-    add effects.
-  - A machine that receives the swarm late does not replay finished creatures.
+  - `On Creature Launched`, `On Creature Struck` and `On Creature Finished` let
+    the swarm Blueprint add effects.
+  - A machine that receives the swarm late replays neither finished creatures
+    nor earlier strikes.
 
 ### Grave Swarm content
 
@@ -727,55 +731,60 @@ All assets live in `GF_Harvesting_Magic` and are authored through Unreal MCP.
   `AS_Tool_Axe`:
   - Hold to aim and release to summon `BP_HarvestSwarm_Grave` at the aim
     point, which must lie within 15 m of the pawn.
-  - Eight creatures take two sections each from the trees within 10 m, so one
-    summon fells four dead pines.
+  - Five creatures fell every tree within 8 m, up to ten. Each strike takes
+    two sections and is followed by a 0.7 s rest, so the trees fall one after
+    another.
   - It needs Logging 2, like Death Wave; the HARV-09 talents will choose
     between such powers.
-  - It costs only `GE_Cooldown_Harvest_GraveSwarm` (10 s,
+  - It costs only `GE_Cooldown_Harvest_GraveSwarm` (15 s,
     `Cooldown.Harvesting.GraveSwarm`).
 - `BP_HarvestSwarmCreature_Grave` is a pale green wisp with a short tail and a
   small light. Its `MI_HarvestSwarmWisp` reuses the weak point material.
-  `BP_HarvestSwarm_Grave` lets a wisp burst when it strikes and shrink when it
-  dissipates.
+- `BP_HarvestSwarm_Grave` spawns a short glowing pop,
+  `BP_HarvestSwarmStrikeBurst`, at every strike and lets a finished wisp
+  shrink away.
 - `Lvl_HarvestPickaxe` has a second stand of twelve dead pines,
   `Harvest_PcgGraveSwarmStand`, west of the ore veins. Death Wave and Grave
   Swarm therefore each have their own trees.
 
 ### Multiplayer
 
-A listen-server PIE session with one client in `Lvl_HarvestPickaxe` checked
-the following on the client:
+Listen-server PIE sessions with one client in `Lvl_HarvestPickaxe` checked the
+following on the client:
 - Below Logging 2, E showed "Logging 2 required" and summoned nothing.
-- At Logging 2, holding E showed `4/4  -4` on the four trees nearest to the aim
-  point.
-- On release, the server and the client each showed eight wisps. Their
-  computed positions agreed within 8 cm while rising and within about 90 cm in
+- At Logging 2, holding E in the middle of the stand showed `4/4  -4` on the
+  four trees inside the ring.
+- On release, the server and the client each showed five wisps. The four trees
+  fell one after another on both machines, 1.8 s to 4.9 s after the release,
+  with the same stock on both machines in every probe.
+- The 80 wood arrived as one delivery when the last wisp finished, without a
+  drop. The wisps and the swarm were gone on both machines about 7 s after the
+  release.
+- A summon at the edge of the stand selected and felled the three trees inside
+  its ring.
+- A session before the swarm cleared its area compared the computed creature
+  positions: they agreed within 8 cm while rising and within about 90 cm in
   fast flight, because the client's estimate of the server time differs by
   about 0.1 s.
-- The four trees fell one after another on both machines, 1.2 s to 2.9 s after
-  the release.
-- The 80 wood arrived as one delivery when the last wisp struck, without a
-  drop. Both machines then showed 32 sections left in the stand.
-- The wisps and the swarm were gone on both machines 4.5 s after the release.
 
 The network test `SurvivalRpg.Network.LootHarvestPIE.SwarmReplicatesFlightsAndLateJoins`
 runs a slow swarm on a dedicated server with clients:
 - The server spawns no creature actors. The client presents one per creature,
   each close to its replicated flight.
-- A client that joins after the first strike presents only the creatures that
-  have not finished.
+- A client that joins after the first creature finished presents only the
+  creatures that have not.
 - The swarm delivers once into the summoner's inventory. Both clients then show
   the harvested field, and the swarm and its creatures are gone.
 
 ### Not done
 
 - The plan's talent variants, Swarm Brood and Grave Detonation, wait for the
-  HARV-09 talent tree. Creature count and sections per creature are their
-  knobs.
-- Concurrent player harvesting, reassignment and the summoner's death are
-  covered by automation tests, not by a PIE session.
-- Creatures fly straight arcs, also through obstacles; only their target
-  selection respects the line of sight.
+  HARV-09 talent tree. Creature count, sections per strike and the rest between
+  strikes are their knobs.
+- Concurrent player harvesting, misses and the summoner's death are covered by
+  automation tests, not by a PIE session.
+- Creatures fly straight arcs, also through obstacles; only the selection
+  respects the line of sight.
 
 ## Performance guardrails
 

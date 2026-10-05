@@ -115,9 +115,7 @@ bool ARpgHarvestSwarm::StartSwarm(
 	AActor* InSummoner,
 	const FRpgHarvestRequest& InRequestTemplate,
 	const FRpgHarvestSwarmParams& InParams,
-	const float InSearchRadius,
-	const ECollisionChannel Channel,
-	const TArray<FRpgHarvestTargetEvaluation>& InitialTargets)
+	const TArray<FRpgHarvestTargetEvaluation>& Targets)
 {
 	if (bStarted || !HasAuthority() || !GetWorld() || !IsValid(InSummoner))
 	{
@@ -128,8 +126,17 @@ bool ARpgHarvestSwarm::StartSwarm(
 	SwarmParams = InParams;
 	SwarmParams.CreatureCount = FMath::Clamp(InParams.CreatureCount, 1, MaxCreatures);
 	SwarmParams.FlightSpeed = FMath::Max(50.0f, InParams.FlightSpeed);
-	SearchRadius = FMath::Max(0.0f, InSearchRadius);
-	SearchChannel = Channel;
+
+	// The swarm works through exactly the resources the ability selected and previewed.
+	for (const FRpgHarvestTargetEvaluation& Target : Targets)
+	{
+		if (Target.WouldHarvest() && Target.Receiver.IsValid())
+		{
+			FWorkTarget& WorkTarget = WorkTargets.AddDefaulted_GetRef();
+			WorkTarget.Receiver = Target.Receiver;
+			WorkTarget.Hit = Target.Hit;
+		}
+	}
 
 	// The player state receives the rewards, so they arrive even when the summoner's pawn dies first. The swarm itself
 	// strikes the resources.
@@ -167,7 +174,7 @@ bool ARpgHarvestSwarm::StartSwarm(
 	TArray<int32> TargetIndices;
 	TArray<int32> Sections;
 	FRpgHarvestSwarmPlanner::Distribute(
-		InitialTargets,
+		Targets,
 		SwarmParams.CreatureCount,
 		RequestTemplate.RequestedSections,
 		TargetIndices,
@@ -186,7 +193,7 @@ bool ARpgHarvestSwarm::StartSwarm(
 			Now + FMath::Max(0.0f, SwarmParams.EmergeSeconds) + CreatureIndex * FMath::Max(0.0f, SwarmParams.LaunchIntervalSeconds);
 
 		const FRpgHarvestTargetEvaluation* Target =
-			TargetIndices.IsValidIndex(CreatureIndex) ? &InitialTargets[TargetIndices[CreatureIndex]] : nullptr;
+			TargetIndices.IsValidIndex(CreatureIndex) ? &Targets[TargetIndices[CreatureIndex]] : nullptr;
 		UObject* Receiver = Target ? Target->Receiver.Get() : nullptr;
 		if (Receiver)
 		{
@@ -270,7 +277,9 @@ FVector ARpgHarvestSwarm::GetCreatureLocationAt(const int32 CreatureIndex, const
 
 	const double Duration = FMath::Max(UE_KINDA_SMALL_NUMBER, Creature.ArrivalServerTime - Creature.LaunchServerTime);
 	const double Alpha = FMath::Clamp((ServerTime - Creature.LaunchServerTime) / Duration, 0.0, 1.0);
-	return FMath::Lerp(From, To, Alpha) + FVector(0.0, 0.0, FlightArcHeight * 4.0 * Alpha * (1.0 - Alpha));
+	// Short hops, such as a second strike at the same resource, stay low.
+	const double ArcHeight = FMath::Min<double>(FlightArcHeight, 0.5 * FVector::Dist(From, To));
+	return FMath::Lerp(From, To, Alpha) + FVector(0.0, 0.0, ArcHeight * 4.0 * Alpha * (1.0 - Alpha));
 }
 
 bool ARpgHarvestSwarm::IsFinished() const
@@ -362,7 +371,7 @@ void ARpgHarvestSwarm::Step()
 	const double Now = GetServerWorldTimeSeconds();
 	if (!IsSummonerAlive() || Now + RpgHarvestSwarm::DueTolerance >= ExpireServerTime)
 	{
-		DissipateAll();
+		FinishAll();
 		return;
 	}
 
@@ -373,9 +382,9 @@ void ARpgHarvestSwarm::Step()
 		if (Creature.State == ERpgHarvestSwarmCreatureState::Searching &&
 			Now + RpgHarvestSwarm::DueTolerance >= Creature.LaunchServerTime)
 		{
-			if (!Reassign(CreatureIndex, Creature.From, Now))
+			if (!AssignNextTarget(CreatureIndex, Creature.From, Now))
 			{
-				Dissipate(CreatureIndex, Now);
+				Finish(CreatureIndex, Now);
 			}
 			bChanged = true;
 		}
@@ -449,63 +458,58 @@ void ARpgHarvestSwarm::Strike(const int32 CreatureIndex, const double Now)
 
 	if (Result.IsSuccess())
 	{
-		Creature.State = ERpgHarvestSwarmCreatureState::Struck;
-		Creature.SectionsTaken = static_cast<uint8>(FMath::Clamp(Result.SectionsTaken, 0, 255));
+		Creature.Strikes = static_cast<uint8>(FMath::Min(255, Creature.Strikes + 1));
+		Creature.SectionsTaken = static_cast<uint8>(FMath::Clamp(Creature.SectionsTaken + Result.SectionsTaken, 0, 255));
 		HarvestedSections += Result.SectionsTaken;
 		Assignment.Receiver.Reset();
+
+		// After a short rest the creature strikes again, here or at the next resource, until nothing is left.
+		if (!AssignNextTarget(CreatureIndex, Creature.To, Now + FMath::Max(0.0f, SwarmParams.StrikeIntervalSeconds)))
+		{
+			Finish(CreatureIndex, Now);
+		}
 		return;
 	}
 
 	// The resource was emptied, removed or protected before the creature arrived: look for another one from here.
-	if (Assignment.Reassignments < SwarmParams.MaxReassignments && Reassign(CreatureIndex, Creature.To, Now))
+	if (++Assignment.Misses <= SwarmParams.MaxReassignments && AssignNextTarget(CreatureIndex, Creature.To, Now))
 	{
-		++Assignments[CreatureIndex].Reassignments;
 		return;
 	}
-	Dissipate(CreatureIndex, Now);
+	Finish(CreatureIndex, Now);
 }
 
-bool ARpgHarvestSwarm::Reassign(const int32 CreatureIndex, const FVector& FromLocation, const double Now)
+bool ARpgHarvestSwarm::AssignNextTarget(
+	const int32 CreatureIndex,
+	const FVector& FromLocation,
+	const double LaunchServerTime)
 {
-	UWorld* World = GetWorld();
-	if (!World || SearchRadius <= UE_KINDA_SMALL_NUMBER)
-	{
-		return false;
-	}
-
-	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(RpgHarvestSwarm), false, this);
-	if (AActor* SummonerActor = Summoner.Get())
-	{
-		QueryParams.AddIgnoredActor(SummonerActor);
-	}
-	const FVector Center = GetActorLocation();
+	// The nearest selected resource that still has stock no other creature reserved, evaluated as it is now.
 	const FVector Lift(0.0, 0.0, StrikeHeight);
-	TArray<FRpgHarvestTargetEvaluation> Candidates;
-	FRpgHarvestTargeting::CollectAreaTargets(
-		*World,
-		Center,
-		SearchRadius,
-		SearchChannel,
-		QueryParams,
-		Center,
-		true,
-		RequestTemplate,
-		0,
-		Candidates);
-
-	// The nearest resource that still has stock no other creature reserved.
-	const FRpgHarvestTargetEvaluation* Best = nullptr;
+	const FWorkTarget* Best = nullptr;
 	int32 BestAvailable = 0;
 	double BestDistanceSquared = TNumericLimits<double>::Max();
-	for (const FRpgHarvestTargetEvaluation& Candidate : Candidates)
+	for (const FWorkTarget& WorkTarget : WorkTargets)
 	{
-		UObject* Receiver = Candidate.Receiver.Get();
-		if (!Receiver || !Candidate.WouldHarvest())
+		UObject* Receiver = WorkTarget.Receiver.Get();
+		if (!Receiver)
 		{
 			continue;
 		}
-		const TPair<const UObject*, int32> Key = RpgHarvestSwarm::MakeTargetKey(Receiver, Candidate.Hit);
-		int32 Available = FRpgHarvestSwarmPlanner::GetAvailableSections(Candidate);
+		FRpgHarvestRequest Request = RequestTemplate;
+		Request.Hit = WorkTarget.Hit;
+		Request.TraceOrigin = FromLocation;
+		Request.ExpectedRevision = IRpgHarvestableTarget::Execute_GetHarvestRevision(Receiver, WorkTarget.Hit);
+		FRpgHarvestTargetEvaluation Evaluation;
+		Evaluation.bInReach = true;
+		Evaluation.Result = IRpgHarvestableTarget::Execute_EvaluateHarvest(Receiver, Request);
+		if (!Evaluation.WouldHarvest())
+		{
+			continue;
+		}
+
+		const TPair<const UObject*, int32> Key = RpgHarvestSwarm::MakeTargetKey(Receiver, WorkTarget.Hit);
+		int32 Available = FRpgHarvestSwarmPlanner::GetAvailableSections(Evaluation);
 		for (int32 Other = 0; Other < Assignments.Num(); ++Other)
 		{
 			const FAssignment& OtherAssignment = Assignments[Other];
@@ -521,17 +525,13 @@ bool ARpgHarvestSwarm::Reassign(const int32 CreatureIndex, const FVector& FromLo
 			continue;
 		}
 
-		const FVector StrikePoint = Candidate.Hit.ImpactPoint + Lift;
-		const double DistanceSquared = FVector::DistSquared(FromLocation, StrikePoint);
-		if (DistanceSquared >= BestDistanceSquared ||
-			(SwarmParams.bRequireLineOfSight &&
-				!FRpgHarvestSwarmPlanner::HasLineOfSight(*World, Center + Lift, StrikePoint, SearchChannel, QueryParams)))
+		const double DistanceSquared = FVector::DistSquared(FromLocation, WorkTarget.Hit.ImpactPoint + Lift);
+		if (DistanceSquared < BestDistanceSquared)
 		{
-			continue;
+			Best = &WorkTarget;
+			BestAvailable = Available;
+			BestDistanceSquared = DistanceSquared;
 		}
-		Best = &Candidate;
-		BestAvailable = Available;
-		BestDistanceSquared = DistanceSquared;
 	}
 	if (!Best)
 	{
@@ -548,15 +548,15 @@ bool ARpgHarvestSwarm::Reassign(const int32 CreatureIndex, const FVector& FromLo
 	FRpgHarvestSwarmCreature& Creature = Creatures[CreatureIndex];
 	Creature.From = FromLocation;
 	Creature.To = Best->Hit.ImpactPoint + Lift;
-	Creature.LaunchServerTime = Now;
-	Creature.ArrivalServerTime = Now +
+	Creature.LaunchServerTime = LaunchServerTime;
+	Creature.ArrivalServerTime = LaunchServerTime +
 		FMath::Max(RpgHarvestSwarm::MinimumFlightSeconds, FVector::Dist(Creature.From, Creature.To) / SwarmParams.FlightSpeed);
 	Creature.State = ERpgHarvestSwarmCreatureState::Flying;
 	Creature.Leg = static_cast<uint8>(FMath::Min(255, Creature.Leg + 1));
 	return true;
 }
 
-void ARpgHarvestSwarm::Dissipate(const int32 CreatureIndex, const double Now)
+void ARpgHarvestSwarm::Finish(const int32 CreatureIndex, const double Now)
 {
 	// The creature stops where it is and fades there.
 	FRpgHarvestSwarmCreature& Creature = Creatures[CreatureIndex];
@@ -565,21 +565,23 @@ void ARpgHarvestSwarm::Dissipate(const int32 CreatureIndex, const double Now)
 	Creature.To = Location;
 	Creature.LaunchServerTime = FMath::Min(Creature.LaunchServerTime, Now);
 	Creature.ArrivalServerTime = Creature.LaunchServerTime;
-	Creature.State = ERpgHarvestSwarmCreatureState::Dissipated;
+	Creature.State = Creature.Strikes > 0
+		? ERpgHarvestSwarmCreatureState::Harvested
+		: ERpgHarvestSwarmCreatureState::Dissipated;
 
 	FAssignment& Assignment = Assignments[CreatureIndex];
 	Assignment.Receiver.Reset();
 	Assignment.ReservedSections = 0;
 }
 
-void ARpgHarvestSwarm::DissipateAll()
+void ARpgHarvestSwarm::FinishAll()
 {
 	const double Now = GetServerWorldTimeSeconds();
 	for (int32 CreatureIndex = 0; CreatureIndex < Creatures.Num(); ++CreatureIndex)
 	{
 		if (!Creatures[CreatureIndex].IsFinished())
 		{
-			Dissipate(CreatureIndex, Now);
+			Finish(CreatureIndex, Now);
 		}
 	}
 	ReplicateCreatures();
@@ -618,7 +620,7 @@ void ARpgHarvestSwarm::HandleSummonerDeathTagChanged(const FGameplayTag Tag, con
 	// A dead summoner's creatures dissipate at once; nothing they had not struck yet yields loot.
 	if (NewCount > 0 && HasAuthority() && bStarted && !IsFinished())
 	{
-		DissipateAll();
+		FinishAll();
 	}
 }
 
@@ -708,6 +710,7 @@ void ARpgHarvestSwarm::UpdatePresentation()
 	const int32 PreviouslyPresented = PresentedStates.Num();
 	CreatureActors.SetNum(Creatures.Num());
 	PresentedLegs.SetNum(Creatures.Num());
+	PresentedStrikes.SetNum(Creatures.Num());
 	PresentedStates.SetNum(Creatures.Num());
 
 	bool bAnyMoving = false;
@@ -719,7 +722,8 @@ void ARpgHarvestSwarm::UpdatePresentation()
 		{
 			PresentedStates[CreatureIndex] = ERpgHarvestSwarmCreatureState::Searching;
 			PresentedLegs[CreatureIndex] = 0;
-			// A machine that receives the swarm late does not replay creatures that already finished.
+			// A machine that receives the swarm late replays neither finished creatures nor earlier strikes.
+			PresentedStrikes[CreatureIndex] = Creature.Strikes;
 			if (Creature.IsFinished())
 			{
 				PresentedStates[CreatureIndex] = Creature.State;
@@ -746,13 +750,23 @@ void ARpgHarvestSwarm::UpdatePresentation()
 		}
 
 		const ERpgHarvestSwarmCreatureState PresentedState = PresentedStates[CreatureIndex];
-		if (PresentedState == ERpgHarvestSwarmCreatureState::Struck ||
+		if (PresentedState == ERpgHarvestSwarmCreatureState::Harvested ||
 			PresentedState == ERpgHarvestSwarmCreatureState::Dissipated)
 		{
 			continue;
 		}
 
 		AActor* CreatureActor = CreatureActors[CreatureIndex];
+		if (Creature.Strikes != PresentedStrikes[CreatureIndex])
+		{
+			// A creature that struck either rests there before its next leg or finished there.
+			K2_OnCreatureStruck(
+				CreatureIndex,
+				CreatureActor,
+				Creature.IsFinished() ? Creature.To : Creature.From,
+				Creature.SectionsTaken);
+			PresentedStrikes[CreatureIndex] = Creature.Strikes;
+		}
 		if (Creature.State == ERpgHarvestSwarmCreatureState::Flying &&
 			(PresentedState != ERpgHarvestSwarmCreatureState::Flying || PresentedLegs[CreatureIndex] != Creature.Leg))
 		{
@@ -769,7 +783,7 @@ void ARpgHarvestSwarm::UpdatePresentation()
 				CreatureIndex,
 				CreatureActor,
 				Creature.To,
-				Creature.State == ERpgHarvestSwarmCreatureState::Struck);
+				Creature.State == ERpgHarvestSwarmCreatureState::Harvested);
 		}
 		else if (IsValid(CreatureActor))
 		{

@@ -111,7 +111,7 @@ protected:
 
 	/**
 	 * Stock sections this ability requests from each target; targets clamp it to their remaining stock. With a swarm,
-	 * the sections each creature takes from the resource it strikes.
+	 * the sections one creature takes per strike.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Yield", meta = (ClampMin = "1", UIMin = "1", UIMax = "16"))
 	int32 SectionsPerTarget = 1;
@@ -181,8 +181,9 @@ protected:
 
 	/**
 	 * Swarm the commit summons at the aim point instead of harvesting directly, for area targeting only. Its creatures
-	 * spread over the area's resources and harvest them for the player when they arrive; the preview shows the sections
-	 * each resource will lose. The swarm keeps working after a tool switch. Empty harvests directly. Designer content.
+	 * work through the selected resources (up to MaxTargets) one strike at a time until they are empty, for the player;
+	 * the preview marks every one of them. The swarm keeps working after a tool switch. Empty harvests directly.
+	 * Designer content.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Swarm")
 	TSubclassOf<ARpgHarvestSwarm> SwarmClass;
@@ -199,8 +200,8 @@ private:
 	bool SummonSwarm(const FRpgHarvestPreview& Selection, const FRpgHarvestRequest& RequestTemplate);
 
 	/**
-	 * Applies the swarm plan to an area selection: resources the swarm cannot see become out of reach, and every
-	 * resource reports the sections its creatures reserve. The server and the preview run it alike.
+	 * Applies the swarm to an area selection: resources the swarm cannot see become out of reach, and every other
+	 * resource reports its whole remaining stock, which the swarm takes. The server and the preview run it alike.
 	 */
 	void PlanSwarm(const UWorld& World, const AActor& Avatar, FRpgHarvestPreview& InOutSelection) const;
 

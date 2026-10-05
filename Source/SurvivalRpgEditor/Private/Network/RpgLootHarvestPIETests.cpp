@@ -1101,20 +1101,17 @@ NETWORK_TEST_CLASS(LootHarvestPIE, "SurvivalRpg.Network")
 				TEXT("The server summons a slow swarm of three creatures over the field"),
 				[this](FNetworkState& State)
 				{
+					// The swarm works on the first instance only: two creatures share it, the third finds nothing.
 					URpgHarvestableInstancesComponent* Instances = State.InstancesField->GetHarvestableInstances();
 					TArray<FRpgHarvestTargetEvaluation> Targets;
-					for (int32 InstanceIndex = 0; InstanceIndex < InstancesFieldLocations.Num(); ++InstanceIndex)
-					{
-						const FRpgHarvestRequest Request = MakeInstancesRequest(State, InstanceIndex, State.Harvester, 2);
-						FRpgHarvestTargetEvaluation& Target = Targets.AddDefaulted_GetRef();
-						Target.Receiver = Instances;
-						Target.Hit = Request.Hit;
-						Target.bInReach = true;
-						Target.Result = Instances->EvaluateHarvest_Implementation(Request);
-					}
+					const FRpgHarvestRequest TargetRequest = MakeInstancesRequest(State, 0, State.Harvester, 2);
+					FRpgHarvestTargetEvaluation& Target = Targets.AddDefaulted_GetRef();
+					Target.Receiver = Instances;
+					Target.Hit = TargetRequest.Hit;
+					Target.bInReach = true;
+					Target.Result = Instances->EvaluateHarvest_Implementation(TargetRequest);
 
-					// Two creatures share the first instance, the third takes the second; departures are four seconds
-					// apart so a late joiner arrives while the swarm is still at work.
+					// Departures are four seconds apart, so a late joiner arrives while the swarm is still at work.
 					FRpgHarvestSwarmParams Params;
 					Params.CreatureCount = 3;
 					Params.FlightSpeed = 300.0f;
@@ -1134,12 +1131,11 @@ NETWORK_TEST_CLASS(LootHarvestPIE, "SurvivalRpg.Network")
 						FTransform(InstancesFieldLocation + FVector(150.0, 300.0, 0.0)),
 						SpawnParameters);
 					ASSERT_THAT(IsNotNull(Swarm));
-					ASSERT_THAT(IsTrue(Swarm->StartSwarm(State.Harvester, RequestTemplate, Params, 1000.0f, ECC_Visibility, Targets)));
+					ASSERT_THAT(IsTrue(Swarm->StartSwarm(State.Harvester, RequestTemplate, Params, Targets)));
 					ASSERT_THAT(AreEqual(Swarm->GetCreatures().Num(), 3));
-					for (const FRpgHarvestSwarmCreature& Creature : Swarm->GetCreatures())
-					{
-						ASSERT_THAT(IsTrue(Creature.State == ERpgHarvestSwarmCreatureState::Flying));
-					}
+					ASSERT_THAT(IsTrue(Swarm->GetCreatures()[0].State == ERpgHarvestSwarmCreatureState::Flying));
+					ASSERT_THAT(IsTrue(Swarm->GetCreatures()[1].State == ERpgHarvestSwarmCreatureState::Flying));
+					ASSERT_THAT(IsTrue(Swarm->GetCreatures()[2].State == ERpgHarvestSwarmCreatureState::Searching));
 					ASSERT_THAT(IsTrue(Swarm->GetBeneficiary() == State.Harvester));
 					// A dedicated server has no players to present creatures to.
 					ASSERT_THAT(AreEqual(CountSwarmCreatureActors(State.World), 0));
@@ -1166,14 +1162,15 @@ NETWORK_TEST_CLASS(LootHarvestPIE, "SurvivalRpg.Network")
 				[](FNetworkState& State)
 				{
 					return IsValid(State.Swarm) &&
-						State.Swarm->GetCreatures()[0].State == ERpgHarvestSwarmCreatureState::Struck &&
+						State.Swarm->GetCreatures()[0].Strikes == 1 &&
 						HasInstanceStock(State, {2, NodeSectionCount, NodeSectionCount}, 1);
 				},
 				NetworkTimeout())
 			.ThenServer(
-				TEXT("The second creature is still on its way"),
+				TEXT("The first creature found nothing more to take; the others are still at work"),
 				[this](FNetworkState& State)
 				{
+					ASSERT_THAT(IsTrue(State.Swarm->GetCreatures()[0].State == ERpgHarvestSwarmCreatureState::Harvested));
 					ASSERT_THAT(IsFalse(State.Swarm->GetCreatures()[1].IsFinished()));
 					ASSERT_THAT(IsFalse(State.Swarm->GetCreatures()[2].IsFinished()));
 				})
@@ -1214,11 +1211,11 @@ NETWORK_TEST_CLASS(LootHarvestPIE, "SurvivalRpg.Network")
 					ASSERT_THAT(IsNotNull(State.InstancesField));
 				})
 			.UntilServer(
-				TEXT("Every creature harvested and the swarm delivered once"),
+				TEXT("The swarm emptied its instance and finished"),
 				[](FNetworkState& State)
 				{
 					return IsValid(State.Swarm) && State.Swarm->IsFinished() &&
-						HasInstanceStock(State, {0, NodeSectionCount - 2, NodeSectionCount}, 2);
+						HasInstanceStock(State, {0, NodeSectionCount, NodeSectionCount}, 1);
 				},
 				NetworkTimeout())
 			.ThenServer(
@@ -1226,18 +1223,19 @@ NETWORK_TEST_CLASS(LootHarvestPIE, "SurvivalRpg.Network")
 				[this](FNetworkState& State)
 				{
 					ASSERT_THAT(IsTrue(State.Swarm->GetDelivery() == ERpgHarvestDelivery::Inventory));
-					ASSERT_THAT(AreEqual(State.Swarm->GetHarvestedSections(), 6));
+					ASSERT_THAT(AreEqual(State.Swarm->GetHarvestedSections(), NodeSectionCount));
+					ASSERT_THAT(IsTrue(State.Swarm->GetCreatures()[2].State == ERpgHarvestSwarmCreatureState::Dissipated));
 					ASSERT_THAT(AreEqual(
 						State.Harvester->GetInventoryManagerComponent()->GetTotalItemCountByDefinition(
 							URpgNetworkAutomationMaterialDefinition::StaticClass()),
-						6 * LootQuantity));
+						NodeSectionCount * LootQuantity));
 					ASSERT_THAT(AreEqual(CountWorldDrops(State.World), 0));
 				})
 			.UntilClients(
 				TEXT("Both clients show the harvested field and retire the swarm and its creatures"),
 				[](FNetworkState& State)
 				{
-					return HasInstanceStock(State, {0, NodeSectionCount - 2, NodeSectionCount}, 2) &&
+					return HasInstanceStock(State, {0, NodeSectionCount, NodeSectionCount}, 1) &&
 						FindSwarm(State.World) == nullptr &&
 						CountSwarmCreatureActors(State.World) == 0;
 				},

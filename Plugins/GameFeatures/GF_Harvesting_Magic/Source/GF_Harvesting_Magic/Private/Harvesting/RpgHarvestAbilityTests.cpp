@@ -1461,7 +1461,7 @@ namespace RpgHarvestSwarmTests
 {
 	using namespace RpgHarvestAbilityTests;
 
-	/** Grants a swarm ability whose CreatureCount creatures take two sections each from a 450 cm area at the aim point. */
+	/** Grants a swarm ability whose CreatureCount creatures clear up to three resources within 450 cm of the aim point, two sections per strike. */
 	FGrantedAbility GrantSwarmAbility(URpgAbilitySystemComponent* AbilitySystem, const int32 CreatureCount)
 	{
 		FGrantedAbility Granted = GrantAbility(AbilitySystem);
@@ -1474,7 +1474,7 @@ namespace RpgHarvestSwarmTests
 		AreaTargeting.MaxAimDistance = 1000.0f;
 		AreaTargeting.MaxReachFromAvatar = 700.0f;
 		AreaTargeting.AreaRadius = 450.0f;
-		AreaTargeting.MaxTargets = 1;
+		AreaTargeting.MaxTargets = 3;
 		Granted.Instance->ConfigureTargeting(AreaTargeting);
 		Granted.Instance->ConfigureSections(2);
 
@@ -1483,6 +1483,7 @@ namespace RpgHarvestSwarmTests
 		Swarm.FlightSpeed = 1000.0f;
 		Swarm.EmergeSeconds = 0.5f;
 		Swarm.LaunchIntervalSeconds = 0.1f;
+		Swarm.StrikeIntervalSeconds = 0.3f;
 		Swarm.MaxReassignments = 2;
 		Swarm.MaxLifetimeSeconds = 8.0f;
 		Granted.Instance->ConfigureSwarm(ARpgHarvestSwarm::StaticClass(), Swarm);
@@ -1598,17 +1599,14 @@ bool FRpgHarvestSwarmArrivalTest::RunTest(const FString& Parameters)
 	TestWorld.PrimeTimerManager();
 	URpgHarvestAutomationInstancesComponent* Trees = Grove->Instances;
 
-	// Four creatures with two sections each empty the nearest and the side tree; the far tree is left alone.
+	// Four creatures with two sections per strike work through all three trees until they are empty.
 	const FRpgHarvestPreview Preview = Evaluate(Harvester.AbilitySystem, Summon);
 	TArray<int32> PreviewSections;
 	for (const FRpgHarvestTargetEvaluation& Target : Preview.Targets)
 	{
 		PreviewSections.Add(Target.WouldHarvest() ? Target.Result.SectionsTaken : 0);
 	}
-	TestTrue(TEXT("The preview shows the sections the swarm will take"), PreviewSections == TArray<int32>({4, 4}));
-	TestTrue(
-		TEXT("The preview leaves out the tree no creature reserved"),
-		Preview.Targets.Num() == 2 && Preview.Targets[1].Hit.Item == 1);
+	TestTrue(TEXT("The preview marks the whole stock of every tree in the area"), PreviewSections == TArray<int32>({4, 4, 4}));
 
 	TestTrue(TEXT("The swarm is summoned"), Harvester.AbilitySystem->TryActivateAbility(Summon.Handle));
 	ARpgHarvestSwarm* Swarm = FindActiveSwarm(World);
@@ -1632,17 +1630,24 @@ bool FRpgHarvestSwarmArrivalTest::RunTest(const FString& Parameters)
 	Advance(TestWorld, 0.06);
 	TestEqual(TEXT("The first creature takes its sections on arrival"), Trees->GetRemainingSections(0), 2);
 	TestTrue(
-		TEXT("The first creature struck"),
-		Swarm->GetCreatures()[0].State == ERpgHarvestSwarmCreatureState::Struck && Swarm->GetCreatures()[0].SectionsTaken == 2);
+		TEXT("The first creature struck and keeps working"),
+		Swarm->GetCreatures()[0].Strikes == 1 && Swarm->GetCreatures()[0].SectionsTaken == 2 &&
+			Swarm->GetCreatures()[0].State == ERpgHarvestSwarmCreatureState::Flying);
 	TestEqual(TEXT("The rewards wait for the whole swarm"), CountMaterial(Harvester.PlayerState), 0);
+	TestEqual(TEXT("The far tree is still standing while the first trees are worked"), Trees->GetRemainingSections(2), 4);
 
-	Advance(TestWorld, 3.0);
+	Advance(TestWorld, 5.0);
 	TestTrue(TEXT("Every creature finished"), Swarm->IsFinished());
-	TestEqual(TEXT("Two creatures empty the nearest tree"), Trees->GetRemainingSections(0), 0);
-	TestEqual(TEXT("Two creatures empty the side tree"), Trees->GetRemainingSections(1), 0);
-	TestEqual(TEXT("The far tree stays untouched"), Trees->GetRemainingSections(2), 4);
-	TestEqual(TEXT("The swarm counts every section"), Swarm->GetHarvestedSections(), 8);
-	TestEqual(TEXT("All rewards reach the summoner's inventory"), CountMaterial(Harvester.PlayerState), 8 * YieldPerSection);
+	for (int32 TreeIndex = 0; TreeIndex < 3; ++TreeIndex)
+	{
+		TestEqual(TEXT("The swarm fells every tree it selected, one after another"), Trees->GetRemainingSections(TreeIndex), 0);
+	}
+	for (const FRpgHarvestSwarmCreature& Creature : Swarm->GetCreatures())
+	{
+		TestTrue(TEXT("Every creature harvested before it finished"), Creature.State == ERpgHarvestSwarmCreatureState::Harvested);
+	}
+	TestEqual(TEXT("The swarm counts every section"), Swarm->GetHarvestedSections(), 12);
+	TestEqual(TEXT("All rewards reach the summoner's inventory"), CountMaterial(Harvester.PlayerState), 12 * YieldPerSection);
 	TestTrue(TEXT("The rewards arrive as one inventory delivery"), Swarm->GetDelivery() == ERpgHarvestDelivery::Inventory);
 	TestEqual(TEXT("No drop appears"), GetWorldDrops(World).Num(), 0);
 
@@ -1701,22 +1706,21 @@ bool FRpgHarvestSwarmReassignmentTest::RunTest(const FString& Parameters)
 	for (const FRpgHarvestSwarmCreature& Creature : Swarm->GetCreatures())
 	{
 		TestTrue(
-			TEXT("Each creature heads on to the stock left on the side tree"),
-			Creature.State == ERpgHarvestSwarmCreatureState::Struck && Creature.Leg == 1 && Creature.SectionsTaken == 2);
+			TEXT("Each creature moves on from the emptied tree and harvests the others"),
+			Creature.State == ERpgHarvestSwarmCreatureState::Harvested && Creature.Leg >= 2 && Creature.SectionsTaken == 4);
 	}
-	TestEqual(TEXT("The rerouted creatures share the side tree without overbooking it"), Trees->GetRemainingSections(1), 0);
-	TestEqual(TEXT("The far tree was never reserved"), Trees->GetRemainingSections(2), 4);
-	TestEqual(TEXT("The summoner receives what the swarm harvested"), CountMaterial(Harvester.PlayerState), 4 * YieldPerSection);
+	TestEqual(TEXT("The rerouted creatures empty the side tree without overbooking it"), Trees->GetRemainingSections(1), 0);
+	TestEqual(TEXT("The rerouted creatures empty the far tree"), Trees->GetRemainingSections(2), 0);
+	TestEqual(TEXT("The summoner receives what the swarm harvested"), CountMaterial(Harvester.PlayerState), 8 * YieldPerSection);
 	TestEqual(TEXT("The other player keeps the nearest tree's wood"), CountMaterial(Other.PlayerState), 4 * YieldPerSection);
 
-	// Only the far tree is left; it is emptied before the creatures reach it, so they find nothing and dissipate.
+	// Nothing is left in the area, so a second swarm finds nothing and dissipates.
 	TestTrue(TEXT("A second swarm is summoned"), Harvester.AbilitySystem->TryActivateAbility(Summon.Handle));
 	ARpgHarvestSwarm* LateSwarm = FindActiveSwarm(World);
 	if (!TestNotNull(TEXT("The second commit summons a swarm"), LateSwarm))
 	{
 		return false;
 	}
-	TestTrue(TEXT("Another player empties the last tree"), EmptyTree(2));
 	Advance(TestWorld, 3.0);
 	TestTrue(TEXT("The swarm in an emptied area finishes"), LateSwarm->IsFinished());
 	for (const FRpgHarvestSwarmCreature& Creature : LateSwarm->GetCreatures())
@@ -1725,7 +1729,7 @@ bool FRpgHarvestSwarmReassignmentTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("An empty area yields nothing"), LateSwarm->GetHarvestedSections(), 0);
 	TestTrue(TEXT("An empty area delivers nothing"), LateSwarm->GetDelivery() == ERpgHarvestDelivery::None);
-	TestEqual(TEXT("The summoner's rewards are unchanged"), CountMaterial(Harvester.PlayerState), 4 * YieldPerSection);
+	TestEqual(TEXT("The summoner's rewards are unchanged"), CountMaterial(Harvester.PlayerState), 8 * YieldPerSection);
 	TestEqual(TEXT("No drop appears"), GetWorldDrops(World).Num(), 0);
 	return true;
 }
@@ -1766,12 +1770,16 @@ bool FRpgHarvestSwarmSummonerDeathTest::RunTest(const FString& Parameters)
 	Advance(TestWorld, Swarm->GetCreatures()[0].ArrivalServerTime - Swarm->GetServerWorldTimeSeconds() + 0.03);
 	TestEqual(TEXT("The first creature harvested before the summoner died"), Trees->GetRemainingSections(0), 2);
 	TestTrue(
-		TEXT("The other creatures are still on their way"),
-		Swarm->GetCreatures()[1].State == ERpgHarvestSwarmCreatureState::Flying &&
+		TEXT("Every creature is still at work"),
+		Swarm->GetCreatures()[0].State == ERpgHarvestSwarmCreatureState::Flying &&
+			Swarm->GetCreatures()[1].State == ERpgHarvestSwarmCreatureState::Flying &&
 			Swarm->GetCreatures()[2].State == ERpgHarvestSwarmCreatureState::Flying);
 
 	Harvester.AbilitySystem->AddLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("Status.Death.Dying")));
 	TestTrue(TEXT("The summoner's death ends the swarm at once"), Swarm->IsFinished());
+	TestTrue(
+		TEXT("The creature that had struck finishes as harvested"),
+		Swarm->GetCreatures()[0].State == ERpgHarvestSwarmCreatureState::Harvested);
 	TestTrue(
 		TEXT("Creatures that had not struck dissipate"),
 		Swarm->GetCreatures()[1].State == ERpgHarvestSwarmCreatureState::Dissipated &&
