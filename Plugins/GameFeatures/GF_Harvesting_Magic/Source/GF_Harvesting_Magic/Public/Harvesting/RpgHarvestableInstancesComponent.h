@@ -100,10 +100,12 @@ protected:
 
 	/**
 	 * Cosmetic event for sections, depletion, and respawn presentation of one instance, fired on the server and on
-	 * clients whenever the instance's stock is applied locally. Changed instances report their state when the
-	 * component begins play, for example after streaming in. bInitialState is true for that state and for changes
-	 * older than the live-change window, so presentation can snap instead of animating. Depleted instances are already
-	 * hidden when bHideDepletedInstances is set. Never grant loot or change gameplay state from it.
+	 * clients whenever the instance's stock is applied locally. A live change with a presentation delay, such as one
+	 * tree of a Death Wave, is presented when its delay has passed, at the same server time on every machine.
+	 * Changed instances report their state when the component begins play, for example after streaming in.
+	 * bInitialState is true for that state and for changes older than the live-change window, so presentation can
+	 * snap instead of animating. Depleted instances are already hidden when bHideDepletedInstances is set. Never grant
+	 * loot or change gameplay state from it.
 	 */
 	UFUNCTION(BlueprintNativeEvent, Category = "Rpg|Harvesting|Instances")
 	void OnInstanceStockChanged(int32 InstanceIndex, int32 RemainingSections, int32 SectionCount, bool bActive, bool bInitialState);
@@ -148,6 +150,8 @@ private:
 	void BuildLinkedInstances();
 	void HandleStockChanged(const FIntVector& Key, bool bInitialState);
 	void PresentInstance(int32 InstanceIndex, bool bInitialState);
+	void ArmPresentationTimer();
+	void HandlePresentationTimer();
 	void SetLinkedInstancesVisible(int32 InstanceIndex, bool bShow);
 
 	/** One visible instance of a sibling component that presents a resource instance. */
@@ -174,6 +178,12 @@ private:
 
 	/** Stock component this component is registered with. */
 	mutable TWeakObjectPtr<URpgHarvestInstanceStockComponent> CachedStock;
+
+	/** World-time deadlines of live changes whose presentation waits for their delay, by instance index. Local. */
+	TMap<int32, double> PendingPresentations;
+
+	/** One timer wakes only for the next due presentation; no tick is used. */
+	FTimerHandle PresentationTimerHandle;
 
 	/** Server-only guard that rejects delegate-driven re-entry while one commit is in progress. */
 	bool bCommitInProgress = false;

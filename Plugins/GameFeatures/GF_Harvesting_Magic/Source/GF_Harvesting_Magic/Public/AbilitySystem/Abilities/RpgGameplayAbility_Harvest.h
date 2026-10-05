@@ -48,6 +48,9 @@ public:
 	/** Returns whether this ability's swings can strike a resource's active weak point for bonus sections. */
 	bool CanHitWeakPoints() const { return bCanHitWeakPoints && Targeting.Shape == ERpgHarvestTargetShape::SingleTarget; }
 
+	/** Returns the speed in cm/s at which this ability's presentation travels from target to target; 0 is instant. */
+	float GetPresentationWaveSpeed() const { return PresentationWaveSpeed; }
+
 	/** Returns whether this ability harvests every target in an area rather than one target it singled out. */
 	bool HarvestsArea() const { return Targeting.Shape == ERpgHarvestTargetShape::AreaAtAimPoint; }
 
@@ -158,6 +161,15 @@ protected:
 	/** Cosmetic cue executed on the server at the aim point when the commit harvested nothing, for example an empty node. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Feedback", meta = (Categories = "GameplayCue"))
 	FGameplayTag NoYieldGameplayCue;
+
+	/**
+	 * Speed in cm/s at which the presentation of a multi-target harvest travels outward from the harvested target
+	 * nearest to the harvester, so an area power fells its targets one after another. Stock and rewards change at once,
+	 * and every machine presents each target at the same server time. Zero presents every target at once. Cosmetic,
+	 * designer-tuned; honored by instanced resources.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Feedback", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "5000.0", ForceUnits = "cm/s"))
+	float PresentationWaveSpeed = 0.0f;
 
 private:
 	UFUNCTION()

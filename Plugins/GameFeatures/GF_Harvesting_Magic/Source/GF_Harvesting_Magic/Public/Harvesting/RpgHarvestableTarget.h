@@ -69,6 +69,14 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestRequest
 	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
 	bool bAreaHarvest = false;
+
+	/**
+	 * Cosmetic delay in seconds, 0 to 2.5, before every machine presents this change of the target, so an area power
+	 * can fell its targets one after another like a wave. The stock and the reward change at once. Honored by
+	 * instanced resources (URpgHarvestableInstancesComponent); other targets present at once.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Harvesting", meta = (ClampMin = "0.0", ClampMax = "2.5", Units = "s"))
+	float PresentationDelaySeconds = 0.0f;
 };
 
 /** Authoritative or previewed outcome of one harvest request against one target. */

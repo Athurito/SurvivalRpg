@@ -9,6 +9,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayTags/RpgHarvestingMagicGameplayTags.h"
+#include "Harvesting/RpgHarvestInstanceStockComponent.h"
 #include "Harvesting/RpgHarvestRewardService.h"
 #include "Harvesting/RpgHarvestStockRules.h"
 #include "Harvesting/RpgHarvestTargetingComponent.h"
@@ -229,6 +230,21 @@ void URpgGameplayAbility_Harvest::ExecuteAuthorityCommit()
 	FRpgHarvestRequest RequestTemplate;
 	BuildRequestTemplate(*Spec, *CurrentActorInfo, RequestTemplate);
 
+	// The presentation wave starts at the harvested target nearest to the harvester and travels outward.
+	const FVector WaveOrigin = RequestTemplate.Harvester ? RequestTemplate.Harvester->GetActorLocation() : FVector::ZeroVector;
+	double NearestTargetDistance = 0.0;
+	if (PresentationWaveSpeed > UE_KINDA_SMALL_NUMBER)
+	{
+		NearestTargetDistance = TNumericLimits<double>::Max();
+		for (const FRpgHarvestTargetEvaluation& Target : Selection.Targets)
+		{
+			if (Target.WouldHarvest())
+			{
+				NearestTargetDistance = FMath::Min(NearestTargetDistance, FVector::Dist2D(WaveOrigin, Target.Hit.ImpactPoint));
+			}
+		}
+	}
+
 	// Every target extracts its own stock, but their rewards reach the harvester as one delivery: one atomic
 	// inventory batch, or one drop when it does not fit.
 	const FRpgHarvestTargetEvaluation* FirstHarvested = nullptr;
@@ -246,6 +262,14 @@ void URpgGameplayAbility_Harvest::ExecuteAuthorityCommit()
 			Request.Hit = Target.Hit;
 			Request.TraceOrigin = Target.Hit.TraceStart;
 			Request.ExpectedRevision = IRpgHarvestableTarget::Execute_GetHarvestRevision(Receiver, Target.Hit);
+			if (PresentationWaveSpeed > UE_KINDA_SMALL_NUMBER)
+			{
+				const double WaveDistance = FVector::Dist2D(WaveOrigin, Target.Hit.ImpactPoint) - NearestTargetDistance;
+				Request.PresentationDelaySeconds = static_cast<float>(FMath::Clamp(
+					WaveDistance / PresentationWaveSpeed,
+					0.0,
+					static_cast<double>(URpgHarvestInstanceStockComponent::MaxPresentationDelaySeconds)));
+			}
 			Target.Result = IRpgHarvestableTarget::Execute_CommitHarvest(Receiver, Request);
 			if (Target.Result.IsSuccess() && !FirstHarvested)
 			{

@@ -522,6 +522,17 @@ pickup chore, and protected trees survive the wave.
 - **Area target count:** `MaxTargets` now counts only targets the ability
   would harvest. Nearer protected or depleted targets stay in the preview with
   their status but do not take a slot.
+- **Presentation wave:** `URpgGameplayAbility_Harvest::PresentationWaveSpeed`
+  (cm/s, 0 = at once) staggers how the targets of one harvest are presented.
+  - The harvested target nearest to the harvester is presented at once. Every
+    other target waits for its extra distance divided by the speed, up to
+    2.5 s; the request carries the delay as `PresentationDelaySeconds`.
+  - The stock, the rewards and the XP change at once; only the presentation
+    waits.
+  - The instance stock replicates the delay with the change. Each machine
+    subtracts the server time that has passed since the change, so the server
+    and every client present a target at the same server time.
+  - Instanced resources honor the delay; actor nodes present at once.
 
 ### Axe content
 
@@ -539,6 +550,8 @@ All assets live in `GF_Harvesting_Magic` and are authored through Unreal MCP.
       "Logging 2 required".
     - It costs only `GE_Cooldown_Harvest_DeathWave` (6 s,
       `Cooldown.Harvesting.DeathWave`).
+    - Its presentation wave travels at 15 m/s, so the nearest tree falls
+      first.
 - `BP_Pickup_Axe` lies next to the pickaxe pickup in `Lvl_HarvestPickaxe`.
 - `HP_DeadPine` has 4 sections, requires the axe and awards 9 Logging XP per
   section. It respawns after 120–180 s. `LT_DeadPine` yields 5 `ID_Wood` per
@@ -563,13 +576,15 @@ All assets live in `GF_Harvesting_Magic` and are authored through Unreal MCP.
     authored transform.
 - **Felling:** `BPC_HarvestInstances_DeadPine` spawns `BP_HarvestFallingTree`
   with the linked skeletal mesh for a live depletion on every machine with a
-  local player.
-  - The tree falls away from the local player, then sinks into the ground and
-    destroys itself.
-  - It waits by its distance to the local player, up to 1 s, so a Death Wave
-    fells the nearest trees first.
+  local player. The instance presents the depletion when the harvest's
+  presentation wave reaches it.
+  - The tree falls at once, away from the local player, then sinks into the
+    ground and destroys itself.
   - It has no collision, never replicates, and its wood has already been
     delivered.
+  - A first version waited by the tree's distance to the local player. A host
+    far from the trees therefore saw them fall up to 1 s later than the
+    harvesting client; the replicated presentation wave replaced it.
 - **Test map:** `Lvl_HarvestPickaxe` has the PCG volume
   `Harvest_PcgDeadPineStand`, twelve dead pines east of the ore veins.
   - It is generated in the editor, saved, and set to generate On Demand.
@@ -599,6 +614,9 @@ the following on the client:
 - At Logging 2, holding Q previewed `4/4  -4` on the trees in the ring.
   Releasing felled them on both machines and added their wood in one
   delivery, without a drop.
+- With the host far away at the spawn, a wave over three trees hid them 0.33 s,
+  0.39 s and 0.72 s after the release. The server and the client hid each
+  tree in the same probe, which polled about every 60 ms.
 - Aimed at the protected corner, the preview showed "Protected" on both
   protected trees. Only the unprotected tree in the ring was felled; a chop
   on a protected tree still took a section.

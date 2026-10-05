@@ -116,7 +116,8 @@ bool URpgHarvestInstanceStockComponent::ExtractSections(
 	const FIntVector& Key,
 	const int32 SectionCount,
 	const int32 SectionsTaken,
-	const float RespawnDelaySeconds)
+	const float RespawnDelaySeconds,
+	const float PresentationDelaySeconds)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(URpgHarvestInstanceStockComponent::ExtractSections);
 	if (!HasStockAuthority() || SectionsTaken <= 0)
@@ -152,10 +153,26 @@ bool URpgHarvestInstanceStockComponent::ExtractSections(
 		}
 	}
 	Entry.LastChangeServerTime = GetServerWorldTimeSeconds();
+	const float ClampedDelay = FMath::IsFinite(PresentationDelaySeconds)
+		? FMath::Clamp(PresentationDelaySeconds, 0.0f, MaxPresentationDelaySeconds)
+		: 0.0f;
+	Entry.PresentationDelayCentiseconds = static_cast<uint8>(FMath::RoundToInt32(ClampedDelay * 100.0f));
 	Stock.MarkItemDirty(Entry);
 
 	MarkStockChanged(Key);
 	return true;
+}
+
+float URpgHarvestInstanceStockComponent::GetRemainingPresentationDelay(const FIntVector& Key) const
+{
+	const FRpgHarvestInstanceStockEntry* Entry = FindEntry(Key);
+	if (!Entry || Entry->PresentationDelayCentiseconds == 0)
+	{
+		return 0.0f;
+	}
+	// Clients receive the change later than the server made it; that latency is part of the delay.
+	const float Elapsed = FMath::Max(0.0f, GetServerWorldTimeSeconds() - Entry->LastChangeServerTime);
+	return FMath::Max(0.0f, Entry->PresentationDelayCentiseconds / 100.0f - Elapsed);
 }
 
 bool URpgHarvestInstanceStockComponent::RestoreStock(const FIntVector& Key)

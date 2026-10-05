@@ -8,6 +8,7 @@
 #include "Harvesting/RpgHarvestRewardService.h"
 #include "Harvesting/RpgHarvestStockRules.h"
 #include "ProfilingDebugging/CpuProfilerTrace.h"
+#include "TimerManager.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgHarvestableInstancesComponent)
 
@@ -117,7 +118,7 @@ FRpgHarvestResult URpgHarvestableInstancesComponent::CommitHarvest_Implementatio
 		const float MaximumDelay = FMath::Max(MinimumDelay, HarvestProfile->MaximumRespawnSeconds);
 		RespawnDelaySeconds = MaximumDelay > 0.0f ? FMath::Max(0.001f, FMath::FRandRange(MinimumDelay, MaximumDelay)) : 0.0f;
 	}
-	Stock->ExtractSections(Key, SectionCount, Result.SectionsTaken, RespawnDelaySeconds);
+	Stock->ExtractSections(Key, SectionCount, Result.SectionsTaken, RespawnDelaySeconds, Request.PresentationDelaySeconds);
 
 	FRpgHarvestRewardService::AwardExperience(HarvestProfile, Request.Harvester, Result.SectionsTaken);
 	Result.Delivery = FRpgHarvestStockRules::ToDelivery(DeliveryResult);
@@ -269,6 +270,11 @@ void URpgHarvestableInstancesComponent::EndPlay(const EEndPlayReason::Type EndPl
 		Stock->UnregisterInstances(*this);
 	}
 	CachedStock.Reset();
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(PresentationTimerHandle);
+	}
+	PendingPresentations.Reset();
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -455,10 +461,65 @@ void URpgHarvestableInstancesComponent::SetLinkedInstancesVisible(const int32 In
 void URpgHarvestableInstancesComponent::HandleStockChanged(const FIntVector& Key, const bool bInitialState)
 {
 	int32 InstanceIndex = INDEX_NONE;
-	if (FindInstanceByKey(Key, InstanceIndex))
+	if (!FindInstanceByKey(Key, InstanceIndex))
 	{
-		PresentInstance(InstanceIndex, bInitialState);
+		return;
 	}
+
+	// A newer change supersedes a presentation that still waits.
+	PendingPresentations.Remove(InstanceIndex);
+	const URpgHarvestInstanceStockComponent* Stock = FindStock();
+	const UWorld* World = GetWorld();
+	const float Delay = !bInitialState && Stock ? Stock->GetRemainingPresentationDelay(Key) : 0.0f;
+	if (World && Delay > UE_KINDA_SMALL_NUMBER)
+	{
+		PendingPresentations.Add(InstanceIndex, World->GetTimeSeconds() + Delay);
+		ArmPresentationTimer();
+		return;
+	}
+	PresentInstance(InstanceIndex, bInitialState);
+}
+
+void URpgHarvestableInstancesComponent::ArmPresentationTimer()
+{
+	UWorld* World = GetWorld();
+	if (!World || PendingPresentations.IsEmpty())
+	{
+		return;
+	}
+
+	double EarliestDeadline = TNumericLimits<double>::Max();
+	for (const TPair<int32, double>& Pending : PendingPresentations)
+	{
+		EarliestDeadline = FMath::Min(EarliestDeadline, Pending.Value);
+	}
+	const float Delay = static_cast<float>(FMath::Max(0.001, EarliestDeadline - World->GetTimeSeconds()));
+	World->GetTimerManager().SetTimer(PresentationTimerHandle, this, &ThisClass::HandlePresentationTimer, Delay, false);
+}
+
+void URpgHarvestableInstancesComponent::HandlePresentationTimer()
+{
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	const double Now = World->GetTimeSeconds();
+	TArray<int32, TInlineAllocator<8>> DueInstances;
+	for (const TPair<int32, double>& Pending : PendingPresentations)
+	{
+		if (Pending.Value <= Now + UE_KINDA_SMALL_NUMBER)
+		{
+			DueInstances.Add(Pending.Key);
+		}
+	}
+	for (const int32 InstanceIndex : DueInstances)
+	{
+		PendingPresentations.Remove(InstanceIndex);
+		PresentInstance(InstanceIndex, false);
+	}
+	ArmPresentationTimer();
 }
 
 void URpgHarvestableInstancesComponent::PresentInstance(const int32 InstanceIndex, const bool bInitialState)

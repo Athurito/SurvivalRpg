@@ -244,6 +244,7 @@ public:
 		MinimumSkillLevel = InMinimumLevel;
 	}
 	void ConfigureWeakPointHits(const bool bInCanHitWeakPoints) { bCanHitWeakPoints = bInCanHitWeakPoints; }
+	void ConfigurePresentationWave(const float InSpeed) { PresentationWaveSpeed = InSpeed; }
 };
 
 /** Records preview notifications so tests can assert change-only broadcasting. */

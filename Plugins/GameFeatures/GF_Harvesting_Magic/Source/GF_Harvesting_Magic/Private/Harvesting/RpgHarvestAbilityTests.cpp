@@ -1369,4 +1369,84 @@ bool FRpgHarvestProtectionTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestAbilityPresentationWaveTest,
+	"SurvivalRpg.Harvesting.Ability.AreaPresentationTravelsAsWave",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestAbilityPresentationWaveTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestAbilityTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	const float EyeHeight = Harvester.Pawn->BaseEyeHeight;
+	URpgHarvestInstanceStockComponent* Stock = RpgHarvestAutomation::AddInstanceStock(World);
+	// Three trees 300, 424 and 600 cm from the harvester, all inside one area.
+	ARpgHarvestAutomationInstancesActor* Field = RpgHarvestAutomation::SpawnInstances(
+		World,
+		MakeProfile(World, 4),
+		{FVector(0.0, 0.0, 0.0), FVector(0.0, 300.0, 0.0), FVector(300.0, 0.0, 0.0)},
+		FVector(300.0, 0.0, EyeHeight));
+	const FGrantedAbility Wave = GrantAbility(Harvester.AbilitySystem);
+	if (!TestNotNull(TEXT("Instance stock exists"), Stock) ||
+		!TestNotNull(TEXT("Instanced field exists"), Field) ||
+		!TestNotNull(TEXT("Wave ability exists"), Wave.Instance))
+	{
+		return false;
+	}
+	FRpgHarvestTargetingParams AreaTargeting;
+	AreaTargeting.Shape = ERpgHarvestTargetShape::AreaAtAimPoint;
+	AreaTargeting.MaxAimDistance = 1000.0f;
+	AreaTargeting.MaxReachFromAvatar = 700.0f;
+	AreaTargeting.AreaRadius = 450.0f;
+	AreaTargeting.MaxTargets = 3;
+	Wave.Instance->ConfigureTargeting(AreaTargeting);
+	Wave.Instance->ConfigureSections(URpgHarvestProfile::MaxSectionCount);
+	Wave.Instance->ConfigurePresentationWave(500.0f);
+	TestWorld.PrimeTimerManager();
+
+	URpgHarvestAutomationInstancesComponent* Instances = Field->Instances;
+	auto PresentedScale = [Instances](const int32 InstanceIndex)
+	{
+		FTransform Transform;
+		return Instances->GetInstanceTransform(InstanceIndex, Transform, false) ? Transform.GetScale3D().X : -1.0;
+	};
+
+	TestTrue(TEXT("The wave activates"), Harvester.AbilitySystem->TryActivateAbility(Wave.Handle));
+	for (int32 InstanceIndex = 0; InstanceIndex < 3; ++InstanceIndex)
+	{
+		TestEqual(TEXT("Every tree loses its stock at once"), Instances->GetRemainingSections(InstanceIndex), 0);
+	}
+	TestEqual(TEXT("Every tree's wood is delivered at once"), CountMaterial(Harvester.PlayerState), 3 * 4 * YieldPerSection);
+	TestTrue(TEXT("The nearest tree falls at once"), FMath::IsNearlyZero(PresentedScale(0)));
+	TestTrue(TEXT("The side tree still stands"), FMath::IsNearlyEqual(PresentedScale(1), 1.0));
+	TestTrue(TEXT("The far tree still stands"), FMath::IsNearlyEqual(PresentedScale(2), 1.0));
+
+	FIntVector FarKey;
+	Instances->GetInstanceKey(2, FarKey);
+	TestTrue(
+		TEXT("The far tree waits for its distance at the wave speed"),
+		FMath::IsNearlyEqual(Stock->GetRemainingPresentationDelay(FarKey), 0.6f, 0.02f));
+
+	TestWorld.AdvanceTimers(0.3f);
+	TestTrue(TEXT("The side tree falls once the wave reaches it"), FMath::IsNearlyZero(PresentedScale(1)));
+	TestTrue(TEXT("The far tree still waits"), FMath::IsNearlyEqual(PresentedScale(2), 1.0));
+	TestTrue(
+		TEXT("Elapsed server time counts against the delay"),
+		FMath::IsNearlyEqual(Stock->GetRemainingPresentationDelay(FarKey), 0.3f, 0.02f));
+
+	TestWorld.AdvanceTimers(0.35f);
+	TestTrue(TEXT("The far tree falls last"), FMath::IsNearlyZero(PresentedScale(2)));
+	TestFalse(TEXT("A delayed fall is presented as a live change"), Instances->bLastInitialState);
+	TestEqual(TEXT("Each tree is presented exactly once"), Instances->EventCount, 3);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
