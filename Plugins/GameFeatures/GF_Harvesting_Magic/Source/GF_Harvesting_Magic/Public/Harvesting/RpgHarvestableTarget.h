@@ -62,6 +62,21 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestRequest
 	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
 	bool bCanHitWeakPoint = false;
+
+	/**
+	 * True for area powers and other harvests that affect every resource in a region instead of one the player singled
+	 * out. Resources inside a URpgHarvestProtectionComponent box reject such requests as Protected.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
+	bool bAreaHarvest = false;
+
+	/**
+	 * Cosmetic delay in seconds, 0 to 2.5, before every machine presents this change of the target, so an area power
+	 * can fell its targets one after another like a wave. The stock and the reward change at once. Honored by
+	 * instanced resources (URpgHarvestableInstancesComponent); other targets present at once.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Harvesting", meta = (ClampMin = "0.0", ClampMax = "2.5", Units = "s"))
+	float PresentationDelaySeconds = 0.0f;
 };
 
 /** Authoritative or previewed outcome of one harvest request against one target. */
@@ -87,7 +102,10 @@ enum class ERpgHarvestOutcome : uint8
 	Invalid,
 
 	/** The reward could not be materialized; the target state is unchanged and the harvest may be retried. */
-	DeliveryFailed
+	DeliveryFailed,
+
+	/** An area harvest reached a resource inside a harvest protection box; single-target harvests are unaffected. */
+	Protected
 };
 
 /** How the reward of a successful harvest reached the harvester. */
@@ -137,7 +155,10 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestResult
 	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
 	bool bWeakPointHit = false;
 
-	/** Delivery path of a committed reward; None for evaluations and rejections. */
+	/**
+	 * Delivery path of a committed reward; None for evaluations and rejections. A multi-target harvest ability delivers
+	 * the rewards of all its targets as one batch and reports that batch's path on every harvested target.
+	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
 	ERpgHarvestDelivery Delivery = ERpgHarvestDelivery::None;
 

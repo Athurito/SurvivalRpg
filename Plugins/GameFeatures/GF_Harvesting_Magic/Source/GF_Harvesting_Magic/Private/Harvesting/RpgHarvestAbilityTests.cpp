@@ -26,6 +26,7 @@
 #include "Engine/CollisionProfile.h"
 #include "Engine/DecalActor.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "UObject/UnrealType.h"
@@ -169,6 +170,19 @@ namespace RpgHarvestAbilityTests
 			? PlayerState->GetInventoryManagerComponent()->GetTotalItemCountByDefinition(
 				URpgHarvestAutomationTestStackItemDefinition::StaticClass())
 			: 0;
+	}
+
+	TArray<ARpgDroppedInventoryActor*> GetWorldDrops(UWorld* World)
+	{
+		TArray<ARpgDroppedInventoryActor*> Drops;
+		for (TActorIterator<ARpgDroppedInventoryActor> It(World); It; ++It)
+		{
+			if (IsValid(*It) && !It->IsActorBeingDestroyed())
+			{
+				Drops.Add(*It);
+			}
+		}
+		return Drops;
 	}
 
 	UAnimMontage* MakeMontage(const TArray<TPair<FGameplayTag, float>>& Notifies, const float Length)
@@ -1127,6 +1141,318 @@ bool FRpgHarvestAbilityInstancesTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("The area takes three sections from the other side instance"), Instances->GetRemainingSections(2), 1);
 	TestEqual(TEXT("Every harvested instance is stored"), Stock->GetNumChangedInstances(), 3);
 	TestEqual(TEXT("Every extracted section is rewarded"), CountMaterial(Harvester.PlayerState), 10 * YieldPerSection);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestAbilityAreaDeliveryTest,
+	"SurvivalRpg.Harvesting.Ability.AreaRewardsArriveAsOneDelivery",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestAbilityAreaDeliveryTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestAbilityTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	FHarvesterFixture FullHarvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixtures exist"), Harvester.IsValid() && FullHarvester.IsValid()))
+	{
+		return false;
+	}
+	const float EyeHeight = Harvester.Pawn->BaseEyeHeight;
+
+	// Three resources around the aim point and an area power that empties each of them, like Death Wave.
+	auto SpawnField = [World, EyeHeight]()
+	{
+		return TArray<ARpgHarvestAutomationCollidableNodeActor*>{
+			SpawnNode(World, FVector(400.0, 0.0, EyeHeight), MakeProfile(World, 4)),
+			SpawnNode(World, FVector(400.0, 160.0, EyeHeight), MakeProfile(World, 4)),
+			SpawnNode(World, FVector(400.0, -160.0, EyeHeight), MakeProfile(World, 4))};
+	};
+	FRpgHarvestTargetingParams AreaTargeting;
+	AreaTargeting.Shape = ERpgHarvestTargetShape::AreaAtAimPoint;
+	AreaTargeting.MaxAimDistance = 1000.0f;
+	AreaTargeting.MaxReachFromAvatar = 700.0f;
+	AreaTargeting.AreaRadius = 300.0f;
+	AreaTargeting.MaxTargets = 3;
+	const FGrantedAbility Area = GrantAbility(Harvester.AbilitySystem);
+	const FGrantedAbility FullArea = GrantAbility(FullHarvester.AbilitySystem);
+	if (!TestNotNull(TEXT("Area ability exists"), Area.Instance) ||
+		!TestNotNull(TEXT("Full-inventory area ability exists"), FullArea.Instance))
+	{
+		return false;
+	}
+	for (const FGrantedAbility* Granted : {&Area, &FullArea})
+	{
+		Granted->Instance->ConfigureTargeting(AreaTargeting);
+		Granted->Instance->ConfigureSections(URpgHarvestProfile::MaxSectionCount);
+	}
+
+	TArray<ARpgHarvestAutomationCollidableNodeActor*> Field = SpawnField();
+	TestTrue(TEXT("The area harvest activates"), Harvester.AbilitySystem->TryActivateAbility(Area.Handle));
+	for (const ARpgHarvestAutomationCollidableNodeActor* Node : Field)
+	{
+		TestFalse(TEXT("The area empties every resource completely"), Node && Node->HarvestableNode->IsHarvestable());
+	}
+	TestEqual(TEXT("The complete stock of every resource reaches the inventory"), CountMaterial(Harvester.PlayerState), 3 * 4 * YieldPerSection);
+	TestEqual(TEXT("A fitting area reward spawns no drop"), GetWorldDrops(World).Num(), 0);
+
+	for (ARpgHarvestAutomationCollidableNodeActor* Node : Field)
+	{
+		Node->Destroy();
+	}
+	Field = SpawnField();
+	URpgInventoryManagerComponent* FullInventory = FullHarvester.PlayerState->GetInventoryManagerComponent();
+	FullInventory->SetFixedMaxEntries(0);
+	FullInventory->SetCapacityMode(ERpgInventoryCapacityMode::FixedEntries);
+	TestTrue(TEXT("The area harvest activates with a full inventory"), FullHarvester.AbilitySystem->TryActivateAbility(FullArea.Handle));
+	for (const ARpgHarvestAutomationCollidableNodeActor* Node : Field)
+	{
+		TestFalse(TEXT("A full inventory still empties every resource"), Node && Node->HarvestableNode->IsHarvestable());
+	}
+	const TArray<ARpgDroppedInventoryActor*> Drops = GetWorldDrops(World);
+	if (!TestEqual(TEXT("The overflow of every target arrives in exactly one drop"), Drops.Num(), 1))
+	{
+		return false;
+	}
+	const URpgInventoryManagerComponent* DropInventory = Drops[0]->GetLootInventoryManager();
+	TestTrue(
+		TEXT("The single drop holds the complete area reward"),
+		DropInventory &&
+			DropInventory->GetTotalItemCountByDefinition(URpgHarvestAutomationTestStackItemDefinition::StaticClass()) ==
+				3 * 4 * YieldPerSection);
+	TestTrue(
+		TEXT("An area drop lands at the harvester"),
+		FVector::Dist2D(Drops[0]->GetActorLocation(), FullHarvester.Pawn->GetActorLocation()) < 100.0);
+	TestEqual(TEXT("Nothing reaches the full inventory"), CountMaterial(FullHarvester.PlayerState), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestProtectionTest,
+	"SurvivalRpg.Harvesting.Protection.AreaHarvestSkipsProtectedResources",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestProtectionTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestAbilityTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	const float EyeHeight = Harvester.Pawn->BaseEyeHeight;
+	ARpgHarvestAutomationCollidableNodeActor* Aimed = SpawnNode(World, FVector(400.0, 0.0, EyeHeight), MakeProfile(World, 4));
+	ARpgHarvestAutomationCollidableNodeActor* Side = SpawnNode(World, FVector(400.0, 160.0, EyeHeight), MakeProfile(World, 4));
+	ARpgHarvestAutomationCollidableNodeActor* Far = SpawnNode(World, FVector(400.0, -200.0, EyeHeight), MakeProfile(World, 4));
+
+	// A camp protects the aimed resource; its box does not reach the others.
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgHarvestAutomationProtectionActor* Camp = World->SpawnActor<ARpgHarvestAutomationProtectionActor>(
+		ARpgHarvestAutomationProtectionActor::StaticClass(),
+		FTransform(FVector(400.0, 0.0, EyeHeight)),
+		SpawnParameters);
+	if (!TestNotNull(TEXT("Aimed resource exists"), Aimed) ||
+		!TestNotNull(TEXT("Side resource exists"), Side) ||
+		!TestNotNull(TEXT("Far resource exists"), Far) ||
+		!TestNotNull(TEXT("Protection camp exists"), Camp))
+	{
+		return false;
+	}
+	Camp->Protection->SetBoxExtent(FVector(80.0, 80.0, 200.0));
+	if (!Camp->HasActorBegunPlay())
+	{
+		Camp->DispatchBeginPlay();
+	}
+	const URpgHarvestProtectionSubsystem* Protection = World->GetSubsystem<URpgHarvestProtectionSubsystem>();
+	if (!TestNotNull(TEXT("The world has a protection registry"), Protection))
+	{
+		return false;
+	}
+	TestEqual(TEXT("The camp registers its protection box"), Protection->GetNumProtectionZones(), 1);
+	TestTrue(TEXT("The box protects the aimed resource"), Protection->IsProtected(Aimed->GetActorLocation()));
+	TestFalse(TEXT("The box leaves the side resource unprotected"), Protection->IsProtected(Side->GetActorLocation()));
+
+	const FGrantedAbility Area = GrantAbility(Harvester.AbilitySystem);
+	const FGrantedAbility Swing = GrantAbility(Harvester.AbilitySystem);
+	if (!TestNotNull(TEXT("Area ability exists"), Area.Instance) || !TestNotNull(TEXT("Swing exists"), Swing.Instance))
+	{
+		return false;
+	}
+	FRpgHarvestTargetingParams AreaTargeting;
+	AreaTargeting.Shape = ERpgHarvestTargetShape::AreaAtAimPoint;
+	AreaTargeting.MaxAimDistance = 1000.0f;
+	AreaTargeting.MaxReachFromAvatar = 700.0f;
+	AreaTargeting.AreaRadius = 300.0f;
+	AreaTargeting.MaxTargets = 2;
+	Area.Instance->ConfigureTargeting(AreaTargeting);
+
+	FRpgHarvestPreview Preview = Evaluate(Harvester.AbilitySystem, Area);
+	int32 WouldHarvest = 0;
+	const FRpgHarvestTargetEvaluation* AimedTarget = nullptr;
+	for (const FRpgHarvestTargetEvaluation& Target : Preview.Targets)
+	{
+		WouldHarvest += Target.WouldHarvest() ? 1 : 0;
+		AimedTarget = Target.Receiver.Get() == Aimed->HarvestableNode ? &Target : AimedTarget;
+	}
+	TestEqual(TEXT("The preview lists the protected resource and two harvestable ones"), Preview.Targets.Num(), 3);
+	TestEqual(TEXT("The protected resource does not use up a target slot"), WouldHarvest, 2);
+	TestTrue(
+		TEXT("The preview reports the protected resource as protected"),
+		AimedTarget && AimedTarget->Result.Outcome == ERpgHarvestOutcome::Protected && !AimedTarget->WouldHarvest());
+
+	TestTrue(TEXT("The area harvest activates"), Harvester.AbilitySystem->TryActivateAbility(Area.Handle));
+	TestEqual(TEXT("The area skips the protected resource"), Aimed->HarvestableNode->GetRemainingSections(), 4);
+	TestEqual(TEXT("The area harvests the side resource"), Side->HarvestableNode->GetRemainingSections(), 3);
+	TestEqual(TEXT("The area harvests the far resource"), Far->HarvestableNode->GetRemainingSections(), 3);
+
+	FRpgHarvestTargetingParams Single;
+	Single.MaxAimDistance = 1000.0f;
+	Single.MaxReachFromAvatar = 500.0f;
+	Swing.Instance->ConfigureTargeting(Single);
+	TestTrue(TEXT("A deliberate swing activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	TestEqual(TEXT("A deliberate swing still harvests a protected resource"), Aimed->HarvestableNode->GetRemainingSections(), 3);
+
+	// Instanced resources check the same boxes at their authored locations.
+	RpgHarvestAutomation::AddInstanceStock(World);
+	ARpgHarvestAutomationInstancesActor* Instances = RpgHarvestAutomation::SpawnInstances(
+		World,
+		MakeProfile(World, 4),
+		{FVector::ZeroVector, FVector(0.0, 300.0, 0.0)},
+		FVector(400.0, 2000.0, 0.0));
+	ARpgHarvestAutomationProtectionActor* Grove = World->SpawnActor<ARpgHarvestAutomationProtectionActor>(
+		ARpgHarvestAutomationProtectionActor::StaticClass(),
+		FTransform(FVector(400.0, 2000.0, 0.0)),
+		SpawnParameters);
+	if (!TestNotNull(TEXT("Instanced resources exist"), Instances) || !TestNotNull(TEXT("Grove protection exists"), Grove))
+	{
+		return false;
+	}
+	Grove->Protection->SetBoxExtent(FVector(100.0, 100.0, 100.0));
+	if (!Grove->HasActorBegunPlay())
+	{
+		Grove->DispatchBeginPlay();
+	}
+	FRpgHarvestRequest InstanceRequest =
+		RpgHarvestAutomation::MakeInstanceRequest(Instances->Instances, 0, Harvester.Pawn);
+	InstanceRequest.bAreaHarvest = true;
+	TestTrue(
+		TEXT("An area request rejects a protected instance"),
+		IRpgHarvestableTarget::Execute_EvaluateHarvest(Instances->Instances, InstanceRequest).Outcome == ERpgHarvestOutcome::Protected);
+	FRpgHarvestRequest OutsideRequest =
+		RpgHarvestAutomation::MakeInstanceRequest(Instances->Instances, 1, Harvester.Pawn);
+	OutsideRequest.bAreaHarvest = true;
+	TestTrue(
+		TEXT("An area request harvests an instance outside the box"),
+		IRpgHarvestableTarget::Execute_EvaluateHarvest(Instances->Instances, OutsideRequest).IsSuccess());
+	InstanceRequest.bAreaHarvest = false;
+	TestTrue(
+		TEXT("A single-target request harvests a protected instance"),
+		IRpgHarvestableTarget::Execute_EvaluateHarvest(Instances->Instances, InstanceRequest).IsSuccess());
+
+	// Removing the camp's protection, for example when it is torn down, ends its protection.
+	Camp->Protection->DestroyComponent();
+	TestEqual(TEXT("A removed protection box unregisters"), Protection->GetNumProtectionZones(), 1);
+	Preview = Evaluate(Harvester.AbilitySystem, Area);
+	TestTrue(
+		TEXT("Without the camp the area harvests the formerly protected resource"),
+		Preview.Targets.Num() == 2 && Preview.Targets[0].Receiver.Get() == Aimed->HarvestableNode &&
+			Preview.Targets[0].WouldHarvest());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestAbilityPresentationWaveTest,
+	"SurvivalRpg.Harvesting.Ability.AreaPresentationTravelsAsWave",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestAbilityPresentationWaveTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestAbilityTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	const float EyeHeight = Harvester.Pawn->BaseEyeHeight;
+	URpgHarvestInstanceStockComponent* Stock = RpgHarvestAutomation::AddInstanceStock(World);
+	// Three trees 300, 424 and 600 cm from the harvester inside one area, and one far outside it.
+	ARpgHarvestAutomationInstancesActor* Field = RpgHarvestAutomation::SpawnInstances(
+		World,
+		MakeProfile(World, 4),
+		{FVector(0.0, 0.0, 0.0), FVector(0.0, 300.0, 0.0), FVector(300.0, 0.0, 0.0), FVector(0.0, -1500.0, 0.0)},
+		FVector(300.0, 0.0, EyeHeight));
+	const FGrantedAbility Wave = GrantAbility(Harvester.AbilitySystem);
+	if (!TestNotNull(TEXT("Instance stock exists"), Stock) ||
+		!TestNotNull(TEXT("Instanced field exists"), Field) ||
+		!TestNotNull(TEXT("Wave ability exists"), Wave.Instance))
+	{
+		return false;
+	}
+	FRpgHarvestTargetingParams AreaTargeting;
+	AreaTargeting.Shape = ERpgHarvestTargetShape::AreaAtAimPoint;
+	AreaTargeting.MaxAimDistance = 1000.0f;
+	AreaTargeting.MaxReachFromAvatar = 700.0f;
+	AreaTargeting.AreaRadius = 450.0f;
+	AreaTargeting.MaxTargets = 3;
+	Wave.Instance->ConfigureTargeting(AreaTargeting);
+	Wave.Instance->ConfigureSections(URpgHarvestProfile::MaxSectionCount);
+	Wave.Instance->ConfigurePresentationWave(500.0f);
+	TestWorld.PrimeTimerManager();
+
+	URpgHarvestAutomationInstancesComponent* Instances = Field->Instances;
+	auto PresentedScale = [Instances](const int32 InstanceIndex)
+	{
+		FTransform Transform;
+		return Instances->GetInstanceTransform(InstanceIndex, Transform, false) ? Transform.GetScale3D().X : -1.0;
+	};
+
+	TestTrue(TEXT("The wave activates"), Harvester.AbilitySystem->TryActivateAbility(Wave.Handle));
+	for (int32 InstanceIndex = 0; InstanceIndex < 3; ++InstanceIndex)
+	{
+		TestEqual(TEXT("Every tree loses its stock at once"), Instances->GetRemainingSections(InstanceIndex), 0);
+	}
+	TestEqual(TEXT("Every tree's wood is delivered at once"), CountMaterial(Harvester.PlayerState), 3 * 4 * YieldPerSection);
+	TestTrue(TEXT("The nearest tree falls at once"), FMath::IsNearlyZero(PresentedScale(0)));
+	TestTrue(TEXT("The side tree still stands"), FMath::IsNearlyEqual(PresentedScale(1), 1.0));
+	FVector SideDirection;
+	TestTrue(
+		TEXT("Every machine reads the side tree's direction away from the harvester"),
+		Instances->GetInstanceHarvestDirection(1, SideDirection) &&
+			SideDirection.Equals(FVector(UE_INV_SQRT_2, UE_INV_SQRT_2, 0.0), 0.03));
+	FVector UntouchedDirection;
+	TestFalse(TEXT("An untouched tree has no harvest direction"), Instances->GetInstanceHarvestDirection(3, UntouchedDirection));
+	TestTrue(TEXT("The far tree still stands"), FMath::IsNearlyEqual(PresentedScale(2), 1.0));
+
+	FIntVector FarKey;
+	Instances->GetInstanceKey(2, FarKey);
+	TestTrue(
+		TEXT("The far tree waits for its distance at the wave speed"),
+		FMath::IsNearlyEqual(Stock->GetRemainingPresentationDelay(FarKey), 0.6f, 0.02f));
+
+	TestWorld.AdvanceTimers(0.3f);
+	TestTrue(TEXT("The side tree falls once the wave reaches it"), FMath::IsNearlyZero(PresentedScale(1)));
+	TestTrue(TEXT("The far tree still waits"), FMath::IsNearlyEqual(PresentedScale(2), 1.0));
+	TestTrue(
+		TEXT("Elapsed server time counts against the delay"),
+		FMath::IsNearlyEqual(Stock->GetRemainingPresentationDelay(FarKey), 0.3f, 0.02f));
+
+	TestWorld.AdvanceTimers(0.35f);
+	TestTrue(TEXT("The far tree falls last"), FMath::IsNearlyZero(PresentedScale(2)));
+	TestFalse(TEXT("A delayed fall is presented as a live change"), Instances->bLastInitialState);
+	TestEqual(TEXT("Each tree is presented exactly once"), Instances->EventCount, 3);
 	return true;
 }
 

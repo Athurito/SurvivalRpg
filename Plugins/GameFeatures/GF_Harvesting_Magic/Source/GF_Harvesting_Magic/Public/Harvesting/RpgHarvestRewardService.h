@@ -1,8 +1,11 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "SurvivalRpg/Inventory/IPickupable.h"
+#include "Templates/SubclassOf.h"
 
 class AActor;
+class ARpgDroppedInventoryActor;
 class ARpgPlayerState;
 class URpgHarvestRewardProfile;
 class URpgInventoryItemInstance;
@@ -14,7 +17,10 @@ enum class ERpgHarvestRewardDeliveryResult : uint8
 	Failed,
 	Empty,
 	Inventory,
-	WorldDrop
+	WorldDrop,
+
+	/** The reward was rolled and added to the harvester's open FRpgHarvestRewardBatch, which delivers it later. */
+	Batched
 };
 
 /** Native-only input for one atomic harvest reward roll and delivery. */
@@ -59,4 +65,61 @@ public:
 
 	/** Awards the profile's trade-skill XP once per harvested unit after a target has accepted successful delivery. */
 	static void AwardExperience(const URpgHarvestRewardProfile* Profile, AActor* Harvester, int32 HarvestedUnits = 1);
+
+private:
+	friend class FRpgHarvestRewardBatch;
+
+	/**
+	 * Delivers Reward atomically to the harvester's inventory when bTryInventory is set and it fits, otherwise
+	 * completely into one drop at DropTransform.
+	 */
+	static ERpgHarvestRewardDeliveryResult DeliverPickup(
+		UWorld& World,
+		AActor& Harvester,
+		const FInventoryPickup& Reward,
+		const FTransform& DropTransform,
+		TSubclassOf<ARpgDroppedInventoryActor> DropClass,
+		bool bTryInventory);
+};
+
+/**
+ * Server-side scope that merges the rewards of several harvest commits into one delivery, so an area harvest fills
+ * the inventory as one atomic batch or overflows into one drop instead of one drop per target.
+ *
+ * While a batch is open for a harvester, FRpgHarvestRewardService::DeliverReward still validates, rolls and
+ * materializes every target's reward, but adds it to the batch and reports Batched; the target then extracts its
+ * stock and awards XP as usual. Deliver sends the merged rewards. A batch destroyed with undelivered rewards delivers
+ * them at the harvester, so material is never dropped silently. Game thread only; batches may not overlap for one
+ * harvester.
+ */
+class GF_HARVESTING_MAGIC_API FRpgHarvestRewardBatch : public FNoncopyable
+{
+public:
+	explicit FRpgHarvestRewardBatch(AActor* InHarvester);
+	~FRpgHarvestRewardBatch();
+
+	/**
+	 * Delivers every batched reward to the harvester's inventory as one atomic batch, or completely into one
+	 * replicated drop at DropTransform. Returns Empty when nothing was batched. Later rewards are delivered directly.
+	 */
+	ERpgHarvestRewardDeliveryResult Deliver(const FTransform& DropTransform);
+
+	/** Returns whether the batch holds rewards that were not delivered yet. */
+	bool HasPendingRewards() const;
+
+	/** Returns the open batch of Harvester, or null. */
+	static FRpgHarvestRewardBatch* FindOpen(const AActor* Harvester);
+
+private:
+	friend class FRpgHarvestRewardService;
+
+	/** Merges Reward into the pending rewards; stacks of the same item definition are combined. */
+	bool Append(const FInventoryPickup& Reward, TSubclassOf<ARpgDroppedInventoryActor> InDropClass);
+
+	TWeakObjectPtr<AActor> Harvester;
+	TWeakObjectPtr<UWorld> World;
+	FInventoryPickup PendingReward;
+	TSubclassOf<ARpgDroppedInventoryActor> DropClass;
+
+	static TArray<FRpgHarvestRewardBatch*> OpenBatches;
 };

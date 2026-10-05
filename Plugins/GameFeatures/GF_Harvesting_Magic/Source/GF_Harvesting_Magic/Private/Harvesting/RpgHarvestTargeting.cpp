@@ -267,16 +267,24 @@ FVector FRpgHarvestTargeting::SelectAndEvaluate(
 	{
 		return A.DistanceSquared < B.DistanceSquared;
 	});
-	const int32 TargetCount = FMath::Min(Candidates.Num(), FMath::Max(1, Params.MaxTargets));
-	for (int32 Index = 0; Index < TargetCount; ++Index)
+
+	// Only targets the request would harvest use up MaxTargets. Nearer rejected targets, such as protected or
+	// depleted resources, stay listed so the preview can explain why they are skipped.
+	const int32 MaxTargets = FMath::Max(1, Params.MaxTargets);
+	int32 HarvestableTargets = 0;
+	for (const FAreaCandidate& Candidate : Candidates)
 	{
 		AppendEvaluation(
-			Candidates[Index].Receiver,
-			Candidates[Index].Hit,
+			Candidate.Receiver,
+			Candidate.Hit,
 			bAimInReach,
 			ViewLocation,
 			RequestTemplate,
 			OutTargets);
+		if (OutTargets.Last().Result.IsSuccess() && ++HarvestableTargets >= MaxTargets)
+		{
+			break;
+		}
 	}
 	return AimPoint;
 }

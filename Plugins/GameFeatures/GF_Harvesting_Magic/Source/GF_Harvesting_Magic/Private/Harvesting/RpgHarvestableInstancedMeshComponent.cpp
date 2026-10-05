@@ -294,7 +294,16 @@ FRpgHarvestResult URpgHarvestableInstancedMeshComponent::EvaluateHarvest_Impleme
 	Stock.SectionCount = 1;
 	Stock.bActive = IsResourceInstanceActive(InstanceIndex);
 	Stock.HarvestedSections = Stock.bActive ? 0 : 1;
-	FRpgHarvestResult Result = FRpgHarvestStockRules::Evaluate(HarvestProfile, Request, Stock);
+	// Only area requests respect protection, so only they pay for the instance location.
+	FTransform InstanceTransform;
+	const bool bProbeProtection = Request.bAreaHarvest && GetInstanceTransform(InstanceIndex, InstanceTransform, true);
+	const FVector ProtectionProbe = InstanceTransform.GetLocation();
+	FRpgHarvestResult Result = FRpgHarvestStockRules::Evaluate(
+		HarvestProfile,
+		Request,
+		Stock,
+		nullptr,
+		bProbeProtection ? &ProtectionProbe : nullptr);
 	if (Result.IsSuccess() && HarvestsInProgress.Contains(InstanceIndex))
 	{
 		return FRpgHarvestResult::MakeRejected(ERpgHarvestOutcome::Stale, 1, 1);

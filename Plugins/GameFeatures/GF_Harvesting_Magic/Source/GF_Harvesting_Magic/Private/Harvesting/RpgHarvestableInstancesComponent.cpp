@@ -1,5 +1,6 @@
 #include "Harvesting/RpgHarvestableInstancesComponent.h"
 
+#include "Components/InstancedSkinnedMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Harvesting/RpgHarvestInstanceStockComponent.h"
@@ -7,6 +8,7 @@
 #include "Harvesting/RpgHarvestRewardService.h"
 #include "Harvesting/RpgHarvestStockRules.h"
 #include "ProfilingDebugging/CpuProfilerTrace.h"
+#include "TimerManager.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgHarvestableInstancesComponent)
 
@@ -38,8 +40,16 @@ FRpgHarvestResult URpgHarvestableInstancesComponent::EvaluateHarvest_Implementat
 			GetSectionCount());
 	}
 
-	const FRpgHarvestResult Result =
-		FRpgHarvestStockRules::Evaluate(HarvestProfile, Request, MakeStockSnapshot(InstanceIndex));
+	// Only area requests respect protection, so only they pay for the instance location.
+	FTransform InstanceTransform;
+	const bool bProbeProtection = Request.bAreaHarvest && GetAuthoredInstanceTransform(InstanceIndex, InstanceTransform, true);
+	const FVector ProtectionProbe = InstanceTransform.GetLocation();
+	const FRpgHarvestResult Result = FRpgHarvestStockRules::Evaluate(
+		HarvestProfile,
+		Request,
+		MakeStockSnapshot(InstanceIndex),
+		nullptr,
+		bProbeProtection ? &ProtectionProbe : nullptr);
 	if (Result.IsSuccess() && bCommitInProgress)
 	{
 		return FRpgHarvestResult::MakeRejected(ERpgHarvestOutcome::Stale, Result.RemainingSections, Result.SectionCount);
@@ -108,7 +118,17 @@ FRpgHarvestResult URpgHarvestableInstancesComponent::CommitHarvest_Implementatio
 		const float MaximumDelay = FMath::Max(MinimumDelay, HarvestProfile->MaximumRespawnSeconds);
 		RespawnDelaySeconds = MaximumDelay > 0.0f ? FMath::Max(0.001f, FMath::FRandRange(MinimumDelay, MaximumDelay)) : 0.0f;
 	}
-	Stock->ExtractSections(Key, SectionCount, Result.SectionsTaken, RespawnDelaySeconds);
+	// The direction from the harvester toward the instance lets every machine present the change the same way.
+	FVector AwayFromHarvester = InstanceTransform.GetLocation() - (Request.Harvester ? Request.Harvester->GetActorLocation() : Request.TraceOrigin);
+	AwayFromHarvester.Z = 0.0;
+	const float HarvestYawDegrees = AwayFromHarvester.IsNearlyZero() ? 0.0f : static_cast<float>(AwayFromHarvester.Rotation().Yaw);
+	Stock->ExtractSections(
+		Key,
+		SectionCount,
+		Result.SectionsTaken,
+		RespawnDelaySeconds,
+		Request.PresentationDelaySeconds,
+		HarvestYawDegrees);
 
 	FRpgHarvestRewardService::AwardExperience(HarvestProfile, Request.Harvester, Result.SectionsTaken);
 	Result.Delivery = FRpgHarvestStockRules::ToDelivery(DeliveryResult);
@@ -164,6 +184,54 @@ bool URpgHarvestableInstancesComponent::SetInstancePresentationScale(const int32
 	return UpdateInstanceTransform(InstanceIndex, PresentedTransform, false, true, true);
 }
 
+bool URpgHarvestableInstancesComponent::GetLinkedPresentationInstance(
+	const int32 InstanceIndex,
+	UMeshComponent*& OutComponent,
+	FTransform& OutWorldTransform) const
+{
+	OutComponent = nullptr;
+	OutWorldTransform = FTransform::Identity;
+	for (auto It = LinkedInstances.CreateConstKeyIterator(InstanceIndex); It; ++It)
+	{
+		UMeshComponent* Component = It.Value().Component.Get();
+		if (!Component)
+		{
+			continue;
+		}
+
+		const int32 LinkedIndex = It.Value().InstanceIndex;
+		FTransform LocalTransform;
+		if (const FTransform* HiddenTransform = HiddenLinkedTransforms.Find(MakeTuple(It.Value().Component, LinkedIndex)))
+		{
+			LocalTransform = *HiddenTransform;
+		}
+		else if (const UInstancedStaticMeshComponent* StaticInstances = Cast<UInstancedStaticMeshComponent>(Component))
+		{
+			StaticInstances->GetInstanceTransform(LinkedIndex, LocalTransform, false);
+		}
+		else if (const UInstancedSkinnedMeshComponent* SkinnedInstances = Cast<UInstancedSkinnedMeshComponent>(Component))
+		{
+			SkinnedInstances->GetInstanceTransform(SkinnedInstances->GetInstanceId(LinkedIndex), LocalTransform, false);
+		}
+		OutComponent = Component;
+		OutWorldTransform = LocalTransform * Component->GetComponentTransform();
+		return true;
+	}
+	return false;
+}
+
+bool URpgHarvestableInstancesComponent::GetInstanceHarvestDirection(const int32 InstanceIndex, FVector& OutDirection) const
+{
+	FIntVector Key;
+	const URpgHarvestInstanceStockComponent* Stock = FindStock();
+	if (!Stock || !GetInstanceKey(InstanceIndex, Key))
+	{
+		OutDirection = FVector::ZeroVector;
+		return false;
+	}
+	return Stock->GetHarvestDirection(Key, OutDirection);
+}
+
 bool URpgHarvestableInstancesComponent::GetInstanceKey(const int32 InstanceIndex, FIntVector& OutKey) const
 {
 	if (!IsValidResourceInstance(InstanceIndex))
@@ -199,6 +267,7 @@ void URpgHarvestableInstancesComponent::BeginPlay()
 	Super::BeginPlay();
 
 	BuildInstanceKeys();
+	BuildLinkedInstances();
 	if (!HarvestProfile)
 	{
 		UE_LOG(
@@ -223,6 +292,11 @@ void URpgHarvestableInstancesComponent::EndPlay(const EEndPlayReason::Type EndPl
 		Stock->UnregisterInstances(*this);
 	}
 	CachedStock.Reset();
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(PresentationTimerHandle);
+	}
+	PendingPresentations.Reset();
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -285,13 +359,189 @@ void URpgHarvestableInstancesComponent::BuildInstanceKeys()
 	}
 }
 
+void URpgHarvestableInstancesComponent::BuildLinkedInstances()
+{
+	TRACE_CPUPROFILER_EVENT_SCOPE(URpgHarvestableInstancesComponent::BuildLinkedInstances);
+
+	LinkedInstances.Reset();
+	HiddenLinkedTransforms.Reset();
+	NumLinkedResources = 0;
+	AActor* Owner = GetOwner();
+	if (LinkedPresentationTag.IsNone() || !Owner || InstanceIndexByKey.IsEmpty())
+	{
+		return;
+	}
+
+	auto LinkInstance = [this](UMeshComponent& Component, const int32 LinkedIndex, const FVector& WorldOrigin)
+	{
+		if (const int32* ResourceIndex = InstanceIndexByKey.Find(URpgHarvestInstanceStockComponent::MakeInstanceKey(WorldOrigin)))
+		{
+			FLinkedInstance Link;
+			Link.Component = &Component;
+			Link.InstanceIndex = LinkedIndex;
+			LinkedInstances.Add(*ResourceIndex, Link);
+		}
+	};
+
+	TInlineComponentArray<UMeshComponent*> Meshes(Owner);
+	for (UMeshComponent* Mesh : Meshes)
+	{
+		if (!Mesh || Mesh == this || !Mesh->ComponentHasTag(LinkedPresentationTag))
+		{
+			continue;
+		}
+
+		if (UInstancedStaticMeshComponent* StaticInstances = Cast<UInstancedStaticMeshComponent>(Mesh))
+		{
+			const FTransform& ComponentTransform = StaticInstances->GetComponentTransform();
+			for (int32 LinkedIndex = 0; LinkedIndex < StaticInstances->GetInstanceCount(); ++LinkedIndex)
+			{
+				const FVector LocalOrigin = StaticInstances->PerInstanceSMData[LinkedIndex].Transform.GetOrigin();
+				LinkInstance(*StaticInstances, LinkedIndex, ComponentTransform.TransformPosition(LocalOrigin));
+			}
+		}
+		else if (UInstancedSkinnedMeshComponent* SkinnedInstances = Cast<UInstancedSkinnedMeshComponent>(Mesh))
+		{
+			for (int32 LinkedIndex = 0; LinkedIndex < SkinnedInstances->GetInstanceCount(); ++LinkedIndex)
+			{
+				FTransform WorldTransform;
+				if (SkinnedInstances->GetInstanceTransform(SkinnedInstances->GetInstanceId(LinkedIndex), WorldTransform, true))
+				{
+					LinkInstance(*SkinnedInstances, LinkedIndex, WorldTransform.GetLocation());
+				}
+			}
+		}
+	}
+
+	TArray<int32> LinkedResources;
+	NumLinkedResources = LinkedInstances.GetKeys(LinkedResources);
+	if (LinkedInstances.IsEmpty())
+	{
+		UE_LOG(
+			LogRpgHarvesting,
+			Warning,
+			TEXT("%s links presentation through tag %s, but no sibling instance shares a resource location."),
+			*GetPathName(),
+			*LinkedPresentationTag.ToString());
+	}
+}
+
+void URpgHarvestableInstancesComponent::SetLinkedInstancesVisible(const int32 InstanceIndex, const bool bShow)
+{
+	for (auto It = LinkedInstances.CreateConstKeyIterator(InstanceIndex); It; ++It)
+	{
+		UMeshComponent* Component = It.Value().Component.Get();
+		const int32 LinkedIndex = It.Value().InstanceIndex;
+		if (!Component)
+		{
+			continue;
+		}
+
+		UInstancedStaticMeshComponent* StaticInstances = Cast<UInstancedStaticMeshComponent>(Component);
+		UInstancedSkinnedMeshComponent* SkinnedInstances = Cast<UInstancedSkinnedMeshComponent>(Component);
+		const TPair<TWeakObjectPtr<UMeshComponent>, int32> HiddenKey = MakeTuple(It.Value().Component, LinkedIndex);
+		FTransform PresentedTransform;
+		if (bShow)
+		{
+			FTransform AuthoredTransform;
+			if (!HiddenLinkedTransforms.RemoveAndCopyValue(HiddenKey, AuthoredTransform))
+			{
+				continue;
+			}
+			PresentedTransform = AuthoredTransform;
+		}
+		else
+		{
+			if (HiddenLinkedTransforms.Contains(HiddenKey))
+			{
+				continue;
+			}
+			FTransform AuthoredTransform;
+			const bool bHasTransform = StaticInstances
+				? StaticInstances->GetInstanceTransform(LinkedIndex, AuthoredTransform, false)
+				: SkinnedInstances && SkinnedInstances->GetInstanceTransform(SkinnedInstances->GetInstanceId(LinkedIndex), AuthoredTransform, false);
+			if (!bHasTransform)
+			{
+				continue;
+			}
+			HiddenLinkedTransforms.Add(HiddenKey, AuthoredTransform);
+			PresentedTransform = AuthoredTransform;
+			PresentedTransform.SetScale3D(FVector::ZeroVector);
+		}
+
+		if (StaticInstances)
+		{
+			StaticInstances->UpdateInstanceTransform(LinkedIndex, PresentedTransform, false, true, true);
+		}
+		else if (SkinnedInstances)
+		{
+			SkinnedInstances->SetInstanceTransform(SkinnedInstances->GetInstanceId(LinkedIndex), PresentedTransform, false);
+		}
+	}
+}
+
 void URpgHarvestableInstancesComponent::HandleStockChanged(const FIntVector& Key, const bool bInitialState)
 {
 	int32 InstanceIndex = INDEX_NONE;
-	if (FindInstanceByKey(Key, InstanceIndex))
+	if (!FindInstanceByKey(Key, InstanceIndex))
 	{
-		PresentInstance(InstanceIndex, bInitialState);
+		return;
 	}
+
+	// A newer change supersedes a presentation that still waits.
+	PendingPresentations.Remove(InstanceIndex);
+	const URpgHarvestInstanceStockComponent* Stock = FindStock();
+	const UWorld* World = GetWorld();
+	const float Delay = !bInitialState && Stock ? Stock->GetRemainingPresentationDelay(Key) : 0.0f;
+	if (World && Delay > UE_KINDA_SMALL_NUMBER)
+	{
+		PendingPresentations.Add(InstanceIndex, World->GetTimeSeconds() + Delay);
+		ArmPresentationTimer();
+		return;
+	}
+	PresentInstance(InstanceIndex, bInitialState);
+}
+
+void URpgHarvestableInstancesComponent::ArmPresentationTimer()
+{
+	UWorld* World = GetWorld();
+	if (!World || PendingPresentations.IsEmpty())
+	{
+		return;
+	}
+
+	double EarliestDeadline = TNumericLimits<double>::Max();
+	for (const TPair<int32, double>& Pending : PendingPresentations)
+	{
+		EarliestDeadline = FMath::Min(EarliestDeadline, Pending.Value);
+	}
+	const float Delay = static_cast<float>(FMath::Max(0.001, EarliestDeadline - World->GetTimeSeconds()));
+	World->GetTimerManager().SetTimer(PresentationTimerHandle, this, &ThisClass::HandlePresentationTimer, Delay, false);
+}
+
+void URpgHarvestableInstancesComponent::HandlePresentationTimer()
+{
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	const double Now = World->GetTimeSeconds();
+	TArray<int32, TInlineAllocator<8>> DueInstances;
+	for (const TPair<int32, double>& Pending : PendingPresentations)
+	{
+		if (Pending.Value <= Now + UE_KINDA_SMALL_NUMBER)
+		{
+			DueInstances.Add(Pending.Key);
+		}
+	}
+	for (const int32 InstanceIndex : DueInstances)
+	{
+		PendingPresentations.Remove(InstanceIndex);
+		PresentInstance(InstanceIndex, false);
+	}
+	ArmPresentationTimer();
 }
 
 void URpgHarvestableInstancesComponent::PresentInstance(const int32 InstanceIndex, const bool bInitialState)
@@ -300,6 +550,7 @@ void URpgHarvestableInstancesComponent::PresentInstance(const int32 InstanceInde
 	if (bHideDepletedInstances)
 	{
 		SetInstancePresentationScale(InstanceIndex, Stock.bActive ? 1.0f : 0.0f);
+		SetLinkedInstancesVisible(InstanceIndex, Stock.bActive);
 	}
 	OnInstanceStockChanged(InstanceIndex, Stock.GetRemainingSections(), GetSectionCount(), Stock.bActive, bInitialState);
 }

@@ -78,11 +78,13 @@ FRpgHarvestResult URpgHarvestableComponent::EvaluateHarvest_Implementation(const
 
 	FRpgHarvestWeakPoint WeakPoint;
 	const bool bHasWeakPoint = GetActiveWeakPoint(WeakPoint.Location, WeakPoint.Radius);
+	const FVector ProtectionProbe = OwningActor->GetActorLocation();
 	const FRpgHarvestResult Result = FRpgHarvestStockRules::Evaluate(
 		HarvestProfile,
 		Request,
 		MakeStockSnapshot(),
-		bHasWeakPoint ? &WeakPoint : nullptr);
+		bHasWeakPoint ? &WeakPoint : nullptr,
+		&ProtectionProbe);
 	if (Result.IsSuccess() && bCommitInProgress)
 	{
 		return FRpgHarvestResult::MakeRejected(ERpgHarvestOutcome::Stale, GetRemainingSections(), GetSectionCount());

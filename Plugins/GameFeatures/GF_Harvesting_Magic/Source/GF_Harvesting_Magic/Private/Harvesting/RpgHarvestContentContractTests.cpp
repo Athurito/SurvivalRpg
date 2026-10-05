@@ -11,6 +11,8 @@
 #include "Harvesting/RpgHarvestableComponent.h"
 #include "Harvesting/RpgHarvestableInstancesComponent.h"
 #include "Harvesting/RpgHarvestInstanceStockComponent.h"
+#include "Inventory/RpgInventoryFragment_HarvestingTool.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Equipment/RpgAbilityBindingResolver.h"
@@ -25,6 +27,11 @@ namespace RpgHarvestContentContractTests
 		TEXT("/GF_Harvesting_Magic/Harvesting/Instances/BPC_HarvestInstances_IronVein.BPC_HarvestInstances_IronVein_C");
 	const TCHAR* IronVeinProfilePath = TEXT("/GF_Harvesting_Magic/Harvesting/Profiles/HP_IronVein.HP_IronVein");
 	const TCHAR* HarvestingFeatureDataPath = TEXT("/GF_Harvesting_Magic/GF_Harvesting_Magic.GF_Harvesting_Magic");
+	const TCHAR* AxeAbilitySetPath = TEXT("/GF_Harvesting_Magic/GAS/AbilitySets/AS_Tool_Axe.AS_Tool_Axe");
+	const TCHAR* AxeItemClassPath = TEXT("/GF_Harvesting_Magic/Items/Tools/ID_Tool_Axe.ID_Tool_Axe_C");
+	const TCHAR* DeadPineProfilePath = TEXT("/GF_Harvesting_Magic/Harvesting/Profiles/HP_DeadPine.HP_DeadPine");
+	const TCHAR* DeadPineInstancesClassPath =
+		TEXT("/GF_Harvesting_Magic/Harvesting/Instances/BPC_HarvestInstances_DeadPine.BPC_HarvestInstances_DeadPine_C");
 
 	const FGameplayAbilitySpec* FindSpecWithId(const URpgAbilitySystemComponent& AbilitySystem, const FGameplayTag AbilityId)
 	{
@@ -221,6 +228,119 @@ bool FRpgHarvestPcgIronVeinContractTest::RunTest(const FString& Parameters)
 		}
 	}
 	TestEqual(TEXT("The GameFeature registers the instance stock exactly once"), StockRegistrations, 1);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestAxeAbilitySetContractTest,
+	"SurvivalRpg.Harvesting.Content.AxeAbilitySetContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestAxeAbilitySetContractTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestContentContractTests;
+
+	const URpgAbilitySet* AbilitySet = LoadObject<URpgAbilitySet>(nullptr, AxeAbilitySetPath);
+	if (!TestNotNull(TEXT("The axe ability set loads"), AbilitySet))
+	{
+		return false;
+	}
+
+	RpgHarvestAutomation::FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	AActor* Owner = World ? World->SpawnActor<AActor>() : nullptr;
+	if (!TestNotNull(TEXT("Grant owner spawns"), Owner))
+	{
+		return false;
+	}
+	URpgAbilitySystemComponent* AbilitySystem = NewObject<URpgAbilitySystemComponent>(Owner, NAME_None, RF_Transient);
+	Owner->AddInstanceComponent(AbilitySystem);
+	AbilitySystem->RegisterComponent();
+	AbilitySystem->InitAbilityActorInfo(Owner, Owner);
+	AbilitySystem->SetForceGrantAuthorityForTests(true);
+	FRpgAbilitySet_GrantedHandles Granted;
+	AbilitySet->GiveToAbilitySystem(AbilitySystem, &Granted);
+
+	// Axe Chop: the swing on the main-hand primary input.
+	const FGameplayTag ChopId = FGameplayTag::RequestGameplayTag(TEXT("Ability.Harvesting.AxeChop"));
+	const FGameplayAbilitySpec* Chop = FindSpecWithId(*AbilitySystem, ChopId);
+	if (!TestNotNull(TEXT("The set grants Axe Chop"), Chop))
+	{
+		return false;
+	}
+	const URpgGameplayAbility_Harvest* ChopAbility = Cast<URpgGameplayAbility_Harvest>(Chop->Ability);
+	TestNotNull(TEXT("Axe Chop derives from the harvest ability base"), ChopAbility);
+	TestTrue(
+		TEXT("Axe Chop is bound to the primary input"),
+		Chop->GetDynamicSpecSourceTags().HasTagExact(FGameplayTag::RequestGameplayTag(TEXT("InputTag.Weapon.Primary"))));
+	TestTrue(TEXT("Axe Chop executes on press"), ChopAbility && !ChopAbility->IsAimWhileInputHeld());
+	TestTrue(TEXT("Axe Chop sends its own ability id"), ChopAbility && ChopAbility->GetHarvestAbilityId() == ChopId);
+
+	// Death Wave: the awakened hold-to-aim area felling, declared as the default of weapon ability slot 1.
+	const FGameplayTag DeathWaveId = FGameplayTag::RequestGameplayTag(TEXT("Ability.Harvesting.DeathWave"));
+	const FGameplayAbilitySpec* DeathWave = FindSpecWithId(*AbilitySystem, DeathWaveId);
+	if (!TestNotNull(TEXT("The set grants Death Wave"), DeathWave))
+	{
+		return false;
+	}
+	const URpgGameplayAbility_Harvest* DeathWaveAbility = Cast<URpgGameplayAbility_Harvest>(DeathWave->Ability);
+	TestNotNull(TEXT("Death Wave derives from the harvest ability base"), DeathWaveAbility);
+	TestTrue(TEXT("Death Wave aims while its input is held"), DeathWaveAbility && DeathWaveAbility->IsAimWhileInputHeld());
+	TestTrue(TEXT("Death Wave harvests an area"), DeathWaveAbility && DeathWaveAbility->HarvestsArea());
+	TestTrue(TEXT("Death Wave sends its own ability id"), DeathWaveAbility && DeathWaveAbility->GetHarvestAbilityId() == DeathWaveId);
+	TestTrue(
+		TEXT("Death Wave is the declared default of weapon ability slot 1"),
+		DeathWave->GetDynamicSpecSourceTags().HasTagExact(URpgWeaponAbilityLoadoutComponent::GetDefaultSelectionTagForSlotIndex(0)));
+	TestTrue(TEXT("Death Wave has a cooldown"), DeathWaveAbility && DeathWaveAbility->GetCooldownGameplayEffect() != nullptr);
+
+	FGameplayTag DefaultId;
+	TestEqual(
+		TEXT("Slot 1 resolves its default to Death Wave alone"),
+		URpgWeaponAbilityLoadoutComponent::ResolveDefaultAbilityId(*AbilitySystem, 0, DefaultId),
+		ERpgAbilityBindingResolveResult::Unique);
+	TestEqual(TEXT("The slot 1 default is Death Wave"), DefaultId, DeathWaveId);
+
+	// The axe item supplies the tool category that dead pines require.
+	const UClass* AxeClass = LoadClass<URpgInventoryItemDefinition>(nullptr, AxeItemClassPath);
+	const URpgInventoryItemDefinition* Axe = AxeClass ? GetDefault<URpgInventoryItemDefinition>(AxeClass) : nullptr;
+	const URpgInventoryFragment_HarvestingTool* AxeTool = Axe
+		? Cast<URpgInventoryFragment_HarvestingTool>(Axe->FindFragmentByClass(URpgInventoryFragment_HarvestingTool::StaticClass()))
+		: nullptr;
+	const URpgHarvestProfile* DeadPine = LoadObject<URpgHarvestProfile>(nullptr, DeadPineProfilePath);
+	if (!TestNotNull(TEXT("The axe is a harvesting tool"), AxeTool) || !TestNotNull(TEXT("The dead pine profile loads"), DeadPine))
+	{
+		return false;
+	}
+	TestTrue(TEXT("Dead pines require a tool"), DeadPine->RequiredToolTag.IsValid());
+	TestTrue(TEXT("The axe meets the dead pine's tool requirement"), AxeTool->ToolTag.MatchesTag(DeadPine->RequiredToolTag));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestPcgDeadPineContractTest,
+	"SurvivalRpg.Harvesting.Content.PcgDeadPineInstancesContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestPcgDeadPineContractTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestContentContractTests;
+
+	// The PCG trunk proxies: every instance is a harvestable dead pine that presents a linked visible tree.
+	UClass* InstancesClass = LoadClass<URpgHarvestableInstancesComponent>(nullptr, DeadPineInstancesClassPath);
+	if (!TestNotNull(TEXT("The dead pine instances class loads"), InstancesClass))
+	{
+		return false;
+	}
+	const URpgHarvestableInstancesComponent* Instances = GetDefault<URpgHarvestableInstancesComponent>(InstancesClass);
+	const URpgHarvestProfile* Profile = Instances ? Instances->GetHarvestProfile() : nullptr;
+	if (!TestNotNull(TEXT("The dead pine instances have a harvest profile"), Profile))
+	{
+		return false;
+	}
+	TestTrue(TEXT("The instances use the dead pine profile"), Profile->GetPathName() == FString(DeadPineProfilePath));
+	TestFalse(TEXT("The trunk proxies link visible trees"), Instances->GetLinkedPresentationTag().IsNone());
 	return true;
 }
 

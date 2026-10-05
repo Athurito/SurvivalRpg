@@ -9,6 +9,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayTags/RpgHarvestingMagicGameplayTags.h"
+#include "Harvesting/RpgHarvestInstanceStockComponent.h"
 #include "Harvesting/RpgHarvestRewardService.h"
 #include "Harvesting/RpgHarvestStockRules.h"
 #include "Harvesting/RpgHarvestTargetingComponent.h"
@@ -229,23 +230,66 @@ void URpgGameplayAbility_Harvest::ExecuteAuthorityCommit()
 	FRpgHarvestRequest RequestTemplate;
 	BuildRequestTemplate(*Spec, *CurrentActorInfo, RequestTemplate);
 
-	const FRpgHarvestTargetEvaluation* FirstHarvested = nullptr;
-	for (FRpgHarvestTargetEvaluation& Target : Selection.Targets)
+	// The presentation wave starts at the harvested target nearest to the harvester and travels outward.
+	const FVector WaveOrigin = RequestTemplate.Harvester ? RequestTemplate.Harvester->GetActorLocation() : FVector::ZeroVector;
+	double NearestTargetDistance = 0.0;
+	if (PresentationWaveSpeed > UE_KINDA_SMALL_NUMBER)
 	{
-		UObject* Receiver = Target.Receiver.Get();
-		if (!Target.WouldHarvest() || !Receiver)
+		NearestTargetDistance = TNumericLimits<double>::Max();
+		for (const FRpgHarvestTargetEvaluation& Target : Selection.Targets)
 		{
-			continue;
+			if (Target.WouldHarvest())
+			{
+				NearestTargetDistance = FMath::Min(NearestTargetDistance, FVector::Dist2D(WaveOrigin, Target.Hit.ImpactPoint));
+			}
+		}
+	}
+
+	// Every target extracts its own stock, but their rewards reach the harvester as one delivery: one atomic
+	// inventory batch, or one drop when it does not fit.
+	const FRpgHarvestTargetEvaluation* FirstHarvested = nullptr;
+	{
+		FRpgHarvestRewardBatch RewardBatch(RequestTemplate.Harvester);
+		for (FRpgHarvestTargetEvaluation& Target : Selection.Targets)
+		{
+			UObject* Receiver = Target.Receiver.Get();
+			if (!Target.WouldHarvest() || !Receiver)
+			{
+				continue;
+			}
+
+			FRpgHarvestRequest Request = RequestTemplate;
+			Request.Hit = Target.Hit;
+			Request.TraceOrigin = Target.Hit.TraceStart;
+			Request.ExpectedRevision = IRpgHarvestableTarget::Execute_GetHarvestRevision(Receiver, Target.Hit);
+			if (PresentationWaveSpeed > UE_KINDA_SMALL_NUMBER)
+			{
+				const double WaveDistance = FVector::Dist2D(WaveOrigin, Target.Hit.ImpactPoint) - NearestTargetDistance;
+				Request.PresentationDelaySeconds = static_cast<float>(FMath::Clamp(
+					WaveDistance / PresentationWaveSpeed,
+					0.0,
+					static_cast<double>(URpgHarvestInstanceStockComponent::MaxPresentationDelaySeconds)));
+			}
+			Target.Result = IRpgHarvestableTarget::Execute_CommitHarvest(Receiver, Request);
+			if (Target.Result.IsSuccess() && !FirstHarvested)
+			{
+				FirstHarvested = &Target;
+			}
 		}
 
-		FRpgHarvestRequest Request = RequestTemplate;
-		Request.Hit = Target.Hit;
-		Request.TraceOrigin = Target.Hit.TraceStart;
-		Request.ExpectedRevision = IRpgHarvestableTarget::Execute_GetHarvestRevision(Receiver, Target.Hit);
-		Target.Result = IRpgHarvestableTarget::Execute_CommitHarvest(Receiver, Request);
-		if (Target.Result.IsSuccess() && !FirstHarvested)
+		// A single target drops overflow where it was struck; an area drops it at the harvester's feet.
+		FTransform DropTransform = RequestTemplate.Harvester ? RequestTemplate.Harvester->GetActorTransform() : FTransform::Identity;
+		if (FirstHarvested && !RequestTemplate.bAreaHarvest)
 		{
-			FirstHarvested = &Target;
+			DropTransform.SetLocation(FirstHarvested->Hit.ImpactPoint);
+		}
+		const ERpgHarvestDelivery BatchDelivery = FRpgHarvestStockRules::ToDelivery(RewardBatch.Deliver(DropTransform));
+		for (FRpgHarvestTargetEvaluation& Target : Selection.Targets)
+		{
+			if (Target.Result.IsSuccess() && Target.Result.Delivery == ERpgHarvestDelivery::None)
+			{
+				Target.Result.Delivery = BatchDelivery;
+			}
 		}
 	}
 
@@ -429,6 +473,7 @@ void URpgGameplayAbility_Harvest::BuildRequestTemplate(
 	OutRequest.AbilityId = HarvestAbilityId;
 	OutRequest.RequestedSections = FMath::Max(1, SectionsPerTarget);
 	OutRequest.bCanHitWeakPoint = bCanHitWeakPoints && Targeting.Shape == ERpgHarvestTargetShape::SingleTarget;
+	OutRequest.bAreaHarvest = HarvestsArea();
 
 	float ToolPower = 1.0f;
 	const URpgEquipmentInstance* Equipment = Cast<URpgEquipmentInstance>(Spec.SourceObject.Get());

@@ -32,6 +32,9 @@ harvesting abilities into Blueprint content belongs to issue
 | Costs | Rift Grip uses only a short cooldown GameplayEffect on the character, with no mana. Re-equipping cannot reset it. |
 | Resource representation | Prototype resources are actors with `URpgHarvestableComponent`. Open-world trees and rocks come from PCG; the PCG bridge in HARV-06 makes those instances harvestable. `URpgHarvestableInstancedMeshComponent` remains the legacy path for bushes and the sandbox. |
 | Indicators | With a tool equipped, the primary-swing target is always highlighted. Special abilities show their area and every target while the input is held, and trigger on release. |
+| Trees | Open-world trees are PCG instanced skinned meshes without collision. An invisible PCG trunk proxy at the same point holds the stock and is the harvest target (HARV-07). |
+| Protection | Area powers skip resources inside a harvest protection box and report them as protected. A deliberate single-target swing still harvests them (HARV-07). |
+| Area rewards | A multi-target harvest delivers the rewards of all its targets as one batch: into the inventory, or into one drop at the harvester (HARV-07). |
 
 The trees from #177 are Nanite-assembly skeletal meshes with dynamic wind.
 HISM cannot render them, and the UE 5.8 foliage tool places only static meshes
@@ -81,11 +84,16 @@ stock rules are kept separate.
     sparse replicated stock of all instanced resources on the GameState.
     Both are engine-facing mechanisms: authority, replication, instance
     identity and the instanced mesh API.
+  - `URpgHarvestProtectionComponent` and its world registry
+    `URpgHarvestProtectionSubsystem` (HARV-07). Every target evaluates the
+    same boxes on the server and in previews.
+  - The non-reflected `FRpgHarvestRewardBatch` (HARV-07), which merges the
+    rewards of one multi-target commit into one delivery.
 - **Designer assets:** item, equipment and ability set definitions, `GA_*`
   abilities, `HP_*` profiles, `LT_*` loot tables, resource actor Blueprints,
   instanced resource component Blueprints (`BPC_HarvestInstances_*`), PCG
-  graphs, montages, cues, cooldown effects, indicator widgets, tags and test
-  maps.
+  graphs, the falling-tree presentation, protection zone actors, montages,
+  cues, cooldown effects, indicator widgets, tags and test maps.
   They are authored through Unreal MCP.
 
 ## Runtime contract (HARV-01)
@@ -100,8 +108,8 @@ stock rules are kept separate.
   - `CommitHarvest(Request)` is authority-only. It re-evaluates, delivers the
     reward for all taken sections as one batch, and only then mutates the stock.
 - Rejections are distinguishable: `Depleted`, `WrongTool`, `SkillGate`,
-  `Stale`, `Invalid` and `DeliveryFailed`. A failed delivery leaves the stock,
-  revision and XP untouched.
+  `Stale`, `Invalid`, `DeliveryFailed` and, since HARV-07, `Protected`. A
+  failed delivery leaves the stock, revision and XP untouched.
 - `URpgHarvestProfile::SectionCount` (1–16) defines the stock. Every section
   rolls the loot table once and awards `SkillExperience` once, so every method
   yields the same total.
@@ -405,7 +413,8 @@ harvest ability works on them unchanged.
   - weak points;
   - the manual interaction harvest (bushes stay on the HISM path);
   - runtime PCG generation (unverified);
-  - instanced skinned meshes (see the tree findings below).
+  - instanced skinned meshes as targets; HARV-07 harvests trees through
+    static trunk proxies instead.
 
 ### Content
 
@@ -433,13 +442,9 @@ harvest ability works on them unchanged.
 - The component exports only some of its virtual functions, so a project
   subclass like `URpgHarvestableInstancesComponent` cannot link outside the
   engine. This was read from the engine headers, not attempted.
-- Recommendation for HARV-07:
-  - At the same PCG points as the visual tree instances, spawn an invisible
-    `URpgHarvestableInstancesComponent` with a simple trunk mesh as a collision
-    proxy.
-  - Felling hides the visual instance with the same location key and spawns a
-    cosmetic falling tree.
-  - Alternatively, author physics assets for the trees.
+- HARV-07 follows the recommendation from this task: an invisible trunk proxy
+  at the same PCG points holds the stock, and felling hides the visible
+  instance and spawns a cosmetic falling tree. See the HARV-07 section.
 
 ### Budget
 
@@ -484,6 +489,159 @@ fresh PIE start. Injected key presses left over from failed pickup attempts
 are the likely cause. Once, right after a pickup, the first swing on an actor
 vein had no effect.
 
+## Axe, Death Wave and trees (HARV-07)
+
+The plan's M2: the axe fells trees one section at a time, and its awakened
+Death Wave fells a whole stand of trees at once. The wood arrives without a
+pickup chore, and protected trees survive the wave.
+
+### Area rewards and protection
+
+- **One delivery per harvest:** `URpgGameplayAbility_Harvest` opens an
+  `FRpgHarvestRewardBatch` around its commit.
+  - Every target still validates, rolls and materializes its own reward,
+    extracts its stock and awards XP.
+  - The batch then delivers all rewards as one atomic inventory batch, or as
+    one drop. A single target drops overflow where it was struck; an area drops
+    it at the harvester's feet. Stacks of the same item are merged.
+  - The committed results report the batch's delivery path.
+  - The targets have already extracted their stock when the batch delivers. If
+    the inventory commit fails after its preflight, the batch falls back to the
+    drop; only a failed drop spawn loses the batch, and it is logged as an error.
+- **Protection:** `URpgHarvestProtectionComponent` is a box without collision,
+  hidden in game, that can sit on any actor; `BP_HarvestProtectionZone` places
+  one in a map. Boxes register with `URpgHarvestProtectionSubsystem` at
+  BeginPlay.
+  - Requests from area abilities carry `FRpgHarvestRequest::bAreaHarvest`. A
+    resource whose location lies in a box rejects them as
+    `ERpgHarvestOutcome::Protected`; the indicator shows "Protected".
+  - Single-target swings and manual harvests ignore protection: the player
+    chose that resource.
+  - Actor nodes, PCG instances and legacy HISM instances check their own
+    location, so previews and the server commit agree.
+- **Area target count:** `MaxTargets` now counts only targets the ability
+  would harvest. Nearer protected or depleted targets stay in the preview with
+  their status but do not take a slot.
+- **Presentation wave:** `URpgGameplayAbility_Harvest::PresentationWaveSpeed`
+  (cm/s, 0 = at once) staggers how the targets of one harvest are presented.
+  - The harvested target nearest to the harvester is presented at once. Every
+    other target waits for its extra distance divided by the speed, up to
+    2.5 s; the request carries the delay as `PresentationDelaySeconds`.
+  - The stock, the rewards and the XP change at once; only the presentation
+    waits.
+  - The instance stock replicates the delay with the change. Each machine
+    subtracts the server time that has passed since the change, so the server
+    and every client present a target at the same server time.
+  - Instanced resources honor the delay; actor nodes present at once.
+- **Harvest direction:** an instanced resource also records the horizontal
+  direction from the harvester toward it with every change (a yaw in 256
+  steps) and replicates it with the stock.
+  `URpgHarvestableInstancesComponent::GetInstanceHarvestDirection` returns it
+  on every machine.
+
+### Axe content
+
+All assets live in `GF_Harvesting_Magic` and are authored through Unreal MCP.
+
+- `ID_Tool_Axe` (tool category `Tool.Harvesting.Axe`) → `ED_Tool_Axe` (main
+  hand, placeholder `BP_Tool_AxeActor`) → `AS_Tool_Axe`:
+  - `GA_Harvest_AxeChop` on `InputTag.Weapon.Primary` takes one section per
+    swing. It reuses the pickaxe swing montage.
+  - `GA_Harvest_DeathWave`, the default of weapon ability slot 1 (Q):
+    - Hold to aim and release to fell. It empties every tree in a 6 m area at
+      the aim point, up to six trees.
+    - The aim point must lie within 10 m of the pawn.
+    - It needs `Skill.Gathering.Logging` level 2; below that the HUD shows
+      "Logging 2 required".
+    - It costs only `GE_Cooldown_Harvest_DeathWave` (6 s,
+      `Cooldown.Harvesting.DeathWave`).
+    - Its presentation wave travels at 15 m/s, so the nearest tree falls
+      first.
+- `BP_Pickup_Axe` lies next to the pickaxe pickup in `Lvl_HarvestPickaxe`.
+- `HP_DeadPine` has 4 sections, requires the axe and awards 9 Logging XP per
+  section. It respawns after 120–180 s. `LT_DeadPine` yields 5 `ID_Wood` per
+  section.
+
+### PCG trees
+
+- `PCG_HarvestDeadPines` spawns two meshes from the same points:
+  - A skinned mesh spawner places the visible `Tree_Dead_Pine_A` trees with
+    the `DW_HarvestTrees` wind provider and the component tag
+    `HarvestTreeVisual`. The trees have no collision.
+  - A static mesh spawner places an invisible cylinder per tree with
+    `BPC_HarvestInstances_DeadPine`. The proxy is about 55 cm wide and reaches
+    2.5 m high, where the target indicator stays in view. Only its scale
+    differs from the tree's point, so both share the stock key.
+- **Linked presentation:** `URpgHarvestableInstancesComponent::LinkedPresentationTag`
+  links instances of tagged sibling instanced static or skinned meshes at the
+  same location to the centimeter.
+  - A depleted proxy hides its linked instances, and a respawn restores them,
+    also on stream-in and late join.
+  - `GetLinkedPresentationInstance` gives Blueprints the linked mesh and its
+    authored transform.
+- **Felling:** `BPC_HarvestInstances_DeadPine` spawns `BP_HarvestFallingTree`
+  with the linked skeletal mesh for a live depletion on every machine with a
+  local player. The instance presents the depletion when the harvest's
+  presentation wave reaches it.
+  - The component faces the falling tree along the replicated harvest
+    direction and keeps the mesh's authored rotation. The tree falls along its
+    forward axis, away from whoever felled it, the same way on every machine.
+    It then sinks into the ground and destroys itself.
+  - It has no collision, never replicates, and its wood has already been
+    delivered.
+  - A first version took both the delay and the direction from each machine's
+    local player. A host far from the trees saw them fall up to 1 s later than
+    the harvesting client, and in another direction. The replicated
+    presentation wave and harvest direction replaced it.
+- **Test map:** `Lvl_HarvestPickaxe` has the PCG volume
+  `Harvest_PcgDeadPineStand`, twelve dead pines east of the ore veins.
+  - It is generated in the editor, saved, and set to generate On Demand.
+  - `Harvest_ProtectedPines` protects its two eastern trees.
+- **Area marker:** the ring decal now projects 40 cm deep at a 100 cm radius
+  (240 cm for Death Wave). Before, a large area tinted whole tree trunks.
+
+### Budget
+
+The budget test adds a field whose 10,000 proxies link 10,000 visible
+instances. Its stream-in with 1,000 stored changes took 2.26 ms in one run,
+against 1.18 ms without links. Linking adds about one key lookup per visible
+instance at BeginPlay. The test ceiling is 30 ms.
+
+### Multiplayer
+
+A listen-server PIE session with one client in `Lvl_HarvestPickaxe` checked
+the following on the client:
+- All twelve proxies are linked to their visible trees on the server and the
+  client.
+- The client picked up the axe.
+- The chop indicator showed `4/4` on the trunk.
+- Four chops took one section each on both machines, for 20 wood.
+- The fourth chop hid the tree on both machines and felled it away from the
+  player.
+- Below Logging 2, Q showed "Logging 2 required" and changed nothing.
+- At Logging 2, holding Q previewed `4/4  -4` on the trees in the ring.
+  Releasing felled them on both machines and added their wood in one
+  delivery, without a drop.
+- With the host far away at the spawn, a wave over three trees hid them 0.33 s,
+  0.39 s and 0.72 s after the release. The server and the client hid each
+  tree in the same probe, which polled about every 60 ms.
+- The falling trees of a chop and of a three-tree wave had the same forward
+  and up vectors on the server and the client, pointing away from the
+  harvesting client.
+- Aimed at the protected corner, the preview showed "Protected" on both
+  protected trees. Only the unprotected tree in the ring was felled; a chop
+  on a protected tree still took a section.
+- A tree felled at the start of the session returned to its full stock on both
+  machines after its respawn time.
+
+### Not done
+
+- The plan's small building task with both tools is open: the workbench
+  recipes use the storage test materials, not `ID_Wood` and `ID_Ore`.
+- Trees present a felled state only through the falling actor; no stump
+  remains.
+- Weak points on instances and runtime PCG generation stay unsupported.
+
 ## Performance guardrails
 
 - Resources never tick. Respawn uses a timer. Replicated state is a revision,
@@ -503,8 +661,8 @@ vein had no effect.
 | HARV-03 | M0 pickaxe content: tool item, equipment and abilities, iron vein, indicator presentation, `Lvl_HarvestPickaxe` test map | Merged: [#180](https://github.com/Athurito/SurvivalRpg/pull/180) |
 | HARV-04 | M1 Rift Grip: hold to aim, Mining 2 gate, cooldown, Q/E/R ability-set defaults, area indicators; replaces Stoneburst | Merged: [#181](https://github.com/Athurito/SurvivalRpg/pull/181) |
 | HARV-05 | M1 weak-point crit: bonus sections from a readable weak point | Merged: [#183](https://github.com/Athurito/SurvivalRpg/pull/183) |
-| HARV-06 | PCG resource bridge: harvestable PCG instances with sparse state and a measured budget | In review: [#184](https://github.com/Athurito/SurvivalRpg/pull/184) |
-| HARV-07 | M2 axe and Death Wave area harvest, aggregated delivery, protected objects | Planned |
+| HARV-06 | PCG resource bridge: harvestable PCG instances with sparse state and a measured budget | Merged: [#184](https://github.com/Athurito/SurvivalRpg/pull/184) |
+| HARV-07 | M2 axe and Death Wave area harvest, aggregated delivery, protected objects, PCG trees | In review: [#185](https://github.com/Athurito/SurvivalRpg/pull/185) |
 | HARV-08 | M3 grave swarm with separate beneficiary and physical harvester | Planned |
 | HARV-09 | M4 talents (powers such as Rift Grip chosen in a level-gated talent tree), resource parity across combat styles, Ash Pact conversion | Planned |
 | HARV-10 | M5 resource persistence with stable IDs, portal variant, co-op load | Planned |
@@ -517,8 +675,11 @@ vein had no effect.
 - Answered in HARV-06: instanced skinned mesh instances can be traced only with a
   physics asset; the trees need one or a collision proxy. Stable keys are
   authored locations, which survive World Partition streaming.
-- For HARV-07: collision proxy or tree physics assets, and how a felled tree
-  is presented.
+- Answered in HARV-07: trees use static trunk proxies; a felled tree is a
+  local cosmetic actor that falls away from the local player and sinks.
+- Still open from M2: the small building task with both tools. The workbench
+  recipes use the storage test materials, not the harvested `ID_Wood` and
+  `ID_Ore`; see the duplicated material sets below.
 - Not decided yet: home-world regeneration, the timing of the awakening, limits
   on large power states, and the final co-op scope.
 - The material sets duplicate each other: `ID_Ore` and its relatives versus

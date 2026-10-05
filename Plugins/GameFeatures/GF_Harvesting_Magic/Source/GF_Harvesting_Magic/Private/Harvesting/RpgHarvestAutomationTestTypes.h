@@ -2,6 +2,7 @@
 
 #include "AbilitySystem/Abilities/RpgGameplayAbility_Harvest.h"
 #include "Harvesting/RpgHarvestableInstancesComponent.h"
+#include "Harvesting/RpgHarvestProtectionComponent.h"
 #include "Harvesting/RpgHarvestTargetingComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Inventory/RpgDroppedInventoryActor.h"
@@ -178,6 +179,7 @@ class URpgHarvestAutomationInstancesComponent final : public URpgHarvestableInst
 
 public:
 	void ConfigureProfile(URpgHarvestProfile* InProfile) { HarvestProfile = InProfile; }
+	void ConfigureLinkedPresentation(const FName InTag) { LinkedPresentationTag = InTag; }
 
 	int32 EventCount = 0;
 	int32 LastInstanceIndex = INDEX_NONE;
@@ -208,6 +210,20 @@ public:
 	TObjectPtr<URpgHarvestAutomationInstancesComponent> Instances;
 };
 
+/** Actor whose root is a harvest protection box, like a camp or a protected zone placed in a map. */
+UCLASS(NotBlueprintable, Transient)
+class ARpgHarvestAutomationProtectionActor final : public AActor
+{
+	GENERATED_BODY()
+
+public:
+	explicit ARpgHarvestAutomationProtectionActor(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<URpgHarvestProtectionComponent> Protection;
+};
+
 /** Concrete test-only harvest ability whose tuning tests set on the granted instance. */
 UCLASS(NotBlueprintable)
 class URpgHarvestAutomationTestAbility final : public URpgGameplayAbility_Harvest
@@ -228,6 +244,7 @@ public:
 		MinimumSkillLevel = InMinimumLevel;
 	}
 	void ConfigureWeakPointHits(const bool bInCanHitWeakPoints) { bCanHitWeakPoints = bInCanHitWeakPoints; }
+	void ConfigurePresentationWave(const float InSpeed) { PresentationWaveSpeed = InSpeed; }
 };
 
 /** Records preview notifications so tests can assert change-only broadcasting. */

@@ -60,12 +60,15 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestStockRules
 	 * Profile may be null for legacy deplete-only resources, which then skip tool and skill requirements.
 	 * ActiveWeakPoint is the representation's current weak point, or null when it has none; a request that may hit
 	 * weak points and strikes it takes the profile's bonus sections in addition, clamped to the remaining stock.
+	 * ProtectionProbe is the resource's world location; an area request is rejected as Protected when it lies inside a
+	 * harvest protection box. Null skips the check.
 	 */
 	static FRpgHarvestResult Evaluate(
 		const URpgHarvestProfile* Profile,
 		const FRpgHarvestRequest& Request,
 		const FRpgHarvestStockSnapshot& Stock,
-		const FRpgHarvestWeakPoint* ActiveWeakPoint = nullptr);
+		const FRpgHarvestWeakPoint* ActiveWeakPoint = nullptr,
+		const FVector* ProtectionProbe = nullptr);
 
 	/**
 	 * Returns which of NumWeakPoints is active for Stock, or INDEX_NONE without weak points or stock. Derived only from
@@ -77,6 +80,9 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestStockRules
 	/** Returns whether Request carries the tool category required by Profile. */
 	static bool MeetsToolRequirement(const URpgHarvestProfile* Profile, const FRpgHarvestRequest& Request);
 
-	/** Maps a reward-service delivery result to the public result enum; Failed maps to None. */
+	/**
+	 * Maps a reward-service delivery result to the public result enum. Failed maps to None, and so does Batched until
+	 * the harvest ability that opened the batch delivers it and reports the batch's path.
+	 */
 	static ERpgHarvestDelivery ToDelivery(ERpgHarvestRewardDeliveryResult DeliveryResult);
 };

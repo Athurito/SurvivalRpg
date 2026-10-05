@@ -40,6 +40,17 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestInstanceStockEntry : public FFastArray
 	/** Server world time in seconds of the last change; lets late joiners present old changes without animating. */
 	UPROPERTY()
 	float LastChangeServerTime = 0.0f;
+
+	/** Cosmetic delay of the last change's presentation after LastChangeServerTime, in hundredths of a second. */
+	UPROPERTY()
+	uint8 PresentationDelayCentiseconds = 0;
+
+	/**
+	 * Cosmetic horizontal direction from the last harvester toward the instance, as a yaw in 256 steps, so every
+	 * machine presents the change the same way, for example felling a tree away from whoever felled it.
+	 */
+	UPROPERTY()
+	uint8 HarvestYaw = 0;
 };
 
 /** FastArray holding only instanced resources whose stock currently differs from their authored state. */
@@ -102,6 +113,9 @@ public:
 	/** Changes older than this many seconds are reported as initial state when they reach a client. */
 	static constexpr float LiveChangeWindowSeconds = 1.5f;
 
+	/** Longest cosmetic presentation delay of one change, in seconds. */
+	static constexpr float MaxPresentationDelaySeconds = 2.5f;
+
 	explicit URpgHarvestInstanceStockComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	/** Returns the stock component of World's GameState, or null before the harvesting GameFeature added it. */
@@ -116,9 +130,29 @@ public:
 	/**
 	 * Records SectionsTaken extracted sections of the instance identified by Key. An instance whose stock runs out
 	 * depletes, advances its revision, and is restored after RespawnDelaySeconds; zero or less keeps it depleted for
-	 * the session. Authority only; the caller has already delivered the reward. Returns false when nothing changed.
+	 * the session. Every machine presents the change PresentationDelaySeconds after it happened on the server; the
+	 * stock itself changes at once. HarvestYawDegrees is the cosmetic direction from the harvester toward the
+	 * instance. Authority only; the caller has already delivered the reward. Returns false when nothing changed.
 	 */
-	bool ExtractSections(const FIntVector& Key, int32 SectionCount, int32 SectionsTaken, float RespawnDelaySeconds);
+	bool ExtractSections(
+		const FIntVector& Key,
+		int32 SectionCount,
+		int32 SectionsTaken,
+		float RespawnDelaySeconds,
+		float PresentationDelaySeconds = 0.0f,
+		float HarvestYawDegrees = 0.0f);
+
+	/**
+	 * Returns the horizontal unit direction from the last harvester toward the instance identified by Key, the same on
+	 * every machine. False for unchanged instances.
+	 */
+	bool GetHarvestDirection(const FIntVector& Key, FVector& OutDirection) const;
+
+	/**
+	 * Returns how many seconds this machine still waits before it presents the last change of Key, measured from the
+	 * change's server time so that every machine presents it at the same moment. Zero for unchanged instances.
+	 */
+	float GetRemainingPresentationDelay(const FIntVector& Key) const;
 
 	/** Restores the authored stock of the instance identified by Key and cancels its respawn. Authority only. */
 	bool RestoreStock(const FIntVector& Key);
