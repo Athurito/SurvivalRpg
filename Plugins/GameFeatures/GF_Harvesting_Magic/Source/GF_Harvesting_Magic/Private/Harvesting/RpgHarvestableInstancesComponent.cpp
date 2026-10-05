@@ -118,8 +118,9 @@ FRpgHarvestResult URpgHarvestableInstancesComponent::CommitHarvest_Implementatio
 		const float MaximumDelay = FMath::Max(MinimumDelay, HarvestProfile->MaximumRespawnSeconds);
 		RespawnDelaySeconds = MaximumDelay > 0.0f ? FMath::Max(0.001f, FMath::FRandRange(MinimumDelay, MaximumDelay)) : 0.0f;
 	}
-	// The direction from the harvester toward the instance lets every machine present the change the same way.
-	FVector AwayFromHarvester = InstanceTransform.GetLocation() - (Request.Harvester ? Request.Harvester->GetActorLocation() : Request.TraceOrigin);
+	// The direction from whatever struck the instance toward it lets every machine present the change the same way.
+	const AActor* StrikingActor = Request.GetStrikingActor();
+	FVector AwayFromHarvester = InstanceTransform.GetLocation() - (StrikingActor ? StrikingActor->GetActorLocation() : Request.TraceOrigin);
 	AwayFromHarvester.Z = 0.0;
 	const float HarvestYawDegrees = AwayFromHarvester.IsNearlyZero() ? 0.0f : static_cast<float>(AwayFromHarvester.Rotation().Yaw);
 	Stock->ExtractSections(

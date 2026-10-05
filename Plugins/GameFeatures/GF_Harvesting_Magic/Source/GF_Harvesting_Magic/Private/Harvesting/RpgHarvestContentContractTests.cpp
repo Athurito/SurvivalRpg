@@ -301,6 +301,28 @@ bool FRpgHarvestAxeAbilitySetContractTest::RunTest(const FString& Parameters)
 		ERpgAbilityBindingResolveResult::Unique);
 	TestEqual(TEXT("The slot 1 default is Death Wave"), DefaultId, DeathWaveId);
 
+	// Grave Swarm: the awakened summon whose creatures fell the trees around the aim point, default of slot 2.
+	const FGameplayTag GraveSwarmId = FGameplayTag::RequestGameplayTag(TEXT("Ability.Harvesting.GraveSwarm"));
+	const FGameplayAbilitySpec* GraveSwarm = FindSpecWithId(*AbilitySystem, GraveSwarmId);
+	if (!TestNotNull(TEXT("The set grants Grave Swarm"), GraveSwarm))
+	{
+		return false;
+	}
+	const URpgGameplayAbility_Harvest* GraveSwarmAbility = Cast<URpgGameplayAbility_Harvest>(GraveSwarm->Ability);
+	TestNotNull(TEXT("Grave Swarm derives from the harvest ability base"), GraveSwarmAbility);
+	TestTrue(TEXT("Grave Swarm aims while its input is held"), GraveSwarmAbility && GraveSwarmAbility->IsAimWhileInputHeld());
+	TestTrue(TEXT("Grave Swarm summons a swarm"), GraveSwarmAbility && GraveSwarmAbility->SummonsSwarm());
+	TestTrue(TEXT("Grave Swarm sends its own ability id"), GraveSwarmAbility && GraveSwarmAbility->GetHarvestAbilityId() == GraveSwarmId);
+	TestTrue(
+		TEXT("Grave Swarm is the declared default of weapon ability slot 2"),
+		GraveSwarm->GetDynamicSpecSourceTags().HasTagExact(URpgWeaponAbilityLoadoutComponent::GetDefaultSelectionTagForSlotIndex(1)));
+	TestTrue(TEXT("Grave Swarm has a cooldown"), GraveSwarmAbility && GraveSwarmAbility->GetCooldownGameplayEffect() != nullptr);
+	TestEqual(
+		TEXT("Slot 2 resolves its default to Grave Swarm alone"),
+		URpgWeaponAbilityLoadoutComponent::ResolveDefaultAbilityId(*AbilitySystem, 1, DefaultId),
+		ERpgAbilityBindingResolveResult::Unique);
+	TestEqual(TEXT("The slot 2 default is Grave Swarm"), DefaultId, GraveSwarmId);
+
 	// The axe item supplies the tool category that dead pines require.
 	const UClass* AxeClass = LoadClass<URpgInventoryItemDefinition>(nullptr, AxeItemClassPath);
 	const URpgInventoryItemDefinition* Axe = AxeClass ? GetDefault<URpgInventoryItemDefinition>(AxeClass) : nullptr;

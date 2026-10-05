@@ -89,14 +89,30 @@ private:
  * While a batch is open for a harvester, FRpgHarvestRewardService::DeliverReward still validates, rolls and
  * materializes every target's reward, but adds it to the batch and reports Batched; the target then extracts its
  * stock and awards XP as usual. Deliver sends the merged rewards. A batch destroyed with undelivered rewards delivers
- * them at the harvester, so material is never dropped silently. Game thread only; batches may not overlap for one
+ * them at the harvester, so material is never dropped silently. Game thread only; open batches may not overlap for one
  * harvester.
+ *
+ * A long-lived owner such as a harvest swarm keeps a closed batch and opens it only around each of its commits, so it
+ * never collects rewards of unrelated harvests in between.
  */
 class GF_HARVESTING_MAGIC_API FRpgHarvestRewardBatch : public FNoncopyable
 {
 public:
-	explicit FRpgHarvestRewardBatch(AActor* InHarvester);
+	/** Creates a batch for InHarvester; with bOpen it collects the harvester's rewards at once. */
+	explicit FRpgHarvestRewardBatch(AActor* InHarvester, bool bOpen = true);
 	~FRpgHarvestRewardBatch();
+
+	/** Starts collecting the harvester's rewards. Fails when another batch of the harvester is open. */
+	bool Open();
+
+	/** Stops collecting rewards without delivering them; they wait for Deliver. */
+	void Close();
+
+	/** Returns whether the batch collects the harvester's rewards. */
+	bool IsOpen() const;
+
+	/** Closes the batch and drops its pending rewards without delivering them, for example when the world ends. */
+	void Discard();
 
 	/**
 	 * Delivers every batched reward to the harvester's inventory as one atomic batch, or completely into one

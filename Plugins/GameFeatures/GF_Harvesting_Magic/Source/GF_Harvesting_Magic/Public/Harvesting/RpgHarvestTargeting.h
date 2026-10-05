@@ -8,6 +8,7 @@
 
 class AActor;
 class UWorld;
+struct FCollisionQueryParams;
 
 /** How a harvest ability selects its targets from the harvester's view. */
 UENUM(BlueprintType)
@@ -154,5 +155,23 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestTargeting
 		const FRotator& ViewRotation,
 		const AActor& Avatar,
 		const FRpgHarvestRequest& RequestTemplate,
+		TArray<FRpgHarvestTargetEvaluation>& OutTargets);
+
+	/**
+	 * Appends every harvestable target whose collision overlaps a sphere of Radius around Center on Channel, nearest
+	 * to Center first, and evaluates RequestTemplate against each without mutating anything. TraceOrigin becomes each
+	 * request's trace origin and bInReach each target's reach. Stops after MaxHarvestableTargets targets the request
+	 * would harvest; zero or less collects every target.
+	 */
+	static void CollectAreaTargets(
+		const UWorld& World,
+		const FVector& Center,
+		float Radius,
+		ECollisionChannel Channel,
+		const FCollisionQueryParams& QueryParams,
+		const FVector& TraceOrigin,
+		bool bInReach,
+		const FRpgHarvestRequest& RequestTemplate,
+		int32 MaxHarvestableTargets,
 		TArray<FRpgHarvestTargetEvaluation>& OutTargets);
 };
