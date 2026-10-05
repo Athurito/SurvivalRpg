@@ -9,6 +9,7 @@
 
 class URpgHarvestableComponent;
 class URpgHarvestableInstancedMeshComponent;
+class URpgHarvestableInstancesComponent;
 class URpgHarvestProfile;
 class URpgInventoryManagerComponent;
 class URpgLootTable;
@@ -104,6 +105,29 @@ public:
 private:
 	UPROPERTY()
 	TObjectPtr<URpgHarvestableInstancedMeshComponent> HarvestableInstances;
+};
+
+/** Non-replicated owner of harvestable instances, loaded on every machine like a PCG partition actor. */
+UCLASS(NotBlueprintable, Transient)
+class ARpgNetworkAutomationHarvestInstancesFixture final : public AActor
+{
+	GENERATED_BODY()
+
+public:
+	explicit ARpgNetworkAutomationHarvestInstancesFixture(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	URpgHarvestableInstancesComponent* GetHarvestableInstances() const
+	{
+		return HarvestableInstances;
+	}
+
+	/** Assigns the static designer profile before BeginPlay; tests call it on every machine, as content loads everywhere. */
+	bool ConfigureHarvestProfile(URpgHarvestProfile* InProfile);
+
+private:
+	UPROPERTY()
+	TObjectPtr<URpgHarvestableInstancesComponent> HarvestableInstances;
 };
 
 /** Dormant replicated actor-backed resource node with the real harvestable node component. */

@@ -10,6 +10,7 @@
 
 class AController;
 class UAbilitySystemComponent;
+class UIndicatorDescriptor;
 class USceneComponent;
 class UUserWidget;
 struct FGameplayAbilitySpec;
@@ -43,6 +44,20 @@ enum class ERpgHarvestTargetStatus : uint8
 	Unavailable
 };
 
+/** One projected target indicator and the target it marks. Local presentation state. */
+USTRUCT()
+struct FRpgHarvestTargetIndicator
+{
+	GENERATED_BODY()
+
+	/** Indicator registered with the controller's indicator manager. */
+	UPROPERTY()
+	TObjectPtr<UIndicatorDescriptor> Indicator = nullptr;
+
+	/** Marked instance of an instanced target component, or INDEX_NONE for other target components. */
+	int32 InstanceIndex = INDEX_NONE;
+};
+
 /**
  * Local-only read model of what the player's harvest abilities would hit, for target indicators.
  *
@@ -54,8 +69,9 @@ enum class ERpgHarvestTargetStatus : uint8
  * mutates anything; presentation Blueprints and widgets read it.
  *
  * When IndicatorWidgetClass is set, the component anchors projected indicators through the controller's indicator
- * manager: over the primary target, and over every target while a hold-to-aim ability is held. The Widget Blueprint
- * owns all presentation and reads its target through GetTargetStatus. While an area ability is held, an optional
+ * manager: over the primary target, and over every target while a hold-to-aim ability is held. Instanced targets get
+ * one indicator per instance, placed over that instance. The Widget Blueprint owns all presentation and reads its
+ * target through URpgHarvestTargetIndicatorWidget. While an area ability is held, an optional
  * AreaMarkerClass actor marks the area on the ground.
  */
 UCLASS(Blueprintable, BlueprintType, ClassGroup = (Rpg), meta = (BlueprintSpawnableComponent, DisplayName = "RPG Harvest Targeting"))
@@ -78,6 +94,20 @@ public:
 
 	/** Returns the previewed evaluation whose hit component is TargetComponent, or null when it is not previewed. */
 	const FRpgHarvestTargetEvaluation* FindTargetEvaluation(const USceneComponent* TargetComponent) const;
+
+	/**
+	 * Returns the previewed evaluation that Indicator marks, matching its instance for instanced targets. Null when
+	 * Indicator was not created by this component or its target left the preview.
+	 */
+	const FRpgHarvestTargetEvaluation* FindIndicatedTarget(const UIndicatorDescriptor* Indicator) const;
+
+	/** Summarizes the target Indicator marks, as GetPrimaryTargetStatus does; false when it is not previewed. */
+	bool GetIndicatedTargetStatus(
+		const UIndicatorDescriptor* Indicator,
+		ERpgHarvestTargetStatus& OutStatus,
+		int32& OutRemainingSections,
+		int32& OutSectionCount,
+		int32& OutSectionsToTake) const;
 
 	/**
 	 * Summarizes the primary previewed target for indicators. Returns false when nothing is previewed.
@@ -127,11 +157,14 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Indicator")
 	TSoftClassPtr<UUserWidget> IndicatorWidgetClass;
 
-	/** How the indicator is projected onto the target's hit component. Cosmetic. */
+	/**
+	 * How the indicator is projected onto the target's hit component. Instanced targets always use a point at
+	 * BoundingBoxAnchor of the targeted instance's bounds, because the component's bounds span every instance. Cosmetic.
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Indicator")
 	EActorCanvasProjectionMode ProjectionMode = EActorCanvasProjectionMode::ComponentBoundingBox;
 
-	/** Normalized anchor inside the projected bounding box; (0.5, 0.5, 1) is the top center. Cosmetic. */
+	/** Normalized anchor inside the projected bounding box or instance bounds; (0.5, 0.5, 1) is the top center. Cosmetic. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Indicator")
 	FVector BoundingBoxAnchor = FVector(0.5, 0.5, 1.0);
 
@@ -160,6 +193,7 @@ private:
 	UAbilitySystemComponent* FindAbilitySystem() const;
 	const FGameplayAbilitySpec* FindPreviewSpec(UAbilitySystemComponent& AbilitySystem, bool& bOutAiming) const;
 	void UpdateTargetIndicators();
+	void PlaceTargetIndicator(UIndicatorDescriptor& Indicator, const FRpgHarvestTargetEvaluation& Target) const;
 	void RemoveTargetIndicators();
 	void UpdateAreaMarker();
 	void DestroyAreaMarker();
@@ -170,9 +204,9 @@ private:
 	/** Hold-to-aim ability currently held on this client, if any. */
 	FGameplayAbilitySpecHandle AimingSpecHandle;
 
-	/** Projected indicators, one per indicated target component; kept while their target stays indicated. */
+	/** Projected indicators, one per indicated target; kept while their target stays indicated. */
 	UPROPERTY(Transient)
-	TArray<TObjectPtr<UIndicatorDescriptor>> TargetIndicators;
+	TArray<FRpgHarvestTargetIndicator> TargetIndicators;
 
 	FTimerHandle RefreshTimerHandle;
 };

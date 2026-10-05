@@ -17,7 +17,10 @@
 #include "GameplayTags/RpgHarvestingMagicGameplayTags.h"
 #include "Harvesting/RpgHarvestableComponent.h"
 #include "Harvesting/RpgHarvestableInstancedMeshComponent.h"
+#include "Harvesting/RpgHarvestableInstancesComponent.h"
+#include "Harvesting/RpgHarvestInstanceStockComponent.h"
 #include "Harvesting/RpgHarvestProfile.h"
+#include "Engine/StaticMesh.h"
 #include "SurvivalRpg/Inventory/Loot/RpgLootTable.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgGatheringSet.h"
 #include "SurvivalRpg/Inventory/RpgDroppedInventoryActor.h"
@@ -42,7 +45,15 @@ namespace RpgLootHarvestPIETests
 		ARpgNetworkAutomationHarvesterState* Harvester = nullptr;
 		ARpgNetworkAutomationHarvestFixture* HarvestFixture = nullptr;
 		ARpgNetworkAutomationHarvestNodeFixture* HarvestNode = nullptr;
+		ARpgNetworkAutomationHarvestInstancesFixture* InstancesField = nullptr;
 	};
+
+	/** Authored instance locations of the instanced test field, relative to InstancesFieldLocation. */
+	const TArray<FVector> InstancesFieldLocations = {
+		FVector(0.0, 0.0, 0.0),
+		FVector(300.0, 0.0, 0.0),
+		FVector(600.0, 0.0, 0.0)};
+	const FVector InstancesFieldLocation(4000.0, 4000.0, 0.0);
 
 	FTimespan NetworkTimeout()
 	{
@@ -160,6 +171,84 @@ namespace RpgLootHarvestPIETests
 			Node->GetRemainingSections() == ExpectedRemainingSections &&
 			Node->GetHarvestState().Revision == ExpectedRevision &&
 			Node->GetHarvestState().bActive == bExpectedActive;
+	}
+
+	/** Loads the same instanced field on one machine, the way every machine loads a PCG partition actor. */
+	ARpgNetworkAutomationHarvestInstancesFixture* LoadInstancesField(UWorld* World)
+	{
+		UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+		ARpgNetworkAutomationHarvestInstancesFixture* Field = World && Cube
+			? World->SpawnActorDeferred<ARpgNetworkAutomationHarvestInstancesFixture>(
+				ARpgNetworkAutomationHarvestInstancesFixture::StaticClass(),
+				FTransform(InstancesFieldLocation),
+				nullptr,
+				nullptr,
+				ESpawnActorCollisionHandlingMethod::AlwaysSpawn)
+			: nullptr;
+		if (!Field || !Field->ConfigureHarvestProfile(MakeSectionedNodeProfile(Field)))
+		{
+			return nullptr;
+		}
+
+		URpgHarvestableInstancesComponent* Instances = Field->GetHarvestableInstances();
+		Instances->SetStaticMesh(Cube);
+		for (const FVector& Location : InstancesFieldLocations)
+		{
+			Instances->AddInstance(FTransform(Location));
+		}
+		Field->FinishSpawning(FTransform(InstancesFieldLocation));
+		return Field;
+	}
+
+	FRpgHarvestRequest MakeInstancesRequest(
+		const FNetworkState& State,
+		const int32 InstanceIndex,
+		AActor* Harvester,
+		const int32 RequestedSections)
+	{
+		FRpgHarvestRequest Request;
+		Request.Harvester = Harvester;
+		Request.AbilityId = RpgHarvestingMagicGameplayTags::Ability_Harvesting_Manual;
+		Request.HarvestPower = 1.0f;
+		Request.RequestedSections = RequestedSections;
+		URpgHarvestableInstancesComponent* Instances =
+			IsValid(State.InstancesField) ? State.InstancesField->GetHarvestableInstances() : nullptr;
+		FTransform InstanceTransform;
+		if (Instances && Instances->GetAuthoredInstanceTransform(InstanceIndex, InstanceTransform, true))
+		{
+			Request.Hit = FHitResult(State.InstancesField, Instances, InstanceTransform.GetLocation(), FVector::UpVector);
+			Request.Hit.Item = InstanceIndex;
+			Request.ExpectedRevision = IRpgHarvestableTarget::Execute_GetHarvestRevision(Instances, Request.Hit);
+		}
+		return Request;
+	}
+
+	/** True when this machine presents the instance stock: remaining sections per instance, hidden when empty. */
+	bool HasInstanceStock(
+		const FNetworkState& State,
+		const TArray<int32>& ExpectedRemainingSections,
+		const int32 ExpectedChangedInstances)
+	{
+		const URpgHarvestInstanceStockComponent* Stock = URpgHarvestInstanceStockComponent::FindForWorld(State.World);
+		const URpgHarvestableInstancesComponent* Instances =
+			IsValid(State.InstancesField) ? State.InstancesField->GetHarvestableInstances() : nullptr;
+		if (!Stock || !Instances || Stock->GetNumChangedInstances() != ExpectedChangedInstances ||
+			Instances->GetInstanceCount() != ExpectedRemainingSections.Num())
+		{
+			return false;
+		}
+
+		for (int32 InstanceIndex = 0; InstanceIndex < ExpectedRemainingSections.Num(); ++InstanceIndex)
+		{
+			FTransform Presented;
+			if (Instances->GetRemainingSections(InstanceIndex) != ExpectedRemainingSections[InstanceIndex] ||
+				!Instances->GetInstanceTransform(InstanceIndex, Presented, false) ||
+				Presented.GetScale3D().IsNearlyZero() != (ExpectedRemainingSections[InstanceIndex] == 0))
+			{
+				return false;
+			}
+		}
+		return true;
 	}
 
 	bool IsServerReady(const FNetworkState& State, const int32 ExpectedClients)
@@ -752,6 +841,150 @@ NETWORK_TEST_CLASS(LootHarvestPIE, "SurvivalRpg.Network")
 				[](FNetworkState& State)
 				{
 					return HasReplicatedNodeState(State, 0, 1, false);
+				},
+				NetworkTimeout());
+	}
+
+	TEST_METHOD(InstanceStockReplicatesThroughGameStateAndLateJoins)
+	{
+		using namespace RpgLootHarvestPIETests;
+
+		Network
+			.UntilServer(
+				TEXT("Dedicated server and first connection are ready for the instance test"),
+				[](FNetworkState& State)
+				{
+					return IsServerReady(State, 1);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Initial PIE client is ready for the instance test"),
+				[](FNetworkState& State)
+				{
+					return IsClientReady(State);
+				},
+				NetworkTimeout())
+			.SpawnAndReplicate<
+				ARpgNetworkAutomationHarvesterState,
+				&FNetworkState::Harvester>(
+				[](ARpgNetworkAutomationHarvesterState& Harvester)
+				{
+					(void)Harvester;
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("The harvesting GameFeature adds the instance stock to the GameState"),
+				[this](FNetworkState& State)
+				{
+					AGameStateBase* GameState = State.World->GetGameState();
+					ASSERT_THAT(IsNotNull(GameState));
+					URpgHarvestInstanceStockComponent* Stock =
+						NewObject<URpgHarvestInstanceStockComponent>(GameState, TEXT("HarvestInstanceStock"));
+					Stock->RegisterComponent();
+					ASSERT_THAT(IsTrue(Stock->HasStockAuthority()));
+				})
+			.UntilClients(
+				TEXT("Clients receive the replicated instance stock"),
+				[](FNetworkState& State)
+				{
+					return URpgHarvestInstanceStockComponent::FindForWorld(State.World) != nullptr;
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("The server loads the instanced field"),
+				[this](FNetworkState& State)
+				{
+					State.InstancesField = LoadInstancesField(State.World);
+					ASSERT_THAT(IsNotNull(State.InstancesField));
+				})
+			.ThenClients(
+				TEXT("Clients load the same field without replicating it"),
+				[this](FNetworkState& State)
+				{
+					State.InstancesField = LoadInstancesField(State.World);
+					ASSERT_THAT(IsNotNull(State.InstancesField));
+					ASSERT_THAT(IsFalse(State.InstancesField->GetIsReplicated()));
+					ASSERT_THAT(IsTrue(HasInstanceStock(State, {NodeSectionCount, NodeSectionCount, NodeSectionCount}, 0)));
+				})
+			.ThenClient(
+				TEXT("A client cannot extract instance stock although it owns its local field"),
+				0,
+				[this](FNetworkState& State)
+				{
+					URpgHarvestableInstancesComponent* Instances = State.InstancesField->GetHarvestableInstances();
+					const FRpgHarvestRequest Request = MakeInstancesRequest(State, 0, State.Harvester, 1);
+					ASSERT_THAT(IsTrue(State.InstancesField->HasAuthority()));
+					ASSERT_THAT(IsTrue(Instances->EvaluateHarvest_Implementation(Request).IsSuccess()));
+					ASSERT_THAT(IsTrue(Instances->CommitHarvest_Implementation(Request).Outcome == ERpgHarvestOutcome::Invalid));
+					ASSERT_THAT(AreEqual(Instances->GetRemainingSections(0), NodeSectionCount));
+				})
+			.ThenServer(
+				TEXT("The server empties one instance and harvests a section of another"),
+				[this](FNetworkState& State)
+				{
+					URpgHarvestableInstancesComponent* Instances = State.InstancesField->GetHarvestableInstances();
+					ASSERT_THAT(IsTrue(Instances->CommitHarvest_Implementation(
+						MakeInstancesRequest(State, 0, State.Harvester, NodeSectionCount)).bDepleted));
+					ASSERT_THAT(IsTrue(Instances->CommitHarvest_Implementation(
+						MakeInstancesRequest(State, 1, State.Harvester, 1)).IsSuccess()));
+					ASSERT_THAT(IsTrue(HasInstanceStock(State, {0, NodeSectionCount - 1, NodeSectionCount}, 2)));
+					ASSERT_THAT(AreEqual(
+						State.Harvester->GetInventoryManagerComponent()->GetTotalItemCountByDefinition(
+							URpgNetworkAutomationMaterialDefinition::StaticClass()),
+						(NodeSectionCount + 1) * LootQuantity));
+				})
+			.UntilClient(
+				TEXT("The client presents the replicated instance stock"),
+				0,
+				[](FNetworkState& State)
+				{
+					return HasInstanceStock(State, {0, NodeSectionCount - 1, NodeSectionCount}, 2);
+				},
+				NetworkTimeout())
+			.ThenClientJoins(NetworkTimeout())
+			.UntilServer(
+				TEXT("Late join establishes the second connection for the instance test"),
+				[](FNetworkState& State)
+				{
+					return IsServerReady(State, 2);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("Late-joining client is ready and received the instance stock"),
+				1,
+				[](FNetworkState& State)
+				{
+					const URpgHarvestInstanceStockComponent* Stock =
+						URpgHarvestInstanceStockComponent::FindForWorld(State.World);
+					return IsClientReady(State) && Stock && Stock->GetNumChangedInstances() == 2;
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("The late joiner streams in the field and presents the stored stock"),
+				1,
+				[this](FNetworkState& State)
+				{
+					State.InstancesField = LoadInstancesField(State.World);
+					ASSERT_THAT(IsNotNull(State.InstancesField));
+					ASSERT_THAT(IsTrue(HasInstanceStock(State, {0, NodeSectionCount - 1, NodeSectionCount}, 2)));
+				})
+			.ThenServer(
+				TEXT("A respawn restores the empty instance"),
+				[this](FNetworkState& State)
+				{
+					URpgHarvestableInstancesComponent* Instances = State.InstancesField->GetHarvestableInstances();
+					URpgHarvestInstanceStockComponent* Stock = URpgHarvestInstanceStockComponent::FindForWorld(State.World);
+					FIntVector Key;
+					ASSERT_THAT(IsNotNull(Stock));
+					ASSERT_THAT(IsTrue(Instances->GetInstanceKey(0, Key)));
+					ASSERT_THAT(IsTrue(Stock->RestoreStock(Key)));
+					ASSERT_THAT(IsTrue(HasInstanceStock(State, {NodeSectionCount, NodeSectionCount - 1, NodeSectionCount}, 1)));
+				})
+			.UntilClients(
+				TEXT("Both clients show the restored instance and keep the partial one"),
+				[](FNetworkState& State)
+				{
+					return HasInstanceStock(State, {NodeSectionCount, NodeSectionCount - 1, NodeSectionCount}, 1);
 				},
 				NetworkTimeout());
 	}

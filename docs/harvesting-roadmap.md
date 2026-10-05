@@ -59,7 +59,8 @@ stock rules are kept separate.
   preview. Tools, abilities, resources, loot, presentation and tuning are
   designer content.
 - **Runtime truth:** the server owns the remaining stock of each resource in
-  `URpgHarvestableComponent`. The stock is replicated, dormant and
+  `URpgHarvestableComponent`, or for instanced resources in the GameState's
+  `URpgHarvestInstanceStockComponent`. The stock is replicated and
   session-scoped. Rewards go through `FRpgHarvestRewardService` into
   `URpgInventoryManagerComponent`. Unlocks read saved trade-skill levels.
   Ability specs come from equipment grants. The target preview is a local
@@ -70,14 +71,21 @@ stock rules are kept separate.
     target selection, exactly-once commit, cancel safety, commit timing taken
     from authored montage data, and hold-to-aim.
   - The local `URpgHarvestTargetingComponent` (HARV-02).
-  - The non-reflected `FRpgHarvestStockRules`, shared with the future PCG
-    bridge.
+  - The non-reflected `FRpgHarvestStockRules`, shared by actor nodes, HISM
+    instances and the PCG bridge.
   - The abstract `URpgHarvestTargetIndicatorWidget` (HARV-04), which binds an
     indicator widget to exactly one previewed target.
   - HARV-04 removed the native `URpgGameplayAbility_Stoneburst` leaf.
+  - `URpgHarvestableInstancesComponent` (HARV-06), an instanced static mesh
+    target for PCG, and `URpgHarvestInstanceStockComponent` (HARV-06), the
+    sparse replicated stock of all instanced resources on the GameState.
+    Both are engine-facing mechanisms: authority, replication, instance
+    identity and the instanced mesh API.
 - **Designer assets:** item, equipment and ability set definitions, `GA_*`
   abilities, `HP_*` profiles, `LT_*` loot tables, resource actor Blueprints,
-  montages, cues, cooldown effects, indicator widgets, tags and test maps.
+  instanced resource component Blueprints (`BPC_HarvestInstances_*`), PCG
+  graphs, montages, cues, cooldown effects, indicator widgets, tags and test
+  maps.
   They are authored through Unreal MCP.
 
 ## Runtime contract (HARV-01)
@@ -346,15 +354,145 @@ of the same stock, so it saves work without adding yield.
   as the server, previewed `-2` on it, and its swing took two sections on both
   sides. Two weak-point swings emptied a vein with the full stock of 24 ore.
 
+## PCG resource bridge (HARV-06)
+
+Open-world resources are placed by PCG and stay actor-free. The bridge makes
+their instances harvestable with the same stock rules as actor nodes, so every
+harvest ability works on them unchanged.
+
+- **Representation:** `URpgHarvestableInstancesComponent` is an instanced static
+  mesh component and an `IRpgHarvestableTarget`. A PCG static mesh spawner entry
+  uses a Blueprint subclass per resource type as its descriptor
+  `ComponentClass`. The subclass assigns the harvest profile and may present
+  sections. The component replicates nothing, because PCG partition actors never
+  replicate.
+- **Stock:** `URpgHarvestInstanceStockComponent` lives on `ARpgGameStateBase`;
+  the harvesting GameFeature adds it. It holds one FastArray entry for each
+  instance whose stock differs from its authored state. An entry stores the
+  revision, the extracted sections, the active flag and the change time.
+  - Untouched instances cost nothing.
+  - A respawn removes the entry again, so a respawned instance starts over at
+    revision 0.
+- **Stable keys:** an instance is identified by its authored world location
+  rounded to whole centimeters.
+  - Server and clients load identical generated transforms, so they derive the
+    same key without replicating any identity. The key does not depend on which
+    component or World Partition cell holds the instance.
+  - Instances closer than one centimeter share a key; the component logs a
+    warning.
+  - The same key can identify saved depletion in HARV-10, as long as the
+    generated PCG output stays unchanged.
+- **Authority:** instance owners report authority on clients too, so commits
+  check the GameState's authority instead. The GameState is also the loot
+  source: rewarded item instances must not be outered to an actor that can
+  stream out.
+- **Streaming and late join:** on BeginPlay, a representation builds its key
+  map, registers with the stock and presents every stored change as initial
+  state. On EndPlay it unregisters.
+  - The stock and the server's respawn timers do not depend on which cells are
+    loaded.
+  - When the GameFeature adds the stock after representations began play, the
+    stock registers them itself.
+- **Presentation:** depleted instances are scaled to zero, which also removes
+  their collision; a respawn restores the authored transform.
+  `OnInstanceStockChanged` lets the Blueprint subclass present sections.
+  `SetInstancePresentationScale` changes only the presented scale, so the
+  authored transform and the key stay intact.
+- **Indicators:** target indicators now mark the targeted instance, not the
+  bounds of the whole component. A held area ability shows one indicator per
+  instance, also when several instances share one component.
+- **Not supported on instances yet:**
+  - weak points;
+  - the manual interaction harvest (bushes stay on the HISM path);
+  - runtime PCG generation (unverified);
+  - instanced skinned meshes (see the tree findings below).
+
+### Content
+
+- `BPC_HarvestInstances_IronVein` uses `HP_IronVein`. It shrinks an instance
+  with its sections like the actor vein does (`MinimumSectionScale` 0.55).
+- `PCG_HarvestIronVeins` chains three nodes:
+  - `Create Points Grid`: 3×3 points in 5 m cells, local to the volume.
+  - `Transform Points`: ±1.2 m offset, random yaw, scale 3.6–4.4.
+  - `Static Mesh Spawner`: `SM_RP_Vol_01_03` with the component class above
+    and `BlockAll` collision.
+- `Lvl_HarvestPickaxe` has the PCG volume `Harvest_PcgIronVeinField` north of
+  the actor veins. It is generated in the editor and saved with the map. Its
+  generation trigger is On Demand, so play never regenerates it.
+- The GameFeature data adds the stock component to `RpgGameStateBase` on server
+  and clients.
+- `M_RP_Vol_01_01` now has `bUsedWithInstancedStaticMeshes`. The editor set the
+  flag when it first rendered the mesh instanced; cooked instances need it.
+
+### Trees and skinned meshes
+
+- In UE 5.8, `UInstancedSkinnedMeshComponent` creates per-instance bodies from a
+  merged body setup of the mesh's physics asset, and its hits report the
+  instance index. The Megaplant trees from #177 have no physics asset, so their
+  instances neither collide nor can be traced.
+- The component exports only some of its virtual functions, so a project
+  subclass like `URpgHarvestableInstancesComponent` cannot link outside the
+  engine. This was read from the engine headers, not attempted.
+- Recommendation for HARV-07:
+  - At the same PCG points as the visual tree instances, spawn an invisible
+    `URpgHarvestableInstancesComponent` with a simple trunk mesh as a collision
+    proxy.
+  - Felling hides the visual instance with the same location key and spawns a
+    cosmetic falling tree.
+  - Alternatively, author physics assets for the trees.
+
+### Budget
+
+Measured in the Development editor with null RHI, through
+`SurvivalRpg.Harvesting.Instances.Budget` and an Unreal Insights CPU trace of
+that test. The test field has 10,000 instances in one component and 1,000
+stored changes. The ranges come from two runs.
+
+| Work | Cost |
+| --- | --- |
+| Building the key map of 10,000 instances | 0.36–0.71 ms |
+| Registering and presenting 1,000 stored changes | 0.31–0.77 ms |
+| Whole BeginPlay of the field, with and without stored changes | 0.6 ms / 1.2–1.5 ms |
+| Commit without loot delivery | 6–10 µs on average; `ExtractSections` 1–2 µs |
+| Evaluation for the preview | 1.5–5.6 µs |
+
+- **Memory:** about 40 bytes of key map per loaded instance, local only.
+- **Network:** one FastArray entry per changed instance, sent to every client
+  because the GameState is always relevant. The bytes were not measured with
+  Network Insights.
+- **Engine costs dominate:**
+  - Physics bodies of instanced meshes: `Init Body` takes about 6 µs per
+    instance in this test.
+  - Overlap queries at BeginPlay when a component generates overlap events. The
+    component disables them by default, and PCG descriptors do too.
+- **Test ceilings:** about ten times the measured costs.
+
+### Multiplayer
+
+The client was checked in a listen-server PIE session in `Lvl_HarvestPickaxe`:
+- Its indicator marked a single PCG instance with `4/4`.
+- Each swing took one section on server and client, and the instance shrank
+  on both.
+- Four swings emptied the instance for 24 ore, and it disappeared on both.
+- Rift Grip at Mining 2 previewed two instances of the same component with
+  `4/4  -3` each and took three sections from each.
+
+In the first PIE session, the first two client swings on an instance took two
+sections each; the cause was not found. Then 14 later swings each took one
+section: 9 on instances and 5 on actor veins, in that session and after a
+fresh PIE start. Injected key presses left over from failed pickup attempts
+are the likely cause. Once, right after a pickup, the first swing on an actor
+vein had no effect.
+
 ## Performance guardrails
 
 - Resources never tick. Respawn uses a timer. Replicated state is a revision,
   a section count, an active flag and a timestamp.
 - Indicators run only on the local client: one query at about 15 Hz, never one
   per resource. The highlight changes only when the target changes.
-- In the open world, PCG instances stay actor-free. The server keeps sparse
-  state only for touched instances. Budgets are measured with Unreal Insights
-  before M2.
+- In the open world, PCG instances stay actor-free. The GameState keeps sparse
+  state only for changed instances. HARV-06 measured the bridge with Unreal
+  Insights; see its budget.
 
 ## Tasks
 
@@ -364,8 +502,8 @@ of the same stock, so it saves work without adding yield.
 | HARV-02 | `URpgGameplayAbility_Harvest` base, shared targeting query, local `URpgHarvestTargetingComponent` preview read model | Merged: [#179](https://github.com/Athurito/SurvivalRpg/pull/179) |
 | HARV-03 | M0 pickaxe content: tool item, equipment and abilities, iron vein, indicator presentation, `Lvl_HarvestPickaxe` test map | Merged: [#180](https://github.com/Athurito/SurvivalRpg/pull/180) |
 | HARV-04 | M1 Rift Grip: hold to aim, Mining 2 gate, cooldown, Q/E/R ability-set defaults, area indicators; replaces Stoneburst | Merged: [#181](https://github.com/Athurito/SurvivalRpg/pull/181) |
-| HARV-05 | M1 weak-point crit: bonus sections from a readable weak point | In review: [#183](https://github.com/Athurito/SurvivalRpg/pull/183) |
-| HARV-06 | PCG resource bridge: harvestable PCG instances with sparse state and a measured budget | Planned, before M2 |
+| HARV-05 | M1 weak-point crit: bonus sections from a readable weak point | Merged: [#183](https://github.com/Athurito/SurvivalRpg/pull/183) |
+| HARV-06 | PCG resource bridge: harvestable PCG instances with sparse state and a measured budget | In review: [#184](https://github.com/Athurito/SurvivalRpg/pull/184) |
 | HARV-07 | M2 axe and Death Wave area harvest, aggregated delivery, protected objects | Planned |
 | HARV-08 | M3 grave swarm with separate beneficiary and physical harvester | Planned |
 | HARV-09 | M4 talents (powers such as Rift Grip chosen in a level-gated talent tree), resource parity across combat styles, Ash Pact conversion | Planned |
@@ -376,9 +514,11 @@ of the same stock, so it saves work without adding yield.
 - Should the primary target also get an outline highlight? The project has
   no custom-depth outline yet, so HARV-03 marks the target with the projected
   label only.
-- For HARV-06: do ISKMC instances support per-instance traces, or are
-  collision proxies needed? How are stable PCG instance keys kept under
-  World Partition streaming?
+- Answered in HARV-06: instanced skinned mesh instances can be traced only with a
+  physics asset; the trees need one or a collision proxy. Stable keys are
+  authored locations, which survive World Partition streaming.
+- For HARV-07: collision proxy or tree physics assets, and how a felled tree
+  is presented.
 - Not decided yet: home-world regeneration, the timing of the awakening, limits
   on large power states, and the final co-op scope.
 - The material sets duplicate each other: `ID_Ore` and its relatives versus

@@ -187,6 +187,31 @@ ARpgHarvestAutomationCollidableNodeActor::ARpgHarvestAutomationCollidableNodeAct
 	HarvestableNode = CreateDefaultSubobject<URpgHarvestableComponent>(TEXT("HarvestableNode"));
 }
 
+void URpgHarvestAutomationInstancesComponent::OnInstanceStockChanged_Implementation(
+	const int32 InstanceIndex,
+	const int32 RemainingSections,
+	const int32 SectionCount,
+	const bool bActive,
+	const bool bInitialState)
+{
+	(void)SectionCount;
+	++EventCount;
+	LastInstanceIndex = InstanceIndex;
+	LastRemainingSections = RemainingSections;
+	bLastActive = bActive;
+	bLastInitialState = bInitialState;
+}
+
+ARpgHarvestAutomationInstancesActor::ARpgHarvestAutomationInstancesActor(
+	const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	bReplicates = false;
+	Instances = CreateDefaultSubobject<URpgHarvestAutomationInstancesComponent>(TEXT("Instances"));
+	Instances->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
+	SetRootComponent(Instances);
+}
+
 URpgHarvestAutomationTestAbility::URpgHarvestAutomationTestAbility(
 	const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)

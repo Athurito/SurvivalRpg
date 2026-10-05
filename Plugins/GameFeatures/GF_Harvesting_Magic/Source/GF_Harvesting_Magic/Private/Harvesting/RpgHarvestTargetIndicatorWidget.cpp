@@ -1,6 +1,5 @@
 #include "Harvesting/RpgHarvestTargetIndicatorWidget.h"
 
-#include "Components/SceneComponent.h"
 #include "SurvivalRpg/UI/IndicatorSystem/IndicatorDescriptor.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgHarvestTargetIndicatorWidget)
@@ -8,13 +7,13 @@
 void URpgHarvestTargetIndicatorWidget::BindIndicator_Implementation(UIndicatorDescriptor* Indicator)
 {
 	Targeting = Indicator ? Cast<URpgHarvestTargetingComponent>(Indicator->GetDataObject()) : nullptr;
-	TargetComponent = Indicator ? Indicator->GetSceneComponent() : nullptr;
+	BoundIndicator = Indicator;
 }
 
 void URpgHarvestTargetIndicatorWidget::UnbindIndicator_Implementation(const UIndicatorDescriptor* Indicator)
 {
 	Targeting.Reset();
-	TargetComponent.Reset();
+	BoundIndicator.Reset();
 }
 
 bool URpgHarvestTargetIndicatorWidget::GetTargetStatus(
@@ -32,8 +31,8 @@ bool URpgHarvestTargetIndicatorWidget::GetTargetStatus(
 		OutSectionsToTake = 0;
 		return false;
 	}
-	return TargetingComponent->GetTargetStatus(
-		TargetComponent.Get(),
+	return TargetingComponent->GetIndicatedTargetStatus(
+		BoundIndicator.Get(),
 		OutStatus,
 		OutRemainingSections,
 		OutSectionCount,
@@ -50,6 +49,6 @@ bool URpgHarvestTargetIndicatorWidget::IsWeakPointTargeted() const
 {
 	const URpgHarvestTargetingComponent* TargetingComponent = Targeting.Get();
 	const FRpgHarvestTargetEvaluation* Target =
-		TargetingComponent ? TargetingComponent->FindTargetEvaluation(TargetComponent.Get()) : nullptr;
+		TargetingComponent ? TargetingComponent->FindIndicatedTarget(BoundIndicator.Get()) : nullptr;
 	return Target && Target->WouldHarvest() && Target->Result.bWeakPointHit;
 }

@@ -3,6 +3,8 @@
 #include "Components/SceneComponent.h"
 #include "Harvesting/RpgHarvestableComponent.h"
 #include "Harvesting/RpgHarvestableInstancedMeshComponent.h"
+#include "Harvesting/RpgHarvestableInstancesComponent.h"
+#include "Engine/CollisionProfile.h"
 #include "Harvesting/RpgHarvestProfile.h"
 #include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
@@ -123,6 +125,31 @@ bool ARpgNetworkAutomationHarvestFixture::ConfigureHarvestProfile(
 	HarvestProfileProperty->SetObjectPropertyValue_InContainer(
 		HarvestableInstances,
 		InProfile);
+	return true;
+}
+
+ARpgNetworkAutomationHarvestInstancesFixture::ARpgNetworkAutomationHarvestInstancesFixture(
+	const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	// Like a PCG partition actor: loaded on every machine, never replicated. The stock replicates via the GameState.
+	bReplicates = false;
+	HarvestableInstances = CreateDefaultSubobject<URpgHarvestableInstancesComponent>(TEXT("HarvestableInstances"));
+	HarvestableInstances->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
+	SetRootComponent(HarvestableInstances);
+}
+
+bool ARpgNetworkAutomationHarvestInstancesFixture::ConfigureHarvestProfile(URpgHarvestProfile* InProfile)
+{
+	FObjectProperty* HarvestProfileProperty = FindFProperty<FObjectProperty>(
+		URpgHarvestableInstancesComponent::StaticClass(),
+		TEXT("HarvestProfile"));
+	if (!HarvestableInstances || !HarvestProfileProperty || !InProfile)
+	{
+		return false;
+	}
+
+	HarvestProfileProperty->SetObjectPropertyValue_InContainer(HarvestableInstances, InProfile);
 	return true;
 }
 
