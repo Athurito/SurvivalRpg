@@ -14,12 +14,14 @@
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgInventoryCapacitySet.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Progression/Player/RpgPlayerProgressionComponent.h"
+#include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeComponent.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillProgressionComponent.h"
 
 ARpgPlayerState::ARpgPlayerState()
 {
 	PlayerProgressionComponent = CreateDefaultSubobject<URpgPlayerProgressionComponent>(TEXT("PlayerProgressionComponent"));
 	TradeSkillProgressionComponent = CreateDefaultSubobject<URpgTradeSkillProgressionComponent>(TEXT("TradeSkillProgressionComponent"));
+	SkillTreeComponent = CreateDefaultSubobject<URpgSkillTreeComponent>(TEXT("SkillTreeComponent"));
 	InventoryCapacitySet = CreateDefaultSubobject<URpgInventoryCapacitySet>(TEXT("InventoryCapacitySet"));
 	InventoryManagerComponent = CreateDefaultSubobject<URpgInventoryManagerComponent>(TEXT("InventoryManagerComponent"));
 	InventoryManagerComponent->SetCapacityMode(ERpgInventoryCapacityMode::Unlimited);

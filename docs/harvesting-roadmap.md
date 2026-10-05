@@ -28,13 +28,14 @@ harvesting abilities into Blueprint content belongs to issue
 | --- | --- |
 | Stoneburst | Replaced by Rift Grip (`GA_Harvest_RiftGrip`), the pickaxe's awakened multi-section ability. HARV-04 removed the native leaf, its tag and its PlayerState grant. |
 | Manual harvest | Profiles with `RequiredToolTag` offer no interaction harvest. Bushes keep the interaction harvest. |
-| First unlock | Rift Grip requires `Skill.Gathering.Mining` level 2. This reuses saved, replicated trade-skill progression. Later, the player picks such powers in a talent tree whose nodes are gated by the skill level (HARV-09). |
+| First unlock | Rift Grip requires `Skill.Gathering.Mining` level 2. This reuses saved, replicated trade-skill progression. HARV-09b moves such powers into the tool's skill tree. |
 | Costs | Rift Grip uses only a short cooldown GameplayEffect on the character, with no mana. Re-equipping cannot reset it. |
 | Resource representation | Prototype resources are actors with `URpgHarvestableComponent`. Open-world trees and rocks come from PCG; the PCG bridge in HARV-06 makes those instances harvestable. `URpgHarvestableInstancedMeshComponent` remains the legacy path for bushes and the sandbox. |
 | Indicators | With a tool equipped, the primary-swing target is always highlighted. Special abilities show their area and every target while the input is held, and trigger on release. |
 | Trees | Open-world trees are PCG instanced skinned meshes without collision. An invisible PCG trunk proxy at the same point holds the stock and is the harvest target (HARV-07). |
 | Protection | Area powers skip resources inside a harvest protection box and report them as protected. A deliberate single-target swing still harvests them (HARV-07). |
 | Area rewards | A multi-target harvest delivers the rewards of all its targets as one batch: into the inventory, or into one drop at the harvester (HARV-07). |
+| Skill trees | Every tool carries a skill tree in the style of New World (HARV-09a, [skill-trees.md](skill-trees.md)). The tool's trade skill level earns the points. Learned active powers are placed on Q/E/R in the tree, upgrades change their values through tunings, and the tree can be reset for free. The system is core and data-driven, so combat weapons can use it later. |
 | Swarm | Grave Swarm is the axe's second awakened power. Its creatures work through every resource in its area, one strike at a time, through the same `IRpgHarvestableTarget` path. The player's player state receives the rewards; the swarm is the physical harvester. A summoned swarm keeps working after a tool switch and ends when the player dies (HARV-08). |
 
 The trees from #177 are Nanite-assembly skeletal meshes with dynamic wind.
@@ -52,7 +53,7 @@ stock rules are kept separate.
 | Harvest request and result | `FRpgHarvestRequest`, `FRpgHarvestResult`, `IRpgHarvestableTarget` | HARV-01 |
 | Auto pickup and overflow container | `FRpgHarvestRewardService`: atomic inventory batch or one replicated drop | Exists; multi-section batching added in HARV-01 |
 | Harvest input tags | `InputTag.Weapon.Primary` on the main-hand tool; Q/E/R defaults declared by ability sets | No new input tags; ability-set defaults for Q/E/R added in HARV-04 |
-| Harvesting progression | `URpgTradeSkillProgressionComponent` (`Skill.Gathering.*`, saved) | Exists; talents come later |
+| Harvesting progression | `URpgTradeSkillProgressionComponent` (`Skill.Gathering.*`, saved); tool skill trees in `URpgSkillTreeComponent` | Skill levels exist; skill tree foundation in HARV-09a, tool trees from HARV-09b |
 | World persistence of resources | none (depletion is session-scoped) | HARV-10 |
 
 ## C++ boundary decision
@@ -807,8 +808,13 @@ runs a slow swarm on a dedicated server with clients:
 | HARV-05 | M1 weak-point crit: bonus sections from a readable weak point | Merged: [#183](https://github.com/Athurito/SurvivalRpg/pull/183) |
 | HARV-06 | PCG resource bridge: harvestable PCG instances with sparse state and a measured budget | Merged: [#184](https://github.com/Athurito/SurvivalRpg/pull/184) |
 | HARV-07 | M2 axe and Death Wave area harvest, aggregated delivery, protected objects, PCG trees | Merged: [#185](https://github.com/Athurito/SurvivalRpg/pull/185) |
-| HARV-08 | M3 grave swarm with separate beneficiary and physical harvester | In review: [#186](https://github.com/Athurito/SurvivalRpg/pull/186) |
-| HARV-09 | M4 talents (powers such as Rift Grip chosen in a level-gated talent tree), resource parity across combat styles, Ash Pact conversion | Planned |
+| HARV-08 | M3 grave swarm with separate beneficiary and physical harvester | Merged: [#186](https://github.com/Athurito/SurvivalRpg/pull/186) |
+| HARV-09a | M4 skill tree foundation (core): tree definition, item fragment, PlayerState progress, weapon grants, Q/E/R per tree, tunings, save schema 4; see [skill-trees.md](skill-trees.md) | In review |
+| HARV-09b | Skill UI (progression overview, tree grid, Q/E/R, reset) and the tool trees; Rift Grip, Death Wave and Grave Swarm move from level gates to tree nodes | Planned |
+| HARV-09c | Power forms through tunings: Wide Wave, Long Reach, Swarm Brood, Grave Detonation (strike radius), Wide Rift, Deep Grip | Planned |
+| HARV-09d | Ash Pact: axe toggle that turns wood harvests into charcoal at a shown ratio, charcoal item, kiln recipe | Planned |
+| HARV-09e | Striding Wave, the axe's ultimate: trees around the walking player fall for a few seconds | Planned |
+| HARV-09f | Resource parity across combat styles and a build target that stronger harvesting makes easier | Planned |
 | HARV-10 | M5 resource persistence with stable IDs, portal variant, co-op load | Planned |
 
 ## Open questions
@@ -821,8 +827,8 @@ runs a slow swarm on a dedicated server with clients:
   authored locations, which survive World Partition streaming.
 - Answered in HARV-07: trees use static trunk proxies; a felled tree is a
   local cosmetic actor that falls away from the local player and sinks.
-- Still open from M3: the swarm's talent variants wait for the HARV-09 talent
-  tree.
+- Still open from M3: the swarm's talent variants follow in HARV-09c, on the
+  skill trees of HARV-09a and HARV-09b.
 - Still open from M2: the small building task with both tools. The workbench
   recipes use the storage test materials, not the harvested `ID_Wood` and
   `ID_Ore`; see the duplicated material sets below.

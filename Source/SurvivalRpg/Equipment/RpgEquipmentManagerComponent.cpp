@@ -18,9 +18,40 @@
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/Itemization/RpgItemizationGameplayTags.h"
+#include "SurvivalRpg/Inventory/RpgInventoryFragment_SkillTree.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
+#include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeComponent.h"
+#include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeDefinition.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgEquipmentManagerComponent)
+
+namespace RpgEquipmentSkillTrees
+{
+	void GiveSkillNodeGrant(
+		URpgAbilitySystemComponent& AbilitySystem,
+		FRpgAppliedSkillNodeGrant& Grant,
+		URpgEquipmentInstance* SourceEquipment)
+	{
+		if (Grant.AbilitySet)
+		{
+			Grant.AbilitySet->GiveToAbilitySystem(&AbilitySystem, &Grant.GrantedHandles, SourceEquipment);
+		}
+		if (!Grant.GrantedTags.IsEmpty())
+		{
+			AbilitySystem.AddLooseGameplayTags(Grant.GrantedTags, 1, EGameplayTagReplicationState::TagOnly);
+		}
+	}
+
+	void TakeSkillNodeGrant(URpgAbilitySystemComponent& AbilitySystem, FRpgAppliedSkillNodeGrant& Grant)
+	{
+		Grant.GrantedHandles.TakeFromAbilitySystem(&AbilitySystem);
+		if (!Grant.GrantedTags.IsEmpty())
+		{
+			AbilitySystem.RemoveLooseGameplayTags(Grant.GrantedTags, 1, EGameplayTagReplicationState::TagOnly);
+			Grant.GrantedTags.Reset();
+		}
+	}
+}
 
 FString FRpgAppliedEquipmentEntry::GetDebugString() const
 {
@@ -127,8 +158,13 @@ void FRpgEquipmentList::RemoveEntry(URpgEquipmentInstance* Instance)
 			{
 				GrantPair.Value.GrantedHandles.TakeFromAbilitySystem(AbilitySystemComponent);
 			}
+			for (TPair<FGameplayTag, FRpgAppliedSkillNodeGrant>& NodeGrantPair : Entry.SkillNodeGrants)
+			{
+				RpgEquipmentSkillTrees::TakeSkillNodeGrant(*AbilitySystemComponent, NodeGrantPair.Value);
+			}
 		}
 		Entry.AbilitySetGrants.Reset();
+		Entry.SkillNodeGrants.Reset();
 
 		Instance->DestroyEquipmentActors();
 		EntryIt.RemoveCurrent();
@@ -732,6 +768,8 @@ void URpgEquipmentManagerComponent::RebuildEquipmentAbilityGrants()
 
 	const URpgEquipmentInstance* ActiveBlockSource = GetActiveBlockSource();
 	bool bGrantsChanged = false;
+	URpgSkillTreeComponent* SkillTrees = URpgSkillTreeComponent::FindForActor(GetOwner());
+	const bool bHasAuthority = GetOwner() && GetOwner()->HasAuthority();
 
 	for (FRpgAppliedEquipmentEntry& Entry : EquipmentList.Entries)
 	{
@@ -780,6 +818,49 @@ void URpgEquipmentManagerComponent::RebuildEquipmentAbilityGrants()
 				bGrantsChanged = true;
 			}
 		}
+
+		// Learned nodes of the item's skill tree are granted while the item is in use, sourced from its equipment.
+		TMap<FGameplayTag, const FRpgSkillTreeNode*> DesiredNodes;
+		const URpgSkillTreeDefinition* SkillTree = Entry.Instance && SkillTrees && bHasAuthority
+			? URpgInventoryFragment_SkillTree::FindActiveSkillTreeOfItem(Entry.Instance->GetInstigator(), Entry.EquippedSlot)
+			: nullptr;
+		if (SkillTree)
+		{
+			SkillTrees->RegisterSkillTree(SkillTree);
+			for (const FRpgSkillTreeNode& Node : SkillTree->Nodes)
+			{
+				if ((Node.AbilitySet || !Node.GrantedTags.IsEmpty()) &&
+					SkillTrees->IsNodeUnlocked(SkillTree->TreeTag, Node.NodeTag))
+				{
+					DesiredNodes.Add(Node.NodeTag, &Node);
+				}
+			}
+		}
+
+		for (auto NodeGrantIt = Entry.SkillNodeGrants.CreateIterator(); NodeGrantIt; ++NodeGrantIt)
+		{
+			const FRpgSkillTreeNode* const* DesiredNode = DesiredNodes.Find(NodeGrantIt.Key());
+			if (!DesiredNode ||
+				NodeGrantIt.Value().AbilitySet != (*DesiredNode)->AbilitySet ||
+				NodeGrantIt.Value().GrantedTags != (*DesiredNode)->GrantedTags)
+			{
+				RpgEquipmentSkillTrees::TakeSkillNodeGrant(*AbilitySystemComponent, NodeGrantIt.Value());
+				NodeGrantIt.RemoveCurrent();
+				bGrantsChanged = true;
+			}
+		}
+
+		for (const TPair<FGameplayTag, const FRpgSkillTreeNode*>& DesiredNode : DesiredNodes)
+		{
+			if (!Entry.SkillNodeGrants.Contains(DesiredNode.Key))
+			{
+				FRpgAppliedSkillNodeGrant& NewGrant = Entry.SkillNodeGrants.Add(DesiredNode.Key);
+				NewGrant.AbilitySet = DesiredNode.Value->AbilitySet;
+				NewGrant.GrantedTags = DesiredNode.Value->GrantedTags;
+				RpgEquipmentSkillTrees::GiveSkillNodeGrant(*AbilitySystemComponent, NewGrant, Entry.Instance);
+				bGrantsChanged = true;
+			}
+		}
 	}
 
 	// Q/E/R and quick-access bindings resolve against the granted specs, whichever equip path changed them.
@@ -787,6 +868,18 @@ void URpgEquipmentManagerComponent::RebuildEquipmentAbilityGrants()
 	{
 		RefreshOwnerAbilityBindings();
 	}
+}
+
+void URpgEquipmentManagerComponent::RefreshSkillTreeGrants()
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority())
+	{
+		return;
+	}
+
+	RebuildEquipmentAbilityGrants();
+	// A changed slot assignment moves Q/E/R even when no grant changed.
+	RefreshOwnerAbilityBindings();
 }
 
 void URpgEquipmentManagerComponent::RefreshOwnerAbilityBindings() const

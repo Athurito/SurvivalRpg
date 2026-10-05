@@ -19,6 +19,7 @@
 #include "SurvivalRpg/Core/Character/RpgPawnGameplayComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeComponent.h"
 
 #define ENSURE_ABILITY_IS_INSTANTIATED_OR_RETURN(FunctionName, ReturnValue)																				\
 {																																						\
@@ -125,6 +126,22 @@ void URpgGameplayAbility::TryActivateAbilityOnSpawn(const FGameplayAbilityActorI
 void URpgGameplayAbility::OnPawnAvatarSet()
 {
 	K2_OnPawnAvatarSet();
+}
+
+float URpgGameplayAbility::GetTunedValue(const FGameplayTag TuningTag, const float BaseValue) const
+{
+	const FGameplayAbilitySpec* Spec = GetCurrentAbilitySpec();
+	const FGameplayAbilityActorInfo* ActorInfo = GetCurrentActorInfo();
+	return Spec && ActorInfo ? GetTunedValueForSpec(*Spec, *ActorInfo, TuningTag, BaseValue) : BaseValue;
+}
+
+float URpgGameplayAbility::GetTunedValueForSpec(
+	const FGameplayAbilitySpec& Spec,
+	const FGameplayAbilityActorInfo& ActorInfo,
+	const FGameplayTag TuningTag,
+	const float BaseValue)
+{
+	return URpgSkillTreeComponent::ResolveAbilityTuningForSpec(Spec, ActorInfo, TuningTag, BaseValue);
 }
 
 void URpgGameplayAbility::GetAbilitySource(FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, float& OutSourceLevel, const IRpgAbilitySourceInterface*& OutAbilitySource, AActor*& OutEffectCauser) const

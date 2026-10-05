@@ -1,10 +1,14 @@
 #include "RpgTradeSkillProgressionComponent.h"
 
 #include "Curves/CurveFloat.h"
+#include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/PlayerState.h"
+#include "HAL/IConsoleManager.h"
 #include "Net/UnrealNetwork.h"
 #include "RpgTradeSkillGameplayTags.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
+#include "SurvivalRpg/SurvivalRpg.h"
 
 namespace RpgTradeSkillProgression
 {
@@ -502,3 +506,51 @@ bool URpgTradeSkillProgressionComponent::TryGetLegacySkillForTag(
 
 	return false;
 }
+
+#if !UE_BUILD_SHIPPING
+namespace RpgTradeSkillProgression
+{
+	/** Playtest helper: adds trade-skill XP on the server, for example to reach the levels that earn skill tree points. */
+	static FAutoConsoleCommandWithWorldAndArgs AddSkillXPCommand(
+		TEXT("Rpg.Progression.AddSkillXP"),
+		TEXT("Rpg.Progression.AddSkillXP <SkillTag> <XP> [PlayerIndex]: adds trade-skill XP on the server or listen host. ")
+		TEXT("Example: Rpg.Progression.AddSkillXP Skill.Gathering.Logging 500"),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic([](const TArray<FString>& Args, UWorld* World)
+		{
+			if (!World || World->GetNetMode() == NM_Client)
+			{
+				UE_LOG(LogRpg, Warning, TEXT("Rpg.Progression.AddSkillXP must run on the server or listen host."));
+				return;
+			}
+			if (Args.Num() < 2)
+			{
+				UE_LOG(LogRpg, Warning, TEXT("Usage: Rpg.Progression.AddSkillXP <SkillTag> <XP> [PlayerIndex]"));
+				return;
+			}
+
+			const FGameplayTag SkillTag = FGameplayTag::RequestGameplayTag(FName(*Args[0]), false);
+			const float Amount = FCString::Atof(*Args[1]);
+			const int32 PlayerIndex = Args.Num() > 2 ? FCString::Atoi(*Args[2]) : 0;
+			int32 Index = 0;
+			for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It, ++Index)
+			{
+				if (Index != PlayerIndex)
+				{
+					continue;
+				}
+
+				const APlayerController* PlayerController = It->Get();
+				URpgTradeSkillProgressionComponent* TradeSkills = PlayerController && PlayerController->PlayerState
+					? PlayerController->PlayerState->FindComponentByClass<URpgTradeSkillProgressionComponent>()
+					: nullptr;
+				const bool bAdded = TradeSkills && TradeSkills->AddSkillXPByTag(SkillTag, Amount);
+				UE_LOG(LogRpg, Display, TEXT("Rpg.Progression.AddSkillXP %s %.1f for player %d: %s, level %d."),
+					*SkillTag.ToString(), Amount, PlayerIndex, bAdded ? TEXT("added") : TEXT("rejected"),
+					TradeSkills ? TradeSkills->GetSkillLevelByTag(SkillTag) : 0);
+				return;
+			}
+
+			UE_LOG(LogRpg, Warning, TEXT("Rpg.Progression.AddSkillXP found no player %d."), PlayerIndex);
+		}));
+}
+#endif

@@ -1,11 +1,14 @@
 #include "RpgWeaponAbilityLoadoutComponent.h"
 
+#include "GameFramework/Controller.h"
 #include "GameFramework/GameplayMessageSubsystem.h"
 #include "Net/UnrealNetwork.h"
 #include "RpgAbilityBindingResolver.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeComponent.h"
+#include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeDefinition.h"
 #include "SurvivalRpg/SurvivalRpg.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgWeaponAbilityLoadoutComponent)
@@ -100,11 +103,16 @@ void URpgWeaponAbilityLoadoutComponent::ApplyAbilityBindings(URpgAbilitySystemCo
 		const FGameplayTag RuntimeInputTag = GetInputTagForSlotIndex(SlotIndex);
 		AbilitySystem.ClearRuntimeAbilityInputTag(RuntimeInputTag);
 
-		// A slot without a player selection follows the default of the currently granted ability sets.
+		// A slot without a player selection follows the skill tree of the weapon in use, then the default of the
+		// currently granted ability sets.
 		if (!Slot.AbilityIdTag.IsValid() || Slot.bDefaultSelection)
 		{
-			FGameplayTag DefaultAbilityId;
-			const ERpgAbilityBindingResolveResult DefaultResult = ResolveDefaultAbilityId(AbilitySystem, SlotIndex, DefaultAbilityId);
+			FGameplayTag DefaultAbilityId = ResolveSkillTreeAbilityId(AbilitySystem, SlotIndex);
+			ERpgAbilityBindingResolveResult DefaultResult = ERpgAbilityBindingResolveResult::Unique;
+			if (!DefaultAbilityId.IsValid())
+			{
+				DefaultResult = ResolveDefaultAbilityId(AbilitySystem, SlotIndex, DefaultAbilityId);
+			}
 			Slot.AbilityIdTag = DefaultAbilityId;
 			Slot.bDefaultSelection = DefaultAbilityId.IsValid();
 			if (!Slot.bDefaultSelection)
@@ -142,6 +150,27 @@ void URpgWeaponAbilityLoadoutComponent::ApplyAbilityBindings(URpgAbilitySystemCo
 	}
 
 	OnRep_Slots();
+}
+
+FGameplayTag URpgWeaponAbilityLoadoutComponent::ResolveSkillTreeAbilityId(
+	const URpgAbilitySystemComponent& AbilitySystem,
+	const int32 SlotIndex) const
+{
+	const AController* Controller = Cast<AController>(GetOwner());
+	const URpgSkillTreeDefinition* SkillTree = URpgSkillTreeComponent::FindActiveWeaponSkillTree(
+		Controller ? Controller->GetPawn() : nullptr);
+	const URpgSkillTreeComponent* SkillTrees = URpgSkillTreeComponent::FindForActor(Controller);
+	if (!SkillTree || !SkillTrees)
+	{
+		return FGameplayTag();
+	}
+
+	// Only an assignment whose ability is granted right now replaces the ability set default.
+	const FGameplayTag AbilityId = SkillTrees->GetSlotAbilityId(SkillTree->TreeTag, SlotIndex);
+	return AbilityId.IsValid() &&
+			FRpgAbilityBindingResolver::ResolveUniqueAbilityId(&AbilitySystem, AbilityId, this).IsUnique()
+		? AbilityId
+		: FGameplayTag();
 }
 
 ERpgAbilityBindingResolveResult URpgWeaponAbilityLoadoutComponent::ResolveDefaultAbilityId(

@@ -28,8 +28,8 @@ struct SURVIVALRPG_API FRpgWeaponAbilityLoadoutSlot
 	ERpgAbilityBindingResolveResult ResolveResult = ERpgAbilityBindingResolveResult::InvalidAbilityId;
 
 	/**
-	 * True when AbilityIdTag is the default declared by a granted ability set rather than a player selection.
-	 * Server-derived on every refresh; UI read-only.
+	 * True when AbilityIdTag comes from the skill tree of the weapon in use or the default of a granted ability set
+	 * rather than a player selection. Server-derived on every refresh; UI read-only.
 	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Weapon Ability Loadout")
 	bool bDefaultSelection = false;
@@ -56,9 +56,10 @@ struct SURVIVALRPG_API FRpgWeaponAbilityLoadoutChangedMessage
  * Equipment still grants abilities through the normal equipment manager. This component only chooses
  * which granted ability ids are currently bound to InputTag.Weapon.Ability.1..3.
  *
- * A slot without a player selection takes the default its granted ability sets declare: an ability set entry whose
- * InputTag is InputTag.Weapon.Ability.N marks its spec as the default of slot N. Player selections always win, and
- * a default slot follows the currently granted abilities on every refresh.
+ * A slot without a player selection takes the ability the skill tree of the weapon in use assigns to it (see
+ * URpgSkillTreeComponent), or else the default its granted ability sets declare: an ability set entry whose InputTag
+ * is InputTag.Weapon.Ability.N marks its spec as the default of slot N. Player selections always win, and a default
+ * slot follows the current weapon and granted abilities on every refresh.
  */
 UCLASS(Blueprintable, meta = (BlueprintSpawnableComponent))
 class SURVIVALRPG_API URpgWeaponAbilityLoadoutComponent : public UControllerComponent
@@ -134,6 +135,9 @@ protected:
 	void OnRep_Slots();
 
 private:
+	/** Ability id the active weapon's skill tree places on SlotIndex, when that ability is granted; otherwise empty. */
+	FGameplayTag ResolveSkillTreeAbilityId(const URpgAbilitySystemComponent& AbilitySystem, int32 SlotIndex) const;
+
 	void EnsureSlotCount();
 	void BroadcastSlotsChanged() const;
 	bool IsValidSlotIndex(int32 SlotIndex) const;

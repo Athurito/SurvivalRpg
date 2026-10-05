@@ -123,6 +123,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Ability Set")
 	void AddGrantedGameplayAbilityByTagName(TSubclassOf<URpgGameplayAbility> AbilityClass, int32 AbilityLevel, FName InputTagName);
 	
+	/** Abilities this set grants, in authored order. Static data; read by skill trees to slot learned abilities. */
+	const TArray<FRpgAbilitySet_GameplayAbility>& GetGrantedGameplayAbilities() const { return GrantedGameplayAbilities; }
+
 protected:
 
 	// Gameplay abilities granted by this set. Equipment uses this for attack, block, and utility abilities.
