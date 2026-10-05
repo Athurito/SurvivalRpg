@@ -185,3 +185,16 @@ bool ARpgNetworkAutomationHarvestNodeFixture::ConfigureHarvestProfile(
 		InProfile);
 	return true;
 }
+
+ARpgNetworkAutomationSwarmCreature::ARpgNetworkAutomationSwarmCreature(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	SetRootComponent(CreateDefaultSubobject<USceneComponent>(TEXT("Root")));
+	bReplicates = false;
+}
+
+ARpgNetworkAutomationSwarm::ARpgNetworkAutomationSwarm(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	CreatureClass = ARpgNetworkAutomationSwarmCreature::StaticClass();
+}

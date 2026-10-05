@@ -20,6 +20,7 @@
 #include "Harvesting/RpgHarvestableInstancesComponent.h"
 #include "Harvesting/RpgHarvestInstanceStockComponent.h"
 #include "Harvesting/RpgHarvestProfile.h"
+#include "Harvesting/RpgHarvestSwarm.h"
 #include "Engine/StaticMesh.h"
 #include "SurvivalRpg/Inventory/Loot/RpgLootTable.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgGatheringSet.h"
@@ -46,6 +47,7 @@ namespace RpgLootHarvestPIETests
 		ARpgNetworkAutomationHarvestFixture* HarvestFixture = nullptr;
 		ARpgNetworkAutomationHarvestNodeFixture* HarvestNode = nullptr;
 		ARpgNetworkAutomationHarvestInstancesFixture* InstancesField = nullptr;
+		ARpgNetworkAutomationSwarm* Swarm = nullptr;
 	};
 
 	/** Authored instance locations of the instanced test field, relative to InstancesFieldLocation. */
@@ -244,6 +246,54 @@ namespace RpgLootHarvestPIETests
 			if (Instances->GetRemainingSections(InstanceIndex) != ExpectedRemainingSections[InstanceIndex] ||
 				!Instances->GetInstanceTransform(InstanceIndex, Presented, false) ||
 				Presented.GetScale3D().IsNearlyZero() != (ExpectedRemainingSections[InstanceIndex] == 0))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** Returns the swarm replicated to or spawned in World that has not been destroyed, or null. */
+	ARpgHarvestSwarm* FindSwarm(UWorld* World)
+	{
+		for (TActorIterator<ARpgHarvestSwarm> It(World); It; ++It)
+		{
+			if (IsValid(*It) && !It->IsActorBeingDestroyed())
+			{
+				return *It;
+			}
+		}
+		return nullptr;
+	}
+
+	int32 CountSwarmCreatureActors(UWorld* World)
+	{
+		int32 Count = 0;
+		for (TActorIterator<ARpgNetworkAutomationSwarmCreature> It(World); It; ++It)
+		{
+			Count += IsValid(*It) && !It->IsActorBeingDestroyed() ? 1 : 0;
+		}
+		return Count;
+	}
+
+	/** True when every creature actor is within a short flight distance of a flying creature's replicated location. */
+	bool CreatureActorsFollowFlights(UWorld* World)
+	{
+		const ARpgHarvestSwarm* Swarm = FindSwarm(World);
+		if (!Swarm || CountSwarmCreatureActors(World) == 0)
+		{
+			return false;
+		}
+		for (TActorIterator<ARpgNetworkAutomationSwarmCreature> It(World); It; ++It)
+		{
+			bool bFollows = false;
+			for (int32 CreatureIndex = 0; CreatureIndex < Swarm->GetCreatures().Num(); ++CreatureIndex)
+			{
+				FVector Location;
+				bFollows |= Swarm->GetCreatureLocation(CreatureIndex, Location) &&
+					FVector::Dist(Location, It->GetActorLocation()) < 60.0;
+			}
+			if (!bFollows)
 			{
 				return false;
 			}
@@ -985,6 +1035,211 @@ NETWORK_TEST_CLASS(LootHarvestPIE, "SurvivalRpg.Network")
 				[](FNetworkState& State)
 				{
 					return HasInstanceStock(State, {NodeSectionCount, NodeSectionCount - 1, NodeSectionCount}, 1);
+				},
+				NetworkTimeout());
+	}
+
+	TEST_METHOD(SwarmReplicatesFlightsAndLateJoins)
+	{
+		using namespace RpgLootHarvestPIETests;
+
+		Network
+			.UntilServer(
+				TEXT("Dedicated server and first connection are ready for the swarm test"),
+				[](FNetworkState& State)
+				{
+					return IsServerReady(State, 1);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Initial PIE client is ready for the swarm test"),
+				[](FNetworkState& State)
+				{
+					return IsClientReady(State);
+				},
+				NetworkTimeout())
+			.SpawnAndReplicate<
+				ARpgNetworkAutomationHarvesterState,
+				&FNetworkState::Harvester>(
+				[](ARpgNetworkAutomationHarvesterState& Harvester)
+				{
+					(void)Harvester;
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("The harvesting GameFeature adds the instance stock for the swarm"),
+				[this](FNetworkState& State)
+				{
+					AGameStateBase* GameState = State.World->GetGameState();
+					ASSERT_THAT(IsNotNull(GameState));
+					URpgHarvestInstanceStockComponent* Stock =
+						NewObject<URpgHarvestInstanceStockComponent>(GameState, TEXT("HarvestInstanceStock"));
+					Stock->RegisterComponent();
+				})
+			.UntilClients(
+				TEXT("Clients receive the instance stock for the swarm"),
+				[](FNetworkState& State)
+				{
+					return URpgHarvestInstanceStockComponent::FindForWorld(State.World) != nullptr;
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("The server loads the instanced field for the swarm"),
+				[this](FNetworkState& State)
+				{
+					State.InstancesField = LoadInstancesField(State.World);
+					ASSERT_THAT(IsNotNull(State.InstancesField));
+				})
+			.ThenClients(
+				TEXT("Clients load the field the swarm will harvest"),
+				[this](FNetworkState& State)
+				{
+					State.InstancesField = LoadInstancesField(State.World);
+					ASSERT_THAT(IsNotNull(State.InstancesField));
+				})
+			.ThenServer(
+				TEXT("The server summons a slow swarm of three creatures over the field"),
+				[this](FNetworkState& State)
+				{
+					URpgHarvestableInstancesComponent* Instances = State.InstancesField->GetHarvestableInstances();
+					TArray<FRpgHarvestTargetEvaluation> Targets;
+					for (int32 InstanceIndex = 0; InstanceIndex < InstancesFieldLocations.Num(); ++InstanceIndex)
+					{
+						const FRpgHarvestRequest Request = MakeInstancesRequest(State, InstanceIndex, State.Harvester, 2);
+						FRpgHarvestTargetEvaluation& Target = Targets.AddDefaulted_GetRef();
+						Target.Receiver = Instances;
+						Target.Hit = Request.Hit;
+						Target.bInReach = true;
+						Target.Result = Instances->EvaluateHarvest_Implementation(Request);
+					}
+
+					// Two creatures share the first instance, the third takes the second; departures are four seconds
+					// apart so a late joiner arrives while the swarm is still at work.
+					FRpgHarvestSwarmParams Params;
+					Params.CreatureCount = 3;
+					Params.FlightSpeed = 300.0f;
+					Params.EmergeSeconds = 1.0f;
+					Params.LaunchIntervalSeconds = 4.0f;
+					Params.MaxReassignments = 0;
+					Params.MaxLifetimeSeconds = 20.0f;
+					Params.bRequireLineOfSight = false;
+
+					FRpgHarvestRequest RequestTemplate = MakeInstancesRequest(State, 0, State.Harvester, 2);
+					RequestTemplate.Hit = FHitResult();
+					RequestTemplate.ExpectedRevision = INDEX_NONE;
+					FActorSpawnParameters SpawnParameters;
+					SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+					ARpgNetworkAutomationSwarm* Swarm = State.World->SpawnActor<ARpgNetworkAutomationSwarm>(
+						ARpgNetworkAutomationSwarm::StaticClass(),
+						FTransform(InstancesFieldLocation + FVector(150.0, 300.0, 0.0)),
+						SpawnParameters);
+					ASSERT_THAT(IsNotNull(Swarm));
+					ASSERT_THAT(IsTrue(Swarm->StartSwarm(State.Harvester, RequestTemplate, Params, 1000.0f, ECC_Visibility, Targets)));
+					ASSERT_THAT(AreEqual(Swarm->GetCreatures().Num(), 3));
+					for (const FRpgHarvestSwarmCreature& Creature : Swarm->GetCreatures())
+					{
+						ASSERT_THAT(IsTrue(Creature.State == ERpgHarvestSwarmCreatureState::Flying));
+					}
+					ASSERT_THAT(IsTrue(Swarm->GetBeneficiary() == State.Harvester));
+					// A dedicated server has no players to present creatures to.
+					ASSERT_THAT(AreEqual(CountSwarmCreatureActors(State.World), 0));
+					State.Swarm = Swarm;
+				})
+			.UntilClients(
+				TEXT("Clients receive the swarm and present one creature actor per flying creature"),
+				[](FNetworkState& State)
+				{
+					const ARpgHarvestSwarm* Swarm = FindSwarm(State.World);
+					return Swarm && Swarm->GetCreatures().Num() == 3 && CountSwarmCreatureActors(State.World) == 3;
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("The client moves each creature along its replicated flight"),
+				0,
+				[](FNetworkState& State)
+				{
+					return CreatureActorsFollowFlights(State.World);
+				},
+				NetworkTimeout())
+			.UntilServer(
+				TEXT("The first creature harvests its instance when it arrives"),
+				[](FNetworkState& State)
+				{
+					return IsValid(State.Swarm) &&
+						State.Swarm->GetCreatures()[0].State == ERpgHarvestSwarmCreatureState::Struck &&
+						HasInstanceStock(State, {2, NodeSectionCount, NodeSectionCount}, 1);
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("The second creature is still on its way"),
+				[this](FNetworkState& State)
+				{
+					ASSERT_THAT(IsFalse(State.Swarm->GetCreatures()[1].IsFinished()));
+					ASSERT_THAT(IsFalse(State.Swarm->GetCreatures()[2].IsFinished()));
+				})
+			.ThenClientJoins(NetworkTimeout())
+			.UntilServer(
+				TEXT("Late join establishes the second connection for the swarm test"),
+				[](FNetworkState& State)
+				{
+					return IsServerReady(State, 2);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("The late joiner receives the swarm at work"),
+				1,
+				[](FNetworkState& State)
+				{
+					const ARpgHarvestSwarm* Swarm = FindSwarm(State.World);
+					return IsClientReady(State) && Swarm && Swarm->GetCreatures().Num() == 3;
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("The late joiner presents only creatures that have not finished"),
+				1,
+				[this](FNetworkState& State)
+				{
+					const ARpgHarvestSwarm* Swarm = FindSwarm(State.World);
+					ASSERT_THAT(IsNotNull(Swarm));
+					ASSERT_THAT(IsTrue(Swarm->GetCreatures()[0].IsFinished()));
+					int32 Unfinished = 0;
+					for (const FRpgHarvestSwarmCreature& Creature : Swarm->GetCreatures())
+					{
+						Unfinished += Creature.IsFinished() ? 0 : 1;
+					}
+					ASSERT_THAT(AreEqual(CountSwarmCreatureActors(State.World), Unfinished));
+
+					// The late joiner streams in the field the swarm works on, as every machine loads PCG partitions.
+					State.InstancesField = LoadInstancesField(State.World);
+					ASSERT_THAT(IsNotNull(State.InstancesField));
+				})
+			.UntilServer(
+				TEXT("Every creature harvested and the swarm delivered once"),
+				[](FNetworkState& State)
+				{
+					return IsValid(State.Swarm) && State.Swarm->IsFinished() &&
+						HasInstanceStock(State, {0, NodeSectionCount - 2, NodeSectionCount}, 2);
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("The summoner received the rewards of all strikes in its inventory"),
+				[this](FNetworkState& State)
+				{
+					ASSERT_THAT(IsTrue(State.Swarm->GetDelivery() == ERpgHarvestDelivery::Inventory));
+					ASSERT_THAT(AreEqual(State.Swarm->GetHarvestedSections(), 6));
+					ASSERT_THAT(AreEqual(
+						State.Harvester->GetInventoryManagerComponent()->GetTotalItemCountByDefinition(
+							URpgNetworkAutomationMaterialDefinition::StaticClass()),
+						6 * LootQuantity));
+					ASSERT_THAT(AreEqual(CountWorldDrops(State.World), 0));
+				})
+			.UntilClients(
+				TEXT("Both clients show the harvested field and retire the swarm and its creatures"),
+				[](FNetworkState& State)
+				{
+					return HasInstanceStock(State, {0, NodeSectionCount - 2, NodeSectionCount}, 2) &&
+						FindSwarm(State.World) == nullptr &&
+						CountSwarmCreatureActors(State.World) == 0;
 				},
 				NetworkTimeout());
 	}

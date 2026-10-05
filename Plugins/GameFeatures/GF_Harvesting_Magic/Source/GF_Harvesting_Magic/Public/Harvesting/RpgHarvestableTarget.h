@@ -14,9 +14,20 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestRequest
 {
 	GENERATED_BODY()
 
-	/** Pawn or actor performing the harvest. Gameplay code must not trust a client-supplied value. */
+	/**
+	 * Beneficiary of the harvest: the pawn, controller, or player state that receives the rewards and XP and whose trade
+	 * skills are checked. Gameplay code must not trust a client-supplied value.
+	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
 	TObjectPtr<AActor> Harvester = nullptr;
+
+	/**
+	 * Actor that physically strikes the resource when it is not the Harvester, for example a summoned swarm. Presentation
+	 * that depends on where the strike came from, such as the felling direction, uses it; rewards, XP and skill checks
+	 * always use the Harvester. Null when the Harvester strikes the resource itself.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
+	TObjectPtr<AActor> PhysicalHarvester = nullptr;
 
 	/** Stable semantic ability id below Ability.Harvesting, used by targets and telemetry to identify the harvest method. */
 	UPROPERTY(BlueprintReadOnly, Category = "Harvesting", meta = (Categories = "Ability.Harvesting"))
@@ -77,6 +88,12 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestRequest
 	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Harvesting", meta = (ClampMin = "0.0", ClampMax = "2.5", Units = "s"))
 	float PresentationDelaySeconds = 0.0f;
+
+	/** Returns the actor that physically strikes the resource: PhysicalHarvester when set, otherwise the Harvester. */
+	AActor* GetStrikingActor() const
+	{
+		return PhysicalHarvester ? PhysicalHarvester.Get() : Harvester.Get();
+	}
 };
 
 /** Authoritative or previewed outcome of one harvest request against one target. */

@@ -245,6 +245,11 @@ public:
 	}
 	void ConfigureWeakPointHits(const bool bInCanHitWeakPoints) { bCanHitWeakPoints = bInCanHitWeakPoints; }
 	void ConfigurePresentationWave(const float InSpeed) { PresentationWaveSpeed = InSpeed; }
+	void ConfigureSwarm(const TSubclassOf<ARpgHarvestSwarm> InSwarmClass, const FRpgHarvestSwarmParams& InSwarm)
+	{
+		SwarmClass = InSwarmClass;
+		Swarm = InSwarm;
+	}
 };
 
 /** Records preview notifications so tests can assert change-only broadcasting. */

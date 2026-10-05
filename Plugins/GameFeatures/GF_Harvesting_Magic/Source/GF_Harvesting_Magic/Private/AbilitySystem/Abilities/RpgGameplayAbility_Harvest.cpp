@@ -4,6 +4,7 @@
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitInputRelease.h"
 #include "Animation/AnimMontage.h"
+#include "CollisionQueryParams.h"
 #include "Engine/World.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
@@ -230,6 +231,18 @@ void URpgGameplayAbility_Harvest::ExecuteAuthorityCommit()
 	FRpgHarvestRequest RequestTemplate;
 	BuildRequestTemplate(*Spec, *CurrentActorInfo, RequestTemplate);
 
+	// A swarm harvests the selection later, creature by creature; this commit only summons it.
+	if (SummonsSwarm())
+	{
+		const bool bReserved = SummonSwarm(Selection, RequestTemplate);
+		ExecuteHarvestCue(bReserved ? SuccessGameplayCue : NoYieldGameplayCue, Selection.AimPoint, FVector::UpVector);
+		if (!HarvestMontage && IsActive())
+		{
+			EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
+		}
+		return;
+	}
+
 	// The presentation wave starts at the harvested target nearest to the harvester and travels outward.
 	const FVector WaveOrigin = RequestTemplate.Harvester ? RequestTemplate.Harvester->GetActorLocation() : FVector::ZeroVector;
 	double NearestTargetDistance = 0.0;
@@ -293,25 +306,141 @@ void URpgGameplayAbility_Harvest::ExecuteAuthorityCommit()
 		}
 	}
 
-	if (UAbilitySystemComponent* AbilitySystem = CurrentActorInfo->AbilitySystemComponent.Get())
-	{
-		const FGameplayTag CueTag = FirstHarvested ? SuccessGameplayCue : NoYieldGameplayCue;
-		if (CueTag.IsValid())
-		{
-			FGameplayCueParameters CueParameters;
-			CueParameters.Instigator = CurrentActorInfo->AvatarActor.Get();
-			CueParameters.EffectCauser = CurrentActorInfo->AvatarActor.Get();
-			CueParameters.Location = FirstHarvested ? FVector(FirstHarvested->Hit.ImpactPoint) : Selection.AimPoint;
-			CueParameters.Normal = FirstHarvested ? FVector(FirstHarvested->Hit.ImpactNormal) : FVector::UpVector;
-			AbilitySystem->ExecuteGameplayCue(CueTag, CueParameters);
-		}
-	}
+	ExecuteHarvestCue(
+		FirstHarvested ? SuccessGameplayCue : NoYieldGameplayCue,
+		FirstHarvested ? FVector(FirstHarvested->Hit.ImpactPoint) : Selection.AimPoint,
+		FirstHarvested ? FVector(FirstHarvested->Hit.ImpactNormal) : FVector::UpVector);
 
 	K2_OnHarvestResolved(Selection.Targets);
 	if (!HarvestMontage && IsActive())
 	{
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 	}
+}
+
+void URpgGameplayAbility_Harvest::ExecuteHarvestCue(const FGameplayTag CueTag, const FVector& Location, const FVector& Normal) const
+{
+	UAbilitySystemComponent* AbilitySystem = CurrentActorInfo ? CurrentActorInfo->AbilitySystemComponent.Get() : nullptr;
+	if (!AbilitySystem || !CueTag.IsValid())
+	{
+		return;
+	}
+	FGameplayCueParameters CueParameters;
+	CueParameters.Instigator = CurrentActorInfo->AvatarActor.Get();
+	CueParameters.EffectCauser = CurrentActorInfo->AvatarActor.Get();
+	CueParameters.Location = Location;
+	CueParameters.Normal = Normal;
+	AbilitySystem->ExecuteGameplayCue(CueTag, CueParameters);
+}
+
+bool URpgGameplayAbility_Harvest::SummonSwarm(const FRpgHarvestPreview& Selection, const FRpgHarvestRequest& RequestTemplate)
+{
+	UWorld* World = GetWorld();
+	AActor* Avatar = CurrentActorInfo ? CurrentActorInfo->AvatarActor.Get() : nullptr;
+	if (!World || !Avatar || !SwarmClass)
+	{
+		return false;
+	}
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.Owner = Avatar;
+	SpawnParameters.Instigator = Cast<APawn>(Avatar);
+	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgHarvestSwarm* SummonedSwarm = World->SpawnActor<ARpgHarvestSwarm>(
+		SwarmClass,
+		FTransform(Selection.AimPoint),
+		SpawnParameters);
+	if (!SummonedSwarm ||
+		!SummonedSwarm->StartSwarm(
+			Avatar,
+			RequestTemplate,
+			Swarm,
+			Targeting.AreaRadius,
+			Targeting.TraceChannel,
+			Selection.Targets))
+	{
+		if (SummonedSwarm)
+		{
+			SummonedSwarm->Destroy();
+		}
+		UE_LOG(LogRpgHarvesting, Error, TEXT("%s could not summon its swarm."), *GetNameSafe(GetClass()));
+		return false;
+	}
+
+	for (const FRpgHarvestSwarmCreature& Creature : SummonedSwarm->GetCreatures())
+	{
+		if (Creature.State == ERpgHarvestSwarmCreatureState::Flying)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+void URpgGameplayAbility_Harvest::PlanSwarm(
+	const UWorld& World,
+	const AActor& Avatar,
+	FRpgHarvestPreview& InOutSelection) const
+{
+	const ARpgHarvestSwarm* SwarmDefaults = SwarmClass ? SwarmClass->GetDefaultObject<ARpgHarvestSwarm>() : nullptr;
+	if (!SwarmDefaults)
+	{
+		return;
+	}
+
+	const FVector Lift(0.0, 0.0, SwarmDefaults->GetStrikeHeight());
+	if (Swarm.bRequireLineOfSight)
+	{
+		FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(RpgHarvestSwarmPlan), false, &Avatar);
+		if (AActor* AvatarOwner = Avatar.GetOwner())
+		{
+			QueryParams.AddIgnoredActor(AvatarOwner);
+		}
+		for (FRpgHarvestTargetEvaluation& Target : InOutSelection.Targets)
+		{
+			if (Target.WouldHarvest() &&
+				!FRpgHarvestSwarmPlanner::HasLineOfSight(
+					World,
+					InOutSelection.AimPoint + Lift,
+					Target.Hit.ImpactPoint + Lift,
+					Targeting.TraceChannel,
+					QueryParams))
+			{
+				Target.bInReach = false;
+			}
+		}
+	}
+
+	TArray<int32> TargetIndices;
+	TArray<int32> Sections;
+	FRpgHarvestSwarmPlanner::Distribute(InOutSelection.Targets, Swarm.CreatureCount, SectionsPerTarget, TargetIndices, Sections);
+	TArray<int32> ReservedSections;
+	ReservedSections.Init(0, InOutSelection.Targets.Num());
+	for (int32 CreatureIndex = 0; CreatureIndex < TargetIndices.Num(); ++CreatureIndex)
+	{
+		ReservedSections[TargetIndices[CreatureIndex]] += Sections[CreatureIndex];
+	}
+
+	// Every resource shows what its creatures will take, so the preview matches the swarm's plan. Resources no creature
+	// reserved leave the selection; rejected ones stay so the preview can explain them.
+	TArray<FRpgHarvestTargetEvaluation> PlannedTargets;
+	PlannedTargets.Reserve(InOutSelection.Targets.Num());
+	for (int32 TargetIndex = 0; TargetIndex < InOutSelection.Targets.Num(); ++TargetIndex)
+	{
+		FRpgHarvestTargetEvaluation& Target = InOutSelection.Targets[TargetIndex];
+		if (Target.WouldHarvest())
+		{
+			if (ReservedSections[TargetIndex] <= 0)
+			{
+				continue;
+			}
+			const int32 Available = FRpgHarvestSwarmPlanner::GetAvailableSections(Target);
+			Target.Result.SectionsTaken = ReservedSections[TargetIndex];
+			Target.Result.RemainingSections = Available - ReservedSections[TargetIndex];
+		}
+		PlannedTargets.Add(MoveTemp(Target));
+	}
+	InOutSelection.Targets = MoveTemp(PlannedTargets);
 }
 
 void URpgGameplayAbility_Harvest::EvaluateTargets(
@@ -350,14 +479,24 @@ void URpgGameplayAbility_Harvest::EvaluateTargetsFromView(
 
 	FRpgHarvestRequest RequestTemplate;
 	BuildRequestTemplate(Spec, ActorInfo, RequestTemplate);
+	FRpgHarvestTargetingParams Params = Targeting;
+	if (SummonsSwarm())
+	{
+		// Every selected resource gets at least one creature.
+		Params.MaxTargets = FMath::Clamp(Swarm.CreatureCount, 1, ARpgHarvestSwarm::MaxCreatures);
+	}
 	OutPreview.AimPoint = FRpgHarvestTargeting::SelectAndEvaluate(
 		*World,
-		Targeting,
+		Params,
 		ViewLocation,
 		ViewRotation,
 		*Avatar,
 		RequestTemplate,
 		OutPreview.Targets);
+	if (SummonsSwarm())
+	{
+		PlanSwarm(*World, *Avatar, OutPreview);
+	}
 }
 
 bool URpgGameplayAbility_Harvest::ResolveCommitDelay(

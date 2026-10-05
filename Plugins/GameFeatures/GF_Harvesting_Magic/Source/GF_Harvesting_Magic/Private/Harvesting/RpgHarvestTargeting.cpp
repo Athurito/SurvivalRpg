@@ -214,18 +214,46 @@ FVector FRpgHarvestTargeting::SelectAndEvaluate(
 		}
 	}
 	const bool bAimInReach = FVector::DistSquared(AvatarLocation, AimPoint) <= MaxReachSquared;
-	if (Params.AreaRadius <= KINDA_SMALL_NUMBER)
+	CollectAreaTargets(
+		World,
+		AimPoint,
+		Params.AreaRadius,
+		Params.TraceChannel,
+		QueryParams,
+		ViewLocation,
+		bAimInReach,
+		RequestTemplate,
+		FMath::Max(1, Params.MaxTargets),
+		OutTargets);
+	return AimPoint;
+}
+
+void FRpgHarvestTargeting::CollectAreaTargets(
+	const UWorld& World,
+	const FVector& Center,
+	const float Radius,
+	const ECollisionChannel Channel,
+	const FCollisionQueryParams& QueryParams,
+	const FVector& TraceOrigin,
+	const bool bInReach,
+	const FRpgHarvestRequest& RequestTemplate,
+	const int32 MaxHarvestableTargets,
+	TArray<FRpgHarvestTargetEvaluation>& OutTargets)
+{
+	using namespace RpgHarvestTargeting;
+
+	if (Radius <= KINDA_SMALL_NUMBER)
 	{
-		return AimPoint;
+		return;
 	}
 
 	TArray<FOverlapResult> Overlaps;
 	World.OverlapMultiByChannel(
 		Overlaps,
-		AimPoint,
+		Center,
 		FQuat::Identity,
-		Params.TraceChannel,
-		FCollisionShape::MakeSphere(Params.AreaRadius),
+		Channel,
+		FCollisionShape::MakeSphere(Radius),
 		QueryParams);
 
 	TArray<FAreaCandidate> Candidates;
@@ -260,7 +288,7 @@ FVector FRpgHarvestTargeting::SelectAndEvaluate(
 		FAreaCandidate& Candidate = Candidates.AddDefaulted_GetRef();
 		Candidate.Receiver = Receiver;
 		Candidate.Hit = Hit;
-		Candidate.DistanceSquared = FVector::DistSquared(AimPoint, TargetLocation);
+		Candidate.DistanceSquared = FVector::DistSquared(Center, TargetLocation);
 	}
 
 	Candidates.StableSort([](const FAreaCandidate& A, const FAreaCandidate& B)
@@ -268,23 +296,23 @@ FVector FRpgHarvestTargeting::SelectAndEvaluate(
 		return A.DistanceSquared < B.DistanceSquared;
 	});
 
-	// Only targets the request would harvest use up MaxTargets. Nearer rejected targets, such as protected or
+	// Only targets the request would harvest count against the limit. Nearer rejected targets, such as protected or
 	// depleted resources, stay listed so the preview can explain why they are skipped.
-	const int32 MaxTargets = FMath::Max(1, Params.MaxTargets);
 	int32 HarvestableTargets = 0;
 	for (const FAreaCandidate& Candidate : Candidates)
 	{
 		AppendEvaluation(
 			Candidate.Receiver,
 			Candidate.Hit,
-			bAimInReach,
-			ViewLocation,
+			bInReach,
+			TraceOrigin,
 			RequestTemplate,
 			OutTargets);
-		if (OutTargets.Last().Result.IsSuccess() && ++HarvestableTargets >= MaxTargets)
+		if (MaxHarvestableTargets > 0 &&
+			OutTargets.Last().Result.IsSuccess() &&
+			++HarvestableTargets >= MaxHarvestableTargets)
 		{
 			break;
 		}
 	}
-	return AimPoint;
 }

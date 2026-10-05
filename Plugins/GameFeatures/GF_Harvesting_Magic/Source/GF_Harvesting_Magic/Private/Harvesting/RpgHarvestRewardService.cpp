@@ -236,16 +236,50 @@ void FRpgHarvestRewardService::AwardExperience(
 
 TArray<FRpgHarvestRewardBatch*> FRpgHarvestRewardBatch::OpenBatches;
 
-FRpgHarvestRewardBatch::FRpgHarvestRewardBatch(AActor* InHarvester)
+FRpgHarvestRewardBatch::FRpgHarvestRewardBatch(AActor* InHarvester, const bool bOpen)
 	: Harvester(InHarvester)
 	, World(InHarvester ? InHarvester->GetWorld() : nullptr)
 {
 	check(IsInGameThread());
-	if (InHarvester &&
-		ensureMsgf(!FindOpen(InHarvester), TEXT("Harvest reward batches may not overlap for %s."), *GetNameSafe(InHarvester)))
+	if (bOpen)
 	{
-		OpenBatches.Add(this);
+		Open();
 	}
+}
+
+bool FRpgHarvestRewardBatch::Open()
+{
+	check(IsInGameThread());
+	AActor* HarvesterActor = Harvester.Get();
+	if (!HarvesterActor || IsOpen())
+	{
+		return IsOpen();
+	}
+	if (!ensureMsgf(
+			!FindOpen(HarvesterActor),
+			TEXT("Harvest reward batches may not overlap for %s."),
+			*GetNameSafe(HarvesterActor)))
+	{
+		return false;
+	}
+	OpenBatches.Add(this);
+	return true;
+}
+
+void FRpgHarvestRewardBatch::Close()
+{
+	OpenBatches.Remove(this);
+}
+
+bool FRpgHarvestRewardBatch::IsOpen() const
+{
+	return OpenBatches.Contains(this);
+}
+
+void FRpgHarvestRewardBatch::Discard()
+{
+	Close();
+	PendingReward = FInventoryPickup();
 }
 
 FRpgHarvestRewardBatch::~FRpgHarvestRewardBatch()

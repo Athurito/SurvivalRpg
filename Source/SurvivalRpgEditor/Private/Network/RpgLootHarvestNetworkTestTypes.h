@@ -1,6 +1,7 @@
 #pragma once
 
 #include "GameFramework/Actor.h"
+#include "Harvesting/RpgHarvestSwarm.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgLootSourceComponent.h"
@@ -154,4 +155,26 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<URpgHarvestableComponent> HarvestableNode;
+};
+
+/** Plain non-replicated actor each client spawns per creature of ARpgNetworkAutomationSwarm. */
+UCLASS(NotBlueprintable, Transient)
+class ARpgNetworkAutomationSwarmCreature final : public AActor
+{
+	GENERATED_BODY()
+
+public:
+	explicit ARpgNetworkAutomationSwarmCreature(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+};
+
+/** Swarm fixture whose creatures present as ARpgNetworkAutomationSwarmCreature, like a swarm Blueprint configures. */
+UCLASS(NotBlueprintable, Transient)
+class ARpgNetworkAutomationSwarm final : public ARpgHarvestSwarm
+{
+	GENERATED_BODY()
+
+public:
+	explicit ARpgNetworkAutomationSwarm(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 };

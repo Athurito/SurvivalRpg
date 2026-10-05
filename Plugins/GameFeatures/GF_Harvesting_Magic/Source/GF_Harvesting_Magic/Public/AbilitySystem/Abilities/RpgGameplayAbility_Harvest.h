@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Harvesting/RpgHarvestSwarm.h"
 #include "Harvesting/RpgHarvestTargeting.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_FromEquipment.h"
 #include "TimerManager.h"
@@ -54,6 +55,9 @@ public:
 	/** Returns whether this ability harvests every target in an area rather than one target it singled out. */
 	bool HarvestsArea() const { return Targeting.Shape == ERpgHarvestTargetShape::AreaAtAimPoint; }
 
+	/** Returns whether this ability's commit summons a swarm that harvests its area instead of harvesting directly. */
+	bool SummonsSwarm() const { return SwarmClass && HarvestsArea(); }
+
 	/** Returns the stable harvest ability id carried by every request of this ability. */
 	FGameplayTag GetHarvestAbilityId() const { return HarvestAbilityId; }
 
@@ -91,7 +95,8 @@ protected:
 
 	/**
 	 * Server-side notification after the commit, with every selected target and its committed result.
-	 * Use it for cosmetic follow-ups only; loot and stock have already been resolved.
+	 * Use it for cosmetic follow-ups only; loot and stock have already been resolved. Not called when the commit
+	 * summons a swarm, whose creatures harvest later.
 	 */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Rpg|Harvesting", DisplayName = "On Harvest Resolved")
 	void K2_OnHarvestResolved(const TArray<FRpgHarvestTargetEvaluation>& Results);
@@ -104,7 +109,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Targeting")
 	FRpgHarvestTargetingParams Targeting;
 
-	/** Stock sections this ability requests from each target; targets clamp it to their remaining stock. */
+	/**
+	 * Stock sections this ability requests from each target; targets clamp it to their remaining stock. With a swarm,
+	 * the sections each creature takes from the resource it strikes.
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Yield", meta = (ClampMin = "1", UIMin = "1", UIMax = "16"))
 	int32 SectionsPerTarget = 1;
 
@@ -171,7 +179,31 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Feedback", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "5000.0", ForceUnits = "cm/s"))
 	float PresentationWaveSpeed = 0.0f;
 
+	/**
+	 * Swarm the commit summons at the aim point instead of harvesting directly, for area targeting only. Its creatures
+	 * spread over the area's resources and harvest them for the player when they arrive; the preview shows the sections
+	 * each resource will lose. The swarm keeps working after a tool switch. Empty harvests directly. Designer content.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Swarm")
+	TSubclassOf<ARpgHarvestSwarm> SwarmClass;
+
+	/** Creature count, flight and reassignment rules of the summoned swarm. Used only with a SwarmClass. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Swarm")
+	FRpgHarvestSwarmParams Swarm;
+
 private:
+	/** Server: executes CueTag, when set, at Location for the current activation. */
+	void ExecuteHarvestCue(FGameplayTag CueTag, const FVector& Location, const FVector& Normal) const;
+
+	/** Server: summons the swarm at the selection's aim point; returns whether any creature reserved a resource. */
+	bool SummonSwarm(const FRpgHarvestPreview& Selection, const FRpgHarvestRequest& RequestTemplate);
+
+	/**
+	 * Applies the swarm plan to an area selection: resources the swarm cannot see become out of reach, and every
+	 * resource reports the sections its creatures reserve. The server and the preview run it alike.
+	 */
+	void PlanSwarm(const UWorld& World, const AActor& Avatar, FRpgHarvestPreview& InOutSelection) const;
+
 	UFUNCTION()
 	void HandleAimInputReleased(float TimeHeld);
 
