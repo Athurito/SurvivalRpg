@@ -118,7 +118,17 @@ FRpgHarvestResult URpgHarvestableInstancesComponent::CommitHarvest_Implementatio
 		const float MaximumDelay = FMath::Max(MinimumDelay, HarvestProfile->MaximumRespawnSeconds);
 		RespawnDelaySeconds = MaximumDelay > 0.0f ? FMath::Max(0.001f, FMath::FRandRange(MinimumDelay, MaximumDelay)) : 0.0f;
 	}
-	Stock->ExtractSections(Key, SectionCount, Result.SectionsTaken, RespawnDelaySeconds, Request.PresentationDelaySeconds);
+	// The direction from the harvester toward the instance lets every machine present the change the same way.
+	FVector AwayFromHarvester = InstanceTransform.GetLocation() - (Request.Harvester ? Request.Harvester->GetActorLocation() : Request.TraceOrigin);
+	AwayFromHarvester.Z = 0.0;
+	const float HarvestYawDegrees = AwayFromHarvester.IsNearlyZero() ? 0.0f : static_cast<float>(AwayFromHarvester.Rotation().Yaw);
+	Stock->ExtractSections(
+		Key,
+		SectionCount,
+		Result.SectionsTaken,
+		RespawnDelaySeconds,
+		Request.PresentationDelaySeconds,
+		HarvestYawDegrees);
 
 	FRpgHarvestRewardService::AwardExperience(HarvestProfile, Request.Harvester, Result.SectionsTaken);
 	Result.Delivery = FRpgHarvestStockRules::ToDelivery(DeliveryResult);
@@ -208,6 +218,18 @@ bool URpgHarvestableInstancesComponent::GetLinkedPresentationInstance(
 		return true;
 	}
 	return false;
+}
+
+bool URpgHarvestableInstancesComponent::GetInstanceHarvestDirection(const int32 InstanceIndex, FVector& OutDirection) const
+{
+	FIntVector Key;
+	const URpgHarvestInstanceStockComponent* Stock = FindStock();
+	if (!Stock || !GetInstanceKey(InstanceIndex, Key))
+	{
+		OutDirection = FVector::ZeroVector;
+		return false;
+	}
+	return Stock->GetHarvestDirection(Key, OutDirection);
 }
 
 bool URpgHarvestableInstancesComponent::GetInstanceKey(const int32 InstanceIndex, FIntVector& OutKey) const

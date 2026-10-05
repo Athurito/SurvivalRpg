@@ -77,6 +77,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rpg|Harvesting|Instances")
 	bool GetLinkedPresentationInstance(int32 InstanceIndex, UMeshComponent*& OutComponent, FTransform& OutWorldTransform) const;
 
+	/**
+	 * Returns the horizontal unit direction from the last harvester toward InstanceIndex, the same on the server and
+	 * every client; false while the instance is untouched. Use it to present a change consistently, for example to
+	 * fell a tree away from whoever felled it. Cosmetic.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Harvesting|Instances")
+	bool GetInstanceHarvestDirection(int32 InstanceIndex, FVector& OutDirection) const;
+
 	/** Returns the component tag that links visible presentation instances; None links nothing. */
 	FName GetLinkedPresentationTag() const { return LinkedPresentationTag; }
 

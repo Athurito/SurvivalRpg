@@ -1388,11 +1388,11 @@ bool FRpgHarvestAbilityPresentationWaveTest::RunTest(const FString& Parameters)
 	}
 	const float EyeHeight = Harvester.Pawn->BaseEyeHeight;
 	URpgHarvestInstanceStockComponent* Stock = RpgHarvestAutomation::AddInstanceStock(World);
-	// Three trees 300, 424 and 600 cm from the harvester, all inside one area.
+	// Three trees 300, 424 and 600 cm from the harvester inside one area, and one far outside it.
 	ARpgHarvestAutomationInstancesActor* Field = RpgHarvestAutomation::SpawnInstances(
 		World,
 		MakeProfile(World, 4),
-		{FVector(0.0, 0.0, 0.0), FVector(0.0, 300.0, 0.0), FVector(300.0, 0.0, 0.0)},
+		{FVector(0.0, 0.0, 0.0), FVector(0.0, 300.0, 0.0), FVector(300.0, 0.0, 0.0), FVector(0.0, -1500.0, 0.0)},
 		FVector(300.0, 0.0, EyeHeight));
 	const FGrantedAbility Wave = GrantAbility(Harvester.AbilitySystem);
 	if (!TestNotNull(TEXT("Instance stock exists"), Stock) ||
@@ -1427,6 +1427,13 @@ bool FRpgHarvestAbilityPresentationWaveTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Every tree's wood is delivered at once"), CountMaterial(Harvester.PlayerState), 3 * 4 * YieldPerSection);
 	TestTrue(TEXT("The nearest tree falls at once"), FMath::IsNearlyZero(PresentedScale(0)));
 	TestTrue(TEXT("The side tree still stands"), FMath::IsNearlyEqual(PresentedScale(1), 1.0));
+	FVector SideDirection;
+	TestTrue(
+		TEXT("Every machine reads the side tree's direction away from the harvester"),
+		Instances->GetInstanceHarvestDirection(1, SideDirection) &&
+			SideDirection.Equals(FVector(UE_INV_SQRT_2, UE_INV_SQRT_2, 0.0), 0.03));
+	FVector UntouchedDirection;
+	TestFalse(TEXT("An untouched tree has no harvest direction"), Instances->GetInstanceHarvestDirection(3, UntouchedDirection));
 	TestTrue(TEXT("The far tree still stands"), FMath::IsNearlyEqual(PresentedScale(2), 1.0));
 
 	FIntVector FarKey;

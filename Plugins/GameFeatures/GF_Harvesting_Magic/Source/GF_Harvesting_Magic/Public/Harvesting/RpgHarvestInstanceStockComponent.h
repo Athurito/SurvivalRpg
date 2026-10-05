@@ -44,6 +44,13 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestInstanceStockEntry : public FFastArray
 	/** Cosmetic delay of the last change's presentation after LastChangeServerTime, in hundredths of a second. */
 	UPROPERTY()
 	uint8 PresentationDelayCentiseconds = 0;
+
+	/**
+	 * Cosmetic horizontal direction from the last harvester toward the instance, as a yaw in 256 steps, so every
+	 * machine presents the change the same way, for example felling a tree away from whoever felled it.
+	 */
+	UPROPERTY()
+	uint8 HarvestYaw = 0;
 };
 
 /** FastArray holding only instanced resources whose stock currently differs from their authored state. */
@@ -124,15 +131,22 @@ public:
 	 * Records SectionsTaken extracted sections of the instance identified by Key. An instance whose stock runs out
 	 * depletes, advances its revision, and is restored after RespawnDelaySeconds; zero or less keeps it depleted for
 	 * the session. Every machine presents the change PresentationDelaySeconds after it happened on the server; the
-	 * stock itself changes at once. Authority only; the caller has already delivered the reward. Returns false when
-	 * nothing changed.
+	 * stock itself changes at once. HarvestYawDegrees is the cosmetic direction from the harvester toward the
+	 * instance. Authority only; the caller has already delivered the reward. Returns false when nothing changed.
 	 */
 	bool ExtractSections(
 		const FIntVector& Key,
 		int32 SectionCount,
 		int32 SectionsTaken,
 		float RespawnDelaySeconds,
-		float PresentationDelaySeconds = 0.0f);
+		float PresentationDelaySeconds = 0.0f,
+		float HarvestYawDegrees = 0.0f);
+
+	/**
+	 * Returns the horizontal unit direction from the last harvester toward the instance identified by Key, the same on
+	 * every machine. False for unchanged instances.
+	 */
+	bool GetHarvestDirection(const FIntVector& Key, FVector& OutDirection) const;
 
 	/**
 	 * Returns how many seconds this machine still waits before it presents the last change of Key, measured from the

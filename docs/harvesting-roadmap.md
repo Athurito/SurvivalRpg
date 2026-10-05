@@ -533,6 +533,11 @@ pickup chore, and protected trees survive the wave.
     subtracts the server time that has passed since the change, so the server
     and every client present a target at the same server time.
   - Instanced resources honor the delay; actor nodes present at once.
+- **Harvest direction:** an instanced resource also records the horizontal
+  direction from the harvester toward it with every change (a yaw in 256
+  steps) and replicates it with the stock.
+  `URpgHarvestableInstancesComponent::GetInstanceHarvestDirection` returns it
+  on every machine.
 
 ### Axe content
 
@@ -578,13 +583,16 @@ All assets live in `GF_Harvesting_Magic` and are authored through Unreal MCP.
   with the linked skeletal mesh for a live depletion on every machine with a
   local player. The instance presents the depletion when the harvest's
   presentation wave reaches it.
-  - The tree falls at once, away from the local player, then sinks into the
-    ground and destroys itself.
+  - The component faces the falling tree along the replicated harvest
+    direction and keeps the mesh's authored rotation. The tree falls along its
+    forward axis, away from whoever felled it, the same way on every machine.
+    It then sinks into the ground and destroys itself.
   - It has no collision, never replicates, and its wood has already been
     delivered.
-  - A first version waited by the tree's distance to the local player. A host
-    far from the trees therefore saw them fall up to 1 s later than the
-    harvesting client; the replicated presentation wave replaced it.
+  - A first version took both the delay and the direction from each machine's
+    local player. A host far from the trees saw them fall up to 1 s later than
+    the harvesting client, and in another direction. The replicated
+    presentation wave and harvest direction replaced it.
 - **Test map:** `Lvl_HarvestPickaxe` has the PCG volume
   `Harvest_PcgDeadPineStand`, twelve dead pines east of the ore veins.
   - It is generated in the editor, saved, and set to generate On Demand.
@@ -617,6 +625,9 @@ the following on the client:
 - With the host far away at the spawn, a wave over three trees hid them 0.33 s,
   0.39 s and 0.72 s after the release. The server and the client hid each
   tree in the same probe, which polled about every 60 ms.
+- The falling trees of a chop and of a three-tree wave had the same forward
+  and up vectors on the server and the client, pointing away from the
+  harvesting client.
 - Aimed at the protected corner, the preview showed "Protected" on both
   protected trees. Only the unprotected tree in the ring was felled; a chop
   on a protected tree still took a section.
