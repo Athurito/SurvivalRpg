@@ -13,6 +13,7 @@
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillGameplayTags.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillProgressionComponent.h"
 
+#include "Components/InstancedSkinnedMeshComponent.h"
 #include "Engine/World.h"
 #include "HAL/PlatformTime.h"
 
@@ -342,7 +343,8 @@ bool FRpgHarvestInstancesBudgetTest::RunTest(const FString& Parameters)
 
 	// Times only the bridge's part of a stream-in: BeginPlay builds the instance keys, registers with the stock, and
 	// presents stored stock. Render and physics state are paid by every instanced mesh and are not measured here.
-	auto StreamIn = [World, Profile, Cube, &Transforms](double& OutBridgeMs)
+	// A linked field also links visible instances at every point and hides those of stored depletions, like trees.
+	auto StreamIn = [World, Profile, Cube, &Transforms](double& OutBridgeMs, const bool bLinked = false)
 	{
 		ARpgHarvestAutomationInstancesActor* Actor = World->SpawnActorDeferred<ARpgHarvestAutomationInstancesActor>(
 			ARpgHarvestAutomationInstancesActor::StaticClass(),
@@ -359,6 +361,18 @@ bool FRpgHarvestInstancesBudgetTest::RunTest(const FString& Parameters)
 		Actor->Instances->AddInstances(Transforms, false);
 
 		Actor->FinishSpawning(FTransform::Identity);
+		if (bLinked)
+		{
+			const FName LinkTag(TEXT("BudgetVisual"));
+			Actor->Instances->ConfigureLinkedPresentation(LinkTag);
+			UInstancedStaticMeshComponent* Visual = NewObject<UInstancedStaticMeshComponent>(Actor, TEXT("BudgetVisual"));
+			Visual->ComponentTags.Add(LinkTag);
+			Visual->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Visual->SetupAttachment(Actor->GetRootComponent());
+			Visual->RegisterComponent();
+			Visual->SetStaticMesh(Cube);
+			Visual->AddInstances(Transforms, false);
+		}
 		const double StartSeconds = FPlatformTime::Seconds();
 		if (!Actor->HasActorBegunPlay())
 		{
@@ -406,13 +420,24 @@ bool FRpgHarvestInstancesBudgetTest::RunTest(const FString& Parameters)
 	ARpgHarvestAutomationInstancesActor* Streamed = StreamIn(StreamBridgeMs);
 	TestTrue(TEXT("The streamed field presents every stored instance"), Streamed && Streamed->Instances->EventCount == ChangedCount);
 
+	if (Streamed)
+	{
+		Streamed->Destroy();
+	}
+	double LinkedBridgeMs = 0.0;
+	ARpgHarvestAutomationInstancesActor* Linked = StreamIn(LinkedBridgeMs, true);
+	TestTrue(
+		TEXT("The linked field links every point and presents every stored instance"),
+		Linked && Linked->Instances->GetNumLinkedInstances() == InstanceCount && Linked->Instances->EventCount == ChangedCount);
+
 	AddInfo(FString::Printf(
-		TEXT("Harvest instance budget: %d instances, %d stored. Bridge BeginPlay: %.2f ms without stored stock, %.2f ms presenting %d stored instances. Commit %.1f us, evaluation %.1f us."),
+		TEXT("Harvest instance budget: %d instances, %d stored. Bridge BeginPlay: %.2f ms without stored stock, %.2f ms presenting %d stored instances, %.2f ms with linked visible instances. Commit %.1f us, evaluation %.1f us."),
 		InstanceCount,
 		ChangedCount,
 		FirstBridgeMs,
 		StreamBridgeMs,
 		ChangedCount,
+		LinkedBridgeMs,
 		CommitUs,
 		EvaluateUs));
 
@@ -420,8 +445,151 @@ bool FRpgHarvestInstancesBudgetTest::RunTest(const FString& Parameters)
 	// Insights has the per-function detail.
 	TestTrue(TEXT("The bridge streams in 10,000 instances within 10 ms"), FirstBridgeMs < 10.0);
 	TestTrue(TEXT("The bridge presents 1,000 stored instances on stream-in within 15 ms"), StreamBridgeMs < 15.0);
+	TestTrue(TEXT("A linked field of 10,000 instances streams in within 30 ms"), LinkedBridgeMs < 30.0);
 	TestTrue(TEXT("A commit stays within 200 us"), CommitUs < 200.0);
 	TestTrue(TEXT("An evaluation stays within 50 us"), EvaluateUs < 50.0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestInstancesLinkedPresentationTest,
+	"SurvivalRpg.Harvesting.Instances.LinkedPresentationFollowsStock",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestInstancesLinkedPresentationTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestableInstancesTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	URpgHarvestInstanceStockComponent* Stock = AddInstanceStock(World);
+	ARpgHarvestAutomationTestPlayerState* Harvester = SpawnHarvester(World);
+	UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (!TestNotNull(TEXT("Instance stock exists"), Stock) ||
+		!TestNotNull(TEXT("Harvester exists"), Harvester) ||
+		!TestNotNull(TEXT("Cube mesh exists"), Cube))
+	{
+		return false;
+	}
+	const FName LinkTag(TEXT("HarvestTreeVisual"));
+	const FVector FieldLocation(500.0, -300.0, 0.0);
+	TestWorld.PrimeTimerManager();
+
+	// Like a PCG graph that spawns invisible trunk proxies and visible trees at the same points: a tagged static and
+	// a tagged skinned visual, plus an untagged mesh at the same points that must stay untouched.
+	struct FLinkedField
+	{
+		ARpgHarvestAutomationInstancesActor* Actor = nullptr;
+		UInstancedStaticMeshComponent* StaticVisual = nullptr;
+		UInstancedSkinnedMeshComponent* SkinnedVisual = nullptr;
+		UInstancedStaticMeshComponent* Unrelated = nullptr;
+	};
+	auto SpawnLinkedField = [World, Cube, LinkTag, FieldLocation]()
+	{
+		FLinkedField Field;
+		Field.Actor = World->SpawnActorDeferred<ARpgHarvestAutomationInstancesActor>(
+			ARpgHarvestAutomationInstancesActor::StaticClass(),
+			FTransform(FieldLocation),
+			nullptr,
+			nullptr,
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (!Field.Actor)
+		{
+			return Field;
+		}
+		Field.Actor->Instances->ConfigureProfile(MakeProfile(World, 4));
+		Field.Actor->Instances->ConfigureLinkedPresentation(LinkTag);
+		Field.Actor->Instances->SetStaticMesh(Cube);
+		for (const FVector& Location : ThreeInstanceLocations)
+		{
+			Field.Actor->Instances->AddInstance(FTransform(Location));
+		}
+		Field.Actor->FinishSpawning(FTransform(FieldLocation));
+
+		Field.StaticVisual = NewObject<UInstancedStaticMeshComponent>(Field.Actor, TEXT("StaticVisual"));
+		Field.SkinnedVisual = NewObject<UInstancedSkinnedMeshComponent>(Field.Actor, TEXT("SkinnedVisual"));
+		Field.Unrelated = NewObject<UInstancedStaticMeshComponent>(Field.Actor, TEXT("Unrelated"));
+		Field.StaticVisual->ComponentTags.Add(LinkTag);
+		Field.SkinnedVisual->ComponentTags.Add(LinkTag);
+		for (UMeshComponent* Mesh : TArray<UMeshComponent*>{Field.StaticVisual, Field.SkinnedVisual, Field.Unrelated})
+		{
+			Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Mesh->SetupAttachment(Field.Actor->GetRootComponent());
+			Mesh->RegisterComponent();
+		}
+		Field.StaticVisual->SetStaticMesh(Cube);
+		Field.Unrelated->SetStaticMesh(Cube);
+		// Visible meshes list their instances in their own order, and one visual has no resource at its point.
+		for (int32 Index = ThreeInstanceLocations.Num() - 1; Index >= 0; --Index)
+		{
+			Field.StaticVisual->AddInstance(FTransform(ThreeInstanceLocations[Index]));
+			Field.SkinnedVisual->AddInstance(FTransform(ThreeInstanceLocations[Index]), 0);
+			Field.Unrelated->AddInstance(FTransform(ThreeInstanceLocations[Index]));
+		}
+		Field.StaticVisual->AddInstance(FTransform(FVector(0.0, 0.0, 900.0)));
+		if (!Field.Actor->HasActorBegunPlay())
+		{
+			Field.Actor->DispatchBeginPlay();
+		}
+		return Field;
+	};
+	auto StaticScale = [](const UInstancedStaticMeshComponent* Mesh, const int32 Index)
+	{
+		FTransform Transform;
+		return Mesh && Mesh->GetInstanceTransform(Index, Transform, false) ? Transform.GetScale3D().X : -1.0;
+	};
+	auto SkinnedScale = [](const UInstancedSkinnedMeshComponent* Mesh, const int32 Index)
+	{
+		FTransform Transform;
+		return Mesh && Mesh->GetInstanceTransform(Mesh->GetInstanceId(Index), Transform, false) ? Transform.GetScale3D().X : -1.0;
+	};
+
+	FLinkedField Field = SpawnLinkedField();
+	if (!TestNotNull(TEXT("Linked field exists"), Field.Actor) ||
+		!TestEqual(TEXT("The skinned visual holds three instances"), Field.SkinnedVisual->GetInstanceCount(), 3))
+	{
+		return false;
+	}
+	URpgHarvestAutomationInstancesComponent* Proxies = Field.Actor->Instances;
+	TestEqual(TEXT("Every proxy is linked to its visible instances"), Proxies->GetNumLinkedInstances(), 3);
+	UMeshComponent* LinkedComponent = nullptr;
+	FTransform LinkedTransform;
+	TestTrue(
+		TEXT("The proxy reports the visible instance at its location"),
+		Proxies->GetLinkedPresentationInstance(0, LinkedComponent, LinkedTransform) &&
+			(LinkedComponent == Field.StaticVisual || LinkedComponent == Field.SkinnedVisual) &&
+			LinkedTransform.GetLocation().Equals(FieldLocation + ThreeInstanceLocations[0], 0.5));
+
+	// Proxy 0 sits at the visuals' last index, because they list their instances in reverse order.
+	TestTrue(TEXT("Depleting a proxy succeeds"), Proxies->CommitHarvest_Implementation(MakeInstanceRequest(Proxies, 0, Harvester, 4)).bDepleted);
+	TestTrue(TEXT("The linked static visual hides"), FMath::IsNearlyZero(StaticScale(Field.StaticVisual, 2)));
+	TestTrue(TEXT("The linked skinned visual hides"), FMath::IsNearlyZero(SkinnedScale(Field.SkinnedVisual, 2)));
+	TestTrue(TEXT("Other visible instances stay"), FMath::IsNearlyEqual(StaticScale(Field.StaticVisual, 1), 1.0));
+	TestTrue(TEXT("An untagged mesh at the same point stays"), FMath::IsNearlyEqual(StaticScale(Field.Unrelated, 2), 1.0));
+	TestTrue(TEXT("A visual without a resource stays"), FMath::IsNearlyEqual(StaticScale(Field.StaticVisual, 3), 1.0));
+	TestTrue(
+		TEXT("A hidden visual still reports its authored transform"),
+		Proxies->GetLinkedPresentationInstance(0, LinkedComponent, LinkedTransform) &&
+			FMath::IsNearlyEqual(LinkedTransform.GetScale3D().X, 1.0));
+	TestTrue(
+		TEXT("A partial harvest keeps the visuals"),
+		Proxies->CommitHarvest_Implementation(MakeInstanceRequest(Proxies, 1, Harvester)).IsSuccess() &&
+			FMath::IsNearlyEqual(SkinnedScale(Field.SkinnedVisual, 1), 1.0));
+
+	// Streaming in again hides the visuals of stored depletions as initial state.
+	Field.Actor->Destroy();
+	Field = SpawnLinkedField();
+	if (!TestNotNull(TEXT("Linked field streams in again"), Field.Actor))
+	{
+		return false;
+	}
+	TestTrue(TEXT("A stored depletion hides its static visual on stream-in"), FMath::IsNearlyZero(StaticScale(Field.StaticVisual, 2)));
+	TestTrue(TEXT("A stored depletion hides its skinned visual on stream-in"), FMath::IsNearlyZero(SkinnedScale(Field.SkinnedVisual, 2)));
+
+	TestWorld.AdvanceTimers(RespawnSeconds + 1.0f);
+	TestTrue(TEXT("A respawn restores the static visual"), FMath::IsNearlyEqual(StaticScale(Field.StaticVisual, 2), 1.0));
+	TestTrue(TEXT("A respawn restores the skinned visual"), FMath::IsNearlyEqual(SkinnedScale(Field.SkinnedVisual, 2), 1.0));
 	return true;
 }
 

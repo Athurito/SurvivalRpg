@@ -55,7 +55,10 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestTargetingParams
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "cm", EditCondition = "Shape == ERpgHarvestTargetShape::AreaAtAimPoint"))
 	float AreaRadius = 0.0f;
 
-	/** Maximum number of targets an area selects, nearest to the aim point first. AreaAtAimPoint only. */
+	/**
+	 * Maximum number of targets an area harvests, nearest to the aim point first. Nearer targets the ability cannot
+	 * harvest, such as protected or depleted ones, are previewed but do not count. AreaAtAimPoint only.
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "1", UIMin = "1", EditCondition = "Shape == ERpgHarvestTargetShape::AreaAtAimPoint"))
 	int32 MaxTargets = 1;
 

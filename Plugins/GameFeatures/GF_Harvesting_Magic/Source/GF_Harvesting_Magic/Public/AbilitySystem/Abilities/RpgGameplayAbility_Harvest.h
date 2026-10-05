@@ -48,6 +48,9 @@ public:
 	/** Returns whether this ability's swings can strike a resource's active weak point for bonus sections. */
 	bool CanHitWeakPoints() const { return bCanHitWeakPoints && Targeting.Shape == ERpgHarvestTargetShape::SingleTarget; }
 
+	/** Returns whether this ability harvests every target in an area rather than one target it singled out. */
+	bool HarvestsArea() const { return Targeting.Shape == ERpgHarvestTargetShape::AreaAtAimPoint; }
+
 	/** Returns the stable harvest ability id carried by every request of this ability. */
 	FGameplayTag GetHarvestAbilityId() const { return HarvestAbilityId; }
 

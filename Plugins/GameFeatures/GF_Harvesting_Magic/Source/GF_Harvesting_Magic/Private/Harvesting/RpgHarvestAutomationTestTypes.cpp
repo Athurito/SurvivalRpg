@@ -224,3 +224,10 @@ void URpgHarvestAutomationPreviewListener::HandlePreviewChanged(const FRpgHarves
 	++EventCount;
 	LastPreview = Preview;
 }
+
+ARpgHarvestAutomationProtectionActor::ARpgHarvestAutomationProtectionActor(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	Protection = CreateDefaultSubobject<URpgHarvestProtectionComponent>(TEXT("Protection"));
+	SetRootComponent(Protection);
+}

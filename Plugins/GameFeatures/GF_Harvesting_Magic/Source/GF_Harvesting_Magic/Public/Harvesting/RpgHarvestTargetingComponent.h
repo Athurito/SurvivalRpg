@@ -41,7 +41,10 @@ enum class ERpgHarvestTargetStatus : uint8
 	SkillLocked,
 
 	/** The target rejected the request for another reason. */
-	Unavailable
+	Unavailable,
+
+	/** The target lies inside a harvest protection box, which area powers skip. */
+	Protected
 };
 
 /** One projected target indicator and the target it marks. Local presentation state. */

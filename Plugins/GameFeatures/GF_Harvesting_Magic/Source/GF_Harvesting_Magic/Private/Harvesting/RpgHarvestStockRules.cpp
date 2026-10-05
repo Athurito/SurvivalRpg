@@ -3,6 +3,7 @@
 #include "GameFramework/Actor.h"
 #include "GameplayTags/RpgHarvestingMagicGameplayTags.h"
 #include "Harvesting/RpgHarvestProfile.h"
+#include "Harvesting/RpgHarvestProtectionComponent.h"
 #include "Harvesting/RpgHarvestRewardService.h"
 
 DEFINE_LOG_CATEGORY(LogRpgHarvesting);
@@ -39,7 +40,8 @@ FRpgHarvestResult FRpgHarvestStockRules::Evaluate(
 	const URpgHarvestProfile* Profile,
 	const FRpgHarvestRequest& Request,
 	const FRpgHarvestStockSnapshot& Stock,
-	const FRpgHarvestWeakPoint* ActiveWeakPoint)
+	const FRpgHarvestWeakPoint* ActiveWeakPoint,
+	const FVector* ProtectionProbe)
 {
 	const int32 SectionCount = FMath::Max(1, Stock.SectionCount);
 	const int32 RemainingSections = Stock.GetRemainingSections();
@@ -63,6 +65,12 @@ FRpgHarvestResult FRpgHarvestStockRules::Evaluate(
 	if (Request.ExpectedRevision == INDEX_NONE || Request.ExpectedRevision != Stock.Revision)
 	{
 		return Reject(ERpgHarvestOutcome::Stale);
+	}
+	if (Request.bAreaHarvest &&
+		ProtectionProbe &&
+		URpgHarvestProtectionSubsystem::IsLocationProtected(Request.Harvester->GetWorld(), *ProtectionProbe))
+	{
+		return Reject(ERpgHarvestOutcome::Protected);
 	}
 	if (!MeetsToolRequirement(Profile, Request))
 	{
@@ -118,6 +126,7 @@ ERpgHarvestDelivery FRpgHarvestStockRules::ToDelivery(const ERpgHarvestRewardDel
 		return ERpgHarvestDelivery::Inventory;
 	case ERpgHarvestRewardDeliveryResult::WorldDrop:
 		return ERpgHarvestDelivery::WorldDrop;
+	case ERpgHarvestRewardDeliveryResult::Batched:
 	case ERpgHarvestRewardDeliveryResult::Failed:
 	default:
 		return ERpgHarvestDelivery::None;

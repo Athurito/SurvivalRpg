@@ -6,6 +6,7 @@
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
 #include "Harvesting/RpgHarvestRewardProfile.h"
+#include "Harvesting/RpgHarvestStockRules.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgGatheringSet.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Inventory/Loot/RpgLootResolver.h"
@@ -135,9 +136,28 @@ ERpgHarvestRewardDeliveryResult FRpgHarvestRewardService::DeliverReward(
 		return ERpgHarvestRewardDeliveryResult::Empty;
 	}
 
+	if (FRpgHarvestRewardBatch* Batch = FRpgHarvestRewardBatch::FindOpen(Harvester))
+	{
+		// The batch delivers this reward together with the other targets of the same harvest.
+		return Batch->Append(Reward, Profile->OverflowDropClass)
+			? ERpgHarvestRewardDeliveryResult::Batched
+			: ERpgHarvestRewardDeliveryResult::Failed;
+	}
+	return DeliverPickup(*World, *Harvester, Reward, Request.DeliveryTransform, Profile->OverflowDropClass, true);
+}
+
+ERpgHarvestRewardDeliveryResult FRpgHarvestRewardService::DeliverPickup(
+	UWorld& World,
+	AActor& Harvester,
+	const FInventoryPickup& Reward,
+	const FTransform& DropTransform,
+	TSubclassOf<ARpgDroppedInventoryActor> DropClass,
+	const bool bTryInventory)
+{
+	ARpgPlayerState* PlayerState = ResolveHarvesterPlayerState(&Harvester);
 	URpgInventoryManagerComponent* PlayerInventory =
 		PlayerState ? PlayerState->GetInventoryManagerComponent() : nullptr;
-	if (PlayerInventory && PlayerInventory->CanAddPickupBatch(Reward))
+	if (bTryInventory && PlayerInventory && PlayerInventory->CanAddPickupBatch(Reward))
 	{
 		TArray<FRpgInventoryItemId> AffectedItemIds;
 		const FRpgInventoryMutationResult GrantResult =
@@ -151,20 +171,19 @@ ERpgHarvestRewardDeliveryResult FRpgHarvestRewardService::DeliverReward(
 		return ERpgHarvestRewardDeliveryResult::Failed;
 	}
 
-	FTransform DropTransform = Request.DeliveryTransform;
-	DropTransform.AddToTranslation(FVector(0.0, 0.0, 40.0));
+	FTransform SpawnTransform = DropTransform;
+	SpawnTransform.AddToTranslation(FVector(0.0, 0.0, 40.0));
 	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.Owner = Harvester;
+	SpawnParameters.Owner = &Harvester;
 	SpawnParameters.SpawnCollisionHandlingOverride =
 		ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-	TSubclassOf<ARpgDroppedInventoryActor> DropClass = Profile->OverflowDropClass;
 	if (!DropClass)
 	{
 		DropClass = ARpgDroppedInventoryActor::StaticClass();
 	}
-	ARpgDroppedInventoryActor* Drop = World->SpawnActor<ARpgDroppedInventoryActor>(
+	ARpgDroppedInventoryActor* Drop = World.SpawnActor<ARpgDroppedInventoryActor>(
 		DropClass,
-		DropTransform,
+		SpawnTransform,
 		SpawnParameters);
 	if (!Drop)
 	{
@@ -213,4 +232,135 @@ void FRpgHarvestRewardService::AwardExperience(
 			Profile->SkillTag,
 			static_cast<float>(Profile->SkillExperience) * static_cast<float>(HarvestedUnits));
 	}
+}
+
+TArray<FRpgHarvestRewardBatch*> FRpgHarvestRewardBatch::OpenBatches;
+
+FRpgHarvestRewardBatch::FRpgHarvestRewardBatch(AActor* InHarvester)
+	: Harvester(InHarvester)
+	, World(InHarvester ? InHarvester->GetWorld() : nullptr)
+{
+	check(IsInGameThread());
+	if (InHarvester &&
+		ensureMsgf(!FindOpen(InHarvester), TEXT("Harvest reward batches may not overlap for %s."), *GetNameSafe(InHarvester)))
+	{
+		OpenBatches.Add(this);
+	}
+}
+
+FRpgHarvestRewardBatch::~FRpgHarvestRewardBatch()
+{
+	if (HasPendingRewards())
+	{
+		const AActor* HarvesterActor = Harvester.Get();
+		Deliver(HarvesterActor ? HarvesterActor->GetActorTransform() : FTransform::Identity);
+	}
+	OpenBatches.Remove(this);
+}
+
+ERpgHarvestRewardDeliveryResult FRpgHarvestRewardBatch::Deliver(const FTransform& DropTransform)
+{
+	OpenBatches.Remove(this);
+	if (!HasPendingRewards())
+	{
+		return ERpgHarvestRewardDeliveryResult::Empty;
+	}
+
+	const FInventoryPickup Reward = MoveTemp(PendingReward);
+	PendingReward = FInventoryPickup();
+	AActor* HarvesterActor = Harvester.Get();
+	UWorld* HarvestWorld = World.Get();
+	ERpgHarvestRewardDeliveryResult Result = ERpgHarvestRewardDeliveryResult::Failed;
+	if (HarvesterActor && HarvestWorld)
+	{
+		Result = FRpgHarvestRewardService::DeliverPickup(
+			*HarvestWorld,
+			*HarvesterActor,
+			Reward,
+			DropTransform,
+			DropClass,
+			true);
+		if (Result == ERpgHarvestRewardDeliveryResult::Failed)
+		{
+			// The targets already extracted their stock, so a failed inventory commit falls back to the drop.
+			Result = FRpgHarvestRewardService::DeliverPickup(
+				*HarvestWorld,
+				*HarvesterActor,
+				Reward,
+				DropTransform,
+				DropClass,
+				false);
+		}
+	}
+	if (Result == ERpgHarvestRewardDeliveryResult::Failed)
+	{
+		UE_LOG(
+			LogRpgHarvesting,
+			Error,
+			TEXT("A batched harvest reward of %d stacks and %d item instances for %s could not be delivered."),
+			Reward.Templates.Num(),
+			Reward.Instances.Num(),
+			*GetNameSafe(HarvesterActor));
+	}
+	return Result;
+}
+
+bool FRpgHarvestRewardBatch::HasPendingRewards() const
+{
+	return HasPickupContents(PendingReward);
+}
+
+FRpgHarvestRewardBatch* FRpgHarvestRewardBatch::FindOpen(const AActor* InHarvester)
+{
+	if (!InHarvester || !IsInGameThread())
+	{
+		return nullptr;
+	}
+	for (FRpgHarvestRewardBatch* Batch : OpenBatches)
+	{
+		if (Batch->Harvester.Get() == InHarvester)
+		{
+			return Batch;
+		}
+	}
+	return nullptr;
+}
+
+bool FRpgHarvestRewardBatch::Append(const FInventoryPickup& Reward, TSubclassOf<ARpgDroppedInventoryActor> InDropClass)
+{
+	auto FindStack = [this](const FPickupTemplate& Template)
+	{
+		return PendingReward.Templates.FindByPredicate([&Template](const FPickupTemplate& Candidate)
+		{
+			return Candidate.ItemDef == Template.ItemDef;
+		});
+	};
+
+	// Validate every stack before merging, so a rejected reward leaves the batch unchanged.
+	for (const FPickupTemplate& Template : Reward.Templates)
+	{
+		const FPickupTemplate* Existing = FindStack(Template);
+		if (Template.StackCount <= 0 || (Existing && Existing->StackCount > MAX_int32 - Template.StackCount))
+		{
+			return false;
+		}
+	}
+
+	for (const FPickupTemplate& Template : Reward.Templates)
+	{
+		if (FPickupTemplate* Existing = FindStack(Template))
+		{
+			Existing->StackCount += Template.StackCount;
+		}
+		else
+		{
+			PendingReward.Templates.Add(Template);
+		}
+	}
+	PendingReward.Instances.Append(Reward.Instances);
+	if (!DropClass)
+	{
+		DropClass = InDropClass;
+	}
+	return true;
 }

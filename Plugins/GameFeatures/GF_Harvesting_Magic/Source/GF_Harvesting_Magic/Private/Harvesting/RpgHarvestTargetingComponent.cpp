@@ -67,6 +67,9 @@ namespace RpgHarvestTargetingComponent
 		case ERpgHarvestOutcome::SkillGate:
 			OutStatus = ERpgHarvestTargetStatus::SkillLocked;
 			break;
+		case ERpgHarvestOutcome::Protected:
+			OutStatus = ERpgHarvestTargetStatus::Protected;
+			break;
 		default:
 			OutStatus = ERpgHarvestTargetStatus::Unavailable;
 			break;

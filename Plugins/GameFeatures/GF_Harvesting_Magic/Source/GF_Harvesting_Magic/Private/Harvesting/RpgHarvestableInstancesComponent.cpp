@@ -1,5 +1,6 @@
 #include "Harvesting/RpgHarvestableInstancesComponent.h"
 
+#include "Components/InstancedSkinnedMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Harvesting/RpgHarvestInstanceStockComponent.h"
@@ -38,8 +39,16 @@ FRpgHarvestResult URpgHarvestableInstancesComponent::EvaluateHarvest_Implementat
 			GetSectionCount());
 	}
 
-	const FRpgHarvestResult Result =
-		FRpgHarvestStockRules::Evaluate(HarvestProfile, Request, MakeStockSnapshot(InstanceIndex));
+	// Only area requests respect protection, so only they pay for the instance location.
+	FTransform InstanceTransform;
+	const bool bProbeProtection = Request.bAreaHarvest && GetAuthoredInstanceTransform(InstanceIndex, InstanceTransform, true);
+	const FVector ProtectionProbe = InstanceTransform.GetLocation();
+	const FRpgHarvestResult Result = FRpgHarvestStockRules::Evaluate(
+		HarvestProfile,
+		Request,
+		MakeStockSnapshot(InstanceIndex),
+		nullptr,
+		bProbeProtection ? &ProtectionProbe : nullptr);
 	if (Result.IsSuccess() && bCommitInProgress)
 	{
 		return FRpgHarvestResult::MakeRejected(ERpgHarvestOutcome::Stale, Result.RemainingSections, Result.SectionCount);
@@ -164,6 +173,42 @@ bool URpgHarvestableInstancesComponent::SetInstancePresentationScale(const int32
 	return UpdateInstanceTransform(InstanceIndex, PresentedTransform, false, true, true);
 }
 
+bool URpgHarvestableInstancesComponent::GetLinkedPresentationInstance(
+	const int32 InstanceIndex,
+	UMeshComponent*& OutComponent,
+	FTransform& OutWorldTransform) const
+{
+	OutComponent = nullptr;
+	OutWorldTransform = FTransform::Identity;
+	for (auto It = LinkedInstances.CreateConstKeyIterator(InstanceIndex); It; ++It)
+	{
+		UMeshComponent* Component = It.Value().Component.Get();
+		if (!Component)
+		{
+			continue;
+		}
+
+		const int32 LinkedIndex = It.Value().InstanceIndex;
+		FTransform LocalTransform;
+		if (const FTransform* HiddenTransform = HiddenLinkedTransforms.Find(MakeTuple(It.Value().Component, LinkedIndex)))
+		{
+			LocalTransform = *HiddenTransform;
+		}
+		else if (const UInstancedStaticMeshComponent* StaticInstances = Cast<UInstancedStaticMeshComponent>(Component))
+		{
+			StaticInstances->GetInstanceTransform(LinkedIndex, LocalTransform, false);
+		}
+		else if (const UInstancedSkinnedMeshComponent* SkinnedInstances = Cast<UInstancedSkinnedMeshComponent>(Component))
+		{
+			SkinnedInstances->GetInstanceTransform(SkinnedInstances->GetInstanceId(LinkedIndex), LocalTransform, false);
+		}
+		OutComponent = Component;
+		OutWorldTransform = LocalTransform * Component->GetComponentTransform();
+		return true;
+	}
+	return false;
+}
+
 bool URpgHarvestableInstancesComponent::GetInstanceKey(const int32 InstanceIndex, FIntVector& OutKey) const
 {
 	if (!IsValidResourceInstance(InstanceIndex))
@@ -199,6 +244,7 @@ void URpgHarvestableInstancesComponent::BeginPlay()
 	Super::BeginPlay();
 
 	BuildInstanceKeys();
+	BuildLinkedInstances();
 	if (!HarvestProfile)
 	{
 		UE_LOG(
@@ -285,6 +331,127 @@ void URpgHarvestableInstancesComponent::BuildInstanceKeys()
 	}
 }
 
+void URpgHarvestableInstancesComponent::BuildLinkedInstances()
+{
+	TRACE_CPUPROFILER_EVENT_SCOPE(URpgHarvestableInstancesComponent::BuildLinkedInstances);
+
+	LinkedInstances.Reset();
+	HiddenLinkedTransforms.Reset();
+	NumLinkedResources = 0;
+	AActor* Owner = GetOwner();
+	if (LinkedPresentationTag.IsNone() || !Owner || InstanceIndexByKey.IsEmpty())
+	{
+		return;
+	}
+
+	auto LinkInstance = [this](UMeshComponent& Component, const int32 LinkedIndex, const FVector& WorldOrigin)
+	{
+		if (const int32* ResourceIndex = InstanceIndexByKey.Find(URpgHarvestInstanceStockComponent::MakeInstanceKey(WorldOrigin)))
+		{
+			FLinkedInstance Link;
+			Link.Component = &Component;
+			Link.InstanceIndex = LinkedIndex;
+			LinkedInstances.Add(*ResourceIndex, Link);
+		}
+	};
+
+	TInlineComponentArray<UMeshComponent*> Meshes(Owner);
+	for (UMeshComponent* Mesh : Meshes)
+	{
+		if (!Mesh || Mesh == this || !Mesh->ComponentHasTag(LinkedPresentationTag))
+		{
+			continue;
+		}
+
+		if (UInstancedStaticMeshComponent* StaticInstances = Cast<UInstancedStaticMeshComponent>(Mesh))
+		{
+			const FTransform& ComponentTransform = StaticInstances->GetComponentTransform();
+			for (int32 LinkedIndex = 0; LinkedIndex < StaticInstances->GetInstanceCount(); ++LinkedIndex)
+			{
+				const FVector LocalOrigin = StaticInstances->PerInstanceSMData[LinkedIndex].Transform.GetOrigin();
+				LinkInstance(*StaticInstances, LinkedIndex, ComponentTransform.TransformPosition(LocalOrigin));
+			}
+		}
+		else if (UInstancedSkinnedMeshComponent* SkinnedInstances = Cast<UInstancedSkinnedMeshComponent>(Mesh))
+		{
+			for (int32 LinkedIndex = 0; LinkedIndex < SkinnedInstances->GetInstanceCount(); ++LinkedIndex)
+			{
+				FTransform WorldTransform;
+				if (SkinnedInstances->GetInstanceTransform(SkinnedInstances->GetInstanceId(LinkedIndex), WorldTransform, true))
+				{
+					LinkInstance(*SkinnedInstances, LinkedIndex, WorldTransform.GetLocation());
+				}
+			}
+		}
+	}
+
+	TArray<int32> LinkedResources;
+	NumLinkedResources = LinkedInstances.GetKeys(LinkedResources);
+	if (LinkedInstances.IsEmpty())
+	{
+		UE_LOG(
+			LogRpgHarvesting,
+			Warning,
+			TEXT("%s links presentation through tag %s, but no sibling instance shares a resource location."),
+			*GetPathName(),
+			*LinkedPresentationTag.ToString());
+	}
+}
+
+void URpgHarvestableInstancesComponent::SetLinkedInstancesVisible(const int32 InstanceIndex, const bool bShow)
+{
+	for (auto It = LinkedInstances.CreateConstKeyIterator(InstanceIndex); It; ++It)
+	{
+		UMeshComponent* Component = It.Value().Component.Get();
+		const int32 LinkedIndex = It.Value().InstanceIndex;
+		if (!Component)
+		{
+			continue;
+		}
+
+		UInstancedStaticMeshComponent* StaticInstances = Cast<UInstancedStaticMeshComponent>(Component);
+		UInstancedSkinnedMeshComponent* SkinnedInstances = Cast<UInstancedSkinnedMeshComponent>(Component);
+		const TPair<TWeakObjectPtr<UMeshComponent>, int32> HiddenKey = MakeTuple(It.Value().Component, LinkedIndex);
+		FTransform PresentedTransform;
+		if (bShow)
+		{
+			FTransform AuthoredTransform;
+			if (!HiddenLinkedTransforms.RemoveAndCopyValue(HiddenKey, AuthoredTransform))
+			{
+				continue;
+			}
+			PresentedTransform = AuthoredTransform;
+		}
+		else
+		{
+			if (HiddenLinkedTransforms.Contains(HiddenKey))
+			{
+				continue;
+			}
+			FTransform AuthoredTransform;
+			const bool bHasTransform = StaticInstances
+				? StaticInstances->GetInstanceTransform(LinkedIndex, AuthoredTransform, false)
+				: SkinnedInstances && SkinnedInstances->GetInstanceTransform(SkinnedInstances->GetInstanceId(LinkedIndex), AuthoredTransform, false);
+			if (!bHasTransform)
+			{
+				continue;
+			}
+			HiddenLinkedTransforms.Add(HiddenKey, AuthoredTransform);
+			PresentedTransform = AuthoredTransform;
+			PresentedTransform.SetScale3D(FVector::ZeroVector);
+		}
+
+		if (StaticInstances)
+		{
+			StaticInstances->UpdateInstanceTransform(LinkedIndex, PresentedTransform, false, true, true);
+		}
+		else if (SkinnedInstances)
+		{
+			SkinnedInstances->SetInstanceTransform(SkinnedInstances->GetInstanceId(LinkedIndex), PresentedTransform, false);
+		}
+	}
+}
+
 void URpgHarvestableInstancesComponent::HandleStockChanged(const FIntVector& Key, const bool bInitialState)
 {
 	int32 InstanceIndex = INDEX_NONE;
@@ -300,6 +467,7 @@ void URpgHarvestableInstancesComponent::PresentInstance(const int32 InstanceInde
 	if (bHideDepletedInstances)
 	{
 		SetInstancePresentationScale(InstanceIndex, Stock.bActive ? 1.0f : 0.0f);
+		SetLinkedInstancesVisible(InstanceIndex, Stock.bActive);
 	}
 	OnInstanceStockChanged(InstanceIndex, Stock.GetRemainingSections(), GetSectionCount(), Stock.bActive, bInitialState);
 }
