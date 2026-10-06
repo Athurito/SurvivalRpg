@@ -984,7 +984,7 @@ the client:
 
 ### Not done
 
-- The values are first tuning; HARV-09f compares the forms by harvest time.
+- The values are first tuning; HARV-09f lists the harvest times of the powers.
 - In two PIE runs, the first held power right after the script closed the
   menu executed before the scripted release; every later hold waited for the
   release. HARV-09d traced it to the script's window captures, which change
@@ -1183,8 +1183,157 @@ runs a stride on a dedicated server with clients:
   montage, so content does not exercise that path.
 - **Pickaxe:** decided in review: the pickaxe needs no ultimate for now; the
   stride setup is enough.
-- **Tuning:** the values are first tuning; HARV-09f compares the powers by
-  harvest time.
+- **Tuning:** the values are first tuning; HARV-09f lists the harvest times of
+  the powers.
+
+## Resource parity and build target (HARV-09f)
+
+HARV-09f closes M4. The combat styles draw from one small material pool, and a
+known build target becomes much easier with awakened powers. The content lives
+in `GF_Dev_Sandbox`, which already depends on `GF_Combat_Core` and
+`GF_Harvesting_Magic`. No native class was added.
+
+### Shared pool
+
+- **Pool:** the weapons of all three combat styles, the ranged style's arrows
+  and the build target cost only `ID_Wood`, `ID_Ore`, `ID_Charcoal`,
+  `ID_Stone` and `ID_Sticks`.
+  - The first recipes use wood, ore and charcoal, which the tools and their
+    powers harvest.
+  - Switching combat style therefore uses the same stocks and needs no new raw
+    material.
+- **Contract test:** `SurvivalRpg.Harvesting.Content.ResourceParityPool` fixes
+  no amount. It checks three things:
+  - The parity bench offers recipes for the sword, the bow, its arrows, the
+    spell focus and the build target, through the station's own offer rules.
+  - Every ingredient comes from the pool.
+  - Every pool material is harvested through a harvest profile's loot table, or
+    a kiln recipe refines it from pool materials.
+
+### Combat styles
+
+The table lists the first values at `BP_CraftingStation_ParityBench`. Costs are
+counted in sections:
+- One swing takes one section: 5 wood from a dead pine or 6 ore from an iron
+  vein.
+- One charcoal costs 2 wood at the kiln.
+
+| Style | Weapon | Running supply | Sections |
+| --- | --- | --- | --- |
+| Melee | `ID_BasicSword`: 12 ore, 4 charcoal, 4 wood | None | 4.4 |
+| Ranged | `ID_Placeholder_Bow`: 12 wood, 2 ore | 20 `ID_Placeholder_Arrow`: 3 wood, 1 ore | 2.7, plus 0.8 per 20 arrows |
+| Magic | `ID_Placeholder_SpellFocus`: 10 wood, 6 ore, 4 charcoal | None; spells cost mana | 4.6 |
+
+- **Crafting:** with 40 arrows, assumed here as one expedition's supply, the bow
+  costs 4.2 sections. The three styles therefore cost 4.2 to 4.6 sections:
+  about five swings each with the basic tools.
+- **Arrows:** they add about 1.5 sections per expedition. That is two swings,
+  or less than a tenth of the measured Death Wave below.
+  - The first draft asked 4 wood and 2 ore per 20 arrows, twice as much, so
+    the arrows got cheaper.
+- **Not compared:** there is no durability yet. Repairs, the other running cost
+  in the plan, are therefore not compared.
+
+### Build target
+
+- **Fallback:** the plan's build target was the kiln as a
+  `URpgBaseBuildableDefinition`.
+  - The base camp's generic construction site has no placement UI. Physical
+    chests use their own container path.
+  - As the plan allowed for this case, the build target is a workbench recipe
+    instead: the Kiln Kit. It costs 60 wood, 24 ore and 10 charcoal, 20
+    sections in all.
+  - The kit cannot be placed until base building supports it.
+- **Both tools:** the kit needs wood and ore, which closes M2's small building
+  task with both tools.
+
+PIE runs in `Lvl_ResourceParity` used a listen server with one client,
+scripted on the client. The script teleports between stops. The table lists the
+straight distance it skipped as walking.
+
+| | Basic tools (Mining 1, Logging 1) | Powers (Mining 2: Rift Grip; Logging 3: Death Wave, Wide Wave) |
+| --- | --- | --- |
+| Ore | 3 pickaxe swings at one vein, one on the weak point; 2.6 s, 24 ore | One Rift Grip over three veins, 54 ore |
+| Wood | 16 axe chops at four trees, 3.7–3.9 s per tree, 80 wood | One Death Wave over five trees, 102 wood |
+| Actions | 19 swings at 5 resources | 2 casts at 2 spots |
+| Walking skipped | 89 m | 78 m |
+| Charcoal | Kiln, 10 crafts, 30.5 s | Kiln, 10 crafts, 30.4 s |
+| Kiln Kit | Parity bench, 8.4 s | Parity bench, 8.4 s; 22 wood and 30 ore remain |
+
+- **Harvest work:** the powers cut it from 19 swings at five resources to two
+  casts at two spots.
+- **Kiln wait:** the kiln's 30 s now take longer than the whole harvest.
+  - Ash Wave delivers charcoal directly.
+  - Processing stations that run on their own are a separate crafting task.
+- **Station trays:** the bench took the charcoal straight from the kiln's
+  output tray, because station trays within its storage radius count as
+  sources. The kit waited in the bench's tray.
+
+### Harvest time per power
+
+Measured in the same map. A tree yields 20 wood, plus a few from the gathering
+yield multiplier.
+
+| Power | Measured use | Harvest | Ready again |
+| --- | --- | --- | --- |
+| Axe chop | 4 chops per tree, about 3.75 s | 20 wood per tree | At once |
+| Death Wave with Wide Wave | 5 trees; the wood arrived 0.4 s after the release | 102 wood | 6 s |
+| Grave Swarm | 4 trees; the wood arrived 4.4 s after the release | 85 wood | 15 s |
+| Striding Wave | 6 trees during 6 s of walking | 120 wood | 60 s |
+| Pickaxe strike | 3–4 swings per vein, about 2.6 s | 24 ore | At once |
+| Rift Grip | 3 sections from each of three veins | 54 ore | 4 s |
+
+- **Single resource:** the basic swing is quick, about one section per second.
+- **Powers:** they save the walk between resources and many inputs. A stand
+  falls with one cast.
+- **Tuning:** the values remain first tuning. No test fixes them.
+
+### Material cycles
+
+- **Charcoal:** wood becomes charcoal at 2:1, at the kiln or through Ash Wave.
+  A yield conversion keeps the remainder as wood, so nothing is lost.
+- **No cycle creates material:** no recipe turns charcoal, weapons or the kit
+  back into wood or ore, and there is no salvage or recycling yet.
+- **Open:** the plan leaves open whether direct conversion should cost more than
+  the kiln. Both convert at 2:1 now.
+- **Storage test materials:** `ID_Oak`, `ID_Plank` and their relatives still
+  form their own set; see the open questions.
+
+### Content
+
+All assets were authored through Unreal MCP in `GF_Dev_Sandbox/ResourceParity`:
+- **Items:** `ID_Placeholder_Bow`, `ID_Placeholder_Arrow`,
+  `ID_Placeholder_SpellFocus` and `ID_Placeholder_KilnKit` are plain items
+  without equipment. The bow and the focus are only recipe targets.
+- **Recipes:** `DA_Recipe_Parity_*` in `DA_RecipeSet_ResourceParity`, with the
+  new categories `Crafting.Category.Weapons` and `Crafting.Category.Building`.
+- **Bench:** `BP_CraftingStation_ParityBench` is a copy of the workbench
+  (`Crafting.Station.Workbench`) with the prompt "Parity Bench".
+- **Map:** `Lvl_ResourceParity` in `GF_Dev_Sandbox/Maps` is a copy of
+  `Lvl_HarvestPickaxe` with the bench beside the kiln. The harvest map gets no
+  sandbox content, because harvesting must not depend on the sandbox.
+- **Rest of M4:** since HARV-09b, tool switches keep learned powers, because the
+  progress lives on the character. HARV-09e added the larger harvesting power,
+  Striding Wave.
+
+A PIE run at the bench with one client crafted the sword, the bow, 40 arrows
+and the focus. One vein and the kiln supplied the ore and charcoal; earlier
+runs had harvested the wood. The crafting screen listed all five recipes with
+their requirements.
+
+### Not done
+
+- **Placing the kit:** the Kiln Kit is an item; base building cannot place it
+  yet.
+- **Weapons:** the bow and the focus cannot be equipped. The sword is the
+  existing `ID_BasicSword`.
+- **Repairs and buffs:** there is no durability and no mandatory buff yet, so
+  the comparison covers crafting and ammunition only.
+- **Expedition length:** 40 arrows per expedition is an assumption.
+- **Measurements:** each is one scripted run, with teleports instead of walking
+  and without a player's aiming time.
+- **Map copy:** `Lvl_ResourceParity` does not follow later changes to
+  `Lvl_HarvestPickaxe`.
 
 ## Performance guardrails
 
@@ -1212,8 +1361,8 @@ runs a stride on a dedicated server with clients:
 | HARV-09b | Skill UI (progression overview, tree grid, Q/E/R, reset) and the tool trees; Rift Grip, Death Wave and Grave Swarm move from level gates to tree nodes | Merged: [#189](https://github.com/Athurito/SurvivalRpg/pull/189) |
 | HARV-09c | Power forms through tunings: Wide Wave, Long Reach, Swarm Brood, Grave Detonation (strike radius), Wide Rift, Deep Grip; loose passives, chain-only gates, right-click refund of single nodes | Merged: [#190](https://github.com/Athurito/SurvivalRpg/pull/190) |
 | HARV-09d | Ash Wave: Death Wave form that delivers charcoal through yield conversions at a shown ratio, charcoal item, kiln recipe | Merged: [#192](https://github.com/Athurito/SurvivalRpg/pull/192) |
-| HARV-09e | Striding Wave, the axe's ultimate: trees around the walking player fall for a few seconds; strides around the harvester, point-gated ultimate node, ring cue | In review: [#193](https://github.com/Athurito/SurvivalRpg/pull/193) |
-| HARV-09f | Resource parity across combat styles and a build target that stronger harvesting makes easier | Planned |
+| HARV-09e | Striding Wave, the axe's ultimate: trees around the walking player fall for a few seconds; strides around the harvester, point-gated ultimate node, ring cue | Merged: [#193](https://github.com/Athurito/SurvivalRpg/pull/193) |
+| HARV-09f | Resource parity across combat styles and a build target that stronger harvesting makes easier; shared pool, parity bench, Kiln Kit, harvest times | In review |
 | HARV-10 | M5 resource persistence with stable IDs, portal variant, co-op load | Planned |
 
 ## Open questions
@@ -1228,9 +1377,10 @@ runs a stride on a dedicated server with clients:
   local cosmetic actor that falls away from the local player and sinks.
 - Answered in HARV-09c: the swarm's talent variants are the axe tree nodes
   Swarm Brood and Grave Detonation.
-- Still open from M2: the small building task with both tools. The workbench
-  recipes use the storage test materials, not the harvested `ID_Wood` and
-  `ID_Ore`; see the duplicated material sets below.
+- Answered in HARV-09f: the Kiln Kit at the parity bench is M2's small
+  building task with both tools; it needs `ID_Wood` and `ID_Ore`. The core
+  workbench recipes still use the storage test materials; see the duplicated
+  material sets below.
 - Not decided yet: home-world regeneration, the timing of the awakening, limits
   on large power states, and the final co-op scope.
 - The material sets duplicate each other: `ID_Ore` and its relatives versus
