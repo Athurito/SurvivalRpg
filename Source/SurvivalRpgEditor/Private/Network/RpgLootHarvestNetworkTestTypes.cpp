@@ -5,6 +5,7 @@
 #include "Harvesting/RpgHarvestableInstancedMeshComponent.h"
 #include "Harvesting/RpgHarvestableInstancesComponent.h"
 #include "Engine/CollisionProfile.h"
+#include "GameplayTags/RpgHarvestingMagicGameplayTags.h"
 #include "Harvesting/RpgHarvestProfile.h"
 #include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
@@ -197,4 +198,21 @@ ARpgNetworkAutomationSwarm::ARpgNetworkAutomationSwarm(const FObjectInitializer&
 	: Super(ObjectInitializer)
 {
 	CreatureClass = ARpgNetworkAutomationSwarmCreature::StaticClass();
+}
+
+void URpgNetworkAutomationStrideAbility::ConfigureStride(
+	const float Radius,
+	const float DurationSeconds,
+	const float PulseSeconds,
+	const int32 Sections,
+	const FGameplayTag CueTag)
+{
+	HarvestAbilityId = RpgHarvestingMagicGameplayTags::Ability_Harvesting_Manual;
+	Targeting.Shape = ERpgHarvestTargetShape::AreaAroundHarvester;
+	Targeting.AreaRadius = Radius;
+	Targeting.MaxTargets = 4;
+	SectionsPerTarget = Sections;
+	Stride.DurationSeconds = DurationSeconds;
+	Stride.PulseIntervalSeconds = PulseSeconds;
+	StrideGameplayCue = CueTag;
 }

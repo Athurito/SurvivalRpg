@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AbilitySystem/Abilities/RpgGameplayAbility_Harvest.h"
 #include "GameFramework/Actor.h"
 #include "Harvesting/RpgHarvestSwarm.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
@@ -177,4 +178,18 @@ class ARpgNetworkAutomationSwarm final : public ARpgHarvestSwarm
 public:
 	explicit ARpgNetworkAutomationSwarm(
 		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+};
+
+/** Stride harvest ability the network test grants directly; the test configures the granted instance on the server. */
+UCLASS(NotBlueprintable)
+class URpgNetworkAutomationStrideAbility final : public URpgGameplayAbility_Harvest
+{
+	GENERATED_BODY()
+
+public:
+	/**
+	 * Harvests every target within Radius cm around the harvester every PulseSeconds for DurationSeconds, Sections
+	 * sections each, and shows CueTag on the harvester while the stride runs.
+	 */
+	void ConfigureStride(float Radius, float DurationSeconds, float PulseSeconds, int32 Sections, FGameplayTag CueTag);
 };

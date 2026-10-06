@@ -1162,17 +1162,27 @@ the client:
 - In the first session the client also stopped walking when the script captured
   its window, the known focus artifact of HARV-09d.
 
+The network test
+`SurvivalRpg.Network.LootHarvestPIE.StrideHarvestsAlongThePathAndReplicatesItsCue`
+runs a stride on a dedicated server with clients:
+- A server-only avatar starts the stride before the instanced field. The client
+  receives the cue.
+- The avatar walks onto the first instance, and a pulse empties only that one.
+  It then skips ahead to the last instance, which a pulse empties too; the one
+  it skipped stays.
+- A client that joins during the stride receives its cue.
+- The rewards arrive in the inventory once, when the stride ends, without a
+  drop. Both clients show the harvested path, and the cue is gone on both.
+
 ### Not done
 
-- **Network test:** there is no new PIE network test. The stride reuses the
-  replicated stock, ability end and cue; native tests and the PIE session cover
-  it.
 - **Presentation:** the ring reuses the area marker's decal, whose line grows
   with the radius. There is no extra effect at the struck trees beyond their
   falling presentation.
 - **Montage:** a stride ignores the end of its montage. Striding Wave has no
   montage, so content does not exercise that path.
-- **Pickaxe:** the pickaxe has no ultimate yet.
+- **Pickaxe:** decided in review: the pickaxe needs no ultimate for now; the
+  stride setup is enough.
 - **Tuning:** the values are first tuning; HARV-09f compares the powers by
   harvest time.
 
