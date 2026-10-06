@@ -127,6 +127,10 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestPreview
 	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
 	TArray<FRpgHarvestTargetEvaluation> Targets;
 
+	/** Yield conversions the previewed ability would apply, for example two wood into one charcoal. */
+	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
+	TArray<FRpgHarvestYieldConversion> YieldConversions;
+
 	/** Returns whether a harvest ability is being previewed at all. */
 	bool HasAbility() const
 	{

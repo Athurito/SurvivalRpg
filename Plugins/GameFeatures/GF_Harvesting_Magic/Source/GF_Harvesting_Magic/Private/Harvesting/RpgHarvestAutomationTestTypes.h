@@ -284,6 +284,7 @@ public:
 		Swarm = InSwarm;
 	}
 	void ConfigureCooldown(const TSubclassOf<UGameplayEffect> InCooldownEffect) { CooldownGameplayEffectClass = InCooldownEffect; }
+	void ConfigureYieldConversions(const TArray<FRpgHarvestYieldConversion>& InConversions) { YieldConversions = InConversions; }
 };
 
 /** Records preview notifications so tests can assert change-only broadcasting. */

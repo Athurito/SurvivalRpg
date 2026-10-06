@@ -5,11 +5,14 @@
 #include "Engine/World.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
+#include "Harvesting/RpgHarvestableTarget.h"
 #include "Harvesting/RpgHarvestRewardProfile.h"
 #include "Harvesting/RpgHarvestStockRules.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgGatheringSet.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
+#include "SurvivalRpg/Inventory/Itemization/RpgInventoryFragment_Itemization.h"
 #include "SurvivalRpg/Inventory/Loot/RpgLootResolver.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgDroppedInventoryActor.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillProgressionComponent.h"
@@ -234,6 +237,75 @@ void FRpgHarvestRewardService::AwardExperience(
 	}
 }
 
+int32 FRpgHarvestRewardService::ApplyYieldConversions(
+	FInventoryPickup& Reward,
+	const TArray<FRpgHarvestYieldConversion>& Conversions)
+{
+	int32 CreatedOutputs = 0;
+	for (const FRpgHarvestYieldConversion& Conversion : Conversions)
+	{
+		if (!Conversion.IsValid())
+		{
+			continue;
+		}
+
+		// Conversions only handle plain material stacks; itemized outputs would need generated item instances.
+		const URpgInventoryItemDefinition* OutputDefinition = GetDefault<URpgInventoryItemDefinition>(Conversion.OutputItem);
+		if (!OutputDefinition ||
+			OutputDefinition->FindFragmentByClass(URpgInventoryFragment_Itemization::StaticClass()))
+		{
+			UE_LOG(LogRpgHarvesting, Warning, TEXT("Yield conversion into %s is skipped: the output must be a plain material."),
+				*GetNameSafe(Conversion.OutputItem));
+			continue;
+		}
+
+		int64 InputCount = 0;
+		for (const FPickupTemplate& Template : Reward.Templates)
+		{
+			InputCount += Template.ItemDef == Conversion.InputItem ? FMath::Max(0, Template.StackCount) : 0;
+		}
+		const int32 Outputs = static_cast<int32>(FMath::Min<int64>(InputCount / Conversion.InputPerOutput, MAX_int32));
+		if (Outputs <= 0)
+		{
+			continue;
+		}
+
+		int64 ToConsume = static_cast<int64>(Outputs) * Conversion.InputPerOutput;
+		for (FPickupTemplate& Template : Reward.Templates)
+		{
+			if (Template.ItemDef == Conversion.InputItem && ToConsume > 0)
+			{
+				const int32 Consumed = static_cast<int32>(FMath::Min<int64>(Template.StackCount, ToConsume));
+				Template.StackCount -= Consumed;
+				ToConsume -= Consumed;
+			}
+		}
+		Reward.Templates.RemoveAll([](const FPickupTemplate& Template)
+		{
+			return Template.StackCount <= 0;
+		});
+
+		FPickupTemplate* OutputStack = Reward.Templates.FindByPredicate([&Conversion](const FPickupTemplate& Template)
+		{
+			return Template.ItemDef == Conversion.OutputItem;
+		});
+		if (OutputStack)
+		{
+			OutputStack->StackCount = static_cast<int32>(FMath::Min<int64>(
+				static_cast<int64>(OutputStack->StackCount) + Outputs,
+				MAX_int32));
+		}
+		else
+		{
+			FPickupTemplate& NewStack = Reward.Templates.AddDefaulted_GetRef();
+			NewStack.ItemDef = Conversion.OutputItem;
+			NewStack.StackCount = Outputs;
+		}
+		CreatedOutputs += Outputs;
+	}
+	return CreatedOutputs;
+}
+
 TArray<FRpgHarvestRewardBatch*> FRpgHarvestRewardBatch::OpenBatches;
 
 FRpgHarvestRewardBatch::FRpgHarvestRewardBatch(AActor* InHarvester, const bool bOpen)
@@ -300,8 +372,10 @@ ERpgHarvestRewardDeliveryResult FRpgHarvestRewardBatch::Deliver(const FTransform
 		return ERpgHarvestRewardDeliveryResult::Empty;
 	}
 
-	const FInventoryPickup Reward = MoveTemp(PendingReward);
+	FInventoryPickup Reward = MoveTemp(PendingReward);
 	PendingReward = FInventoryPickup();
+	// Conversions run on the merged rewards, so the remainders of several targets combine.
+	FRpgHarvestRewardService::ApplyYieldConversions(Reward, YieldConversions);
 	AActor* HarvesterActor = Harvester.Get();
 	UWorld* HarvestWorld = World.Get();
 	ERpgHarvestRewardDeliveryResult Result = ERpgHarvestRewardDeliveryResult::Failed;
@@ -342,6 +416,11 @@ ERpgHarvestRewardDeliveryResult FRpgHarvestRewardBatch::Deliver(const FTransform
 bool FRpgHarvestRewardBatch::HasPendingRewards() const
 {
 	return HasPickupContents(PendingReward);
+}
+
+void FRpgHarvestRewardBatch::SetYieldConversions(const TArray<FRpgHarvestYieldConversion>& InConversions)
+{
+	YieldConversions = InConversions;
 }
 
 FRpgHarvestRewardBatch* FRpgHarvestRewardBatch::FindOpen(const AActor* InHarvester)

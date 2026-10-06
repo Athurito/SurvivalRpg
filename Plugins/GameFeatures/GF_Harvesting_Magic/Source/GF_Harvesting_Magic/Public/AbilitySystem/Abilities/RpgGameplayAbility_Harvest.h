@@ -24,6 +24,9 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestTunedValues
 
 	/** Swarm with tuned creature count, rest and strike radius. */
 	FRpgHarvestSwarmParams Swarm;
+
+	/** Yield conversions whose owner tag the ability's owner has. */
+	TArray<FRpgHarvestYieldConversion> YieldConversions;
 };
 
 /**
@@ -64,7 +67,8 @@ public:
 
 	/**
 	 * Resolves this ability's targeting, sections and swarm for Spec with the learned skill tree tunings of its source
-	 * weapon. Valid on the server and on the owning client, which see the same tree state.
+	 * weapon, and the yield conversions its owner's tags activate. Valid on the server and on the owning client, which
+	 * see the same tree state and tags.
 	 */
 	void ResolveTunedValues(
 		const FGameplayAbilitySpec& Spec,
@@ -158,6 +162,15 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Yield")
 	bool bCanHitWeakPoints = false;
+
+	/**
+	 * Material conversions this ability can make, for example two wood into one charcoal. Each is active while the
+	 * owner has its RequiredOwnerTag, usually granted by a learned skill tree form, and applies to the merged rewards
+	 * of one execution or one summoned swarm. The server captures the active ones when execution starts; the preview
+	 * shows them. Designer data.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Yield")
+	TArray<FRpgHarvestYieldConversion> YieldConversions;
 
 	/** Multiplier applied to the source tool's HarvestPower; scales yield-sensitive loot rows. One keeps the tool's power. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Yield", meta = (ClampMin = "0.01", UIMin = "0.1", UIMax = "5.0"))

@@ -6,6 +6,7 @@
 
 class AActor;
 class ARpgDroppedInventoryActor;
+struct FRpgHarvestYieldConversion;
 class ARpgPlayerState;
 class URpgHarvestRewardProfile;
 class URpgInventoryItemInstance;
@@ -66,6 +67,13 @@ public:
 	/** Awards the profile's trade-skill XP once per harvested unit after a target has accepted successful delivery. */
 	static void AwardExperience(const URpgHarvestRewardProfile* Profile, AActor* Harvester, int32 HarvestedUnits = 1);
 
+	/**
+	 * Applies Conversions in order to the plain material stacks of Reward: every whole InputPerOutput input items
+	 * become one output item, and the remainder stays the input material. Invalid conversions and itemized outputs
+	 * are skipped. Returns the number of output items created.
+	 */
+	static int32 ApplyYieldConversions(FInventoryPickup& Reward, const TArray<FRpgHarvestYieldConversion>& Conversions);
+
 private:
 	friend class FRpgHarvestRewardBatch;
 
@@ -123,6 +131,9 @@ public:
 	/** Returns whether the batch holds rewards that were not delivered yet. */
 	bool HasPendingRewards() const;
 
+	/** Sets the yield conversions Deliver applies to the merged rewards, normally the request's active conversions. */
+	void SetYieldConversions(const TArray<FRpgHarvestYieldConversion>& InConversions);
+
 	/** Returns the open batch of Harvester, or null. */
 	static FRpgHarvestRewardBatch* FindOpen(const AActor* Harvester);
 
@@ -136,6 +147,7 @@ private:
 	TWeakObjectPtr<UWorld> World;
 	FInventoryPickup PendingReward;
 	TSubclassOf<ARpgDroppedInventoryActor> DropClass;
+	TArray<FRpgHarvestYieldConversion> YieldConversions;
 
 	static TArray<FRpgHarvestRewardBatch*> OpenBatches;
 };

@@ -67,7 +67,8 @@ bool FRpgHarvestPreview::IsEquivalent(const FRpgHarvestPreview& Other, const flo
 		bHasArea != Other.bHasArea ||
 		!FMath::IsNearlyEqual(AreaRadius, Other.AreaRadius) ||
 		(bHasArea && !AimPoint.Equals(Other.AimPoint, LocationTolerance)) ||
-		Targets.Num() != Other.Targets.Num())
+		Targets.Num() != Other.Targets.Num() ||
+		YieldConversions != Other.YieldConversions)
 	{
 		return false;
 	}

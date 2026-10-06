@@ -155,6 +155,8 @@ bool ARpgHarvestSwarm::StartSwarm(
 	RequestTemplate.bCanHitWeakPoint = false;
 	RequestTemplate.PresentationDelaySeconds = 0.0f;
 	RewardBatch = MakeUnique<FRpgHarvestRewardBatch>(Beneficiary, false);
+	// The conversions active at the summon stay with the swarm, even when the form is unlearned meanwhile.
+	RewardBatch->SetYieldConversions(RequestTemplate.YieldConversions);
 
 	UAbilitySystemComponent* AbilitySystem = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(InSummoner);
 	if (!AbilitySystem)
