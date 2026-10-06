@@ -158,6 +158,53 @@ ERpgSkillTreeUnlockResult URpgSkillTreeComponent::EvaluateUnlock(const FGameplay
 		Tree->GetEarnedPointsForLevel(GetMasterySkillLevel(*Tree)));
 }
 
+ERpgSkillTreeRefundResult URpgSkillTreeComponent::EvaluateRefund(const FGameplayTag TreeTag, const FGameplayTag NodeTag) const
+{
+	const URpgSkillTreeDefinition* Tree = FindSkillTree(TreeTag);
+	if (!Tree)
+	{
+		return ERpgSkillTreeRefundResult::UnknownTree;
+	}
+	if (!Tree->FindNode(NodeTag))
+	{
+		return ERpgSkillTreeRefundResult::UnknownNode;
+	}
+
+	const FRpgSkillTreeState* State = FindState(TreeTag);
+	if (!State || !State->UnlockedNodes.Contains(NodeTag))
+	{
+		return ERpgSkillTreeRefundResult::NotUnlocked;
+	}
+
+	for (const FGameplayTag& UnlockedTag : State->UnlockedNodes)
+	{
+		const FRpgSkillTreeNode* UnlockedNode = Tree->FindNode(UnlockedTag);
+		if (UnlockedTag != NodeTag && UnlockedNode && UnlockedNode->Prerequisites.Contains(NodeTag))
+		{
+			return ERpgSkillTreeRefundResult::RequiredByNode;
+		}
+	}
+
+	// The remaining purchases, replayed in their order without this node, must all stay learnable; otherwise a later
+	// node depends on the points spent here.
+	FRpgSkillTreeState Remaining;
+	Remaining.TreeTag = TreeTag;
+	const int32 EarnedPoints = Tree->GetEarnedPointsForLevel(GetMasterySkillLevel(*Tree));
+	for (const FGameplayTag& UnlockedTag : State->UnlockedNodes)
+	{
+		if (UnlockedTag == NodeTag || !Tree->FindNode(UnlockedTag))
+		{
+			continue;
+		}
+		if (EvaluateUnlockForState(*Tree, &Remaining, UnlockedTag, EarnedPoints) != ERpgSkillTreeUnlockResult::Unlockable)
+		{
+			return ERpgSkillTreeRefundResult::PointsStillNeeded;
+		}
+		Remaining.UnlockedNodes.Add(UnlockedTag);
+	}
+	return ERpgSkillTreeRefundResult::Refundable;
+}
+
 FGameplayTag URpgSkillTreeComponent::GetSlotAbilityId(const FGameplayTag TreeTag, const int32 SlotIndex) const
 {
 	const FRpgSkillTreeState* State = FindState(TreeTag);
@@ -170,6 +217,17 @@ void URpgSkillTreeComponent::RequestUnlockNode_Implementation(const FGameplayTag
 	if (Result != ERpgSkillTreeUnlockResult::Unlockable)
 	{
 		UE_LOG(LogRpg, Verbose, TEXT("Skill tree [%s] rejected node [%s] for [%s]: %s."),
+			*TreeTag.ToString(), *NodeTag.ToString(), *GetNameSafe(GetOwner()),
+			*UEnum::GetValueAsString(Result));
+	}
+}
+
+void URpgSkillTreeComponent::RequestRefundNode_Implementation(const FGameplayTag TreeTag, const FGameplayTag NodeTag)
+{
+	const ERpgSkillTreeRefundResult Result = RefundNode(TreeTag, NodeTag);
+	if (Result != ERpgSkillTreeRefundResult::Refundable)
+	{
+		UE_LOG(LogRpg, Verbose, TEXT("Skill tree [%s] rejected the refund of node [%s] for [%s]: %s."),
 			*TreeTag.ToString(), *NodeTag.ToString(), *GetNameSafe(GetOwner()),
 			*UEnum::GetValueAsString(Result));
 	}
@@ -210,6 +268,30 @@ ERpgSkillTreeUnlockResult URpgSkillTreeComponent::UnlockNode(const FGameplayTag 
 	AssignFreeSlots(*Node, State);
 	HandleSkillTreeChanged(TreeTag);
 	return ERpgSkillTreeUnlockResult::Unlockable;
+}
+
+ERpgSkillTreeRefundResult URpgSkillTreeComponent::RefundNode(const FGameplayTag TreeTag, const FGameplayTag NodeTag)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority())
+	{
+		return ERpgSkillTreeRefundResult::UnknownTree;
+	}
+
+	const ERpgSkillTreeRefundResult Result = EvaluateRefund(TreeTag, NodeTag);
+	if (Result != ERpgSkillTreeRefundResult::Refundable)
+	{
+		return Result;
+	}
+
+	const URpgSkillTreeDefinition* Tree = FindSkillTree(TreeTag);
+	FRpgSkillTreeState* State = FindMutableState(TreeTag);
+	check(Tree && State);
+
+	// The order of the remaining purchases is kept, so restores replay them the same way.
+	State->UnlockedNodes.Remove(NodeTag);
+	SanitizeSlots(*Tree, *State);
+	HandleSkillTreeChanged(TreeTag);
+	return ERpgSkillTreeRefundResult::Refundable;
 }
 
 bool URpgSkillTreeComponent::ResetTree(const FGameplayTag TreeTag)

@@ -37,11 +37,15 @@ are data. Code is only needed when an ability gains a new tunable value.
   - Every prerequisite is learned.
   - At least `RequiredPointsInTree` points are already spent in the tree.
   - Enough points are available for its `Cost`.
-- **Requests:** clients call `RequestUnlockNode`, `RequestResetTree` and `RequestAssignSlot`. The server validates them exactly like its own calls; a rejected request changes nothing.
+- **Requests:** clients call `RequestUnlockNode`, `RequestRefundNode`, `RequestResetTree` and `RequestAssignSlot`. The server validates them exactly like its own calls; a rejected request changes nothing.
 - **Q/E/R slots:**
   - A newly learned node places its abilities on the first free slot of its tree.
   - Assigning an ability that already occupies another slot swaps the two slots.
   - Only abilities of learned nodes can be assigned.
+- **Refund:** `RefundNode` forgets one learned node for free, refunds its cost and takes its abilities off Q/E/R. The other purchases keep their order.
+  - It is rejected while another learned node lists the node as a prerequisite (`RequiredByNode`). Refund that node first, as in New World.
+  - It is also rejected while a later purchase needs the node's points for a point gate (`PointsStillNeeded`).
+  - `EvaluateRefund` reports the result without changing anything.
 - **Reset:** `ResetTree` is free. It forgets every node, clears the slots and refunds every point.
 - **In use:** a weapon is in use while it is equipped in one of the fragment's `ActiveInSlots` (main hand by default).
   - While it is in use, the equipment manager grants each learned node's `AbilitySet` (abilities, passive effects) and `GrantedTags` (loose tags, replicated).
@@ -65,12 +69,14 @@ are data. Code is only needed when an ability gains a new tunable value.
 H opens the game menu on its Skills tab: `IA_UI_Skills` → `InputTag.UI.Skills` →
 `UI.Screen.GameMenu` with a payload whose screen tag is `UI.Screen.GameMenu.Skills`.
 The menu's `TabScreenTags` map such tags to its tabs.
+Clicking a node learns it; right-clicking a learned node refunds it (`CUI_SkillTreeNode` overrides On Mouse Button Down
+and calls the node view model's `RequestRefund`).
 
 | Part | Role |
 | --- | --- |
 | `URpgSkillProgressionViewModel` | Character level, trade skills with XP, one tree view model per known tree, the selected tree, free points. `OnProgressionChanged` also fires when the selected tree changes, so a screen refreshes from one event. |
 | `URpgSkillTreeViewModel` | Points, rows with their gates, prerequisite links, Q/E/R slots, the selected node, and the commands learn, reset, select and assign. |
-| `URpgSkillTreeNodeViewModel` | One node: name, text, icon, kind, cell, cost, state (`Unlocked`, `Unlockable`, `Unaffordable`, `Locked`, `Excluded`), slot. |
+| `URpgSkillTreeNodeViewModel` | One node: name, text, icon, kind, cell, cost, state (`Unlocked`, `Unlockable`, `Unaffordable`, `Locked`, `Excluded`), slot, and `bCanRefund` with the commands learn, refund and select. |
 | `URpgSkillTreeGridWidget` | Places one entry per node from `Row` and `Column`, draws the links and darkens locked rows. Entries implement User Object List Entry. |
 | `CUI_Skills`, `CUI_SkillTreeNode`, `CUI_TradeSkillEntry`, `CUI_SkillTreeListEntry` | Layout and style in `/Game/SurvivalRpg/UI/Menus/GameMenu/GameMenu/Skills`. |
 
@@ -130,7 +136,7 @@ Add an entry to `Nodes`:
 - validation
 - points
 - unlock rules
-- reset and slots
+- refunds of single nodes, reset and slots
 - weapon grants
 - tunings
 - Q/E/R through the weapon loadout

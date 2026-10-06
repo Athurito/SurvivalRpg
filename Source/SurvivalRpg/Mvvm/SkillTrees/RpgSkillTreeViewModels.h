@@ -136,7 +136,8 @@ public:
 		ERpgSkillTreeUnlockResult InUnlockResult,
 		int32 InAssignedSlotIndex,
 		bool bInSelected,
-		bool bInRowUnlocked);
+		bool bInRowUnlocked,
+		bool bInCanRefund);
 
 	/** Tree view model that owns this node. */
 	UFUNCTION(BlueprintPure, Category = "Skill Tree|ViewModel")
@@ -145,6 +146,13 @@ public:
 	/** Asks the server to learn this node. The server validates it; the UI updates when the result replicates. */
 	UFUNCTION(BlueprintCallable, Category = "Skill Tree|ViewModel")
 	void RequestUnlock();
+
+	/**
+	 * Asks the server to refund this learned node's point, for example on a right-click. The server validates it; the
+	 * UI updates when the result replicates.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Skill Tree|ViewModel")
+	void RequestRefund();
 
 	/** Selects this node in its tree, for example before placing its ability on Q/E/R. Local UI state only. */
 	UFUNCTION(BlueprintCallable, Category = "Skill Tree|ViewModel")
@@ -157,6 +165,7 @@ public:
 	FGameplayTag GetAbilityIdTag() const { return AbilityIdTag; }
 	int32 GetAssignedSlotIndex() const { return AssignedSlotIndex; }
 	bool IsSelected() const { return bIsSelected; }
+	bool CanRefund() const { return bCanRefund; }
 
 protected:
 	/** Stable node identity. */
@@ -210,6 +219,10 @@ protected:
 	/** True when RequestUnlock would succeed now. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Node", meta = (AllowPrivateAccess = "true"))
 	bool bCanUnlock = false;
+
+	/** True when RequestRefund would succeed now: the node is learned and no other learned node depends on it. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Node", meta = (AllowPrivateAccess = "true"))
+	bool bCanRefund = false;
 
 	/** True when the row's point gate is reached. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Node", meta = (AllowPrivateAccess = "true"))
@@ -265,6 +278,10 @@ public:
 	/** Asks the server to learn NodeTag. */
 	UFUNCTION(BlueprintCallable, Category = "Skill Tree|ViewModel")
 	void RequestUnlockNode(FGameplayTag NodeTag);
+
+	/** Asks the server to refund the point of the learned NodeTag. */
+	UFUNCTION(BlueprintCallable, Category = "Skill Tree|ViewModel")
+	void RequestRefundNode(FGameplayTag NodeTag);
 
 	/** Asks the server to refund every point of the tree for free. */
 	UFUNCTION(BlueprintCallable, Category = "Skill Tree|ViewModel")
