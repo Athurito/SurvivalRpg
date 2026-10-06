@@ -43,6 +43,7 @@ UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestTuningTest_Brood, "SkillTree.Node.Harve
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestTuningTest_Blast, "SkillTree.Node.HarvestTuningTest.Blast");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestTuningTest_Cooldown, "Cooldown.HarvestTuningTest");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestYieldTest_Form, "Harvest.Form.AutomationTest");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestStrideTest_Cue, "GameplayCue.HarvestStrideTest");
 
 namespace RpgHarvestAbilityTests
 {
@@ -2506,6 +2507,300 @@ bool FRpgHarvestYieldSwarmTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("The swarm harvests all twelve sections"), Swarm->GetHarvestedSections(), 12);
 	TestEqual(TEXT("Its 24 inputs convert at the summon's ratio into four outputs"), CountOutput(Harvester.PlayerState), 4);
 	TestEqual(TEXT("Four inputs remain as material"), CountMaterial(Harvester.PlayerState), 4);
+	return true;
+}
+
+namespace RpgHarvestStrideTests
+{
+	using namespace RpgHarvestTuningTests;
+
+	/** Gives the harvester's plain pawn a root at the origin, so a test can walk it. */
+	bool MakeWalkable(const FHarvesterFixture& Harvester)
+	{
+		USceneComponent* Root = NewObject<USceneComponent>(Harvester.Pawn, TEXT("StrideTestRoot"));
+		Harvester.Pawn->SetRootComponent(Root);
+		Root->RegisterComponent();
+		return Harvester.Pawn->SetActorLocation(FVector::ZeroVector);
+	}
+
+	/**
+	 * Grants a stride ability that harvests 300 cm around the harvester for 2 s, one pulse every 0.5 s, with up to
+	 * MaxTargets targets per pulse and Sections sections per target.
+	 */
+	FGrantedAbility GrantStrideAbility(
+		URpgAbilitySystemComponent* AbilitySystem,
+		const int32 MaxTargets,
+		const int32 Sections,
+		const FGameplayTag CueTag = FGameplayTag())
+	{
+		FGrantedAbility Granted = GrantAbility(AbilitySystem);
+		if (Granted.Instance)
+		{
+			FRpgHarvestTargetingParams Around;
+			Around.Shape = ERpgHarvestTargetShape::AreaAroundHarvester;
+			Around.AreaRadius = 300.0f;
+			Around.MaxTargets = MaxTargets;
+			Granted.Instance->ConfigureTargeting(Around);
+			Granted.Instance->ConfigureSections(Sections);
+			FRpgHarvestStrideParams Stride;
+			Stride.DurationSeconds = 2.0f;
+			Stride.PulseIntervalSeconds = 0.5f;
+			Granted.Instance->ConfigureStride(Stride, CueTag);
+		}
+		return Granted;
+	}
+
+	bool IsAbilityActive(const URpgAbilitySystemComponent* AbilitySystem, const FGrantedAbility& Granted)
+	{
+		const FGameplayAbilitySpec* Spec = AbilitySystem->FindAbilitySpecFromHandle(Granted.Handle);
+		return Spec && Spec->IsActive();
+	}
+
+	bool IsFull(const ARpgHarvestAutomationCollidableNodeActor* Node, const int32 SectionCount)
+	{
+		return Node && Node->HarvestableNode->GetRemainingSections() == SectionCount;
+	}
+
+	bool IsEmpty(const ARpgHarvestAutomationCollidableNodeActor* Node)
+	{
+		return Node && !Node->HarvestableNode->IsHarvestable();
+	}
+
+	/** Reads the prediction key of the active cue Tag of AbilitySystem; false when the cue is not active. */
+	bool FindActiveCuePredictionKey(const UAbilitySystemComponent* AbilitySystem, const FGameplayTag Tag, FPredictionKey& OutKey)
+	{
+		const FStructProperty* Property =
+			FindFProperty<FStructProperty>(UAbilitySystemComponent::StaticClass(), TEXT("ActiveGameplayCues"));
+		const FActiveGameplayCueContainer* Cues =
+			Property ? Property->ContainerPtrToValuePtr<FActiveGameplayCueContainer>(AbilitySystem) : nullptr;
+		for (const FActiveGameplayCue& Cue : Cues ? Cues->GameplayCues : TArray<FActiveGameplayCue>())
+		{
+			if (Cue.GameplayCueTag == Tag)
+			{
+				OutKey = Cue.PredictionKey;
+				return true;
+			}
+		}
+		return false;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestStrideWalkTest,
+	"SurvivalRpg.Harvesting.Stride.HarvestsAroundTheWalkingHarvester",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestStrideWalkTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestStrideTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()) ||
+		!TestTrue(TEXT("The harvester can walk"), MakeWalkable(Harvester)))
+	{
+		return false;
+	}
+
+	// Resources along the harvester's path, one far beside it, and one it reaches only after the stride.
+	ARpgHarvestAutomationCollidableNodeActor* Start = SpawnNode(World, FVector(200.0, 0.0, 0.0), MakeProfile(World, 4));
+	ARpgHarvestAutomationCollidableNodeActor* Middle = SpawnNode(World, FVector(900.0, 0.0, 0.0), MakeProfile(World, 4));
+	ARpgHarvestAutomationCollidableNodeActor* End = SpawnNode(World, FVector(1600.0, 0.0, 0.0), MakeProfile(World, 4));
+	ARpgHarvestAutomationCollidableNodeActor* Later = SpawnNode(World, FVector(2600.0, 0.0, 0.0), MakeProfile(World, 4));
+	ARpgHarvestAutomationCollidableNodeActor* Beside = SpawnNode(World, FVector(900.0, 900.0, 0.0), MakeProfile(World, 4));
+	const FGrantedAbility Stride =
+		GrantStrideAbility(Harvester.AbilitySystem, 4, URpgHarvestProfile::MaxSectionCount, TAG_HarvestStrideTest_Cue);
+	if (!TestTrue(TEXT("Every resource exists"), Start && Middle && End && Later && Beside) ||
+		!TestNotNull(TEXT("Stride ability exists"), Stride.Instance))
+	{
+		return false;
+	}
+	FScopedCooldownTag CooldownTag(TAG_HarvestTuningTest_Cooldown);
+	Stride.Instance->ConfigureCooldown(URpgHarvestAutomationTestCooldownEffect::StaticClass());
+	TestWorld.PrimeTimerManager();
+
+	// As on a server, the stride starts inside the owning client's predicted activation.
+	const FPredictionKey ClientKey = FPredictionKey::CreateNewPredictionKey(Harvester.AbilitySystem);
+	TestTrue(
+		TEXT("The stride activates without aiming"),
+		Harvester.AbilitySystem->InternalTryActivateAbility(Stride.Handle, ClientKey));
+	TestTrue(TEXT("The stride runs"), Stride.Instance->IsStriding());
+	TestTrue(TEXT("The ability stays active while the stride runs"), IsAbilityActive(Harvester.AbilitySystem, Stride));
+	TestTrue(TEXT("The cooldown starts with the stride"), Harvester.AbilitySystem->HasMatchingGameplayTag(TAG_HarvestTuningTest_Cooldown));
+	TestTrue(TEXT("The stride's cue is on the harvester"), Harvester.AbilitySystem->HasMatchingGameplayTag(TAG_HarvestStrideTest_Cue));
+	FPredictionKey CueKey;
+	TestTrue(
+		TEXT("The owning client plays the cue from replication, because it carries no client prediction key"),
+		FindActiveCuePredictionKey(Harvester.AbilitySystem, TAG_HarvestStrideTest_Cue, CueKey) && !CueKey.IsValidKey());
+	TestTrue(TEXT("The first pulse harvests around the harvester at once"), IsEmpty(Start));
+	TestTrue(TEXT("Resources ahead wait for the harvester"), IsFull(Middle, 4) && IsFull(End, 4));
+	TestEqual(TEXT("The rewards wait for the end of the stride"), CountMaterial(Harvester.PlayerState), 0);
+
+	// Timers fire once the time passes their deadline, so every step lands just after a pulse.
+	Harvester.Pawn->SetActorLocation(FVector(900.0, 0.0, 0.0));
+	TestWorld.AdvanceTimers(0.55f);
+	TestTrue(TEXT("A pulse harvests where the harvester walked"), IsEmpty(Middle));
+	TestTrue(TEXT("The resource ahead still waits"), IsFull(End, 4));
+	TestEqual(TEXT("The rewards still wait"), CountMaterial(Harvester.PlayerState), 0);
+
+	Harvester.Pawn->SetActorLocation(FVector(1600.0, 0.0, 0.0));
+	TestWorld.AdvanceTimers(0.5f);
+	TestTrue(TEXT("The next pulse harvests further along the path"), IsEmpty(End));
+
+	TestWorld.AdvanceTimers(0.5f);
+	TestTrue(TEXT("The stride runs until its duration is over"), Stride.Instance->IsStriding());
+	TestWorld.AdvanceTimers(0.5f);
+	TestFalse(TEXT("The stride ends after its duration"), Stride.Instance->IsStriding());
+	TestFalse(TEXT("The ability ends with the stride"), IsAbilityActive(Harvester.AbilitySystem, Stride));
+	TestFalse(TEXT("The stride's cue is removed"), Harvester.AbilitySystem->HasMatchingGameplayTag(TAG_HarvestStrideTest_Cue));
+	TestEqual(
+		TEXT("The rewards of every pulse arrive when the stride ends"),
+		CountMaterial(Harvester.PlayerState),
+		3 * 4 * YieldPerSection);
+	TestEqual(TEXT("A fitting stride reward spawns no drop"), GetWorldDrops(World).Num(), 0);
+
+	Harvester.Pawn->SetActorLocation(FVector(2600.0, 0.0, 0.0));
+	TestWorld.AdvanceTimers(0.5f);
+	TestTrue(TEXT("Nothing is harvested after the stride"), IsFull(Later, 4));
+	TestTrue(TEXT("A resource beside the path stays untouched"), IsFull(Beside, 4));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestStridePulseTest,
+	"SurvivalRpg.Harvesting.Stride.EachPulseTakesUpToMaxTargets",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestStridePulseTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestStrideTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()) ||
+		!TestTrue(TEXT("The harvester can walk"), MakeWalkable(Harvester)))
+	{
+		return false;
+	}
+
+	// Three resources around a standing harvester, two pulses of stock each, and two targets per pulse.
+	ARpgHarvestAutomationCollidableNodeActor* Nearest = SpawnNode(World, FVector(100.0, 0.0, 0.0), MakeProfile(World, 2));
+	ARpgHarvestAutomationCollidableNodeActor* Second = SpawnNode(World, FVector(0.0, 150.0, 0.0), MakeProfile(World, 2));
+	ARpgHarvestAutomationCollidableNodeActor* Third = SpawnNode(World, FVector(-200.0, 0.0, 0.0), MakeProfile(World, 2));
+	const FGrantedAbility Stride = GrantStrideAbility(Harvester.AbilitySystem, 2, 1);
+	if (!TestTrue(TEXT("Every resource exists"), Nearest && Second && Third) ||
+		!TestNotNull(TEXT("Stride ability exists"), Stride.Instance))
+	{
+		return false;
+	}
+	TestWorld.PrimeTimerManager();
+
+	const FRpgHarvestPreview Preview = Evaluate(Harvester.AbilitySystem, Stride);
+	TestTrue(TEXT("The preview shows an area"), Preview.bHasArea && FMath::IsNearlyEqual(Preview.AreaRadius, 300.0f));
+	TestTrue(TEXT("The area is centered on the harvester"), Preview.AimPoint.Equals(Harvester.Pawn->GetActorLocation(), 1.0));
+	TestTrue(
+		TEXT("The preview selects the two nearest resources"),
+		Preview.Targets.Num() == 2 && Preview.Targets[0].WouldHarvest() && Preview.Targets[1].WouldHarvest() &&
+			Preview.Targets[0].Receiver.Get() == Nearest->HarvestableNode &&
+			Preview.Targets[1].Receiver.Get() == Second->HarvestableNode);
+
+	TestTrue(TEXT("The stride activates"), Harvester.AbilitySystem->TryActivateAbility(Stride.Handle));
+	TestTrue(
+		TEXT("A pulse takes one strike from each of the nearest resources"),
+		IsFull(Nearest, 1) && IsFull(Second, 1) && IsFull(Third, 2));
+	TestWorld.AdvanceTimers(0.55f);
+	TestTrue(TEXT("The next pulse strikes them again"), IsEmpty(Nearest) && IsEmpty(Second) && IsFull(Third, 2));
+	TestWorld.AdvanceTimers(0.5f);
+	TestTrue(TEXT("Emptied resources no longer count against the limit"), IsFull(Third, 1));
+	TestWorld.AdvanceTimers(0.5f);
+	TestTrue(TEXT("The last pulse empties the third resource"), IsEmpty(Third));
+	TestWorld.AdvanceTimers(0.5f);
+	TestFalse(TEXT("The stride is over"), Stride.Instance->IsStriding());
+	TestEqual(TEXT("Every section arrives once"), CountMaterial(Harvester.PlayerState), 3 * 2 * YieldPerSection);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestStrideEarlyEndTest,
+	"SurvivalRpg.Harvesting.Stride.EndingEarlyDeliversWhatWasHarvested",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestStrideEarlyEndTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestStrideTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture FullHarvester = SpawnHarvester(World);
+	FHarvesterFixture DyingHarvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixtures exist"), FullHarvester.IsValid() && DyingHarvester.IsValid()) ||
+		!TestTrue(TEXT("The harvesters can walk"), MakeWalkable(FullHarvester) && MakeWalkable(DyingHarvester)))
+	{
+		return false;
+	}
+	DyingHarvester.Pawn->SetActorLocation(FVector(5000.0, 0.0, 0.0));
+	TestWorld.PrimeTimerManager();
+
+	// A tool switch removes the ability mid-stride: the harvest so far arrives as one drop from a full inventory.
+	URpgInventoryManagerComponent* FullInventory = FullHarvester.PlayerState->GetInventoryManagerComponent();
+	FullInventory->SetFixedMaxEntries(0);
+	FullInventory->SetCapacityMode(ERpgInventoryCapacityMode::FixedEntries);
+	ARpgHarvestAutomationCollidableNodeActor* First = SpawnNode(World, FVector(150.0, 0.0, 0.0), MakeProfile(World, 4));
+	const FGrantedAbility Switched =
+		GrantStrideAbility(FullHarvester.AbilitySystem, 4, URpgHarvestProfile::MaxSectionCount, TAG_HarvestStrideTest_Cue);
+	if (!TestNotNull(TEXT("First resource exists"), First) || !TestNotNull(TEXT("Stride ability exists"), Switched.Instance))
+	{
+		return false;
+	}
+	TestTrue(TEXT("The stride activates"), FullHarvester.AbilitySystem->TryActivateAbility(Switched.Handle));
+	TestTrue(TEXT("The first pulse harvests"), IsEmpty(First));
+	TestEqual(TEXT("Nothing is dropped while the stride runs"), GetWorldDrops(World).Num(), 0);
+
+	FullHarvester.AbilitySystem->ClearAbility(Switched.Handle);
+	TArray<ARpgDroppedInventoryActor*> Drops = GetWorldDrops(World);
+	if (!TestEqual(TEXT("Removing the ability delivers the harvest in exactly one drop"), Drops.Num(), 1))
+	{
+		return false;
+	}
+	const URpgInventoryManagerComponent* DropInventory = Drops[0]->GetLootInventoryManager();
+	TestTrue(
+		TEXT("The drop holds the whole harvest"),
+		DropInventory &&
+			DropInventory->GetTotalItemCountByDefinition(URpgHarvestAutomationTestStackItemDefinition::StaticClass()) ==
+				4 * YieldPerSection);
+	TestTrue(
+		TEXT("The drop lands at the harvester"),
+		FVector::Dist2D(Drops[0]->GetActorLocation(), FullHarvester.Pawn->GetActorLocation()) < 100.0);
+	TestFalse(TEXT("The cue ends with the stride"), FullHarvester.AbilitySystem->HasMatchingGameplayTag(TAG_HarvestStrideTest_Cue));
+	ARpgHarvestAutomationCollidableNodeActor* AfterSwitch = SpawnNode(World, FVector(0.0, 150.0, 0.0), MakeProfile(World, 4));
+	TestWorld.AdvanceTimers(0.5f);
+	TestTrue(TEXT("Nothing is harvested after the tool switch"), IsFull(AfterSwitch, 4));
+	TestEqual(TEXT("No further drop appears"), GetWorldDrops(World).Num(), 1);
+
+	// A harvester that dies mid-stride harvests nothing more, and receives what it harvested before.
+	ARpgHarvestAutomationCollidableNodeActor* BeforeDeath =
+		SpawnNode(World, FVector(5150.0, 0.0, 0.0), MakeProfile(World, 4));
+	const FGrantedAbility Dying = GrantStrideAbility(DyingHarvester.AbilitySystem, 4, URpgHarvestProfile::MaxSectionCount);
+	if (!TestNotNull(TEXT("Resource before death exists"), BeforeDeath) || !TestNotNull(TEXT("Stride ability exists"), Dying.Instance))
+	{
+		return false;
+	}
+	TestTrue(TEXT("The second stride activates"), DyingHarvester.AbilitySystem->TryActivateAbility(Dying.Handle));
+	TestTrue(TEXT("The second stride harvests"), IsEmpty(BeforeDeath));
+	DyingHarvester.AbilitySystem->AddLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("Status.Death")));
+	ARpgHarvestAutomationCollidableNodeActor* AfterDeath = SpawnNode(World, FVector(5000.0, 150.0, 0.0), MakeProfile(World, 4));
+	TestWorld.AdvanceTimers(0.55f);
+	TestTrue(TEXT("A dead harvester harvests nothing more"), IsFull(AfterDeath, 4));
+	TestFalse(TEXT("Death ends the stride"), Dying.Instance->IsStriding() || IsAbilityActive(DyingHarvester.AbilitySystem, Dying));
+	TestEqual(
+		TEXT("What the stride harvested before the death arrives"),
+		CountMaterial(DyingHarvester.PlayerState),
+		4 * YieldPerSection);
 	return true;
 }
 

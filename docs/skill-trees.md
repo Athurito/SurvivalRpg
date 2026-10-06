@@ -87,7 +87,7 @@ The view models observe the replicated state and rebuild at most once per frame.
 
 | Tree | Points | Nodes |
 | --- | --- | --- |
-| `DA_SkillTree_Axe` (`GF_Harvesting_Magic`) | Logging | Death Wave (row 0, column 1) forking into the exclusive forms Wide Wave and Ash Wave, with Long Reach below it; Grave Swarm (row 0, column 5) forking into the exclusive forms Swarm Brood and Grave Detonation; the loose passives Keen Edge and Quick Recovery in column 3 |
+| `DA_SkillTree_Axe` (`GF_Harvesting_Magic`) | Logging | Death Wave (row 0, column 1) forking into the exclusive forms Wide Wave and Ash Wave, with Long Reach below it; Grave Swarm (row 0, column 5) forking into the exclusive forms Swarm Brood and Grave Detonation; the loose passives Keen Edge and Quick Recovery in column 3; the ultimate Striding Wave (row 3, column 3) after 4 spent points |
 | `DA_SkillTree_Pickaxe` (`GF_Harvesting_Magic`) | Mining | Rift Grip (row 0, column 2) forking into the exclusive forms Wide Rift and Deep Grip; the loose passives Steady Hands and Quick Recovery beside it |
 
 The upgrades and forms only carry tunings. The harvest abilities read the tags under `Ability.Tuning.Harvest`
@@ -149,4 +149,5 @@ Add an entry to `Nodes`:
 fragment → tree → node → ability set → ability for the tool trees.
 `SurvivalRpg.Harvesting.Tuning.*` checks that harvest tunings change preview and commit alike, are captured when
 execution starts, and shape the swarm; `SurvivalRpg.Harvesting.Swarm.StrikeRadiusTakesEachTargetOnce` checks the
-strike radius.
+strike radius. `SurvivalRpg.Harvesting.Stride.*` checks the strides of
+ultimates such as Striding Wave.

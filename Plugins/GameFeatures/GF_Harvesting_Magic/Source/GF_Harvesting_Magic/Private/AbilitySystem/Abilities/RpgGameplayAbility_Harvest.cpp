@@ -20,6 +20,7 @@
 #include "SurvivalRpg/Camera/RpgCameraMode.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentInstance.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillProgressionComponent.h"
 
@@ -37,6 +38,15 @@ URpgGameplayAbility_Harvest::URpgGameplayAbility_Harvest(const FObjectInitialize
 	if (DeathTag.IsValid())
 	{
 		ActivationBlockedTags.AddTag(DeathTag);
+	}
+}
+
+URpgGameplayAbility_Harvest::~URpgGameplayAbility_Harvest()
+{
+	// EndAbility delivers a stride's rewards; an instance destroyed without it only takes them along with its world.
+	if (StrideRewardBatch)
+	{
+		StrideRewardBatch->Discard();
 	}
 }
 
@@ -108,6 +118,9 @@ void URpgGameplayAbility_Harvest::EndAbility(
 	const bool bReplicateEndAbility,
 	const bool bWasCancelled)
 {
+	// A stride that ends early, for example through a tool switch or death, still delivers what it harvested.
+	FinishStride();
+
 	// A commit that has not happened yet never happens after the activation ends.
 	if (UWorld* World = GetWorld())
 	{
@@ -171,12 +184,19 @@ void URpgGameplayAbility_Harvest::HandleAimInputReleased(const float TimeHeld)
 
 void URpgGameplayAbility_Harvest::HandleMontageCompleted()
 {
-	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
+	// A stride outlasts its montage; the server ends the activation when the stride is over.
+	if (!HasStride())
+	{
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
+	}
 }
 
 void URpgGameplayAbility_Harvest::HandleMontageInterrupted()
 {
-	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+	if (!HasStride())
+	{
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+	}
 }
 
 void URpgGameplayAbility_Harvest::BeginHarvestExecution()
@@ -276,6 +296,16 @@ void URpgGameplayAbility_Harvest::ExecuteAuthorityCommit()
 	{
 		ResolveTunedValues(*Spec, *CurrentActorInfo, Values);
 	}
+	FRpgHarvestRequest RequestTemplate;
+	BuildRequestTemplate(*Spec, *CurrentActorInfo, Values, RequestTemplate);
+
+	// A stride harvests around the walking harvester in pulses until its duration is over.
+	if (HasStride())
+	{
+		StartStride(RequestTemplate, Values);
+		return;
+	}
+
 	FVector ViewLocation = CommitViewLocation;
 	FRotator ViewRotation = CommitViewRotation;
 	FRpgHarvestPreview Selection;
@@ -283,8 +313,6 @@ void URpgGameplayAbility_Harvest::ExecuteAuthorityCommit()
 	{
 		EvaluateTargetsFromView(*Spec, *CurrentActorInfo, Values, ViewLocation, ViewRotation, Selection);
 	}
-	FRpgHarvestRequest RequestTemplate;
-	BuildRequestTemplate(*Spec, *CurrentActorInfo, Values, RequestTemplate);
 
 	// A swarm harvests the selection later, creature by creature; this commit only summons it.
 	if (SummonsSwarm())
@@ -298,53 +326,13 @@ void URpgGameplayAbility_Harvest::ExecuteAuthorityCommit()
 		return;
 	}
 
-	// The presentation wave starts at the harvested target nearest to the harvester and travels outward.
-	const FVector WaveOrigin = RequestTemplate.Harvester ? RequestTemplate.Harvester->GetActorLocation() : FVector::ZeroVector;
-	double NearestTargetDistance = 0.0;
-	if (PresentationWaveSpeed > UE_KINDA_SMALL_NUMBER)
-	{
-		NearestTargetDistance = TNumericLimits<double>::Max();
-		for (const FRpgHarvestTargetEvaluation& Target : Selection.Targets)
-		{
-			if (Target.WouldHarvest())
-			{
-				NearestTargetDistance = FMath::Min(NearestTargetDistance, FVector::Dist2D(WaveOrigin, Target.Hit.ImpactPoint));
-			}
-		}
-	}
-
 	// Every target extracts its own stock, but their rewards reach the harvester as one delivery: one atomic
 	// inventory batch, or one drop when it does not fit.
 	const FRpgHarvestTargetEvaluation* FirstHarvested = nullptr;
 	{
 		FRpgHarvestRewardBatch RewardBatch(RequestTemplate.Harvester);
 		RewardBatch.SetYieldConversions(RequestTemplate.YieldConversions);
-		for (FRpgHarvestTargetEvaluation& Target : Selection.Targets)
-		{
-			UObject* Receiver = Target.Receiver.Get();
-			if (!Target.WouldHarvest() || !Receiver)
-			{
-				continue;
-			}
-
-			FRpgHarvestRequest Request = RequestTemplate;
-			Request.Hit = Target.Hit;
-			Request.TraceOrigin = Target.Hit.TraceStart;
-			Request.ExpectedRevision = IRpgHarvestableTarget::Execute_GetHarvestRevision(Receiver, Target.Hit);
-			if (PresentationWaveSpeed > UE_KINDA_SMALL_NUMBER)
-			{
-				const double WaveDistance = FVector::Dist2D(WaveOrigin, Target.Hit.ImpactPoint) - NearestTargetDistance;
-				Request.PresentationDelaySeconds = static_cast<float>(FMath::Clamp(
-					WaveDistance / PresentationWaveSpeed,
-					0.0,
-					static_cast<double>(URpgHarvestInstanceStockComponent::MaxPresentationDelaySeconds)));
-			}
-			Target.Result = IRpgHarvestableTarget::Execute_CommitHarvest(Receiver, Request);
-			if (Target.Result.IsSuccess() && !FirstHarvested)
-			{
-				FirstHarvested = &Target;
-			}
-		}
+		FirstHarvested = CommitSelection(Selection, RequestTemplate);
 
 		// A single target drops overflow where it was struck; an area drops it at the harvester's feet.
 		FTransform DropTransform = RequestTemplate.Harvester ? RequestTemplate.Harvester->GetActorTransform() : FTransform::Identity;
@@ -372,6 +360,191 @@ void URpgGameplayAbility_Harvest::ExecuteAuthorityCommit()
 	{
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 	}
+}
+
+const FRpgHarvestTargetEvaluation* URpgGameplayAbility_Harvest::CommitSelection(
+	FRpgHarvestPreview& Selection,
+	const FRpgHarvestRequest& RequestTemplate) const
+{
+	// The presentation wave starts at the harvested target nearest to the harvester and travels outward.
+	const FVector WaveOrigin = RequestTemplate.Harvester ? RequestTemplate.Harvester->GetActorLocation() : FVector::ZeroVector;
+	double NearestTargetDistance = 0.0;
+	if (PresentationWaveSpeed > UE_KINDA_SMALL_NUMBER)
+	{
+		NearestTargetDistance = TNumericLimits<double>::Max();
+		for (const FRpgHarvestTargetEvaluation& Target : Selection.Targets)
+		{
+			if (Target.WouldHarvest())
+			{
+				NearestTargetDistance = FMath::Min(NearestTargetDistance, FVector::Dist2D(WaveOrigin, Target.Hit.ImpactPoint));
+			}
+		}
+	}
+
+	const FRpgHarvestTargetEvaluation* FirstHarvested = nullptr;
+	for (FRpgHarvestTargetEvaluation& Target : Selection.Targets)
+	{
+		UObject* Receiver = Target.Receiver.Get();
+		if (!Target.WouldHarvest() || !Receiver)
+		{
+			continue;
+		}
+
+		FRpgHarvestRequest Request = RequestTemplate;
+		Request.Hit = Target.Hit;
+		Request.TraceOrigin = Target.Hit.TraceStart;
+		Request.ExpectedRevision = IRpgHarvestableTarget::Execute_GetHarvestRevision(Receiver, Target.Hit);
+		if (PresentationWaveSpeed > UE_KINDA_SMALL_NUMBER)
+		{
+			const double WaveDistance = FVector::Dist2D(WaveOrigin, Target.Hit.ImpactPoint) - NearestTargetDistance;
+			Request.PresentationDelaySeconds = static_cast<float>(FMath::Clamp(
+				WaveDistance / PresentationWaveSpeed,
+				0.0,
+				static_cast<double>(URpgHarvestInstanceStockComponent::MaxPresentationDelaySeconds)));
+		}
+		Target.Result = IRpgHarvestableTarget::Execute_CommitHarvest(Receiver, Request);
+		if (Target.Result.IsSuccess() && !FirstHarvested)
+		{
+			FirstHarvested = &Target;
+		}
+	}
+	return FirstHarvested;
+}
+
+void URpgGameplayAbility_Harvest::StartStride(const FRpgHarvestRequest& RequestTemplate, const FRpgHarvestTunedValues& Values)
+{
+	UWorld* World = GetWorld();
+	if (!World || bStriding)
+	{
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		return;
+	}
+
+	bStriding = true;
+	StrideValues = Values;
+	StrideRequestTemplate = RequestTemplate;
+	StrideEndTime = World->GetTimeSeconds() + Stride.DurationSeconds;
+
+	// The batch opens only around each pulse, so it never collects the player's other harvests in between.
+	StrideRewardBatch = MakeUnique<FRpgHarvestRewardBatch>(RequestTemplate.Harvester, false);
+	StrideRewardBatch->SetYieldConversions(RequestTemplate.YieldConversions);
+
+	UAbilitySystemComponent* AbilitySystem = CurrentActorInfo ? CurrentActorInfo->AbilitySystemComponent.Get() : nullptr;
+	if (AbilitySystem && StrideGameplayCue.IsValid())
+	{
+		FGameplayCueParameters CueParameters;
+		CueParameters.Instigator = CurrentActorInfo->AvatarActor.Get();
+		CueParameters.EffectCauser = CurrentActorInfo->AvatarActor.Get();
+		CueParameters.RawMagnitude = Values.Targeting.AreaRadius;
+		// The stride starts inside the owning client's predicted activation, but no client predicts this cue. Without
+		// that prediction key, the owning client plays it from replication like every other machine instead of
+		// skipping it as already predicted.
+		FScopedPredictionWindow UnpredictedCue(AbilitySystem, FPredictionKey(), false);
+		AbilitySystem->AddGameplayCue(StrideGameplayCue, CueParameters);
+	}
+
+	FTimerManager& TimerManager = World->GetTimerManager();
+	TimerManager.SetTimer(StrideEndTimerHandle, this, &ThisClass::HandleStrideElapsed, Stride.DurationSeconds, false);
+	TimerManager.SetTimer(
+		StridePulseTimerHandle,
+		this,
+		&ThisClass::PulseStride,
+		FMath::Max(0.1f, Stride.PulseIntervalSeconds),
+		true);
+	PulseStride();
+}
+
+void URpgGameplayAbility_Harvest::PulseStride()
+{
+	UWorld* World = GetWorld();
+	if (!bStriding || !IsActive() || !World || !CurrentActorInfo)
+	{
+		return;
+	}
+	// The last pulse happens before the stride's end, which delivers.
+	if (World->GetTimeSeconds() >= StrideEndTime - 0.001)
+	{
+		return;
+	}
+	// A dead or vanished harvester harvests nothing more; ending delivers what was harvested so far.
+	const AActor* Avatar = CurrentActorInfo->AvatarActor.Get();
+	const UAbilitySystemComponent* AbilitySystem = CurrentActorInfo->AbilitySystemComponent.Get();
+	if (!Avatar || (AbilitySystem && AbilitySystem->HasMatchingGameplayTag(RpgGameplayTags::Status_Death)))
+	{
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		return;
+	}
+
+	// Each pulse selects again around where the harvester is now, with the values captured when the stride started.
+	FRpgHarvestPreview Selection;
+	Selection.AimPoint = FRpgHarvestTargeting::SelectAndEvaluate(
+		*World,
+		StrideValues.Targeting,
+		Avatar->GetActorLocation(),
+		Avatar->GetActorRotation(),
+		*Avatar,
+		StrideRequestTemplate,
+		Selection.Targets);
+
+	const bool bBatchOpen = StrideRewardBatch && StrideRewardBatch->Open();
+	const FRpgHarvestTargetEvaluation* FirstHarvested = CommitSelection(Selection, StrideRequestTemplate);
+	if (bBatchOpen)
+	{
+		StrideRewardBatch->Close();
+	}
+
+	if (FirstHarvested)
+	{
+		ExecuteHarvestCue(SuccessGameplayCue, FirstHarvested->Hit.ImpactPoint, FirstHarvested->Hit.ImpactNormal);
+		K2_OnHarvestResolved(Selection.Targets);
+	}
+}
+
+void URpgGameplayAbility_Harvest::HandleStrideElapsed()
+{
+	if (bStriding && IsActive())
+	{
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
+	}
+}
+
+void URpgGameplayAbility_Harvest::FinishStride()
+{
+	if (!bStriding)
+	{
+		return;
+	}
+	bStriding = false;
+
+	UWorld* World = GetWorld();
+	if (World)
+	{
+		World->GetTimerManager().ClearTimer(StridePulseTimerHandle);
+		World->GetTimerManager().ClearTimer(StrideEndTimerHandle);
+	}
+	UAbilitySystemComponent* AbilitySystem = CurrentActorInfo ? CurrentActorInfo->AbilitySystemComponent.Get() : nullptr;
+	if (AbilitySystem && StrideGameplayCue.IsValid())
+	{
+		AbilitySystem->RemoveGameplayCue(StrideGameplayCue);
+	}
+
+	if (StrideRewardBatch)
+	{
+		// The rewards of all pulses arrive as one delivery, also when the stride ends early; only a world that ends
+		// takes them along. Overflow lands at the harvester's feet like any area harvest.
+		if (World && !World->bIsTearingDown && !World->IsBeingCleanedUp())
+		{
+			const AActor* Harvester = StrideRequestTemplate.Harvester;
+			StrideRewardBatch->Deliver(IsValid(Harvester) ? Harvester->GetActorTransform() : FTransform::Identity);
+		}
+		else if (StrideRewardBatch->HasPendingRewards())
+		{
+			UE_LOG(LogRpgHarvesting, Warning, TEXT("%s ended with the world before its stride delivered."), *GetNameSafe(GetClass()));
+		}
+		StrideRewardBatch->Discard();
+		StrideRewardBatch.Reset();
+	}
+	StrideRequestTemplate = FRpgHarvestRequest();
 }
 
 void URpgGameplayAbility_Harvest::ExecuteHarvestCue(const FGameplayTag CueTag, const FVector& Location, const FVector& Normal) const

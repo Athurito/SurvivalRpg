@@ -125,34 +125,29 @@ namespace RpgHarvestContentContractTests
 		return Tree;
 	}
 
-	/**
-	 * Expects a node of Tree that teaches AbilityId with the first point (skill level 2): its own ability set grants the
-	 * ability without an input tag, so the tree places it on Q/E/R, and the ability has no skill-level gate of its own.
-	 */
-	const URpgGameplayAbility_Harvest* ExpectFirstPointActive(
-		FAutomationTestBase& Test,
-		const URpgSkillTreeDefinition& Tree,
-		URpgAbilitySystemComponent& AbilitySystem,
-		const FGameplayTag AbilityId)
+	/** Returns the node of Tree whose ability set grants AbilityId, or null. */
+	const FRpgSkillTreeNode* FindNodeTeaching(const URpgSkillTreeDefinition& Tree, const FGameplayTag AbilityId)
 	{
-		const FRpgSkillTreeNode* Node = Tree.Nodes.FindByPredicate([AbilityId](const FRpgSkillTreeNode& Candidate)
+		return Tree.Nodes.FindByPredicate([AbilityId](const FRpgSkillTreeNode& Candidate)
 		{
 			TArray<FGameplayTag> AbilityIds;
 			Candidate.GetGrantedAbilityIds(AbilityIds);
 			return AbilityIds.Contains(AbilityId);
 		});
+	}
+
+	/**
+	 * Expects Node's own ability set to grant AbilityId without an input tag, so the tree places it on Q/E/R, from the
+	 * harvest ability base with its own id, a cooldown and no skill-level gate of its own.
+	 */
+	const URpgGameplayAbility_Harvest* ExpectNodeGrantsAbility(
+		FAutomationTestBase& Test,
+		const FRpgSkillTreeNode& Node,
+		URpgAbilitySystemComponent& AbilitySystem,
+		const FGameplayTag AbilityId)
+	{
 		const FString Name = AbilityId.ToString();
-		if (!Test.TestNotNull(*FString::Printf(TEXT("A node teaches %s"), *Name), Node))
-		{
-			return nullptr;
-		}
-		Test.TestTrue(
-			*FString::Printf(TEXT("%s is learnable with the first point"), *Name),
-			Node->Prerequisites.IsEmpty() && Node->RequiredPointsInTree == 0 && Node->Cost <= Tree.GetEarnedPointsForLevel(2));
-		Test.TestTrue(
-			*FString::Printf(TEXT("%s presents as an active node"), *Name),
-			Node->KindTag.MatchesTagExact(FGameplayTag::RequestGameplayTag(TEXT("SkillTree.NodeKind.Active"))));
-		for (const FRpgAbilitySet_GameplayAbility& Entry : Node->AbilitySet->GetGrantedGameplayAbilities())
+		for (const FRpgAbilitySet_GameplayAbility& Entry : Node.AbilitySet->GetGrantedGameplayAbilities())
 		{
 			if (Entry.AbilityIdTag == AbilityId)
 			{
@@ -161,7 +156,7 @@ namespace RpgHarvestContentContractTests
 		}
 
 		FRpgAbilitySet_GrantedHandles Granted;
-		Node->AbilitySet->GiveToAbilitySystem(&AbilitySystem, &Granted);
+		Node.AbilitySet->GiveToAbilitySystem(&AbilitySystem, &Granted);
 		const FGameplayAbilitySpec* Spec = FindSpecWithId(AbilitySystem, AbilityId);
 		const URpgGameplayAbility_Harvest* Ability = Spec ? Cast<URpgGameplayAbility_Harvest>(Spec->Ability) : nullptr;
 		if (!Test.TestNotNull(*FString::Printf(TEXT("The node grants %s from the harvest ability base"), *Name), Ability))
@@ -179,6 +174,62 @@ namespace RpgHarvestContentContractTests
 		const FGameplayTag* Gate = GateProperty ? GateProperty->ContainerPtrToValuePtr<FGameplayTag>(Ability) : nullptr;
 		Test.TestTrue(*FString::Printf(TEXT("The tree, not a skill level, unlocks %s"), *Name), Gate && !Gate->IsValid());
 		return Ability;
+	}
+
+	/**
+	 * Expects a node of Tree that teaches AbilityId with the first point (skill level 2): its own ability set grants the
+	 * ability without an input tag, so the tree places it on Q/E/R, and the ability has no skill-level gate of its own.
+	 */
+	const URpgGameplayAbility_Harvest* ExpectFirstPointActive(
+		FAutomationTestBase& Test,
+		const URpgSkillTreeDefinition& Tree,
+		URpgAbilitySystemComponent& AbilitySystem,
+		const FGameplayTag AbilityId)
+	{
+		const FRpgSkillTreeNode* Node = FindNodeTeaching(Tree, AbilityId);
+		const FString Name = AbilityId.ToString();
+		if (!Test.TestNotNull(*FString::Printf(TEXT("A node teaches %s"), *Name), Node))
+		{
+			return nullptr;
+		}
+		Test.TestTrue(
+			*FString::Printf(TEXT("%s is learnable with the first point"), *Name),
+			Node->Prerequisites.IsEmpty() && Node->RequiredPointsInTree == 0 && Node->Cost <= Tree.GetEarnedPointsForLevel(2));
+		Test.TestTrue(
+			*FString::Printf(TEXT("%s presents as an active node"), *Name),
+			Node->KindTag.MatchesTagExact(FGameplayTag::RequestGameplayTag(TEXT("SkillTree.NodeKind.Active"))));
+		return ExpectNodeGrantsAbility(Test, *Node, AbilitySystem, AbilityId);
+	}
+
+	/**
+	 * Expects the ultimate node of Tree that teaches AbilityId: it presents as an ultimate and keeps a point gate, which
+	 * the tree's other nodes can fill, and its ability set grants the ability like any active node.
+	 */
+	const URpgGameplayAbility_Harvest* ExpectUltimate(
+		FAutomationTestBase& Test,
+		const URpgSkillTreeDefinition& Tree,
+		URpgAbilitySystemComponent& AbilitySystem,
+		const FGameplayTag AbilityId)
+	{
+		const FRpgSkillTreeNode* Node = FindNodeTeaching(Tree, AbilityId);
+		const FString Name = AbilityId.ToString();
+		if (!Test.TestNotNull(*FString::Printf(TEXT("A node teaches %s"), *Name), Node))
+		{
+			return nullptr;
+		}
+		Test.TestTrue(
+			*FString::Printf(TEXT("%s presents as an ultimate"), *Name),
+			Node->KindTag.MatchesTagExact(FGameplayTag::RequestGameplayTag(TEXT("SkillTree.NodeKind.Ultimate"))));
+		int32 OtherNodeCosts = 0;
+		for (const FRpgSkillTreeNode& Other : Tree.Nodes)
+		{
+			OtherNodeCosts += &Other != Node ? Other.Cost : 0;
+		}
+		Test.TestTrue(
+			*FString::Printf(TEXT("%s keeps a point gate the other nodes can fill"), *Name),
+			Node->RequiredPointsInTree > 0 && Node->RequiredPointsInTree <= OtherNodeCosts &&
+				Node->RequiredPointsInTree + Node->Cost <= Tree.MaxPoints);
+		return ExpectNodeGrantsAbility(Test, *Node, AbilitySystem, AbilityId);
 	}
 }
 
@@ -371,6 +422,12 @@ bool FRpgHarvestAxeSkillTreeContractTest::RunTest(const FString& Parameters)
 		*this, *Tree, *AbilitySystem, FGameplayTag::RequestGameplayTag(TEXT("Ability.Harvesting.GraveSwarm")));
 	TestTrue(TEXT("Grave Swarm aims while its input is held"), GraveSwarm && GraveSwarm->IsAimWhileInputHeld());
 	TestTrue(TEXT("Grave Swarm summons a swarm"), GraveSwarm && GraveSwarm->SummonsSwarm());
+
+	// Striding Wave: the ultimate, which harvests around the walking player for a while without aiming.
+	const URpgGameplayAbility_Harvest* StridingWave = ExpectUltimate(
+		*this, *Tree, *AbilitySystem, FGameplayTag::RequestGameplayTag(TEXT("Ability.Harvesting.StridingWave")));
+	TestTrue(TEXT("Striding Wave executes on press"), StridingWave && !StridingWave->IsAimWhileInputHeld());
+	TestTrue(TEXT("Striding Wave strides with the player"), StridingWave && StridingWave->HasStride());
 
 	// The axe item supplies the tool category that dead pines require.
 	const UClass* AxeClass = LoadClass<URpgInventoryItemDefinition>(nullptr, AxeItemClassPath);
