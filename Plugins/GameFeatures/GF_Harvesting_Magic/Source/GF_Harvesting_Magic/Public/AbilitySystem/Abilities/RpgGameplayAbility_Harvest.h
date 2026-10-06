@@ -7,8 +7,33 @@
 
 #include "RpgGameplayAbility_Harvest.generated.h"
 
+class FRpgHarvestRewardBatch;
 class UAnimMontage;
 class URpgCameraMode;
+
+/**
+ * Designer-tuned repetition of an area harvest around the harvester over time, for powers that keep harvesting while
+ * the player walks. Static data on the ability.
+ */
+USTRUCT(BlueprintType)
+struct GF_HARVESTING_MAGIC_API FRpgHarvestStrideParams
+{
+	GENERATED_BODY()
+
+	/**
+	 * Seconds the stride keeps harvesting after the commit. Zero harvests once. Used only with the AreaAroundHarvester
+	 * shape; the ability stays active for the whole stride.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Stride", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "15.0", Units = "s"))
+	float DurationSeconds = 0.0f;
+
+	/**
+	 * Seconds between two pulses. The first pulse harvests at the commit; each pulse harvests every target in the area
+	 * around the harvester once, up to the targeting's MaxTargets.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Stride", meta = (ClampMin = "0.1", UIMin = "0.1", UIMax = "2.0", Units = "s"))
+	float PulseIntervalSeconds = 0.5f;
+};
 
 /**
  * Values of one harvest after the learned skill tree tunings of the source weapon were applied to the ability's
@@ -40,6 +65,9 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestTunedValues
  * - Cancel safety: ending or cancelling the ability before the commit, for example by switching tools, never yields loot.
  * - Optional hold-to-aim: the ability previews while its input is held and executes on release.
  *
+ * - Optional stride: with the AreaAroundHarvester shape and a stride duration, the commit starts a stride that harvests
+ *   around the walking harvester in pulses and delivers once when it ends.
+ *
  * Tool category and harvest power come from the source equipment's item (URpgInventoryFragment_HarvestingTool).
  * Learned skill tree nodes of that weapon tune the authored values through Ability.Tuning.Harvest.* tags (area radius,
  * reach, target count, sections, swarm creatures, rest and strike radius, cooldown); preview and commit use the same
@@ -53,6 +81,7 @@ class GF_HARVESTING_MAGIC_API URpgGameplayAbility_Harvest : public URpgGameplayA
 
 public:
 	explicit URpgGameplayAbility_Harvest(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+	virtual ~URpgGameplayAbility_Harvest() override;
 
 	/**
 	 * Selects and evaluates this ability's current targets for Spec without mutating anything.
@@ -85,10 +114,19 @@ public:
 	float GetPresentationWaveSpeed() const { return PresentationWaveSpeed; }
 
 	/** Returns whether this ability harvests every target in an area rather than one target it singled out. */
-	bool HarvestsArea() const { return Targeting.Shape == ERpgHarvestTargetShape::AreaAtAimPoint; }
+	bool HarvestsArea() const { return Targeting.Shape != ERpgHarvestTargetShape::SingleTarget; }
 
 	/** Returns whether this ability's commit summons a swarm that harvests its area instead of harvesting directly. */
-	bool SummonsSwarm() const { return SwarmClass && HarvestsArea(); }
+	bool SummonsSwarm() const { return SwarmClass && Targeting.Shape == ERpgHarvestTargetShape::AreaAtAimPoint; }
+
+	/** Returns whether this ability's commit starts a stride that harvests around the walking harvester for a while. */
+	bool HasStride() const
+	{
+		return Stride.DurationSeconds > 0.0f && Targeting.Shape == ERpgHarvestTargetShape::AreaAroundHarvester;
+	}
+
+	/** Server: returns whether a stride of the current activation is running. */
+	bool IsStriding() const { return bStriding; }
 
 	/** Returns the stable harvest ability id carried by every request of this ability. */
 	FGameplayTag GetHarvestAbilityId() const { return HarvestAbilityId; }
@@ -133,7 +171,7 @@ protected:
 	/**
 	 * Server-side notification after the commit, with every selected target and its committed result.
 	 * Use it for cosmetic follow-ups only; loot and stock have already been resolved. Not called when the commit
-	 * summons a swarm, whose creatures harvest later.
+	 * summons a swarm, whose creatures harvest later. A stride calls it after every pulse that harvested.
 	 */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Rpg|Harvesting", DisplayName = "On Harvest Resolved")
 	void K2_OnHarvestResolved(const TArray<FRpgHarvestTargetEvaluation>& Results);
@@ -211,7 +249,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Execution", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "3.0", Units = "s"))
 	float CommitDelaySeconds = 0.0f;
 
-	/** Cosmetic cue executed on the server at the first harvested target. */
+	/** Cosmetic cue executed on the server at the first harvested target; a stride executes it on every pulse that harvests. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Feedback", meta = (Categories = "GameplayCue"))
 	FGameplayTag SuccessGameplayCue;
 
@@ -245,6 +283,23 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Swarm")
 	FRpgHarvestSwarmParams Swarm;
 
+	/**
+	 * Duration and pulse interval of a stride. With the AreaAroundHarvester shape and a duration, the commit starts a
+	 * stride: every pulse harvests the targets around the harvester where it walks, and the rewards of all pulses reach
+	 * the player as one delivery when the stride ends. The ability stays active meanwhile. Switching tools, dying or
+	 * cancelling ends it early, and what was harvested is still delivered. The area tunings apply to each pulse.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Stride")
+	FRpgHarvestStrideParams Stride;
+
+	/**
+	 * Looping cue added on the harvester while a stride runs and removed when it ends, for example a ring around the
+	 * walking player. Its RawMagnitude carries the tuned area radius in centimeters. Replicated by the ability system,
+	 * so every machine shows it, also after a late join. Cosmetic.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Stride", meta = (Categories = "GameplayCue"))
+	FGameplayTag StrideGameplayCue;
+
 private:
 	/** Server: executes CueTag, when set, at Location for the current activation. */
 	void ExecuteHarvestCue(FGameplayTag CueTag, const FVector& Location, const FVector& Normal) const;
@@ -273,6 +328,24 @@ private:
 
 	UFUNCTION()
 	void HandleMontageInterrupted();
+
+	/**
+	 * Server: commits every target of Selection that would be harvested, with the presentation wave from the harvester.
+	 * An open reward batch collects the rewards. Returns the first target that was harvested, or null.
+	 */
+	const FRpgHarvestTargetEvaluation* CommitSelection(FRpgHarvestPreview& Selection, const FRpgHarvestRequest& RequestTemplate) const;
+
+	/** Server: starts the stride of the current activation with the values captured when execution started. */
+	void StartStride(const FRpgHarvestRequest& RequestTemplate, const FRpgHarvestTunedValues& Values);
+
+	/** Server: harvests once around the harvester's current location; the reward batch collects the rewards. */
+	void PulseStride();
+
+	/** Server: the stride's duration is over; delivers and ends the activation. */
+	void HandleStrideElapsed();
+
+	/** Server: stops the stride, removes its cue, and delivers its rewards (or discards them while the world ends). */
+	void FinishStride();
 
 	/** Spends cost and cooldown, plays the montage, and schedules the authoritative commit. */
 	void BeginHarvestExecution();
@@ -308,4 +381,16 @@ private:
 	/** Authority-only tuned values captured when execution starts, so learning a node mid-swing changes nothing. */
 	FRpgHarvestTunedValues CommitValues;
 	bool bHasCommitValues = false;
+
+	/** Server-only state of the running stride: its pulse and end timers, captured values and pending rewards. */
+	FTimerHandle StridePulseTimerHandle;
+	FTimerHandle StrideEndTimerHandle;
+	FRpgHarvestTunedValues StrideValues;
+
+	UPROPERTY(Transient)
+	FRpgHarvestRequest StrideRequestTemplate;
+
+	TUniquePtr<FRpgHarvestRewardBatch> StrideRewardBatch;
+	double StrideEndTime = 0.0;
+	bool bStriding = false;
 };

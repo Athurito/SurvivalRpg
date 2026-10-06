@@ -143,6 +143,24 @@ FVector FRpgHarvestTargeting::SelectAndEvaluate(
 		QueryParams.AddIgnoredActor(AvatarOwner);
 	}
 
+	// An area around the harvester needs no aim; it moves with the harvester, so everything in it is in reach.
+	if (Params.Shape == ERpgHarvestTargetShape::AreaAroundHarvester)
+	{
+		const FVector HarvesterLocation = Avatar.GetActorLocation();
+		CollectAreaTargets(
+			World,
+			HarvesterLocation,
+			Params.AreaRadius,
+			Params.TraceChannel,
+			QueryParams,
+			HarvesterLocation,
+			true,
+			RequestTemplate,
+			FMath::Max(1, Params.MaxTargets),
+			OutTargets);
+		return HarvesterLocation;
+	}
+
 	TArray<FHitResult> Hits;
 	if (Params.AimRadius > KINDA_SMALL_NUMBER)
 	{

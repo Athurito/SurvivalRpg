@@ -22,7 +22,13 @@ enum class ERpgHarvestTargetShape : uint8
 	 * hits nothing, or hits beyond MaxReachFromAvatar, the aim point moves back to the ground within that reach, so
 	 * the area stops at the reach.
 	 */
-	AreaAtAimPoint
+	AreaAtAimPoint,
+
+	/**
+	 * Every harvestable within AreaRadius around the harvester, such as a power that harvests while the player walks.
+	 * Needs no aim: the view ray and MaxReachFromAvatar are unused, and every target in the area is in reach.
+	 */
+	AreaAroundHarvester
 };
 
 /**
@@ -53,15 +59,16 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestTargetingParams
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "cm"))
 	float MaxReachFromAvatar = 250.0f;
 
-	/** Radius around the aim point in centimeters that collects targets. AreaAtAimPoint only. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "cm", EditCondition = "Shape == ERpgHarvestTargetShape::AreaAtAimPoint"))
+	/** Radius in centimeters around the aim point or the harvester that collects targets. Area shapes only. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "cm", EditCondition = "Shape != ERpgHarvestTargetShape::SingleTarget"))
 	float AreaRadius = 0.0f;
 
 	/**
-	 * Maximum number of targets an area harvests, nearest to the aim point first. Nearer targets the ability cannot
-	 * harvest, such as protected or depleted ones, are previewed but do not count. AreaAtAimPoint only.
+	 * Maximum number of targets an area harvests, nearest to the area's center first. Nearer targets the ability
+	 * cannot harvest, such as protected or depleted ones, are previewed but do not count. Area shapes only; a stride
+	 * applies it to each pulse.
 	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "1", UIMin = "1", EditCondition = "Shape == ERpgHarvestTargetShape::AreaAtAimPoint"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting", meta = (ClampMin = "1", UIMin = "1", EditCondition = "Shape != ERpgHarvestTargetShape::SingleTarget"))
 	int32 MaxTargets = 1;
 
 	/** Collision channel used by the view ray and the area overlap. Harvestable meshes must block or overlap it. */
@@ -112,7 +119,10 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestPreview
 	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
 	bool bIsAiming = false;
 
-	/** World-space point in centimeters where the view ray hit, or its end when it hit nothing. */
+	/**
+	 * World-space center in centimeters of what the ability selects: where the view ray hit (or its end), the area
+	 * center moved within reach, or the harvester's location for an area around the harvester.
+	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
 	FVector AimPoint = FVector::ZeroVector;
 

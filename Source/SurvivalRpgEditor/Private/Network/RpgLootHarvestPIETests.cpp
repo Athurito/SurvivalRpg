@@ -22,6 +22,7 @@
 #include "Harvesting/RpgHarvestProfile.h"
 #include "Harvesting/RpgHarvestSwarm.h"
 #include "Engine/StaticMesh.h"
+#include "GameFramework/Pawn.h"
 #include "SurvivalRpg/Inventory/Loot/RpgLootTable.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgGatheringSet.h"
 #include "SurvivalRpg/Inventory/RpgDroppedInventoryActor.h"
@@ -48,6 +49,8 @@ namespace RpgLootHarvestPIETests
 		ARpgNetworkAutomationHarvestNodeFixture* HarvestNode = nullptr;
 		ARpgNetworkAutomationHarvestInstancesFixture* InstancesField = nullptr;
 		ARpgNetworkAutomationSwarm* Swarm = nullptr;
+		APawn* StrideAvatar = nullptr;
+		URpgNetworkAutomationStrideAbility* StrideAbility = nullptr;
 	};
 
 	/** Authored instance locations of the instanced test field, relative to InstancesFieldLocation. */
@@ -447,6 +450,32 @@ namespace RpgLootHarvestPIETests
 			Component->GetInstanceCount() == 1 &&
 			!Component->IsResourceInstanceActive(0) &&
 			Component->GetResourceInstanceRevision(0) == 1;
+	}
+
+	/** The Striding Wave cue tag from the project tags; editor modules cannot define native tags. */
+	FGameplayTag StrideCueTag()
+	{
+		return FGameplayTag::RequestGameplayTag(TEXT("GameplayCue.Harvesting.StridingWave"));
+	}
+
+	/** Returns whether this machine's copy of the harvester's ability system shows the stride cue. */
+	bool HasStrideCue(UWorld* World)
+	{
+		for (TActorIterator<ARpgNetworkAutomationHarvesterState> It(World); It; ++It)
+		{
+			const UAbilitySystemComponent* AbilitySystem = It->GetAbilitySystemComponent();
+			return AbilitySystem && AbilitySystem->HasMatchingGameplayTag(StrideCueTag());
+		}
+		return false;
+	}
+
+	/** Moves the server-only stride avatar to Offset from the instanced field. */
+	void MoveStrideAvatar(const FNetworkState& State, const FVector& Offset)
+	{
+		if (IsValid(State.StrideAvatar))
+		{
+			State.StrideAvatar->SetActorLocation(InstancesFieldLocation + Offset);
+		}
 	}
 
 	int32 CountGatheringSets(const FNetworkState& State)
@@ -1238,6 +1267,199 @@ NETWORK_TEST_CLASS(LootHarvestPIE, "SurvivalRpg.Network")
 					return HasInstanceStock(State, {0, NodeSectionCount, NodeSectionCount}, 1) &&
 						FindSwarm(State.World) == nullptr &&
 						CountSwarmCreatureActors(State.World) == 0;
+				},
+				NetworkTimeout());
+	}
+
+	TEST_METHOD(StrideHarvestsAlongThePathAndReplicatesItsCue)
+	{
+		using namespace RpgLootHarvestPIETests;
+
+		Network
+			.UntilServer(
+				TEXT("Dedicated server and first connection are ready for the stride test"),
+				[](FNetworkState& State)
+				{
+					return IsServerReady(State, 1);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Initial PIE client is ready for the stride test"),
+				[](FNetworkState& State)
+				{
+					return IsClientReady(State);
+				},
+				NetworkTimeout())
+			.SpawnAndReplicate<
+				ARpgNetworkAutomationHarvesterState,
+				&FNetworkState::Harvester>(
+				[](ARpgNetworkAutomationHarvesterState& Harvester)
+				{
+					(void)Harvester;
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("The harvesting GameFeature adds the instance stock for the stride"),
+				[this](FNetworkState& State)
+				{
+					AGameStateBase* GameState = State.World->GetGameState();
+					ASSERT_THAT(IsNotNull(GameState));
+					URpgHarvestInstanceStockComponent* Stock =
+						NewObject<URpgHarvestInstanceStockComponent>(GameState, TEXT("HarvestInstanceStock"));
+					Stock->RegisterComponent();
+				})
+			.UntilClients(
+				TEXT("Clients receive the instance stock for the stride"),
+				[](FNetworkState& State)
+				{
+					return URpgHarvestInstanceStockComponent::FindForWorld(State.World) != nullptr;
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("The server loads the field the stride walks through"),
+				[this](FNetworkState& State)
+				{
+					State.InstancesField = LoadInstancesField(State.World);
+					ASSERT_THAT(IsNotNull(State.InstancesField));
+				})
+			.ThenClients(
+				TEXT("Clients load the field the stride walks through"),
+				[this](FNetworkState& State)
+				{
+					State.InstancesField = LoadInstancesField(State.World);
+					ASSERT_THAT(IsNotNull(State.InstancesField));
+				})
+			.ThenServer(
+				TEXT("The harvester starts a stride before the field"),
+				[this](FNetworkState& State)
+				{
+					// A server-only avatar walks for the harvester; the player state receives the rewards.
+					APawn* Avatar = State.World->SpawnActorDeferred<APawn>(
+						APawn::StaticClass(),
+						FTransform(InstancesFieldLocation + FVector(-400.0, 0.0, 0.0)),
+						nullptr,
+						nullptr,
+						ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+					ASSERT_THAT(IsNotNull(Avatar));
+					Avatar->SetReplicates(false);
+					USceneComponent* Root = NewObject<USceneComponent>(Avatar, TEXT("StrideAvatarRoot"));
+					Avatar->SetRootComponent(Root);
+					Avatar->FinishSpawning(FTransform(InstancesFieldLocation + FVector(-400.0, 0.0, 0.0)));
+					Root->RegisterComponent();
+					Avatar->SetActorLocation(InstancesFieldLocation + FVector(-400.0, 0.0, 0.0));
+					Avatar->SetPlayerState(State.Harvester);
+					State.StrideAvatar = Avatar;
+
+					UAbilitySystemComponent* AbilitySystem = State.Harvester->GetAbilitySystemComponent();
+					ASSERT_THAT(IsNotNull(AbilitySystem));
+					AbilitySystem->InitAbilityActorInfo(State.Harvester, Avatar);
+					const FGameplayAbilitySpecHandle Handle =
+						AbilitySystem->GiveAbility(FGameplayAbilitySpec(URpgNetworkAutomationStrideAbility::StaticClass()));
+					const FGameplayAbilitySpec* Spec = AbilitySystem->FindAbilitySpecFromHandle(Handle);
+					State.StrideAbility = Spec ? Cast<URpgNetworkAutomationStrideAbility>(Spec->GetPrimaryInstance()) : nullptr;
+					ASSERT_THAT(IsNotNull(State.StrideAbility));
+
+					// 200 cm reach one instance at a time; the 15 s stride outlasts a late join.
+					State.StrideAbility->ConfigureStride(200.0f, 15.0f, 0.25f, NodeSectionCount, StrideCueTag());
+					ASSERT_THAT(IsTrue(AbilitySystem->TryActivateAbility(Handle)));
+					ASSERT_THAT(IsTrue(State.StrideAbility->IsStriding()));
+					ASSERT_THAT(IsTrue(HasStrideCue(State.World)));
+					ASSERT_THAT(IsTrue(HasInstanceStock(State, {NodeSectionCount, NodeSectionCount, NodeSectionCount}, 0)));
+				})
+			.UntilClients(
+				TEXT("Clients receive the stride cue"),
+				[](FNetworkState& State)
+				{
+					return HasStrideCue(State.World);
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("The harvester walks onto the first instance"),
+				[](FNetworkState& State)
+				{
+					MoveStrideAvatar(State, FVector::ZeroVector);
+				})
+			.UntilServer(
+				TEXT("A pulse empties the instance where the harvester is, and only that one"),
+				[](FNetworkState& State)
+				{
+					return HasInstanceStock(State, {0, NodeSectionCount, NodeSectionCount}, 1);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("The client presents the emptied instance"),
+				0,
+				[](FNetworkState& State)
+				{
+					return HasInstanceStock(State, {0, NodeSectionCount, NodeSectionCount}, 1);
+				},
+				NetworkTimeout())
+			.ThenClientJoins(NetworkTimeout())
+			.UntilServer(
+				TEXT("Late join establishes the second connection for the stride test"),
+				[](FNetworkState& State)
+				{
+					return IsServerReady(State, 2);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("The late joiner receives the running stride's cue"),
+				1,
+				[](FNetworkState& State)
+				{
+					return IsClientReady(State) && HasStrideCue(State.World);
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("The late joiner streams in the field"),
+				1,
+				[this](FNetworkState& State)
+				{
+					State.InstancesField = LoadInstancesField(State.World);
+					ASSERT_THAT(IsNotNull(State.InstancesField));
+				})
+			.ThenServer(
+				TEXT("The stride is still running, and the harvester skips ahead to the last instance"),
+				[this](FNetworkState& State)
+				{
+					ASSERT_THAT(IsTrue(State.StrideAbility->IsStriding()));
+					ASSERT_THAT(AreEqual(
+						State.Harvester->GetInventoryManagerComponent()->GetTotalItemCountByDefinition(
+							URpgNetworkAutomationMaterialDefinition::StaticClass()),
+						0));
+					MoveStrideAvatar(State, FVector(600.0, 0.0, 0.0));
+				})
+			.UntilServer(
+				TEXT("A pulse empties the last instance; the one it skipped stays"),
+				[](FNetworkState& State)
+				{
+					return HasInstanceStock(State, {0, NodeSectionCount, 0}, 2);
+				},
+				NetworkTimeout())
+			.UntilServer(
+				TEXT("The stride ends after its duration"),
+				[](FNetworkState& State)
+				{
+					return IsValid(State.StrideAbility) && !State.StrideAbility->IsStriding();
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("The rewards of every pulse arrive in the inventory once, at the end"),
+				[this](FNetworkState& State)
+				{
+					ASSERT_THAT(IsFalse(State.StrideAbility->IsActive()));
+					ASSERT_THAT(IsFalse(HasStrideCue(State.World)));
+					ASSERT_THAT(AreEqual(
+						State.Harvester->GetInventoryManagerComponent()->GetTotalItemCountByDefinition(
+							URpgNetworkAutomationMaterialDefinition::StaticClass()),
+						2 * NodeSectionCount * LootQuantity));
+					ASSERT_THAT(AreEqual(CountWorldDrops(State.World), 0));
+				})
+			.UntilClients(
+				TEXT("Both clients show the stride's path and remove its cue"),
+				[](FNetworkState& State)
+				{
+					return HasInstanceStock(State, {0, NodeSectionCount, 0}, 2) && !HasStrideCue(State.World);
 				},
 				NetworkTimeout());
 	}

@@ -285,6 +285,11 @@ public:
 	}
 	void ConfigureCooldown(const TSubclassOf<UGameplayEffect> InCooldownEffect) { CooldownGameplayEffectClass = InCooldownEffect; }
 	void ConfigureYieldConversions(const TArray<FRpgHarvestYieldConversion>& InConversions) { YieldConversions = InConversions; }
+	void ConfigureStride(const FRpgHarvestStrideParams& InStride, const FGameplayTag InCueTag)
+	{
+		Stride = InStride;
+		StrideGameplayCue = InCueTag;
+	}
 };
 
 /** Records preview notifications so tests can assert change-only broadcasting. */

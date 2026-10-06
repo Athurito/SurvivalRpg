@@ -74,7 +74,8 @@ stock rules are kept separate.
   - `URpgHarvestableComponent` (HARV-01).
   - The abstract `URpgGameplayAbility_Harvest` (HARV-02), which owns server
     target selection, exactly-once commit, cancel safety, commit timing taken
-    from authored montage data, and hold-to-aim.
+    from authored montage data, hold-to-aim and, since HARV-09e, strides that
+    harvest around the walking player.
   - The local `URpgHarvestTargetingComponent` (HARV-02).
   - The non-reflected `FRpgHarvestStockRules`, shared by actor nodes, HISM
     instances and the PCG bridge.
@@ -904,7 +905,7 @@ All nodes cost one point and carry only tunings.
 **Gates:** as in New World, a node only needs the node above it in its chain;
 loose passives need nothing. No node below the ultimate has a point gate
 (`RequiredPointsInTree` 0), so the first point may go to any power or passive.
-The ultimate of HARV-09e will keep a point gate.
+The ultimate of HARV-09e keeps a point gate.
 
 **Layout rule:**
 - Exclusive forms sit side by side in one row below their power, so the links
@@ -931,7 +932,7 @@ The ultimate of HARV-09e will keep a point gate.
   8 m apart, so 3 m never reached a neighbor; 7 m reaches the direct
   neighbors.
 - Wide Wave stays outside an exclusive group until the ultimate of HARV-09e
-  exists.
+  exists. HARV-09d paired it with Ash Wave instead; the ultimate stands alone.
 - `CM_Harvest_Aim` now looks at least 10 degrees down instead of 20. At 20
   degrees no aim point on flat ground lay more than about 6 m from the pawn, so
   Long Reach, and already the 10 m and 15 m reach of Death Wave and Grave
@@ -1073,6 +1074,118 @@ the client:
   waited for the release, and the user could not reproduce it by hand, so it
   is a test-tool artifact.
 
+## Striding Wave (HARV-09e)
+
+HARV-09e gives the axe its ultimate: for a few seconds, every dead tree around
+the walking player falls.
+
+### Stride
+
+- **Shape:** `ERpgHarvestTargetShape::AreaAroundHarvester` selects every
+  resource within `AreaRadius` around the harvester, nearest first, up to
+  `MaxTargets`. It needs no aim, and everything in the area is in reach. The
+  area tunings apply to it as to every area power.
+- **Stride:** `URpgGameplayAbility_Harvest::Stride` (`FRpgHarvestStrideParams`:
+  duration and pulse interval) turns such an ability into a stride.
+  - The commit starts it at once. Every pulse selects again around where the
+    harvester is now and commits each target once through
+    `IRpgHarvestableTarget`, with the values captured when execution started.
+    The presentation wave applies to each pulse.
+  - At most `ceil(duration / interval) × MaxTargets` commits happen, 48 for
+    Striding Wave.
+  - The ability stays active during the stride; a montage does not end it. The
+    server ends the activation when the duration is over.
+  - The stride opens its reward batch only around each pulse. When it ends, the
+    rewards of all pulses reach the player as one delivery: into the inventory,
+    or as one drop at the player's feet.
+  - Switching tools, dying or cancelling ends it early, and what it harvested is
+    still delivered. Only a world that ends takes it along. A dead harvester
+    harvests nothing more.
+  - Trees fall away from the player, who is the physical harvester.
+- **Cue:** `StrideGameplayCue` is a looping cue on the harvester while the
+  stride runs. Its `RawMagnitude` is the tuned area radius.
+  - The stride starts inside the owning client's predicted activation. The
+    server adds the cue without that prediction key, so the owning client plays
+    it from replication instead of skipping it as already predicted.
+  - `ActiveGameplayCues` replicates to every machine, also to late joiners.
+
+### Content
+
+- `GA_Harvest_StridingWave`:
+  - Executes on press, without aim or montage.
+  - Harvests 6 m around the player, up to four trees per pulse with all their
+    sections (16). A pulse comes every 0.5 s for 6 s, with a 15 m/s
+    presentation wave.
+  - `GE_Cooldown_Harvest_StridingWave` lasts 60 s and grants
+    `Cooldown.Harvesting.StridingWave`. Quick Recovery shortens it to 48 s.
+- `AS_Node_StridingWave` grants the ability without an input tag, so the tree
+  places it on Q/E/R.
+- **Axe tree:** the ultimate node Striding Wave sits at row 3, column 3
+  (`SkillTree.NodeKind.Ultimate`).
+  - It needs 4 points spent in the tree and no prerequisite, so every build can
+    reach it. With one point per Logging level above the first, that is
+    Logging 6.
+  - It excludes nothing; the axe has one ultimate.
+- `GCN_Harvest_StridingWave`, a `GameplayCueNotify_Actor`, carries the area
+  ring decal of `BP_HarvestAreaMarker`. It attaches to the player and scales to
+  the radius.
+- `GF_Harvesting_Magic` now registers its `/GameplayCues` folder with the
+  GameplayCue manager (`AddHarvestingGameplayCuePath`).
+- **Design change:** the first plan made Striding Wave a Death Wave form that
+  excluded Wide Wave.
+  - HARV-09d already paired Wide Wave with Ash Wave, and HARV-09c kept the
+    point gate for the ultimate. So Striding Wave is its own ability on Q/E/R.
+  - As a capstone without a chain, it follows the "choose freely" rule of
+    HARV-09c.
+  - Ash Wave's conversion stays a Death Wave form and does not apply to
+    Striding Wave.
+
+### Multiplayer
+
+Listen-server PIE sessions with one client in `Lvl_HarvestPickaxe` checked on
+the client:
+- **Gate:** Logging 6 gave five points. Striding Wave showed as locked after
+  three spent points and as learnable after four. Learned, it went to E.
+- **Felling:** the client pressed E and walked with W through the Death Wave
+  stand.
+  - The trees within 6 m fell in pairs as the client passed: after about 1.2,
+    3.0 and 5.2 s.
+  - The column 9 m to the side and the row beyond the end of the walk stayed.
+  - Server and client showed the same stock in every sample.
+- **Ring:** on the client, the ring followed the client's pawn at 6 m radius;
+  the host also showed it. It disappeared when the stride ended.
+- **Delivery:** the 124 wood of six trees arrived once, when the stride ended
+  after 6 s, without a drop. The E slot showed the cooldown.
+- **Failed attempt:** in the first session the owning client showed no ring.
+  The cue still carried the client's prediction key. Since the fix,
+  `Stride.HarvestsAroundTheWalkingHarvester` checks that the cue carries none.
+- In the first session the client also stopped walking when the script captured
+  its window, the known focus artifact of HARV-09d.
+
+The network test
+`SurvivalRpg.Network.LootHarvestPIE.StrideHarvestsAlongThePathAndReplicatesItsCue`
+runs a stride on a dedicated server with clients:
+- A server-only avatar starts the stride before the instanced field. The client
+  receives the cue.
+- The avatar walks onto the first instance, and a pulse empties only that one.
+  It then skips ahead to the last instance, which a pulse empties too; the one
+  it skipped stays.
+- A client that joins during the stride receives its cue.
+- The rewards arrive in the inventory once, when the stride ends, without a
+  drop. Both clients show the harvested path, and the cue is gone on both.
+
+### Not done
+
+- **Presentation:** the ring reuses the area marker's decal, whose line grows
+  with the radius. There is no extra effect at the struck trees beyond their
+  falling presentation.
+- **Montage:** a stride ignores the end of its montage. Striding Wave has no
+  montage, so content does not exercise that path.
+- **Pickaxe:** decided in review: the pickaxe needs no ultimate for now; the
+  stride setup is enough.
+- **Tuning:** the values are first tuning; HARV-09f compares the powers by
+  harvest time.
+
 ## Performance guardrails
 
 - Resources never tick. Respawn uses a timer. Replicated state is a revision,
@@ -1098,8 +1211,8 @@ the client:
 | HARV-09a | M4 skill tree foundation (core): tree definition, item fragment, PlayerState progress, weapon grants, Q/E/R per tree, tunings, save schema 4; see [skill-trees.md](skill-trees.md) | Merged: [#188](https://github.com/Athurito/SurvivalRpg/pull/188) |
 | HARV-09b | Skill UI (progression overview, tree grid, Q/E/R, reset) and the tool trees; Rift Grip, Death Wave and Grave Swarm move from level gates to tree nodes | Merged: [#189](https://github.com/Athurito/SurvivalRpg/pull/189) |
 | HARV-09c | Power forms through tunings: Wide Wave, Long Reach, Swarm Brood, Grave Detonation (strike radius), Wide Rift, Deep Grip; loose passives, chain-only gates, right-click refund of single nodes | Merged: [#190](https://github.com/Athurito/SurvivalRpg/pull/190) |
-| HARV-09d | Ash Wave: Death Wave form that delivers charcoal through yield conversions at a shown ratio, charcoal item, kiln recipe | In review: [#192](https://github.com/Athurito/SurvivalRpg/pull/192) |
-| HARV-09e | Striding Wave, the axe's ultimate: trees around the walking player fall for a few seconds | Planned |
+| HARV-09d | Ash Wave: Death Wave form that delivers charcoal through yield conversions at a shown ratio, charcoal item, kiln recipe | Merged: [#192](https://github.com/Athurito/SurvivalRpg/pull/192) |
+| HARV-09e | Striding Wave, the axe's ultimate: trees around the walking player fall for a few seconds; strides around the harvester, point-gated ultimate node, ring cue | In review: [#193](https://github.com/Athurito/SurvivalRpg/pull/193) |
 | HARV-09f | Resource parity across combat styles and a build target that stronger harvesting makes easier | Planned |
 | HARV-10 | M5 resource persistence with stable IDs, portal variant, co-op load | Planned |
 
