@@ -812,6 +812,71 @@ bool FRpgHarvestAbilityAimedAreaIndicatorTest::RunTest(const FString& Parameters
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestAbilityAreaReachClampTest,
+	"SurvivalRpg.Harvesting.Ability.AreaAimStopsAtReach",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestAbilityAreaReachClampTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestAbilityTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+
+	auto SpawnBlock = [World](const FVector& Location, const FVector& Extent) -> UBoxComponent*
+	{
+		AActor* Block = World->SpawnActor<AActor>();
+		UBoxComponent* Box = Block ? NewObject<UBoxComponent>(Block) : nullptr;
+		if (Box)
+		{
+			Box->InitBoxExtent(Extent);
+			Box->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
+			Block->SetRootComponent(Box);
+			Box->RegisterComponent();
+			Block->SetActorLocation(Location);
+		}
+		return Box;
+	};
+	// Ground below, and a wall far beyond the reach that the level view ray hits.
+	UBoxComponent* Floor = SpawnBlock(FVector(0.0, 0.0, -150.0), FVector(5000.0, 5000.0, 50.0));
+	UBoxComponent* Wall = SpawnBlock(FVector(1500.0, 0.0, 300.0), FVector(50.0, 2000.0, 600.0));
+	ARpgHarvestAutomationCollidableNodeActor* Node =
+		SpawnNode(World, FVector(550.0, 0.0, -60.0), MakeProfile(World, 4));
+	const FGrantedAbility Area = GrantAbility(Harvester.AbilitySystem);
+	if (!TestNotNull(TEXT("Floor exists"), Floor) || !TestNotNull(TEXT("Wall exists"), Wall) ||
+		!TestNotNull(TEXT("Node exists"), Node) || !TestNotNull(TEXT("Area ability exists"), Area.Instance))
+	{
+		return false;
+	}
+
+	FRpgHarvestTargetingParams Params;
+	Params.Shape = ERpgHarvestTargetShape::AreaAtAimPoint;
+	Params.MaxAimDistance = 3000.0f;
+	Params.MaxReachFromAvatar = 700.0f;
+	Params.AreaRadius = 300.0f;
+	Params.MaxTargets = 3;
+	Area.Instance->ConfigureTargeting(Params);
+	const FRpgHarvestPreview Preview = Evaluate(Harvester.AbilitySystem, Area);
+	const FVector AvatarLocation = Harvester.Pawn->GetActorLocation();
+	TestTrue(
+		TEXT("An aim point beyond the reach moves back within it"),
+		FVector::Dist(AvatarLocation, Preview.AimPoint) <= Params.MaxReachFromAvatar + 1.0);
+	TestTrue(TEXT("The moved aim point lies on the ground"), FMath::IsNearlyEqual(Preview.AimPoint.Z, -100.0, 2.0));
+	if (!TestEqual(TEXT("The area at the reach collects the node there"), Preview.Targets.Num(), 1))
+	{
+		return false;
+	}
+	TestTrue(TEXT("What the area shows can be harvested"), Preview.Targets[0].bInReach && Preview.Targets[0].WouldHarvest());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgHarvestAbilityAreaGroundFallbackTest,
 	"SurvivalRpg.Harvesting.Ability.AreaAimFallsBackToGround",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -1986,7 +2051,7 @@ bool FRpgHarvestTuningPreviewAndCommitTest::RunTest(const FString& Parameters)
 	FScopedTreeTool TreeTool(Tree);
 	URpgSkillTreeComponent* SkillTrees = PrepareSkillTree(Harvester, Tree);
 	URpgEquipmentInstance* Equipment = MakeTreeToolEquipment(Harvester);
-	// The aim point lies 250 cm away, beyond the authored reach of 200 cm.
+	// The aimed tree face lies about 258 cm away, beyond the authored reach of 200 cm.
 	const FGrantedAbility Power = GrantAreaAbility(Harvester.AbilitySystem, Equipment, 200.0f);
 	if (!TestNotNull(TEXT("Grove exists"), Grove) ||
 		!TestNotNull(TEXT("Skill trees are prepared"), SkillTrees) ||
@@ -1999,8 +2064,12 @@ bool FRpgHarvestTuningPreviewAndCommitTest::RunTest(const FString& Parameters)
 	Power.Instance->ConfigureCooldown(URpgHarvestAutomationTestCooldownEffect::StaticClass());
 	TestWorld.PrimeTimerManager();
 
+	const FVector AvatarLocation = Harvester.Pawn->GetActorLocation();
 	FRpgHarvestPreview Preview = Evaluate(Harvester.AbilitySystem, Power);
-	TestTrue(TEXT("Without upgrades the aim point is out of reach"), PreviewSections(Preview) == TArray<int32>({0}));
+	TestTrue(
+		TEXT("Without upgrades the aim point stops at the authored reach"),
+		FVector::Dist(AvatarLocation, Preview.AimPoint) <= 201.0);
+	TestTrue(TEXT("The area at the reach still takes the nearest tree"), PreviewSections(Preview) == TArray<int32>({1}));
 	TestEqual(TEXT("The authored area radius is previewed"), Preview.AreaRadius, 200.0f);
 
 	TestEqual(TEXT("Reach is learned"),
@@ -2014,6 +2083,9 @@ bool FRpgHarvestTuningPreviewAndCommitTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("A reach upgrade extends the reach"), Values.Targeting.MaxReachFromAvatar, 350.0f);
 	TestEqual(TEXT("The aim ray grows with the reach"), Values.Targeting.MaxAimDistance, 1150.0f);
 	Preview = Evaluate(Harvester.AbilitySystem, Power);
+	TestTrue(
+		TEXT("The longer reach lets the aim point stay on the aimed tree"),
+		FVector::Dist(AvatarLocation, Preview.AimPoint) > 250.0 && FVector::Dist(AvatarLocation, Preview.AimPoint) <= 350.0);
 	TestTrue(TEXT("The longer reach takes the nearest tree"), PreviewSections(Preview) == TArray<int32>({1}));
 
 	TestEqual(TEXT("Wide is learned"),

@@ -196,11 +196,14 @@ FVector FRpgHarvestTargeting::SelectAndEvaluate(
 			break;
 		}
 	}
-	if (!bAimHit)
+	// A level view ray rarely meets open ground, and a flat view can hit ground beyond the reach. In both cases the aim
+	// point moves back within reach and onto the ground, so the area stops at the reach instead of showing targets it
+	// could not take.
+	if (!bAimHit || FVector::DistSquared(AvatarLocation, AimPoint) > MaxReachSquared)
 	{
-		// A level view ray rarely meets open ground: keep the ray end within reach and drop it onto the ground.
-		const FVector FromAvatar = TraceEnd - AvatarLocation;
-		const FVector ProbeOrigin = AvatarLocation + FromAvatar.GetClampedToMaxSize(FMath::Max(0.0f, Params.MaxReachFromAvatar));
+		const float MaxReach = FMath::Max(0.0f, Params.MaxReachFromAvatar);
+		const FVector FromAvatar = AimPoint - AvatarLocation;
+		const FVector ProbeOrigin = AvatarLocation + FromAvatar.GetClampedToMaxSize(MaxReach);
 		FHitResult GroundHit;
 		if (World.LineTraceSingleByChannel(
 				GroundHit,
@@ -211,7 +214,11 @@ FVector FRpgHarvestTargeting::SelectAndEvaluate(
 		{
 			// The drop to the ground can add a little distance; keep the area just inside the reach.
 			AimPoint = AvatarLocation +
-				(GroundHit.ImpactPoint - AvatarLocation).GetClampedToMaxSize(FMath::Max(0.0f, Params.MaxReachFromAvatar - 1.0f));
+				(GroundHit.ImpactPoint - AvatarLocation).GetClampedToMaxSize(FMath::Max(0.0f, MaxReach - 1.0f));
+		}
+		else if (bAimHit)
+		{
+			AimPoint = AvatarLocation + FromAvatar.GetClampedToMaxSize(FMath::Max(0.0f, MaxReach - 1.0f));
 		}
 	}
 	const bool bAimInReach = FVector::DistSquared(AvatarLocation, AimPoint) <= MaxReachSquared;

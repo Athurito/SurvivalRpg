@@ -986,7 +986,8 @@ the client:
 - The values are first tuning; HARV-09f compares the forms by harvest time.
 - In two PIE runs, the first held power right after the script closed the
   menu executed before the scripted release; every later hold waited for the
-  release. A real key was not tested.
+  release. HARV-09d traced it to the script's window captures, which change
+  focus; it is no game bug.
 - Refunds need a mouse right-click; there is no gamepad binding yet.
 
 ## Ash Wave and charcoal (HARV-09d)
@@ -1037,6 +1038,14 @@ Wave, turns Death Wave's wood into charcoal.
   that also turns manual swings into charcoal is optional and was left out,
   because powers do most of the felling.
 
+### Area aim stops at the reach
+
+Found in review: with the flatter aim camera of HARV-09c, the ring could lie
+beyond the reach, and the trees inside it read "Out of reach". Now an area aim
+point beyond `MaxReachFromAvatar`, hit or not, moves back toward the harvester
+and onto the ground within reach (`FRpgHarvestTargeting::SelectAndEvaluate`).
+The ring stops at the reach, and everything inside it can be harvested.
+
 ### Multiplayer
 
 Listen-server PIE sessions with one client in `Lvl_HarvestPickaxe` checked on
@@ -1047,6 +1056,8 @@ the client:
   arrived as 20 charcoal with no wood left over (40 charcoal in total).
 - **Kiln:** pressing F at the kiln opened the crafting screen with the Charcoal
   recipe. Two crafts turned 4 of 5 wood into 2 charcoal in the station output.
+- **Reach:** aiming Death Wave far beyond its 10 m reach left the aim point
+  about 9.3 m away. The two trees in the ring fell (40 wood).
 
 ### Not done
 
@@ -1056,8 +1067,11 @@ the client:
   survival games, while workbenches stay manual. That needs its own crafting
   task.
 - **Icons:** the charcoal icon is a placeholder.
-- **Early release in PIE:** as in HARV-09c, the first held power after the
-  script closed the menu executed before the scripted release.
+- **Early release in PIE:** a held power executed before the scripted release
+  whenever the script captured the client window during the hold. The capture
+  changes window focus, which releases held keys. Holds without a capture
+  waited for the release, and the user could not reproduce it by hand, so it
+  is a test-tool artifact.
 
 ## Performance guardrails
 

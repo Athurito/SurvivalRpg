@@ -19,7 +19,8 @@ enum class ERpgHarvestTargetShape : uint8
 
 	/**
 	 * Every harvestable within AreaRadius around the point the view ray hits, such as an area power. When the ray
-	 * hits nothing, the aim point is the ground below the ray end, kept within MaxReachFromAvatar.
+	 * hits nothing, or hits beyond MaxReachFromAvatar, the aim point moves back to the ground within that reach, so
+	 * the area stops at the reach.
 	 */
 	AreaAtAimPoint
 };
