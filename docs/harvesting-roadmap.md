@@ -936,6 +936,17 @@ The ultimate of HARV-09e will keep a point gate.
   Long Reach, and already the 10 m and 15 m reach of Death Wave and Grave
   Swarm, could not be used.
 
+### Refunding single nodes
+
+A right-click on a learned node refunds just that node, so switching forms
+needs no reset; [skill-trees.md](skill-trees.md) has the rules.
+- `URpgSkillTreeComponent::RefundNode` forgets the node for free, refunds its
+  cost and clears its Q/E/R slots. Clients use `RequestRefundNode`.
+- It is rejected while another learned node requires the node, or needs its
+  points for a point gate. As in New World, the later node goes first.
+- `CUI_SkillTreeNode` overrides On Mouse Button Down: a right-click selects the
+  node and calls the node view model's `RequestRefund` when `bCanRefund` is set.
+
 ### Multiplayer
 
 Listen-server PIE sessions with one client in `Lvl_HarvestPickaxe` checked on
@@ -961,6 +972,13 @@ the client:
   strike. They emptied the four selected trees.
 - Rift Grip with Wide Rift previewed a 450 cm area. After a reset, Deep Grip
   previewed and took 4 sections from each of two veins.
+- Refunds, with real right-clicks sent to the client window through Unreal MCP's
+  Slate inspector:
+  - Right-clicking Grave Swarm changed nothing while Grave Detonation built on
+    it.
+  - Grave Detonation, then Grave Swarm and Keen Edge refunded on the server,
+    and Q emptied.
+  - Grave Swarm and Swarm Brood were then learned without a reset.
 
 ### Not done
 
@@ -968,6 +986,7 @@ the client:
 - In two PIE runs, the first held power right after the script closed the
   menu executed before the scripted release; every later hold waited for the
   release. A real key was not tested.
+- Refunds need a mouse right-click; there is no gamepad binding yet.
 
 ## Performance guardrails
 
@@ -993,7 +1012,7 @@ the client:
 | HARV-08 | M3 grave swarm with separate beneficiary and physical harvester | Merged: [#186](https://github.com/Athurito/SurvivalRpg/pull/186) |
 | HARV-09a | M4 skill tree foundation (core): tree definition, item fragment, PlayerState progress, weapon grants, Q/E/R per tree, tunings, save schema 4; see [skill-trees.md](skill-trees.md) | Merged: [#188](https://github.com/Athurito/SurvivalRpg/pull/188) |
 | HARV-09b | Skill UI (progression overview, tree grid, Q/E/R, reset) and the tool trees; Rift Grip, Death Wave and Grave Swarm move from level gates to tree nodes | Merged: [#189](https://github.com/Athurito/SurvivalRpg/pull/189) |
-| HARV-09c | Power forms through tunings: Wide Wave, Long Reach, Swarm Brood, Grave Detonation (strike radius), Wide Rift, Deep Grip | In review: [#190](https://github.com/Athurito/SurvivalRpg/pull/190) |
+| HARV-09c | Power forms through tunings: Wide Wave, Long Reach, Swarm Brood, Grave Detonation (strike radius), Wide Rift, Deep Grip; loose passives, chain-only gates, right-click refund of single nodes | In review: [#190](https://github.com/Athurito/SurvivalRpg/pull/190) |
 | HARV-09d | Ash Pact: axe toggle that turns wood harvests into charcoal at a shown ratio, charcoal item, kiln recipe | Planned |
 | HARV-09e | Striding Wave, the axe's ultimate: trees around the walking player fall for a few seconds | Planned |
 | HARV-09f | Resource parity across combat styles and a build target that stronger harvesting makes easier | Planned |
