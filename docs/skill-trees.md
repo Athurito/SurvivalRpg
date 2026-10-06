@@ -81,8 +81,8 @@ The view models observe the replicated state and rebuild at most once per frame.
 
 | Tree | Points | Nodes |
 | --- | --- | --- |
-| `DA_SkillTree_Axe` (`GF_Harvesting_Magic`) | Logging | Death Wave (row 0, column 0) with Wide Wave and Long Reach below it; Grave Swarm (row 0, column 2) with the exclusive forms Swarm Brood and Grave Detonation |
-| `DA_SkillTree_Pickaxe` (`GF_Harvesting_Magic`) | Mining | Rift Grip (row 0, column 0) with the exclusive forms Wide Rift and Deep Grip |
+| `DA_SkillTree_Axe` (`GF_Harvesting_Magic`) | Logging | Death Wave (row 0, column 1) chaining into Wide Wave and Long Reach; Grave Swarm (row 0, column 4) forking into the exclusive forms Swarm Brood and Grave Detonation |
+| `DA_SkillTree_Pickaxe` (`GF_Harvesting_Magic`) | Mining | Rift Grip (row 0, column 1) forking into the exclusive forms Wide Rift and Deep Grip |
 
 The upgrades and forms only carry tunings. The harvest abilities read the tags under `Ability.Tuning.Harvest`
 (area radius, reach, target count, sections, swarm creatures, rest and strike radius, cooldown); the table is in
@@ -106,6 +106,7 @@ No code, widget or save change is needed; the skill screen lists the tree and dr
 Add an entry to `Nodes`:
 - `NodeTag`: `SkillTree.Node.<Weapon>.<Name>`. Never rename it once shipped; saves use it.
 - `Row` and `Column` for the grid, and `KindTag` for the style (`SkillTree.NodeKind.Active`, `Passive`, `Upgrade`, `Ultimate`).
+  - Put exclusive alternatives side by side in one row below their prerequisite, so the links fork. Chain upgrades that stack straight down, each requiring the one above, so no link passes behind another node.
 - `Cost`, `RequiredPointsInTree`, `Prerequisites` and optionally `ExclusiveGroup`.
 - Any combination of grants:
   - **Active ability:** an ability set whose entry has an `AbilityIdTag` and no Q/E/R input tag. The tree places it on Q/E/R.
