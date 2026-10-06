@@ -802,7 +802,7 @@ HARV-09b makes the skill trees of HARV-09a playable; see
 - `DA_SkillTree_Axe` (`SkillTree.Tree.Axe`, Logging) has the branches Death
   and Grave with one active node each in row 0: Death Wave in column 0 and
   Grave Swarm in column 2. Column 1 stays free for the Ash Pact (HARV-09d).
-  HARV-09c widened the tree to six columns; see its layout rule.
+  HARV-09c widened the tree to seven columns; see its layout rule.
 - `DA_SkillTree_Pickaxe` (`SkillTree.Tree.Pickaxe`, Mining) has Rift Grip in
   row 0 of the Rift branch.
 - Every node costs one point and grants its own ability set
@@ -898,22 +898,33 @@ to its authored values. Each tag names one value:
 
 ### Content
 
-All nodes cost one point and carry only tunings for one ability id.
+All nodes cost one point and carry only tunings.
 
-**Layout rule:** exclusive forms sit side by side in one row below their power,
-so the links fork; upgrades that stack chain straight down. The axe uses six
-columns: Death Wave in column 1 with the Death branch in columns 0 to 2, and
-Grave Swarm in column 4 with the Grave branch in columns 3 to 5. Rift Grip sits
-in column 1 of three.
+**Gates:** as in New World, a node only needs the node above it in its chain;
+loose passives need nothing. No node below the ultimate has a point gate
+(`RequiredPointsInTree` 0), so the first point may go to any power or passive.
+The ultimate of HARV-09e will keep a point gate.
 
-| Tree | Node | Row, column | Gate | Tunings |
+**Layout rule:**
+- Exclusive forms sit side by side in one row below their power, so the links
+  fork. Upgrades that stack chain straight down.
+- The axe uses seven columns: Death Wave in column 1 with its branch in
+  columns 0 to 2, Grave Swarm in column 5 with its branch in columns 4 to 6,
+  and the loose passives in the middle column 3.
+- Rift Grip sits in the middle of five columns, between the two passives.
+
+| Tree | Node | Row, column | Needs | Tunings |
 | --- | --- | --- | --- | --- |
-| Axe | Wide Wave | 1, 1 | 2 points, Death Wave | Death Wave area +300 cm, targets +4 |
-| Axe | Long Reach | 2, 1 | 3 points, Wide Wave | Death Wave reach +500 cm |
-| Axe | Swarm Brood | 1, 3 | 2 points, Grave Swarm; excludes Grave Detonation | Grave Swarm 8 creatures, 1 section per strike |
-| Axe | Grave Detonation | 1, 5 | 2 points, Grave Swarm; excludes Swarm Brood | Grave Swarm 3 creatures, strike radius 700 cm |
-| Pickaxe | Wide Rift | 1, 0 | 1 point, Rift Grip; excludes Deep Grip | Rift Grip area +150 cm, targets +2 |
-| Pickaxe | Deep Grip | 1, 2 | 1 point, Rift Grip; excludes Wide Rift | Rift Grip sections +1 |
+| Axe | Wide Wave | 1, 1 | Death Wave | Death Wave area +300 cm, targets +4 |
+| Axe | Long Reach | 2, 1 | Wide Wave | Death Wave reach +500 cm |
+| Axe | Swarm Brood | 1, 4 | Grave Swarm; excludes Grave Detonation | Grave Swarm 8 creatures, 1 section per strike |
+| Axe | Grave Detonation | 1, 6 | Grave Swarm; excludes Swarm Brood | Grave Swarm 3 creatures, strike radius 700 cm |
+| Axe | Keen Edge (passive) | 0, 3 | nothing | Axe swing sections +1 |
+| Axe | Quick Recovery (passive) | 1, 3 | nothing | Every axe ability's cooldown ×0.8 |
+| Pickaxe | Wide Rift | 1, 1 | Rift Grip; excludes Deep Grip | Rift Grip area +150 cm, targets +2 |
+| Pickaxe | Deep Grip | 1, 3 | Rift Grip; excludes Wide Rift | Rift Grip sections +1 |
+| Pickaxe | Steady Hands (passive) | 0, 0 | nothing | Pickaxe swing sections +1 |
+| Pickaxe | Quick Recovery (passive) | 0, 4 | nothing | Every pickaxe ability's cooldown ×0.8 |
 
 - The plan proposed a 3 m detonation. The trees of the grave stand stand 5 to
   8 m apart, so 3 m never reached a neighbor; 7 m reaches the direct
@@ -934,6 +945,10 @@ the client:
   Grave Detonation; Swarm Brood showed as excluded.
 - After the layout change, Grave Swarm and Rift Grip fork into their two
   forms, and Death Wave chains into Wide Wave and Long Reach.
+- Without point gates, Logging 3 learned Keen Edge and Grave Swarm as the
+  first two points. Keen Edge made the axe swing preview take 2 sections.
+  Grave Detonation and Quick Recovery followed; Grave Swarm's 15 s cooldown
+  then ended after about 12 s.
 - Death Wave with Wide Wave previewed a 900 cm ring. The commit felled exactly
   the previewed trees (four, and three on a second cast).
 - With Long Reach, the aim point lay 1074 cm from the pawn and in reach;
