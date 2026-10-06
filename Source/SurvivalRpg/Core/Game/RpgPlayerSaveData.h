@@ -6,6 +6,7 @@
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryGraphTypes.h"
 #include "SurvivalRpg/Progression/Player/Data/RpgPlayerProgressionState.h"
+#include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeComponent.h"
 #include "SurvivalRpg/Progression/Skills/Data/RpgTradeSkillState.h"
 
 #include "RpgPlayerSaveData.generated.h"
@@ -30,8 +31,11 @@ struct SURVIVALRPG_API FRpgPlayerSaveData
 	/** First schema that persists general character and tag-keyed trade-skill progression. */
 	static constexpr int32 ProgressionSchemaVersion = 3;
 
+	/** First schema that persists weapon and tool skill trees. Older profiles load with empty trees. */
+	static constexpr int32 SkillTreeSchemaVersion = 4;
+
 	/** Current per-player schema emitted by this build. */
-	static constexpr int32 CurrentSchemaVersion = ProgressionSchemaVersion;
+	static constexpr int32 CurrentSchemaVersion = SkillTreeSchemaVersion;
 
 	/** Selects the migration/validation path before any runtime player state is changed. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save", meta = (ClampMin = "1", UIMin = "1"))
@@ -77,6 +81,14 @@ struct SURVIVALRPG_API FRpgPlayerSaveData
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save|Progression")
 	TArray<FTradeSkillState> TradeSkillStates;
 
+	/** True when SkillTreeStates contains a captured authoritative skill tree snapshot. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save|Progression")
+	bool bHasSkillTreeProgression = false;
+
+	/** Learned nodes and Q/E/R assignments per skill tree, keyed by stable SkillTree.Tree.* tags. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save|Progression")
+	TArray<FRpgSkillTreeState> SkillTreeStates;
+
 	/** Lightweight envelope validation; the inventory manager performs the authoritative deep graph validation. */
 	bool IsSchemaSupported() const
 	{
@@ -101,9 +113,16 @@ struct SURVIVALRPG_API FRpgPlayerSaveData
 			SeenSkillTags.Add(SkillState.SkillTag);
 		}
 
+		if ((!bHasSkillTreeProgression && !SkillTreeStates.IsEmpty()) ||
+			!URpgSkillTreeComponent::ValidateSkillTreeStates(SkillTreeStates))
+		{
+			return false;
+		}
+
 		return SchemaVersion >= MinimumSupportedSchemaVersion &&
 			SchemaVersion <= CurrentSchemaVersion &&
 			(!bHasPlayerProgression || SchemaVersion >= ProgressionSchemaVersion) &&
-			(!bHasTradeSkillProgression || SchemaVersion >= ProgressionSchemaVersion);
+			(!bHasTradeSkillProgression || SchemaVersion >= ProgressionSchemaVersion) &&
+			(!bHasSkillTreeProgression || SchemaVersion >= SkillTreeSchemaVersion);
 	}
 };

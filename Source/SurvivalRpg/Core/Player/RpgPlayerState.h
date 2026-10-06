@@ -8,6 +8,7 @@
 
 class ARpgPlayerController;
 class URpgTradeSkillProgressionComponent;
+class URpgSkillTreeComponent;
 class URpgInventoryCapacitySet;
 class URpgPlayerProgressionComponent;
 class URpgInventoryManagerComponent;
@@ -93,6 +94,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rpg|Progression")
 	URpgTradeSkillProgressionComponent* GetTradeSkillProgressionComponent() const { return TradeSkillProgressionComponent; }
 
+	/** Returns the owner-only replicated, server-authoritative progress of every weapon and tool skill tree. */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Progression")
+	URpgSkillTreeComponent* GetSkillTreeComponent() const { return SkillTreeComponent; }
+
 	void SetRespawnState(bool bInIsWaitingForRespawn, float InRespawnAvailableServerTime);
 	void SetCheckpointData(bool bInHasCheckpoint, const FTransform& InCheckpointTransform);
 
@@ -137,6 +142,9 @@ protected:
 	
 	UPROPERTY(VisibleAnywhere, Category = "Rpg|Progression")
 	TObjectPtr<URpgTradeSkillProgressionComponent> TradeSkillProgressionComponent;
+
+	UPROPERTY(VisibleAnywhere, Category = "Rpg|Progression")
+	TObjectPtr<URpgSkillTreeComponent> SkillTreeComponent;
 
 	UPROPERTY(VisibleAnywhere, Category = "Rpg|Inventory")
 	TObjectPtr<URpgInventoryManagerComponent> InventoryManagerComponent;

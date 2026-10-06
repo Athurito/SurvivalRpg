@@ -69,6 +69,11 @@ bool FRpgWorldSaveGameMemoryRoundTripTest::RunTest(const FString& Parameters)
 	SavedForaging.SkillTag = RpgTradeSkillGameplayTags::Skill_Gathering_Foraging;
 	SavedForaging.Level = 14;
 	SavedForaging.XP = 55.0f;
+	Player.bHasSkillTreeProgression = true;
+	FRpgSkillTreeState& SavedTree = Player.SkillTreeStates.AddDefaulted_GetRef();
+	SavedTree.TreeTag = FGameplayTag::RequestGameplayTag(TEXT("SkillTree.Tree"));
+	SavedTree.UnlockedNodes.Add(FGameplayTag::RequestGameplayTag(TEXT("SkillTree.Node")));
+	SavedTree.SlotAbilityIds = {FGameplayTag::RequestGameplayTag(TEXT("Ability.Harvesting.DeathWave")), FGameplayTag(), FGameplayTag()};
 
 	const FRpgInventoryContainerHandle CarryContainer =
 		FRpgInventoryContainerHandle::MakeRoot(TEXT("Carry.Weapon1"));
@@ -139,6 +144,14 @@ bool FRpgWorldSaveGameMemoryRoundTripTest::RunTest(const FString& Parameters)
 				FGameplayTag(RpgTradeSkillGameplayTags::Skill_Gathering_Foraging));
 			TestEqual(TEXT("Trade-skill level survives serialization"), RestoredPlayer->TradeSkillStates[0].Level, 14);
 			TestEqual(TEXT("Trade-skill XP survives serialization"), RestoredPlayer->TradeSkillStates[0].XP, 55.0f);
+		}
+		TestTrue(TEXT("Skill tree progression presence survives serialization"), RestoredPlayer->bHasSkillTreeProgression);
+		TestEqual(TEXT("Exactly one skill tree state survives serialization"), RestoredPlayer->SkillTreeStates.Num(), 1);
+		if (RestoredPlayer->SkillTreeStates.Num() == 1)
+		{
+			TestEqual(TEXT("Skill tree tag survives serialization"), RestoredPlayer->SkillTreeStates[0].TreeTag, SavedTree.TreeTag);
+			TestEqual(TEXT("Learned nodes survive serialization"), RestoredPlayer->SkillTreeStates[0].UnlockedNodes, SavedTree.UnlockedNodes);
+			TestEqual(TEXT("Q/E/R assignments survive serialization"), RestoredPlayer->SkillTreeStates[0].SlotAbilityIds, SavedTree.SlotAbilityIds);
 		}
 
 		const FRpgInventorySlotAddress& RestoredCarryAddress = RestoredPlayer->QuickAccessBindings[0].SlotAddress;

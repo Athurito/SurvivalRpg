@@ -119,6 +119,22 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Rpg|Ability UI")
 	TSoftObjectPtr<UTexture2D> GetAbilityIcon() const { return AbilityIcon; }
+
+	/**
+	 * Returns BaseValue changed by the learned skill tree nodes of the weapon that granted this ability, for example a
+	 * larger area radius. TuningTag names the value (Ability.Tuning.*); nodes target this ability by its ability id or
+	 * every ability of their weapon. Valid on the server and the owning client while the ability is instanced; returns
+	 * BaseValue for abilities without a skill tree. Read-only; designers add upgrades as tree data.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Ability|Skill Tree", meta = (GameplayTagFilter = "Ability.Tuning"))
+	float GetTunedValue(FGameplayTag TuningTag, float BaseValue) const;
+
+	/** GetTunedValue for an explicit spec and actor info, for non-instanced use such as target previews. */
+	static float GetTunedValueForSpec(
+		const FGameplayAbilitySpec& Spec,
+		const FGameplayAbilityActorInfo& ActorInfo,
+		FGameplayTag TuningTag,
+		float BaseValue);
 	
 	void TryActivateAbilityOnSpawn(const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilitySpec& Spec) const;
 	

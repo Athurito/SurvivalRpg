@@ -36,6 +36,26 @@ struct SURVIVALRPG_API FRpgAppliedEquipmentAbilityGrant
 	FRpgAbilitySet_GrantedHandles GrantedHandles;
 };
 
+/**
+ * Runtime grants of one learned skill tree node while the equipped item that carries the tree is in use.
+ * Server only; rebuilt whenever equipment or the player's skill tree changes.
+ */
+USTRUCT()
+struct SURVIVALRPG_API FRpgAppliedSkillNodeGrant
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	TObjectPtr<const URpgAbilitySet> AbilitySet = nullptr;
+
+	UPROPERTY()
+	FRpgAbilitySet_GrantedHandles GrantedHandles;
+
+	/** Loose replicated tags added for the node; removed with the same count. */
+	UPROPERTY()
+	FGameplayTagContainer GrantedTags;
+};
+
 USTRUCT(BlueprintType)
 struct SURVIVALRPG_API FRpgAppliedEquipmentEntry : public FFastArraySerializerItem
 {
@@ -58,6 +78,10 @@ private:
 
 	UPROPERTY(NotReplicated)
 	TMap<int32, FRpgAppliedEquipmentAbilityGrant> AbilitySetGrants;
+
+	/** Server-only grants of the learned nodes of the item's skill tree, keyed by node tag. */
+	UPROPERTY(NotReplicated)
+	TMap<FGameplayTag, FRpgAppliedSkillNodeGrant> SkillNodeGrants;
 
 	/** Server-only handle for the concrete inventory item's generated global-stat effect. */
 	FActiveGameplayEffectHandle ItemizationEffectHandle;
@@ -164,6 +188,12 @@ public:
 	/** Current equipment-owned linked instance on the gameplay mesh, or null until local presentation is ready. Game thread only. */
 	UFUNCTION(BlueprintPure, Category = "Equipment|Block")
 	UAnimInstance* GetBlockLocomotionLayerInstance() const;
+
+	/**
+	 * Authority: re-grants the learned skill tree nodes of every equipped item after the player's skill tree changed,
+	 * then re-resolves the owning controller's Q/E/R and quick-access bindings.
+	 */
+	void RefreshSkillTreeGrants();
 
 	template <typename T>
 	T* GetFirstInstanceOfType() const

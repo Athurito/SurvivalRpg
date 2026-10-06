@@ -47,6 +47,7 @@
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutComponent.h"
 #include "SurvivalRpg/Progression/Player/RpgPlayerProgressionComponent.h"
+#include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeComponent.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillProgressionComponent.h"
 #include "SurvivalRpg/System/RpgAssetManager.h"
 #include "GameFramework/GameStateBase.h"
@@ -1309,6 +1310,22 @@ bool ARpgGameModeBase::TryRestorePlayerSaveData(APlayerController* PC, const FRp
 		TradeSkillProgression->ResetSkillStatesToDefaults();
 	}
 
+	// Skill trees replay their purchases against the restored skill levels, so they follow the trade skills.
+	if (URpgSkillTreeComponent* SkillTrees = PlayerState->GetSkillTreeComponent())
+	{
+		if (SaveData.bHasSkillTreeProgression)
+		{
+			if (!SkillTrees->RestoreSkillTreeStates(SaveData.SkillTreeStates))
+			{
+				return false;
+			}
+		}
+		else
+		{
+			SkillTrees->ResetSkillTreesToDefaults();
+		}
+	}
+
 	return true;
 }
 
@@ -1373,6 +1390,11 @@ void ARpgGameModeBase::CapturePlayerSaveData(APlayerController* PC)
 	{
 		SaveData.TradeSkillStates = TradeSkillProgression->ExportSkillStates();
 		SaveData.bHasTradeSkillProgression = true;
+	}
+	if (const URpgSkillTreeComponent* SkillTrees = PlayerState->GetSkillTreeComponent())
+	{
+		SaveData.SkillTreeStates = SkillTrees->ExportSkillTreeStates();
+		SaveData.bHasSkillTreeProgression = true;
 	}
 }
 
@@ -1855,13 +1877,14 @@ bool ARpgGameModeBase::RestoreLoadedWorldSaveCandidatesAtomically()
 				continue;
 			}
 
+			// Legacy root placements predate the progression schema; later schema bumps do not reopen the migration.
 			const bool bEligibleLegacyPlacement = Validator &&
 				(ValidationResult.Code ==
 					 ERpgInventoryMutationResultCode::Occupied ||
 				 ValidationResult.Code ==
 					 ERpgInventoryMutationResultCode::ItemNotAllowed) &&
 				PlayerSaveData.SchemaVersion <
-					FRpgPlayerSaveData::CurrentSchemaVersion;
+					FRpgPlayerSaveData::ProgressionSchemaVersion;
 			if (!bEligibleLegacyPlacement)
 			{
 				UE_LOG(LogRpg, Warning,
