@@ -28,6 +28,10 @@ struct SURVIVALRPG_API FTradeSkillConfig
 {
 	GENERATED_BODY()
 
+	/** Player-facing skill name for progression UI. Empty shows the last part of the skill tag. Display only. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Progression|Trade Skills")
+	FText DisplayName;
+
 	/** Optional XP cost by current level; unset entries use round(100 * Level^1.35). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Progression|Trade Skills")
 	TObjectPtr<UCurveFloat> XPToNextLevel = nullptr;

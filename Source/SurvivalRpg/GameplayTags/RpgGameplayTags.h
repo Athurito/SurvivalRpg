@@ -48,6 +48,7 @@ namespace RpgGameplayTags
 	/** GAS-owned living-ragdoll/getup activation; separate from the terminal health/death lifecycle. */
 	extern SURVIVALRPG_API FNativeGameplayTag Status_Ragdoll;
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_UI_Inventory);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_UI_Skills);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_UI_QuickAccessRadial_Hold);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_UI_QuickAccessRadial_Select);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_UI_QuickAccessRadial_Cancel);
@@ -187,6 +188,8 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Screen_Respawn);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Screen_Pause);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Screen_Settings);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Screen_GameMenu);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_Screen_GameMenu_Skills);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_HUD_Slot_ActionBar);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_HUD_Slot_QuickAccessRadial);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(UI_HUD_Slot_WeaponAbilityBar);

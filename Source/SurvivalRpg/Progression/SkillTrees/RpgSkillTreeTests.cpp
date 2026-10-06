@@ -21,6 +21,9 @@
 #include "SurvivalRpg/Equipment/RpgWeaponAbilityLoadoutComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
+#include "SurvivalRpg/Mvvm/SkillTrees/RpgSkillTreeViewModels.h"
+#include "SurvivalRpg/Progression/Skills/Data/RpgTradeSkillConfigData.h"
+#include "TimerManager.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillGameplayTags.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillProgressionComponent.h"
 
@@ -751,6 +754,253 @@ bool FRpgSkillTreeContentTest::RunTest(const FString& Parameters)
 	}
 
 	AddInfo(FString::Printf(TEXT("Validated %d skill tree assets."), TreeAssets.Num()));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgSkillTreeViewModelProjectionTest,
+	"SurvivalRpg.Progression.SkillTrees.ViewModel.TreeProjectsProgress",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgSkillTreeViewModelProjectionTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgSkillTreeTests;
+
+	FScopedTestWorld TestWorld;
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		TestWorld.GetWorld() ? TestWorld.GetWorld()->SpawnActor<ARpgInventoryAutomationTestPlayerState>() : nullptr;
+	URpgSkillTreeComponent* SkillTrees = PlayerState ? PlayerState->GetSkillTreeComponent() : nullptr;
+	if (!TestNotNull(TEXT("Player state with skill trees spawns"), SkillTrees))
+	{
+		return false;
+	}
+
+	const FGameplayTag TreeTag = TAG_SkillTreeTest_Tree;
+	SkillTrees->RegisterSkillTree(MakeTree());
+	URpgSkillTreeViewModel* Tree = NewObject<URpgSkillTreeViewModel>(GetTransientPackage(), NAME_None, RF_Transient);
+	Tree->BindSkillTree(SkillTrees, TreeTag);
+
+	// Level 1 earns nothing: open nodes wait for points, gated ones stay locked.
+	TestEqual(TEXT("Every node is projected"), Tree->GetNodes().Num(), 6);
+	TestEqual(TEXT("The grid has three rows"), Tree->GetRowCount(), 3);
+	TestEqual(TEXT("The grid has two columns"), Tree->GetColumnCount(), 2);
+	TestEqual(TEXT("No points are earned at level 1"), Tree->GetEarnedPoints(), 0);
+	URpgSkillTreeNodeViewModel* Root = Tree->FindNode(TAG_SkillTreeTest_Root);
+	URpgSkillTreeNodeViewModel* FormA = Tree->FindNode(TAG_SkillTreeTest_FormA);
+	URpgSkillTreeNodeViewModel* FormB = Tree->FindNode(TAG_SkillTreeTest_FormB);
+	if (!TestNotNull(TEXT("Root is projected"), Root) || !TestNotNull(TEXT("FormA is projected"), FormA) ||
+		!TestNotNull(TEXT("FormB is projected"), FormB))
+	{
+		return false;
+	}
+	TestEqual(TEXT("Root waits for a point"), Root->GetState(), ERpgSkillTreeNodeState::Unaffordable);
+	TestEqual(TEXT("FormA is locked"), FormA->GetState(), ERpgSkillTreeNodeState::Locked);
+	TestEqual(TEXT("Root sits in its authored cell"), Root->GetCell(), FIntPoint(0, 0));
+	TestEqual(TEXT("FormB sits in its authored cell"), FormB->GetCell(), FIntPoint(1, 1));
+	TestTrue(TEXT("Root offers its ability for Q/E/R"), Root->GetAbilityIdTag() == TAG_SkillTreeTest_Alpha);
+	TestFalse(TEXT("A tuning-only node offers no ability"), FormA->GetAbilityIdTag().IsValid());
+	if (TestEqual(TEXT("Every row has a gate"), Tree->GetRows().Num(), 3))
+	{
+		TestEqual(TEXT("Row 1 needs two spent points"), Tree->GetRows()[1].RequiredPoints, 2);
+		TestFalse(TEXT("Row 1 is locked"), Tree->GetRows()[1].bIsUnlocked);
+		TestTrue(TEXT("Row 0 is open"), Tree->GetRows()[0].bIsUnlocked);
+	}
+	TestEqual(TEXT("Both forms link to Root"), Tree->GetLinks().Num(), 2);
+	TestEqual(TEXT("The tree has three empty slots"), Tree->GetSlots().Num(), URpgSkillTreeComponent::SlotCount);
+	TestFalse(TEXT("Nothing to reset yet"), Tree->CanResetTree());
+
+	RaiseLogging(*PlayerState, 4);
+	Tree->Refresh();
+	TestEqual(TEXT("Level 4 earns three points"), Tree->GetAvailablePoints(), 3);
+	TestEqual(TEXT("Root can be learned"), Root->GetState(), ERpgSkillTreeNodeState::Unlockable);
+
+	SkillTrees->UnlockNode(TreeTag, TAG_SkillTreeTest_Root);
+	SkillTrees->UnlockNode(TreeTag, TAG_SkillTreeTest_Second);
+	SkillTrees->UnlockNode(TreeTag, TAG_SkillTreeTest_FormA);
+	Tree->Refresh();
+	TestTrue(TEXT("Node view models stay the same objects"), Tree->FindNode(TAG_SkillTreeTest_Root) == Root);
+	TestEqual(TEXT("Root is learned"), Root->GetState(), ERpgSkillTreeNodeState::Unlocked);
+	TestEqual(TEXT("FormB is excluded by FormA"), FormB->GetState(), ERpgSkillTreeNodeState::Excluded);
+	TestTrue(TEXT("Row 1 opened with two spent points"), Tree->GetRows()[1].bIsUnlocked);
+	TestEqual(TEXT("Root holds Q"), Root->GetAssignedSlotIndex(), 0);
+	TestTrue(TEXT("The Q slot names Root"), Tree->GetSlots()[0].NodeTag == TAG_SkillTreeTest_Root);
+	TestEqual(TEXT("Three points are spent"), Tree->GetSpentPoints(), 3);
+	TestTrue(TEXT("A spent tree can be reset"), Tree->CanResetTree());
+	const FRpgSkillTreeLinkView* RootToFormA = Tree->GetLinks().FindByPredicate([](const FRpgSkillTreeLinkView& Link)
+	{
+		return Link.ToCell == FIntPoint(0, 1);
+	});
+	TestTrue(TEXT("The Root-FormA link is learned at both ends"),
+		RootToFormA && RootToFormA->bFromUnlocked && RootToFormA->bToUnlocked);
+
+	// Commands: selection is local; assignment and reset go through the validated requests.
+	Tree->SelectNode(TAG_SkillTreeTest_FormA);
+	TestTrue(TEXT("FormA is selected"), FormA->IsSelected());
+	Tree->AssignSelectedNodeToSlot(2);
+	TestFalse(TEXT("A node without an ability cannot take a slot"), SkillTrees->GetSlotAbilityId(TreeTag, 2).IsValid());
+	Tree->SelectNode(TAG_SkillTreeTest_Second);
+	TestFalse(TEXT("Selecting another node clears the old selection"), FormA->IsSelected());
+	Tree->AssignSelectedNodeToSlot(2);
+	TestEqual(TEXT("The selected ability moved to R"), SkillTrees->GetSlotAbilityId(TreeTag, 2), TAG_SkillTreeTest_Beta.GetTag());
+	Tree->Refresh();
+	TestEqual(TEXT("Second shows R"), Tree->FindNode(TAG_SkillTreeTest_Second)->GetAssignedSlotIndex(), 2);
+	Tree->ClearSlot(2);
+	TestFalse(TEXT("Clearing a slot empties it"), SkillTrees->GetSlotAbilityId(TreeTag, 2).IsValid());
+
+	Tree->RequestResetTree();
+	Tree->Refresh();
+	TestEqual(TEXT("Reset refunds every point"), Tree->GetAvailablePoints(), 3);
+	TestEqual(TEXT("Root is learnable again"), Root->GetState(), ERpgSkillTreeNodeState::Unlockable);
+	TestFalse(TEXT("Reset clears the Q slot"), Tree->GetSlots()[0].NodeTag.IsValid());
+
+	Tree->RequestUnlockNode(TAG_SkillTreeTest_Root);
+	TestTrue(TEXT("A request learns an affordable node"), SkillTrees->IsNodeUnlocked(TreeTag, TAG_SkillTreeTest_Root));
+
+	Tree->UnbindSkillTree();
+	TestTrue(TEXT("Unbinding clears the nodes"), Tree->GetNodes().IsEmpty());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgSkillTreeViewModelInvalidationTest,
+	"SurvivalRpg.Progression.SkillTrees.ViewModel.ChangesRefreshOncePerFrame",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgSkillTreeViewModelInvalidationTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgSkillTreeTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	ARpgInventoryAutomationTestPlayerState* PlayerState = World ? World->SpawnActor<ARpgInventoryAutomationTestPlayerState>() : nullptr;
+	URpgSkillTreeComponent* SkillTrees = PlayerState ? PlayerState->GetSkillTreeComponent() : nullptr;
+	if (!TestNotNull(TEXT("Player state with skill trees spawns"), SkillTrees))
+	{
+		return false;
+	}
+
+	const FGameplayTag TreeTag = TAG_SkillTreeTest_Tree;
+	SkillTrees->RegisterSkillTree(MakeTree());
+	URpgSkillTreeViewModel* Tree = NewObject<URpgSkillTreeViewModel>(GetTransientPackage(), NAME_None, RF_Transient);
+	Tree->BindSkillTree(SkillTrees, TreeTag);
+
+	// Mastery XP and purchases arrive as separate events; the view rebuilds on the next tick.
+	RaiseLogging(*PlayerState, 4);
+	SkillTrees->UnlockNode(TreeTag, TAG_SkillTreeTest_Root);
+	TestEqual(TEXT("Changes do not rebuild synchronously"), Tree->GetSpentPoints(), 0);
+	// The timer manager ticks once per engine frame.
+	++GFrameCounter;
+	World->GetTimerManager().Tick(0.016f);
+	TestEqual(TEXT("The next tick shows the purchase"), Tree->GetSpentPoints(), 1);
+	TestEqual(TEXT("The next tick shows the new points"), Tree->GetAvailablePoints(), 2);
+
+	// Another skill's XP does not touch this tree.
+	URpgSkillTreeNodeViewModel* Root = Tree->FindNode(TAG_SkillTreeTest_Root);
+	RaiseSkillLevel(*PlayerState->GetTradeSkillProgressionComponent(), RpgTradeSkillGameplayTags::Skill_Gathering_Mining, 3);
+	SkillTrees->ResetTree(TreeTag);
+	TestTrue(TEXT("Root still shows learned before the tick"), Root && Root->GetState() == ERpgSkillTreeNodeState::Unlocked);
+	++GFrameCounter;
+	World->GetTimerManager().Tick(0.016f);
+	TestTrue(TEXT("The reset arrives on the next tick"), Root && Root->GetState() == ERpgSkillTreeNodeState::Unlockable);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgSkillProgressionViewModelTest,
+	"SurvivalRpg.Progression.SkillTrees.ViewModel.ProgressionOverview",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgSkillProgressionViewModelTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgSkillTreeTests;
+
+	FScopedTestWorld TestWorld;
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		TestWorld.GetWorld() ? TestWorld.GetWorld()->SpawnActor<ARpgInventoryAutomationTestPlayerState>() : nullptr;
+	URpgSkillTreeComponent* SkillTrees = PlayerState ? PlayerState->GetSkillTreeComponent() : nullptr;
+	if (!TestNotNull(TEXT("Player state with skill trees spawns"), SkillTrees))
+	{
+		return false;
+	}
+
+	SkillTrees->RegisterSkillTree(MakeTree());
+	RaiseLogging(*PlayerState, 3);
+	URpgSkillProgressionViewModel* Progression =
+		NewObject<URpgSkillProgressionViewModel>(GetTransientPackage(), NAME_None, RF_Transient);
+	Progression->BindPlayerState(PlayerState);
+
+	const TArray<URpgTradeSkillViewModel*> Skills = Progression->GetSkills();
+	URpgTradeSkillViewModel* const* Logging = Skills.FindByPredicate([](const URpgTradeSkillViewModel* Skill)
+	{
+		return Skill && Skill->GetSkillTag() == RpgTradeSkillGameplayTags::Skill_Gathering_Logging;
+	});
+	if (TestNotNull(TEXT("The overview lists Logging"), Logging))
+	{
+		TestEqual(TEXT("Logging shows its level"), (*Logging)->GetLevel(), 3);
+	}
+
+	const TArray<URpgSkillTreeViewModel*> Trees = Progression->GetSkillTrees();
+	URpgSkillTreeViewModel* const* TestTree = Trees.FindByPredicate([](const URpgSkillTreeViewModel* Tree)
+	{
+		return Tree && Tree->GetTreeTag() == TAG_SkillTreeTest_Tree;
+	});
+	if (!TestNotNull(TEXT("The overview lists the registered tree"), TestTree))
+	{
+		return false;
+	}
+	URpgSkillTreeViewModel* TestTreeViewModel = *TestTree;
+	Progression->SelectSkillTree(TAG_SkillTreeTest_Tree);
+	TestTrue(TEXT("Selecting a tree shows it"), Progression->GetSelectedSkillTree() == TestTreeViewModel);
+	TestEqual(TEXT("The tree view shows the tree's points"), TestTreeViewModel->GetAvailablePoints(), 2);
+	const int32 PointsBefore = Progression->GetTotalAvailablePoints();
+	TestTrue(TEXT("Free points include the test tree"), PointsBefore >= 2);
+
+	SkillTrees->UnlockNode(TAG_SkillTreeTest_Tree, TAG_SkillTreeTest_Root);
+	Progression->Refresh();
+	TestEqual(TEXT("Learning spends a free point"), Progression->GetTotalAvailablePoints(), PointsBefore - 1);
+	TestTrue(TEXT("The selected tree survives a refresh"), Progression->GetSelectedSkillTree() == TestTreeViewModel);
+
+	// A screen refreshes from one event, also when only the selected tree changed.
+	URpgSkillTreeAutomationTestListener* Listener =
+		NewObject<URpgSkillTreeAutomationTestListener>(GetTransientPackage(), NAME_None, RF_Transient);
+	Progression->OnProgressionChanged.AddDynamic(Listener, &URpgSkillTreeAutomationTestListener::HandleChanged);
+	TestTreeViewModel->SelectNode(TAG_SkillTreeTest_Root);
+	TestEqual(TEXT("Selecting a node of the selected tree notifies the overview"), Listener->Broadcasts, 1);
+	if (URpgSkillTreeViewModel* const* OtherTree = Trees.FindByPredicate([TestTreeViewModel](const URpgSkillTreeViewModel* Tree)
+	{
+		return Tree && Tree != TestTreeViewModel;
+	}))
+	{
+		const int32 BroadcastsBefore = Listener->Broadcasts;
+		(*OtherTree)->Refresh();
+		TestEqual(TEXT("Trees that are not selected do not notify the overview"), Listener->Broadcasts, BroadcastsBefore);
+	}
+
+	Progression->Unbind();
+	TestTrue(TEXT("Unbinding clears the trees"), Progression->GetSkillTrees().IsEmpty());
+	TestTrue(TEXT("Unbinding clears the skills"), Progression->GetSkills().IsEmpty());
+	TestTrue(TEXT("Unbinding clears the selection"), Progression->GetSelectedSkillTree() == nullptr);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgTradeSkillDisplayNameTest,
+	"SurvivalRpg.Progression.SkillTrees.ViewModel.SkillDisplayNames",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgTradeSkillDisplayNameTest::RunTest(const FString& Parameters)
+{
+	URpgTradeSkillProgressionComponent* TradeSkills =
+		NewObject<URpgTradeSkillProgressionComponent>(GetTransientPackage(), NAME_None, RF_Transient);
+	const FGameplayTag Logging = RpgTradeSkillGameplayTags::Skill_Gathering_Logging;
+	TestEqual(TEXT("Without config the tag leaf names the skill"), TradeSkills->GetSkillDisplayName(Logging).ToString(), FString(TEXT("Logging")));
+
+	URpgTradeSkillConfigData* Config = NewObject<URpgTradeSkillConfigData>(GetTransientPackage(), NAME_None, RF_Transient);
+	Config->TaggedSkillConfigs.Add(Logging).DisplayName = FText::FromString(TEXT("Woodcutting"));
+	TradeSkills->ConfigData = Config;
+	TestEqual(TEXT("An authored name wins"), TradeSkills->GetSkillDisplayName(Logging).ToString(), FString(TEXT("Woodcutting")));
+	TestEqual(TEXT("Skills without a name still use the tag leaf"),
+		TradeSkills->GetSkillDisplayName(RpgTradeSkillGameplayTags::Skill_Gathering_Mining).ToString(), FString(TEXT("Mining")));
 	return true;
 }
 

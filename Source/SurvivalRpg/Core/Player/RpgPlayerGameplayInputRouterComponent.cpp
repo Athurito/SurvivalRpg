@@ -8,6 +8,7 @@
 #include "SurvivalRpg/Equipment/RpgWeaponAbilityLoadoutComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/UI/RpgUIScreenBlueprintLibrary.h"
+#include "SurvivalRpg/UI/RpgUIScreenPayload.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgPlayerGameplayInputRouterComponent)
 
@@ -56,6 +57,24 @@ void URpgPlayerGameplayInputRouterComponent::HandleGameplayInputPressed(FGamepla
 			RpgPC,
 			RpgGameplayTags::UI_Screen_Inventory,
 			nullptr);
+		return;
+	}
+
+	if (InputTag == RpgGameplayTags::InputTag_UI_Skills)
+	{
+		if (!RpgPC->IsLocalController())
+		{
+			return;
+		}
+
+		CancelQuickAccessRadial();
+		// The game menu selects the tab named by the payload's screen tag.
+		URpgUIScreenPayload* Payload = NewObject<URpgUIScreenPayload>(RpgPC);
+		Payload->ScreenTag = RpgGameplayTags::UI_Screen_GameMenu_Skills;
+		URpgUIScreenBlueprintLibrary::OpenUIScreen(
+			RpgPC,
+			RpgGameplayTags::UI_Screen_GameMenu,
+			Payload);
 		return;
 	}
 

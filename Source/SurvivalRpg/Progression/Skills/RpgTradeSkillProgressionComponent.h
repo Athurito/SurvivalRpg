@@ -61,6 +61,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rpg|Progression|Trade Skills")
 	float GetXPToNextLevelByTag(FGameplayTag SkillTag) const;
 
+	/** Returns SkillTag's highest attainable level from ConfigData, or 100 without an override. */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Progression|Trade Skills")
+	int32 GetMaxSkillLevelByTag(FGameplayTag SkillTag) const;
+
+	/** Returns SkillTag's display name from ConfigData, or the last part of the tag when none is authored. UI read-only. */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Progression|Trade Skills")
+	FText GetSkillDisplayName(FGameplayTag SkillTag) const;
+
 	/** Returns SkillTag's base quantity multiplier; defaults linearly from 1.0 at level 1 to 1.5 at level 100. */
 	UFUNCTION(BlueprintPure, Category = "Rpg|Progression|Trade Skills")
 	float GetSkillYieldMultiplier(FGameplayTag SkillTag) const;
