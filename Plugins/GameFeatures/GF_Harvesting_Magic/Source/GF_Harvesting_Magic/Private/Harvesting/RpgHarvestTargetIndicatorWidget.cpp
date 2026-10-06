@@ -1,5 +1,6 @@
 #include "Harvesting/RpgHarvestTargetIndicatorWidget.h"
 
+#include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/UI/IndicatorSystem/IndicatorDescriptor.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgHarvestTargetIndicatorWidget)
@@ -43,6 +44,29 @@ bool URpgHarvestTargetIndicatorWidget::IsAimingPreview() const
 {
 	const URpgHarvestTargetingComponent* TargetingComponent = Targeting.Get();
 	return TargetingComponent && TargetingComponent->IsPreviewAiming();
+}
+
+bool URpgHarvestTargetIndicatorWidget::GetYieldConversion(FText& OutOutputName, int32& OutInputPerOutput) const
+{
+	OutOutputName = FText::GetEmpty();
+	OutInputPerOutput = 0;
+	const URpgHarvestTargetingComponent* TargetingComponent = Targeting.Get();
+	if (!TargetingComponent)
+	{
+		return false;
+	}
+	for (const FRpgHarvestYieldConversion& Conversion : TargetingComponent->GetCurrentPreview().YieldConversions)
+	{
+		if (const URpgInventoryItemDefinition* Output = Conversion.IsValid()
+			? GetDefault<URpgInventoryItemDefinition>(Conversion.OutputItem)
+			: nullptr)
+		{
+			OutOutputName = Output->DisplayName;
+			OutInputPerOutput = Conversion.InputPerOutput;
+			return true;
+		}
+	}
+	return false;
 }
 
 bool URpgHarvestTargetIndicatorWidget::IsWeakPointTargeted() const

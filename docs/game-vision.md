@@ -372,8 +372,8 @@ Erntewerkzeuge tragen einen Skilltree wie in New World (`docs/skill-trees.md`). 
 
 - Bergbau 2: erster Punkt der Spitzhacke, zum Beispiel Rissgriff
 - Holzfällen 2: erster Punkt der Axt, Totenwelle oder Grabschwarm
-- Weitere Punkte: Formen der Kräfte, Aschenpakt, Ultimate Schreitende Welle
-  - Axt: Weite Welle und Lange Reichweite für die Totenwelle; Schwarmbrut (viele schwache Wesen) oder Grabdetonation (wenige Wesen, deren Einschläge die Nachbarbäume mitnehmen) für den Grabschwarm
+- Weitere Punkte: Formen der Kräfte, Ultimate Schreitende Welle
+  - Axt: Weite Welle (größerer Ring) oder Aschenwelle (Holz kommt als Kohle an, 2:1) und Lange Reichweite für die Totenwelle; Schwarmbrut (viele schwache Wesen) oder Grabdetonation (wenige Wesen, deren Einschläge die Nachbarbäume mitnehmen) für den Grabschwarm
   - Spitzhacke: Weiter Riss (größerer Bereich) oder Tiefer Griff (mehr Abschnitte pro Ader) für den Rissgriff
 - Später: Astral Axe
 - Level 5: Wahl zwischen mehr Ertrag, schnellerem Harvesting oder selteneren Materialien

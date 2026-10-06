@@ -318,6 +318,7 @@ void URpgGameplayAbility_Harvest::ExecuteAuthorityCommit()
 	const FRpgHarvestTargetEvaluation* FirstHarvested = nullptr;
 	{
 		FRpgHarvestRewardBatch RewardBatch(RequestTemplate.Harvester);
+		RewardBatch.SetYieldConversions(RequestTemplate.YieldConversions);
 		for (FRpgHarvestTargetEvaluation& Target : Selection.Targets)
 		{
 			UObject* Receiver = Target.Receiver.Get();
@@ -530,6 +531,19 @@ void URpgGameplayAbility_Harvest::ResolveTunedValues(
 			FMath::Max(0.0f, Tune(Ability_Tuning_Harvest_StrikeInterval, Swarm.StrikeIntervalSeconds));
 		OutValues.Swarm.StrikeRadius = FMath::Max(0.0f, Tune(Ability_Tuning_Harvest_StrikeRadius, Swarm.StrikeRadius));
 	}
+
+	// Forms of the skill tree switch conversions on through loose tags they grant while the weapon is in use.
+	OutValues.YieldConversions.Reset();
+	const UAbilitySystemComponent* AbilitySystem = ActorInfo.AbilitySystemComponent.Get();
+	for (const FRpgHarvestYieldConversion& Conversion : YieldConversions)
+	{
+		if (Conversion.IsValid() &&
+			(!Conversion.RequiredOwnerTag.IsValid() ||
+				(AbilitySystem && AbilitySystem->HasMatchingGameplayTag(Conversion.RequiredOwnerTag))))
+		{
+			OutValues.YieldConversions.Add(Conversion);
+		}
+	}
 }
 
 void URpgGameplayAbility_Harvest::EvaluateTargetsFromView(
@@ -544,6 +558,7 @@ void URpgGameplayAbility_Harvest::EvaluateTargetsFromView(
 	OutPreview.AbilityId = HarvestAbilityId;
 	OutPreview.bHasArea = HarvestsArea();
 	OutPreview.AreaRadius = OutPreview.bHasArea ? Values.Targeting.AreaRadius : 0.0f;
+	OutPreview.YieldConversions = Values.YieldConversions;
 
 	const AActor* Avatar = ActorInfo.AvatarActor.Get();
 	const UWorld* World = Avatar ? Avatar->GetWorld() : nullptr;
@@ -681,6 +696,7 @@ void URpgGameplayAbility_Harvest::BuildRequestTemplate(
 	OutRequest.Harvester = ActorInfo.AvatarActor.Get();
 	OutRequest.AbilityId = HarvestAbilityId;
 	OutRequest.RequestedSections = FMath::Max(1, Values.SectionsPerTarget);
+	OutRequest.YieldConversions = Values.YieldConversions;
 	OutRequest.bCanHitWeakPoint = bCanHitWeakPoints && Targeting.Shape == ERpgHarvestTargetShape::SingleTarget;
 	OutRequest.bAreaHarvest = HarvestsArea();
 

@@ -2,11 +2,56 @@
 
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
+#include "Templates/SubclassOf.h"
 #include "UObject/Interface.h"
 
 #include "RpgHarvestableTarget.generated.h"
 
 class AActor;
+
+/**
+ * Turns one harvested material into another at a whole-number ratio, for example two wood into one charcoal.
+ *
+ * A harvest ability lists the conversions it can make; each is active while the ability's owner has
+ * RequiredOwnerTag, which a learned skill tree form usually grants. The reward batch of one harvest applies the
+ * active conversions to its merged rewards, so remainders of several targets combine; what does not fill a whole
+ * output stays the input material. Input and output are plain stackable materials without itemization.
+ * Designer-tuned static data.
+ */
+USTRUCT(BlueprintType)
+struct GF_HARVESTING_MAGIC_API FRpgHarvestYieldConversion
+{
+	GENERATED_BODY()
+
+	/** Owner tag that activates the conversion, for example Harvest.Form.AshWave. Empty keeps it always active. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Harvesting|Yield")
+	FGameplayTag RequiredOwnerTag;
+
+	/** Material the harvest yields that is converted, for example ID_Wood. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Harvesting|Yield")
+	TSubclassOf<URpgInventoryItemDefinition> InputItem;
+
+	/** Material delivered instead, for example ID_Charcoal. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Harvesting|Yield")
+	TSubclassOf<URpgInventoryItemDefinition> OutputItem;
+
+	/** Input items that make one output item, 1 to 100. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Harvesting|Yield", meta = (ClampMin = "1", ClampMax = "100", UIMin = "1", UIMax = "10"))
+	int32 InputPerOutput = 2;
+
+	/** Returns whether the conversion names two different items and a positive ratio. */
+	bool IsValid() const
+	{
+		return InputItem && OutputItem && InputItem != OutputItem && InputPerOutput >= 1;
+	}
+
+	bool operator==(const FRpgHarvestYieldConversion& Other) const
+	{
+		return RequiredOwnerTag == Other.RequiredOwnerTag && InputItem == Other.InputItem &&
+			OutputItem == Other.OutputItem && InputPerOutput == Other.InputPerOutput;
+	}
+};
 
 /** Server-authored request passed from a harvesting ability or interaction to a harvestable actor or component. */
 USTRUCT(BlueprintType)
@@ -88,6 +133,13 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestRequest
 	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Harvesting", meta = (ClampMin = "0.0", ClampMax = "2.5", Units = "s"))
 	float PresentationDelaySeconds = 0.0f;
+
+	/**
+	 * Yield conversions the harvesting ability had active when its execution started. The harvest's reward batch
+	 * applies them to the merged rewards; targets ignore them. Server-side; empty for manual harvesting.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
+	TArray<FRpgHarvestYieldConversion> YieldConversions;
 
 	/** Returns the actor that physically strikes the resource: PhysicalHarvester when set, otherwise the Harvester. */
 	AActor* GetStrikingActor() const

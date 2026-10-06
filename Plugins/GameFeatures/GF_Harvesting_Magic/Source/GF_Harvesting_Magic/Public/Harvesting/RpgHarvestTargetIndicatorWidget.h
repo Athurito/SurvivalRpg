@@ -48,6 +48,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rpg|Harvesting|Indicator")
 	bool IsWeakPointTargeted() const;
 
+	/**
+	 * Returns the first yield conversion of the previewed ability, for example two wood into one charcoal: the output
+	 * item's display name and the input items per output item. False when the preview converts nothing.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Harvesting|Indicator")
+	bool GetYieldConversion(FText& OutOutputName, int32& OutInputPerOutput) const;
+
 private:
 	/** Read model that created the bound indicator. */
 	TWeakObjectPtr<const URpgHarvestTargetingComponent> Targeting;

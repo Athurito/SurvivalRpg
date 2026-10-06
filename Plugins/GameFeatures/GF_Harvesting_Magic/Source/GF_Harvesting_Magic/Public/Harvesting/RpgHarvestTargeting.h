@@ -19,7 +19,8 @@ enum class ERpgHarvestTargetShape : uint8
 
 	/**
 	 * Every harvestable within AreaRadius around the point the view ray hits, such as an area power. When the ray
-	 * hits nothing, the aim point is the ground below the ray end, kept within MaxReachFromAvatar.
+	 * hits nothing, or hits beyond MaxReachFromAvatar, the aim point moves back to the ground within that reach, so
+	 * the area stops at the reach.
 	 */
 	AreaAtAimPoint
 };
@@ -126,6 +127,10 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestPreview
 	/** Selected targets, nearest first. */
 	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
 	TArray<FRpgHarvestTargetEvaluation> Targets;
+
+	/** Yield conversions the previewed ability would apply, for example two wood into one charcoal. */
+	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
+	TArray<FRpgHarvestYieldConversion> YieldConversions;
 
 	/** Returns whether a harvest ability is being previewed at all. */
 	bool HasAbility() const

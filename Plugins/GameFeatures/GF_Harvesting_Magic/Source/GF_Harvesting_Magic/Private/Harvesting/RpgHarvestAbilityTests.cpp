@@ -8,6 +8,7 @@
 #include "Harvesting/RpgHarvestAutomationTestTypes.h"
 #include "Harvesting/RpgHarvestAutomationTestWorld.h"
 #include "Harvesting/RpgHarvestProfile.h"
+#include "Harvesting/RpgHarvestRewardService.h"
 #include "Harvesting/RpgHarvestSwarm.h"
 #include "Harvesting/RpgHarvestTargetingComponent.h"
 #include "SurvivalRpg/Animation/AnimNotify_RpgGameplayEvent.h"
@@ -41,6 +42,7 @@ UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestTuningTest_Reach, "SkillTree.Node.Harve
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestTuningTest_Brood, "SkillTree.Node.HarvestTuningTest.Brood");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestTuningTest_Blast, "SkillTree.Node.HarvestTuningTest.Blast");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestTuningTest_Cooldown, "Cooldown.HarvestTuningTest");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestYieldTest_Form, "Harvest.Form.AutomationTest");
 
 namespace RpgHarvestAbilityTests
 {
@@ -806,6 +808,71 @@ bool FRpgHarvestAbilityAimedAreaIndicatorTest::RunTest(const FString& Parameters
 	TestEqual(TEXT("Releasing the aim removes the area indicators"), IndicatorManager->GetIndicators().Num(), 0);
 	TestTrue(TEXT("Releasing the aim hides the area marker"), AreaMarker && AreaMarker->IsHidden());
 	TestTrue(TEXT("The hidden marker is kept for the next aim"), Targeting->GetAreaMarkerForTest() == AreaMarker);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestAbilityAreaReachClampTest,
+	"SurvivalRpg.Harvesting.Ability.AreaAimStopsAtReach",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestAbilityAreaReachClampTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestAbilityTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+
+	auto SpawnBlock = [World](const FVector& Location, const FVector& Extent) -> UBoxComponent*
+	{
+		AActor* Block = World->SpawnActor<AActor>();
+		UBoxComponent* Box = Block ? NewObject<UBoxComponent>(Block) : nullptr;
+		if (Box)
+		{
+			Box->InitBoxExtent(Extent);
+			Box->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
+			Block->SetRootComponent(Box);
+			Box->RegisterComponent();
+			Block->SetActorLocation(Location);
+		}
+		return Box;
+	};
+	// Ground below, and a wall far beyond the reach that the level view ray hits.
+	UBoxComponent* Floor = SpawnBlock(FVector(0.0, 0.0, -150.0), FVector(5000.0, 5000.0, 50.0));
+	UBoxComponent* Wall = SpawnBlock(FVector(1500.0, 0.0, 300.0), FVector(50.0, 2000.0, 600.0));
+	ARpgHarvestAutomationCollidableNodeActor* Node =
+		SpawnNode(World, FVector(550.0, 0.0, -60.0), MakeProfile(World, 4));
+	const FGrantedAbility Area = GrantAbility(Harvester.AbilitySystem);
+	if (!TestNotNull(TEXT("Floor exists"), Floor) || !TestNotNull(TEXT("Wall exists"), Wall) ||
+		!TestNotNull(TEXT("Node exists"), Node) || !TestNotNull(TEXT("Area ability exists"), Area.Instance))
+	{
+		return false;
+	}
+
+	FRpgHarvestTargetingParams Params;
+	Params.Shape = ERpgHarvestTargetShape::AreaAtAimPoint;
+	Params.MaxAimDistance = 3000.0f;
+	Params.MaxReachFromAvatar = 700.0f;
+	Params.AreaRadius = 300.0f;
+	Params.MaxTargets = 3;
+	Area.Instance->ConfigureTargeting(Params);
+	const FRpgHarvestPreview Preview = Evaluate(Harvester.AbilitySystem, Area);
+	const FVector AvatarLocation = Harvester.Pawn->GetActorLocation();
+	TestTrue(
+		TEXT("An aim point beyond the reach moves back within it"),
+		FVector::Dist(AvatarLocation, Preview.AimPoint) <= Params.MaxReachFromAvatar + 1.0);
+	TestTrue(TEXT("The moved aim point lies on the ground"), FMath::IsNearlyEqual(Preview.AimPoint.Z, -100.0, 2.0));
+	if (!TestEqual(TEXT("The area at the reach collects the node there"), Preview.Targets.Num(), 1))
+	{
+		return false;
+	}
+	TestTrue(TEXT("What the area shows can be harvested"), Preview.Targets[0].bInReach && Preview.Targets[0].WouldHarvest());
 	return true;
 }
 
@@ -1984,7 +2051,7 @@ bool FRpgHarvestTuningPreviewAndCommitTest::RunTest(const FString& Parameters)
 	FScopedTreeTool TreeTool(Tree);
 	URpgSkillTreeComponent* SkillTrees = PrepareSkillTree(Harvester, Tree);
 	URpgEquipmentInstance* Equipment = MakeTreeToolEquipment(Harvester);
-	// The aim point lies 250 cm away, beyond the authored reach of 200 cm.
+	// The aimed tree face lies about 258 cm away, beyond the authored reach of 200 cm.
 	const FGrantedAbility Power = GrantAreaAbility(Harvester.AbilitySystem, Equipment, 200.0f);
 	if (!TestNotNull(TEXT("Grove exists"), Grove) ||
 		!TestNotNull(TEXT("Skill trees are prepared"), SkillTrees) ||
@@ -1997,8 +2064,12 @@ bool FRpgHarvestTuningPreviewAndCommitTest::RunTest(const FString& Parameters)
 	Power.Instance->ConfigureCooldown(URpgHarvestAutomationTestCooldownEffect::StaticClass());
 	TestWorld.PrimeTimerManager();
 
+	const FVector AvatarLocation = Harvester.Pawn->GetActorLocation();
 	FRpgHarvestPreview Preview = Evaluate(Harvester.AbilitySystem, Power);
-	TestTrue(TEXT("Without upgrades the aim point is out of reach"), PreviewSections(Preview) == TArray<int32>({0}));
+	TestTrue(
+		TEXT("Without upgrades the aim point stops at the authored reach"),
+		FVector::Dist(AvatarLocation, Preview.AimPoint) <= 201.0);
+	TestTrue(TEXT("The area at the reach still takes the nearest tree"), PreviewSections(Preview) == TArray<int32>({1}));
 	TestEqual(TEXT("The authored area radius is previewed"), Preview.AreaRadius, 200.0f);
 
 	TestEqual(TEXT("Reach is learned"),
@@ -2012,6 +2083,9 @@ bool FRpgHarvestTuningPreviewAndCommitTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("A reach upgrade extends the reach"), Values.Targeting.MaxReachFromAvatar, 350.0f);
 	TestEqual(TEXT("The aim ray grows with the reach"), Values.Targeting.MaxAimDistance, 1150.0f);
 	Preview = Evaluate(Harvester.AbilitySystem, Power);
+	TestTrue(
+		TEXT("The longer reach lets the aim point stay on the aimed tree"),
+		FVector::Dist(AvatarLocation, Preview.AimPoint) > 250.0 && FVector::Dist(AvatarLocation, Preview.AimPoint) <= 350.0);
 	TestTrue(TEXT("The longer reach takes the nearest tree"), PreviewSections(Preview) == TArray<int32>({1}));
 
 	TestEqual(TEXT("Wide is learned"),
@@ -2244,6 +2318,194 @@ bool FRpgHarvestTuningSwarmFormsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Every creature finished"), Swarm->IsFinished());
 	TestTrue(TEXT("The brood empties every tree"), RemainingSections(Grove, 3) == TArray<int32>({0, 0, 0}));
 	TestEqual(TEXT("The brood counts every section once"), Swarm->GetHarvestedSections(), 12);
+	return true;
+}
+
+namespace RpgHarvestYieldTests
+{
+	using namespace RpgHarvestTuningTests;
+
+	using FInputMaterial = URpgHarvestAutomationTestStackItemDefinition;
+	using FOutputMaterial = URpgHarvestAutomationTestSecondMaterialDefinition;
+
+	FRpgHarvestYieldConversion MakeConversion(const int32 InputPerOutput, const FGameplayTag RequiredOwnerTag = FGameplayTag())
+	{
+		FRpgHarvestYieldConversion Conversion;
+		Conversion.RequiredOwnerTag = RequiredOwnerTag;
+		Conversion.InputItem = FInputMaterial::StaticClass();
+		Conversion.OutputItem = FOutputMaterial::StaticClass();
+		Conversion.InputPerOutput = InputPerOutput;
+		return Conversion;
+	}
+
+	int32 CountStack(const FInventoryPickup& Reward, const TSubclassOf<URpgInventoryItemDefinition> Definition)
+	{
+		int32 Count = 0;
+		for (const FPickupTemplate& Template : Reward.Templates)
+		{
+			Count += Template.ItemDef == Definition ? Template.StackCount : 0;
+		}
+		return Count;
+	}
+
+	int32 CountOutput(const ARpgHarvestAutomationTestPlayerState* PlayerState)
+	{
+		return PlayerState && PlayerState->GetInventoryManagerComponent()
+			? PlayerState->GetInventoryManagerComponent()->GetTotalItemCountByDefinition(FOutputMaterial::StaticClass())
+			: 0;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestYieldConversionRulesTest,
+	"SurvivalRpg.Harvesting.Yield.ConversionKeepsRemainder",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestYieldConversionRulesTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestYieldTests;
+
+	auto MakeReward = [](const TArray<TPair<TSubclassOf<URpgInventoryItemDefinition>, int32>>& Stacks)
+	{
+		FInventoryPickup Reward;
+		for (const TPair<TSubclassOf<URpgInventoryItemDefinition>, int32>& Stack : Stacks)
+		{
+			FPickupTemplate& Template = Reward.Templates.AddDefaulted_GetRef();
+			Template.ItemDef = Stack.Key;
+			Template.StackCount = Stack.Value;
+		}
+		return Reward;
+	};
+	const TSubclassOf<URpgInventoryItemDefinition> Other = URpgHarvestAutomationTestLowToolDefinition::StaticClass();
+
+	FInventoryPickup Reward = MakeReward({{FInputMaterial::StaticClass(), 7}, {Other, 3}});
+	TestEqual(TEXT("Seven inputs at two per output make three outputs"),
+		FRpgHarvestRewardService::ApplyYieldConversions(Reward, {MakeConversion(2)}), 3);
+	TestEqual(TEXT("The odd input stays the input material"), CountStack(Reward, FInputMaterial::StaticClass()), 1);
+	TestEqual(TEXT("The outputs arrive as one stack"), CountStack(Reward, FOutputMaterial::StaticClass()), 3);
+	TestEqual(TEXT("Other loot is untouched"), CountStack(Reward, Other), 3);
+
+	Reward = MakeReward({{FInputMaterial::StaticClass(), 5}, {FOutputMaterial::StaticClass(), 1}, {FInputMaterial::StaticClass(), 4}});
+	TestEqual(TEXT("Split input stacks count together"),
+		FRpgHarvestRewardService::ApplyYieldConversions(Reward, {MakeConversion(3)}), 3);
+	TestEqual(TEXT("Nothing of the input is left"), CountStack(Reward, FInputMaterial::StaticClass()), 0);
+	TestEqual(TEXT("Outputs join an existing output stack"), CountStack(Reward, FOutputMaterial::StaticClass()), 4);
+	TestEqual(TEXT("Empty stacks are removed"), Reward.Templates.Num(), 1);
+
+	Reward = MakeReward({{FInputMaterial::StaticClass(), 4}});
+	TestEqual(TEXT("Too few inputs make no output"),
+		FRpgHarvestRewardService::ApplyYieldConversions(Reward, {MakeConversion(5)}), 0);
+	TestEqual(TEXT("The inputs stay unchanged"), CountStack(Reward, FInputMaterial::StaticClass()), 4);
+
+	FRpgHarvestYieldConversion SameItem = MakeConversion(1);
+	SameItem.OutputItem = SameItem.InputItem;
+	TestEqual(TEXT("An invalid conversion is skipped"),
+		FRpgHarvestRewardService::ApplyYieldConversions(Reward, {SameItem}), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestYieldAbilityTest,
+	"SurvivalRpg.Harvesting.Yield.AbilityConvertsWhileFormIsActive",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestYieldAbilityTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestYieldTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	RpgHarvestAutomation::AddInstanceStock(World);
+	ARpgHarvestAutomationInstancesActor* Grove = SpawnGrove(World, Harvester.Pawn->BaseEyeHeight);
+	// One section of each of the three trees, two items per section: six inputs per execution.
+	const FGrantedAbility Power = GrantAreaAbility(Harvester.AbilitySystem, nullptr, 700.0f);
+	const FGrantedAbility PlainPower = GrantAreaAbility(Harvester.AbilitySystem, nullptr, 700.0f);
+	if (!TestNotNull(TEXT("Grove exists"), Grove) ||
+		!TestNotNull(TEXT("Converting power exists"), Power.Instance) ||
+		!TestNotNull(TEXT("Plain power exists"), PlainPower.Instance))
+	{
+		return false;
+	}
+	for (const FGrantedAbility& Granted : {Power, PlainPower})
+	{
+		FRpgHarvestTargetingParams AreaTargeting;
+		AreaTargeting.Shape = ERpgHarvestTargetShape::AreaAtAimPoint;
+		AreaTargeting.MaxAimDistance = 1000.0f;
+		AreaTargeting.MaxReachFromAvatar = 700.0f;
+		AreaTargeting.AreaRadius = 450.0f;
+		AreaTargeting.MaxTargets = 3;
+		Granted.Instance->ConfigureTargeting(AreaTargeting);
+	}
+	Power.Instance->ConfigureYieldConversions({MakeConversion(4, TAG_HarvestYieldTest_Form)});
+	TestWorld.PrimeTimerManager();
+
+	TestTrue(TEXT("Without the form the preview converts nothing"), Evaluate(Harvester.AbilitySystem, Power).YieldConversions.IsEmpty());
+	TestTrue(TEXT("Without the form the power executes"), Harvester.AbilitySystem->TryActivateAbility(Power.Handle));
+	TestEqual(TEXT("Without the form the harvest yields its material"), CountMaterial(Harvester.PlayerState), 6);
+	TestEqual(TEXT("Without the form nothing is converted"), CountOutput(Harvester.PlayerState), 0);
+
+	Harvester.AbilitySystem->AddLooseGameplayTag(TAG_HarvestYieldTest_Form);
+	const FRpgHarvestPreview Preview = Evaluate(Harvester.AbilitySystem, Power);
+	TestTrue(TEXT("The preview shows the active conversion"),
+		Preview.YieldConversions.Num() == 1 && Preview.YieldConversions[0].InputPerOutput == 4);
+	TestTrue(TEXT("With the form the power executes"), Harvester.AbilitySystem->TryActivateAbility(Power.Handle));
+	TestEqual(TEXT("The three trees' rewards convert together: six inputs make one output"), CountOutput(Harvester.PlayerState), 1);
+	TestEqual(TEXT("Two inputs remain as material, no hidden loss"), CountMaterial(Harvester.PlayerState), 6 + 2);
+
+	TestTrue(TEXT("A power without conversions executes"), Harvester.AbilitySystem->TryActivateAbility(PlainPower.Handle));
+	TestEqual(TEXT("Another ability keeps its material despite the form"), CountMaterial(Harvester.PlayerState), 8 + 6);
+	TestEqual(TEXT("Another ability converts nothing"), CountOutput(Harvester.PlayerState), 1);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestYieldSwarmTest,
+	"SurvivalRpg.Harvesting.Yield.SwarmKeepsConversionFromSummon",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestYieldSwarmTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestYieldTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	RpgHarvestAutomation::AddInstanceStock(World);
+	ARpgHarvestAutomationInstancesActor* Grove = SpawnGrove(World, Harvester.Pawn->BaseEyeHeight);
+	const FGrantedAbility Summon = GrantSwarmAbility(Harvester.AbilitySystem, 4);
+	if (!TestNotNull(TEXT("Grove exists"), Grove) || !TestNotNull(TEXT("Swarm ability exists"), Summon.Instance))
+	{
+		return false;
+	}
+	Summon.Instance->ConfigureYieldConversions({MakeConversion(5, TAG_HarvestYieldTest_Form)});
+	TestWorld.PrimeTimerManager();
+
+	Harvester.AbilitySystem->AddLooseGameplayTag(TAG_HarvestYieldTest_Form);
+	TestTrue(TEXT("The swarm is summoned with the form"), Harvester.AbilitySystem->TryActivateAbility(Summon.Handle));
+	ARpgHarvestSwarm* Swarm = FindActiveSwarm(World);
+	if (!TestNotNull(TEXT("The commit summons a swarm"), Swarm))
+	{
+		return false;
+	}
+	// Unlearning the form after the summon does not change the swarm.
+	Harvester.AbilitySystem->RemoveLooseGameplayTag(TAG_HarvestYieldTest_Form);
+	Advance(TestWorld, 5.0);
+	TestTrue(TEXT("Every creature finished"), Swarm->IsFinished());
+	TestEqual(TEXT("The swarm harvests all twelve sections"), Swarm->GetHarvestedSections(), 12);
+	TestEqual(TEXT("Its 24 inputs convert at the summon's ratio into four outputs"), CountOutput(Harvester.PlayerState), 4);
+	TestEqual(TEXT("Four inputs remain as material"), CountMaterial(Harvester.PlayerState), 4);
 	return true;
 }
 

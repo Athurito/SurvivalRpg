@@ -802,6 +802,7 @@ HARV-09b makes the skill trees of HARV-09a playable; see
 - `DA_SkillTree_Axe` (`SkillTree.Tree.Axe`, Logging) has the branches Death
   and Grave with one active node each in row 0: Death Wave in column 0 and
   Grave Swarm in column 2. Column 1 stays free for the Ash Pact (HARV-09d).
+  HARV-09d made the Ash Pact a form of Death Wave instead.
   HARV-09c widened the tree to seven columns; see its layout rule.
 - `DA_SkillTree_Pickaxe` (`SkillTree.Tree.Pickaxe`, Mining) has Rift Grip in
   row 0 of the Rift branch.
@@ -985,8 +986,92 @@ the client:
 - The values are first tuning; HARV-09f compares the forms by harvest time.
 - In two PIE runs, the first held power right after the script closed the
   menu executed before the scripted release; every later hold waited for the
-  release. A real key was not tested.
+  release. HARV-09d traced it to the script's window captures, which change
+  focus; it is no game bug.
 - Refunds need a mouse right-click; there is no gamepad binding yet.
+
+## Ash Wave and charcoal (HARV-09d)
+
+HARV-09d lets a skill change what a harvest yields. The first such form, Ash
+Wave, turns Death Wave's wood into charcoal.
+
+### Yield conversions
+
+- **Schema:** `FRpgHarvestYieldConversion` names an input and an output material,
+  a whole-number ratio (`InputPerOutput`), and a `RequiredOwnerTag`.
+- **On the ability:** `URpgGameplayAbility_Harvest::YieldConversions` lists the
+  conversions an ability can make. One is active while the ability's owner has
+  its tag; the skill tree form grants it through `GrantedTags`, only while the
+  weapon is in use.
+- **Capture:** the server captures the active conversions with the other values
+  when execution starts and passes them in `FRpgHarvestRequest`. A summoned
+  swarm keeps those of its summon, even when the form is unlearned meanwhile.
+- **Delivery:** `FRpgHarvestRewardBatch` applies them to the merged rewards of
+  one harvest (`FRpgHarvestRewardService::ApplyYieldConversions`).
+  - Remainders of several targets therefore combine. What does not fill a whole
+    output stays the input material; nothing is lost.
+  - Only plain stackable materials convert. Other loot, such as rare finds,
+    stays unchanged.
+- **Preview:** `FRpgHarvestPreview::YieldConversions` and the indicator's
+  `GetYieldConversion` give the target markers "→ Charcoal 2:1".
+
+### Content
+
+- `ID_Charcoal`: a stackable material like `ID_Wood`, with a placeholder icon.
+- `GA_Harvest_DeathWave` converts `ID_Wood` into `ID_Charcoal` at 2:1 while
+  its owner has `Harvest.Form.AshWave`.
+- **Axe tree:** Death Wave now forks into Wide Wave (row 1, column 0) and the
+  new Ash Wave (row 1, column 2). The two exclude each other (`DeathWaveForm`).
+  Ash Wave grants `Harvest.Form.AshWave`. Long Reach chains straight from Death
+  Wave (row 2, column 1).
+- **Kiln:**
+  - `BP_CraftingStation_Kiln` is a copy of the workbench with the station tag
+    `Crafting.Station.Kiln` and `DA_RecipeSet_Kiln`.
+  - `DA_Recipe_Charcoal` burns 2 `ID_Wood` into 1 `ID_Charcoal` in 3 s, so
+    charcoal stays reachable without the form.
+  - `Harvest_Kiln` stands next to the tool pickups in `Lvl_HarvestPickaxe`.
+- `WBP_HarvestTargetIndicator` appends the conversion to the marker text through
+  `F_ConversionSuffix`.
+- **Design change:** the plan had the Ash Pact as a toggle ability with its own
+  mode effect. In review the user preferred a skill form like the Diablo 4 skill
+  transformations, so Ash Wave is an exclusive form of Death Wave. A passive
+  that also turns manual swings into charcoal is optional and was left out,
+  because powers do most of the felling.
+
+### Area aim stops at the reach
+
+Found in review: with the flatter aim camera of HARV-09c, the ring could lie
+beyond the reach, and the trees inside it read "Out of reach". Now an area aim
+point beyond `MaxReachFromAvatar`, hit or not, moves back toward the harvester
+and onto the ground within reach (`FRpgHarvestTargeting::SelectAndEvaluate`).
+The ring stops at the reach, and everything inside it can be harvested.
+
+### Multiplayer
+
+Listen-server PIE sessions with one client in `Lvl_HarvestPickaxe` checked on
+the client:
+- Logging 3 learned Death Wave and Ash Wave; Wide Wave showed as excluded.
+- While Q was held, the target markers read "4/4  -4  → Charcoal 2:1".
+- **Death Wave casts:** two casts felled two trees each. Each cast's 40 wood
+  arrived as 20 charcoal with no wood left over (40 charcoal in total).
+- **Kiln:** pressing F at the kiln opened the crafting screen with the Charcoal
+  recipe. Two crafts turned 4 of 5 wood into 2 charcoal in the station output.
+- **Reach:** aiming Death Wave far beyond its 10 m reach left the aim point
+  about 9.3 m away. The two trees in the ring fell (40 wood).
+
+### Not done
+
+- **Kiln screen:** the kiln still uses the shared manual crafting screen,
+  titled "Crafting Station". Decided in review: processing stations such as
+  the kiln or a smelter will run a selected recipe automatically, as in other
+  survival games, while workbenches stay manual. That needs its own crafting
+  task.
+- **Icons:** the charcoal icon is a placeholder.
+- **Early release in PIE:** a held power executed before the scripted release
+  whenever the script captured the client window during the hold. The capture
+  changes window focus, which releases held keys. Holds without a capture
+  waited for the release, and the user could not reproduce it by hand, so it
+  is a test-tool artifact.
 
 ## Performance guardrails
 
@@ -1012,8 +1097,8 @@ the client:
 | HARV-08 | M3 grave swarm with separate beneficiary and physical harvester | Merged: [#186](https://github.com/Athurito/SurvivalRpg/pull/186) |
 | HARV-09a | M4 skill tree foundation (core): tree definition, item fragment, PlayerState progress, weapon grants, Q/E/R per tree, tunings, save schema 4; see [skill-trees.md](skill-trees.md) | Merged: [#188](https://github.com/Athurito/SurvivalRpg/pull/188) |
 | HARV-09b | Skill UI (progression overview, tree grid, Q/E/R, reset) and the tool trees; Rift Grip, Death Wave and Grave Swarm move from level gates to tree nodes | Merged: [#189](https://github.com/Athurito/SurvivalRpg/pull/189) |
-| HARV-09c | Power forms through tunings: Wide Wave, Long Reach, Swarm Brood, Grave Detonation (strike radius), Wide Rift, Deep Grip; loose passives, chain-only gates, right-click refund of single nodes | In review: [#190](https://github.com/Athurito/SurvivalRpg/pull/190) |
-| HARV-09d | Ash Pact: axe toggle that turns wood harvests into charcoal at a shown ratio, charcoal item, kiln recipe | Planned |
+| HARV-09c | Power forms through tunings: Wide Wave, Long Reach, Swarm Brood, Grave Detonation (strike radius), Wide Rift, Deep Grip; loose passives, chain-only gates, right-click refund of single nodes | Merged: [#190](https://github.com/Athurito/SurvivalRpg/pull/190) |
+| HARV-09d | Ash Wave: Death Wave form that delivers charcoal through yield conversions at a shown ratio, charcoal item, kiln recipe | In review: [#192](https://github.com/Athurito/SurvivalRpg/pull/192) |
 | HARV-09e | Striding Wave, the axe's ultimate: trees around the walking player fall for a few seconds | Planned |
 | HARV-09f | Resource parity across combat styles and a build target that stronger harvesting makes easier | Planned |
 | HARV-10 | M5 resource persistence with stable IDs, portal variant, co-op load | Planned |
