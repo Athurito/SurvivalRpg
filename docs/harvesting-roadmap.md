@@ -874,7 +874,7 @@ on the client:
 | HARV-07 | M2 axe and Death Wave area harvest, aggregated delivery, protected objects, PCG trees | Merged: [#185](https://github.com/Athurito/SurvivalRpg/pull/185) |
 | HARV-08 | M3 grave swarm with separate beneficiary and physical harvester | Merged: [#186](https://github.com/Athurito/SurvivalRpg/pull/186) |
 | HARV-09a | M4 skill tree foundation (core): tree definition, item fragment, PlayerState progress, weapon grants, Q/E/R per tree, tunings, save schema 4; see [skill-trees.md](skill-trees.md) | Merged: [#188](https://github.com/Athurito/SurvivalRpg/pull/188) |
-| HARV-09b | Skill UI (progression overview, tree grid, Q/E/R, reset) and the tool trees; Rift Grip, Death Wave and Grave Swarm move from level gates to tree nodes | In review |
+| HARV-09b | Skill UI (progression overview, tree grid, Q/E/R, reset) and the tool trees; Rift Grip, Death Wave and Grave Swarm move from level gates to tree nodes | In review: [#189](https://github.com/Athurito/SurvivalRpg/pull/189) |
 | HARV-09c | Power forms through tunings: Wide Wave, Long Reach, Swarm Brood, Grave Detonation (strike radius), Wide Rift, Deep Grip | Planned |
 | HARV-09d | Ash Pact: axe toggle that turns wood harvests into charcoal at a shown ratio, charcoal item, kiln recipe | Planned |
 | HARV-09e | Striding Wave, the axe's ultimate: trees around the walking player fall for a few seconds | Planned |
