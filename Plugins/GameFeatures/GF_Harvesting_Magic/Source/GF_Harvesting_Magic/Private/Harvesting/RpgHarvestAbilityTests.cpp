@@ -18,6 +18,8 @@
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillGameplayTags.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillProgressionComponent.h"
+#include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeComponent.h"
+#include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeDefinition.h"
 #include "SurvivalRpg/UI/IndicatorSystem/RpgIndicatorManagerComponent.h"
 #include "Blueprint/UserWidget.h"
 
@@ -30,7 +32,15 @@
 #include "EngineUtils.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
+#include "NativeGameplayTags.h"
 #include "UObject/UnrealType.h"
+
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestTuningTest_Tree, "SkillTree.Tree.HarvestTuningTest");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestTuningTest_Wide, "SkillTree.Node.HarvestTuningTest.Wide");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestTuningTest_Reach, "SkillTree.Node.HarvestTuningTest.Reach");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestTuningTest_Brood, "SkillTree.Node.HarvestTuningTest.Brood");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestTuningTest_Blast, "SkillTree.Node.HarvestTuningTest.Blast");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestTuningTest_Cooldown, "Cooldown.HarvestTuningTest");
 
 namespace RpgHarvestAbilityTests
 {
@@ -1462,9 +1472,12 @@ namespace RpgHarvestSwarmTests
 	using namespace RpgHarvestAbilityTests;
 
 	/** Grants a swarm ability whose CreatureCount creatures clear up to three resources within 450 cm of the aim point, two sections per strike. */
-	FGrantedAbility GrantSwarmAbility(URpgAbilitySystemComponent* AbilitySystem, const int32 CreatureCount)
+	FGrantedAbility GrantSwarmAbility(
+		URpgAbilitySystemComponent* AbilitySystem,
+		const int32 CreatureCount,
+		UObject* SourceObject = nullptr)
 	{
-		FGrantedAbility Granted = GrantAbility(AbilitySystem);
+		FGrantedAbility Granted = GrantAbility(AbilitySystem, SourceObject);
 		if (!Granted.Instance)
 		{
 			return Granted;
@@ -1790,6 +1803,447 @@ bool FRpgHarvestSwarmSummonerDeathTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Nothing more is taken from the nearest tree"), Trees->GetRemainingSections(0), 2);
 	TestEqual(TEXT("Nothing is harvested after the death"), Trees->GetRemainingSections(1), 4);
 	TestEqual(TEXT("No late rewards arrive"), CountMaterial(Harvester.PlayerState), 2 * YieldPerSection);
+	return true;
+}
+
+namespace RpgHarvestTuningTests
+{
+	using namespace RpgHarvestSwarmTests;
+
+	/** Restores the class-default fragment of the tree tool when a test ends. */
+	struct FScopedTreeTool
+	{
+		explicit FScopedTreeTool(const URpgSkillTreeDefinition* Tree)
+		{
+			URpgHarvestAutomationTestTreeToolDefinition::SetTestSkillTree(Tree);
+		}
+
+		~FScopedTreeTool()
+		{
+			URpgHarvestAutomationTestTreeToolDefinition::SetTestSkillTree(nullptr);
+		}
+	};
+
+	/** Restores the class-default cooldown tag of the test cooldown effect when a test ends. */
+	struct FScopedCooldownTag
+	{
+		explicit FScopedCooldownTag(const FGameplayTag CooldownTag)
+		{
+			URpgHarvestAutomationTestCooldownEffect::SetCooldownTag(CooldownTag);
+		}
+
+		~FScopedCooldownTag()
+		{
+			URpgHarvestAutomationTestCooldownEffect::SetCooldownTag(FGameplayTag());
+		}
+	};
+
+	FRpgSkillTreeAbilityTuning MakeTuning(
+		const FGameplayTag TuningTag,
+		const ERpgSkillTreeTuningOperation Operation,
+		const float Value)
+	{
+		FRpgSkillTreeAbilityTuning Tuning;
+		Tuning.TuningTag = TuningTag;
+		Tuning.Operation = Operation;
+		Tuning.Value = Value;
+		return Tuning;
+	}
+
+	/**
+	 * One-point nodes on Mining, each tuning every ability of the tool: Wide (+120 cm area, +2 targets, +1 section,
+	 * -1 s cooldown), Reach (+150 cm), Brood (6 creatures with one section each) and Blast (250 cm strike radius,
+	 * 0.2 s rest).
+	 */
+	URpgSkillTreeDefinition* MakePowerTree()
+	{
+		using namespace RpgHarvestingMagicGameplayTags;
+
+		URpgSkillTreeDefinition* Tree = NewObject<URpgSkillTreeDefinition>(GetTransientPackage(), NAME_None, RF_Transient);
+		Tree->TreeTag = TAG_HarvestTuningTest_Tree;
+		Tree->MasterySkillTag = RpgTradeSkillGameplayTags::Skill_Gathering_Mining;
+		Tree->MaxPoints = 10;
+
+		auto AddNode = [Tree](const FGameplayTag NodeTag, const int32 Column) -> FRpgSkillTreeNode&
+		{
+			FRpgSkillTreeNode& Node = Tree->Nodes.AddDefaulted_GetRef();
+			Node.NodeTag = NodeTag;
+			Node.Column = Column;
+			return Node;
+		};
+
+		AddNode(TAG_HarvestTuningTest_Wide, 0).AbilityTunings = {
+			MakeTuning(Ability_Tuning_Harvest_AreaRadius, ERpgSkillTreeTuningOperation::Add, 120.0f),
+			MakeTuning(Ability_Tuning_Harvest_MaxTargets, ERpgSkillTreeTuningOperation::Add, 2.0f),
+			MakeTuning(Ability_Tuning_Harvest_Sections, ERpgSkillTreeTuningOperation::Add, 1.0f),
+			MakeTuning(Ability_Tuning_Harvest_Cooldown, ERpgSkillTreeTuningOperation::Add, -1.0f)};
+		AddNode(TAG_HarvestTuningTest_Reach, 1).AbilityTunings = {
+			MakeTuning(Ability_Tuning_Harvest_Reach, ERpgSkillTreeTuningOperation::Add, 150.0f)};
+		AddNode(TAG_HarvestTuningTest_Brood, 2).AbilityTunings = {
+			MakeTuning(Ability_Tuning_Harvest_Creatures, ERpgSkillTreeTuningOperation::Set, 6.0f),
+			MakeTuning(Ability_Tuning_Harvest_Sections, ERpgSkillTreeTuningOperation::Set, 1.0f)};
+		AddNode(TAG_HarvestTuningTest_Blast, 3).AbilityTunings = {
+			MakeTuning(Ability_Tuning_Harvest_StrikeRadius, ERpgSkillTreeTuningOperation::Set, 250.0f),
+			MakeTuning(Ability_Tuning_Harvest_StrikeInterval, ERpgSkillTreeTuningOperation::Set, 0.2f)};
+		return Tree;
+	}
+
+	/** Gives the harvester's player state the tree and enough Mining levels for every node. */
+	URpgSkillTreeComponent* PrepareSkillTree(const FHarvesterFixture& Harvester, const URpgSkillTreeDefinition* Tree)
+	{
+		URpgSkillTreeComponent* SkillTrees = Harvester.PlayerState->GetSkillTreeComponent();
+		URpgTradeSkillProgressionComponent* TradeSkills = Harvester.PlayerState->GetTradeSkillProgressionComponent();
+		if (!SkillTrees || !TradeSkills)
+		{
+			return nullptr;
+		}
+		SkillTrees->RegisterSkillTree(Tree);
+		const FGameplayTag Mining = RpgTradeSkillGameplayTags::Skill_Gathering_Mining;
+		for (int32 Guard = 0; Guard < 200 && TradeSkills->GetSkillLevelByTag(Mining) < 6; ++Guard)
+		{
+			const float MissingXP = TradeSkills->GetXPToNextLevelByTag(Mining) - TradeSkills->GetSkillXPByTag(Mining);
+			TradeSkills->AddSkillXPByTag(Mining, FMath::Max(1.0f, MissingXP));
+		}
+		return SkillTrees;
+	}
+
+	/** Equipment instance whose source item is the tree tool, as the equipment manager grants tool abilities. */
+	URpgEquipmentInstance* MakeTreeToolEquipment(const FHarvesterFixture& Harvester)
+	{
+		URpgInventoryItemInstance* ToolItem = Harvester.PlayerState->GetInventoryManagerComponent()->GrantItemDefinition(
+			URpgHarvestAutomationTestTreeToolDefinition::StaticClass());
+		URpgEquipmentInstance* Equipment = ToolItem ? NewObject<URpgEquipmentInstance>(Harvester.Pawn) : nullptr;
+		if (Equipment)
+		{
+			Equipment->SetInstigator(ToolItem);
+		}
+		return Equipment;
+	}
+
+	/** Grants an area ability sourced from Equipment: 200 cm area, one target, one section, reach Reach. */
+	FGrantedAbility GrantAreaAbility(URpgAbilitySystemComponent* AbilitySystem, UObject* Equipment, const float Reach)
+	{
+		FGrantedAbility Granted = GrantAbility(AbilitySystem, Equipment);
+		if (Granted.Instance)
+		{
+			FRpgHarvestTargetingParams AreaTargeting;
+			AreaTargeting.Shape = ERpgHarvestTargetShape::AreaAtAimPoint;
+			AreaTargeting.MaxAimDistance = 1000.0f;
+			AreaTargeting.MaxReachFromAvatar = Reach;
+			AreaTargeting.AreaRadius = 200.0f;
+			AreaTargeting.MaxTargets = 1;
+			Granted.Instance->ConfigureTargeting(AreaTargeting);
+			Granted.Instance->ConfigureSections(1);
+		}
+		return Granted;
+	}
+
+	/** Remaining sections of every tree of Grove, in instance order. */
+	TArray<int32> RemainingSections(const ARpgHarvestAutomationInstancesActor* Grove, const int32 TreeCount)
+	{
+		TArray<int32> Remaining;
+		for (int32 TreeIndex = 0; TreeIndex < TreeCount; ++TreeIndex)
+		{
+			Remaining.Add(Grove->Instances->GetRemainingSections(TreeIndex));
+		}
+		return Remaining;
+	}
+
+	/** Sections each target of Preview would take, in preview order; zero for targets that would not be harvested. */
+	TArray<int32> PreviewSections(const FRpgHarvestPreview& Preview)
+	{
+		TArray<int32> Sections;
+		for (const FRpgHarvestTargetEvaluation& Target : Preview.Targets)
+		{
+			Sections.Add(Target.WouldHarvest() ? Target.Result.SectionsTaken : 0);
+		}
+		return Sections;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestTuningPreviewAndCommitTest,
+	"SurvivalRpg.Harvesting.Tuning.PreviewAndCommitAgree",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestTuningPreviewAndCommitTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestTuningTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	RpgHarvestAutomation::AddInstanceStock(World);
+	ARpgHarvestAutomationInstancesActor* Grove = SpawnGrove(World, Harvester.Pawn->BaseEyeHeight);
+	URpgSkillTreeDefinition* Tree = MakePowerTree();
+	FScopedTreeTool TreeTool(Tree);
+	URpgSkillTreeComponent* SkillTrees = PrepareSkillTree(Harvester, Tree);
+	URpgEquipmentInstance* Equipment = MakeTreeToolEquipment(Harvester);
+	// The aim point lies 250 cm away, beyond the authored reach of 200 cm.
+	const FGrantedAbility Power = GrantAreaAbility(Harvester.AbilitySystem, Equipment, 200.0f);
+	if (!TestNotNull(TEXT("Grove exists"), Grove) ||
+		!TestNotNull(TEXT("Skill trees are prepared"), SkillTrees) ||
+		!TestNotNull(TEXT("Tree tool equipment exists"), Equipment) ||
+		!TestNotNull(TEXT("Area ability exists"), Power.Instance))
+	{
+		return false;
+	}
+	FScopedCooldownTag CooldownTag(TAG_HarvestTuningTest_Cooldown);
+	Power.Instance->ConfigureCooldown(URpgHarvestAutomationTestCooldownEffect::StaticClass());
+	TestWorld.PrimeTimerManager();
+
+	FRpgHarvestPreview Preview = Evaluate(Harvester.AbilitySystem, Power);
+	TestTrue(TEXT("Without upgrades the aim point is out of reach"), PreviewSections(Preview) == TArray<int32>({0}));
+	TestEqual(TEXT("The authored area radius is previewed"), Preview.AreaRadius, 200.0f);
+
+	TestEqual(TEXT("Reach is learned"),
+		SkillTrees->UnlockNode(TAG_HarvestTuningTest_Tree, TAG_HarvestTuningTest_Reach), ERpgSkillTreeUnlockResult::Unlockable);
+	const FGameplayAbilitySpec* Spec = Harvester.AbilitySystem->FindAbilitySpecFromHandle(Power.Handle);
+	FRpgHarvestTunedValues Values;
+	if (Spec)
+	{
+		Power.Instance->ResolveTunedValues(*Spec, *Harvester.AbilitySystem->AbilityActorInfo, Values);
+	}
+	TestEqual(TEXT("A reach upgrade extends the reach"), Values.Targeting.MaxReachFromAvatar, 350.0f);
+	TestEqual(TEXT("The aim ray grows with the reach"), Values.Targeting.MaxAimDistance, 1150.0f);
+	Preview = Evaluate(Harvester.AbilitySystem, Power);
+	TestTrue(TEXT("The longer reach takes the nearest tree"), PreviewSections(Preview) == TArray<int32>({1}));
+
+	TestEqual(TEXT("Wide is learned"),
+		SkillTrees->UnlockNode(TAG_HarvestTuningTest_Tree, TAG_HarvestTuningTest_Wide), ERpgSkillTreeUnlockResult::Unlockable);
+	Preview = Evaluate(Harvester.AbilitySystem, Power);
+	TestEqual(TEXT("The preview ring follows the tuned radius"), Preview.AreaRadius, 320.0f);
+	TestTrue(
+		TEXT("The tuned area, target count and sections reach all three trees"),
+		PreviewSections(Preview) == TArray<int32>({2, 2, 2}));
+
+	TestTrue(TEXT("The power executes"), Harvester.AbilitySystem->TryActivateAbility(Power.Handle));
+	TestTrue(
+		TEXT("The commit takes exactly what the preview showed"),
+		RemainingSections(Grove, 3) == TArray<int32>({2, 2, 2}));
+	TestEqual(TEXT("The rewards arrive"), CountMaterial(Harvester.PlayerState), 6 * YieldPerSection);
+
+	FGameplayEffectQuery CooldownQuery;
+	CooldownQuery.EffectDefinition = URpgHarvestAutomationTestCooldownEffect::StaticClass();
+	const TArray<float> CooldownDurations = Harvester.AbilitySystem->GetActiveEffectsDuration(CooldownQuery);
+	TestTrue(
+		TEXT("The cooldown is shortened by one second"),
+		CooldownDurations.Num() == 1 &&
+			FMath::IsNearlyEqual(CooldownDurations[0], URpgHarvestAutomationTestCooldownEffect::BaseDurationSeconds - 1.0f));
+	TestTrue(TEXT("The cooldown blocks the power"), Harvester.AbilitySystem->HasMatchingGameplayTag(TAG_HarvestTuningTest_Cooldown));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestTuningCaptureTest,
+	"SurvivalRpg.Harvesting.Tuning.ValuesCapturedAtExecutionStart",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestTuningCaptureTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestTuningTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	RpgHarvestAutomation::AddInstanceStock(World);
+	ARpgHarvestAutomationInstancesActor* Grove = SpawnGrove(World, Harvester.Pawn->BaseEyeHeight);
+	URpgSkillTreeDefinition* Tree = MakePowerTree();
+	FScopedTreeTool TreeTool(Tree);
+	URpgSkillTreeComponent* SkillTrees = PrepareSkillTree(Harvester, Tree);
+	URpgEquipmentInstance* Equipment = MakeTreeToolEquipment(Harvester);
+	const FGrantedAbility Power = GrantAreaAbility(Harvester.AbilitySystem, Equipment, 700.0f);
+	if (!TestNotNull(TEXT("Grove exists"), Grove) ||
+		!TestNotNull(TEXT("Skill trees are prepared"), SkillTrees) ||
+		!TestNotNull(TEXT("Area ability exists"), Power.Instance))
+	{
+		return false;
+	}
+	Power.Instance->ConfigureCommitDelay(0.5f);
+	TestWorld.PrimeTimerManager();
+
+	// Learning an upgrade during the swing does not change the swing.
+	TestTrue(TEXT("The first swing starts"), Harvester.AbilitySystem->TryActivateAbility(Power.Handle));
+	SkillTrees->UnlockNode(TAG_HarvestTuningTest_Tree, TAG_HarvestTuningTest_Wide);
+	TestWorld.AdvanceTimers(0.6f);
+	TestTrue(
+		TEXT("The swing commits with the values from its start"),
+		RemainingSections(Grove, 3) == TArray<int32>({3, 4, 4}));
+
+	// Resetting the tree during the next swing does not take the upgrade away from it.
+	TestTrue(TEXT("The second swing starts"), Harvester.AbilitySystem->TryActivateAbility(Power.Handle));
+	SkillTrees->ResetTree(TAG_HarvestTuningTest_Tree);
+	TestWorld.AdvanceTimers(0.6f);
+	TestTrue(
+		TEXT("The upgraded swing keeps its area, targets and sections"),
+		RemainingSections(Grove, 3) == TArray<int32>({1, 2, 2}));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestSwarmStrikeRadiusTest,
+	"SurvivalRpg.Harvesting.Swarm.StrikeRadiusTakesEachTargetOnce",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestSwarmStrikeRadiusTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestTuningTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	FHarvesterFixture Other = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixtures exist"), Harvester.IsValid() && Other.IsValid()))
+	{
+		return false;
+	}
+	RpgHarvestAutomation::AddInstanceStock(World);
+	// The nearest tree, two trees 300 cm from it and one 400 cm from it.
+	ARpgHarvestAutomationInstancesActor* Grove = RpgHarvestAutomation::SpawnInstances(
+		World,
+		MakeProfile(World, 4),
+		{FVector(0.0, 0.0, 0.0), FVector(0.0, 300.0, 0.0), FVector(300.0, 0.0, 0.0), FVector(0.0, -400.0, 0.0)},
+		FVector(300.0, 0.0, Harvester.Pawn->BaseEyeHeight));
+	const FGrantedAbility Summon = GrantSwarmAbility(Harvester.AbilitySystem, 3);
+	if (!TestNotNull(TEXT("Grove exists"), Grove) || !TestNotNull(TEXT("Swarm ability exists"), Summon.Instance))
+	{
+		return false;
+	}
+	FRpgHarvestTargetingParams AreaTargeting;
+	AreaTargeting.Shape = ERpgHarvestTargetShape::AreaAtAimPoint;
+	AreaTargeting.MaxAimDistance = 1000.0f;
+	AreaTargeting.MaxReachFromAvatar = 700.0f;
+	AreaTargeting.AreaRadius = 450.0f;
+	AreaTargeting.MaxTargets = 4;
+	Summon.Instance->ConfigureTargeting(AreaTargeting);
+	FRpgHarvestSwarmParams SwarmParams;
+	SwarmParams.CreatureCount = 3;
+	SwarmParams.FlightSpeed = 1000.0f;
+	SwarmParams.EmergeSeconds = 0.5f;
+	SwarmParams.LaunchIntervalSeconds = 0.1f;
+	SwarmParams.StrikeIntervalSeconds = 0.3f;
+	SwarmParams.MaxLifetimeSeconds = 8.0f;
+	SwarmParams.StrikeRadius = 350.0f;
+	Summon.Instance->ConfigureSwarm(ARpgHarvestSwarm::StaticClass(), SwarmParams);
+	TestWorld.PrimeTimerManager();
+
+	// Another player leaves only two sections on the first side tree.
+	TestTrue(
+		TEXT("Another player harvests the first side tree"),
+		IRpgHarvestableTarget::Execute_CommitHarvest(
+			Grove->Instances,
+			RpgHarvestAutomation::MakeInstanceRequest(Grove->Instances, 1, Other.Pawn, 2)).IsSuccess());
+
+	// Two creatures share the nearest tree; the third reserves the side tree's last two sections.
+	TestTrue(TEXT("The swarm is summoned"), Harvester.AbilitySystem->TryActivateAbility(Summon.Handle));
+	ARpgHarvestSwarm* Swarm = FindActiveSwarm(World);
+	if (!TestNotNull(TEXT("The commit summons a swarm"), Swarm))
+	{
+		return false;
+	}
+	TestEqual(TEXT("The strike radius reaches every machine"), Swarm->GetStrikeRadius(), 350.0f);
+
+	Advance(TestWorld, Swarm->GetCreatures()[0].ArrivalServerTime - Swarm->GetServerWorldTimeSeconds() + 0.01);
+	TestTrue(
+		TEXT("The strike also takes the free stock within its radius, once and without the reserved sections"),
+		RemainingSections(Grove, 4) == TArray<int32>({2, 2, 2, 4}));
+	TestEqual(TEXT("The striking creature counts every section of its strike"), Swarm->GetCreatures()[0].SectionsTaken, 4);
+
+	const double ThirdArrival = Swarm->GetCreatures()[2].ArrivalServerTime;
+	Advance(TestWorld, ThirdArrival - Swarm->GetServerWorldTimeSeconds() + 0.01);
+	TestTrue(
+		TEXT("The creature that reserved the side tree takes it with its first flight"),
+		Swarm->GetCreatures()[2].Strikes == 1 && Swarm->GetCreatures()[2].SectionsTaken == 2);
+
+	Advance(TestWorld, 5.0);
+	TestTrue(TEXT("Every creature finished"), Swarm->IsFinished());
+	TestTrue(TEXT("The swarm empties every tree"), RemainingSections(Grove, 4) == TArray<int32>({0, 0, 0, 0}));
+	TestEqual(TEXT("The swarm counts every section exactly once"), Swarm->GetHarvestedSections(), 14);
+	TestEqual(TEXT("The summoner receives every section"), CountMaterial(Harvester.PlayerState), 14 * YieldPerSection);
+	TestTrue(TEXT("The rewards arrive as one delivery"), Swarm->GetDelivery() == ERpgHarvestDelivery::Inventory);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestTuningSwarmFormsTest,
+	"SurvivalRpg.Harvesting.Tuning.SwarmFormsFollowTree",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestTuningSwarmFormsTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestTuningTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	RpgHarvestAutomation::AddInstanceStock(World);
+	ARpgHarvestAutomationInstancesActor* Grove = SpawnGrove(World, Harvester.Pawn->BaseEyeHeight);
+	URpgSkillTreeDefinition* Tree = MakePowerTree();
+	FScopedTreeTool TreeTool(Tree);
+	URpgSkillTreeComponent* SkillTrees = PrepareSkillTree(Harvester, Tree);
+	URpgEquipmentInstance* Equipment = MakeTreeToolEquipment(Harvester);
+	const FGrantedAbility Summon = GrantSwarmAbility(Harvester.AbilitySystem, 3, Equipment);
+	if (!TestNotNull(TEXT("Grove exists"), Grove) ||
+		!TestNotNull(TEXT("Skill trees are prepared"), SkillTrees) ||
+		!TestNotNull(TEXT("Swarm ability exists"), Summon.Instance))
+	{
+		return false;
+	}
+	TestWorld.PrimeTimerManager();
+
+	// The brood form: six creatures that take one section per strike, resting 0.2 s.
+	SkillTrees->UnlockNode(TAG_HarvestTuningTest_Tree, TAG_HarvestTuningTest_Brood);
+	SkillTrees->UnlockNode(TAG_HarvestTuningTest_Tree, TAG_HarvestTuningTest_Blast);
+	TestTrue(TEXT("The swarm is summoned"), Harvester.AbilitySystem->TryActivateAbility(Summon.Handle));
+	ARpgHarvestSwarm* Swarm = FindActiveSwarm(World);
+	if (!TestNotNull(TEXT("The commit summons a swarm"), Swarm))
+	{
+		return false;
+	}
+	const TArray<FRpgHarvestSwarmCreature> Creatures = Swarm->GetCreatures();
+	TestEqual(TEXT("The tuned creature count is summoned"), Creatures.Num(), 6);
+	TestEqual(TEXT("The tuned strike radius is summoned"), Swarm->GetStrikeRadius(), 250.0f);
+
+	const float StrikeHeight = Swarm->GetStrikeHeight();
+	const FVector EyeLift(0.0, 0.0, Harvester.Pawn->BaseEyeHeight + StrikeHeight);
+	const FVector NearestTree = FVector(300.0, 0.0, 0.0) + EyeLift;
+	const FVector SideTree = FVector(300.0, 300.0, 0.0) + EyeLift;
+	bool bPlanned = Creatures.Num() == 6;
+	for (int32 CreatureIndex = 0; bPlanned && CreatureIndex < Creatures.Num(); ++CreatureIndex)
+	{
+		const FVector Expected = CreatureIndex < 4 ? NearestTree : SideTree;
+		bPlanned = Creatures[CreatureIndex].State == ERpgHarvestSwarmCreatureState::Flying &&
+			FVector::Dist(Creatures[CreatureIndex].To, Expected) < 1.0;
+	}
+	TestTrue(TEXT("Four creatures share the nearest tree's four sections, two start on the side tree"), bPlanned);
+
+	const double FirstArrival = Creatures[0].ArrivalServerTime;
+	Advance(TestWorld, FirstArrival - Swarm->GetServerWorldTimeSeconds() + 0.01);
+	TestEqual(TEXT("A brood creature takes one section per strike"), Grove->Instances->GetRemainingSections(0), 3);
+	TestTrue(
+		TEXT("The tuned rest delays the creature's next flight"),
+		FMath::IsNearlyEqual(Swarm->GetCreatures()[0].LaunchServerTime - FirstArrival, 0.2, 0.03));
+
+	Advance(TestWorld, 6.0);
+	TestTrue(TEXT("Every creature finished"), Swarm->IsFinished());
+	TestTrue(TEXT("The brood empties every tree"), RemainingSections(Grove, 3) == TArray<int32>({0, 0, 0}));
+	TestEqual(TEXT("The brood counts every section once"), Swarm->GetHarvestedSections(), 12);
 	return true;
 }
 

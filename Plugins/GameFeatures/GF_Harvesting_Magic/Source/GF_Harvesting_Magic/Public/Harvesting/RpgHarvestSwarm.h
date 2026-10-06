@@ -45,6 +45,14 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestSwarmParams
 	float StrikeIntervalSeconds = 0.6f;
 
 	/**
+	 * Radius in centimeters around each strike in which every other resource the swarm works on is struck too, once per
+	 * strike and with the strike's sections. Stock other creatures reserved is left to them. Zero strikes only the
+	 * creature's own resource.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Swarm", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "800.0", Units = "cm"))
+	float StrikeRadius = 0.0f;
+
+	/**
 	 * How often one creature may arrive at a resource that was emptied, removed or protected meanwhile before it gives
 	 * up. After each such miss it heads for the nearest selected resource with stock no other creature reserved.
 	 */
@@ -172,6 +180,8 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestSwarmPlanner
  *   arrives counts.
  * - Every strike commits exactly once through IRpgHarvestableTarget, like any harvest. The player's player state is the
  *   request's beneficiary (rewards, XP, skill gate) and the swarm is its physical harvester (felling direction).
+ * - With a StrikeRadius, a strike also commits every other resource of the swarm within it exactly once, taking only
+ *   stock no other creature reserved.
  * - A creature that arrives at a resource emptied, removed or protected meanwhile heads for another selected resource,
  *   or gives up.
  * - The rewards of all strikes reach the player as one delivery when the last creature finishes: into the inventory,
@@ -232,6 +242,13 @@ public:
 
 	/** Height in centimeters above a resource's location at which creatures strike it. */
 	float GetStrikeHeight() const { return StrikeHeight; }
+
+	/**
+	 * Radius in centimeters around each strike in which the swarm's other resources are struck too; zero for single
+	 * strikes. Comes from the summoning ability and is replicated, so a strike presentation can scale to it.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Harvesting|Swarm")
+	float GetStrikeRadius() const { return StrikeRadius; }
 
 	/** Returns the current server world time in seconds, or the world time without a game state. */
 	double GetServerWorldTimeSeconds() const;
@@ -322,6 +339,18 @@ private:
 	 * no other creature reserved. Returns false when nothing is left to take.
 	 */
 	bool AssignNextTarget(int32 CreatureIndex, const FVector& FromLocation, double LaunchServerTime);
+
+	/**
+	 * Server: stock sections of the target Hit addresses on Receiver that no creature other than CreatureIndex reserved,
+	 * evaluated from FromLocation as the target is now. Zero when the target cannot be harvested.
+	 */
+	int32 GetUnreservedSections(int32 CreatureIndex, UObject* Receiver, const FHitResult& Hit, const FVector& FromLocation) const;
+
+	/**
+	 * Server: strikes every work target other than the struck one within StrikeRadius of StruckHit once, with the
+	 * strike's sections but never stock other creatures reserved. The reward batch must be open. Returns the sections taken.
+	 */
+	int32 StrikeAround(int32 CreatureIndex, const UObject* StruckReceiver, const FHitResult& StruckHit, const FVector& FromLocation);
 	void Finish(int32 CreatureIndex, double Now);
 	void FinishAll();
 	void FinishIfDone();
@@ -342,6 +371,10 @@ private:
 	/** Server world time of the summon; the creatures of the first leg rise from it until they leave. */
 	UPROPERTY(Replicated)
 	double SummonServerTime = 0.0;
+
+	/** Strike radius in centimeters from the summoning ability's swarm parameters; replicated for presentation. */
+	UPROPERTY(Replicated)
+	float StrikeRadius = 0.0f;
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<AActor>> CreatureActors;

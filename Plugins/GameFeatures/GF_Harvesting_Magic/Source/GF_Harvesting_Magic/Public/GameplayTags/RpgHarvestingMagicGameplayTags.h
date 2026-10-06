@@ -36,4 +36,28 @@ namespace RpgHarvestingMagicGameplayTags
 
 	/** External corpse-lifecycle requirement completed after successful reward delivery. */
 	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Corpse_Completion_Harvest);
+
+	/** Skill tree tuning of an area harvest's radius around its aim point, in centimeters. */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_AreaRadius);
+
+	/** Skill tree tuning of the farthest distance from the harvester to its hit or aim point, in centimeters. */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_Reach);
+
+	/** Skill tree tuning of the most targets an area harvest takes. */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_MaxTargets);
+
+	/** Skill tree tuning of the stock sections taken per target, or per creature strike of a swarm. */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_Sections);
+
+	/** Skill tree tuning of the creatures a swarm summons. */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_Creatures);
+
+	/** Skill tree tuning of the rest of a swarm creature after each strike, in seconds. */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_StrikeInterval);
+
+	/** Skill tree tuning of the radius around a swarm strike in which the other swarm targets are struck too, in centimeters. */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_StrikeRadius);
+
+	/** Skill tree tuning of a harvest ability's cooldown duration, in seconds. */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_Cooldown);
 }

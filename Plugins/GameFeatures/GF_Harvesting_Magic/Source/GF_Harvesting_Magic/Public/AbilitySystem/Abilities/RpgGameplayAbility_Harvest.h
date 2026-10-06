@@ -11,6 +11,22 @@ class UAnimMontage;
 class URpgCameraMode;
 
 /**
+ * Values of one harvest after the learned skill tree tunings of the source weapon were applied to the ability's
+ * authored values. The preview resolves them each time; the server captures them when execution starts.
+ */
+struct GF_HARVESTING_MAGIC_API FRpgHarvestTunedValues
+{
+	/** Targeting with tuned area radius, target count and reach; the aim ray grows with the reach. */
+	FRpgHarvestTargetingParams Targeting;
+
+	/** Stock sections per target, or per creature strike of a swarm. */
+	int32 SectionsPerTarget = 1;
+
+	/** Swarm with tuned creature count, rest and strike radius. */
+	FRpgHarvestSwarmParams Swarm;
+};
+
+/**
  * Abstract mechanism for tool swings and harvesting powers. Concrete abilities are GA_* Blueprint assets that only
  * configure identity, targeting, sections, montage, cues, cooldown, and unlock requirements.
  *
@@ -22,6 +38,9 @@ class URpgCameraMode;
  * - Optional hold-to-aim: the ability previews while its input is held and executes on release.
  *
  * Tool category and harvest power come from the source equipment's item (URpgInventoryFragment_HarvestingTool).
+ * Learned skill tree nodes of that weapon tune the authored values through Ability.Tuning.Harvest.* tags (area radius,
+ * reach, target count, sections, swarm creatures, rest and strike radius, cooldown); preview and commit use the same
+ * tuned values.
  * Blueprint children must not implement the ActivateAbility event; use On Harvest Resolved and cues for feedback.
  */
 UCLASS(Abstract, Blueprintable)
@@ -42,6 +61,15 @@ public:
 		const FGameplayAbilitySpec& Spec,
 		const FGameplayAbilityActorInfo& ActorInfo,
 		FRpgHarvestPreview& OutPreview) const;
+
+	/**
+	 * Resolves this ability's targeting, sections and swarm for Spec with the learned skill tree tunings of its source
+	 * weapon. Valid on the server and on the owning client, which see the same tree state.
+	 */
+	void ResolveTunedValues(
+		const FGameplayAbilitySpec& Spec,
+		const FGameplayAbilityActorInfo& ActorInfo,
+		FRpgHarvestTunedValues& OutValues) const;
 
 	/** Returns whether this ability previews while its input is held and executes on release. */
 	bool IsAimWhileInputHeld() const { return bAimWhileInputHeld; }
@@ -91,6 +119,11 @@ protected:
 		const FGameplayAbilityActivationInfo ActivationInfo,
 		bool bReplicateEndAbility,
 		bool bWasCancelled) override;
+	/** Applies the cooldown effect with its duration tuned by Ability.Tuning.Harvest.Cooldown. */
+	virtual void ApplyCooldown(
+		const FGameplayAbilitySpecHandle Handle,
+		const FGameplayAbilityActorInfo* ActorInfo,
+		const FGameplayAbilityActivationInfo ActivationInfo) const override;
 	//~ End UGameplayAbility interface
 
 	/**
@@ -105,13 +138,16 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting", meta = (Categories = "Ability.Harvesting"))
 	FGameplayTag HarvestAbilityId;
 
-	/** Target selection used by the server commit and by the owning client's preview. */
+	/**
+	 * Target selection used by the server commit and by the owning client's preview. Skill tree nodes tune AreaRadius,
+	 * MaxTargets and MaxReachFromAvatar (Ability.Tuning.Harvest.AreaRadius, .MaxTargets, .Reach).
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Targeting")
 	FRpgHarvestTargetingParams Targeting;
 
 	/**
 	 * Stock sections this ability requests from each target; targets clamp it to their remaining stock. With a swarm,
-	 * the sections one creature takes per strike.
+	 * the sections one creature takes per strike. Tuned by Ability.Tuning.Harvest.Sections.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Yield", meta = (ClampMin = "1", UIMin = "1", UIMax = "16"))
 	int32 SectionsPerTarget = 1;
@@ -188,7 +224,11 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Swarm")
 	TSubclassOf<ARpgHarvestSwarm> SwarmClass;
 
-	/** Creature count, flight and reassignment rules of the summoned swarm. Used only with a SwarmClass. */
+	/**
+	 * Creature count, flight and reassignment rules of the summoned swarm. Used only with a SwarmClass. Skill tree nodes
+	 * tune CreatureCount, StrikeIntervalSeconds and StrikeRadius (Ability.Tuning.Harvest.Creatures, .StrikeInterval,
+	 * .StrikeRadius).
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Swarm")
 	FRpgHarvestSwarmParams Swarm;
 
@@ -197,13 +237,20 @@ private:
 	void ExecuteHarvestCue(FGameplayTag CueTag, const FVector& Location, const FVector& Normal) const;
 
 	/** Server: summons the swarm at the selection's aim point; returns whether any creature reserved a resource. */
-	bool SummonSwarm(const FRpgHarvestPreview& Selection, const FRpgHarvestRequest& RequestTemplate);
+	bool SummonSwarm(
+		const FRpgHarvestPreview& Selection,
+		const FRpgHarvestRequest& RequestTemplate,
+		const FRpgHarvestSwarmParams& SwarmParams);
 
 	/**
 	 * Applies the swarm to an area selection: resources the swarm cannot see become out of reach, and every other
 	 * resource reports its whole remaining stock, which the swarm takes. The server and the preview run it alike.
 	 */
-	void PlanSwarm(const UWorld& World, const AActor& Avatar, FRpgHarvestPreview& InOutSelection) const;
+	void PlanSwarm(
+		const UWorld& World,
+		const AActor& Avatar,
+		const FRpgHarvestTunedValues& Values,
+		FRpgHarvestPreview& InOutSelection) const;
 
 	UFUNCTION()
 	void HandleAimInputReleased(float TimeHeld);
@@ -223,11 +270,13 @@ private:
 	void BuildRequestTemplate(
 		const FGameplayAbilitySpec& Spec,
 		const FGameplayAbilityActorInfo& ActorInfo,
+		const FRpgHarvestTunedValues& Values,
 		FRpgHarvestRequest& OutRequest) const;
 	static bool GetViewPoint(const FGameplayAbilityActorInfo& ActorInfo, FVector& OutLocation, FRotator& OutRotation);
 	void EvaluateTargetsFromView(
 		const FGameplayAbilitySpec& Spec,
 		const FGameplayAbilityActorInfo& ActorInfo,
+		const FRpgHarvestTunedValues& Values,
 		const FVector& ViewLocation,
 		const FRotator& ViewRotation,
 		FRpgHarvestPreview& OutPreview) const;
@@ -242,4 +291,8 @@ private:
 	FVector CommitViewLocation = FVector::ZeroVector;
 	FRotator CommitViewRotation = FRotator::ZeroRotator;
 	bool bHasCommitView = false;
+
+	/** Authority-only tuned values captured when execution starts, so learning a node mid-swing changes nothing. */
+	FRpgHarvestTunedValues CommitValues;
+	bool bHasCommitValues = false;
 };

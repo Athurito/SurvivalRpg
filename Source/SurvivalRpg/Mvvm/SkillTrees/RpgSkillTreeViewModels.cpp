@@ -73,7 +73,8 @@ void URpgSkillTreeNodeViewModel::UpdateNode(
 	const ERpgSkillTreeUnlockResult InUnlockResult,
 	const int32 InAssignedSlotIndex,
 	const bool bInSelected,
-	const bool bInRowUnlocked)
+	const bool bInRowUnlocked,
+	const bool bInCanRefund)
 {
 	Tree = InTree;
 
@@ -95,6 +96,7 @@ void URpgSkillTreeNodeViewModel::UpdateNode(
 	UE_MVVM_SET_PROPERTY_VALUE(UnlockResult, InUnlockResult);
 	UE_MVVM_SET_PROPERTY_VALUE(bIsUnlocked, NewState == ERpgSkillTreeNodeState::Unlocked);
 	UE_MVVM_SET_PROPERTY_VALUE(bCanUnlock, NewState == ERpgSkillTreeNodeState::Unlockable);
+	UE_MVVM_SET_PROPERTY_VALUE(bCanRefund, bInCanRefund);
 	UE_MVVM_SET_PROPERTY_VALUE(bIsRowUnlocked, bInRowUnlocked);
 	UE_MVVM_SET_PROPERTY_VALUE(AbilityIdTag, NewAbilityId);
 	UE_MVVM_SET_PROPERTY_VALUE(bGrantsSlotAbility, NewAbilityId.IsValid());
@@ -107,6 +109,14 @@ void URpgSkillTreeNodeViewModel::RequestUnlock()
 	if (URpgSkillTreeViewModel* OwningTree = Tree.Get())
 	{
 		OwningTree->RequestUnlockNode(NodeTag);
+	}
+}
+
+void URpgSkillTreeNodeViewModel::RequestRefund()
+{
+	if (URpgSkillTreeViewModel* OwningTree = Tree.Get())
+	{
+		OwningTree->RequestRefundNode(NodeTag);
 	}
 }
 
@@ -164,6 +174,15 @@ void URpgSkillTreeViewModel::RequestUnlockNode(const FGameplayTag NodeTag)
 	// Selecting first lets the player place a freshly learned active on Q/E/R right away.
 	SelectNode(NodeTag);
 	SkillTrees->RequestUnlockNode(TreeTag, NodeTag);
+}
+
+void URpgSkillTreeViewModel::RequestRefundNode(const FGameplayTag NodeTag)
+{
+	URpgSkillTreeComponent* SkillTrees = ObservedSkillTrees.Get();
+	if (SkillTrees && TreeTag.IsValid() && NodeTag.IsValid())
+	{
+		SkillTrees->RequestRefundNode(TreeTag, NodeTag);
+	}
 }
 
 void URpgSkillTreeViewModel::RequestResetTree()
@@ -364,7 +383,8 @@ void URpgSkillTreeViewModel::Rebuild()
 				SkillTrees->EvaluateUnlock(TreeTag, Node.NodeTag),
 				AssignedSlot,
 				SelectedNodeTag.IsValid() && Node.NodeTag == SelectedNodeTag,
-				NewSpentPoints >= Node.RequiredPointsInTree);
+				NewSpentPoints >= Node.RequiredPointsInTree,
+				SkillTrees->EvaluateRefund(TreeTag, Node.NodeTag) == ERpgSkillTreeRefundResult::Refundable);
 			NewNodes.Add(NodeViewModel);
 
 			NewRowCount = FMath::Max(NewRowCount, Node.Row + 1);

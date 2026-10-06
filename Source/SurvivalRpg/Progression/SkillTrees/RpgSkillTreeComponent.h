@@ -65,6 +65,29 @@ enum class ERpgSkillTreeUnlockResult : uint8
 	NotEnoughPoints
 };
 
+/** Why a learned node can or cannot be refunded right now. */
+UENUM(BlueprintType)
+enum class ERpgSkillTreeRefundResult : uint8
+{
+	/** The node can be refunded. */
+	Refundable,
+
+	/** The node is not learned. */
+	NotUnlocked,
+
+	/** No registered tree has the requested tag. */
+	UnknownTree,
+
+	/** The tree has no node with the requested tag. */
+	UnknownNode,
+
+	/** Another learned node needs this one as a prerequisite; refund that node first. */
+	RequiredByNode,
+
+	/** Another learned node needs the points spent on this one to stay learnable. */
+	PointsStillNeeded
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRpgSkillTreeChangedSignature, FGameplayTag, TreeTag);
 
 /**
@@ -132,6 +155,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rpg|Skill Tree")
 	ERpgSkillTreeUnlockResult EvaluateUnlock(FGameplayTag TreeTag, FGameplayTag NodeTag) const;
 
+	/**
+	 * Returns whether the learned NodeTag of TreeTag can be refunded now, or the first reason it cannot. A node can be
+	 * refunded when every other learned node stays learnable without it: no learned node lists it as a prerequisite, and
+	 * every point gate is still met.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Skill Tree")
+	ERpgSkillTreeRefundResult EvaluateRefund(FGameplayTag TreeTag, FGameplayTag NodeTag) const;
+
 	/** Returns the ability id TreeTag places on weapon ability slot SlotIndex (0 = Q), or an empty tag. */
 	UFUNCTION(BlueprintPure, Category = "Rpg|Skill Tree")
 	FGameplayTag GetSlotAbilityId(FGameplayTag TreeTag, int32 SlotIndex) const;
@@ -143,6 +174,13 @@ public:
 	/** Learns NodeTag of TreeTag. The server validates it like UnlockNode; rejected requests change nothing. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Rpg|Skill Tree")
 	void RequestUnlockNode(FGameplayTag TreeTag, FGameplayTag NodeTag);
+
+	/**
+	 * Refunds the point of the learned NodeTag of TreeTag for free and takes its abilities off Q/E/R. The server
+	 * validates it like RefundNode; rejected requests change nothing.
+	 */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Rpg|Skill Tree")
+	void RequestRefundNode(FGameplayTag TreeTag, FGameplayTag NodeTag);
 
 	/** Refunds every point of TreeTag for free and clears its Q/E/R assignment. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Rpg|Skill Tree")
@@ -157,6 +195,9 @@ public:
 
 	/** Authority: learns a node when EvaluateUnlock allows it and places its abilities on free slots. */
 	ERpgSkillTreeUnlockResult UnlockNode(FGameplayTag TreeTag, FGameplayTag NodeTag);
+
+	/** Authority: forgets one node when EvaluateRefund allows it, refunds its cost and clears its slots. */
+	ERpgSkillTreeRefundResult RefundNode(FGameplayTag TreeTag, FGameplayTag NodeTag);
 
 	/** Authority: refunds every point of a tree. Returns false when nothing changed. */
 	bool ResetTree(FGameplayTag TreeTag);

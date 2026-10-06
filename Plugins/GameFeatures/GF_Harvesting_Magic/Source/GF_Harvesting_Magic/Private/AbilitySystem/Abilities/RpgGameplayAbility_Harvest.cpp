@@ -9,6 +9,7 @@
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
+#include "GameplayEffect.h"
 #include "GameplayTags/RpgHarvestingMagicGameplayTags.h"
 #include "Harvesting/RpgHarvestInstanceStockComponent.h"
 #include "Harvesting/RpgHarvestRewardService.h"
@@ -114,9 +115,52 @@ void URpgGameplayAbility_Harvest::EndAbility(
 	}
 	bCommitPending = false;
 	bHasCommitView = false;
+	bHasCommitValues = false;
 	SetLocalAimPreview(false);
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
+}
+
+void URpgGameplayAbility_Harvest::ApplyCooldown(
+	const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayAbilityActivationInfo ActivationInfo) const
+{
+	const UGameplayEffect* CooldownEffect = GetCooldownGameplayEffect();
+	const UAbilitySystemComponent* AbilitySystem = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
+	const FGameplayAbilitySpec* Spec = AbilitySystem ? AbilitySystem->FindAbilitySpecFromHandle(Handle) : nullptr;
+	if (!CooldownEffect || !Spec)
+	{
+		Super::ApplyCooldown(Handle, ActorInfo, ActivationInfo);
+		return;
+	}
+
+	const FGameplayEffectSpecHandle CooldownSpec = MakeOutgoingGameplayEffectSpec(
+		Handle,
+		ActorInfo,
+		ActivationInfo,
+		CooldownEffect->GetClass(),
+		GetAbilityLevel(Handle, ActorInfo));
+	if (!CooldownSpec.IsValid())
+	{
+		return;
+	}
+
+	// Only effects with a duration can be tuned; the server and the predicting client resolve the same tree state.
+	const float BaseDuration = CooldownSpec.Data->GetDuration();
+	if (BaseDuration > 0.0f)
+	{
+		const float TunedDuration = GetTunedValueForSpec(
+			*Spec,
+			*ActorInfo,
+			RpgHarvestingMagicGameplayTags::Ability_Tuning_Harvest_Cooldown,
+			BaseDuration);
+		if (FMath::IsFinite(TunedDuration) && !FMath::IsNearlyEqual(TunedDuration, BaseDuration))
+		{
+			CooldownSpec.Data->SetDuration(FMath::Max(0.05f, TunedDuration), true);
+		}
+	}
+	ApplyGameplayEffectSpecToOwner(Handle, ActorInfo, ActivationInfo, CooldownSpec);
 }
 
 void URpgGameplayAbility_Harvest::HandleAimInputReleased(const float TimeHeld)
@@ -141,6 +185,14 @@ void URpgGameplayAbility_Harvest::BeginHarvestExecution()
 	// even though the commit happens later in the swing and the aim camera blends back right away.
 	bHasCommitView = HasAuthority(&CurrentActivationInfo) && CurrentActorInfo &&
 		GetViewPoint(*CurrentActorInfo, CommitViewLocation, CommitViewRotation);
+
+	// The tuned values are captured at the same moment, so learning or resetting a node mid-swing changes nothing.
+	const FGameplayAbilitySpec* Spec = GetCurrentAbilitySpec();
+	bHasCommitValues = HasAuthority(&CurrentActivationInfo) && CurrentActorInfo && Spec;
+	if (bHasCommitValues)
+	{
+		ResolveTunedValues(*Spec, *CurrentActorInfo, CommitValues);
+	}
 	SetLocalAimPreview(false);
 	ClearCameraMode();
 	if (!CommitAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo))
@@ -218,23 +270,26 @@ void URpgGameplayAbility_Harvest::ExecuteAuthorityCommit()
 	bCommitPending = false;
 
 	// Targets are selected again at the moment of extraction with the same query the client previewed, from the
-	// aim captured when execution started; stock and reach are evaluated now.
-	FRpgHarvestPreview Selection;
-	if (bHasCommitView)
+	// aim and tuned values captured when execution started; stock and reach are evaluated now.
+	FRpgHarvestTunedValues Values = CommitValues;
+	if (!bHasCommitValues)
 	{
-		EvaluateTargetsFromView(*Spec, *CurrentActorInfo, CommitViewLocation, CommitViewRotation, Selection);
+		ResolveTunedValues(*Spec, *CurrentActorInfo, Values);
 	}
-	else
+	FVector ViewLocation = CommitViewLocation;
+	FRotator ViewRotation = CommitViewRotation;
+	FRpgHarvestPreview Selection;
+	if (bHasCommitView || GetViewPoint(*CurrentActorInfo, ViewLocation, ViewRotation))
 	{
-		EvaluateTargets(*Spec, *CurrentActorInfo, Selection);
+		EvaluateTargetsFromView(*Spec, *CurrentActorInfo, Values, ViewLocation, ViewRotation, Selection);
 	}
 	FRpgHarvestRequest RequestTemplate;
-	BuildRequestTemplate(*Spec, *CurrentActorInfo, RequestTemplate);
+	BuildRequestTemplate(*Spec, *CurrentActorInfo, Values, RequestTemplate);
 
 	// A swarm harvests the selection later, creature by creature; this commit only summons it.
 	if (SummonsSwarm())
 	{
-		const bool bReserved = SummonSwarm(Selection, RequestTemplate);
+		const bool bReserved = SummonSwarm(Selection, RequestTemplate, Values.Swarm);
 		ExecuteHarvestCue(bReserved ? SuccessGameplayCue : NoYieldGameplayCue, Selection.AimPoint, FVector::UpVector);
 		if (!HarvestMontage && IsActive())
 		{
@@ -333,7 +388,10 @@ void URpgGameplayAbility_Harvest::ExecuteHarvestCue(const FGameplayTag CueTag, c
 	AbilitySystem->ExecuteGameplayCue(CueTag, CueParameters);
 }
 
-bool URpgGameplayAbility_Harvest::SummonSwarm(const FRpgHarvestPreview& Selection, const FRpgHarvestRequest& RequestTemplate)
+bool URpgGameplayAbility_Harvest::SummonSwarm(
+	const FRpgHarvestPreview& Selection,
+	const FRpgHarvestRequest& RequestTemplate,
+	const FRpgHarvestSwarmParams& SwarmParams)
 {
 	UWorld* World = GetWorld();
 	AActor* Avatar = CurrentActorInfo ? CurrentActorInfo->AvatarActor.Get() : nullptr;
@@ -351,7 +409,7 @@ bool URpgGameplayAbility_Harvest::SummonSwarm(const FRpgHarvestPreview& Selectio
 		FTransform(Selection.AimPoint),
 		SpawnParameters);
 	if (!SummonedSwarm ||
-		!SummonedSwarm->StartSwarm(Avatar, RequestTemplate, Swarm, Selection.Targets))
+		!SummonedSwarm->StartSwarm(Avatar, RequestTemplate, SwarmParams, Selection.Targets))
 	{
 		if (SummonedSwarm)
 		{
@@ -374,6 +432,7 @@ bool URpgGameplayAbility_Harvest::SummonSwarm(const FRpgHarvestPreview& Selectio
 void URpgGameplayAbility_Harvest::PlanSwarm(
 	const UWorld& World,
 	const AActor& Avatar,
+	const FRpgHarvestTunedValues& Values,
 	FRpgHarvestPreview& InOutSelection) const
 {
 	const ARpgHarvestSwarm* SwarmDefaults = SwarmClass ? SwarmClass->GetDefaultObject<ARpgHarvestSwarm>() : nullptr;
@@ -383,7 +442,7 @@ void URpgGameplayAbility_Harvest::PlanSwarm(
 	}
 
 	const FVector Lift(0.0, 0.0, SwarmDefaults->GetStrikeHeight());
-	if (Swarm.bRequireLineOfSight)
+	if (Values.Swarm.bRequireLineOfSight)
 	{
 		FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(RpgHarvestSwarmPlan), false, &Avatar);
 		if (AActor* AvatarOwner = Avatar.GetOwner())
@@ -397,7 +456,7 @@ void URpgGameplayAbility_Harvest::PlanSwarm(
 					World,
 					InOutSelection.AimPoint + Lift,
 					Target.Hit.ImpactPoint + Lift,
-					Targeting.TraceChannel,
+					Values.Targeting.TraceChannel,
 					QueryParams))
 			{
 				Target.bInReach = false;
@@ -428,20 +487,63 @@ void URpgGameplayAbility_Harvest::EvaluateTargets(
 		OutPreview = FRpgHarvestPreview();
 		return;
 	}
-	EvaluateTargetsFromView(Spec, ActorInfo, ViewLocation, ViewRotation, OutPreview);
+	FRpgHarvestTunedValues Values;
+	ResolveTunedValues(Spec, ActorInfo, Values);
+	EvaluateTargetsFromView(Spec, ActorInfo, Values, ViewLocation, ViewRotation, OutPreview);
+}
+
+void URpgGameplayAbility_Harvest::ResolveTunedValues(
+	const FGameplayAbilitySpec& Spec,
+	const FGameplayAbilityActorInfo& ActorInfo,
+	FRpgHarvestTunedValues& OutValues) const
+{
+	using namespace RpgHarvestingMagicGameplayTags;
+
+	auto Tune = [&Spec, &ActorInfo](const FGameplayTag TuningTag, const float BaseValue)
+	{
+		const float Value = GetTunedValueForSpec(Spec, ActorInfo, TuningTag, BaseValue);
+		return FMath::IsFinite(Value) ? Value : BaseValue;
+	};
+	auto TuneCount = [&Tune](const FGameplayTag TuningTag, const int32 BaseValue, const int32 MinValue, const int32 MaxValue)
+	{
+		return FMath::Clamp(FMath::RoundToInt(Tune(TuningTag, static_cast<float>(BaseValue))), MinValue, MaxValue);
+	};
+
+	OutValues.Targeting = Targeting;
+	OutValues.Targeting.MaxReachFromAvatar = FMath::Max(0.0f, Tune(Ability_Tuning_Harvest_Reach, Targeting.MaxReachFromAvatar));
+	// The aim ray grows with the reach, so a longer reach can be aimed at as well.
+	OutValues.Targeting.MaxAimDistance = Targeting.MaxAimDistance +
+		FMath::Max(0.0f, OutValues.Targeting.MaxReachFromAvatar - Targeting.MaxReachFromAvatar);
+	if (HarvestsArea())
+	{
+		OutValues.Targeting.AreaRadius = FMath::Max(0.0f, Tune(Ability_Tuning_Harvest_AreaRadius, Targeting.AreaRadius));
+		OutValues.Targeting.MaxTargets = TuneCount(Ability_Tuning_Harvest_MaxTargets, Targeting.MaxTargets, 1, 64);
+	}
+	OutValues.SectionsPerTarget = TuneCount(Ability_Tuning_Harvest_Sections, FMath::Max(1, SectionsPerTarget), 1, 64);
+
+	OutValues.Swarm = Swarm;
+	if (SummonsSwarm())
+	{
+		OutValues.Swarm.CreatureCount =
+			TuneCount(Ability_Tuning_Harvest_Creatures, Swarm.CreatureCount, 1, ARpgHarvestSwarm::MaxCreatures);
+		OutValues.Swarm.StrikeIntervalSeconds =
+			FMath::Max(0.0f, Tune(Ability_Tuning_Harvest_StrikeInterval, Swarm.StrikeIntervalSeconds));
+		OutValues.Swarm.StrikeRadius = FMath::Max(0.0f, Tune(Ability_Tuning_Harvest_StrikeRadius, Swarm.StrikeRadius));
+	}
 }
 
 void URpgGameplayAbility_Harvest::EvaluateTargetsFromView(
 	const FGameplayAbilitySpec& Spec,
 	const FGameplayAbilityActorInfo& ActorInfo,
+	const FRpgHarvestTunedValues& Values,
 	const FVector& ViewLocation,
 	const FRotator& ViewRotation,
 	FRpgHarvestPreview& OutPreview) const
 {
 	OutPreview = FRpgHarvestPreview();
 	OutPreview.AbilityId = HarvestAbilityId;
-	OutPreview.bHasArea = Targeting.Shape == ERpgHarvestTargetShape::AreaAtAimPoint;
-	OutPreview.AreaRadius = OutPreview.bHasArea ? Targeting.AreaRadius : 0.0f;
+	OutPreview.bHasArea = HarvestsArea();
+	OutPreview.AreaRadius = OutPreview.bHasArea ? Values.Targeting.AreaRadius : 0.0f;
 
 	const AActor* Avatar = ActorInfo.AvatarActor.Get();
 	const UWorld* World = Avatar ? Avatar->GetWorld() : nullptr;
@@ -451,10 +553,10 @@ void URpgGameplayAbility_Harvest::EvaluateTargetsFromView(
 	}
 
 	FRpgHarvestRequest RequestTemplate;
-	BuildRequestTemplate(Spec, ActorInfo, RequestTemplate);
+	BuildRequestTemplate(Spec, ActorInfo, Values, RequestTemplate);
 	OutPreview.AimPoint = FRpgHarvestTargeting::SelectAndEvaluate(
 		*World,
-		Targeting,
+		Values.Targeting,
 		ViewLocation,
 		ViewRotation,
 		*Avatar,
@@ -462,7 +564,7 @@ void URpgGameplayAbility_Harvest::EvaluateTargetsFromView(
 		OutPreview.Targets);
 	if (SummonsSwarm())
 	{
-		PlanSwarm(*World, *Avatar, OutPreview);
+		PlanSwarm(*World, *Avatar, Values, OutPreview);
 	}
 }
 
@@ -572,12 +674,13 @@ bool URpgGameplayAbility_Harvest::MeetsSkillRequirement(const FGameplayAbilityAc
 void URpgGameplayAbility_Harvest::BuildRequestTemplate(
 	const FGameplayAbilitySpec& Spec,
 	const FGameplayAbilityActorInfo& ActorInfo,
+	const FRpgHarvestTunedValues& Values,
 	FRpgHarvestRequest& OutRequest) const
 {
 	OutRequest = FRpgHarvestRequest();
 	OutRequest.Harvester = ActorInfo.AvatarActor.Get();
 	OutRequest.AbilityId = HarvestAbilityId;
-	OutRequest.RequestedSections = FMath::Max(1, SectionsPerTarget);
+	OutRequest.RequestedSections = FMath::Max(1, Values.SectionsPerTarget);
 	OutRequest.bCanHitWeakPoint = bCanHitWeakPoints && Targeting.Shape == ERpgHarvestTargetShape::SingleTarget;
 	OutRequest.bAreaHarvest = HarvestsArea();
 

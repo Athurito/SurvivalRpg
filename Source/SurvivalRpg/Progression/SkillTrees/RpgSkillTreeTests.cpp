@@ -457,6 +457,79 @@ bool FRpgSkillTreeResetAndSlotsTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgSkillTreeRefundNodeTest,
+	"SurvivalRpg.Progression.SkillTrees.RefundNode",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgSkillTreeRefundNodeTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgSkillTreeTests;
+
+	FScopedTestWorld TestWorld;
+	FEquipmentFixture Fixture;
+	if (!MakeEquipmentFixture(*this, TestWorld.GetWorld(), Fixture))
+	{
+		return false;
+	}
+
+	const FGameplayTag TreeTag = TAG_SkillTreeTest_Tree;
+	FScopedTestToolTree ToolTree(MakeTree());
+	URpgEquipmentInstance* MainHand = Fixture.Equipment->EquipItemInSlotWithInstigator(
+		URpgEquipmentAutomationTestSwordDefinition::StaticClass(),
+		ERpgEquipmentSlot::MainHand,
+		Fixture.Tool);
+	if (!TestNotNull(TEXT("The tool equips"), MainHand))
+	{
+		return false;
+	}
+
+	URpgSkillTreeComponent* SkillTrees = Fixture.SkillTrees;
+	RaiseLogging(*Fixture.PlayerState, 6);
+	SkillTrees->UnlockNode(TreeTag, TAG_SkillTreeTest_Root);
+	SkillTrees->UnlockNode(TreeTag, TAG_SkillTreeTest_Second);
+	SkillTrees->UnlockNode(TreeTag, TAG_SkillTreeTest_FormA);
+	SkillTrees->UnlockNode(TreeTag, TAG_SkillTreeTest_Wide);
+	TestEqual(TEXT("One point is left"), SkillTrees->GetAvailablePoints(TreeTag), 1);
+
+	TestEqual(TEXT("A node another learned node requires cannot be refunded"),
+		SkillTrees->EvaluateRefund(TreeTag, TAG_SkillTreeTest_Root), ERpgSkillTreeRefundResult::RequiredByNode);
+	TestEqual(TEXT("A node whose point keeps a row gate met cannot be refunded"),
+		SkillTrees->EvaluateRefund(TreeTag, TAG_SkillTreeTest_Second), ERpgSkillTreeRefundResult::PointsStillNeeded);
+	TestEqual(TEXT("A node that is not learned cannot be refunded"),
+		SkillTrees->EvaluateRefund(TreeTag, TAG_SkillTreeTest_FormB), ERpgSkillTreeRefundResult::NotUnlocked);
+	TestEqual(TEXT("An unknown node cannot be refunded"),
+		SkillTrees->EvaluateRefund(TreeTag, TAG_SkillTreeTest_Removed), ERpgSkillTreeRefundResult::UnknownNode);
+	TestEqual(TEXT("A rejected refund changes nothing"),
+		SkillTrees->RefundNode(TreeTag, TAG_SkillTreeTest_Root), ERpgSkillTreeRefundResult::RequiredByNode);
+	TestTrue(TEXT("Root stays learned"), SkillTrees->IsNodeUnlocked(TreeTag, TAG_SkillTreeTest_Root));
+
+	TestEqual(TEXT("A node nothing depends on is refunded"),
+		SkillTrees->RefundNode(TreeTag, TAG_SkillTreeTest_FormA), ERpgSkillTreeRefundResult::Refundable);
+	TestFalse(TEXT("The refunded node is forgotten"), SkillTrees->IsNodeUnlocked(TreeTag, TAG_SkillTreeTest_FormA));
+	TestEqual(TEXT("Its point returns"), SkillTrees->GetAvailablePoints(TreeTag), 2);
+	TestTrue(TEXT("The other purchases keep their order"),
+		SkillTrees->GetUnlockedNodes(TreeTag) ==
+			TArray<FGameplayTag>({TAG_SkillTreeTest_Root, TAG_SkillTreeTest_Second, TAG_SkillTreeTest_Wide}));
+	TestTrue(TEXT("The exclusive alternative is no longer blocked"),
+		SkillTrees->EvaluateUnlock(TreeTag, TAG_SkillTreeTest_FormB) != ERpgSkillTreeUnlockResult::ExclusiveConflict);
+
+	TestEqual(TEXT("Without FormA, Second is free to go"),
+		SkillTrees->RefundNode(TreeTag, TAG_SkillTreeTest_Second), ERpgSkillTreeRefundResult::Refundable);
+	TestFalse(TEXT("The refunded ability leaves its slot"), SkillTrees->GetSlotAbilityId(TreeTag, 1).IsValid());
+	TestNull(TEXT("The refunded ability is no longer granted"), FindSpecWithId(*Fixture.AbilitySystem, TAG_SkillTreeTest_Beta));
+
+	TestEqual(TEXT("Without dependents, Root is refunded too"),
+		SkillTrees->RefundNode(TreeTag, TAG_SkillTreeTest_Root), ERpgSkillTreeRefundResult::Refundable);
+	TestNull(TEXT("Root's ability is removed at once"), FindSpecWithId(*Fixture.AbilitySystem, TAG_SkillTreeTest_Alpha));
+	TestFalse(TEXT("Root's tag is removed"), Fixture.AbilitySystem->HasMatchingGameplayTag(TAG_SkillTreeTest_Granted));
+	TestFalse(TEXT("Q is cleared"), SkillTrees->GetSlotAbilityId(TreeTag, 0).IsValid());
+	TestTrue(TEXT("The loose node stays learned"), SkillTrees->IsNodeUnlocked(TreeTag, TAG_SkillTreeTest_Wide));
+	TestEqual(TEXT("Every refunded point is back"), SkillTrees->GetAvailablePoints(TreeTag), 4);
+	Fixture.Equipment->UnequipItem(MainHand);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgSkillTreeEquipmentGrantsTest,
 	"SurvivalRpg.Progression.SkillTrees.WeaponGrantsLearnedNodes",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -846,6 +919,16 @@ bool FRpgSkillTreeViewModelProjectionTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Second shows R"), Tree->FindNode(TAG_SkillTreeTest_Second)->GetAssignedSlotIndex(), 2);
 	Tree->ClearSlot(2);
 	TestFalse(TEXT("Clearing a slot empties it"), SkillTrees->GetSlotAbilityId(TreeTag, 2).IsValid());
+
+	TestFalse(TEXT("Root cannot be refunded while FormA needs it"), Root->CanRefund());
+	TestFalse(TEXT("Second keeps FormA's row gate met"), Tree->FindNode(TAG_SkillTreeTest_Second)->CanRefund());
+	TestTrue(TEXT("FormA can be refunded"), FormA->CanRefund());
+	TestFalse(TEXT("A node that is not learned cannot be refunded"), FormB->CanRefund());
+	FormA->RequestRefund();
+	Tree->Refresh();
+	TestFalse(TEXT("A refund request forgets the node"), SkillTrees->IsNodeUnlocked(TreeTag, TAG_SkillTreeTest_FormA));
+	TestEqual(TEXT("The refund returns its point"), Tree->GetAvailablePoints(), 1);
+	TestTrue(TEXT("Without FormA, Root can be refunded"), Root->CanRefund());
 
 	Tree->RequestResetTree();
 	Tree->Refresh();

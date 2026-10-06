@@ -126,6 +126,8 @@ bool ARpgHarvestSwarm::StartSwarm(
 	SwarmParams = InParams;
 	SwarmParams.CreatureCount = FMath::Clamp(InParams.CreatureCount, 1, MaxCreatures);
 	SwarmParams.FlightSpeed = FMath::Max(50.0f, InParams.FlightSpeed);
+	SwarmParams.StrikeRadius = FMath::IsFinite(InParams.StrikeRadius) ? FMath::Max(0.0f, InParams.StrikeRadius) : 0.0f;
+	StrikeRadius = SwarmParams.StrikeRadius;
 
 	// The swarm works through exactly the resources the ability selected and previewed.
 	for (const FRpgHarvestTargetEvaluation& Target : Targets)
@@ -314,6 +316,7 @@ void ARpgHarvestSwarm::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(ThisClass, Creatures);
 	DOREPLIFETIME(ThisClass, SummonServerTime);
+	DOREPLIFETIME(ThisClass, StrikeRadius);
 }
 
 void ARpgHarvestSwarm::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -440,6 +443,7 @@ void ARpgHarvestSwarm::Strike(const int32 CreatureIndex, const double Now)
 	FAssignment& Assignment = Assignments[CreatureIndex];
 	UObject* Receiver = Assignment.Receiver.Get();
 	FRpgHarvestResult Result = FRpgHarvestResult::MakeRejected(ERpgHarvestOutcome::Invalid);
+	int32 SectionsAround = 0;
 	if (Receiver && Assignment.ReservedSections > 0 && RewardBatch)
 	{
 		FRpgHarvestRequest Request = RequestTemplate;
@@ -452,15 +456,20 @@ void ARpgHarvestSwarm::Strike(const int32 CreatureIndex, const double Now)
 		// swarm's single delivery.
 		RewardBatch->Open();
 		Result = IRpgHarvestableTarget::Execute_CommitHarvest(Receiver, Request);
+		if (Result.IsSuccess() && SwarmParams.StrikeRadius > UE_KINDA_SMALL_NUMBER)
+		{
+			SectionsAround = StrikeAround(CreatureIndex, Receiver, Assignment.Hit, Creature.From);
+		}
 		RewardBatch->Close();
 	}
 	Assignment.ReservedSections = 0;
 
 	if (Result.IsSuccess())
 	{
+		const int32 StrikeSections = Result.SectionsTaken + SectionsAround;
 		Creature.Strikes = static_cast<uint8>(FMath::Min(255, Creature.Strikes + 1));
-		Creature.SectionsTaken = static_cast<uint8>(FMath::Clamp(Creature.SectionsTaken + Result.SectionsTaken, 0, 255));
-		HarvestedSections += Result.SectionsTaken;
+		Creature.SectionsTaken = static_cast<uint8>(FMath::Clamp(Creature.SectionsTaken + StrikeSections, 0, 255));
+		HarvestedSections += StrikeSections;
 		Assignment.Receiver.Reset();
 
 		// After a short rest the creature strikes again, here or at the next resource, until nothing is left.
@@ -492,34 +501,7 @@ bool ARpgHarvestSwarm::AssignNextTarget(
 	for (const FWorkTarget& WorkTarget : WorkTargets)
 	{
 		UObject* Receiver = WorkTarget.Receiver.Get();
-		if (!Receiver)
-		{
-			continue;
-		}
-		FRpgHarvestRequest Request = RequestTemplate;
-		Request.Hit = WorkTarget.Hit;
-		Request.TraceOrigin = FromLocation;
-		Request.ExpectedRevision = IRpgHarvestableTarget::Execute_GetHarvestRevision(Receiver, WorkTarget.Hit);
-		FRpgHarvestTargetEvaluation Evaluation;
-		Evaluation.bInReach = true;
-		Evaluation.Result = IRpgHarvestableTarget::Execute_EvaluateHarvest(Receiver, Request);
-		if (!Evaluation.WouldHarvest())
-		{
-			continue;
-		}
-
-		const TPair<const UObject*, int32> Key = RpgHarvestSwarm::MakeTargetKey(Receiver, WorkTarget.Hit);
-		int32 Available = FRpgHarvestSwarmPlanner::GetAvailableSections(Evaluation);
-		for (int32 Other = 0; Other < Assignments.Num(); ++Other)
-		{
-			const FAssignment& OtherAssignment = Assignments[Other];
-			if (Other != CreatureIndex &&
-				Creatures[Other].State == ERpgHarvestSwarmCreatureState::Flying &&
-				RpgHarvestSwarm::MakeTargetKey(OtherAssignment.Receiver.Get(), OtherAssignment.Hit) == Key)
-			{
-				Available -= OtherAssignment.ReservedSections;
-			}
-		}
+		const int32 Available = Receiver ? GetUnreservedSections(CreatureIndex, Receiver, WorkTarget.Hit, FromLocation) : 0;
 		if (Available <= 0)
 		{
 			continue;
@@ -554,6 +536,80 @@ bool ARpgHarvestSwarm::AssignNextTarget(
 	Creature.State = ERpgHarvestSwarmCreatureState::Flying;
 	Creature.Leg = static_cast<uint8>(FMath::Min(255, Creature.Leg + 1));
 	return true;
+}
+
+int32 ARpgHarvestSwarm::GetUnreservedSections(
+	const int32 CreatureIndex,
+	UObject* Receiver,
+	const FHitResult& Hit,
+	const FVector& FromLocation) const
+{
+	FRpgHarvestRequest Request = RequestTemplate;
+	Request.Hit = Hit;
+	Request.TraceOrigin = FromLocation;
+	Request.ExpectedRevision = IRpgHarvestableTarget::Execute_GetHarvestRevision(Receiver, Hit);
+	FRpgHarvestTargetEvaluation Evaluation;
+	Evaluation.bInReach = true;
+	Evaluation.Result = IRpgHarvestableTarget::Execute_EvaluateHarvest(Receiver, Request);
+	if (!Evaluation.WouldHarvest())
+	{
+		return 0;
+	}
+
+	const TPair<const UObject*, int32> Key = RpgHarvestSwarm::MakeTargetKey(Receiver, Hit);
+	int32 Available = FRpgHarvestSwarmPlanner::GetAvailableSections(Evaluation);
+	for (int32 Other = 0; Other < Assignments.Num(); ++Other)
+	{
+		const FAssignment& OtherAssignment = Assignments[Other];
+		if (Other != CreatureIndex &&
+			Creatures[Other].State == ERpgHarvestSwarmCreatureState::Flying &&
+			RpgHarvestSwarm::MakeTargetKey(OtherAssignment.Receiver.Get(), OtherAssignment.Hit) == Key)
+		{
+			Available -= OtherAssignment.ReservedSections;
+		}
+	}
+	return FMath::Max(0, Available);
+}
+
+int32 ARpgHarvestSwarm::StrikeAround(
+	const int32 CreatureIndex,
+	const UObject* StruckReceiver,
+	const FHitResult& StruckHit,
+	const FVector& FromLocation)
+{
+	// Each other resource in the radius is struck once; what other creatures reserved stays theirs, so none of them
+	// arrives at a resource the swarm itself emptied.
+	TSet<TPair<const UObject*, int32>> Struck;
+	Struck.Add(RpgHarvestSwarm::MakeTargetKey(StruckReceiver, StruckHit));
+	const double RadiusSquared = FMath::Square(static_cast<double>(SwarmParams.StrikeRadius));
+	int32 SectionsTaken = 0;
+	for (const FWorkTarget& WorkTarget : WorkTargets)
+	{
+		UObject* Receiver = WorkTarget.Receiver.Get();
+		if (!Receiver || FVector::DistSquared(WorkTarget.Hit.ImpactPoint, StruckHit.ImpactPoint) > RadiusSquared)
+		{
+			continue;
+		}
+		bool bAlreadyStruck = false;
+		Struck.Add(RpgHarvestSwarm::MakeTargetKey(Receiver, WorkTarget.Hit), &bAlreadyStruck);
+		const int32 Unreserved = bAlreadyStruck ? 0 : GetUnreservedSections(CreatureIndex, Receiver, WorkTarget.Hit, FromLocation);
+		if (Unreserved <= 0)
+		{
+			continue;
+		}
+
+		FRpgHarvestRequest Request = RequestTemplate;
+		Request.Hit = WorkTarget.Hit;
+		Request.TraceOrigin = FromLocation;
+		Request.ExpectedRevision = IRpgHarvestableTarget::Execute_GetHarvestRevision(Receiver, WorkTarget.Hit);
+		Request.RequestedSections = FMath::Min(RequestTemplate.RequestedSections, Unreserved);
+		const FRpgHarvestResult Result = IRpgHarvestableTarget::Execute_CommitHarvest(Receiver, Request);
+		if (Result.IsSuccess())
+		{
+			SectionsTaken += Result.SectionsTaken;
+		}
+	}
+	return SectionsTaken;
 }
 
 void ARpgHarvestSwarm::Finish(const int32 CreatureIndex, const double Now)
