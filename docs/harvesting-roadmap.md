@@ -1050,8 +1050,11 @@ the client:
 
 ### Not done
 
-- **Kiln title:** the crafting screen still titles the kiln "Crafting Station";
-  the title comes from the shared screen.
+- **Kiln screen:** the kiln still uses the shared manual crafting screen,
+  titled "Crafting Station". Decided in review: processing stations such as
+  the kiln or a smelter will run a selected recipe automatically, as in other
+  survival games, while workbenches stay manual. That needs its own crafting
+  task.
 - **Icons:** the charcoal icon is a placeholder.
 - **Early release in PIE:** as in HARV-09c, the first held power after the
   script closed the menu executed before the scripted release.
