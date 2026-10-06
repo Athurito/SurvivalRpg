@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AbilitySystem/Abilities/RpgGameplayAbility_Harvest.h"
+#include "GameplayEffect.h"
 #include "Harvesting/RpgHarvestableInstancesComponent.h"
 #include "Harvesting/RpgHarvestProtectionComponent.h"
 #include "Harvesting/RpgHarvestTargetingComponent.h"
@@ -15,6 +16,7 @@ class URpgHarvestableComponent;
 class URpgHarvestableCorpseComponent;
 class UBoxComponent;
 class USceneComponent;
+class URpgSkillTreeDefinition;
 
 /** Drop fixture that deliberately materializes only part of a payload before reporting failure. */
 UCLASS(NotBlueprintable, Transient)
@@ -96,6 +98,37 @@ public:
 	explicit URpgHarvestAutomationTestTieToolDefinition(
 		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 	virtual bool IsEditorOnly() const override { return true; }
+};
+
+/** Skinning tool whose SkillTree fragment points at a transient tree supplied by the running test. */
+UCLASS(NotBlueprintable, Transient)
+class URpgHarvestAutomationTestTreeToolDefinition final : public URpgInventoryItemDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgHarvestAutomationTestTreeToolDefinition(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+	virtual bool IsEditorOnly() const override { return true; }
+
+	/** Points the class default fragment at Tree; tests restore null when they finish. */
+	static void SetTestSkillTree(const URpgSkillTreeDefinition* Tree);
+};
+
+/** Cooldown effect of four seconds whose duration skill tree tests tune. */
+UCLASS(NotBlueprintable, Transient)
+class URpgHarvestAutomationTestCooldownEffect final : public UGameplayEffect
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgHarvestAutomationTestCooldownEffect(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	/** Makes the class default grant CooldownTag, as cooldown effects must; tests restore an empty tag when they finish. */
+	static void SetCooldownTag(FGameplayTag CooldownTag);
+
+	static constexpr float BaseDurationSeconds = 4.0f;
 };
 
 /** Asset-free authoritative corpse fixture with the real lifecycle and harvest components. */
@@ -250,6 +283,7 @@ public:
 		SwarmClass = InSwarmClass;
 		Swarm = InSwarm;
 	}
+	void ConfigureCooldown(const TSubclassOf<UGameplayEffect> InCooldownEffect) { CooldownGameplayEffectClass = InCooldownEffect; }
 };
 
 /** Records preview notifications so tests can assert change-only broadcasting. */

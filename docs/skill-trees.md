@@ -81,8 +81,12 @@ The view models observe the replicated state and rebuild at most once per frame.
 
 | Tree | Points | Nodes |
 | --- | --- | --- |
-| `DA_SkillTree_Axe` (`GF_Harvesting_Magic`) | Logging | Death Wave (row 0, column 0), Grave Swarm (row 0, column 2) |
-| `DA_SkillTree_Pickaxe` (`GF_Harvesting_Magic`) | Mining | Rift Grip (row 0, column 0) |
+| `DA_SkillTree_Axe` (`GF_Harvesting_Magic`) | Logging | Death Wave (row 0, column 0) with Wide Wave and Long Reach below it; Grave Swarm (row 0, column 2) with the exclusive forms Swarm Brood and Grave Detonation |
+| `DA_SkillTree_Pickaxe` (`GF_Harvesting_Magic`) | Mining | Rift Grip (row 0, column 0) with the exclusive forms Wide Rift and Deep Grip |
+
+The upgrades and forms only carry tunings. The harvest abilities read the tags under `Ability.Tuning.Harvest`
+(area radius, reach, target count, sections, swarm creatures, rest and strike radius, cooldown); the table is in
+[harvesting-roadmap.md](harvesting-roadmap.md#harvest-tunings).
 
 ## How to extend
 
@@ -134,3 +138,6 @@ Add an entry to `Nodes`:
 `SurvivalRpg.Save.WorldSave.MemoryRoundTrip` covers the save fields.
 `SurvivalRpg.Harvesting.Content.AxeSkillTreeContract` and `PickaxeSkillTreeContract` check the chain item →
 fragment → tree → node → ability set → ability for the tool trees.
+`SurvivalRpg.Harvesting.Tuning.*` checks that harvest tunings change preview and commit alike, are captured when
+execution starts, and shape the swarm; `SurvivalRpg.Harvesting.Swarm.StrikeRadiusTakesEachTargetOnce` checks the
+strike radius.

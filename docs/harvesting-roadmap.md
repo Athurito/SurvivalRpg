@@ -268,7 +268,9 @@ All assets live in `GF_Harvesting_Magic` and are authored through Unreal MCP.
   - While Q is held, `AimCameraMode` (`CM_Harvest_Aim`) gives the owning
     client a higher view that looks at least 20 degrees down, so the ring and
     the targets stay readable. Lyra's ability camera mode seam sets it, and it
-    is cleared on release or when the ability ends.
+    is cleared on release or when the ability ends. HARV-09c relaxed the limit
+    to 10 degrees, because at 20 degrees no aim point on flat ground lay more
+    than about 6 m from the pawn.
 - **Q/E/R defaults:** `AS_Tool_Pickaxe` grants Rift Grip with
   `InputTag.Weapon.Ability.1`. Since HARV-09b the tool set grants only the
   swing, and the pickaxe tree places Rift Grip on Q/E/R.
@@ -784,7 +786,7 @@ runs a slow swarm on a dedicated server with clients:
 
 - The plan's talent variants, Swarm Brood and Grave Detonation, wait for the
   HARV-09 talent tree. Creature count, sections per strike and the rest between
-  strikes are their knobs.
+  strikes are their knobs. HARV-09c added both as axe tree nodes.
 - Concurrent player harvesting, misses and the summoner's death are covered by
   automation tests, not by a PIE session.
 - Creatures fly straight arcs, also through obstacles; only the selection
@@ -851,6 +853,100 @@ on the client:
   because injected keys bypass the Slate back action.
 - Gamepad navigation inside the tree uses plain buttons and was not tuned.
 
+## Power forms through tunings (HARV-09c)
+
+HARV-09c gives the tool powers upgrade and form nodes. The nodes carry only
+tuning entries; the harvest mechanism reads them.
+
+### Harvest tunings
+
+`URpgGameplayAbility_Harvest` applies the learned tunings of its weapon's tree
+to its authored values. Each tag names one value:
+
+| Tag | Changes | Unit |
+| --- | --- | --- |
+| `Ability.Tuning.Harvest.AreaRadius` | `Targeting.AreaRadius`; the preview ring follows it | cm |
+| `Ability.Tuning.Harvest.Reach` | `Targeting.MaxReachFromAvatar`; the aim ray grows by the same amount | cm |
+| `Ability.Tuning.Harvest.MaxTargets` | `Targeting.MaxTargets`, rounded, at least 1 | targets |
+| `Ability.Tuning.Harvest.Sections` | `SectionsPerTarget`, rounded, at least 1; per strike for a swarm | sections |
+| `Ability.Tuning.Harvest.Creatures` | `Swarm.CreatureCount`, rounded, 1 to 16 | creatures |
+| `Ability.Tuning.Harvest.StrikeInterval` | `Swarm.StrikeIntervalSeconds`, the rest after a strike | s |
+| `Ability.Tuning.Harvest.StrikeRadius` | `Swarm.StrikeRadius` | cm |
+| `Ability.Tuning.Harvest.Cooldown` | duration of the cooldown effect | s |
+
+- The preview resolves the values each time it evaluates. The server
+  captures them, with the aim, when execution starts; learning or resetting a
+  node during the swing changes nothing.
+- The cooldown tuning sets the duration of the cooldown effect's spec, so
+  existing cooldown effects need no change. Only effects with a duration are
+  tuned.
+- The plan suggested a cooldown through SetByCaller. Setting the spec's
+  duration keeps the existing `GE_Cooldown_Harvest_*` assets unchanged.
+
+### Strike radius
+
+- `FRpgHarvestSwarmParams::StrikeRadius` (default 0) lets every creature
+  strike also commit each other resource the swarm works on within the radius,
+  once per strike, with the strike's sections.
+- Stock that other creatures reserved stays theirs, so the swarm never
+  empties a resource another creature is on its way to. Commits clamp to the
+  stock, as always.
+- The swarm replicates the radius; `Get Strike Radius` lets the presentation
+  use it. `BP_HarvestSwarm_Grave` flashes `BP_HarvestAreaMarker` on the ground
+  at strikes with a radius, scaled to it, for half a second.
+
+### Content
+
+All nodes cost one point and carry only tunings for one ability id.
+
+| Tree | Node | Row, column | Gate | Tunings |
+| --- | --- | --- | --- | --- |
+| Axe | Wide Wave | 1, 0 | 2 points, Death Wave | Death Wave area +300 cm, targets +4 |
+| Axe | Swarm Brood | 1, 2 | 2 points, Grave Swarm; excludes Grave Detonation | Grave Swarm 8 creatures, 1 section per strike |
+| Axe | Long Reach | 2, 0 | 3 points, Death Wave | Death Wave reach +500 cm |
+| Axe | Grave Detonation | 2, 2 | 3 points, Grave Swarm; excludes Swarm Brood | Grave Swarm 3 creatures, strike radius 700 cm |
+| Pickaxe | Wide Rift | 1, 0 | 1 point, Rift Grip; excludes Deep Grip | Rift Grip area +150 cm, targets +2 |
+| Pickaxe | Deep Grip | 1, 1 | 1 point, Rift Grip; excludes Wide Rift | Rift Grip sections +1 |
+
+- The plan proposed a 3 m detonation. The trees of the grave stand stand 5 to
+  8 m apart, so 3 m never reached a neighbor; 7 m reaches the direct
+  neighbors.
+- Wide Wave stays outside an exclusive group until the ultimate of HARV-09e
+  exists.
+- `CM_Harvest_Aim` now looks at least 10 degrees down instead of 20. At 20
+  degrees no aim point on flat ground lay more than about 6 m from the pawn, so
+  Long Reach, and already the 10 m and 15 m reach of Death Wave and Grave
+  Swarm, could not be used.
+
+### Multiplayer
+
+Listen-server PIE sessions with one client in `Lvl_HarvestPickaxe` checked on
+the client:
+- The skill screen showed the new nodes with their links, row gates and the
+  excluded form. Logging 5 learned Death Wave, Grave Swarm, Wide Wave and
+  Grave Detonation; Swarm Brood showed as excluded.
+- Death Wave with Wide Wave previewed a 900 cm ring. The commit felled exactly
+  the previewed trees (four, and three on a second cast).
+- With Long Reach, the aim point lay 1074 cm from the pawn and in reach;
+  without it, that is beyond the 1000 cm reach.
+- Grave Swarm with Grave Detonation summoned three creatures. The first
+  strike took 8 sections: its own 2 and 2 from each of three neighbors within
+  7 m. The three creatures emptied five trees in about 2.5 s, delivered once,
+  and the ground ring showed the strike area.
+- Grave Swarm with Swarm Brood summoned eight creatures with one section per
+  strike. They emptied the four selected trees.
+- Rift Grip with Wide Rift previewed a 450 cm area. After a reset, Deep Grip
+  previewed and took 4 sections from each of two veins.
+
+### Not done
+
+- The values are first tuning; HARV-09f compares the forms by harvest time.
+- Links that skip a row, such as Grave Swarm to Grave Detonation, are drawn
+  behind the node in between.
+- In two PIE runs, the first held power right after the script closed the
+  menu executed before the scripted release; every later hold waited for the
+  release. A real key was not tested.
+
 ## Performance guardrails
 
 - Resources never tick. Respawn uses a timer. Replicated state is a revision,
@@ -874,8 +970,8 @@ on the client:
 | HARV-07 | M2 axe and Death Wave area harvest, aggregated delivery, protected objects, PCG trees | Merged: [#185](https://github.com/Athurito/SurvivalRpg/pull/185) |
 | HARV-08 | M3 grave swarm with separate beneficiary and physical harvester | Merged: [#186](https://github.com/Athurito/SurvivalRpg/pull/186) |
 | HARV-09a | M4 skill tree foundation (core): tree definition, item fragment, PlayerState progress, weapon grants, Q/E/R per tree, tunings, save schema 4; see [skill-trees.md](skill-trees.md) | Merged: [#188](https://github.com/Athurito/SurvivalRpg/pull/188) |
-| HARV-09b | Skill UI (progression overview, tree grid, Q/E/R, reset) and the tool trees; Rift Grip, Death Wave and Grave Swarm move from level gates to tree nodes | In review: [#189](https://github.com/Athurito/SurvivalRpg/pull/189) |
-| HARV-09c | Power forms through tunings: Wide Wave, Long Reach, Swarm Brood, Grave Detonation (strike radius), Wide Rift, Deep Grip | Planned |
+| HARV-09b | Skill UI (progression overview, tree grid, Q/E/R, reset) and the tool trees; Rift Grip, Death Wave and Grave Swarm move from level gates to tree nodes | Merged: [#189](https://github.com/Athurito/SurvivalRpg/pull/189) |
+| HARV-09c | Power forms through tunings: Wide Wave, Long Reach, Swarm Brood, Grave Detonation (strike radius), Wide Rift, Deep Grip | In review |
 | HARV-09d | Ash Pact: axe toggle that turns wood harvests into charcoal at a shown ratio, charcoal item, kiln recipe | Planned |
 | HARV-09e | Striding Wave, the axe's ultimate: trees around the walking player fall for a few seconds | Planned |
 | HARV-09f | Resource parity across combat styles and a build target that stronger harvesting makes easier | Planned |
@@ -891,8 +987,8 @@ on the client:
   authored locations, which survive World Partition streaming.
 - Answered in HARV-07: trees use static trunk proxies; a felled tree is a
   local cosmetic actor that falls away from the local player and sinks.
-- Still open from M3: the swarm's talent variants follow in HARV-09c, on the
-  skill trees of HARV-09a and HARV-09b.
+- Answered in HARV-09c: the swarm's talent variants are the axe tree nodes
+  Swarm Brood and Grave Detonation.
 - Still open from M2: the small building task with both tools. The workbench
   recipes use the storage test materials, not the harvested `ID_Wood` and
   `ID_Ore`; see the duplicated material sets below.

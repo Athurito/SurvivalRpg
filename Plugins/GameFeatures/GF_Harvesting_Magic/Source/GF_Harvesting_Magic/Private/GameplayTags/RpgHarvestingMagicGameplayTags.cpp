@@ -56,4 +56,44 @@ namespace RpgHarvestingMagicGameplayTags
 		Rpg_Corpse_Completion_Harvest,
 		"Rpg.Corpse.Completion.Harvest",
 		"External corpse-lifecycle requirement fulfilled after a harvest reward is delivered.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_AreaRadius,
+		"Ability.Tuning.Harvest.AreaRadius",
+		"Area radius in cm of an area harvest around its aim point; the preview ring follows it.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_Reach,
+		"Ability.Tuning.Harvest.Reach",
+		"Farthest distance in cm from the harvester to its hit or aim point; the aim ray grows by the same amount.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_MaxTargets,
+		"Ability.Tuning.Harvest.MaxTargets",
+		"Most targets an area harvest takes, rounded to a whole number of at least one.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_Sections,
+		"Ability.Tuning.Harvest.Sections",
+		"Stock sections a harvest takes per target, or a swarm creature per strike; rounded, at least one.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_Creatures,
+		"Ability.Tuning.Harvest.Creatures",
+		"Creatures a swarm summons, rounded and kept between 1 and 16.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_StrikeInterval,
+		"Ability.Tuning.Harvest.StrikeInterval",
+		"Seconds a swarm creature rests after each strike.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_StrikeRadius,
+		"Ability.Tuning.Harvest.StrikeRadius",
+		"Radius in cm around each swarm strike in which every other resource of the swarm is struck once too.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_Cooldown,
+		"Ability.Tuning.Harvest.Cooldown",
+		"Duration in seconds of a harvest ability's cooldown effect.");
 }

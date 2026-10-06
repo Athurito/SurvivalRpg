@@ -1,5 +1,6 @@
 #include "Harvesting/RpgHarvestAutomationTestTypes.h"
 
+#include "GameplayEffectComponents/TargetTagsGameplayEffectComponent.h"
 #include "GameplayTags/RpgHarvestingMagicGameplayTags.h"
 #include "Inventory/RpgInventoryFragment_HarvestingTool.h"
 #include "Components/BoxComponent.h"
@@ -10,6 +11,7 @@
 #include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
 #include "SurvivalRpg/Core/Corpse/RpgCorpseLifecycleComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
+#include "SurvivalRpg/Inventory/RpgInventoryFragment_SkillTree.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgHarvestAutomationTestTypes)
@@ -210,6 +212,46 @@ ARpgHarvestAutomationInstancesActor::ARpgHarvestAutomationInstancesActor(
 	Instances = CreateDefaultSubobject<URpgHarvestAutomationInstancesComponent>(TEXT("Instances"));
 	Instances->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
 	SetRootComponent(Instances);
+}
+
+URpgHarvestAutomationTestTreeToolDefinition::URpgHarvestAutomationTestTreeToolDefinition(
+	const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	ConfigureToolDefinition(*this, TEXT("Skill Tree Skinning Tool"), 1.0f, ObjectInitializer);
+	Fragments.Add(ObjectInitializer.CreateDefaultSubobject<URpgInventoryFragment_SkillTree>(this, TEXT("SkillTree")));
+}
+
+void URpgHarvestAutomationTestTreeToolDefinition::SetTestSkillTree(const URpgSkillTreeDefinition* Tree)
+{
+	URpgHarvestAutomationTestTreeToolDefinition* Definition = GetMutableDefault<URpgHarvestAutomationTestTreeToolDefinition>();
+	for (URpgInventoryItemFragment* Fragment : Definition->Fragments)
+	{
+		if (URpgInventoryFragment_SkillTree* SkillTreeFragment = Cast<URpgInventoryFragment_SkillTree>(Fragment))
+		{
+			SkillTreeFragment->SkillTree = Tree;
+		}
+	}
+}
+
+URpgHarvestAutomationTestCooldownEffect::URpgHarvestAutomationTestCooldownEffect(
+	const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	DurationPolicy = EGameplayEffectDurationType::HasDuration;
+	DurationMagnitude = FGameplayEffectModifierMagnitude(FScalableFloat(BaseDurationSeconds));
+}
+
+void URpgHarvestAutomationTestCooldownEffect::SetCooldownTag(const FGameplayTag CooldownTag)
+{
+	FInheritedTagContainer GrantedTags;
+	if (CooldownTag.IsValid())
+	{
+		GrantedTags.Added.AddTag(CooldownTag);
+	}
+	GetMutableDefault<URpgHarvestAutomationTestCooldownEffect>()
+		->FindOrAddComponent<UTargetTagsGameplayEffectComponent>()
+		.SetAndApplyTargetTagChanges(GrantedTags);
 }
 
 URpgHarvestAutomationTestAbility::URpgHarvestAutomationTestAbility(
