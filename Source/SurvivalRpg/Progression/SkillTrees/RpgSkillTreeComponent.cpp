@@ -62,7 +62,7 @@ URpgSkillTreeComponent::URpgSkillTreeComponent()
 void URpgSkillTreeComponent::BeginPlay()
 {
 	Super::BeginPlay();
-	RegisterTreesFromAssetManager();
+	RegisterSkillTreesFromAssetManager();
 }
 
 void URpgSkillTreeComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -507,9 +507,22 @@ bool URpgSkillTreeComponent::ValidateSkillTreeStates(const TArray<FRpgSkillTreeS
 
 void URpgSkillTreeComponent::OnRep_TreeStates()
 {
+	// Known trees without a state are included, so a cleared state still refreshes their views.
+	TArray<FGameplayTag, TInlineAllocator<8>> ChangedTreeTags;
 	for (const FRpgSkillTreeState& State : TreeStates)
 	{
-		OnSkillTreeChanged.Broadcast(State.TreeTag);
+		ChangedTreeTags.AddUnique(State.TreeTag);
+	}
+	for (const TObjectPtr<const URpgSkillTreeDefinition>& Tree : KnownTrees)
+	{
+		if (Tree)
+		{
+			ChangedTreeTags.AddUnique(Tree->TreeTag);
+		}
+	}
+	for (const FGameplayTag& TreeTag : ChangedTreeTags)
+	{
+		OnSkillTreeChanged.Broadcast(TreeTag);
 	}
 }
 
@@ -698,7 +711,7 @@ bool URpgSkillTreeComponent::ReplayRestoredState(const URpgSkillTreeDefinition& 
 	return !bResetTree && State.UnlockedNodes.Num() == SavedNodes.Num();
 }
 
-void URpgSkillTreeComponent::RegisterTreesFromAssetManager()
+void URpgSkillTreeComponent::RegisterSkillTreesFromAssetManager()
 {
 	if (!UAssetManager::IsInitialized())
 	{

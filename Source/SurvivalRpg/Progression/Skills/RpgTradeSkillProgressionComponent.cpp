@@ -443,6 +443,27 @@ const FTradeSkillState* URpgTradeSkillProgressionComponent::FindSkillState(const
 	});
 }
 
+int32 URpgTradeSkillProgressionComponent::GetMaxSkillLevelByTag(const FGameplayTag SkillTag) const
+{
+	return GetMaxLevel(SkillTag);
+}
+
+FText URpgTradeSkillProgressionComponent::GetSkillDisplayName(const FGameplayTag SkillTag) const
+{
+	if (const FTradeSkillConfig* Config = GetConfig(SkillTag); Config && !Config->DisplayName.IsEmpty())
+	{
+		return Config->DisplayName;
+	}
+
+	FString LeafName = SkillTag.ToString();
+	int32 LastDot = INDEX_NONE;
+	if (LeafName.FindLastChar(TEXT('.'), LastDot))
+	{
+		LeafName.RightChopInline(LastDot + 1);
+	}
+	return FText::FromString(LeafName);
+}
+
 const FTradeSkillConfig* URpgTradeSkillProgressionComponent::GetConfig(const FGameplayTag SkillTag) const
 {
 	if (!ConfigData)

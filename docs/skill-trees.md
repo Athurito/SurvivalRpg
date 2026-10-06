@@ -23,7 +23,7 @@ are data. Code is only needed when an ability gains a new tunable value.
 | Abilities, effects and tags of learned nodes | `URpgEquipmentManagerComponent` | Granted while the weapon is in use; the source object is the weapon's equipment instance. |
 | Q/E/R binding | `URpgWeaponAbilityLoadoutComponent` | Order: player selection, then the tree of the weapon in use, then ability set defaults. |
 | Numeric upgrades | `URpgGameplayAbility::GetTunedValue` | Resolved on the server and the owning client. |
-| Presentation | ViewModels and CommonUI widgets (HARV-09b) | Read-only. |
+| Presentation | `URpgSkillProgressionViewModel`, `URpgSkillTreeViewModel`, `URpgSkillTreeNodeViewModel`, `URpgTradeSkillViewModel`, `URpgSkillTreeGridWidget`, and the CommonUI screen `CUI_Skills` | Read-only; commands send the component's requests. |
 
 ## Runtime rules
 
@@ -58,6 +58,31 @@ are data. Code is only needed when an ability gains a new tunable value.
 - **Registration:** at BeginPlay the component registers every tree the asset manager knows, and the equipment manager registers the tree of every weapon it equips.
   - Trees under `/Game/SurvivalRpg` are scanned by `DefaultGame.ini`.
   - A Game Feature adds its own folder to the primary asset types of its GameFeatureData.
+  - The skill screen registers the asset manager's trees again when it opens, so trees of Game Features registered later appear too.
+
+## Skill screen
+
+H opens the game menu on its Skills tab: `IA_UI_Skills` → `InputTag.UI.Skills` →
+`UI.Screen.GameMenu` with a payload whose screen tag is `UI.Screen.GameMenu.Skills`.
+The menu's `TabScreenTags` map such tags to its tabs.
+
+| Part | Role |
+| --- | --- |
+| `URpgSkillProgressionViewModel` | Character level, trade skills with XP, one tree view model per known tree, the selected tree, free points. `OnProgressionChanged` also fires when the selected tree changes, so a screen refreshes from one event. |
+| `URpgSkillTreeViewModel` | Points, rows with their gates, prerequisite links, Q/E/R slots, the selected node, and the commands learn, reset, select and assign. |
+| `URpgSkillTreeNodeViewModel` | One node: name, text, icon, kind, cell, cost, state (`Unlocked`, `Unlockable`, `Unaffordable`, `Locked`, `Excluded`), slot. |
+| `URpgSkillTreeGridWidget` | Places one entry per node from `Row` and `Column`, draws the links and darkens locked rows. Entries implement User Object List Entry. |
+| `CUI_Skills`, `CUI_SkillTreeNode`, `CUI_TradeSkillEntry`, `CUI_SkillTreeListEntry` | Layout and style in `/Game/SurvivalRpg/UI/Menus/GameMenu/GameMenu/Skills`. |
+
+The view models observe the replicated state and rebuild at most once per frame. Trade skill names come from
+`DisplayName` in the trade skill config, or the last part of the skill tag.
+
+## Current trees
+
+| Tree | Points | Nodes |
+| --- | --- | --- |
+| `DA_SkillTree_Axe` (`GF_Harvesting_Magic`) | Logging | Death Wave (row 0, column 0), Grave Swarm (row 0, column 2) |
+| `DA_SkillTree_Pickaxe` (`GF_Harvesting_Magic`) | Mining | Rift Grip (row 0, column 0) |
 
 ## How to extend
 
@@ -70,7 +95,7 @@ are data. Code is only needed when an ability gains a new tunable value.
 3. Make sure the asset manager scans the folder (`DefaultGame.ini` for `/Game`, the GameFeatureData for a plugin).
 4. Run data validation. The automation test `SurvivalRpg.Progression.SkillTrees.Content.AllTreesValid` checks every tree.
 
-No code, widget or save change is needed.
+No code, widget or save change is needed; the skill screen lists the tree and draws it.
 
 ### Add a node
 
@@ -104,4 +129,8 @@ Add an entry to `Nodes`:
 - Q/E/R through the weapon loadout
 - save and restore
 
+- the view models: projection, commands, coalesced refresh and the overview
+
 `SurvivalRpg.Save.WorldSave.MemoryRoundTrip` covers the save fields.
+`SurvivalRpg.Harvesting.Content.AxeSkillTreeContract` and `PickaxeSkillTreeContract` check the chain item →
+fragment → tree → node → ability set → ability for the tool trees.

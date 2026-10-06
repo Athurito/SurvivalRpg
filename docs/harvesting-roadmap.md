@@ -28,7 +28,7 @@ harvesting abilities into Blueprint content belongs to issue
 | --- | --- |
 | Stoneburst | Replaced by Rift Grip (`GA_Harvest_RiftGrip`), the pickaxe's awakened multi-section ability. HARV-04 removed the native leaf, its tag and its PlayerState grant. |
 | Manual harvest | Profiles with `RequiredToolTag` offer no interaction harvest. Bushes keep the interaction harvest. |
-| First unlock | Rift Grip requires `Skill.Gathering.Mining` level 2. This reuses saved, replicated trade-skill progression. HARV-09b moves such powers into the tool's skill tree. |
+| First unlock | Rift Grip, Death Wave and Grave Swarm are first-point nodes of the tool skill trees (HARV-09b). Level 2 of the tool's trade skill earns that point; until HARV-09b the abilities had their own level gate. |
 | Costs | Rift Grip uses only a short cooldown GameplayEffect on the character, with no mana. Re-equipping cannot reset it. |
 | Resource representation | Prototype resources are actors with `URpgHarvestableComponent`. Open-world trees and rocks come from PCG; the PCG bridge in HARV-06 makes those instances harvestable. `URpgHarvestableInstancedMeshComponent` remains the legacy path for bushes and the sandbox. |
 | Indicators | With a tool equipped, the primary-swing target is always highlighted. Special abilities show their area and every target while the input is held, and trigger on release. |
@@ -53,7 +53,7 @@ stock rules are kept separate.
 | Harvest request and result | `FRpgHarvestRequest`, `FRpgHarvestResult`, `IRpgHarvestableTarget` | HARV-01 |
 | Auto pickup and overflow container | `FRpgHarvestRewardService`: atomic inventory batch or one replicated drop | Exists; multi-section batching added in HARV-01 |
 | Harvest input tags | `InputTag.Weapon.Primary` on the main-hand tool; Q/E/R defaults declared by ability sets | No new input tags; ability-set defaults for Q/E/R added in HARV-04 |
-| Harvesting progression | `URpgTradeSkillProgressionComponent` (`Skill.Gathering.*`, saved); tool skill trees in `URpgSkillTreeComponent` | Skill levels exist; skill tree foundation in HARV-09a, tool trees from HARV-09b |
+| Harvesting progression | `URpgTradeSkillProgressionComponent` (`Skill.Gathering.*`, saved); tool skill trees in `URpgSkillTreeComponent` | Skill levels exist; skill tree foundation in HARV-09a; skill UI and tool trees in HARV-09b |
 | World persistence of resources | none (depletion is session-scoped) | HARV-10 |
 
 ## C++ boundary decision
@@ -259,7 +259,8 @@ All assets live in `GF_Harvesting_Magic` and are authored through Unreal MCP.
     the aim point is the ground below the ray end, kept within reach. The ring
     follows the camera pitch.
   - It needs `Skill.Gathering.Mining` level 2. Below that, activation fails and
-    the HUD shows "Mining 2 required".
+    the HUD shows "Mining 2 required". HARV-09b replaced this gate with the
+    pickaxe skill tree.
   - It costs only `GE_Cooldown_Harvest_RiftGrip`: 4 s, granting
     `Cooldown.Harvesting.RiftGrip` on the character. Re-equipping cannot reset
     it.
@@ -269,7 +270,8 @@ All assets live in `GF_Harvesting_Magic` and are authored through Unreal MCP.
     the targets stay readable. Lyra's ability camera mode seam sets it, and it
     is cleared on release or when the ability ends.
 - **Q/E/R defaults:** `AS_Tool_Pickaxe` grants Rift Grip with
-  `InputTag.Weapon.Ability.1`.
+  `InputTag.Weapon.Ability.1`. Since HARV-09b the tool set grants only the
+  swing, and the pickaxe tree places Rift Grip on Q/E/R.
   - Weapon ability input belongs to `URpgWeaponAbilityLoadoutComponent`. An
     ability set entry with `InputTag.Weapon.Ability.N` therefore does not bind
     statically. It marks its spec as the default of slot N
@@ -565,7 +567,8 @@ All assets live in `GF_Harvesting_Magic` and are authored through Unreal MCP.
       the aim point, up to six trees.
     - The aim point must lie within 10 m of the pawn.
     - It needs `Skill.Gathering.Logging` level 2; below that the HUD shows
-      "Logging 2 required".
+      "Logging 2 required". HARV-09b moved Death Wave into the axe skill tree
+      and removed the gate and the slot default.
     - It costs only `GE_Cooldown_Harvest_DeathWave` (6 s,
       `Cooldown.Harvesting.DeathWave`).
     - Its presentation wave travels at 15 m/s, so the nearest tree falls
@@ -735,8 +738,8 @@ All assets live in `GF_Harvesting_Magic` and are authored through Unreal MCP.
   - Five creatures fell every tree within 8 m, up to ten. Each strike takes
     two sections and is followed by a 0.7 s rest, so the trees fall one after
     another.
-  - It needs Logging 2, like Death Wave; the HARV-09 talents will choose
-    between such powers.
+  - It needs Logging 2, like Death Wave. HARV-09b moved Grave Swarm into the
+    axe skill tree and removed the gate and the slot default.
   - It costs only `GE_Cooldown_Harvest_GraveSwarm` (15 s,
     `Cooldown.Harvesting.GraveSwarm`).
 - `BP_HarvestSwarmCreature_Grave` is a pale green wisp with a short tail and a
@@ -787,6 +790,67 @@ runs a slow swarm on a dedicated server with clients:
 - Creatures fly straight arcs, also through obstacles; only the selection
   respects the line of sight.
 
+## Skill UI and tool trees (HARV-09b)
+
+HARV-09b makes the skill trees of HARV-09a playable; see
+[skill-trees.md](skill-trees.md) for the system.
+
+### Content
+
+- `DA_SkillTree_Axe` (`SkillTree.Tree.Axe`, Logging) has the branches Death
+  and Grave with one active node each in row 0: Death Wave in column 0 and
+  Grave Swarm in column 2. Column 1 stays free for the Ash Pact (HARV-09d).
+- `DA_SkillTree_Pickaxe` (`SkillTree.Tree.Pickaxe`, Mining) has Rift Grip in
+  row 0 of the Rift branch.
+- Every node costs one point and grants its own ability set
+  (`AS_Node_DeathWave`, `AS_Node_GraveSwarm`, `AS_Node_RiftGrip`) without an
+  input tag. Logging or Mining level 2 earns the first point.
+- `ID_Tool_Axe` and `ID_Tool_Pickaxe` carry a skill tree fragment for the main
+  hand. `AS_Tool_Axe` and `AS_Tool_Pickaxe` grant only the swing.
+- The three abilities lost their own level gate (`RequiredSkillTag`).
+- `GF_Harvesting_Magic` scans `/GF_Harvesting_Magic/Progression/SkillTrees`
+  for skill trees, so server and clients know both trees.
+
+### Skill screen
+
+- H (`IA_UI_Skills`, already mapped in `IMC_UI_PlayerHUD`) opens the game menu
+  (`UI.Screen.GameMenu`) on its Skills tab. The menu is now a
+  `URpgActivatableWidget` in menu input mode and selects the tab named by the
+  payload's screen tag (`UI.Screen.GameMenu.Skills`).
+- `CUI_Skills` shows the character level, every trade skill with its XP bar,
+  the trees with their free points, and the selected tree: the tree picked in
+  the list, otherwise the tree of the main-hand weapon.
+- The tree view lays out the nodes with `URpgSkillTreeGridWidget` and draws
+  the prerequisite links and the locked rows. Nodes show their state by color.
+  Clicking a node selects it and learns it when it is available; Q, E and R
+  place the selected learned ability; Reset tree refunds every point.
+
+### Multiplayer
+
+A listen-server PIE session with one client in `Lvl_HarvestPickaxe` checked
+on the client:
+- H opened the menu on the Skills tab. Logging 2 showed one free axe point
+  and both actives as learnable.
+- Clicking Grave Swarm learned it on the server, put it on Q, and showed it as
+  learned on Q. After closing the menu, Q summoned the swarm, and 61 wood
+  arrived.
+- Reset refunded the point and emptied Q. Death Wave then took Q.
+- With the pickaxe in the main hand, Q/E/R were empty and the menu opened on
+  the pickaxe tree. Mining 2 let Rift Grip take Q, while the axe tree kept
+  Death Wave on Q.
+- Extensibility probe: a node added only in `DA_SkillTree_Axe` (prerequisite
+  Death Wave, two points spent, one tuning) appeared below Death Wave with a
+  link and a locked row. After two learned nodes it became learnable. It was
+  removed again without saving.
+
+### Not done
+
+- Save and load in PIE were not exercised; the automation tests of HARV-09a
+  cover them.
+- Escape closes the menu through CommonUI; the PIE script closed it directly,
+  because injected keys bypass the Slate back action.
+- Gamepad navigation inside the tree uses plain buttons and was not tuned.
+
 ## Performance guardrails
 
 - Resources never tick. Respawn uses a timer. Replicated state is a revision,
@@ -809,8 +873,8 @@ runs a slow swarm on a dedicated server with clients:
 | HARV-06 | PCG resource bridge: harvestable PCG instances with sparse state and a measured budget | Merged: [#184](https://github.com/Athurito/SurvivalRpg/pull/184) |
 | HARV-07 | M2 axe and Death Wave area harvest, aggregated delivery, protected objects, PCG trees | Merged: [#185](https://github.com/Athurito/SurvivalRpg/pull/185) |
 | HARV-08 | M3 grave swarm with separate beneficiary and physical harvester | Merged: [#186](https://github.com/Athurito/SurvivalRpg/pull/186) |
-| HARV-09a | M4 skill tree foundation (core): tree definition, item fragment, PlayerState progress, weapon grants, Q/E/R per tree, tunings, save schema 4; see [skill-trees.md](skill-trees.md) | In review: [#188](https://github.com/Athurito/SurvivalRpg/pull/188) |
-| HARV-09b | Skill UI (progression overview, tree grid, Q/E/R, reset) and the tool trees; Rift Grip, Death Wave and Grave Swarm move from level gates to tree nodes | Planned |
+| HARV-09a | M4 skill tree foundation (core): tree definition, item fragment, PlayerState progress, weapon grants, Q/E/R per tree, tunings, save schema 4; see [skill-trees.md](skill-trees.md) | Merged: [#188](https://github.com/Athurito/SurvivalRpg/pull/188) |
+| HARV-09b | Skill UI (progression overview, tree grid, Q/E/R, reset) and the tool trees; Rift Grip, Death Wave and Grave Swarm move from level gates to tree nodes | In review: [#189](https://github.com/Athurito/SurvivalRpg/pull/189) |
 | HARV-09c | Power forms through tunings: Wide Wave, Long Reach, Swarm Brood, Grave Detonation (strike radius), Wide Rift, Deep Grip | Planned |
 | HARV-09d | Ash Pact: axe toggle that turns wood harvests into charcoal at a shown ratio, charcoal item, kiln recipe | Planned |
 | HARV-09e | Striding Wave, the axe's ultimate: trees around the walking player fall for a few seconds | Planned |

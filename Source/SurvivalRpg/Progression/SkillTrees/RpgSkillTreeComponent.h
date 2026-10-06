@@ -94,6 +94,12 @@ public:
 	/** Makes Tree known to requests, restores and the UI. Trees of the asset manager and of equipped weapons register automatically. */
 	void RegisterSkillTree(const URpgSkillTreeDefinition* Tree);
 
+	/**
+	 * Registers every tree the asset manager knows. Runs at BeginPlay; the progression UI calls it again so trees of
+	 * Game Features registered later appear too. Loads the tree assets synchronously.
+	 */
+	void RegisterSkillTreesFromAssetManager();
+
 	/** Returns the registered tree with TreeTag, or null. */
 	UFUNCTION(BlueprintPure, Category = "Rpg|Skill Tree")
 	URpgSkillTreeDefinition* FindSkillTree(FGameplayTag TreeTag) const;
@@ -221,7 +227,6 @@ private:
 	void AssignFreeSlots(const FRpgSkillTreeNode& Node, FRpgSkillTreeState& State) const;
 	void SanitizeSlots(const URpgSkillTreeDefinition& Tree, FRpgSkillTreeState& State) const;
 	bool ReplayRestoredState(const URpgSkillTreeDefinition& Tree, FRpgSkillTreeState& State) const;
-	void RegisterTreesFromAssetManager();
 	void HandleSkillTreeChanged(FGameplayTag TreeTag);
 	void RefreshOwnerGrants() const;
 	void MarkOwnerSaveDirty() const;

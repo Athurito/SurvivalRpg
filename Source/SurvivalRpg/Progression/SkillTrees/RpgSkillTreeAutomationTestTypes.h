@@ -20,3 +20,16 @@ public:
 	/** Points the class default fragment at Tree; tests restore null when they finish. */
 	static void SetTestSkillTree(const URpgSkillTreeDefinition* Tree);
 };
+
+/** Counts broadcasts of a parameterless skill tree view model event. Test-only. */
+UCLASS(NotBlueprintable, Transient)
+class URpgSkillTreeAutomationTestListener final : public UObject
+{
+	GENERATED_BODY()
+
+public:
+	UFUNCTION()
+	void HandleChanged() { ++Broadcasts; }
+
+	int32 Broadcasts = 0;
+};
