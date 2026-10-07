@@ -54,7 +54,7 @@ stock rules are kept separate.
 | Auto pickup and overflow container | `FRpgHarvestRewardService`: atomic inventory batch or one replicated drop | Exists; multi-section batching added in HARV-01 |
 | Harvest input tags | `InputTag.Weapon.Primary` on the main-hand tool; Q/E/R defaults declared by ability sets | No new input tags; ability-set defaults for Q/E/R added in HARV-04 |
 | Harvesting progression | `URpgTradeSkillProgressionComponent` (`Skill.Gathering.*`, saved); tool skill trees in `URpgSkillTreeComponent` | Skill levels exist; skill tree foundation in HARV-09a; skill UI and tool trees in HARV-09b |
-| World persistence of resources | none (depletion is session-scoped) | HARV-10 |
+| World persistence of resources | `URpgHarvestPersistenceComponent` saves changed stock with the host's world snapshot | HARV-10a |
 
 ## C++ boundary decision
 
@@ -65,8 +65,9 @@ stock rules are kept separate.
   designer content.
 - **Runtime truth:** the server owns the remaining stock of each resource in
   `URpgHarvestableComponent`, or for instanced resources in the GameState's
-  `URpgHarvestInstanceStockComponent`. The stock is replicated and
-  session-scoped. Rewards go through `FRpgHarvestRewardService` into
+  `URpgHarvestInstanceStockComponent`. The stock is replicated. Since
+  HARV-10a, the stock of resources loaded with the map is saved with the
+  host's world snapshot. Rewards go through `FRpgHarvestRewardService` into
   `URpgInventoryManagerComponent`. Unlocks read saved trade-skill levels.
   Ability specs come from equipment grants. The target preview is a local
   cosmetic read model; the server re-selects targets at commit time.
@@ -97,6 +98,9 @@ stock rules are kept separate.
     area and its lifecycle, and replicates the creature flights in server
     time. The non-reflected `FRpgHarvestSwarmPlanner` distributes the
     creatures for the swarm and the preview alike.
+  - `URpgHarvestPersistenceComponent` (HARV-10a), the server-only GameState
+    component that saves and restores the stock. It uses the core seam
+    `IRpgWorldSaveParticipant`.
 - **Designer assets:** item, equipment and ability set definitions, `GA_*`
   abilities, `HP_*` profiles, `LT_*` loot tables, resource actor Blueprints,
   instanced resource component Blueprints (`BPC_HarvestInstances_*`), PCG
@@ -406,7 +410,7 @@ harvest ability works on them unchanged.
     component or World Partition cell holds the instance.
   - Instances closer than one centimeter share a key; the component logs a
     warning.
-  - The same key can identify saved depletion in HARV-10, as long as the
+  - HARV-10a saves depletion under the same key. This holds as long as the
     generated PCG output stays unchanged.
 - **Authority:** instance owners report authority on clients too, so commits
   check the GameState's authority instead. The GameState is also the loot
@@ -1335,6 +1339,106 @@ their requirements.
 - **Map copy:** `Lvl_ResourceParity` does not follow later changes to
   `Lvl_HarvestPickaxe`.
 
+## Resource persistence (HARV-10a)
+
+HARV-10 is split like HARV-09:
+- **HARV-10a** saves the harvest state.
+- **HARV-10b** tries a portal variant with known resources.
+- **HARV-10c** measures co-op load and large target groups.
+
+Since HARV-10a, felled trees and emptied veins stay harvested after the host
+reloads the world, and remaining respawn times continue where they stopped.
+
+### Saved state
+
+- **Owner:** `URpgHarvestPersistenceComponent` is a server-only GameState
+  component that the harvesting GameFeature adds.
+  - The stock stays in `URpgHarvestableComponent` and
+    `URpgHarvestInstanceStockComponent`.
+  - Both report every server change to the persistence component.
+- **Sparse records:** the component keeps one record for each resource whose
+  stock differs from its authored state.
+  - A record holds the revision, the extracted sections and the active flag.
+    For a depleted resource, it also holds the respawn deadline.
+  - A respawned resource drops its record.
+  - Records also cover resources that World Partition streamed out.
+  - An actor node that streams back in now keeps its stock. Before, it started
+    over with its authored stock. This is reasoned from the code; no World
+    Partition map tested it.
+- **Stable IDs:** only resources loaded with the map or a streamed cell are
+  saved (`AActor::bNetStartup`). Resources spawned at runtime stay
+  session-scoped.
+  - **Actor nodes:** the actor's name in its map. World Partition keeps actor
+    names unique in the whole world; a streamed sublevel of a classic world adds
+    its package.
+  - **Instances:** the HARV-06 key, the authored location in whole centimeters.
+- **Per map:** the save groups records by map package, without the PIE prefix.
+  The entry of a map that is not loaded is written back unchanged.
+- **Respawn:** a depleted resource saves its remaining respawn time.
+  - The countdown runs in game time and pauses while the host is offline.
+  - A resource whose profile has no respawn stays depleted.
+- **Presentation:** restored stock is older than the live window. Server,
+  clients and late joiners snap to it without felling or section animations.
+
+### World save seam
+
+The world save belongs to the core GameMode, which must not know GameFeature
+types. A small core seam carries the harvest state:
+- **`IRpgWorldSaveParticipant`:** a feature object that captures and restores
+  its durable state. The GameMode:
+  - captures every registered participant when it writes a snapshot;
+  - restores it when it selects a snapshot, including the rollback to the
+    pristine state;
+  - captures its final state when it unregisters.
+- **`FRpgWorldFeatureSaveData`:** a feature-owned schema version and an opaque
+  payload.
+  - `URpgWorldSaveGame` schema 4 stores these entries in `WorldFeatures`, keyed
+    by feature id.
+  - The entry of an inactive feature is written back unchanged, so disabling a
+    GameFeature does not erase its state.
+  - Schema 3 saves load without feature entries.
+- **Harvest payload:** `FRpgHarvestSaveData` (payload schema 1), serialized
+  through SaveGame tagged properties.
+
+### Content
+
+- **GameFeature data:** `GF_Harvesting_Magic` adds the
+  `RpgHarvestPersistenceComponent` to `RpgGameStateBase` on the server only.
+- **Parity GameMode:** the GASP test GameMode of the harvest maps disables
+  disk persistence.
+  - `BP_Rpg_ResourceParityGameMode` in `GF_Dev_Sandbox/ResourceParity` is its
+    child with disk persistence. It has its own slots
+    (`SurvivalRpg_ResourceParity` with backup and recovery) and the profile
+    key `ResourceParity`.
+  - `Lvl_ResourceParity` uses it. `Lvl_HarvestPickaxe` keeps the
+    non-persistent test GameMode.
+  - In `Lvl_ResourceParity` the host's inventory is saved too, so tools picked
+    up in an earlier session stay in the inventory.
+
+### Multiplayer
+
+A listen-server PIE session with one client in `Lvl_ResourceParity`:
+- **First session:** the client emptied iron vein `C_2` in three swings and
+  struck `C_1` once (4 → 3). With the axe, it felled one dead pine and struck
+  another once. Stopping PIE wrote the slot, and it held the harvesting entry.
+- **Second session:** server and client both started with `C_2` empty, `C_1`
+  at 3 of 4, the felled pine empty and the struck pine at 3 of 4. The client
+  joined after the restore, like a late joiner.
+- **No screenshot:** the viewport capture tool renders the editor viewport,
+  not the PIE view, so the restored look was not captured.
+
+### Not done
+
+- **Other resources:** legacy HISM bushes
+  (`URpgHarvestableInstancedMeshComponent`) and corpses stay session-scoped.
+- **Changed maps:** regenerating PCG output changes instance keys, so their
+  saved records no longer match. Renaming a placed resource actor loses its
+  saved stock.
+- **Changed profiles:** if a profile loses sections after a save, actor nodes
+  deplete and respawn. Saved instances are not adjusted.
+- **Reset:** no console command clears the saved stock. Deleting the
+  `SurvivalRpg_ResourceParity*` slots does.
+
 ## Performance guardrails
 
 - Resources never tick. Respawn uses a timer. Replicated state is a revision,
@@ -1362,8 +1466,10 @@ their requirements.
 | HARV-09c | Power forms through tunings: Wide Wave, Long Reach, Swarm Brood, Grave Detonation (strike radius), Wide Rift, Deep Grip; loose passives, chain-only gates, right-click refund of single nodes | Merged: [#190](https://github.com/Athurito/SurvivalRpg/pull/190) |
 | HARV-09d | Ash Wave: Death Wave form that delivers charcoal through yield conversions at a shown ratio, charcoal item, kiln recipe | Merged: [#192](https://github.com/Athurito/SurvivalRpg/pull/192) |
 | HARV-09e | Striding Wave, the axe's ultimate: trees around the walking player fall for a few seconds; strides around the harvester, point-gated ultimate node, ring cue | Merged: [#193](https://github.com/Athurito/SurvivalRpg/pull/193) |
-| HARV-09f | Resource parity across combat styles and a build target that stronger harvesting makes easier; shared pool, parity bench, Kiln Kit, harvest times | In review: [#194](https://github.com/Athurito/SurvivalRpg/pull/194) |
-| HARV-10 | M5 resource persistence with stable IDs, portal variant, co-op load | Planned |
+| HARV-09f | Resource parity across combat styles and a build target that stronger harvesting makes easier; shared pool, parity bench, Kiln Kit, harvest times | Merged: [#194](https://github.com/Athurito/SurvivalRpg/pull/194) |
+| HARV-10a | M5 resource persistence: saved stock per map with stable IDs and remaining respawn times, core world save seam for GameFeatures | In review: [#195](https://github.com/Athurito/SurvivalRpg/pull/195) |
+| HARV-10b | M5 portal variant: one portal rule that rearranges known resources | Planned |
+| HARV-10c | M5 co-op load: simultaneous extraction, latency and late join under load; profile large target groups, effects and swarms | Planned |
 
 ## Open questions
 
@@ -1382,6 +1488,8 @@ their requirements.
   workbench recipes still use the storage test materials; see the duplicated
   material sets below.
 - Not decided yet: home-world regeneration, the timing of the awakening, limits
-  on large power states, and the final co-op scope.
+  on large power states, and the final co-op scope. Until regeneration is
+  decided, HARV-10a keeps each profile's respawn and pauses it while the host
+  is offline.
 - The material sets duplicate each other: `ID_Ore` and its relatives versus
   the storage test materials.

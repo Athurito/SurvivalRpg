@@ -1166,6 +1166,140 @@ bool ARpgGameModeBase::RestoreStorageKnowledge()
 	return bImported;
 }
 
+void ARpgGameModeBase::RegisterWorldSaveParticipant(UObject* Participant)
+{
+	IRpgWorldSaveParticipant* SaveParticipant = Cast<IRpgWorldSaveParticipant>(Participant);
+	if (!HasAuthority() || !SaveParticipant)
+	{
+		return;
+	}
+	const FName FeatureId = SaveParticipant->GetWorldSaveFeatureId();
+	if (FeatureId.IsNone())
+	{
+		UE_LOG(LogRpg, Error, TEXT("RpgGameMode: Refusing world save participant %s without a feature id."), *GetNameSafe(Participant));
+		return;
+	}
+	for (const TWeakObjectPtr<UObject>& Registered : WorldSaveParticipants)
+	{
+		if (Registered.Get() == Participant)
+		{
+			return;
+		}
+		const IRpgWorldSaveParticipant* Other = Cast<IRpgWorldSaveParticipant>(Registered.Get());
+		if (Other && Other->GetWorldSaveFeatureId() == FeatureId)
+		{
+			UE_LOG(LogRpg, Error, TEXT("RpgGameMode: Refusing a second world save participant for feature [%s]."), *FeatureId.ToString());
+			return;
+		}
+	}
+	WorldSaveParticipants.Add(Participant);
+
+	// Before selection, the whole-snapshot restore includes this participant.
+	if (!bWorldSaveCandidateSelectionComplete)
+	{
+		return;
+	}
+	bool bRestored = false;
+	{
+		TGuardValue<bool> RestoreGuard(bIsRestoringSaveState, true);
+		bRestored = SaveParticipant->RestoreWorldSaveData(WorldFeatureSaveDataMap.Find(FeatureId));
+	}
+	if (!bRestored)
+	{
+		bDiskWritesBlockedByRestoreFailure = true;
+		UE_LOG(LogRpg, Error, TEXT("RpgGameMode: World feature [%s] could not restore its saved state; disk writes are blocked."), *FeatureId.ToString());
+	}
+}
+
+void ARpgGameModeBase::UnregisterWorldSaveParticipant(UObject* Participant)
+{
+	const int32 Index = WorldSaveParticipants.IndexOfByPredicate([Participant](const TWeakObjectPtr<UObject>& Registered)
+	{
+		return Registered.Get() == Participant;
+	});
+	if (Index == INDEX_NONE)
+	{
+		return;
+	}
+	// The participant still owns its final state here. Keep it for the next snapshot, but never replace durable
+	// state with startup defaults before selection. After this GameMode's own final flush nothing is written.
+	if (HasAuthority() && HasActorBegunPlay() && bWorldSaveCandidateSelectionComplete && !bIsRestoringSaveState &&
+		!bDiskWritesBlockedByRestoreFailure && CaptureWorldSaveParticipant(Participant))
+	{
+		MarkWorldSaveDirty();
+	}
+	WorldSaveParticipants.RemoveAt(Index);
+}
+
+void ARpgGameModeBase::MarkWorldFeatureSaveDirty(const UObject* Participant)
+{
+	const bool bRegistered = WorldSaveParticipants.ContainsByPredicate([Participant](const TWeakObjectPtr<UObject>& Registered)
+	{
+		return Registered.Get() == Participant;
+	});
+	// Resources report their final stock while the world tears down; this GameMode's own flush already wrote it.
+	if (HasAuthority() && HasActorBegunPlay() && bRegistered)
+	{
+		MarkWorldSaveDirty();
+	}
+}
+
+bool ARpgGameModeBase::CaptureWorldSaveParticipant(UObject* Participant)
+{
+	IRpgWorldSaveParticipant* SaveParticipant = Cast<IRpgWorldSaveParticipant>(Participant);
+	if (!SaveParticipant)
+	{
+		return true;
+	}
+	const FName FeatureId = SaveParticipant->GetWorldSaveFeatureId();
+	FRpgWorldFeatureSaveData Captured;
+	if (!SaveParticipant->CaptureWorldSaveData(Captured) || Captured.SchemaVersion <= 0)
+	{
+		bDiskWritesBlockedByRestoreFailure = true;
+		UE_LOG(LogRpg, Error, TEXT("RpgGameMode: World feature [%s] export was incomplete; refusing disk writes."), *FeatureId.ToString());
+		return false;
+	}
+	WorldFeatureSaveDataMap.Add(FeatureId, MoveTemp(Captured));
+	return true;
+}
+
+void ARpgGameModeBase::CaptureWorldSaveParticipants()
+{
+	WorldSaveParticipants.RemoveAll([](const TWeakObjectPtr<UObject>& Registered)
+	{
+		return !Registered.IsValid();
+	});
+	const TArray<TWeakObjectPtr<UObject>> Participants = WorldSaveParticipants;
+	for (const TWeakObjectPtr<UObject>& Participant : Participants)
+	{
+		if (!CaptureWorldSaveParticipant(Participant.Get()))
+		{
+			return;
+		}
+	}
+}
+
+bool ARpgGameModeBase::RestoreWorldSaveParticipants()
+{
+	bool bRestored = true;
+	const TArray<TWeakObjectPtr<UObject>> Participants = WorldSaveParticipants;
+	for (const TWeakObjectPtr<UObject>& Participant : Participants)
+	{
+		IRpgWorldSaveParticipant* SaveParticipant = Cast<IRpgWorldSaveParticipant>(Participant.Get());
+		if (!SaveParticipant)
+		{
+			continue;
+		}
+		const FName FeatureId = SaveParticipant->GetWorldSaveFeatureId();
+		if (!SaveParticipant->RestoreWorldSaveData(WorldFeatureSaveDataMap.Find(FeatureId)))
+		{
+			UE_LOG(LogRpg, Error, TEXT("RpgGameMode: World feature [%s] restore failed."), *FeatureId.ToString());
+			bRestored = false;
+		}
+	}
+	return bRestored;
+}
+
 bool ARpgGameModeBase::IsPlayerProfileRestoreReady(const APlayerController* PC) const
 {
 	const ARpgPlayerController* RpgPC = Cast<ARpgPlayerController>(PC);
@@ -2006,13 +2140,17 @@ bool ARpgGameModeBase::RestoreLoadedWorldSaveCandidatesAtomically()
 	CaptureCraftingStations();
 	if (bDiskWritesBlockedByRestoreFailure) return false;
 	const TMap<FName, FRpgCraftingStationSaveData> InitialCraftingStations = CraftingStationSaveDataMap;
+	CaptureWorldSaveParticipants();
+	if (bDiskWritesBlockedByRestoreFailure) return false;
+	const TMap<FName, FRpgWorldFeatureSaveData> InitialWorldFeatures = WorldFeatureSaveDataMap;
 
 	auto ApplyWholeState = [this, &PreflightPlayerGraphs](
 		const TMap<FString, FRpgPlayerSaveData>& Players,
 		const TMap<FName, FRpgWorldContainerSaveData>& WorldContainers,
 		const TMap<FName, FRpgBaseStorageSaveData>& BaseStorages,
 		const TMap<FName, FRpgCraftingStationSaveData>& CraftingStations,
-		const FGameplayTagContainer& KnowledgeTags)
+		const FGameplayTagContainer& KnowledgeTags,
+		const TMap<FName, FRpgWorldFeatureSaveData>& WorldFeatures)
 	{
 		if (!PreflightPlayerGraphs(Players, true))
 		{
@@ -2028,11 +2166,13 @@ bool ARpgGameModeBase::RestoreLoadedWorldSaveCandidatesAtomically()
 		BaseStorageSaveDataMap = BaseStorages;
 		CraftingStationSaveDataMap = CraftingStations;
 		StorageKnowledgeSaveTags = KnowledgeTags;
+		WorldFeatureSaveDataMap = WorldFeatures;
 
 		bool bApplied = RestoreStorageKnowledge();
 		bApplied = RestorePlacedBaseStorages() && bApplied;
 		bApplied = RestorePlacedWorldContainers() && bApplied;
 		bApplied = RestoreCraftingStations() && bApplied;
+		bApplied = RestoreWorldSaveParticipants() && bApplied;
 		return bApplied;
 	};
 	auto IsAnyBaseTainted = [this]()
@@ -2066,7 +2206,8 @@ bool ARpgGameModeBase::RestoreLoadedWorldSaveCandidatesAtomically()
 						InitialWorldContainers,
 						InitialBaseStorages,
 						InitialCraftingStations,
-						InitialKnowledgeTags) ||
+						InitialKnowledgeTags,
+						InitialWorldFeatures) ||
 					IsAnyBaseTainted())
 				{
 					bDiskWritesBlockedByRestoreFailure = true;
@@ -2103,7 +2244,8 @@ bool ARpgGameModeBase::RestoreLoadedWorldSaveCandidatesAtomically()
 					Candidate->WorldContainers,
 					Candidate->BaseStorages,
 					Candidate->CraftingStations,
-					Candidate->StorageKnowledgeTags))
+					Candidate->StorageKnowledgeTags,
+					Candidate->WorldFeatures))
 			{
 				SelectedCandidate = Candidate;
 				SelectedCandidateIndex = CandidateIndex;
@@ -2138,7 +2280,8 @@ bool ARpgGameModeBase::RestoreLoadedWorldSaveCandidatesAtomically()
 				InitialWorldContainers,
 				InitialBaseStorages,
 				InitialCraftingStations,
-				InitialKnowledgeTags);
+				InitialKnowledgeTags,
+				InitialWorldFeatures);
 			if (!bReset || IsAnyBaseTainted())
 			{
 				UE_LOG(LogRpg, Error,
@@ -2200,6 +2343,7 @@ void ARpgGameModeBase::LoadWorldSaveFromDisk()
 	BaseStorageSaveDataMap.Reset();
 	CraftingStationSaveDataMap.Reset();
 	StorageKnowledgeSaveTags.Reset();
+	WorldFeatureSaveDataMap.Reset();
 	ValidLoadedSaveCandidates.Reset();
 	LoadedPlayerProfileKeys.Reset();
 	bWorldSaveCandidateSelectionComplete = false;
@@ -2264,6 +2408,7 @@ URpgWorldSaveGame* ARpgGameModeBase::BuildWorldSaveSnapshot()
 	Snapshot->BaseStorages = BaseStorageSaveDataMap;
 	Snapshot->CraftingStations = CraftingStationSaveDataMap;
 	Snapshot->StorageKnowledgeTags = StorageKnowledgeSaveTags;
+	Snapshot->WorldFeatures = WorldFeatureSaveDataMap;
 	FString ValidationError;
 	if (!Snapshot->ValidateForLoad(ValidationError))
 	{
@@ -2360,6 +2505,7 @@ void ARpgGameModeBase::SaveWorldStateAsync()
 	CaptureBaseStorages();
 	CaptureCraftingStations();
 	CaptureStorageKnowledge();
+	CaptureWorldSaveParticipants();
 	if (bDiskWritesBlockedByRestoreFailure)
 	{
 		return;
@@ -2432,6 +2578,7 @@ bool ARpgGameModeBase::SaveWorldStateSync()
 	CaptureBaseStorages();
 	CaptureCraftingStations();
 	CaptureStorageKnowledge();
+	CaptureWorldSaveParticipants();
 	if (bDiskWritesBlockedByRestoreFailure)
 	{
 		return false;

@@ -241,6 +241,16 @@ bool URpgWorldSaveGame::ValidateForLoad(FString& OutError) const
 		}
 	}
 
+	for (const TPair<FName, FRpgWorldFeatureSaveData>& Pair : WorldFeatures)
+	{
+		// Payloads stay opaque here; the owning feature validates them when it restores.
+		if (Pair.Key.IsNone() || Pair.Value.SchemaVersion <= 0)
+		{
+			OutError = FString::Printf(TEXT("World feature '%s' has an invalid save envelope."), *Pair.Key.ToString());
+			return false;
+		}
+	}
+
 	FRpgWorldStorageKnowledgeSaveData KnowledgeSaveData;
 	KnowledgeSaveData.KnowledgeTags = StorageKnowledgeTags;
 	if (!URpgWorldStorageKnowledgeComponent::ValidateSaveData(

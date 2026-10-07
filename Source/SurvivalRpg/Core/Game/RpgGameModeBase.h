@@ -173,6 +173,19 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rpg|Save")
 	bool FlushWorldSave();
 
+	/**
+	 * Adds a feature object implementing IRpgWorldSaveParticipant whose durable state is saved with the world
+	 * snapshot. Before whole-save selection, selection restores it; afterwards it receives its saved entry at once.
+	 * A second participant with the same feature id is refused. Authority only.
+	 */
+	void RegisterWorldSaveParticipant(UObject* Participant);
+
+	/** Captures a registered participant's final state into the world snapshot and removes it. Call before EndPlay ends it. */
+	void UnregisterWorldSaveParticipant(UObject* Participant);
+
+	/** Restarts the asynchronous save debounce after a registered participant's durable state changed. */
+	void MarkWorldFeatureSaveDirty(const UObject* Participant);
+
 	// --- Checkpoint API ---
 
 	/** Registers a checkpoint for a player. Stored in the host's save data map. */
@@ -252,6 +265,7 @@ private:
 	friend class FRpgCraftingStationRetentionTest;
 	friend class FRpgPhysicalChestRetentionTest;
 	friend class FRpgPhysicalChestSplitMergeSaveTest;
+	friend class FRpgWorldFeatureSaveTest;
 
 	/** Derived live registration only; durable absent-station state remains in CraftingStationSaveDataMap. */
 	TSet<TWeakObjectPtr<class URpgCraftingStationComponent>> RegisteredCraftingStations;
@@ -282,6 +296,9 @@ private:
 	bool RestoreBaseStorage(FName BaseId, ARpgBaseCampActor* BaseCamp);
 	void CaptureStorageKnowledge();
 	bool RestoreStorageKnowledge();
+	bool CaptureWorldSaveParticipant(UObject* Participant);
+	void CaptureWorldSaveParticipants();
+	bool RestoreWorldSaveParticipants();
 	void ApplyRestoredEquipmentSelection(APlayerController* PC);
 
 	void LoadWorldSaveFromDisk();
@@ -341,6 +358,13 @@ private:
 	/** Host-authoritative world-shared storage discoveries mirrored from the GameState component. */
 	UPROPERTY()
 	FGameplayTagContainer StorageKnowledgeSaveTags;
+
+	/** Durable feature state keyed by feature id; entries of features without a live participant stay unchanged. */
+	UPROPERTY()
+	TMap<FName, FRpgWorldFeatureSaveData> WorldFeatureSaveDataMap;
+
+	/** Live IRpgWorldSaveParticipant objects; derived registration, rebuilt as features begin and end play. */
+	TArray<TWeakObjectPtr<UObject>> WorldSaveParticipants;
 
 	/** Host-authoritative runtime respawn state. Keyed by Steam NetId. */
 	UPROPERTY()

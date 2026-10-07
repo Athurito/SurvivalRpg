@@ -10,6 +10,7 @@
 class URpgHarvestableComponent;
 class URpgHarvestProfile;
 class FLifetimeProperty;
+struct FRpgHarvestSavedStock;
 struct FRpgHarvestStockSnapshot;
 
 /** Replicated stock of one actor-backed harvestable resource. Server-authored; clients only read it. */
@@ -117,6 +118,16 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rpg|Harvesting")
 	bool RestoreHarvestStock();
 
+	/** Returns the saved form of the stock, including the remaining respawn time on the server. */
+	FRpgHarvestSavedStock ExportSavedStock() const;
+
+	/**
+	 * Replaces the stock with saved stock without granting loot; every machine presents it as initial state. A
+	 * depleted stock with RespawnSeconds of zero or more schedules its respawn. Authority only; used by
+	 * URpgHarvestPersistenceComponent.
+	 */
+	bool ApplySavedStock(const FRpgHarvestSavedStock& SavedStock);
+
 	/** Cosmetic event for sections, depletion, and respawn presentation. Never grant loot from it. */
 	UPROPERTY(BlueprintAssignable, Category = "Rpg|Harvesting")
 	FRpgHarvestNodeStateChangedEvent OnHarvestStateChanged;
@@ -169,6 +180,8 @@ private:
 	float GetServerWorldTimeSeconds() const;
 	void ScheduleRespawn();
 	void HandleRespawnTimer();
+	/** Reports the settled stock, including a scheduled respawn, to the world's harvest persistence. Server only. */
+	void ReportStockToPersistence() const;
 
 	/** Server-authored stock; replicated to every client for presentation and target previews. */
 	UPROPERTY(ReplicatedUsing = OnRep_HarvestState)

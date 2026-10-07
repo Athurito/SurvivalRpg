@@ -11,6 +11,7 @@ class URpgHarvestableInstancesComponent;
 class URpgHarvestInstanceStockComponent;
 class FLifetimeProperty;
 class UWorld;
+struct FRpgHarvestSavedStock;
 
 /** Replicated stock of one instanced resource whose stock differs from its authored, fully stocked state. */
 USTRUCT()
@@ -101,8 +102,9 @@ struct TStructOpsTypeTraits<FRpgHarvestInstanceStockList> : public TStructOpsTyp
  * entry again. Server and clients load identical instance transforms, so they derive the same keys without
  * replicating any instance identity, and a component that streams in later applies the stored stock on BeginPlay.
  *
- * The stock is session-scoped and never saved. Representations (URpgHarvestableInstancesComponent) evaluate and
- * commit harvests and present their instances; this component only stores stock and schedules respawns.
+ * Representations (URpgHarvestableInstancesComponent) evaluate and commit harvests and present their instances; this
+ * component only stores stock and schedules respawns. URpgHarvestPersistenceComponent saves the stock of instances
+ * loaded with the map.
  */
 UCLASS(ClassGroup = (Rpg), meta = (DisplayName = "RPG Harvest Instance Stock"))
 class GF_HARVESTING_MAGIC_API URpgHarvestInstanceStockComponent final : public UGameStateComponent
@@ -156,6 +158,19 @@ public:
 
 	/** Restores the authored stock of the instance identified by Key and cancels its respawn. Authority only. */
 	bool RestoreStock(const FIntVector& Key);
+
+	/**
+	 * Writes the saved form of Key's stock, including the remaining respawn time on the server. False, with the
+	 * authored stock written, for unchanged instances.
+	 */
+	bool ExportSavedStock(const FIntVector& Key, FRpgHarvestSavedStock& OutStock) const;
+
+	/**
+	 * Replaces Key's stock with saved stock without loot; every machine presents it as initial state. Pristine stock
+	 * drops the entry. A depleted stock with RespawnSeconds of zero or more schedules its respawn. Authority only;
+	 * used by URpgHarvestPersistenceComponent.
+	 */
+	bool ApplySavedStock(const FIntVector& Key, const FRpgHarvestSavedStock& SavedStock);
 
 	/** Returns the number of instances whose stock currently differs from their authored state. */
 	UFUNCTION(BlueprintPure, Category = "Rpg|Harvesting|Instances")
