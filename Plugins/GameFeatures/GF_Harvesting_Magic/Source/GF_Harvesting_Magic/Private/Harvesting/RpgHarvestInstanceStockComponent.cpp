@@ -1,88 +1,24 @@
 #include "Harvesting/RpgHarvestInstanceStockComponent.h"
 
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameFramework/GameStateBase.h"
 #include "Harvesting/RpgHarvestableInstancesComponent.h"
 #include "Harvesting/RpgHarvestPersistenceComponent.h"
 #include "Harvesting/RpgHarvestProfile.h"
-#include "Net/UnrealNetwork.h"
+#include "Misc/Crc.h"
 #include "ProfilingDebugging/CpuProfilerTrace.h"
 #include "UObject/UObjectIterator.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgHarvestInstanceStockComponent)
 
-void FRpgHarvestInstanceStockList::PreReplicatedRemove(const TArrayView<int32> RemovedIndices, const int32 FinalSize)
-{
-	// The entries still exist here; they are presented once the whole update has been applied.
-	for (const int32 ArrayIndex : RemovedIndices)
-	{
-		if (Entries.IsValidIndex(ArrayIndex))
-		{
-			PendingRemovedKeys.Add(Entries[ArrayIndex].Key);
-		}
-	}
-}
-
-void FRpgHarvestInstanceStockList::PostReplicatedAdd(const TArrayView<int32> AddedIndices, const int32 FinalSize)
-{
-	if (!OwnerComponent)
-	{
-		return;
-	}
-
-	for (const int32 ArrayIndex : AddedIndices)
-	{
-		if (Entries.IsValidIndex(ArrayIndex))
-		{
-			const FRpgHarvestInstanceStockEntry& Entry = Entries[ArrayIndex];
-			OwnerComponent->NotifyStockChanged(Entry.Key, OwnerComponent->IsInitialState(Entry));
-		}
-	}
-}
-
-void FRpgHarvestInstanceStockList::PostReplicatedChange(const TArrayView<int32> ChangedIndices, const int32 FinalSize)
-{
-	if (!OwnerComponent)
-	{
-		return;
-	}
-
-	for (const int32 ArrayIndex : ChangedIndices)
-	{
-		if (Entries.IsValidIndex(ArrayIndex))
-		{
-			const FRpgHarvestInstanceStockEntry& Entry = Entries[ArrayIndex];
-			OwnerComponent->NotifyStockChanged(Entry.Key, OwnerComponent->IsInitialState(Entry));
-		}
-	}
-}
-
-void FRpgHarvestInstanceStockList::PostReplicatedReceive(
-	const FFastArraySerializer::FPostReplicatedReceiveParameters& Parameters)
-{
-	TArray<FIntVector> RemovedKeys = MoveTemp(PendingRemovedKeys);
-	PendingRemovedKeys.Reset();
-	if (!OwnerComponent)
-	{
-		return;
-	}
-
-	for (const FIntVector& Key : RemovedKeys)
-	{
-		// A key removed and added again in the same update was already presented by the add.
-		if (!OwnerComponent->FindEntry(Key))
-		{
-			OwnerComponent->NotifyStockChanged(Key, false);
-		}
-	}
-}
-
 URpgHarvestInstanceStockComponent::URpgHarvestInstanceStockComponent(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
 	PrimaryComponentTick.bCanEverTick = false;
+	// Replicates so clients have the component; the stock itself replicates through the shards.
 	SetIsReplicatedByDefault(true);
-	Stock.OwnerComponent = this;
+	Shards.SetNum(NumShards);
 }
 
 URpgHarvestInstanceStockComponent* URpgHarvestInstanceStockComponent::FindForWorld(const UWorld* World)
@@ -98,6 +34,13 @@ FIntVector URpgHarvestInstanceStockComponent::MakeInstanceKey(const FVector& Aut
 		return FMath::RoundToInt32(FMath::Clamp(Value, static_cast<double>(MIN_int32), static_cast<double>(MAX_int32)));
 	};
 	return FIntVector(Quantize(AuthoredWorldLocation.X), Quantize(AuthoredWorldLocation.Y), Quantize(AuthoredWorldLocation.Z));
+}
+
+int32 URpgHarvestInstanceStockComponent::GetShardIndex(const FIntVector& Key)
+{
+	// A CRC spreads grid-aligned keys evenly; it depends only on the key, so every machine picks the same shard.
+	const int32 Components[3] = {Key.X, Key.Y, Key.Z};
+	return static_cast<int32>(FCrc::MemCrc32(Components, sizeof(Components)) % static_cast<uint32>(NumShards));
 }
 
 FRpgHarvestStockSnapshot URpgHarvestInstanceStockComponent::GetStockSnapshot(const FIntVector& Key, const int32 SectionCount) const
@@ -127,14 +70,19 @@ bool URpgHarvestInstanceStockComponent::ExtractSections(
 		return false;
 	}
 
-	int32 EntryIndex = FindEntryIndex(Key);
+	ARpgHarvestInstanceStockShard* Shard = FindOrSpawnShard(Key);
+	if (!Shard)
+	{
+		return false;
+	}
+	FRpgHarvestInstanceStockList& Stock = Shard->GetMutableStock();
+	int32 EntryIndex = Stock.FindIndex(Key);
 	if (EntryIndex == INDEX_NONE)
 	{
-		EntryIndex = Stock.Entries.AddDefaulted();
-		Stock.Entries[EntryIndex].Key = Key;
+		EntryIndex = Stock.AddEntry(Key);
 	}
 
-	FRpgHarvestInstanceStockEntry& Entry = Stock.Entries[EntryIndex];
+	FRpgHarvestInstanceStockEntry& Entry = Stock.GetEntry(EntryIndex);
 	if (!Entry.bActive)
 	{
 		return false;
@@ -150,8 +98,7 @@ bool URpgHarvestInstanceStockComponent::ExtractSections(
 		const UWorld* World = GetWorld();
 		if (World && RespawnDelaySeconds > 0.0f)
 		{
-			RespawnDeadlines.Add(Key, World->GetTimeSeconds() + RespawnDelaySeconds);
-			ArmNextRespawnTimer();
+			ScheduleRespawn(Key, World->GetTimeSeconds() + RespawnDelaySeconds);
 		}
 	}
 	Entry.LastChangeServerTime = GetServerWorldTimeSeconds();
@@ -163,7 +110,7 @@ bool URpgHarvestInstanceStockComponent::ExtractSections(
 	Entry.HarvestYaw = static_cast<uint8>(FMath::RoundToInt32(Yaw * 256.0f / 360.0f) & 0xFF);
 	Stock.MarkItemDirty(Entry);
 
-	MarkStockChanged(Key);
+	MarkStockChanged(*Shard, Key);
 	return true;
 }
 
@@ -200,16 +147,16 @@ bool URpgHarvestInstanceStockComponent::RestoreStock(const FIntVector& Key)
 	}
 
 	RespawnDeadlines.Remove(Key);
-	const int32 EntryIndex = FindEntryIndex(Key);
+	ARpgHarvestInstanceStockShard* Shard = GetShard(GetShardIndex(Key));
+	const int32 EntryIndex = Shard ? Shard->GetStock().FindIndex(Key) : INDEX_NONE;
 	if (EntryIndex == INDEX_NONE)
 	{
 		return false;
 	}
 
 	// Restored instances match their authored state again, so they stop costing memory and bandwidth.
-	Stock.Entries.RemoveAtSwap(EntryIndex);
-	Stock.MarkArrayDirty();
-	MarkStockChanged(Key);
+	Shard->GetMutableStock().RemoveEntryAt(EntryIndex);
+	MarkStockChanged(*Shard, Key);
 	if (URpgHarvestPersistenceComponent* Persistence = URpgHarvestPersistenceComponent::FindForWorld(GetWorld()))
 	{
 		Persistence->ForgetInstance(Key);
@@ -246,23 +193,34 @@ bool URpgHarvestInstanceStockComponent::ApplySavedStock(const FIntVector& Key, c
 	}
 
 	RespawnDeadlines.Remove(Key);
-	int32 EntryIndex = FindEntryIndex(Key);
+	ARpgHarvestInstanceStockShard* Shard = SavedStock.IsPristine() ? GetShard(GetShardIndex(Key)) : FindOrSpawnShard(Key);
+	if (!Shard)
+	{
+		// Without a shard, a pristine stock has no entry to drop, and a changed stock cannot be stored.
+		if (!SavedStock.IsPristine())
+		{
+			return false;
+		}
+		NotifyStockChanged(Key, true);
+		return true;
+	}
+
+	FRpgHarvestInstanceStockList& Stock = Shard->GetMutableStock();
+	int32 EntryIndex = Stock.FindIndex(Key);
 	if (SavedStock.IsPristine())
 	{
 		if (EntryIndex != INDEX_NONE)
 		{
-			Stock.Entries.RemoveAtSwap(EntryIndex);
-			Stock.MarkArrayDirty();
+			Stock.RemoveEntryAt(EntryIndex);
 		}
 	}
 	else
 	{
 		if (EntryIndex == INDEX_NONE)
 		{
-			EntryIndex = Stock.Entries.AddDefaulted();
-			Stock.Entries[EntryIndex].Key = Key;
+			EntryIndex = Stock.AddEntry(Key);
 		}
-		FRpgHarvestInstanceStockEntry& Entry = Stock.Entries[EntryIndex];
+		FRpgHarvestInstanceStockEntry& Entry = Stock.GetEntry(EntryIndex);
 		Entry.Revision = FMath::Max(0, SavedStock.Revision);
 		Entry.HarvestedSections = static_cast<uint8>(
 			FMath::Clamp(SavedStock.HarvestedSections, 0, URpgHarvestProfile::MaxSectionCount));
@@ -274,17 +232,33 @@ bool URpgHarvestInstanceStockComponent::ApplySavedStock(const FIntVector& Key, c
 		Stock.MarkItemDirty(Entry);
 		if (!SavedStock.bActive && SavedStock.RespawnSeconds >= 0.0f)
 		{
-			RespawnDeadlines.Add(Key, World->GetTimeSeconds() + FMath::Max(0.001f, SavedStock.RespawnSeconds));
+			ScheduleRespawn(Key, World->GetTimeSeconds() + FMath::Max(0.001f, SavedStock.RespawnSeconds));
 		}
 	}
-	ArmNextRespawnTimer();
 
-	if (AActor* OwningActor = GetOwner())
-	{
-		OwningActor->ForceNetUpdate();
-	}
+	Shard->ForceNetUpdate();
 	NotifyStockChanged(Key, true);
 	return true;
+}
+
+int32 URpgHarvestInstanceStockComponent::GetNumChangedInstances() const
+{
+	int32 NumChanged = 0;
+	for (const ARpgHarvestInstanceStockShard* Shard : Shards)
+	{
+		NumChanged += Shard ? Shard->GetStock().GetEntries().Num() : 0;
+	}
+	return NumChanged;
+}
+
+int32 URpgHarvestInstanceStockComponent::GetMaxShardEntries() const
+{
+	int32 MaxEntries = 0;
+	for (const ARpgHarvestInstanceStockShard* Shard : Shards)
+	{
+		MaxEntries = FMath::Max(MaxEntries, Shard ? Shard->GetStock().GetEntries().Num() : 0);
+	}
+	return MaxEntries;
 }
 
 bool URpgHarvestInstanceStockComponent::HasStockAuthority() const
@@ -305,11 +279,17 @@ void URpgHarvestInstanceStockComponent::RegisterInstances(URpgHarvestableInstanc
 	}
 	RegisteredInstances.Add(&Instances);
 
-	TArray<FIntVector, TInlineAllocator<16>> Keys;
-	Keys.Reserve(Stock.Entries.Num());
-	for (const FRpgHarvestInstanceStockEntry& Entry : Stock.Entries)
+	TArray<FIntVector> Keys;
+	Keys.Reserve(GetNumChangedInstances());
+	for (const ARpgHarvestInstanceStockShard* Shard : Shards)
 	{
-		Keys.Add(Entry.Key);
+		if (Shard)
+		{
+			for (const FRpgHarvestInstanceStockEntry& Entry : Shard->GetStock().GetEntries())
+			{
+				Keys.Add(Entry.Key);
+			}
+		}
 	}
 	for (const FIntVector& Key : Keys)
 	{
@@ -342,24 +322,87 @@ int32 URpgHarvestInstanceStockComponent::RestoreInstances(const URpgHarvestableI
 	return NumRestored;
 }
 
-void URpgHarvestInstanceStockComponent::OnRegister()
+void URpgHarvestInstanceStockComponent::RegisterShard(ARpgHarvestInstanceStockShard& Shard)
 {
-	Super::OnRegister();
-	Stock.OwnerComponent = this;
+	const int32 ShardIndex = Shard.GetShardIndex();
+	Shards.SetNum(NumShards);
+	if (!Shards.IsValidIndex(ShardIndex) || Shards[ShardIndex] == &Shard)
+	{
+		return;
+	}
+
+	Shards[ShardIndex] = &Shard;
+	Shard.SetRegisteredStock(this);
+	if (HasStockAuthority())
+	{
+		return;
+	}
+
+	// The shard's entries arrived before it registered, for example with a late join; present them now.
+	for (const FRpgHarvestInstanceStockEntry& Entry : Shard.GetStock().GetEntries())
+	{
+		NotifyStockChanged(Entry.Key, IsInitialState(Entry));
+	}
+}
+
+void URpgHarvestInstanceStockComponent::UnregisterShard(const ARpgHarvestInstanceStockShard& Shard)
+{
+	const int32 ShardIndex = Shard.GetShardIndex();
+	if (Shards.IsValidIndex(ShardIndex) && Shards[ShardIndex] == &Shard)
+	{
+		Shards[ShardIndex] = nullptr;
+	}
+}
+
+void URpgHarvestInstanceStockComponent::HandleShardUpdate(
+	const ARpgHarvestInstanceStockShard& Shard,
+	const TConstArrayView<FIntVector> ChangedKeys,
+	const TConstArrayView<FIntVector> RemovedKeys)
+{
+	TRACE_CPUPROFILER_EVENT_SCOPE(URpgHarvestInstanceStockComponent::HandleShardUpdate);
+	const FRpgHarvestInstanceStockList& Stock = Shard.GetStock();
+	for (const FIntVector& Key : ChangedKeys)
+	{
+		const int32 EntryIndex = Stock.FindIndex(Key);
+		if (EntryIndex != INDEX_NONE)
+		{
+			NotifyStockChanged(Key, IsInitialState(Stock.GetEntry(EntryIndex)));
+		}
+	}
+	for (const FIntVector& Key : RemovedKeys)
+	{
+		// A key removed and added again in the same update was already presented with the changes.
+		if (Stock.FindIndex(Key) == INDEX_NONE)
+		{
+			NotifyStockChanged(Key, false);
+		}
+	}
 }
 
 void URpgHarvestInstanceStockComponent::BeginPlay()
 {
 	Super::BeginPlay();
-	Stock.OwnerComponent = this;
-	if (URpgHarvestPersistenceComponent* Persistence = URpgHarvestPersistenceComponent::FindForWorld(GetWorld()))
+
+	// Client shards that replicated before this component register now; later ones register on their BeginPlay.
+	UWorld* World = GetWorld();
+	if (World && !HasStockAuthority())
+	{
+		for (TActorIterator<ARpgHarvestInstanceStockShard> It(World); It; ++It)
+		{
+			if (IsValid(*It) && It->HasActorBegunPlay())
+			{
+				RegisterShard(**It);
+			}
+		}
+	}
+
+	if (URpgHarvestPersistenceComponent* Persistence = URpgHarvestPersistenceComponent::FindForWorld(World))
 	{
 		Persistence->ApplyInstanceRecords(*this);
 	}
 
 	// Representations that began play before the GameFeature added this component register now; later ones
 	// register themselves on BeginPlay, for example when World Partition streams them in.
-	const UWorld* World = GetWorld();
 	for (TObjectIterator<URpgHarvestableInstancesComponent> It; It; ++It)
 	{
 		URpgHarvestableInstancesComponent* Instances = *It;
@@ -377,48 +420,84 @@ void URpgHarvestInstanceStockComponent::EndPlay(const EEndPlayReason::Type EndPl
 	{
 		World->GetTimerManager().ClearTimer(RespawnTimerHandle);
 	}
+	ArmedRespawnDeadline = TNumericLimits<double>::Max();
 	RespawnDeadlines.Reset();
 	RegisteredInstances.Reset();
+
+	const bool bDestroyShards = HasStockAuthority();
+	for (TObjectPtr<ARpgHarvestInstanceStockShard>& Shard : Shards)
+	{
+		if (Shard)
+		{
+			Shard->SetRegisteredStock(nullptr);
+			// The stock ends with this component, for example when its GameFeature deactivates.
+			if (bDestroyShards && !Shard->IsActorBeingDestroyed())
+			{
+				Shard->Destroy();
+			}
+		}
+		Shard = nullptr;
+	}
 	Super::EndPlay(EndPlayReason);
 }
 
-void URpgHarvestInstanceStockComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+ARpgHarvestInstanceStockShard* URpgHarvestInstanceStockComponent::GetShard(const int32 ShardIndex) const
 {
-	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-	DOREPLIFETIME(ThisClass, Stock);
+	return Shards.IsValidIndex(ShardIndex) ? Shards[ShardIndex].Get() : nullptr;
+}
+
+const ARpgHarvestInstanceStockShard* URpgHarvestInstanceStockComponent::FindShard(const FIntVector& Key) const
+{
+	return GetShard(GetShardIndex(Key));
+}
+
+ARpgHarvestInstanceStockShard* URpgHarvestInstanceStockComponent::FindOrSpawnShard(const FIntVector& Key)
+{
+	const int32 ShardIndex = GetShardIndex(Key);
+	if (ARpgHarvestInstanceStockShard* Shard = GetShard(ShardIndex))
+	{
+		return Shard;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World || !HasStockAuthority())
+	{
+		return nullptr;
+	}
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.Owner = GetOwner();
+	SpawnParameters.ObjectFlags = RF_Transient;
+	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	SpawnParameters.bDeferConstruction = true;
+	ARpgHarvestInstanceStockShard* Shard = World->SpawnActor<ARpgHarvestInstanceStockShard>(SpawnParameters);
+	if (!Shard)
+	{
+		return nullptr;
+	}
+	Shard->InitializeShard(ShardIndex);
+	Shard->FinishSpawning(FTransform::Identity);
+	RegisterShard(*Shard);
+	return Shard;
 }
 
 const FRpgHarvestInstanceStockEntry* URpgHarvestInstanceStockComponent::FindEntry(const FIntVector& Key) const
 {
-	const int32 EntryIndex = FindEntryIndex(Key);
-	return EntryIndex != INDEX_NONE ? &Stock.Entries[EntryIndex] : nullptr;
+	const ARpgHarvestInstanceStockShard* Shard = FindShard(Key);
+	const int32 EntryIndex = Shard ? Shard->GetStock().FindIndex(Key) : INDEX_NONE;
+	return EntryIndex != INDEX_NONE ? &Shard->GetStock().GetEntry(EntryIndex) : nullptr;
 }
 
-int32 URpgHarvestInstanceStockComponent::FindEntryIndex(const FIntVector& Key) const
+void URpgHarvestInstanceStockComponent::MarkStockChanged(ARpgHarvestInstanceStockShard& Shard, const FIntVector& Key)
 {
-	// Entries exist only for instances whose stock currently differs from the authored state; a linear search
-	// stays cheap for the expected hundreds of entries and avoids index upkeep on FastArray removals.
-	return Stock.Entries.IndexOfByPredicate([&Key](const FRpgHarvestInstanceStockEntry& Entry)
-	{
-		return Entry.Key == Key;
-	});
-}
-
-void URpgHarvestInstanceStockComponent::MarkStockChanged(const FIntVector& Key)
-{
-	if (AActor* OwningActor = GetOwner())
-	{
-		OwningActor->ForceNetUpdate();
-	}
+	Shard.ForceNetUpdate();
 	NotifyStockChanged(Key, false);
 }
 
 void URpgHarvestInstanceStockComponent::NotifyStockChanged(const FIntVector& Key, const bool bInitialState)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(URpgHarvestInstanceStockComponent::NotifyStockChanged);
-
 	// Presentation events may stream representations out, so iterate over a copy.
-	const TArray<TWeakObjectPtr<URpgHarvestableInstancesComponent>> Registered = RegisteredInstances;
+	const TArray<TWeakObjectPtr<URpgHarvestableInstancesComponent>, TInlineAllocator<16>> Registered(RegisteredInstances);
 	for (const TWeakObjectPtr<URpgHarvestableInstancesComponent>& WeakInstances : Registered)
 	{
 		if (URpgHarvestableInstancesComponent* Instances = WeakInstances.Get())
@@ -445,8 +524,22 @@ float URpgHarvestInstanceStockComponent::GetServerWorldTimeSeconds() const
 	return World ? World->GetTimeSeconds() : 0.0f;
 }
 
+void URpgHarvestInstanceStockComponent::ScheduleRespawn(const FIntVector& Key, const double Deadline)
+{
+	RespawnDeadlines.Add(Key, Deadline);
+	// Only an earlier deadline re-arms the timer, so scheduling stays constant time however many respawns wait.
+	UWorld* World = GetWorld();
+	if (World && Deadline < ArmedRespawnDeadline)
+	{
+		ArmedRespawnDeadline = Deadline;
+		const float Delay = static_cast<float>(FMath::Max(0.001, Deadline - World->GetTimeSeconds()));
+		World->GetTimerManager().SetTimer(RespawnTimerHandle, this, &ThisClass::HandleRespawnTimer, Delay, false);
+	}
+}
+
 void URpgHarvestInstanceStockComponent::ArmNextRespawnTimer()
 {
+	ArmedRespawnDeadline = TNumericLimits<double>::Max();
 	UWorld* World = GetWorld();
 	if (!World || RespawnDeadlines.IsEmpty())
 	{
@@ -459,12 +552,14 @@ void URpgHarvestInstanceStockComponent::ArmNextRespawnTimer()
 		EarliestDeadline = FMath::Min(EarliestDeadline, Pair.Value);
 	}
 
+	ArmedRespawnDeadline = EarliestDeadline;
 	const float Delay = static_cast<float>(FMath::Max(0.001, EarliestDeadline - World->GetTimeSeconds()));
 	World->GetTimerManager().SetTimer(RespawnTimerHandle, this, &ThisClass::HandleRespawnTimer, Delay, false);
 }
 
 void URpgHarvestInstanceStockComponent::HandleRespawnTimer()
 {
+	ArmedRespawnDeadline = TNumericLimits<double>::Max();
 	const UWorld* World = GetWorld();
 	if (!World || !HasStockAuthority())
 	{

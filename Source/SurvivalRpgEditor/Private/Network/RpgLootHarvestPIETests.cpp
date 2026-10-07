@@ -51,6 +51,9 @@ namespace RpgLootHarvestPIETests
 		ARpgNetworkAutomationSwarm* Swarm = nullptr;
 		APawn* StrideAvatar = nullptr;
 		URpgNetworkAutomationStrideAbility* StrideAbility = nullptr;
+		ARpgNetworkAutomationHarvesterState* SecondHarvester = nullptr;
+		ARpgNetworkAutomationHarvestInstancesFixture* LoadField = nullptr;
+		URpgNetworkAutomationStrideAbility* SecondStrideAbility = nullptr;
 	};
 
 	/** Authored instance locations of the instanced test field, relative to InstancesFieldLocation. */
@@ -59,6 +62,14 @@ namespace RpgLootHarvestPIETests
 		FVector(300.0, 0.0, 0.0),
 		FVector(600.0, 0.0, 0.0)};
 	const FVector InstancesFieldLocation(4000.0, 4000.0, 0.0);
+
+	/**
+	 * Dense field of the co-op load tests: LoadFieldSize x LoadFieldSize instances, LoadFieldSpacing cm apart. Its middle
+	 * lies near the clients' viewpoint, because swarms replicate only within their net cull distance.
+	 */
+	constexpr int32 LoadFieldSize = 60;
+	constexpr double LoadFieldSpacing = 300.0;
+	const FVector LoadFieldLocation(-6000.0, -6000.0, 0.0);
 
 	FTimespan NetworkTimeout()
 	{
@@ -478,6 +489,225 @@ namespace RpgLootHarvestPIETests
 		}
 	}
 
+	/** Loads the co-op load test's dense field on one machine, the way every machine loads a PCG partition actor. */
+	ARpgNetworkAutomationHarvestInstancesFixture* LoadDenseField(UWorld* World)
+	{
+		UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+		ARpgNetworkAutomationHarvestInstancesFixture* Field = World && Cube
+			? World->SpawnActorDeferred<ARpgNetworkAutomationHarvestInstancesFixture>(
+				ARpgNetworkAutomationHarvestInstancesFixture::StaticClass(),
+				FTransform(LoadFieldLocation),
+				nullptr,
+				nullptr,
+				ESpawnActorCollisionHandlingMethod::AlwaysSpawn)
+			: nullptr;
+		if (!Field || !Field->ConfigureHarvestProfile(MakeSectionedNodeProfile(Field)))
+		{
+			return nullptr;
+		}
+
+		URpgHarvestableInstancesComponent* Instances = Field->GetHarvestableInstances();
+		Instances->SetStaticMesh(Cube);
+		TArray<FTransform> Transforms;
+		Transforms.Reserve(LoadFieldSize * LoadFieldSize);
+		for (int32 Row = 0; Row < LoadFieldSize; ++Row)
+		{
+			for (int32 Column = 0; Column < LoadFieldSize; ++Column)
+			{
+				Transforms.Emplace(FVector(Column * LoadFieldSpacing, Row * LoadFieldSpacing, 0.0));
+			}
+		}
+		Instances->AddInstances(Transforms, false);
+		Field->FinishSpawning(FTransform(LoadFieldLocation));
+		return Field;
+	}
+
+	/** Writes the remaining sections of every instance of Field as this machine presents them; false if one is off. */
+	bool GetPresentedFieldStock(const ARpgNetworkAutomationHarvestInstancesFixture* Field, TArray<int32>& OutRemaining)
+	{
+		OutRemaining.Reset();
+		const URpgHarvestableInstancesComponent* Instances = IsValid(Field) ? Field->GetHarvestableInstances() : nullptr;
+		if (!Instances)
+		{
+			return false;
+		}
+
+		OutRemaining.Reserve(Instances->GetInstanceCount());
+		for (int32 InstanceIndex = 0; InstanceIndex < Instances->GetInstanceCount(); ++InstanceIndex)
+		{
+			FTransform Presented;
+			const int32 Remaining = Instances->GetRemainingSections(InstanceIndex);
+			if (!Instances->GetInstanceTransform(InstanceIndex, Presented, false) ||
+				Presented.GetScale3D().IsNearlyZero() != (Remaining == 0))
+			{
+				return false;
+			}
+			OutRemaining.Add(Remaining);
+		}
+		return true;
+	}
+
+	/** True when this machine stores ExpectedChanged changed instances and presents Field with ExpectedRemaining. */
+	bool HasDenseFieldStock(const FNetworkState& State, const TArray<int32>& ExpectedRemaining, const int32 ExpectedChanged)
+	{
+		const URpgHarvestInstanceStockComponent* Stock = URpgHarvestInstanceStockComponent::FindForWorld(State.World);
+		TArray<int32> Presented;
+		return Stock && Stock->GetNumChangedInstances() == ExpectedChanged &&
+			GetPresentedFieldStock(State.LoadField, Presented) && Presented == ExpectedRemaining;
+	}
+
+	/**
+	 * Gives Harvester a server-only avatar at Location and a running stride that takes Sections sections from up to four
+	 * targets within Radius cm every PulseSeconds, like Striding Wave. Returns the granted stride.
+	 */
+	URpgNetworkAutomationStrideAbility* StartStride(
+		UWorld* World,
+		ARpgNetworkAutomationHarvesterState* Harvester,
+		const FVector& Location,
+		const float Radius,
+		const float DurationSeconds,
+		const float PulseSeconds,
+		const int32 Sections)
+	{
+		APawn* Avatar = World && Harvester
+			? World->SpawnActorDeferred<APawn>(
+				APawn::StaticClass(),
+				FTransform(Location),
+				nullptr,
+				nullptr,
+				ESpawnActorCollisionHandlingMethod::AlwaysSpawn)
+			: nullptr;
+		if (!Avatar)
+		{
+			return nullptr;
+		}
+		Avatar->SetReplicates(false);
+		USceneComponent* Root = NewObject<USceneComponent>(Avatar, TEXT("StrideAvatarRoot"));
+		Avatar->SetRootComponent(Root);
+		Avatar->FinishSpawning(FTransform(Location));
+		Root->RegisterComponent();
+		Avatar->SetActorLocation(Location);
+		Avatar->SetPlayerState(Harvester);
+
+		UAbilitySystemComponent* AbilitySystem = Harvester->GetAbilitySystemComponent();
+		if (!AbilitySystem)
+		{
+			return nullptr;
+		}
+		AbilitySystem->InitAbilityActorInfo(Harvester, Avatar);
+		const FGameplayAbilitySpecHandle Handle =
+			AbilitySystem->GiveAbility(FGameplayAbilitySpec(URpgNetworkAutomationStrideAbility::StaticClass()));
+		const FGameplayAbilitySpec* Spec = AbilitySystem->FindAbilitySpecFromHandle(Handle);
+		URpgNetworkAutomationStrideAbility* Stride =
+			Spec ? Cast<URpgNetworkAutomationStrideAbility>(Spec->GetPrimaryInstance()) : nullptr;
+		if (!Stride)
+		{
+			return nullptr;
+		}
+		Stride->ConfigureStride(Radius, DurationSeconds, PulseSeconds, Sections, FGameplayTag());
+		return AbilitySystem->TryActivateAbility(Handle) && Stride->IsStriding() ? Stride : nullptr;
+	}
+
+	/** Builds a request for instance InstanceIndex of the dense field, like MakeInstancesRequest does for the small one. */
+	FRpgHarvestRequest MakeDenseFieldRequest(
+		const FNetworkState& State,
+		const int32 InstanceIndex,
+		AActor* Harvester,
+		const int32 RequestedSections)
+	{
+		FRpgHarvestRequest Request;
+		Request.Harvester = Harvester;
+		Request.AbilityId = RpgHarvestingMagicGameplayTags::Ability_Harvesting_Manual;
+		Request.HarvestPower = 1.0f;
+		Request.RequestedSections = RequestedSections;
+		URpgHarvestableInstancesComponent* Instances =
+			IsValid(State.LoadField) ? State.LoadField->GetHarvestableInstances() : nullptr;
+		FTransform InstanceTransform;
+		if (Instances && Instances->GetAuthoredInstanceTransform(InstanceIndex, InstanceTransform, true))
+		{
+			Request.Hit = FHitResult(State.LoadField, Instances, InstanceTransform.GetLocation(), FVector::UpVector);
+			Request.Hit.Item = InstanceIndex;
+			Request.ExpectedRevision = IRpgHarvestableTarget::Execute_GetHarvestRevision(Instances, Request.Hit);
+		}
+		return Request;
+	}
+
+	/** Summons a swarm of 16 fast creatures for Harvester over the dense field instances InstanceIndices. */
+	ARpgNetworkAutomationSwarm* SummonDenseFieldSwarm(
+		const FNetworkState& State,
+		ARpgNetworkAutomationHarvesterState* Harvester,
+		const TArray<int32>& InstanceIndices,
+		const FVector& Location)
+	{
+		URpgHarvestableInstancesComponent* Instances = State.LoadField->GetHarvestableInstances();
+		TArray<FRpgHarvestTargetEvaluation> Targets;
+		for (const int32 InstanceIndex : InstanceIndices)
+		{
+			const FRpgHarvestRequest TargetRequest = MakeDenseFieldRequest(State, InstanceIndex, Harvester, 1);
+			FRpgHarvestTargetEvaluation& Target = Targets.AddDefaulted_GetRef();
+			Target.Receiver = Instances;
+			Target.Hit = TargetRequest.Hit;
+			Target.bInReach = true;
+			Target.Result = Instances->EvaluateHarvest_Implementation(TargetRequest);
+		}
+
+		FRpgHarvestSwarmParams Params;
+		Params.CreatureCount = 16;
+		Params.FlightSpeed = 1500.0f;
+		Params.EmergeSeconds = 0.2f;
+		Params.LaunchIntervalSeconds = 0.05f;
+		Params.StrikeIntervalSeconds = 0.2f;
+		Params.MaxReassignments = 8;
+		Params.MaxLifetimeSeconds = 30.0f;
+		Params.bRequireLineOfSight = false;
+
+		FRpgHarvestRequest RequestTemplate = MakeDenseFieldRequest(State, InstanceIndices[0], Harvester, 1);
+		RequestTemplate.Hit = FHitResult();
+		RequestTemplate.ExpectedRevision = INDEX_NONE;
+		FActorSpawnParameters SpawnParameters;
+		SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		ARpgNetworkAutomationSwarm* Swarm = State.World->SpawnActor<ARpgNetworkAutomationSwarm>(
+			ARpgNetworkAutomationSwarm::StaticClass(),
+			FTransform(Location),
+			SpawnParameters);
+		return Swarm && Swarm->StartSwarm(Harvester, RequestTemplate, Params, Targets) ? Swarm : nullptr;
+	}
+
+	/** Returns the number of swarms replicated to or spawned in World that have not been destroyed. */
+	int32 CountSwarms(UWorld* World)
+	{
+		int32 Count = 0;
+		for (TActorIterator<ARpgHarvestSwarm> It(World); It; ++It)
+		{
+			Count += IsValid(*It) && !It->IsActorBeingDestroyed() ? 1 : 0;
+		}
+		return Count;
+	}
+
+	/** Delays and drops packets this machine sends, like a distant player on a poor connection. */
+	void EmulatePoorConnection(UWorld* World, const int32 LagMilliseconds, const int32 LossPercent)
+	{
+#if DO_ENABLE_NET_TEST
+		if (UNetDriver* NetDriver = World ? World->GetNetDriver() : nullptr)
+		{
+			FPacketSimulationSettings Settings;
+			Settings.PktLag = LagMilliseconds;
+			Settings.PktLoss = LossPercent;
+			NetDriver->SetPacketSimulationSettings(Settings);
+		}
+#endif
+	}
+
+	/** Returns the bytes the server has sent so far over its ConnectionIndex-th client connection, or -1. */
+	int32 GetBytesSentToClient(const FNetworkState& State, const int32 ConnectionIndex)
+	{
+		const UNetDriver* NetDriver = IsValid(State.World) ? State.World->GetNetDriver() : nullptr;
+		const UNetConnection* Connection = NetDriver && NetDriver->ClientConnections.IsValidIndex(ConnectionIndex)
+			? NetDriver->ClientConnections[ConnectionIndex].Get()
+			: nullptr;
+		return Connection ? Connection->OutTotalBytes : -1;
+	}
+
 	int32 CountGatheringSets(const FNetworkState& State)
 	{
 		const UAbilitySystemComponent* AbilitySystem = IsValid(State.Harvester)
@@ -512,6 +742,15 @@ NETWORK_TEST_CLASS(LootHarvestPIE, "SurvivalRpg.Network")
 	FString HarvestingPluginURL;
 	bool bPluginTransitionComplete = false;
 	bool bPluginTransitionSucceeded = false;
+
+	/** Co-op load test: the server's stock of the dense field, which every client must end up presenting. */
+	TArray<int32> ExpectedLoadFieldStock;
+	int32 ExpectedChangedInstances = 0;
+	int32 BytesBeforeMassChange = 0;
+	double MassChangeStartSeconds = 0.0;
+	double LateJoinStartSeconds = 0.0;
+	int32 BytesBeforeSwarms = 0;
+	double SwarmStartSeconds = 0.0;
 
 	BEFORE_EACH()
 	{
@@ -1460,6 +1699,397 @@ NETWORK_TEST_CLASS(LootHarvestPIE, "SurvivalRpg.Network")
 				[](FNetworkState& State)
 				{
 					return HasInstanceStock(State, {0, NodeSectionCount, 0}, 2) && !HasStrideCue(State.World);
+				},
+				NetworkTimeout());
+	}
+
+	TEST_METHOD(CoopHarvestersShareStockAndLateJoinUnderLoad)
+	{
+		using namespace RpgLootHarvestPIETests;
+
+		Network
+			.UntilServer(
+				TEXT("Dedicated server and first connection are ready for the co-op load test"),
+				[](FNetworkState& State)
+				{
+					return IsServerReady(State, 1);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Initial PIE client is ready for the co-op load test"),
+				[](FNetworkState& State)
+				{
+					return IsClientReady(State);
+				},
+				NetworkTimeout())
+			.SpawnAndReplicate<
+				ARpgNetworkAutomationHarvesterState,
+				&FNetworkState::Harvester>(
+				[](ARpgNetworkAutomationHarvesterState& Harvester)
+				{
+					(void)Harvester;
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("A second player harvests in the same session over a poor connection"),
+				[this](FNetworkState& State)
+				{
+					FActorSpawnParameters SpawnParameters;
+					SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+					State.SecondHarvester = State.World->SpawnActor<ARpgNetworkAutomationHarvesterState>(SpawnParameters);
+					ASSERT_THAT(IsNotNull(State.SecondHarvester));
+					AGameStateBase* GameState = State.World->GetGameState();
+					ASSERT_THAT(IsNotNull(GameState));
+					URpgHarvestInstanceStockComponent* Stock =
+						NewObject<URpgHarvestInstanceStockComponent>(GameState, TEXT("HarvestInstanceStock"));
+					Stock->RegisterComponent();
+					// Every packet the host sends arrives 100 ms late and 2 % never arrive.
+					EmulatePoorConnection(State.World, 100, 2);
+				})
+			.UntilClients(
+				TEXT("Clients receive the instance stock for the co-op load test"),
+				[](FNetworkState& State)
+				{
+					return URpgHarvestInstanceStockComponent::FindForWorld(State.World) != nullptr;
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("The server loads the dense field"),
+				[this](FNetworkState& State)
+				{
+					State.LoadField = LoadDenseField(State.World);
+					ASSERT_THAT(IsNotNull(State.LoadField));
+				})
+			.ThenClients(
+				TEXT("Clients load the dense field, and their packets arrive late too"),
+				[this](FNetworkState& State)
+				{
+					State.LoadField = LoadDenseField(State.World);
+					ASSERT_THAT(IsNotNull(State.LoadField));
+					EmulatePoorConnection(State.World, 100, 2);
+				})
+			.ThenServer(
+				TEXT("Both players start a stride over the same instances in the same frame"),
+				[this](FNetworkState& State)
+				{
+					// Both strides stand on the same instance and pulse in the same frames. Each pulse, the first takes
+					// three sections of the four nearest instances and the second takes what the first left.
+					const FVector Center = LoadFieldLocation + FVector(10.0 * LoadFieldSpacing, 10.0 * LoadFieldSpacing, 0.0);
+					State.StrideAbility = StartStride(State.World, State.Harvester, Center, 650.0f, 2.0f, 0.25f, 3);
+					State.SecondStrideAbility = StartStride(State.World, State.SecondHarvester, Center, 650.0f, 2.0f, 0.25f, 3);
+					ASSERT_THAT(IsNotNull(State.StrideAbility));
+					ASSERT_THAT(IsNotNull(State.SecondStrideAbility));
+				})
+			.UntilServer(
+				TEXT("Both strides end"),
+				[](FNetworkState& State)
+				{
+					return IsValid(State.StrideAbility) && !State.StrideAbility->IsActive() &&
+						IsValid(State.SecondStrideAbility) && !State.SecondStrideAbility->IsActive();
+				},
+				NetworkTimeout())
+			.UntilServer(
+				TEXT("The server has presented every instance the strides emptied"),
+				[](FNetworkState& State)
+				{
+					TArray<int32> Presented;
+					return GetPresentedFieldStock(State.LoadField, Presented);
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("Every section of the shared instances was taken exactly once"),
+				[this](FNetworkState& State)
+				{
+					ASSERT_THAT(IsTrue(GetPresentedFieldStock(State.LoadField, ExpectedLoadFieldStock)));
+					int32 TakenSections = 0;
+					int32 DepletedInstances = 0;
+					int32 ChangedInstances = 0;
+					for (const int32 Remaining : ExpectedLoadFieldStock)
+					{
+						TakenSections += NodeSectionCount - Remaining;
+						DepletedInstances += Remaining == 0 ? 1 : 0;
+						ChangedInstances += Remaining < NodeSectionCount ? 1 : 0;
+					}
+					const int32 FirstShare = State.Harvester->GetInventoryManagerComponent()->GetTotalItemCountByDefinition(
+						URpgNetworkAutomationMaterialDefinition::StaticClass());
+					const int32 SecondShare = State.SecondHarvester->GetInventoryManagerComponent()->GetTotalItemCountByDefinition(
+						URpgNetworkAutomationMaterialDefinition::StaticClass());
+					ASSERT_THAT(IsTrue(DepletedInstances >= 8));
+					ASSERT_THAT(IsTrue(FirstShare > 0 && SecondShare > 0));
+					ASSERT_THAT(AreEqual(FirstShare + SecondShare, TakenSections * LootQuantity));
+					ASSERT_THAT(AreEqual(CountWorldDrops(State.World), 0));
+					ExpectedChangedInstances = URpgHarvestInstanceStockComponent::FindForWorld(State.World)->GetNumChangedInstances();
+					ASSERT_THAT(AreEqual(ExpectedChangedInstances, ChangedInstances));
+					TestRunner->AddInfo(FString::Printf(
+						TEXT("Co-op strides: %d instances depleted, %d sections taken; the players received %d and %d."),
+						DepletedInstances,
+						TakenSections,
+						FirstShare,
+						SecondShare));
+				})
+			.UntilClients(
+				TEXT("Both clients present the shared instances like the server"),
+				[this](FNetworkState& State)
+				{
+					return HasDenseFieldStock(State, ExpectedLoadFieldStock, ExpectedChangedInstances);
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("Thousands of instances change in one frame"),
+				[this](FNetworkState& State)
+				{
+					// A busy saved world: more changed instances than one FastArray update may carry (2,048 by default).
+					URpgHarvestInstanceStockComponent* Stock = URpgHarvestInstanceStockComponent::FindForWorld(State.World);
+					URpgHarvestableInstancesComponent* Instances = State.LoadField->GetHarvestableInstances();
+					ASSERT_THAT(IsNotNull(Stock));
+					for (int32 InstanceIndex = 0; InstanceIndex < ExpectedLoadFieldStock.Num(); ++InstanceIndex)
+					{
+						if (ExpectedLoadFieldStock[InstanceIndex] != NodeSectionCount || InstanceIndex % 6 == 5)
+						{
+							continue;
+						}
+						FIntVector Key;
+						ASSERT_THAT(IsTrue(Instances->GetInstanceKey(InstanceIndex, Key)));
+						const int32 Sections = InstanceIndex % 5 == 0 ? 1 : NodeSectionCount;
+						ASSERT_THAT(IsTrue(Stock->ExtractSections(Key, NodeSectionCount, Sections, 0.0f)));
+						ExpectedLoadFieldStock[InstanceIndex] = NodeSectionCount - Sections;
+					}
+					ExpectedChangedInstances = Stock->GetNumChangedInstances();
+					ASSERT_THAT(IsTrue(ExpectedChangedInstances > 2500));
+					ASSERT_THAT(IsTrue(HasDenseFieldStock(State, ExpectedLoadFieldStock, ExpectedChangedInstances)));
+					BytesBeforeMassChange = GetBytesSentToClient(State, 0);
+					MassChangeStartSeconds = FPlatformTime::Seconds();
+				})
+			.UntilClients(
+				TEXT("The connected client receives every change"),
+				[this](FNetworkState& State)
+				{
+					return HasDenseFieldStock(State, ExpectedLoadFieldStock, ExpectedChangedInstances);
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("The server records what the mass change cost the connected client"),
+				[this](FNetworkState& State)
+				{
+					TestRunner->AddInfo(FString::Printf(
+						TEXT("Co-op load: %d changed instances reached the connected client within %.2f s; the server sent it %.1f KB meanwhile."),
+						ExpectedChangedInstances,
+						FPlatformTime::Seconds() - MassChangeStartSeconds,
+						(GetBytesSentToClient(State, 0) - BytesBeforeMassChange) / 1024.0));
+					LateJoinStartSeconds = FPlatformTime::Seconds();
+				})
+			.ThenClientJoins(NetworkTimeout())
+			.UntilServer(
+				TEXT("Late join establishes the second connection for the co-op load test"),
+				[](FNetworkState& State)
+				{
+					return IsServerReady(State, 2);
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("The late joiner receives the whole stock"),
+				1,
+				[this](FNetworkState& State)
+				{
+					const URpgHarvestInstanceStockComponent* Stock =
+						URpgHarvestInstanceStockComponent::FindForWorld(State.World);
+					return IsClientReady(State) && Stock && Stock->GetNumChangedInstances() == ExpectedChangedInstances;
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("The server records what the late join cost"),
+				[this](FNetworkState& State)
+				{
+					TestRunner->AddInfo(FString::Printf(
+						TEXT("Co-op load: a late joiner had all %d changed instances %.2f s after its join started; the server sent it %.1f KB in total."),
+						ExpectedChangedInstances,
+						FPlatformTime::Seconds() - LateJoinStartSeconds,
+						GetBytesSentToClient(State, 1) / 1024.0));
+				})
+			.ThenClient(
+				TEXT("The late joiner streams in the dense field and presents the stored stock"),
+				1,
+				[this](FNetworkState& State)
+				{
+					State.LoadField = LoadDenseField(State.World);
+					ASSERT_THAT(IsNotNull(State.LoadField));
+					ASSERT_THAT(IsTrue(HasDenseFieldStock(State, ExpectedLoadFieldStock, ExpectedChangedInstances)));
+				})
+			.ThenServer(
+				TEXT("Thousands of depleted instances respawn in one frame"),
+				[this](FNetworkState& State)
+				{
+					URpgHarvestInstanceStockComponent* Stock = URpgHarvestInstanceStockComponent::FindForWorld(State.World);
+					URpgHarvestableInstancesComponent* Instances = State.LoadField->GetHarvestableInstances();
+					ASSERT_THAT(IsNotNull(Stock));
+					int32 Restored = 0;
+					for (int32 InstanceIndex = 0; InstanceIndex < ExpectedLoadFieldStock.Num(); ++InstanceIndex)
+					{
+						FIntVector Key;
+						if (ExpectedLoadFieldStock[InstanceIndex] == 0 && Instances->GetInstanceKey(InstanceIndex, Key) &&
+							Stock->RestoreStock(Key))
+						{
+							ExpectedLoadFieldStock[InstanceIndex] = NodeSectionCount;
+							++Restored;
+						}
+					}
+					ASSERT_THAT(IsTrue(Restored > 2048));
+					ExpectedChangedInstances = Stock->GetNumChangedInstances();
+					ASSERT_THAT(IsTrue(HasDenseFieldStock(State, ExpectedLoadFieldStock, ExpectedChangedInstances)));
+				})
+			.UntilClients(
+				TEXT("Every client presents the respawned field"),
+				[this](FNetworkState& State)
+				{
+					return HasDenseFieldStock(State, ExpectedLoadFieldStock, ExpectedChangedInstances);
+				},
+				NetworkTimeout());
+	}
+
+	TEST_METHOD(CoopSwarmsShareTargetsAndStayWithinBandwidth)
+	{
+		using namespace RpgLootHarvestPIETests;
+
+		Network
+			.UntilServer(
+				TEXT("Dedicated server and first connection are ready for the co-op swarm test"),
+				[](FNetworkState& State)
+				{
+					return IsServerReady(State, 1);
+				},
+				NetworkTimeout())
+			.UntilClients(
+				TEXT("Initial PIE client is ready for the co-op swarm test"),
+				[](FNetworkState& State)
+				{
+					return IsClientReady(State);
+				},
+				NetworkTimeout())
+			.SpawnAndReplicate<
+				ARpgNetworkAutomationHarvesterState,
+				&FNetworkState::Harvester>(
+				[](ARpgNetworkAutomationHarvesterState& Harvester)
+				{
+					(void)Harvester;
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("A second player joins the swarm test over a poor connection"),
+				[this](FNetworkState& State)
+				{
+					FActorSpawnParameters SpawnParameters;
+					SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+					State.SecondHarvester = State.World->SpawnActor<ARpgNetworkAutomationHarvesterState>(SpawnParameters);
+					ASSERT_THAT(IsNotNull(State.SecondHarvester));
+					AGameStateBase* GameState = State.World->GetGameState();
+					ASSERT_THAT(IsNotNull(GameState));
+					URpgHarvestInstanceStockComponent* Stock =
+						NewObject<URpgHarvestInstanceStockComponent>(GameState, TEXT("HarvestInstanceStock"));
+					Stock->RegisterComponent();
+					EmulatePoorConnection(State.World, 100, 2);
+				})
+			.UntilClients(
+				TEXT("Clients receive the instance stock for the co-op swarm test"),
+				[](FNetworkState& State)
+				{
+					return URpgHarvestInstanceStockComponent::FindForWorld(State.World) != nullptr;
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("The server loads the dense field for the swarms"),
+				[this](FNetworkState& State)
+				{
+					State.LoadField = LoadDenseField(State.World);
+					ASSERT_THAT(IsNotNull(State.LoadField));
+				})
+			.ThenClients(
+				TEXT("Clients load the dense field for the swarms"),
+				[this](FNetworkState& State)
+				{
+					State.LoadField = LoadDenseField(State.World);
+					ASSERT_THAT(IsNotNull(State.LoadField));
+					EmulatePoorConnection(State.World, 100, 2);
+				})
+			.ThenServer(
+				TEXT("Two players summon two swarms each over the same 32 instances"),
+				[this](FNetworkState& State)
+				{
+					// 64 creatures reserve stock independently; whoever arrives first takes it, the rest move on.
+					TArray<int32> InstanceIndices;
+					for (int32 Row = 20; Row < 24; ++Row)
+					{
+						for (int32 Column = 20; Column < 28; ++Column)
+						{
+							InstanceIndices.Add(Row * LoadFieldSize + Column);
+						}
+					}
+					const FVector Center = LoadFieldLocation + FVector(23.5 * LoadFieldSpacing, 21.5 * LoadFieldSpacing, 0.0);
+					const ARpgHarvestSwarm* Swarms[] = {
+						SummonDenseFieldSwarm(State, State.Harvester, InstanceIndices, Center + FVector(-600.0, -600.0, 0.0)),
+						SummonDenseFieldSwarm(State, State.Harvester, InstanceIndices, Center + FVector(600.0, -600.0, 0.0)),
+						SummonDenseFieldSwarm(State, State.SecondHarvester, InstanceIndices, Center + FVector(-600.0, 600.0, 0.0)),
+						SummonDenseFieldSwarm(State, State.SecondHarvester, InstanceIndices, Center + FVector(600.0, 600.0, 0.0))};
+					for (const ARpgHarvestSwarm* Swarm : Swarms)
+					{
+						ASSERT_THAT(IsNotNull(Swarm));
+					}
+					BytesBeforeSwarms = GetBytesSentToClient(State, 0);
+					SwarmStartSeconds = FPlatformTime::Seconds();
+				})
+			.UntilClients(
+				TEXT("Clients present the creatures of all four swarms"),
+				[](FNetworkState& State)
+				{
+					return CountSwarms(State.World) == 4 && CountSwarmCreatureActors(State.World) > 0;
+				},
+				NetworkTimeout())
+			.UntilServer(
+				TEXT("Every swarm finished and delivered"),
+				[](FNetworkState& State)
+				{
+					return CountSwarms(State.World) == 0;
+				},
+				NetworkTimeout())
+			.ThenServer(
+				TEXT("Every section of the shared instances was taken and delivered exactly once"),
+				[this](FNetworkState& State)
+				{
+					const double Seconds = FPlatformTime::Seconds() - SwarmStartSeconds;
+					const int32 Bytes = GetBytesSentToClient(State, 0) - BytesBeforeSwarms;
+					ASSERT_THAT(IsTrue(GetPresentedFieldStock(State.LoadField, ExpectedLoadFieldStock)));
+					int32 TakenSections = 0;
+					int32 DepletedInstances = 0;
+					for (const int32 Remaining : ExpectedLoadFieldStock)
+					{
+						TakenSections += NodeSectionCount - Remaining;
+						DepletedInstances += Remaining == 0 ? 1 : 0;
+					}
+					const int32 FirstShare = State.Harvester->GetInventoryManagerComponent()->GetTotalItemCountByDefinition(
+						URpgNetworkAutomationMaterialDefinition::StaticClass());
+					const int32 SecondShare = State.SecondHarvester->GetInventoryManagerComponent()->GetTotalItemCountByDefinition(
+						URpgNetworkAutomationMaterialDefinition::StaticClass());
+					ASSERT_THAT(AreEqual(DepletedInstances, 32));
+					ASSERT_THAT(AreEqual(TakenSections, 32 * NodeSectionCount));
+					ASSERT_THAT(IsTrue(FirstShare > 0 && SecondShare > 0));
+					ASSERT_THAT(AreEqual(FirstShare + SecondShare, TakenSections * LootQuantity));
+					ASSERT_THAT(AreEqual(CountWorldDrops(State.World), 0));
+					ExpectedChangedInstances = URpgHarvestInstanceStockComponent::FindForWorld(State.World)->GetNumChangedInstances();
+					ASSERT_THAT(AreEqual(ExpectedChangedInstances, 32));
+					TestRunner->AddInfo(FString::Printf(
+						TEXT("Co-op swarms: 4 swarms of 16 creatures emptied 32 instances in %.2f s; the players received %d and %d. The server sent the client %.1f KB meanwhile, %.1f KB/s."),
+						Seconds,
+						FirstShare,
+						SecondShare,
+						Bytes / 1024.0,
+						Bytes / 1024.0 / FMath::Max(Seconds, 0.001)));
+				})
+			.UntilClients(
+				TEXT("The client shows the emptied instances and retires every swarm and creature"),
+				[this](FNetworkState& State)
+				{
+					return HasDenseFieldStock(State, ExpectedLoadFieldStock, ExpectedChangedInstances) &&
+						CountSwarms(State.World) == 0 &&
+						CountSwarmCreatureActors(State.World) == 0;
 				},
 				NetworkTimeout());
 	}

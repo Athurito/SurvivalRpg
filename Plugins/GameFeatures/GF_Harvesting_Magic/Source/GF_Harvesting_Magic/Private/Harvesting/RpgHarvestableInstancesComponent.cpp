@@ -181,13 +181,67 @@ bool URpgHarvestableInstancesComponent::SetInstancePresentationScale(const int32
 	if (FMath::IsNearlyEqual(Scale, 1.0f))
 	{
 		return PresentedInstanceTransforms.Remove(InstanceIndex) == 0 ||
-			UpdateInstanceTransform(InstanceIndex, AuthoredTransform, false, true, true);
+			UpdatePresentedTransform(*this, InstanceIndex, AuthoredTransform);
 	}
 
 	PresentedInstanceTransforms.FindOrAdd(InstanceIndex, AuthoredTransform);
 	FTransform PresentedTransform = AuthoredTransform;
 	PresentedTransform.SetScale3D(AuthoredTransform.GetScale3D() * FMath::Max(0.0f, Scale));
-	return UpdateInstanceTransform(InstanceIndex, PresentedTransform, false, true, true);
+	return UpdatePresentedTransform(*this, InstanceIndex, PresentedTransform);
+}
+
+bool URpgHarvestableInstancesComponent::UpdatePresentedTransform(
+	UInstancedStaticMeshComponent& Component,
+	const int32 InstanceIndex,
+	const FTransform& LocalTransform)
+{
+	// UpdateInstanceTransform recomputes the bounds of every instance for the navigation update of a navigation-relevant
+	// component: 0.3 ms per instance in a field of 10,000, so hiding thousands of instances took seconds (HARV-10c).
+	// This component therefore collects its navigation updates and applies them once on the next tick. Linked meshes
+	// have no collision and update directly.
+	const bool bDeferNavigation = &Component == this && Component.bNavigationRelevant && Component.IsRegistered();
+	if (!bDeferNavigation)
+	{
+		return Component.UpdateInstanceTransform(InstanceIndex, LocalTransform, false, true, true);
+	}
+
+	FTransform PreviousLocalTransform;
+	if (Component.GetInstanceTransform(InstanceIndex, PreviousLocalTransform, false))
+	{
+		DeferredNavigationTransforms.Add(PreviousLocalTransform * Component.GetComponentTransform());
+		DeferredNavigationTransforms.Add(LocalTransform * Component.GetComponentTransform());
+	}
+	Component.bNavigationRelevant = false;
+	const bool bUpdated = Component.UpdateInstanceTransform(InstanceIndex, LocalTransform, false, true, true);
+	Component.bNavigationRelevant = true;
+
+	UWorld* World = GetWorld();
+	if (World && !World->GetTimerManager().IsTimerActive(NavigationFlushTimerHandle))
+	{
+		NavigationFlushTimerHandle = World->GetTimerManager().SetTimerForNextTick(this, &ThisClass::FlushNavigationUpdates);
+	}
+	return bUpdated;
+}
+
+void URpgHarvestableInstancesComponent::FlushNavigationUpdates()
+{
+	TRACE_CPUPROFILER_EVENT_SCOPE(URpgHarvestableInstancesComponent::FlushNavigationUpdates);
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(NavigationFlushTimerHandle);
+	}
+	if (!DeferredNavigationTransforms.IsEmpty() && bNavigationRelevant && IsRegistered())
+	{
+		if (SupportsPartialNavigationUpdate())
+		{
+			PartialNavigationUpdates(DeferredNavigationTransforms);
+		}
+		else
+		{
+			FullNavigationUpdate();
+		}
+	}
+	DeferredNavigationTransforms.Reset();
 }
 
 bool URpgHarvestableInstancesComponent::GetLinkedPresentationInstance(
@@ -310,8 +364,10 @@ void URpgHarvestableInstancesComponent::EndPlay(const EEndPlayReason::Type EndPl
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(PresentationTimerHandle);
+		World->GetTimerManager().ClearTimer(NavigationFlushTimerHandle);
 	}
 	PendingPresentations.Reset();
+	DeferredNavigationTransforms.Reset();
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -486,7 +542,7 @@ void URpgHarvestableInstancesComponent::SetLinkedInstancesVisible(const int32 In
 
 		if (StaticInstances)
 		{
-			StaticInstances->UpdateInstanceTransform(LinkedIndex, PresentedTransform, false, true, true);
+			UpdatePresentedTransform(*StaticInstances, LinkedIndex, PresentedTransform);
 		}
 		else if (SkinnedInstances)
 		{
