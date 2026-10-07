@@ -23,30 +23,32 @@ set once per text style, using the palette value from the table below.
 
 `MPC_UI_Palette` holds one vector parameter per role. Materials pick a role by
 its number through `MF_UI_PaletteRole`; material instances choose roles, never
-colours. Values are linear RGBA starting points and may be tuned.
+colours. The six base colours come from the skill screen concept
+([ui-roadmap.md](ui-roadmap.md#skill-screen-concept-ui-01b)); the rest are
+derived from them.
 
-| Role | Name | Value | Use |
-| --- | --- | --- | --- |
-| 0 | PanelBase | 0.006, 0.005, 0.005, 0.88 | Screen panels, buttons |
-| 1 | PanelInset | 0, 0, 0, 0.6 | Slots, cells, list rows, bar tracks |
-| 2 | Outline | 0.12, 0.11, 0.10 | Iron outlines; neutral fill of tinted frames |
-| 3 | Accent | 0.62, 0.45, 0.18 | Tarnished gold: hover, selection, learned links |
-| 4 | AccentBright | 0.85, 0.64, 0.28 | Focus, highlights, accent text |
-| 5 | AccentDim | 0.30, 0.22, 0.10 | Primary button fill, dividers, tooltip edges |
-| 6 | TextPrimary | 0.80, 0.76, 0.68 | Bone: body text |
-| 7 | TextMuted | 0.50, 0.48, 0.45 | Ash: labels, captions |
-| 8 | TextDisabled | 0.28, 0.27, 0.26 | Disabled text |
-| 9 | Blood | 0.55, 0.08, 0.05 | Danger, invalid |
-| 10 | Valid | 0.25, 0.50, 0.22 | Valid drop, enough resources |
-| 11 | Pending | 0.75, 0.42, 0.12 | Waiting, warnings, load |
-| 12 | Health | 0.42, 0.03, 0.02 | Health bar |
-| 13 | Stamina | 0.33, 0.40, 0.14 | Stamina bar |
-| 14 | Mana | 0.10, 0.14, 0.45 | Mana bar |
-| 15 | XP | 0.55, 0.40, 0.14 | Experience bars |
-| 16 | RarityCommon | 0.55, 0.53, 0.50 | Item frames |
-| 17 | RarityUncommon | 0.16, 0.55, 0.20 | Item frames |
-| 18 | RarityRare | 0.16, 0.33, 0.80 | Item frames |
-| 19 | RarityEpic | 0.48, 0.18, 0.72 | Item frames |
+| Role | Name | sRGB | Linear value | Use |
+| --- | --- | --- | --- | --- |
+| 0 | PanelBase | `#101214`, alpha 0.92 | 0.0052, 0.0060, 0.0070 | Charcoal background of screens |
+| 1 | PanelInset | `#1B1D20`, alpha 0.94 | 0.0110, 0.0123, 0.0144 | Matte iron: panels, slots, rows, bar tracks |
+| 2 | Outline | `#34363A` | 0.0343, 0.0369, 0.0423 | Iron edges |
+| 3 | Accent | `#AD915A` | 0.4179, 0.2831, 0.1022 | Matte old gold: learned, selection, accent text |
+| 4 | AccentBright | `#D9B979` | 0.6939, 0.4851, 0.1912 | Focus, hovered labels |
+| 5 | AccentDim | `#5C4C2E` | 0.1070, 0.0723, 0.0273 | Primary button fill, dividers, tooltip edges |
+| 6 | TextPrimary | `#DDD4C2` | 0.7231, 0.6584, 0.5395 | Bone white: main text |
+| 7 | TextMuted | `#A39D92` | 0.3663, 0.3372, 0.2874 | Warm ash: secondary text |
+| 8 | TextDisabled | `#625D55` | 0.1221, 0.1095, 0.0908 | Disabled text; neutral fill of tinted frames |
+| 9 | Blood | `#824747` | 0.2232, 0.0630, 0.0630 | Muted blood red: exclusions, warnings, danger |
+| 10 | Valid | `#6E8A55` | 0.1559, 0.2542, 0.0908 | Valid drop, enough resources |
+| 11 | Pending | `#B0803F` | 0.4342, 0.2159, 0.0497 | Waiting, load |
+| 12 | Health | `#7A1E19` | 0.1946, 0.0130, 0.0097 | Health bar |
+| 13 | Stamina | `#6F7A3A` | 0.1590, 0.1946, 0.0423 | Stamina bar |
+| 14 | Mana | `#2E3F7A` | 0.0273, 0.0497, 0.1946 | Mana bar |
+| 15 | XP | `#AD915A` | 0.4179, 0.2831, 0.1022 | Experience bars |
+| 16 | RarityCommon | — | 0.55, 0.53, 0.50 | Item frames |
+| 17 | RarityUncommon | — | 0.16, 0.55, 0.20 | Item frames |
+| 18 | RarityRare | — | 0.16, 0.33, 0.80 | Item frames |
+| 19 | RarityEpic | — | 0.48, 0.18, 0.72 | Item frames |
 
 The rarity roles are darker frame colours. The item text colours stay in
 `RpgInventoryItemizationFragmentViewModel.cpp`.
@@ -68,8 +70,8 @@ everything else uses the engine's Roboto. Text styles are in `Text/`.
 | `CUI_TextStyle_Caption` | Roboto Regular | 13 | TextMuted | Small notes |
 | `CUI_TextStyle_Hint` | Roboto Italic | 13 | TextMuted | Input hints |
 | `CUI_TextStyle_Number` | Roboto Bold | 16 | TextPrimary | Counts and values |
-| `CUI_TextStyle_Accent` | Roboto Bold | 18 | AccentBright | Points, highlights |
-| `CUI_TextStyle_AccentSmall` | Roboto Regular | 13 | AccentBright | Small highlights |
+| `CUI_TextStyle_Accent` | Roboto Bold | 18 | Accent | Points, highlights |
+| `CUI_TextStyle_AccentSmall` | Roboto Regular | 13 | Accent | Small highlights |
 | `CUI_TextStyle_ButtonLabel` | Roboto Bold, spacing 20 | 15 | TextPrimary | Button text |
 | `CUI_TextStyle_ButtonLabelHovered` | Roboto Bold, spacing 20 | 15 | AccentBright | Hovered, focused and selected button text |
 | `CUI_TextStyle_ButtonLabelDisabled` | Roboto Bold, spacing 20 | 15 | TextDisabled | Disabled button text |
