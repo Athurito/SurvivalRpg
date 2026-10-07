@@ -112,7 +112,8 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestSaveData
  * remaining respawn time; the countdown pauses while the host is offline.
  *
  * Only resources loaded with the map are saved: actor nodes are identified by their actor name, instances by their
- * authored location. Resources spawned at runtime stay session-scoped.
+ * authored location. Resources spawned at runtime stay session-scoped, and resources of renewable areas such as
+ * portal realms (FRpgHarvestStockRules::IsInRenewableArea) start over whenever the area loads.
  */
 UCLASS(ClassGroup = (Rpg), meta = (DisplayName = "RPG Harvest Persistence"))
 class GF_HARVESTING_MAGIC_API URpgHarvestPersistenceComponent final : public UGameStateComponent, public IRpgWorldSaveParticipant

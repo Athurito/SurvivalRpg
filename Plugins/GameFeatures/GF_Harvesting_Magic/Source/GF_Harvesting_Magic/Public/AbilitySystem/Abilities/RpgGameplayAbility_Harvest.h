@@ -67,6 +67,8 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestTunedValues
  *
  * - Optional stride: with the AreaAroundHarvester shape and a stride duration, the commit starts a stride that harvests
  *   around the walking harvester in pulses and delivers once when it ends.
+ * - Chains: a target the commit depletes inside a URpgHarvestChainComponent box takes the box's other resources
+ *   along in the same delivery, and the preview marks them.
  *
  * Tool category and harvest power come from the source equipment's item (URpgInventoryFragment_HarvestingTool).
  * Learned skill tree nodes of that weapon tune the authored values through Ability.Tuning.Harvest.* tags (area radius,
@@ -84,10 +86,10 @@ public:
 	virtual ~URpgGameplayAbility_Harvest() override;
 
 	/**
-	 * Selects and evaluates this ability's current targets for Spec without mutating anything.
-	 * Valid on the server and on the owning client; the targeting preview uses it. The server commit runs the same
-	 * query from the aim captured when execution started (press, or release of a held aim), so turning the camera
-	 * during the swing does not change what is hit.
+	 * Selects and evaluates this ability's current targets for Spec without mutating anything, followed by the
+	 * resources chain boxes would add (bChained). Valid on the server and on the owning client; the targeting preview
+	 * uses it. The server commit runs the same query from the aim captured when execution started (press, or release
+	 * of a held aim), so turning the camera during the swing does not change what is hit.
 	 */
 	void EvaluateTargets(
 		const FGameplayAbilitySpec& Spec,
@@ -330,8 +332,9 @@ private:
 	void HandleMontageInterrupted();
 
 	/**
-	 * Server: commits every target of Selection that would be harvested, with the presentation wave from the harvester.
-	 * An open reward batch collects the rewards. Returns the first target that was harvested, or null.
+	 * Server: commits every target of Selection that would be harvested, with the presentation wave from the harvester,
+	 * then the chains of the targets it depleted, whose results it appends to Selection. An open reward batch collects
+	 * the rewards. Returns the first target that was harvested, or null.
 	 */
 	const FRpgHarvestTargetEvaluation* CommitSelection(FRpgHarvestPreview& Selection, const FRpgHarvestRequest& RequestTemplate) const;
 
@@ -365,7 +368,8 @@ private:
 		const FRpgHarvestTunedValues& Values,
 		const FVector& ViewLocation,
 		const FRotator& ViewRotation,
-		FRpgHarvestPreview& OutPreview) const;
+		FRpgHarvestPreview& OutPreview,
+		bool bPreviewChains) const;
 
 	/** Server-only wakeup for the pending commit of the current activation. */
 	FTimerHandle CommitTimerHandle;

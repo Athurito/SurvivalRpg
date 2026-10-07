@@ -72,7 +72,8 @@ struct FRpgHarvestTargetIndicator
  * mutates anything; presentation Blueprints and widgets read it.
  *
  * When IndicatorWidgetClass is set, the component anchors projected indicators through the controller's indicator
- * manager: over the primary target, and over every target while a hold-to-aim ability is held. Instanced targets get
+ * manager: over the primary target and the resources its chain would take (bChained), and over every target while a
+ * hold-to-aim ability is held. Instanced targets get
  * one indicator per instance, placed over that instance. The Widget Blueprint owns all presentation and reads its
  * target through URpgHarvestTargetIndicatorWidget. While an area ability is held, an optional
  * AreaMarkerClass actor marks the area on the ground.

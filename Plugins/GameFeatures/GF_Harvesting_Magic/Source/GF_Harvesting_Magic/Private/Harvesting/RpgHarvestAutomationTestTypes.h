@@ -3,6 +3,7 @@
 #include "AbilitySystem/Abilities/RpgGameplayAbility_Harvest.h"
 #include "GameplayEffect.h"
 #include "Harvesting/RpgHarvestableInstancesComponent.h"
+#include "Harvesting/RpgHarvestChainComponent.h"
 #include "Harvesting/RpgHarvestProtectionComponent.h"
 #include "Harvesting/RpgHarvestTargetingComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
@@ -255,6 +256,20 @@ public:
 
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<URpgHarvestProtectionComponent> Protection;
+};
+
+/** Actor whose root is a harvest chain box, like a grove placed in a portal realm. */
+UCLASS(NotBlueprintable, Transient)
+class ARpgHarvestAutomationChainActor final : public AActor
+{
+	GENERATED_BODY()
+
+public:
+	explicit ARpgHarvestAutomationChainActor(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<URpgHarvestChainComponent> Chain;
 };
 
 /** Concrete test-only harvest ability whose tuning tests set on the granted instance. */

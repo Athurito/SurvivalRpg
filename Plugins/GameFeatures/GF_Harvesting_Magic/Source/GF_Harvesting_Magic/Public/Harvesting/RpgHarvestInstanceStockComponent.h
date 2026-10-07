@@ -104,7 +104,8 @@ struct TStructOpsTypeTraits<FRpgHarvestInstanceStockList> : public TStructOpsTyp
  *
  * Representations (URpgHarvestableInstancesComponent) evaluate and commit harvests and present their instances; this
  * component only stores stock and schedules respawns. URpgHarvestPersistenceComponent saves the stock of instances
- * loaded with the map.
+ * loaded with the map. Instances of a renewable area (FRpgHarvestStockRules::IsInRenewableArea) are restored when the
+ * area unloads.
  */
 UCLASS(ClassGroup = (Rpg), meta = (DisplayName = "RPG Harvest Instance Stock"))
 class GF_HARVESTING_MAGIC_API URpgHarvestInstanceStockComponent final : public UGameStateComponent
@@ -184,6 +185,13 @@ public:
 
 	/** Removes a representation that streams out or ends play. */
 	void UnregisterInstances(const URpgHarvestableInstancesComponent& Instances);
+
+	/**
+	 * Restores the authored stock of every instance of Instances and cancels their respawns, for a renewable area that
+	 * unloads, such as a portal realm, so it starts over when it loads again. Authority only. Returns the number of
+	 * instances restored.
+	 */
+	int32 RestoreInstances(const URpgHarvestableInstancesComponent& Instances);
 
 protected:
 	//~ UActorComponent interface

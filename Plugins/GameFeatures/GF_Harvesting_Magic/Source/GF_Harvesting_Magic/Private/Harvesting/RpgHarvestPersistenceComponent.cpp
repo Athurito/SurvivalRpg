@@ -28,11 +28,12 @@ namespace RpgHarvestPersistence
 
 	/**
 	 * Returns whether Actor was loaded with its map or a streamed cell. The level sets this flag before the actor
-	 * begins play; actors spawned at runtime never have it.
+	 * begins play; actors spawned at runtime never have it. Renewable areas, such as portal realms, start over
+	 * instead of keeping their stock.
 	 */
 	bool IsLoadedWithMap(const AActor& Actor)
 	{
-		return Actor.bNetStartup;
+		return Actor.bNetStartup && !FRpgHarvestStockRules::IsInRenewableArea(Actor);
 	}
 }
 

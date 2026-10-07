@@ -2804,4 +2804,315 @@ bool FRpgHarvestStrideEarlyEndTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+namespace RpgHarvestChainTests
+{
+	using namespace RpgHarvestAbilityTests;
+
+	/** Spawns a chain box of Extent at Location that takes up to MaxChainedTargets resources at ChainSpeed. */
+	ARpgHarvestAutomationChainActor* SpawnChain(
+		UWorld* World,
+		const FVector& Location,
+		const FVector& Extent,
+		const int32 MaxChainedTargets,
+		const float ChainSpeed)
+	{
+		FActorSpawnParameters SpawnParameters;
+		SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		ARpgHarvestAutomationChainActor* Actor = World
+			? World->SpawnActor<ARpgHarvestAutomationChainActor>(
+				ARpgHarvestAutomationChainActor::StaticClass(),
+				FTransform(Location),
+				SpawnParameters)
+			: nullptr;
+		if (!Actor || !Actor->Chain)
+		{
+			return nullptr;
+		}
+		Actor->Chain->SetBoxExtent(Extent);
+		Actor->Chain->ConfigureChain(MaxChainedTargets, ChainSpeed);
+		if (!Actor->HasActorBegunPlay())
+		{
+			Actor->DispatchBeginPlay();
+		}
+		return Actor;
+	}
+
+	/** Builds the committed result of Request on its instance, the way a harvest passes its trigger to the chain. */
+	FRpgHarvestTargetEvaluation MakeTrigger(
+		URpgHarvestableInstancesComponent* Instances,
+		const FRpgHarvestRequest& Request,
+		const FRpgHarvestResult& Result)
+	{
+		FRpgHarvestTargetEvaluation Trigger;
+		Trigger.Receiver = Instances;
+		Trigger.Hit = Request.Hit;
+		Trigger.Result = Result;
+		Trigger.bInReach = true;
+		return Trigger;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestChainSwingTest,
+	"SurvivalRpg.Harvesting.Chain.FellingOneTreeFellsTheGrove",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestChainSwingTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestChainTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	const float EyeHeight = Harvester.Pawn->BaseEyeHeight;
+	URpgHarvestInstanceStockComponent* Stock = RpgHarvestAutomation::AddInstanceStock(World);
+	// The aimed tree, three grove trees 250, 300 and 350 cm from it, and one tree outside the grove.
+	ARpgHarvestAutomationInstancesActor* Field = RpgHarvestAutomation::SpawnInstances(
+		World,
+		MakeProfile(World, 2),
+		{FVector(0.0, 0.0, 0.0), FVector(0.0, 250.0, 0.0), FVector(0.0, -300.0, 0.0), FVector(350.0, 0.0, 0.0),
+			FVector(0.0, 700.0, 0.0)},
+		FVector(400.0, 0.0, EyeHeight));
+	ARpgHarvestAutomationChainActor* Grove =
+		SpawnChain(World, FVector(500.0, 0.0, EyeHeight), FVector(350.0, 400.0, 200.0), 8, 500.0f);
+	const FGrantedAbility Swing = GrantAbility(Harvester.AbilitySystem);
+	if (!TestNotNull(TEXT("Instance stock exists"), Stock) ||
+		!TestNotNull(TEXT("Trees exist"), Field) ||
+		!TestNotNull(TEXT("Grove exists"), Grove) ||
+		!TestNotNull(TEXT("Swing exists"), Swing.Instance))
+	{
+		return false;
+	}
+	FRpgHarvestTargetingParams Single;
+	Single.MaxAimDistance = 1000.0f;
+	Single.MaxReachFromAvatar = 500.0f;
+	Swing.Instance->ConfigureTargeting(Single);
+	TestWorld.PrimeTimerManager();
+	URpgHarvestAutomationInstancesComponent* Trees = Field->Instances;
+
+	FRpgHarvestPreview Preview = Evaluate(Harvester.AbilitySystem, Swing);
+	TestEqual(TEXT("A swing that leaves stock previews no chain"), Preview.Targets.Num(), 1);
+	TestTrue(TEXT("The first swing activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	TestEqual(TEXT("The first swing takes one section"), Trees->GetRemainingSections(0), 1);
+	for (int32 TreeIndex = 1; TreeIndex < 5; ++TreeIndex)
+	{
+		TestEqual(TEXT("A partial harvest leaves the grove standing"), Trees->GetRemainingSections(TreeIndex), 2);
+	}
+
+	Preview = Evaluate(Harvester.AbilitySystem, Swing);
+	int32 NumChained = 0;
+	bool bChainedTakeWholeStock = true;
+	for (const FRpgHarvestTargetEvaluation& Target : Preview.Targets)
+	{
+		if (Target.bChained)
+		{
+			++NumChained;
+			bChainedTakeWholeStock &=
+				Target.WouldHarvest() && Target.Result.SectionsTaken == 2 && Target.Result.RemainingSections == 0;
+		}
+	}
+	TestEqual(TEXT("The felling swing previews the three other grove trees"), NumChained, 3);
+	TestTrue(TEXT("Each chained tree previews its whole stock"), bChainedTakeWholeStock);
+	TestEqual(TEXT("The preview leaves out the tree outside the grove"), Preview.Targets.Num(), 4);
+	TestTrue(TEXT("The aimed tree is the swing's own target"), !Preview.Targets.IsEmpty() && !Preview.Targets[0].bChained);
+
+	TestTrue(TEXT("The felling swing activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	for (int32 TreeIndex = 0; TreeIndex < 4; ++TreeIndex)
+	{
+		TestEqual(TEXT("The grove falls with the felled tree"), Trees->GetRemainingSections(TreeIndex), 0);
+	}
+	TestEqual(TEXT("The tree outside the grove stands"), Trees->GetRemainingSections(4), 2);
+	TestEqual(
+		TEXT("The harvester receives the wood of the whole grove"),
+		CountMaterial(Harvester.PlayerState),
+		4 * 2 * YieldPerSection);
+
+	FIntVector NearKey;
+	FIntVector FarKey;
+	Trees->GetInstanceKey(1, NearKey);
+	Trees->GetInstanceKey(3, FarKey);
+	TestTrue(
+		TEXT("The chain reaches a tree after its distance at the chain speed"),
+		FMath::IsNearlyEqual(Stock->GetRemainingPresentationDelay(NearKey), 0.5f, 0.02f));
+	TestTrue(
+		TEXT("Farther trees fall later"),
+		FMath::IsNearlyEqual(Stock->GetRemainingPresentationDelay(FarKey), 0.7f, 0.02f));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestChainRulesTest,
+	"SurvivalRpg.Harvesting.Chain.ChainFollowsAreaHarvestRules",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestChainRulesTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestChainTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	const FVector FieldLocation(0.0, 3000.0, 0.0);
+	URpgHarvestInstanceStockComponent* Stock = RpgHarvestAutomation::AddInstanceStock(World);
+	// Six one-section trees in a row, 200 cm apart, and a vein that needs another tool beside them.
+	ARpgHarvestAutomationInstancesActor* Field = RpgHarvestAutomation::SpawnInstances(
+		World,
+		MakeProfile(World, 1),
+		{FVector(0.0, 0.0, 0.0), FVector(200.0, 0.0, 0.0), FVector(400.0, 0.0, 0.0), FVector(600.0, 0.0, 0.0),
+			FVector(800.0, 0.0, 0.0), FVector(1000.0, 0.0, 0.0)},
+		FieldLocation);
+	URpgHarvestProfile* VeinProfile = MakeProfile(World, 1);
+	VeinProfile->RequiredToolTag = RpgHarvestingMagicGameplayTags::Tool_Harvesting_Skinning;
+	ARpgHarvestAutomationInstancesActor* Vein =
+		RpgHarvestAutomation::SpawnInstances(World, VeinProfile, {FVector(300.0, 100.0, 0.0)}, FieldLocation);
+	ARpgHarvestAutomationChainActor* Row =
+		SpawnChain(World, FieldLocation + FVector(500.0, 0.0, 0.0), FVector(600.0, 300.0, 200.0), 3, 0.0f);
+
+	// A camp protects the third tree.
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgHarvestAutomationProtectionActor* Camp = World->SpawnActor<ARpgHarvestAutomationProtectionActor>(
+		ARpgHarvestAutomationProtectionActor::StaticClass(),
+		FTransform(FieldLocation + FVector(400.0, 0.0, 0.0)),
+		SpawnParameters);
+	if (!TestNotNull(TEXT("Instance stock exists"), Stock) ||
+		!TestNotNull(TEXT("Trees exist"), Field) ||
+		!TestNotNull(TEXT("Vein exists"), Vein) ||
+		!TestNotNull(TEXT("Chain exists"), Row) ||
+		!TestNotNull(TEXT("Camp exists"), Camp))
+	{
+		return false;
+	}
+	Camp->Protection->SetBoxExtent(FVector(50.0, 50.0, 100.0));
+	if (!Camp->HasActorBegunPlay())
+	{
+		Camp->DispatchBeginPlay();
+	}
+	TestWorld.PrimeTimerManager();
+	URpgHarvestAutomationInstancesComponent* Trees = Field->Instances;
+
+	TSet<TObjectKey<URpgHarvestChainComponent>> ChainedBoxes;
+	TArray<FRpgHarvestTargetEvaluation> Chained;
+	const FRpgHarvestRequest Request = RpgHarvestAutomation::MakeInstanceRequest(Trees, 0, Harvester.Pawn);
+	FRpgHarvestResult Partial;
+	Partial.Outcome = ERpgHarvestOutcome::Harvested;
+	Partial.SectionsTaken = 1;
+	Partial.RemainingSections = 1;
+	TestEqual(
+		TEXT("A harvest that leaves stock does not chain"),
+		FRpgHarvestChains::Commit(*World, Request, MakeTrigger(Trees, Request, Partial), ChainedBoxes, Chained),
+		0);
+	TestEqual(TEXT("Nothing is chained without a depletion"), Chained.Num(), 0);
+
+	const FRpgHarvestResult Felled = Trees->CommitHarvest_Implementation(Request);
+	TestTrue(TEXT("The first tree is felled"), Felled.bDepleted);
+	const FRpgHarvestTargetEvaluation Trigger = MakeTrigger(Trees, Request, Felled);
+	TestEqual(
+		TEXT("The chain takes three sections"),
+		FRpgHarvestChains::Commit(*World, Request, Trigger, ChainedBoxes, Chained),
+		3);
+	TestEqual(TEXT("The chain stops at its limit"), Chained.Num(), 3);
+	TestFalse(
+		TEXT("Every chained result is marked"),
+		Chained.ContainsByPredicate([](const FRpgHarvestTargetEvaluation& Target) { return !Target.bChained; }));
+	TestEqual(TEXT("The nearest tree falls"), Trees->GetRemainingSections(1), 0);
+	TestEqual(TEXT("A protected tree is skipped"), Trees->GetRemainingSections(2), 1);
+	TestEqual(TEXT("The chain continues past it"), Trees->GetRemainingSections(3), 0);
+	TestEqual(TEXT("The chain takes the next tree"), Trees->GetRemainingSections(4), 0);
+	TestEqual(TEXT("A tree beyond the limit stands"), Trees->GetRemainingSections(5), 1);
+	TestEqual(TEXT("A resource that needs another tool is skipped"), Vein->Instances->GetRemainingSections(0), 1);
+	TestEqual(TEXT("The harvester receives the felled and chained wood"), CountMaterial(Harvester.PlayerState), 4 * YieldPerSection);
+
+	TestEqual(
+		TEXT("One harvest runs a chain box once"),
+		FRpgHarvestChains::Commit(*World, Request, Trigger, ChainedBoxes, Chained),
+		0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestChainSwarmTest,
+	"SurvivalRpg.Harvesting.Chain.SwarmStrikeFellsTheGrove",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestChainSwarmTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestChainTests;
+	using namespace RpgHarvestSwarmTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	const float EyeHeight = Harvester.Pawn->BaseEyeHeight;
+	URpgHarvestInstanceStockComponent* Stock = RpgHarvestAutomation::AddInstanceStock(World);
+	ARpgHarvestAutomationInstancesActor* Grove = SpawnGrove(World, EyeHeight);
+	ARpgHarvestAutomationChainActor* Roots =
+		SpawnChain(World, FVector(450.0, 150.0, EyeHeight), FVector(300.0, 300.0, 200.0), 8, 0.0f);
+	// One creature works on the nearest tree only; the roots take the other two.
+	const FGrantedAbility Summon = GrantSwarmAbility(Harvester.AbilitySystem, 1);
+	if (!TestNotNull(TEXT("Instance stock exists"), Stock) ||
+		!TestNotNull(TEXT("Grove exists"), Grove) ||
+		!TestNotNull(TEXT("Roots exist"), Roots) ||
+		!TestNotNull(TEXT("Swarm ability exists"), Summon.Instance))
+	{
+		return false;
+	}
+	FRpgHarvestTargetingParams OneTree;
+	OneTree.Shape = ERpgHarvestTargetShape::AreaAtAimPoint;
+	OneTree.MaxAimDistance = 1000.0f;
+	OneTree.MaxReachFromAvatar = 700.0f;
+	OneTree.AreaRadius = 450.0f;
+	OneTree.MaxTargets = 1;
+	Summon.Instance->ConfigureTargeting(OneTree);
+	TestWorld.PrimeTimerManager();
+	URpgHarvestAutomationInstancesComponent* Trees = Grove->Instances;
+
+	const FRpgHarvestPreview Preview = Evaluate(Harvester.AbilitySystem, Summon);
+	int32 NumChained = 0;
+	for (const FRpgHarvestTargetEvaluation& Target : Preview.Targets)
+	{
+		NumChained += Target.bChained && Target.WouldHarvest() ? 1 : 0;
+	}
+	TestEqual(TEXT("The swarm preview marks the trees the roots take"), NumChained, 2);
+
+	TestTrue(TEXT("The swarm is summoned"), Harvester.AbilitySystem->TryActivateAbility(Summon.Handle));
+	ARpgHarvestSwarm* Swarm = FindActiveSwarm(World);
+	if (!TestNotNull(TEXT("The commit summons a swarm"), Swarm))
+	{
+		return false;
+	}
+	for (int32 Frame = 0; Frame < 250 && Trees->GetRemainingSections(0) == 4; ++Frame)
+	{
+		Advance(TestWorld, 0.02);
+	}
+	TestEqual(TEXT("The first strike takes two sections"), Trees->GetRemainingSections(0), 2);
+	TestEqual(TEXT("A strike that leaves stock leaves the grove standing"), Trees->GetRemainingSections(1), 4);
+	Advance(TestWorld, 4.0);
+	for (int32 TreeIndex = 0; TreeIndex < 3; ++TreeIndex)
+	{
+		TestEqual(TEXT("The strike that fells the tree fells the grove"), Trees->GetRemainingSections(TreeIndex), 0);
+	}
+	TestTrue(TEXT("The swarm has finished"), Swarm->IsFinished());
+	TestEqual(
+		TEXT("The summoner receives the wood of the whole grove"),
+		CountMaterial(Harvester.PlayerState),
+		3 * 4 * YieldPerSection);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

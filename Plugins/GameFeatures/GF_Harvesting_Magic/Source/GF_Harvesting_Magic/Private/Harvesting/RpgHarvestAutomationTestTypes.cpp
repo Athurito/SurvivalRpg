@@ -273,3 +273,10 @@ ARpgHarvestAutomationProtectionActor::ARpgHarvestAutomationProtectionActor(const
 	Protection = CreateDefaultSubobject<URpgHarvestProtectionComponent>(TEXT("Protection"));
 	SetRootComponent(Protection);
 }
+
+ARpgHarvestAutomationChainActor::ARpgHarvestAutomationChainActor(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	Chain = CreateDefaultSubobject<URpgHarvestChainComponent>(TEXT("Chain"));
+	SetRootComponent(Chain);
+}

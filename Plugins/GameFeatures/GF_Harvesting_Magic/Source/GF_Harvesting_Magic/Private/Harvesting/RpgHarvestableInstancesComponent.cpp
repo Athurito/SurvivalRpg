@@ -296,6 +296,15 @@ void URpgHarvestableInstancesComponent::EndPlay(const EEndPlayReason::Type EndPl
 	if (URpgHarvestInstanceStockComponent* Stock = CachedStock.Get())
 	{
 		Stock->UnregisterInstances(*this);
+
+		// A renewable area that unloads, such as a portal realm, starts over with its authored stock next time.
+		const AActor* OwningActor = GetOwner();
+		if (EndPlayReason == EEndPlayReason::RemovedFromWorld &&
+			OwningActor &&
+			FRpgHarvestStockRules::IsInRenewableArea(*OwningActor))
+		{
+			Stock->RestoreInstances(*this);
+		}
 	}
 	CachedStock.Reset();
 	if (UWorld* World = GetWorld())

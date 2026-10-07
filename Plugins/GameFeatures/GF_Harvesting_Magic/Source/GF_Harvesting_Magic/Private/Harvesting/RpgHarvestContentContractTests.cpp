@@ -6,7 +6,11 @@
 #include "GameFeatureData.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/GameStateBase.h"
+#include "Engine/BlueprintGeneratedClass.h"
+#include "Engine/SCS_Node.h"
+#include "Engine/SimpleConstructionScript.h"
 #include "Harvesting/RpgHarvestAutomationTestWorld.h"
+#include "Harvesting/RpgHarvestChainComponent.h"
 #include "Harvesting/RpgHarvestProfile.h"
 #include "Harvesting/RpgHarvestableComponent.h"
 #include "Harvesting/RpgHarvestableInstancesComponent.h"
@@ -35,6 +39,7 @@ namespace RpgHarvestContentContractTests
 	const TCHAR* AxeAbilitySetPath = TEXT("/GF_Harvesting_Magic/GAS/AbilitySets/AS_Tool_Axe.AS_Tool_Axe");
 	const TCHAR* AxeItemClassPath = TEXT("/GF_Harvesting_Magic/Items/Tools/ID_Tool_Axe.ID_Tool_Axe_C");
 	const TCHAR* DeadPineProfilePath = TEXT("/GF_Harvesting_Magic/Harvesting/Profiles/HP_DeadPine.HP_DeadPine");
+	const TCHAR* RootGroveClassPath = TEXT("/GF_Harvesting_Magic/Harvesting/Chains/BP_HarvestRootGrove.BP_HarvestRootGrove_C");
 	const TCHAR* DeadPineInstancesClassPath =
 		TEXT("/GF_Harvesting_Magic/Harvesting/Instances/BPC_HarvestInstances_DeadPine.BPC_HarvestInstances_DeadPine_C");
 
@@ -469,6 +474,41 @@ bool FRpgHarvestPcgDeadPineContractTest::RunTest(const FString& Parameters)
 	}
 	TestTrue(TEXT("The instances use the dead pine profile"), Profile->GetPathName() == FString(DeadPineProfilePath));
 	TestFalse(TEXT("The trunk proxies link visible trees"), Instances->GetLinkedPresentationTag().IsNone());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestRootGroveContractTest,
+	"SurvivalRpg.Harvesting.Content.RootGroveChainContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestRootGroveContractTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestContentContractTests;
+
+	// The root grove that portal realms place over tree groups: an actor with exactly one chain box.
+	const UBlueprintGeneratedClass* GroveClass = Cast<UBlueprintGeneratedClass>(LoadClass<AActor>(nullptr, RootGroveClassPath));
+	if (!TestNotNull(TEXT("The root grove class loads"), GroveClass) ||
+		!TestNotNull(TEXT("The root grove has components"), GroveClass->SimpleConstructionScript.Get()))
+	{
+		return false;
+	}
+	TArray<const URpgHarvestChainComponent*> Chains;
+	for (const USCS_Node* Node : GroveClass->SimpleConstructionScript->GetAllNodes())
+	{
+		if (const URpgHarvestChainComponent* Chain = Node ? Cast<URpgHarvestChainComponent>(Node->ComponentTemplate) : nullptr)
+		{
+			Chains.Add(Chain);
+		}
+	}
+	if (!TestEqual(TEXT("The root grove has one chain box"), Chains.Num(), 1))
+	{
+		return false;
+	}
+	TestTrue(TEXT("The chain takes resources"), Chains[0]->GetMaxChainedTargets() >= 1);
+	TestTrue(TEXT("The grove falls tree by tree"), Chains[0]->GetChainSpeed() > 0.0f);
+	TestTrue(TEXT("The chain box has a size"), !Chains[0]->GetUnscaledBoxExtent().IsNearlyZero());
 	return true;
 }
 

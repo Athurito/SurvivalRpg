@@ -10,9 +10,12 @@
 #include "Harvesting/RpgHarvestInstanceStockComponent.h"
 #include "Harvesting/RpgHarvestPersistenceComponent.h"
 #include "Harvesting/RpgHarvestProfile.h"
+#include "Harvesting/RpgHarvestStockRules.h"
 #include "SurvivalRpg/Inventory/Loot/RpgLootTable.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillGameplayTags.h"
 
+#include "Engine/Level.h"
+#include "Engine/LevelStreamingDynamic.h"
 #include "Engine/World.h"
 #include "GameFramework/GameStateBase.h"
 #include "UObject/UnrealType.h"
@@ -401,6 +404,116 @@ bool FRpgHarvestPersistenceInvalidTest::RunTest(const FString& Parameters)
 
 	TestEqual(TEXT("A rejected save leaves the stock untouched"), Node->HarvestableNode->GetRemainingSections(), SectionCount - 1);
 	TestEqual(TEXT("A rejected save keeps the records"), Persistence->GetNumRecordedResources(), 1);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestPersistenceRenewableAreaTest,
+	"SurvivalRpg.Harvesting.Persistence.RenewableAreaStartsOver",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestPersistenceRenewableAreaTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestPersistenceTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	if (!TestNotNull(TEXT("World"), World))
+	{
+		return false;
+	}
+	// Like a world that a game loaded, so streamed levels initialize their actors and route EndPlay when they unload.
+	World->InitializeActorsForPlay(FURL());
+	URpgHarvestInstanceStockComponent* Stock = AddInstanceStock(World);
+	URpgHarvestPersistenceComponent* Persistence = AddPersistence(World);
+	ARpgHarvestAutomationTestPlayerState* Harvester = SpawnHarvester(World);
+	if (!TestNotNull(TEXT("Stock"), Stock) || !TestNotNull(TEXT("Persistence"), Persistence) ||
+		!TestNotNull(TEXT("Harvester"), Harvester))
+	{
+		return false;
+	}
+
+	// A level loaded at runtime as a level instance, the way a portal opens its realm.
+	bool bLoaded = false;
+	ULevelStreamingDynamic* Realm = ULevelStreamingDynamic::LoadLevelInstance(
+		World,
+		TEXT("/Engine/Maps/Entry"),
+		FVector(1000000.0, 0.0, 0.0),
+		FRotator::ZeroRotator,
+		bLoaded,
+		TEXT("HarvestRenewableAreaTest"));
+	if (!TestTrue(TEXT("The realm level starts loading"), bLoaded && Realm != nullptr))
+	{
+		return false;
+	}
+	World->FlushLevelStreaming(EFlushLevelStreamingType::Full);
+	ULevel* RealmLevel = Realm->GetLoadedLevel();
+	if (!TestNotNull(TEXT("The realm level is loaded"), RealmLevel))
+	{
+		return false;
+	}
+
+	// Resources loaded with the realm, and resources loaded with the map.
+	const TArray<FVector> Locations = {FVector(0.0, 0.0, 0.0), FVector(200.0, 0.0, 0.0)};
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.OverrideLevel = RealmLevel;
+	SpawnParameters.bDeferConstruction = true;
+	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgHarvestAutomationInstancesActor* RealmField = World->SpawnActor<ARpgHarvestAutomationInstancesActor>(
+		ARpgHarvestAutomationInstancesActor::StaticClass(),
+		FTransform(FVector(1000000.0, 0.0, 0.0)),
+		SpawnParameters);
+	UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (!TestNotNull(TEXT("Realm field"), RealmField) || !TestNotNull(TEXT("Cube mesh"), Cube))
+	{
+		return false;
+	}
+	RealmField->bNetStartup = true;
+	RealmField->Instances->ConfigureProfile(MakeProfile(World));
+	RealmField->Instances->SetStaticMesh(Cube);
+	for (const FVector& Location : Locations)
+	{
+		RealmField->Instances->AddInstance(FTransform(Location));
+	}
+	RealmField->FinishSpawning(FTransform(FVector(1000000.0, 0.0, 0.0)));
+	if (!RealmField->HasActorBegunPlay())
+	{
+		RealmField->DispatchBeginPlay();
+	}
+	ARpgHarvestAutomationInstancesActor* MapField = SpawnInstances(World, MakeProfile(World), Locations, FVector(0.0, 500.0, 0.0));
+	if (!TestNotNull(TEXT("Map field"), MapField))
+	{
+		return false;
+	}
+	MapField->bNetStartup = true;
+	TestWorld.PrimeTimerManager();
+
+	TestTrue(TEXT("A runtime level instance is a renewable area"), FRpgHarvestStockRules::IsInRenewableArea(*RealmField));
+	TestFalse(TEXT("The map's own level is not"), FRpgHarvestStockRules::IsInRenewableArea(*MapField));
+
+	URpgHarvestAutomationInstancesComponent* RealmTrees = RealmField->Instances;
+	TestTrue(
+		TEXT("A realm instance is emptied"),
+		RealmTrees->CommitHarvest_Implementation(MakeInstanceRequest(RealmTrees, 0, Harvester, SectionCount)).bDepleted);
+	TestTrue(
+		TEXT("Another realm instance is harvested once"),
+		RealmTrees->CommitHarvest_Implementation(MakeInstanceRequest(RealmTrees, 1, Harvester)).IsSuccess());
+	TestTrue(
+		TEXT("A map instance is harvested once"),
+		MapField->Instances->CommitHarvest_Implementation(MakeInstanceRequest(MapField->Instances, 0, Harvester)).IsSuccess());
+	TestEqual(TEXT("The stock holds every change while the realm is loaded"), Stock->GetNumChangedInstances(), 3);
+	TestEqual(TEXT("Only the map instance is recorded for the save"), Persistence->GetNumRecordedResources(), 1);
+
+	// Closing the portal unloads the realm; its resources start over.
+	Realm->SetShouldBeVisible(false);
+	Realm->SetShouldBeLoaded(false);
+	Realm->SetIsRequestingUnloadAndRemoval(true);
+	World->FlushLevelStreaming(EFlushLevelStreamingType::Full);
+	TestEqual(TEXT("The unloaded realm leaves only the map's change"), Stock->GetNumChangedInstances(), 1);
+	TestEqual(TEXT("The map instance keeps its record"), Persistence->GetNumRecordedResources(), 1);
+	TestWorld.AdvanceTimers(RespawnSeconds + 1.0f);
+	TestEqual(TEXT("The realm's respawn was cancelled with it"), Stock->GetNumChangedInstances(), 1);
 	return true;
 }
 

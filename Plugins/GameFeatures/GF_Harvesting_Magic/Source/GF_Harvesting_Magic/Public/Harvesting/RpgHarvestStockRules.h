@@ -81,6 +81,13 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestStockRules
 	static bool MeetsToolRequirement(const URpgHarvestProfile* Profile, const FRpgHarvestRequest& Request);
 
 	/**
+	 * Returns whether Actor belongs to a renewable area: a level loaded at runtime as a level instance, such as a portal
+	 * realm. Its resources are never saved and start over with their authored stock whenever the area loads again.
+	 * World Partition cells and level instances placed in a map belong to the map's persistent layout.
+	 */
+	static bool IsInRenewableArea(const AActor& Actor);
+
+	/**
 	 * Maps a reward-service delivery result to the public result enum. Failed maps to None, and so does Batched until
 	 * the harvest ability that opened the batch delivers it and reports the batch's path.
 	 */

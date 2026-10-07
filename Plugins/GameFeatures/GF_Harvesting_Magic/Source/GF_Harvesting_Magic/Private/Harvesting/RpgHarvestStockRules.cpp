@@ -1,10 +1,14 @@
 #include "Harvesting/RpgHarvestStockRules.h"
 
+#include "Engine/Level.h"
+#include "Engine/LevelStreamingDynamic.h"
 #include "GameFramework/Actor.h"
 #include "GameplayTags/RpgHarvestingMagicGameplayTags.h"
 #include "Harvesting/RpgHarvestProfile.h"
 #include "Harvesting/RpgHarvestProtectionComponent.h"
 #include "Harvesting/RpgHarvestRewardService.h"
+#include "LevelInstance/LevelInstanceLevelStreaming.h"
+#include "WorldPartition/WorldPartitionLevelStreamingDynamic.h"
 
 DEFINE_LOG_CATEGORY(LogRpgHarvesting);
 
@@ -114,6 +118,23 @@ bool FRpgHarvestStockRules::MeetsToolRequirement(
 	return !Profile ||
 		!Profile->RequiredToolTag.IsValid() ||
 		Request.ToolTag.MatchesTag(Profile->RequiredToolTag);
+}
+
+bool FRpgHarvestStockRules::IsInRenewableArea(const AActor& Actor)
+{
+	const ULevel* Level = Actor.GetLevel();
+	if (!Level || Level->IsPersistentLevel())
+	{
+		return false;
+	}
+
+	// Levels loaded at runtime, such as portal realms, stream through a dynamic streaming level that no map
+	// authored. World Partition cells and placed level instances derive from it, but belong to the map.
+	const ULevelStreaming* Streaming = ULevelStreaming::FindStreamingLevel(Level);
+	return Streaming &&
+		Streaming->IsA<ULevelStreamingDynamic>() &&
+		!Streaming->IsA<UWorldPartitionLevelStreamingDynamic>() &&
+		!Streaming->IsA<ULevelStreamingLevelInstance>();
 }
 
 ERpgHarvestDelivery FRpgHarvestStockRules::ToDelivery(const ERpgHarvestRewardDeliveryResult DeliveryResult)

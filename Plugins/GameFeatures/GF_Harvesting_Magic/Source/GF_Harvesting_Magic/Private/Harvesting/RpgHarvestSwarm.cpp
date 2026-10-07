@@ -7,6 +7,7 @@
 #include "Engine/World.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/Pawn.h"
+#include "Harvesting/RpgHarvestChainComponent.h"
 #include "Harvesting/RpgHarvestRewardService.h"
 #include "Harvesting/RpgHarvestStockRules.h"
 #include "Net/UnrealNetwork.h"
@@ -458,9 +459,31 @@ void ARpgHarvestSwarm::Strike(const int32 CreatureIndex, const double Now)
 		// swarm's single delivery.
 		RewardBatch->Open();
 		Result = IRpgHarvestableTarget::Execute_CommitHarvest(Receiver, Request);
-		if (Result.IsSuccess() && SwarmParams.StrikeRadius > UE_KINDA_SMALL_NUMBER)
+		if (Result.IsSuccess())
 		{
-			SectionsAround = StrikeAround(CreatureIndex, Receiver, Assignment.Hit, Creature.From);
+			TArray<FRpgHarvestTargetEvaluation, TInlineAllocator<8>> Committed;
+			FRpgHarvestTargetEvaluation& Struck = Committed.AddDefaulted_GetRef();
+			Struck.Receiver = Receiver;
+			Struck.Hit = Assignment.Hit;
+			Struck.Result = Result;
+			Struck.bInReach = true;
+			if (SwarmParams.StrikeRadius > UE_KINDA_SMALL_NUMBER)
+			{
+				TArray<FRpgHarvestTargetEvaluation> Around;
+				SectionsAround = StrikeAround(CreatureIndex, Receiver, Assignment.Hit, Creature.From, Around);
+				Committed.Append(MoveTemp(Around));
+			}
+
+			// Every resource the strike depleted inside a chain box takes the box's other resources along.
+			if (UWorld* World = GetWorld())
+			{
+				TSet<TObjectKey<URpgHarvestChainComponent>> ChainedBoxes;
+				TArray<FRpgHarvestTargetEvaluation> Chained;
+				for (const FRpgHarvestTargetEvaluation& Trigger : Committed)
+				{
+					SectionsAround += FRpgHarvestChains::Commit(*World, Request, Trigger, ChainedBoxes, Chained);
+				}
+			}
 		}
 		RewardBatch->Close();
 	}
@@ -577,7 +600,8 @@ int32 ARpgHarvestSwarm::StrikeAround(
 	const int32 CreatureIndex,
 	const UObject* StruckReceiver,
 	const FHitResult& StruckHit,
-	const FVector& FromLocation)
+	const FVector& FromLocation,
+	TArray<FRpgHarvestTargetEvaluation>& OutCommitted)
 {
 	// Each other resource in the radius is struck once; what other creatures reserved stays theirs, so none of them
 	// arrives at a resource the swarm itself emptied.
@@ -609,6 +633,11 @@ int32 ARpgHarvestSwarm::StrikeAround(
 		if (Result.IsSuccess())
 		{
 			SectionsTaken += Result.SectionsTaken;
+			FRpgHarvestTargetEvaluation& Committed = OutCommitted.AddDefaulted_GetRef();
+			Committed.Receiver = Receiver;
+			Committed.Hit = WorkTarget.Hit;
+			Committed.Result = Result;
+			Committed.bInReach = true;
 		}
 	}
 	return SectionsTaken;

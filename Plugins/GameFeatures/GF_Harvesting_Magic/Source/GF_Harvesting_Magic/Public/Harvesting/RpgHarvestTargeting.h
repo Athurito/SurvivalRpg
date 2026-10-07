@@ -98,6 +98,13 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestTargetEvaluation
 	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
 	bool bInReach = false;
 
+	/**
+	 * True when a chain box adds the target to the harvest: another resource the harvest depletes inside the same box
+	 * takes it along (URpgHarvestChainComponent). Read-only; previews and committed results both report it.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
+	bool bChained = false;
+
 	/** Returns whether a commit would extract stock from this target. */
 	bool WouldHarvest() const
 	{
