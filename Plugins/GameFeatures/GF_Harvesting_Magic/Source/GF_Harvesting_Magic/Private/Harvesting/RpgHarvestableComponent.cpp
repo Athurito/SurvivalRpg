@@ -4,6 +4,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/GameStateBase.h"
+#include "Harvesting/RpgHarvestPersistenceComponent.h"
 #include "Harvesting/RpgHarvestProfile.h"
 #include "Harvesting/RpgHarvestRewardService.h"
 #include "Harvesting/RpgHarvestStockRules.h"
@@ -44,10 +45,24 @@ void URpgHarvestableComponent::BeginPlay()
 	}
 
 	BroadcastStateChanged(true);
+
+	// A saved stock replaces the authored one; the persistence presents it as initial state again.
+	if (OwningActor && OwningActor->HasAuthority())
+	{
+		if (URpgHarvestPersistenceComponent* Persistence = URpgHarvestPersistenceComponent::FindForWorld(GetWorld()))
+		{
+			Persistence->RegisterNode(*this);
+		}
+	}
 }
 
 void URpgHarvestableComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	// Report the final stock while the respawn timer still runs, so a streamed-out resource keeps its countdown.
+	if (URpgHarvestPersistenceComponent* Persistence = URpgHarvestPersistenceComponent::FindForWorld(GetWorld()))
+	{
+		Persistence->UnregisterNode(*this);
+	}
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(RespawnTimerHandle);
@@ -153,6 +168,7 @@ FRpgHarvestResult URpgHarvestableComponent::CommitHarvest_Implementation(const F
 	{
 		ScheduleRespawn();
 	}
+	ReportStockToPersistence();
 
 	Result.Delivery = FRpgHarvestStockRules::ToDelivery(DeliveryResult);
 	OnHarvested.Broadcast(Request, Result);
@@ -220,6 +236,67 @@ bool URpgHarvestableComponent::RestoreHarvestStock()
 	NewState.bActive = true;
 	NewState.HarvestedSections = 0;
 	SetAuthoritativeState(NewState);
+	ReportStockToPersistence();
+	return true;
+}
+
+FRpgHarvestSavedStock URpgHarvestableComponent::ExportSavedStock() const
+{
+	FRpgHarvestSavedStock Saved;
+	Saved.Revision = HarvestState.Revision;
+	Saved.HarvestedSections = HarvestState.HarvestedSections;
+	Saved.bActive = HarvestState.bActive;
+	const UWorld* World = GetWorld();
+	if (World && World->GetTimerManager().IsTimerActive(RespawnTimerHandle))
+	{
+		Saved.RespawnSeconds = World->GetTimerManager().GetTimerRemaining(RespawnTimerHandle);
+	}
+	return Saved;
+}
+
+bool URpgHarvestableComponent::ApplySavedStock(const FRpgHarvestSavedStock& SavedStock)
+{
+	AActor* OwningActor = GetOwner();
+	UWorld* World = GetWorld();
+	if (!OwningActor || !OwningActor->HasAuthority() || !World || !HarvestProfile)
+	{
+		return false;
+	}
+
+	World->GetTimerManager().ClearTimer(RespawnTimerHandle);
+	FRpgHarvestNodeState NewState;
+	NewState.Revision = FMath::Max(0, SavedStock.Revision);
+	NewState.bActive = SavedStock.bActive;
+	NewState.HarvestedSections = static_cast<uint8>(FMath::Clamp(SavedStock.HarvestedSections, 0, GetSectionCount()));
+	// A profile that lost sections since the save may leave nothing to harvest; deplete it the way a harvest would.
+	const bool bExhausted = NewState.bActive && NewState.HarvestedSections >= GetSectionCount();
+	if (bExhausted)
+	{
+		NewState.bActive = false;
+		NewState.Revision = FMath::Max(1, NewState.Revision + 1);
+	}
+
+	OwningActor->FlushNetDormancy();
+	HarvestState = NewState;
+	// Older than the live window, so every machine snaps to the saved stock instead of animating it.
+	HarvestState.LastChangeServerTime = GetServerWorldTimeSeconds() - LiveChangeWindowSeconds - 1.0f;
+	OwningActor->ForceNetUpdate();
+	BroadcastStateChanged(true);
+
+	if (bExhausted)
+	{
+		ScheduleRespawn();
+	}
+	else if (!NewState.bActive && SavedStock.RespawnSeconds >= 0.0f)
+	{
+		World->GetTimerManager().SetTimer(
+			RespawnTimerHandle,
+			this,
+			&ThisClass::HandleRespawnTimer,
+			FMath::Max(0.001f, SavedStock.RespawnSeconds),
+			false);
+	}
+	ReportStockToPersistence();
 	return true;
 }
 
@@ -314,4 +391,18 @@ void URpgHarvestableComponent::HandleRespawnTimer()
 	NewState.HarvestedSections = 0;
 	NewState.bActive = true;
 	SetAuthoritativeState(NewState);
+	ReportStockToPersistence();
+}
+
+void URpgHarvestableComponent::ReportStockToPersistence() const
+{
+	const AActor* OwningActor = GetOwner();
+	if (!OwningActor || !OwningActor->HasAuthority())
+	{
+		return;
+	}
+	if (URpgHarvestPersistenceComponent* Persistence = URpgHarvestPersistenceComponent::FindForWorld(GetWorld()))
+	{
+		Persistence->RecordNode(*this);
+	}
 }

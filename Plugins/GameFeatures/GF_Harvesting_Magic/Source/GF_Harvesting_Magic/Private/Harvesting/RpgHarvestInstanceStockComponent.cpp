@@ -3,6 +3,7 @@
 #include "Engine/World.h"
 #include "GameFramework/GameStateBase.h"
 #include "Harvesting/RpgHarvestableInstancesComponent.h"
+#include "Harvesting/RpgHarvestPersistenceComponent.h"
 #include "Harvesting/RpgHarvestProfile.h"
 #include "Net/UnrealNetwork.h"
 #include "ProfilingDebugging/CpuProfilerTrace.h"
@@ -209,6 +210,80 @@ bool URpgHarvestInstanceStockComponent::RestoreStock(const FIntVector& Key)
 	Stock.Entries.RemoveAtSwap(EntryIndex);
 	Stock.MarkArrayDirty();
 	MarkStockChanged(Key);
+	if (URpgHarvestPersistenceComponent* Persistence = URpgHarvestPersistenceComponent::FindForWorld(GetWorld()))
+	{
+		Persistence->ForgetInstance(Key);
+	}
+	return true;
+}
+
+bool URpgHarvestInstanceStockComponent::ExportSavedStock(const FIntVector& Key, FRpgHarvestSavedStock& OutStock) const
+{
+	OutStock = FRpgHarvestSavedStock();
+	const FRpgHarvestInstanceStockEntry* Entry = FindEntry(Key);
+	if (!Entry)
+	{
+		return false;
+	}
+
+	OutStock.Revision = Entry->Revision;
+	OutStock.HarvestedSections = Entry->HarvestedSections;
+	OutStock.bActive = Entry->bActive;
+	const UWorld* World = GetWorld();
+	if (const double* Deadline = RespawnDeadlines.Find(Key); Deadline && World)
+	{
+		OutStock.RespawnSeconds = static_cast<float>(FMath::Max(0.0, *Deadline - World->GetTimeSeconds()));
+	}
+	return true;
+}
+
+bool URpgHarvestInstanceStockComponent::ApplySavedStock(const FIntVector& Key, const FRpgHarvestSavedStock& SavedStock)
+{
+	UWorld* World = GetWorld();
+	if (!HasStockAuthority() || !World)
+	{
+		return false;
+	}
+
+	RespawnDeadlines.Remove(Key);
+	int32 EntryIndex = FindEntryIndex(Key);
+	if (SavedStock.IsPristine())
+	{
+		if (EntryIndex != INDEX_NONE)
+		{
+			Stock.Entries.RemoveAtSwap(EntryIndex);
+			Stock.MarkArrayDirty();
+		}
+	}
+	else
+	{
+		if (EntryIndex == INDEX_NONE)
+		{
+			EntryIndex = Stock.Entries.AddDefaulted();
+			Stock.Entries[EntryIndex].Key = Key;
+		}
+		FRpgHarvestInstanceStockEntry& Entry = Stock.Entries[EntryIndex];
+		Entry.Revision = FMath::Max(0, SavedStock.Revision);
+		Entry.HarvestedSections = static_cast<uint8>(
+			FMath::Clamp(SavedStock.HarvestedSections, 0, URpgHarvestProfile::MaxSectionCount));
+		Entry.bActive = SavedStock.bActive;
+		// Older than the live window, so every machine snaps to the saved stock instead of animating it.
+		Entry.LastChangeServerTime = GetServerWorldTimeSeconds() - LiveChangeWindowSeconds - 1.0f;
+		Entry.PresentationDelayCentiseconds = 0;
+		Entry.HarvestYaw = 0;
+		Stock.MarkItemDirty(Entry);
+		if (!SavedStock.bActive && SavedStock.RespawnSeconds >= 0.0f)
+		{
+			RespawnDeadlines.Add(Key, World->GetTimeSeconds() + FMath::Max(0.001f, SavedStock.RespawnSeconds));
+		}
+	}
+	ArmNextRespawnTimer();
+
+	if (AActor* OwningActor = GetOwner())
+	{
+		OwningActor->ForceNetUpdate();
+	}
+	NotifyStockChanged(Key, true);
 	return true;
 }
 
@@ -260,6 +335,10 @@ void URpgHarvestInstanceStockComponent::BeginPlay()
 {
 	Super::BeginPlay();
 	Stock.OwnerComponent = this;
+	if (URpgHarvestPersistenceComponent* Persistence = URpgHarvestPersistenceComponent::FindForWorld(GetWorld()))
+	{
+		Persistence->ApplyInstanceRecords(*this);
+	}
 
 	// Representations that began play before the GameFeature added this component register now; later ones
 	// register themselves on BeginPlay, for example when World Partition streams them in.

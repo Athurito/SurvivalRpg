@@ -4,6 +4,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Harvesting/RpgHarvestInstanceStockComponent.h"
+#include "Harvesting/RpgHarvestPersistenceComponent.h"
 #include "Harvesting/RpgHarvestProfile.h"
 #include "Harvesting/RpgHarvestRewardService.h"
 #include "Harvesting/RpgHarvestStockRules.h"
@@ -130,6 +131,10 @@ FRpgHarvestResult URpgHarvestableInstancesComponent::CommitHarvest_Implementatio
 		RespawnDelaySeconds,
 		Request.PresentationDelaySeconds,
 		HarvestYawDegrees);
+	if (URpgHarvestPersistenceComponent* Persistence = URpgHarvestPersistenceComponent::FindForWorld(GetWorld()))
+	{
+		Persistence->RecordInstance(*this, *Stock, Key);
+	}
 
 	FRpgHarvestRewardService::AwardExperience(HarvestProfile, Request.Harvester, Result.SectionsTaken);
 	Result.Delivery = FRpgHarvestStockRules::ToDelivery(DeliveryResult);

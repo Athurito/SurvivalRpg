@@ -4,6 +4,7 @@
 #include "GameFramework/SaveGame.h"
 #include "GameplayTagContainer.h"
 #include "RpgPlayerSaveData.h"
+#include "RpgWorldSaveParticipant.h"
 #include "SurvivalRpg/Base/RpgBaseStorageSaveTypes.h"
 #include "SurvivalRpg/Inventory/RpgPhysicalStorageTypes.h"
 #include "SurvivalRpg/Crafting/RpgCraftingSaveTypes.h"
@@ -49,8 +50,8 @@ class SURVIVALRPG_API URpgWorldSaveGame : public USaveGame
 	GENERATED_BODY()
 
 public:
-	/** Current top-level save schema emitted by this build. */
-	static constexpr int32 CurrentSchemaVersion = 3;
+	/** Current top-level save schema emitted by this build. V4 adds WorldFeatures. */
+	static constexpr int32 CurrentSchemaVersion = 4;
 
 	/** Physical-storage saves start fresh; prototype quantity-storage saves have no implicit migration. */
 	static constexpr int32 MinimumSupportedSchemaVersion = 3;
@@ -82,6 +83,13 @@ public:
 	/** World-shared storage knowledge restored into the GameState knowledge component. Added in schema V2. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save")
 	FGameplayTagContainer StorageKnowledgeTags;
+
+	/**
+	 * Durable state of features outside the core schema, keyed by IRpgWorldSaveParticipant::GetWorldSaveFeatureId.
+	 * Entries of inactive features are kept unchanged. Added in schema V4.
+	 */
+	UPROPERTY(SaveGame)
+	TMap<FName, FRpgWorldFeatureSaveData> WorldFeatures;
 
 	/** Validates the schema and pointer-free DTO envelopes without mutating any runtime gameplay state. */
 	bool ValidateForLoad(FString& OutError) const;
