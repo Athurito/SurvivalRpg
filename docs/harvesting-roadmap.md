@@ -1467,7 +1467,7 @@ A listen-server PIE session with one client in `Lvl_ResourceParity`:
 | HARV-09d | Ash Wave: Death Wave form that delivers charcoal through yield conversions at a shown ratio, charcoal item, kiln recipe | Merged: [#192](https://github.com/Athurito/SurvivalRpg/pull/192) |
 | HARV-09e | Striding Wave, the axe's ultimate: trees around the walking player fall for a few seconds; strides around the harvester, point-gated ultimate node, ring cue | Merged: [#193](https://github.com/Athurito/SurvivalRpg/pull/193) |
 | HARV-09f | Resource parity across combat styles and a build target that stronger harvesting makes easier; shared pool, parity bench, Kiln Kit, harvest times | Merged: [#194](https://github.com/Athurito/SurvivalRpg/pull/194) |
-| HARV-10a | M5 resource persistence: saved stock per map with stable IDs and remaining respawn times, core world save seam for GameFeatures | In review |
+| HARV-10a | M5 resource persistence: saved stock per map with stable IDs and remaining respawn times, core world save seam for GameFeatures | In review: [#195](https://github.com/Athurito/SurvivalRpg/pull/195) |
 | HARV-10b | M5 portal variant: one portal rule that rearranges known resources | Planned |
 | HARV-10c | M5 co-op load: simultaneous extraction, latency and late join under load; profile large target groups, effects and swarms | Planned |
 
