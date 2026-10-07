@@ -1,0 +1,19 @@
+# Third-party notices
+
+Third-party content shipped with the game, with its licence. Builds that ship
+the content must include the licence text listed here.
+
+| Content | Project assets | Source | Licence |
+| --- | --- | --- | --- |
+| Cinzel font (Regular, Bold, Black), copyright 2020 The Cinzel Project Authors | `Content/SurvivalRpg/UI/Fonts/Cinzel` | [github.com/NDISCOVER/Cinzel](https://github.com/NDISCOVER/Cinzel), `fonts/ttf` | SIL Open Font License 1.1, full text in [licenses/Cinzel-OFL.txt](licenses/Cinzel-OFL.txt) |
+
+## Notes
+
+- **Cinzel (OFL):** the font may be bundled and sold with the game, but not
+  sold on its own. A shipped build must contain the copyright notice and
+  licence text. The reserved name "Cinzel Decorative" belongs to the
+  decorative family; the project uses the unmodified Cinzel files.
+- **Unclear licences:** `Content/SurvivalRpg/UI/Fonts/KnightsQuest` and
+  `Hamletornot` came with Fontspace-style file names and no licence file.
+  Their licence is unverified, so new work does not use them. UI-07 removes the
+  remaining references ([ui-roadmap.md](ui-roadmap.md)).
