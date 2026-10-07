@@ -182,6 +182,7 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestSwarmPlanner
  *   request's beneficiary (rewards, XP, skill gate) and the swarm is its physical harvester (felling direction).
  * - With a StrikeRadius, a strike also commits every other resource of the swarm within it exactly once, taking only
  *   stock no other creature reserved.
+ * - A strike that depletes a resource inside a URpgHarvestChainComponent box takes the box's other resources along.
  * - A creature that arrives at a resource emptied, removed or protected meanwhile heads for another selected resource,
  *   or gives up.
  * - The rewards of all strikes reach the player as one delivery when the last creature finishes: into the inventory,
@@ -348,9 +349,15 @@ private:
 
 	/**
 	 * Server: strikes every work target other than the struck one within StrikeRadius of StruckHit once, with the
-	 * strike's sections but never stock other creatures reserved. The reward batch must be open. Returns the sections taken.
+	 * strike's sections but never stock other creatures reserved. The reward batch must be open. Appends every
+	 * successful commit to OutCommitted and returns the sections taken.
 	 */
-	int32 StrikeAround(int32 CreatureIndex, const UObject* StruckReceiver, const FHitResult& StruckHit, const FVector& FromLocation);
+	int32 StrikeAround(
+		int32 CreatureIndex,
+		const UObject* StruckReceiver,
+		const FHitResult& StruckHit,
+		const FVector& FromLocation,
+		TArray<FRpgHarvestTargetEvaluation>& OutCommitted);
 	void Finish(int32 CreatureIndex, double Now);
 	void FinishAll();
 	void FinishIfDone();

@@ -240,17 +240,14 @@ void URpgHarvestTargetingComponent::UpdateTargetIndicators()
 		return;
 	}
 
-	// The primary swing marks its target; a held aim ability marks every target it would hit.
+	// The primary swing marks its target and the resources it would chain; a held aim ability marks every target.
 	TArray<const FRpgHarvestTargetEvaluation*, TInlineAllocator<8>> IndicatedTargets;
-	for (const FRpgHarvestTargetEvaluation& Target : CurrentPreview.Targets)
+	for (int32 TargetIndex = 0; TargetIndex < CurrentPreview.Targets.Num(); ++TargetIndex)
 	{
-		if (Target.Hit.GetComponent())
+		const FRpgHarvestTargetEvaluation& Target = CurrentPreview.Targets[TargetIndex];
+		if (Target.Hit.GetComponent() && (CurrentPreview.bIsAiming || TargetIndex == 0 || Target.bChained))
 		{
 			IndicatedTargets.Add(&Target);
-		}
-		if (!CurrentPreview.bIsAiming)
-		{
-			break;
 		}
 	}
 

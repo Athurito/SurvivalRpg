@@ -80,6 +80,7 @@ bool FRpgHarvestPreview::IsEquivalent(const FRpgHarvestPreview& Other, const flo
 		if (A.Receiver != B.Receiver ||
 			A.Hit.Item != B.Hit.Item ||
 			A.bInReach != B.bInReach ||
+			A.bChained != B.bChained ||
 			A.Result.Outcome != B.Result.Outcome ||
 			A.Result.SectionsTaken != B.Result.SectionsTaken ||
 			A.Result.bWeakPointHit != B.Result.bWeakPointHit ||

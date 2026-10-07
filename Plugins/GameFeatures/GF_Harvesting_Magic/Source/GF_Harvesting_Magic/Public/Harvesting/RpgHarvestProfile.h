@@ -6,7 +6,8 @@
 
 /**
  * Static designer-authored rules for harvestable resources such as ore veins, trees, and bushes.
- * Runtime stock and availability remain server-owned by the target component and are not persisted between sessions.
+ * Runtime stock and availability remain server-owned by the target component; URpgHarvestPersistenceComponent saves
+ * the stock of resources loaded with the map.
  */
 UCLASS(BlueprintType, Const)
 class GF_HARVESTING_MAGIC_API URpgHarvestProfile : public URpgHarvestRewardProfile

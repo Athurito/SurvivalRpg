@@ -36,6 +36,7 @@ harvesting abilities into Blueprint content belongs to issue
 | Protection | Area powers skip resources inside a harvest protection box and report them as protected. A deliberate single-target swing still harvests them (HARV-07). |
 | Area rewards | A multi-target harvest delivers the rewards of all its targets as one batch: into the inventory, or into one drop at the harvester (HARV-07). |
 | Skill trees | Every tool carries a skill tree in the style of New World (HARV-09a, [skill-trees.md](skill-trees.md)). The tool's trade skill level earns the points. Learned active powers are placed on Q/E/R in the tree, upgrades change their values through tunings, and the tree can be reset for free. The system is core and data-driven, so combat weapons can use it later. |
+| Portal areas | Portal realms are renewable: their resources are never saved and start over whenever the realm loads. A portal rule rearranges known resources instead of adding materials; the first one is root groves, where felling one tree fells the grove (HARV-10b). |
 | Swarm | Grave Swarm is the axe's second awakened power. Its creatures work through every resource in its area, one strike at a time, through the same `IRpgHarvestableTarget` path. The player's player state receives the rewards; the swarm is the physical harvester. A summoned swarm keeps working after a tool switch and ends when the player dies (HARV-08). |
 
 The trees from #177 are Nanite-assembly skeletal meshes with dynamic wind.
@@ -55,6 +56,7 @@ stock rules are kept separate.
 | Harvest input tags | `InputTag.Weapon.Primary` on the main-hand tool; Q/E/R defaults declared by ability sets | No new input tags; ability-set defaults for Q/E/R added in HARV-04 |
 | Harvesting progression | `URpgTradeSkillProgressionComponent` (`Skill.Gathering.*`, saved); tool skill trees in `URpgSkillTreeComponent` | Skill levels exist; skill tree foundation in HARV-09a; skill UI and tool trees in HARV-09b |
 | World persistence of resources | `URpgHarvestPersistenceComponent` saves changed stock with the host's world snapshot | HARV-10a |
+| Portal variation with known resources | Root groves (`URpgHarvestChainComponent`) in a portal realm; renewable portal areas | HARV-10b |
 
 ## C++ boundary decision
 
@@ -101,12 +103,18 @@ stock rules are kept separate.
   - `URpgHarvestPersistenceComponent` (HARV-10a), the server-only GameState
     component that saves and restores the stock. It uses the core seam
     `IRpgWorldSaveParticipant`.
+  - `URpgHarvestChainComponent` and its world registry
+    `URpgHarvestChainSubsystem` (HARV-10b), with the non-reflected
+    `FRpgHarvestChains`. A harvest that depletes a resource in a chain box
+    commits the box's other resources in the same server commit, and the
+    preview shows them.
 - **Designer assets:** item, equipment and ability set definitions, `GA_*`
   abilities, `HP_*` profiles, `LT_*` loot tables, resource actor Blueprints,
   instanced resource component Blueprints (`BPC_HarvestInstances_*`), PCG
   graphs, the falling-tree presentation, protection zone actors, swarm
-  Blueprints and their creatures (`BP_HarvestSwarm_*`), montages,
-  cues, cooldown effects, indicator widgets, tags and test maps.
+  Blueprints and their creatures (`BP_HarvestSwarm_*`), chain boxes such as
+  `BP_HarvestRootGrove`, montages, cues, cooldown effects, indicator widgets,
+  tags, portal realms and test maps.
   They are authored through Unreal MCP.
 
 ## Runtime contract (HARV-01)
@@ -1439,6 +1447,112 @@ A listen-server PIE session with one client in `Lvl_ResourceParity`:
 - **Reset:** no console command clears the saved stock. Deleting the
   `SurvivalRpg_ResourceParity*` slots does.
 
+## Root groves in portal realms (HARV-10b)
+
+The plan's root portal connects tree groups for chain reactions. HARV-10b
+builds it as the first portal rule: a portal realm rearranges known trees into
+root groves instead of adding a new material. Felling one tree of a grove fells
+the whole grove.
+
+### Chain rule
+
+- **Chain box:** `URpgHarvestChainComponent` is a box whose harvestable
+  resources form one chain.
+  - When a harvest depletes a resource inside the box, the same harvest takes
+    the whole remaining stock of the box's other resources, nearest to the
+    depleted one first, up to `MaxChainedTargets`.
+  - The harvester receives their rewards and experience in the same delivery:
+    the open reward batch of the swing, area power or stride pulse, or the
+    swarm's single delivery.
+  - Partial harvests do not chain. A chain does not continue into other boxes,
+    and one harvest runs each box at most once.
+  - Chained resources follow the rules of an area harvest. They need the
+    harvest's tool, protected resources are skipped, and reach and weak points
+    do not apply.
+- **Every method:** swings, area powers and strides chain in the ability's
+  commit. Swarm strikes chain too, including resources hit by their strike
+  radius.
+- **Presentation:** a chained resource is presented after the trigger's delay
+  plus its distance at `ChainSpeed`, up to 2.5 s. Stock and rewards change at
+  once. Instanced resources honor the delay; actor nodes present at once.
+- **Preview:** `EvaluateTargets` appends the resources a harvest would chain
+  and marks them `bChained`. The primary swing marks them too, so the swing
+  that would fell a grove tree shows the whole grove. The commit selects
+  without them and chains from what it actually depleted.
+- **Native parts:** `URpgHarvestChainSubsystem` registers the boxes of a world,
+  like the protection boxes. The non-reflected `FRpgHarvestChains` holds the
+  rules that the commit and the preview share.
+
+### Renewable portal areas
+
+The plan's world model is a persistent home with renewable portal areas.
+- **Rule:** `FRpgHarvestStockRules::IsInRenewableArea` treats a level loaded
+  at runtime as a level instance, such as a portal realm, as renewable. World
+  Partition cells and level instances placed in a map belong to the map.
+- **Not saved:** `URpgHarvestPersistenceComponent` skips resources of
+  renewable areas. Without this, HARV-10a would have saved realm trees: a
+  portal streams its realm under a fixed name at a fixed pocket transform, so
+  felled realm trees would have stayed felled in the next session.
+- **Fresh on load:** when a renewable area unloads,
+  `URpgHarvestInstanceStockComponent::RestoreInstances` drops the stock and
+  respawns of its instances. Actor nodes reload with their authored stock
+  anyway. A realm that opens again starts over.
+
+### Content
+
+- **Grove:** `BP_HarvestRootGrove` in `GF_Harvesting_Magic/Harvesting/Chains`
+  is an actor with a hidden chain box: 8 resources at 700 cm/s.
+- **Realm:** `Lvl_PortalRealm_RootGrove` in `GF_Dev_Sandbox/Maps` is a copy of
+  the Rift Grunt trial realm.
+  - A 75 × 50 m GASP floor holds a PCG dead pine stand of 12 trees.
+  - Grove A covers 6 trees, grove B 4. Two trees have no roots.
+  - The boss stands 58 m from the entry; the exit portal opens beside the
+    entry. The realm has no lights; the overworld lights it.
+- **Encounter:** `DA_PortalEncounter_RootGrove` in `GF_Dev_Sandbox/RootGrove`
+  is a copy of the trial encounter with the grove realm and the prompt "Enter
+  Root Grove".
+- **Parity map:** `Lvl_ResourceParity` has `RootGrove_Portal`, the trial
+  portal with the grove encounter, at the south wall, and a basic sword pickup
+  beside it for the boss. `GF_Dev_Sandbox` now declares its dependency on
+  `GF_Portals_Core`.
+
+### Multiplayer
+
+Listen-server PIE with one client in `Lvl_ResourceParity`. The server called
+`TryEnterPortal` for the client, as the portal's interaction does:
+- **First session:** the client struck an overworld tree once (4 → 3) and
+  entered the portal. Server and client loaded the realm with 12 trees and both
+  groves. Before the swing that would fell a grove A tree, the client's preview
+  listed that tree and the 5 other grove trees with 4 sections each. Stopping
+  PIE saved the world.
+- **Second session:**
+  - The overworld tree was still at 3 on server and client. In the realm, all
+    12 trees were full again, and the stock held only the overworld change.
+  - The felling swing emptied all six grove A trees on server and client.
+    Grove B and the trees without roots stayed full. The client's wood went
+    from 15 to 121, the yield of 21 sections.
+  - After the boss was removed, the client left through the exit portal and
+    the portal was closed. The realm unloaded, and the changed instances went
+    from 8 back to the overworld's 1.
+- **Third session, client window:** before the felling swing, the aimed tree
+  showed 1/4 and the grove trees 4/4. One second after it, the felled tree lay
+  on the ground while the others stood; after 2.5 s the far grove trees fell,
+  away from the player.
+
+### Not done
+
+- **Other rules:** only root groves exist. A broken quarry with connected ore
+  sections and an ash zone remain ideas; the chain box would also link ore,
+  but no content uses it.
+- **Grove visuals:** a grove has no visual of its own. Only the preview of a
+  felling swing marks it.
+- **Felling direction:** chained trees fall away from the harvester or swarm,
+  not from the felled tree.
+- **Boss:** the scripted runs removed the boss instead of fighting it.
+- **Persistent runtime areas:** an area that should persist but loads at
+  runtime as a level instance, such as future player housing, would need an
+  explicit exception.
+
 ## Performance guardrails
 
 - Resources never tick. Respawn uses a timer. Replicated state is a revision,
@@ -1467,8 +1581,8 @@ A listen-server PIE session with one client in `Lvl_ResourceParity`:
 | HARV-09d | Ash Wave: Death Wave form that delivers charcoal through yield conversions at a shown ratio, charcoal item, kiln recipe | Merged: [#192](https://github.com/Athurito/SurvivalRpg/pull/192) |
 | HARV-09e | Striding Wave, the axe's ultimate: trees around the walking player fall for a few seconds; strides around the harvester, point-gated ultimate node, ring cue | Merged: [#193](https://github.com/Athurito/SurvivalRpg/pull/193) |
 | HARV-09f | Resource parity across combat styles and a build target that stronger harvesting makes easier; shared pool, parity bench, Kiln Kit, harvest times | Merged: [#194](https://github.com/Athurito/SurvivalRpg/pull/194) |
-| HARV-10a | M5 resource persistence: saved stock per map with stable IDs and remaining respawn times, core world save seam for GameFeatures | In review: [#195](https://github.com/Athurito/SurvivalRpg/pull/195) |
-| HARV-10b | M5 portal variant: one portal rule that rearranges known resources | Planned |
+| HARV-10a | M5 resource persistence: saved stock per map with stable IDs and remaining respawn times, core world save seam for GameFeatures | Merged: [#195](https://github.com/Athurito/SurvivalRpg/pull/195) |
+| HARV-10b | M5 portal variant: root groves in a portal realm, where felling one tree fells the grove; renewable portal areas | In review |
 | HARV-10c | M5 co-op load: simultaneous extraction, latency and late join under load; profile large target groups, effects and swarms | Planned |
 
 ## Open questions
@@ -1490,6 +1604,6 @@ A listen-server PIE session with one client in `Lvl_ResourceParity`:
 - Not decided yet: home-world regeneration, the timing of the awakening, limits
   on large power states, and the final co-op scope. Until regeneration is
   decided, HARV-10a keeps each profile's respawn and pauses it while the host
-  is offline.
+  is offline. Portal realms renew whenever they load (HARV-10b).
 - The material sets duplicate each other: `ID_Ore` and its relatives versus
   the storage test materials.

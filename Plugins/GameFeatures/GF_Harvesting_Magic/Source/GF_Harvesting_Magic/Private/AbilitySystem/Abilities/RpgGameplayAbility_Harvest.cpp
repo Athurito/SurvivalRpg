@@ -11,6 +11,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameplayEffect.h"
 #include "GameplayTags/RpgHarvestingMagicGameplayTags.h"
+#include "Harvesting/RpgHarvestChainComponent.h"
 #include "Harvesting/RpgHarvestInstanceStockComponent.h"
 #include "Harvesting/RpgHarvestRewardService.h"
 #include "Harvesting/RpgHarvestStockRules.h"
@@ -311,7 +312,8 @@ void URpgGameplayAbility_Harvest::ExecuteAuthorityCommit()
 	FRpgHarvestPreview Selection;
 	if (bHasCommitView || GetViewPoint(*CurrentActorInfo, ViewLocation, ViewRotation))
 	{
-		EvaluateTargetsFromView(*Spec, *CurrentActorInfo, Values, ViewLocation, ViewRotation, Selection);
+		// Chains follow from what the commit actually depletes, so the selection leaves them out.
+		EvaluateTargetsFromView(*Spec, *CurrentActorInfo, Values, ViewLocation, ViewRotation, Selection, false);
 	}
 
 	// A swarm harvests the selection later, creature by creature; this commit only summons it.
@@ -381,9 +383,12 @@ const FRpgHarvestTargetEvaluation* URpgGameplayAbility_Harvest::CommitSelection(
 		}
 	}
 
-	const FRpgHarvestTargetEvaluation* FirstHarvested = nullptr;
-	for (FRpgHarvestTargetEvaluation& Target : Selection.Targets)
+	int32 FirstHarvestedIndex = INDEX_NONE;
+	TArray<float, TInlineAllocator<16>> PresentationDelays;
+	PresentationDelays.SetNumZeroed(Selection.Targets.Num());
+	for (int32 TargetIndex = 0; TargetIndex < Selection.Targets.Num(); ++TargetIndex)
 	{
+		FRpgHarvestTargetEvaluation& Target = Selection.Targets[TargetIndex];
 		UObject* Receiver = Target.Receiver.Get();
 		if (!Target.WouldHarvest() || !Receiver)
 		{
@@ -402,13 +407,29 @@ const FRpgHarvestTargetEvaluation* URpgGameplayAbility_Harvest::CommitSelection(
 				0.0,
 				static_cast<double>(URpgHarvestInstanceStockComponent::MaxPresentationDelaySeconds)));
 		}
+		PresentationDelays[TargetIndex] = Request.PresentationDelaySeconds;
 		Target.Result = IRpgHarvestableTarget::Execute_CommitHarvest(Receiver, Request);
-		if (Target.Result.IsSuccess() && !FirstHarvested)
+		if (Target.Result.IsSuccess() && FirstHarvestedIndex == INDEX_NONE)
 		{
-			FirstHarvested = &Target;
+			FirstHarvestedIndex = TargetIndex;
 		}
 	}
-	return FirstHarvested;
+
+	// A target depleted inside a chain box takes the box's other resources along. Their presentation continues from
+	// the moment the trigger is presented, and their rewards join the open batch.
+	if (UWorld* World = GetWorld(); World && FirstHarvestedIndex != INDEX_NONE)
+	{
+		TSet<TObjectKey<URpgHarvestChainComponent>> ChainedBoxes;
+		TArray<FRpgHarvestTargetEvaluation> Chained;
+		FRpgHarvestRequest TriggerRequest = RequestTemplate;
+		for (int32 TargetIndex = 0; TargetIndex < PresentationDelays.Num(); ++TargetIndex)
+		{
+			TriggerRequest.PresentationDelaySeconds = PresentationDelays[TargetIndex];
+			FRpgHarvestChains::Commit(*World, TriggerRequest, Selection.Targets[TargetIndex], ChainedBoxes, Chained);
+		}
+		Selection.Targets.Append(MoveTemp(Chained));
+	}
+	return FirstHarvestedIndex != INDEX_NONE ? &Selection.Targets[FirstHarvestedIndex] : nullptr;
 }
 
 void URpgGameplayAbility_Harvest::StartStride(const FRpgHarvestRequest& RequestTemplate, const FRpgHarvestTunedValues& Values)
@@ -663,7 +684,7 @@ void URpgGameplayAbility_Harvest::EvaluateTargets(
 	}
 	FRpgHarvestTunedValues Values;
 	ResolveTunedValues(Spec, ActorInfo, Values);
-	EvaluateTargetsFromView(Spec, ActorInfo, Values, ViewLocation, ViewRotation, OutPreview);
+	EvaluateTargetsFromView(Spec, ActorInfo, Values, ViewLocation, ViewRotation, OutPreview, true);
 }
 
 void URpgGameplayAbility_Harvest::ResolveTunedValues(
@@ -725,7 +746,8 @@ void URpgGameplayAbility_Harvest::EvaluateTargetsFromView(
 	const FRpgHarvestTunedValues& Values,
 	const FVector& ViewLocation,
 	const FRotator& ViewRotation,
-	FRpgHarvestPreview& OutPreview) const
+	FRpgHarvestPreview& OutPreview,
+	const bool bPreviewChains) const
 {
 	OutPreview = FRpgHarvestPreview();
 	OutPreview.AbilityId = HarvestAbilityId;
@@ -753,6 +775,10 @@ void URpgGameplayAbility_Harvest::EvaluateTargetsFromView(
 	if (SummonsSwarm())
 	{
 		PlanSwarm(*World, *Avatar, Values, OutPreview);
+	}
+	if (bPreviewChains)
+	{
+		FRpgHarvestChains::AppendPreview(*World, RequestTemplate, OutPreview.Targets);
 	}
 }
 

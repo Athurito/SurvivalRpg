@@ -325,6 +325,23 @@ void URpgHarvestInstanceStockComponent::UnregisterInstances(const URpgHarvestabl
 	});
 }
 
+int32 URpgHarvestInstanceStockComponent::RestoreInstances(const URpgHarvestableInstancesComponent& Instances)
+{
+	if (!HasStockAuthority())
+	{
+		return 0;
+	}
+
+	int32 NumRestored = 0;
+	TArray<FIntVector> Keys;
+	Instances.InstanceIndexByKey.GetKeys(Keys);
+	for (const FIntVector& Key : Keys)
+	{
+		NumRestored += RestoreStock(Key) ? 1 : 0;
+	}
+	return NumRestored;
+}
+
 void URpgHarvestInstanceStockComponent::OnRegister()
 {
 	Super::OnRegister();
