@@ -57,6 +57,7 @@ stock rules are kept separate.
 | Harvesting progression | `URpgTradeSkillProgressionComponent` (`Skill.Gathering.*`, saved); tool skill trees in `URpgSkillTreeComponent` | Skill levels exist; skill tree foundation in HARV-09a; skill UI and tool trees in HARV-09b |
 | World persistence of resources | `URpgHarvestPersistenceComponent` saves changed stock with the host's world snapshot | HARV-10a |
 | Portal variation with known resources | Root groves (`URpgHarvestChainComponent`) in a portal realm; renewable portal areas | HARV-10b |
+| Co-op load and large target groups | Stock shards (`ARpgHarvestInstanceStockShard`), deferred navigation updates, co-op PIE load tests | HARV-10c |
 
 ## C++ boundary decision
 
@@ -67,7 +68,8 @@ stock rules are kept separate.
   designer content.
 - **Runtime truth:** the server owns the remaining stock of each resource in
   `URpgHarvestableComponent`, or for instanced resources in the GameState's
-  `URpgHarvestInstanceStockComponent`. The stock is replicated. Since
+  `URpgHarvestInstanceStockComponent`. The stock is replicated, for instanced
+  resources through stock shards since HARV-10c. Since
   HARV-10a, the stock of resources loaded with the map is saved with the
   host's world snapshot. Rewards go through `FRpgHarvestRewardService` into
   `URpgInventoryManagerComponent`. Unlocks read saved trade-skill levels.
@@ -108,6 +110,9 @@ stock rules are kept separate.
     `FRpgHarvestChains`. A harvest that depletes a resource in a chain box
     commits the box's other resources in the same server commit, and the
     preview shows them.
+  - `ARpgHarvestInstanceStockShard` (HARV-10c), a runtime-only replicated
+    actor that carries one share of the instance stock, so a late joiner
+    receives thousands of changed instances.
 - **Designer assets:** item, equipment and ability set definitions, `GA_*`
   abilities, `HP_*` profiles, `LT_*` loot tables, resource actor Blueprints,
   instanced resource component Blueprints (`BPC_HarvestInstances_*`), PCG
@@ -494,7 +499,7 @@ stored changes. The ranges come from two runs.
 - **Memory:** about 40 bytes of key map per loaded instance, local only.
 - **Network:** one FastArray entry per changed instance, sent to every client
   because the GameState is always relevant. The bytes were not measured with
-  Network Insights.
+  Network Insights. HARV-10c measured them and moved the stock into shards.
 - **Engine costs dominate:**
   - Physics bodies of instanced meshes: `Init Body` takes about 6 µs per
     instance in this test.
@@ -1553,15 +1558,125 @@ Listen-server PIE with one client in `Lvl_ResourceParity`. The server called
   runtime as a level instance, such as future player housing, would need an
   explicit exception.
 
+## Co-op load (HARV-10c)
+
+HARV-10c measured what several players do to the harvest systems at once:
+simultaneous extraction, latency, late joins, large target groups, their
+effects and swarms. Two limits of the instance stock broke under load; HARV-10c
+fixes both.
+
+### Findings and fixes
+
+- **The stock stopped replicating beyond about 1,700 changed instances.**
+  - The stock was one FastArray on the GameState. A FastArray update carries
+    at most 2,048 changes, and an actor's replication must fit one bunch of
+    64 KB. An entry costs about 37 bytes.
+  - When 2,984 instances changed at once, the server refused the GameState's
+    111 KB bunch, and the connected client never received the change. A late
+    joiner's first bunch carries every entry, so the same limit applies to
+    any world with that many changed instances. A saved world grows toward
+    it, because partly harvested instances never reset.
+  - **Fix:** `ARpgHarvestInstanceStockShard`. The stock component spreads its
+    entries over 16 always-relevant shard actors, chosen by a CRC of the
+    instance key. Each shard replicates its share over its own channel, so
+    the stock holds about 25,000 changed instances before one shard reaches
+    the limits. The component's API is unchanged. On clients, shards register
+    with the stock component and present their updates.
+  - A key index per shard replaces the linear search over all entries, and
+    scheduling a respawn no longer scans every pending respawn.
+- **Hiding an instance recomputed the bounds of its whole field.**
+  - `UpdateInstanceTransform` on a navigation-relevant instanced mesh
+    recomputes the bounds of every instance for its navigation update. The
+    trunk proxies and ore veins block all channels, so they are
+    navigation-relevant.
+  - In a field of 10,000 instances, each depletion cost 0.3 ms. Streaming in
+    a field with 6,000 stored depletions took 1.9 s on every machine.
+  - **Fix:** `URpgHarvestableInstancesComponent` collects the navigation
+    updates of the instances it presents and applies them once on the next
+    tick. Linked visible meshes have no collision and update directly.
+
+### Budget
+
+`SurvivalRpg.Harvesting.Instances.LargeStockBudget` holds a field of 10,000
+instances in which 6,000 are depleted and wait for their respawn. Measured in
+the Development editor with null RHI; an Unreal Insights trace found the cause.
+
+| Work | Before | After |
+| --- | --- | --- |
+| Stream-in of the field with 6,000 stored depletions | 1,888 ms | 16–33 ms |
+| Depleting commit | 334 µs | 8.5–11 µs |
+| Evaluation for the preview | 3.8 µs | 1.0–1.6 µs |
+| Fullest shard (average 375 entries) | — | 407 entries |
+
+The test ceilings are about ten times the measured costs. The existing
+`Instances.Budget` stays at its HARV-06 values.
+
+### Multiplayer
+
+`SurvivalRpg.Network.LootHarvestPIE.CoopHarvestersShareStockAndLateJoinUnderLoad`
+runs a dedicated server with one client and a dense field of 3,600 instances.
+Every packet arrives 100 ms late and 2 % are lost, on the server and the
+first client:
+- **Simultaneous extraction:** two players' strides stand on the same instance
+  and pulse in the same frames. Each pulse, one takes three sections of the
+  four nearest instances, the other takes what is left. 21 instances were
+  emptied, and the players received exactly their 84 sections, for example
+  45 and 39.
+- **Mass change:** 3,005 instances changed in one frame. The connected client
+  had all of them after 1.9–2.1 s; the server sent it 120–132 KB meanwhile.
+- **Late join:** a client that joined then had the whole stock after
+  2.2–3.0 s, from 123–138 KB in total, and presented it on stream-in.
+- **Mass respawn:** more than 2,048 instances respawned in one frame, and
+  every client followed.
+- Before the fix, the same test failed at the mass change with the FastArray
+  warning and the refused bunch.
+
+`...LootHarvestPIE.CoopSwarmsShareTargetsAndStayWithinBandwidth`: two players
+summon two swarms each, 64 creatures over the same 32 instances, on the same
+poor connection.
+- The swarms emptied the instances in 5.0 s. Every section arrived once: all
+  128, split between the players, for example 89 and 39.
+- The server sent the client 39.5 KB meanwhile, 7.9 KB/s.
+- Swarms replicate only within the default net cull distance of 150 m. A
+  farther client sees no creatures, but the stock still shows the felled
+  trees.
+
+### Effects
+
+A listen-server PIE session with one client in `Lvl_ResourceParity` felled
+root grove A in the portal realm, six trees on each machine, during an
+Unreal Insights trace:
+- Spawning one falling tree, from `BPC_HarvestInstances_DeadPine` through
+  `BP_HarvestFallingTree` and its skeletal mesh, took 0.67 ms on average and
+  1.0 ms at most.
+- A falling tree costs about 0.08 ms per frame while it falls and sinks, about
+  3.5 s; most of it is the skeletal mesh tick.
+- With both worlds in one process, the worst frame took 22 ms against a
+  median of 14.7 ms.
+- A harvest plays one cue, not one per target.
+- Extrapolated, 64 trees falling at once cost about 5 ms per frame on each
+  machine. Waves and chains spread their spawns over up to 2.5 s.
+
+### Not done
+
+- **Entry size:** an entry costs about 37 bytes on the wire. Packing it could
+  halve the bytes of a late join.
+- **Spatial relevancy:** every client receives the whole stock. A large open
+  world would limit shards by distance.
+- **Falling trees:** no cap and no pooling.
+- **Real networks:** latency and loss were emulated in PIE only.
+
 ## Performance guardrails
 
 - Resources never tick. Respawn uses a timer. Replicated state is a revision,
   a section count, an active flag and a timestamp.
 - Indicators run only on the local client: one query at about 15 Hz, never one
   per resource. The highlight changes only when the target changes.
-- In the open world, PCG instances stay actor-free. The GameState keeps sparse
-  state only for changed instances. HARV-06 measured the bridge with Unreal
-  Insights; see its budget.
+- In the open world, PCG instances stay actor-free. The stock keeps sparse
+  state only for changed instances and replicates it through 16 shards
+  (HARV-10c). HARV-06 measured the bridge with Unreal Insights; see its budget.
+- Instances update navigation once per tick, not once per presented instance
+  (HARV-10c).
 
 ## Tasks
 
@@ -1582,8 +1697,8 @@ Listen-server PIE with one client in `Lvl_ResourceParity`. The server called
 | HARV-09e | Striding Wave, the axe's ultimate: trees around the walking player fall for a few seconds; strides around the harvester, point-gated ultimate node, ring cue | Merged: [#193](https://github.com/Athurito/SurvivalRpg/pull/193) |
 | HARV-09f | Resource parity across combat styles and a build target that stronger harvesting makes easier; shared pool, parity bench, Kiln Kit, harvest times | Merged: [#194](https://github.com/Athurito/SurvivalRpg/pull/194) |
 | HARV-10a | M5 resource persistence: saved stock per map with stable IDs and remaining respawn times, core world save seam for GameFeatures | Merged: [#195](https://github.com/Athurito/SurvivalRpg/pull/195) |
-| HARV-10b | M5 portal variant: root groves in a portal realm, where felling one tree fells the grove; renewable portal areas | In review: [#196](https://github.com/Athurito/SurvivalRpg/pull/196) |
-| HARV-10c | M5 co-op load: simultaneous extraction, latency and late join under load; profile large target groups, effects and swarms | Planned |
+| HARV-10b | M5 portal variant: root groves in a portal realm, where felling one tree fells the grove; renewable portal areas | Merged: [#196](https://github.com/Athurito/SurvivalRpg/pull/196) |
+| HARV-10c | M5 co-op load: stock shards for late joins beyond 2,048 changed instances, navigation updates once per tick, co-op PIE load tests with latency and loss; profiles of large target groups, effects and swarms | In review |
 
 ## Open questions
 

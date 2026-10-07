@@ -452,6 +452,134 @@ bool FRpgHarvestInstancesBudgetTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestInstancesLargeStockBudgetTest,
+	"SurvivalRpg.Harvesting.Instances.LargeStockBudget",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestInstancesLargeStockBudgetTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestableInstancesTests;
+
+	// A long co-op session in a saved world: most of a dense field differs from its authored stock, and every depleted
+	// instance waits for its respawn.
+	constexpr int32 GridSize = 100;
+	constexpr int32 InstanceCount = GridSize * GridSize;
+	constexpr int32 ChangedCount = 6000;
+	constexpr double Spacing = 150.0;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	URpgHarvestInstanceStockComponent* Stock = AddInstanceStock(World);
+	URpgHarvestProfile* Profile = MakeProfile(World, 4, 600.0f);
+	Profile->LootTable->Groups[0].GroupChancePercent = 0.0f;
+	ARpgHarvestAutomationTestPlayerState* Harvester = SpawnHarvester(World);
+	UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (!TestNotNull(TEXT("Instance stock exists"), Stock) ||
+		!TestNotNull(TEXT("Cube mesh exists"), Cube) ||
+		!TestNotNull(TEXT("Harvester exists"), Harvester))
+	{
+		return false;
+	}
+	TestWorld.PrimeTimerManager();
+
+	TArray<FTransform> Transforms;
+	Transforms.Reserve(InstanceCount);
+	for (int32 Y = 0; Y < GridSize; ++Y)
+	{
+		for (int32 X = 0; X < GridSize; ++X)
+		{
+			Transforms.Emplace(FVector(X * Spacing, Y * Spacing, 0.0));
+		}
+	}
+	auto StreamIn = [World, Profile, Cube, &Transforms](double& OutBridgeMs)
+	{
+		ARpgHarvestAutomationInstancesActor* Actor = World->SpawnActorDeferred<ARpgHarvestAutomationInstancesActor>(
+			ARpgHarvestAutomationInstancesActor::StaticClass(),
+			FTransform::Identity,
+			nullptr,
+			nullptr,
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (!Actor)
+		{
+			return Actor;
+		}
+		Actor->Instances->ConfigureProfile(Profile);
+		Actor->Instances->SetStaticMesh(Cube);
+		Actor->Instances->AddInstances(Transforms, false);
+		Actor->FinishSpawning(FTransform::Identity);
+		const double StartSeconds = FPlatformTime::Seconds();
+		if (!Actor->HasActorBegunPlay())
+		{
+			Actor->DispatchBeginPlay();
+		}
+		OutBridgeMs = (FPlatformTime::Seconds() - StartSeconds) * 1000.0;
+		return Actor;
+	};
+
+	double FirstBridgeMs = 0.0;
+	ARpgHarvestAutomationInstancesActor* Field = StreamIn(FirstBridgeMs);
+	if (!TestNotNull(TEXT("Resource field exists"), Field))
+	{
+		return false;
+	}
+
+	// Every commit depletes one instance and schedules its respawn, so the stock and the respawn queue keep growing.
+	double StartSeconds = FPlatformTime::Seconds();
+	int32 Depleted = 0;
+	for (int32 Index = 0; Index < ChangedCount; ++Index)
+	{
+		Depleted += Field->Instances->CommitHarvest_Implementation(
+			MakeInstanceRequest(Field->Instances, Index * 7 % InstanceCount, Harvester, 4)).bDepleted ? 1 : 0;
+	}
+	const double CommitUs = (FPlatformTime::Seconds() - StartSeconds) * 1000000.0 / ChangedCount;
+	TestEqual(TEXT("Every budget harvest depleted its instance"), Depleted, ChangedCount);
+	TestEqual(TEXT("Every depleted instance is stored"), Stock->GetNumChangedInstances(), ChangedCount);
+
+	// Target previews read the stock of changed and untouched instances alike.
+	StartSeconds = FPlatformTime::Seconds();
+	int32 Evaluated = 0;
+	for (int32 Index = 0; Index < ChangedCount; ++Index)
+	{
+		Evaluated += IRpgHarvestableTarget::Execute_EvaluateHarvest(
+			Field->Instances,
+			MakeInstanceRequest(Field->Instances, Index * 13 % InstanceCount, Harvester)).Outcome != ERpgHarvestOutcome::Invalid ? 1 : 0;
+	}
+	const double EvaluateUs = (FPlatformTime::Seconds() - StartSeconds) * 1000000.0 / ChangedCount;
+	TestEqual(TEXT("Every budget evaluation resolved its instance"), Evaluated, ChangedCount);
+
+	Field->Destroy();
+	double StreamBridgeMs = 0.0;
+	ARpgHarvestAutomationInstancesActor* Streamed = StreamIn(StreamBridgeMs);
+	TestTrue(TEXT("The streamed field presents every stored instance"), Streamed && Streamed->Instances->EventCount == ChangedCount);
+
+	// The stock replicates through shards, each of which must stay well below the engine's per-update and initial-bunch
+	// limits (2,048 changes, 64 KB or about 1,700 entries).
+	const int32 MaxShardEntries = Stock->GetMaxShardEntries();
+	const int32 AverageShardEntries = ChangedCount / URpgHarvestInstanceStockComponent::NumShards;
+
+	AddInfo(FString::Printf(
+		TEXT("Large harvest stock budget: %d instances, %d depleted with pending respawns. Bridge BeginPlay: %.2f ms without stored stock, %.2f ms presenting %d stored instances. Commit %.1f us, evaluation %.1f us. Fullest shard: %d entries, average %d."),
+		InstanceCount,
+		ChangedCount,
+		FirstBridgeMs,
+		StreamBridgeMs,
+		ChangedCount,
+		CommitUs,
+		EvaluateUs,
+		MaxShardEntries,
+		AverageShardEntries));
+
+	// Before HARV-10c the stream-in took 1.9 s and a commit 334 us: every hidden instance recomputed the bounds of all
+	// 10,000 instances, and stock lookups scanned every entry. Ceilings are roughly ten times the measured cost.
+	TestTrue(TEXT("The bridge presents 6,000 stored depletions on stream-in within 200 ms"), StreamBridgeMs < 200.0);
+	TestTrue(TEXT("A depleting commit with 6,000 stored instances stays within 100 us"), CommitUs < 100.0);
+	TestTrue(TEXT("An evaluation with 6,000 stored instances stays within 50 us"), EvaluateUs < 50.0);
+	TestTrue(TEXT("The key hash spreads the stock evenly over the shards"), MaxShardEntries < 2 * AverageShardEntries);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgHarvestInstancesLinkedPresentationTest,
 	"SurvivalRpg.Harvesting.Instances.LinkedPresentationFollowsStock",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

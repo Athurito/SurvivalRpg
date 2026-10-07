@@ -161,6 +161,8 @@ private:
 	void ArmPresentationTimer();
 	void HandlePresentationTimer();
 	void SetLinkedInstancesVisible(int32 InstanceIndex, bool bShow);
+	bool UpdatePresentedTransform(UInstancedStaticMeshComponent& Component, int32 InstanceIndex, const FTransform& LocalTransform);
+	void FlushNavigationUpdates();
 
 	/** One visible instance of a sibling component that presents a resource instance. */
 	struct FLinkedInstance
@@ -192,6 +194,15 @@ private:
 
 	/** One timer wakes only for the next due presentation; no tick is used. */
 	FTimerHandle PresentationTimerHandle;
+
+	/**
+	 * World transforms of instances presented since the last navigation update, before and after each change. The
+	 * next tick updates navigation once for all of them. Local.
+	 */
+	TArray<FTransform> DeferredNavigationTransforms;
+
+	/** Wakes on the next tick to update navigation for the instances presented this frame. */
+	FTimerHandle NavigationFlushTimerHandle;
 
 	/** Server-only guard that rejects delegate-driven re-entry while one commit is in progress. */
 	bool bCommitInProgress = false;
