@@ -54,6 +54,17 @@ It records the accepted decisions and the task sequence. The style itself
 | UI-06 | Tooltip, context menu, split and drop dialogs, toasts, drag visual | Planned |
 | UI-07 | Menus (game menu tabs, main menu, settings, respawn), then remove KnightsQuest | Planned |
 
+## Open findings outside UI
+
+- **Character XP curve:** `DA_PlayerProgression` has no `XPToNextLevel`
+  curve.
+  - `URpgPlayerProgressionComponent::TryLevelUp` stops when the next level
+    costs nothing, so the character level never rises.
+  - The stats column (UI-03) therefore shows only the experience (`10 XP`)
+    with an empty bar.
+  - This is progression content and is fixed in a separate task. Once the
+    curve is assigned, the column shows `XP / next` without UI changes.
+
 ## Style foundation (UI-01)
 
 - **Assets:** the palette, materials, fonts and styles listed in the style
