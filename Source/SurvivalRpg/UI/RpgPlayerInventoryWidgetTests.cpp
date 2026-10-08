@@ -34,7 +34,6 @@
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
-#include "Components/CanvasPanelSlot.h"
 #include "Components/Border.h"
 #include "Components/Image.h"
 #include "Components/Overlay.h"
@@ -579,20 +578,10 @@ bool FRpgPlayerInventoryAuthoredContentHostsTest::RunTest(const FString& Paramet
 {
 	using namespace RpgPlayerInventoryWidgetTests;
 
-	struct FExpectedContentHost
-	{
-		FName Name;
-		FVector2D Position;
-	};
-
-	const FExpectedContentHost ExpectedHosts[] = {
-		{TEXT("Content_Pockets"), FVector2D(896.0, 116.0)},
-		{TEXT("Content_Backpack"), FVector2D(900.0, 308.0)},
-		{TEXT("Content_Belt"), FVector2D(1296.0, 116.0)},
-		{TEXT("Content_Pouch"), FVector2D(1296.0, 308.0)},
-		{TEXT("Content_ResourceBag"), FVector2D(1296.0, 500.0)},
-	};
-	const FName ProviderHostNames[] = {
+	// Nesting, positions, order and wrappers of the hosts are designer-owned layout (UI-02). Only each host's
+	// native binding contract is stable.
+	const FName ExpectedHostNames[] = {
+		TEXT("Content_Pockets"),
 		TEXT("Content_Backpack"),
 		TEXT("Content_Belt"),
 		TEXT("Content_Pouch"),
@@ -623,13 +612,10 @@ bool FRpgPlayerInventoryAuthoredContentHostsTest::RunTest(const FString& Paramet
 		return false;
 	}
 
-	UCanvasPanel* InventoryCanvas =
-		Cast<UCanvasPanel>(AuthoredTree->FindWidget(TEXT("InventoryCanvas")));
 	UOverlay* RootOverlay = Cast<UOverlay>(RootTree->FindWidget(TEXT("RootOverlay")));
 	UWidget* RootPane = RootTree->FindWidget(TEXT("PlayerInventoryPane"));
 	UWidget* DragVisualCanvas = RootTree->FindWidget(TEXT("DragVisualCanvas"));
-	if (!TestNotNull(TEXT("Pane authors InventoryCanvas"), InventoryCanvas) ||
-		!TestNotNull(TEXT("Standalone root authors RootOverlay"), RootOverlay) ||
+	if (!TestNotNull(TEXT("Standalone root authors RootOverlay"), RootOverlay) ||
 		!TestNotNull(TEXT("Standalone root embeds PlayerInventoryPane"), RootPane) ||
 		!TestNotNull(TEXT("Standalone root retains DragVisualCanvas"), DragVisualCanvas))
 	{
@@ -657,52 +643,27 @@ bool FRpgPlayerInventoryAuthoredContentHostsTest::RunTest(const FString& Paramet
 		TEXT("Passive pane owns no CommonUI action bar"),
 		AuthoredTree->FindWidget(TEXT("ActionBar")));
 
-	TSet<int32> AuthoredChildIndices;
 	UClass* CanonicalContentHostClass = nullptr;
-	for (const FExpectedContentHost& Expected : ExpectedHosts)
+	for (const FName HostName : ExpectedHostNames)
 	{
-		UWidget* Host = AuthoredTree->FindWidget(Expected.Name);
+		UWidget* Host = AuthoredTree->FindWidget(HostName);
 		if (!TestNotNull(
-			*FString::Printf(TEXT("%s is authored"), *Expected.Name.ToString()),
+			*FString::Printf(TEXT("%s is authored"), *HostName.ToString()),
 			Host))
 		{
 			return false;
 		}
 
 		TestTrue(
-			*FString::Printf(TEXT("%s uses the native SlotGroup host contract"), *Expected.Name.ToString()),
+			*FString::Printf(TEXT("%s uses the native SlotGroup host contract"), *HostName.ToString()),
 			Host->IsA<URpgInventorySlotGroupWidget>());
-		TestEqual(
-			*FString::Printf(TEXT("%s is a direct InventoryCanvas child"), *Expected.Name.ToString()),
-			Host->GetParent(),
-			static_cast<UPanelWidget*>(InventoryCanvas));
-
-		UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(Host->Slot);
-		if (!TestNotNull(
-			*FString::Printf(TEXT("%s uses a CanvasPanelSlot"), *Expected.Name.ToString()),
-			CanvasSlot))
-		{
-			return false;
-		}
-		TestTrue(
-			*FString::Printf(TEXT("%s is authored Size To Content"), *Expected.Name.ToString()),
-			CanvasSlot->GetAutoSize());
-		TestTrue(
-			*FString::Printf(TEXT("%s keeps its canonical authored position"), *Expected.Name.ToString()),
-			CanvasSlot->GetPosition().Equals(Expected.Position));
-
-		const int32 ChildIndex = InventoryCanvas->GetChildIndex(Host);
-		TestTrue(
-			*FString::Printf(TEXT("%s has a unique Canvas child index"), *Expected.Name.ToString()),
-			ChildIndex != INDEX_NONE && !AuthoredChildIndices.Contains(ChildIndex));
-		AuthoredChildIndices.Add(ChildIndex);
 
 		if (!CanonicalContentHostClass)
 		{
 			CanonicalContentHostClass = Host->GetClass();
 		}
 		TestEqual(
-			*FString::Printf(TEXT("%s uses the canonical authored host class"), *Expected.Name.ToString()),
+			*FString::Printf(TEXT("%s uses the canonical authored host class"), *HostName.ToString()),
 			Host->GetClass(),
 			CanonicalContentHostClass);
 	}
@@ -713,24 +674,6 @@ bool FRpgPlayerInventoryAuthoredContentHostsTest::RunTest(const FString& Paramet
 		FString(TEXT(
 			"/Game/SurvivalRpg/Inventory/UI/"
 			"CUI_InventorySlotGroupEntry.CUI_InventorySlotGroupEntry_C")));
-
-	int32 PreviousProviderIndex = INDEX_NONE;
-	for (const FName ProviderHostName : ProviderHostNames)
-	{
-		const UWidget* ProviderHost = AuthoredTree->FindWidget(ProviderHostName);
-		const int32 ProviderIndex =
-			ProviderHost ? InventoryCanvas->GetChildIndex(ProviderHost) : INDEX_NONE;
-		if (PreviousProviderIndex != INDEX_NONE)
-		{
-			TestEqual(
-				*FString::Printf(
-					TEXT("%s immediately follows the previous provider host"),
-					*ProviderHostName.ToString()),
-				ProviderIndex,
-				PreviousProviderIndex + 1);
-		}
-		PreviousProviderIndex = ProviderIndex;
-	}
 
 	TestEqual(
 		TEXT("DragVisualCanvas remains the final root child"),
@@ -761,17 +704,17 @@ bool FRpgPlayerInventoryAuthoredContentHostsTest::RunTest(const FString& Paramet
 		return false;
 	}
 
-	for (const FExpectedContentHost& Expected : ExpectedHosts)
+	for (const FName HostName : ExpectedHostNames)
 	{
-		UWidget* RuntimeHost = RuntimePane->GetWidgetFromName(Expected.Name);
+		UWidget* RuntimeHost = RuntimePane->GetWidgetFromName(HostName);
 		const FObjectPropertyBase* BindWidgetProperty =
 			FindFProperty<FObjectPropertyBase>(
 				URpgPlayerInventoryPaneWidget::StaticClass(),
-				Expected.Name);
+				HostName);
 		TestTrue(
 			*FString::Printf(
 				TEXT("%s binds into the exact native presenter property"),
-				*Expected.Name.ToString()),
+				*HostName.ToString()),
 			RuntimeHost &&
 				BindWidgetProperty &&
 				BindWidgetProperty->GetObjectPropertyValue_InContainer(RuntimePane) ==
@@ -2030,12 +1973,6 @@ bool FRpgCarrySlotPresentationLifecycleTest::RunTest(const FString& Parameters)
 		TEXT("Carry item icon paints above the holstered state fill"),
 		IndicatorParent->GetChildIndex(ItemVisualLayer) >
 			IndicatorParent->GetChildIndex(HolsteredIndicator));
-	TestTrue(
-		TEXT("Carry active state remains a subtle background tint"),
-		ActiveIndicator->GetBrushColor().A <= 0.1f);
-	TestTrue(
-		TEXT("Carry holstered state remains a subtle background tint"),
-		HolsteredIndicator->GetBrushColor().A <= 0.1f);
 	UMVVMView* View =
 		UMVVMSubsystem::GetViewFromUserWidget(Widget);
 	if (!TestNotNull(

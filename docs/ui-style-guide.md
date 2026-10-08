@@ -81,6 +81,9 @@ everything else uses the engine's Roboto. Text styles are in `Text/`.
 | `CUI_TextStyle_NodeName` | Cinzel Bold, spacing 10, shadow | 12 | TextPrimary | Skill node names |
 | `CUI_TextStyle_StateLabel` | Cinzel Bold, spacing 120, shadow | 18 | Accent | State labels such as LEARNED |
 | `CUI_TextStyle_KeyBadge` | Cinzel Bold, shadow | 16 | TextPrimary | Key badges (Q, E, R) |
+| `CUI_TextStyle_SectionTitle` | Cinzel Bold, spacing 100, shadow | 15 | TextPrimary | Container titles such as POCKETS and BACKPACK |
+| `CUI_TextStyle_SlotCaption` | Cinzel Regular, spacing 140, shadow | 11 | TextMuted | Captions above equipment slots |
+| `CUI_TextStyle_StackCount` | Roboto Bold, shadow | 11 | TextPrimary | Stack counts on inventory items |
 
 ## Spacing and sizes
 
@@ -89,8 +92,9 @@ everything else uses the engine's Roboto. Text styles are in `Text/`.
 - **Corners:** 6 for panels, 4 for controls and slots, 2–3 for cells and bars.
   The materials take radii in screen pixels.
 - **Edges:** 1 for outlines, 1.5 for selection, 2 for focus.
-- **Inventory cells:** 56 with 2 padding, a 58 stride (decided in UI-02 after
-  measuring the grids).
+- **Inventory cells:** 56 with 2 padding, a 58 stride. The class defaults of
+  `CUI_SpatialInventoryGrid` set them; no host overrides them, and no
+  inventory sits in a scale box, so every grid shows the same cell size.
 
 ## Materials
 
@@ -150,6 +154,11 @@ material's colour shows.
 | `MI_UI_Frame_Row` | Panel | List rows; dim iron edge, gold when the widget tints it as selected |
 | `MI_UI_Glyph_Lock`, `_Forbidden`, `_Diamond` | Glyph | Lock, forbidden sign and diamond badges |
 | `MI_UI_TabMarker`, `_TabMarkerDim` | Glyph | Underline marker with a diamond under active and hovered tabs |
+| `MI_UI_GearSlotFill` | Panel | Chamfered iron fill inside equipment and weapon slot frames |
+| `MI_UI_GridCellFill` | Panel | Iron fill of an inventory grid cell under its frame |
+| `MI_UI_ItemFill` | Panel | Lighter plate behind an item that occupies cells |
+| `MI_UI_SlotActive` | Panel | Gold glow of the weapon or off-hand item in hand |
+| `MI_UI_SlotStateRing` | Panel | Edge-only ring a slot tints for focus, valid and invalid drops |
 
 `M_UI_Glyph` draws small symbols from signed distances:
 - **`GlyphType`:** 0 lock, 1 forbidden sign, 2 diamond, 3 tab marker.
@@ -162,16 +171,31 @@ The shape adapts to any widget size, so no 9-slice margin is needed.
 
 `Content/SurvivalRpg/UI/Art` holds the user's art set, in one engraving
 style:
-- `Icons/`: skills, professions, categories, crafting and navigation.
-- `Frames/`: panels, tooltip, slots and controls.
-- `Ornaments/` and `Backgrounds/`.
+- `Icons/`: skills, professions, categories, crafting and navigation, and
+  `Icons/gear` with the equipment glyphs (UI-02).
+- `Frames/`: panels, tooltip, slots and controls, and the gear frames
+  `T_UI_Gear_Frame_Cell`, `_Equipment`, `_Weapon` and `_Container`.
+- `Ornaments/` (including the paper doll `T_UI_Gear_BodySilhouette`) and
+  `Backgrounds/`.
 
 Rules:
+- **Box and border brushes draw texture margins in texture pixels.** Slate
+  sizes the margins of a texture brush drawn as `Box` or `Border` from the
+  texture's pixel size; the brush's image size does not scale them (it only
+  does for material brushes). A frame texture is therefore exported at the
+  size it should appear on screen:
+  - grid cell frame 64 × 64, margin 0.16 (10 px corners);
+  - equipment slot frame 80 × 104, margin 0.16 × 0.123;
+  - weapon slot frame 300 × 64, margin 0.034 × 0.16;
+  - container frame 110 × 147, margin 0.16 × 0.12.
+- **Equipment glyphs** mark empty slots: bone white at about 24 % opacity, set
+  per slot through the `EmptyGlyphTexture` variable of `CUI_GearSlot` and
+  `CUI_CarrySlot`.
 - **Icons** are bone-white engravings with transparency. Tint them per state
   through the image colour; do not draw extra frames into the icon.
 - **Panel frames:** use a `Border` whose background is
-  `T_UI_Frame_PanelWide`, drawn as `Box` with margin 0.074 × 0.11 and image
-  size 360 × 243.
+  `T_UI_Frame_PanelWide`, drawn as `Box` with margin 0.074 × 0.11. The
+  texture is 969 × 654, so the ornamented corners are about 72 px.
   - Lay the frame over an iron fill (`MI_UI_Panel_Inset`).
   - Use a `Border`, not an `Image`: an image's brush size would force a
     minimum panel size.
@@ -190,6 +214,8 @@ Rules:
 | `Buttons/CUI_ButtonStyle_Danger` | Danger frame, default hover | ButtonLabel, hovered label |
 | `Buttons/CUI_ButtonStyle_Slot` | Slot frames, no padding, at least 48 × 48 | TileLabel |
 | `Buttons/CUI_ButtonStyle_Tab` | No normal brush; hover and selection frames | Subheading, hovered label |
+| `Buttons/CUI_ButtonStyle_GearSlot` | Equipment slot frame, dim at rest and bright on hover or focus, 5 px padding | — |
+| `Buttons/CUI_ButtonStyle_WeaponSlot` | Weapon slot frame, the same states | — |
 | `Borders/CUI_BorderStyle_Panel`, `_Inset`, `_Tooltip` | The matching panel instance | — |
 
 `Config/DefaultEditor.ini` makes Body, Default and Panel the CommonUI template
@@ -224,8 +250,14 @@ palette values:
 - `RpgSkillTreeGridWidget.h` link and locked-row colours: overridden in
   `CUI_Skills` (UI-01).
 - `RpgInventorySpatialGridWidget.h`, `RpgInventorySpatialCellWidget.h`,
-  `RpgInventorySpatialItemWidget.h`, `RpgInventoryDragVisualWidget.h`: UI-02.
-- `RpgStorageInventoryWidget.h` title colours: UI-02.
+  `RpgInventorySpatialItemWidget.h`, `RpgInventoryDragVisualWidget.h`:
+  overridden in `CUI_SpatialInventoryGrid`, `_Cell`, `_Item` and
+  `CUI_InventoryDragVisual` (UI-02). The drag visual's layout follows in
+  UI-06.
+- `RpgStorageInventoryWidget.h` title colours: overridden in
+  `CUI_StorageSpatial` (UI-02).
+- `RpgInventoryCarrySlotWidget.h` `StateIndicatorOpacity`: 1 in
+  `CUI_CarrySlot`, because `MI_UI_SlotActive` carries its own opacity (UI-02).
 - `RpgInventoryItemTooltipWidget.h`, `RpgInventoryFeedbackToastWidget.h`:
   UI-06.
 - `RpgQuickAccessRadialWidget.h`: UI-05.
