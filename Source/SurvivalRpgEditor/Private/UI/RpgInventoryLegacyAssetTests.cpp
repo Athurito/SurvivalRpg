@@ -58,6 +58,7 @@ bool FRpgInventoryLegacyAssetRetirementTest::RunTest(
 		TEXT("/Game/SurvivalRpg/Crafting/BP_TestDrop"),
 		TEXT("/Game/SurvivalRpg/Inventory/Items/Test/ID_Cheese"),
 		TEXT("/Game/SurvivalRpg/Inventory/Items/Test/ID_TestSword1"),
+		TEXT("/Game/SurvivalRpg/Inventory/UI/CUI_InventorySlotButtonStyle"),
 	};
 
 	for (const TCHAR* PackageName : RetiredPackages)
@@ -115,14 +116,6 @@ bool FRpgInventoryLegacyAssetRetirementTest::RunTest(
 		{
 			TEXT("/Game/SurvivalRpg/UI/DA_RpgUIScreenRegistry"),
 			TEXT("/Game/SurvivalRpg/Crafting/UI/CUI_CraftingStationSpatial"),
-		},
-		{
-			TEXT("/Game/SurvivalRpg/Inventory/UI/SpatialInventory/CUI_CarrySlot"),
-			TEXT("/Game/SurvivalRpg/Inventory/UI/CUI_InventorySlotButtonStyle"),
-		},
-		{
-			TEXT("/Game/SurvivalRpg/Inventory/UI/SpatialInventory/CUI_CarrySlot"),
-			TEXT("/Game/SurvivalRpg/Inventory/UI/Inventory_Slot_Background"),
 		},
 		{
 			TEXT("/Game/SurvivalRpg/Inventory/UI/SpatialInventory/CUI_SpatialInventoryGrid"),

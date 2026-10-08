@@ -44,9 +44,9 @@ It records the accepted decisions and the task sequence. The style itself
 
 | ID | Scope | Status |
 | --- | --- | --- |
-| UI-01 | Style foundation: Cinzel font, palette collection, UI materials, CommonUI text, button and border styles, editor template styles, skill screen as proof, style guide | In review: [#198](https://github.com/Athurito/SurvivalRpg/pull/198) |
-| UI-01b | Skill screen after the concept: art set, octagonal plaques with five states, seals and locks, framed panels, detail panel, Q/E/R slots with icon and key, profession icons, menu tab bar and backdrop | In review: [#199](https://github.com/Athurito/SurvivalRpg/pull/199) |
-| UI-02 | Tarkov inventory: pane in columns, one shared cell size, new gear and carry slots, storage and crafting hosting, presentation-only test contracts relaxed | Planned |
+| UI-01 | Style foundation: Cinzel font, palette collection, UI materials, CommonUI text, button and border styles, editor template styles, skill screen as proof, style guide | Done: [#198](https://github.com/Athurito/SurvivalRpg/pull/198) |
+| UI-01b | Skill screen after the concept: art set, octagonal plaques with five states, seals and locks, framed panels, detail panel, Q/E/R slots with icon and key, profession icons, menu tab bar and backdrop | Done: [#199](https://github.com/Athurito/SurvivalRpg/pull/199) |
+| UI-02 | Tarkov inventory: pane in columns, one shared cell size, new gear and carry slots, storage and crafting hosting, presentation-only test contracts relaxed | In progress |
 | UI-03 | Character stats column (level, XP, load, health, stamina, armour), rarity frames on gear slots, MVVM toolset | Planned |
 | UI-04 | Crafting screen: layout, station name, recipe states, categories and search, output preview, job state | Planned |
 | UI-05 | HUD: new arrangement, material bars for health, stamina and mana, XP bar, context fading, action bar and Q/E/R, enemy health bar | Planned |
@@ -160,3 +160,53 @@ slots and animations.
 - **Not done:**
   - Animations: the pulse along unlocked links and the seal stamp on learning.
   - Full gamepad focus styling of the plain node and slot buttons.
+
+## Tarkov inventory (UI-02)
+
+- **One cell size:** every grid uses 56-unit cells with 2 units of padding,
+  from the class defaults of `CUI_SpatialInventoryGrid`. The player pane no
+  longer sits in a scale box, so its grids keep that size in the inventory,
+  storage and crafting screens.
+- **Art:** the user's gear package adds equipment glyphs (`Icons/gear`), cell,
+  equipment, weapon and container frames, and a paper doll figure
+  ([third-party-notices.md](third-party-notices.md)). Slate draws frame
+  margins in texture pixels, so the frames are exported at their on-screen
+  size ([ui-style-guide.md](ui-style-guide.md#art-set)).
+- **Pane (`CUI_PlayerInventoryPane`):** two framed columns and a quick access
+  row instead of the fixed canvas.
+  - Equipment: the paper doll between the armour slots (head, chest, hands,
+    legs, feet) on the left and the off hand and bag slots (backpack, belt,
+    pouch, resource bag) on the right. Weapon I and II sit below in wide
+    weapon frames. Each slot has a caption.
+  - Containers: pockets and every equipped bag, each with a Cinzel title, an
+    optional glyph and its grid inside the container frame. A bag's section
+    appears only while the bag is equipped. The column scrolls, and a scroll
+    box brings the focused grid into view.
+  - Quick access: the 1–8 quickbar below both columns.
+- **Slots (`CUI_GearSlot`, `CUI_CarrySlot`):**
+  - The frame is the CommonUI button style: dim at rest, bright on hover and
+    focus.
+  - An empty slot shows its glyph; the glyph is set per slot.
+  - A ring shows focus, the held source, and valid or invalid drop targets.
+  - The weapon or off-hand item in hand glows gold.
+- **Cells and items:** cells show the cell frame over an iron fill; the native
+  cell states tint the frame with palette colours. Items sit on a lighter
+  plate, and stack counts use `CUI_TextStyle_StackCount`. The drag visual's
+  state colours follow the palette.
+- **Screens:**
+  - Inventory (`CUI_PlayerInventory`): the night forest backdrop of the game
+    menu, the pane centred, a framed Build Chest button.
+  - Storage (`CUI_StorageSpatial`): Inventory and Storage titles that light up
+    with the active side, a framed storage column, the storage grid in the
+    container frame with a scroll box, and restyled storage controls.
+  - Crafting (`CUI_CraftingStationSpatial`): the backdrop and the pane at its
+    natural width. The crafting side keeps its scale box until UI-04.
+- **Tests:** the content-host test no longer freezes canvas positions,
+  parents and child order, and the carry-slot test no longer freezes indicator
+  alpha. `CUI_InventorySlotButtonStyle` lost its last users and is retired.
+- **Not done:**
+  - The character stats column (UI-03).
+  - Glyphs for pouch and resource bag; both show the navigation bag icon for
+    now.
+  - The crafting output grid is still scaled with the crafting side (UI-04).
+  - The quickbar entries keep the HUD look (UI-05).
