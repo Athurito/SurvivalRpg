@@ -10,6 +10,7 @@
 #include "SurvivalRpg/Crafting/RpgCraftingStationActor.h"
 #include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "UObject/StrongObjectPtr.h"
 #include "UObject/UnrealType.h"
 
@@ -288,6 +289,91 @@ bool FRpgCraftingViewModelAvailableCategoriesTest::RunTest(const FString& Parame
 
 	ViewModel->UnbindCraftingStation();
 	TestEqual(TEXT("Unbinding clears the categories"), ViewModel->GetAvailableCategories().Num(), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCraftingViewModelActionAndCountsTest,
+	"SurvivalRpg.Crafting.ViewModel.ActionAndCounts",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCraftingViewModelActionAndCountsTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCraftingViewModelPresentationTests;
+
+	FScopedStationWorld Fixture;
+	if (!TestTrue(TEXT("The station fixture exists"), Fixture.IsValid()) ||
+		!TestNotNull(TEXT("The station has an output tray"), Fixture.Station->GetOutputInventory()))
+	{
+		return false;
+	}
+
+	URpgCraftingRecipeDefinition* Arrows = MakeRecipe(TEXT("Arrows"));
+	Arrows->OutputItems[0].Count = 20;
+	URpgCraftingRecipeDefinition* Pair = MakeRecipe(TEXT("Pair"));
+	const FRpgCraftingOutputItem SecondOutput = Pair->OutputItems[0];
+	Pair->OutputItems.Add(SecondOutput);
+	URpgCraftingRecipeDefinition* Slow = MakeRecipe(TEXT("Slow"), 10.0f);
+	Fixture.OfferRecipes({ Arrows, Pair, Slow });
+	const FString OutputName =
+		GetDefault<URpgInventoryItemDefinition>(URpgInventoryAutomationTestUnitItemDefinition::StaticClass())->DisplayName.ToString();
+
+	URpgCraftingStationViewModel* ViewModel = NewObject<URpgCraftingStationViewModel>(Fixture.Station, NAME_None, RF_Transient);
+	FFieldCounter ActionCounter(ViewModel, TEXT("CraftActionText"));
+	FFieldCounter JobCounter(ViewModel, TEXT("JobCount"));
+	FFieldCounter StackCounter(ViewModel, TEXT("OutputStackCount"));
+	TestTrue(TEXT("The new counts are field-notify fields"), ActionCounter.IsBound() && JobCounter.IsBound() && StackCounter.IsBound());
+	TestTrue(TEXT("An unbound view model has no craft label"), ViewModel->GetCraftActionText().IsEmpty());
+
+	ViewModel->BindCraftingStation(Fixture.Station, Fixture.Requester);
+	const URpgCraftingRecipeViewModel* ArrowRow = FindRow(ViewModel, Arrows);
+	const URpgCraftingRecipeViewModel* PairRow = FindRow(ViewModel, Pair);
+	if (!TestNotNull(TEXT("The arrow recipe has a row"), ArrowRow) ||
+		!TestNotNull(TEXT("The two-output recipe has a row"), PairRow))
+	{
+		ViewModel->UnbindCraftingStation();
+		return false;
+	}
+	TestEqual(TEXT("A single output shows its yield"), ArrowRow->GetYieldText().ToString(), FString(TEXT("×20")));
+	TestTrue(TEXT("Several outputs show no single yield"), PairRow->GetYieldText().IsEmpty());
+
+	ViewModel->SelectRecipe(Arrows);
+	TestEqual(
+		TEXT("The craft label names the output at quantity one"),
+		ViewModel->GetCraftActionText().ToString(),
+		FString::Printf(TEXT("Craft 20x %s"), *OutputName));
+	ViewModel->SetCraftQuantity(2);
+	TestEqual(
+		TEXT("The craft label follows the quantity"),
+		ViewModel->GetCraftActionText().ToString(),
+		FString::Printf(TEXT("Craft 40x %s"), *OutputName));
+	const int32 ActionNotifications = ActionCounter.Count;
+	ViewModel->RefreshSelectedRecipeDetails();
+	TestEqual(TEXT("An unchanged craft label stays quiet"), ActionCounter.Count, ActionNotifications);
+	ViewModel->SelectRecipe(Pair);
+	TestEqual(TEXT("Several outputs fall back to Craft"), ViewModel->GetCraftActionText().ToString(), FString(TEXT("Craft")));
+
+	TestEqual(TEXT("An idle station has no jobs"), ViewModel->GetJobCount(), 0);
+	TestTrue(TEXT("The station queues a timed job"), Fixture.Station->QueueCraftRecipe(Fixture.Requester, Slow, 1));
+	ViewModel->RefreshJobs();
+	TestEqual(TEXT("The queued job is counted"), ViewModel->GetJobCount(), 1);
+	TestEqual(TEXT("The job count notifies once"), JobCounter.Count, 1);
+	ViewModel->RefreshJobs();
+	TestEqual(TEXT("An unchanged job count stays quiet"), JobCounter.Count, 1);
+
+	TestEqual(TEXT("An empty tray has no stacks"), ViewModel->GetOutputStackCount(), 0);
+	FRpgCraftingOutputItem Output;
+	Output.ItemDefinition = URpgInventoryAutomationTestUnitItemDefinition::StaticClass();
+	Output.Count = 1;
+	TestTrue(TEXT("The tray accepts an output"), Fixture.Station->AddCraftingOutputs({ Output }));
+	ViewModel->RefreshStationState();
+	TestEqual(TEXT("The tray stack is counted"), ViewModel->GetOutputStackCount(), 1);
+	TestEqual(TEXT("The stack count notifies once"), StackCounter.Count, 1);
+
+	ViewModel->UnbindCraftingStation();
+	TestTrue(TEXT("Unbinding clears the craft label"), ViewModel->GetCraftActionText().IsEmpty());
+	TestEqual(TEXT("Unbinding clears the job count"), ViewModel->GetJobCount(), 0);
+	TestEqual(TEXT("Unbinding clears the stack count"), ViewModel->GetOutputStackCount(), 0);
 	return true;
 }
 

@@ -110,11 +110,11 @@ void URpgCraftingStationWidget::NativeOnInitialized()
 	}
 	if (QuantityMinusButton)
 	{
-		QuantityMinusButton->SetCraftButtonText(FText::FromString(TEXT("-1")));
+		QuantityMinusButton->SetCraftButtonText(FText::FromString(TEXT("-")));
 	}
 	if (QuantityPlusButton)
 	{
-		QuantityPlusButton->SetCraftButtonText(FText::FromString(TEXT("+1")));
+		QuantityPlusButton->SetCraftButtonText(FText::FromString(TEXT("+")));
 	}
 	if (QuantityFiveButton)
 	{
@@ -947,6 +947,15 @@ void URpgCraftingStationWidget::RefreshSelectedRecipePresentation()
 		CraftQuantityText->SetText(
 			Recipe ? FText::AsNumber(Quantity) : FText::GetEmpty());
 	}
+	if (CraftButton)
+	{
+		const FText CraftActionText =
+			CraftingViewModel ? CraftingViewModel->GetCraftActionText() : FText::GetEmpty();
+		CraftButton->SetCraftButtonText(
+			CraftActionText.IsEmpty()
+				? NSLOCTEXT("RpgCrafting", "CraftButton", "Craft")
+				: CraftActionText);
+	}
 	if (RecipeIcon)
 	{
 		if (Recipe && !Recipe->Icon.IsNull())
@@ -1013,37 +1022,28 @@ void URpgCraftingStationWidget::RefreshCraftingActionAvailability()
 				: NSLOCTEXT("RpgCrafting", "PauseCraftingButton", "Pause"));
 	}
 
-	const bool bShowQuantityOptions = Maximum > 1;
-	const ESlateVisibility QuantityVisibility =
-		bShowQuantityOptions
-			? ESlateVisibility::Visible
-			: ESlateVisibility::Collapsed;
+	// The quantity controls keep their authored visibility so the details layout does not jump; they only disable.
 	if (QuantityMinusButton)
 	{
-		QuantityMinusButton->SetVisibility(QuantityVisibility);
 		QuantityMinusButton->SetIsEnabled(Quantity > 1);
 	}
 	if (QuantityPlusButton)
 	{
-		QuantityPlusButton->SetVisibility(QuantityVisibility);
 		QuantityPlusButton->SetIsEnabled(
 			Maximum > 0 && Quantity < Maximum);
 	}
 	if (QuantityFiveButton)
 	{
-		QuantityFiveButton->SetVisibility(QuantityVisibility);
 		QuantityFiveButton->SetIsEnabled(
 			Maximum >= 5 && Quantity != 5);
 	}
 	if (QuantityTenButton)
 	{
-		QuantityTenButton->SetVisibility(QuantityVisibility);
 		QuantityTenButton->SetIsEnabled(
 			Maximum >= 10 && Quantity != 10);
 	}
 	if (QuantityMaxButton)
 	{
-		QuantityMaxButton->SetVisibility(QuantityVisibility);
 		QuantityMaxButton->SetIsEnabled(
 			Maximum > 1 && Quantity < Maximum);
 	}

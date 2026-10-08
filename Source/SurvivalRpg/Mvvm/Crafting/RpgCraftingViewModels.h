@@ -153,6 +153,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
 	ERpgCraftingRecipeState GetRecipeState() const { return RecipeState; }
 
+	/** Units one craft yields, as "×20", or empty. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	FText GetYieldText() const { return YieldText; }
+
 protected:
 	/** Static recipe definition used by server commands. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Recipe", meta = (AllowPrivateAccess = "true"))
@@ -209,6 +213,10 @@ protected:
 	/** Compact text such as "2x Plank" for recipe list rows. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Recipe", meta = (AllowPrivateAccess = "true"))
 	FText OutputSummary;
+
+	/** Units one craft yields, as "×20", for a single-output recipe; empty otherwise. Static recipe data; UI read-only. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Recipe", meta = (AllowPrivateAccess = "true"))
+	FText YieldText;
 
 	/** Lowercase text blob used for local UI search. */
 	UPROPERTY(BlueprintReadOnly, Category = "Crafting|Recipe", meta = (AllowPrivateAccess = "true"))
@@ -385,6 +393,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
 	bool HasFilteredRecipes() const { return bHasFilteredRecipes; }
 
+	/** Label for the craft action, naming the selected output and quantity. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	FText GetCraftActionText() const { return CraftActionText; }
+
+	/** Number of queued, running and blocked jobs at the observed station. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	int32 GetJobCount() const { return JobCount; }
+
+	/** Number of occupied stacks in the station output tray. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	int32 GetOutputStackCount() const { return OutputStackCount; }
+
 	/** Static recipe currently selected by the details panel. */
 	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
 	URpgCraftingRecipeDefinition* GetSelectedRecipe() const { return SelectedRecipe.Get(); }
@@ -471,6 +491,21 @@ protected:
 	/** True when the current filters leave at least one recipe row; false drives the empty-list hint. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Filters", meta = (AllowPrivateAccess = "true"))
 	bool bHasFilteredRecipes = false;
+
+	/**
+	 * Craft action label for the selection: "Craft 20x Arrow" for one output at the selected quantity, "Craft" for
+	 * several outputs or no selection. Derived from static recipe data; UI read-only.
+	 */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Recipe", meta = (AllowPrivateAccess = "true"))
+	FText CraftActionText;
+
+	/** Number of job rows, derived from the replicated station queue. Drives the queue tab badge; UI read-only. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Jobs", meta = (AllowPrivateAccess = "true"))
+	int32 JobCount = 0;
+
+	/** Occupied stacks in the replicated station output inventory. Drives the output tab badge; UI read-only. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Station", meta = (AllowPrivateAccess = "true"))
+	int32 OutputStackCount = 0;
 
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Recipe", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgCraftingRecipeDefinition> SelectedRecipe = nullptr;
