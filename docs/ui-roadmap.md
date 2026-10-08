@@ -48,6 +48,7 @@ It records the accepted decisions and the task sequence. The style itself
 | UI-01b | Skill screen after the concept: art set, octagonal plaques with five states, seals and locks, framed panels, detail panel, Q/E/R slots with icon and key, profession icons, menu tab bar and backdrop | Done: [#199](https://github.com/Athurito/SurvivalRpg/pull/199) |
 | UI-02 | Tarkov inventory: pane in columns, one shared cell size, new gear and carry slots, storage and crafting hosting, presentation-only test contracts relaxed | Done: [#200](https://github.com/Athurito/SurvivalRpg/pull/200) |
 | UI-02b | Gameplay icons: the user's 59-icon package for items, skills, gear glyphs, buildables, upgrades, stats and crafting; icons keep their aspect ratio in fixed boxes; weapon slots turn long weapons | Done: [#201](https://github.com/Athurito/SurvivalRpg/pull/201) |
+| UI-02c | Coloured item icons: the user's colour version of the gameplay package replaces the 39 item textures in place; every other icon stays bone white | In review |
 | UI-03 | Character stats column (level, XP, load, health, stamina, armour), rarity frames on gear slots, MVVM toolset | In review: [#202](https://github.com/Athurito/SurvivalRpg/pull/202) |
 | UI-04 | Crafting screen: layout, station name, recipe states, categories and search, output preview, job state | Planned |
 | UI-05 | HUD: new arrangement, material bars for health, stamina and mana, XP bar, context fading, action bar and Q/E/R, enemy health bar | Planned |
@@ -261,6 +262,24 @@ slots and animations.
   render scale from `CalculateIconRenderScale` restores the aspect before the
   turn. Weapon I and II enable it, so swords, axes and pickaxes lie across the
   wide frame.
+
+## Coloured item icons (UI-02c)
+
+- **Why:** with every item in bone white, a full backpack read as one pale
+  surface, and items were hard to tell apart at a glance.
+- **Art:** version 2.0 of the user's gameplay package
+  ([third-party-notices.md](third-party-notices.md)) colours the 35 items and
+  the 4 dev placeholders in material colours. The engraving style and the
+  motifs stay the same:
+  - wood and leather brown, iron cool grey, copper warm red, cloth muted olive;
+  - plants, berries and meat in natural colours;
+  - rift materials and magic foci violet, with a small cyan accent.
+- **Import:** the 39 textures in `Icons/items` were re-imported in place with
+  the same names, sizes and settings, so no item, recipe or widget reference
+  changed.
+- **Unchanged:** the other 20 icons of the package (skills, gear glyphs,
+  building, stats, crafting) stay bone white; their colour version is
+  identical.
 
 ## Character stats (UI-03)
 
