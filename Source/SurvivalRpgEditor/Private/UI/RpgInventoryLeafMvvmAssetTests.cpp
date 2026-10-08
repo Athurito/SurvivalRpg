@@ -43,7 +43,7 @@ namespace RpgInventoryLeafMvvmAssetTests
 		UClass* NativeParentClass;
 		UClass* ViewModelClass;
 		FName ViewModelSourceName;
-		int32 BindingCount;
+		/** Bindings the native presenter relies on. Designers may add presentation bindings on the same source. */
 		TArray<FBindingContract> BindingContracts;
 		TArray<FName> ForbiddenAuthoredGraphs;
 		TArray<FName> ForbiddenBlueprintCalls;
@@ -370,12 +370,11 @@ namespace RpgInventoryLeafMvvmAssetTests
 				Contract.Label),
 			BlueprintView->GetConditions().Num(),
 			0);
-		bValid &= Test.TestEqual(
+		bValid &= Test.TestTrue(
 			*FString::Printf(
-				TEXT("%s owns its exact declarative binding count"),
+				TEXT("%s authors at least its required bindings"),
 				Contract.Label),
-			BlueprintView->GetNumBindings(),
-			Contract.BindingCount);
+			BlueprintView->GetNumBindings() >= Contract.BindingContracts.Num());
 
 		for (const FMVVMBlueprintViewBinding& Binding :
 			BlueprintView->GetBindings())
@@ -445,13 +444,6 @@ namespace RpgInventoryLeafMvvmAssetTests
 				BoundConversionPinCount > 0);
 		}
 
-		bValid &= Test.TestEqual(
-			*FString::Printf(
-				TEXT(
-					"%s declares one exact contract per binding"),
-				Contract.Label),
-			Contract.BindingContracts.Num(),
-			Contract.BindingCount);
 		for (const FBindingContract& BindingContract :
 			Contract.BindingContracts)
 		{
@@ -536,7 +528,7 @@ namespace RpgInventoryLeafMvvmAssetTests
 				TEXT("%s compiled binding count matches authored MVVM"),
 				Contract.Label),
 			CompiledView->GetBindings().Num(),
-			Contract.BindingCount);
+			BlueprintView->GetNumBindings());
 		for (const FMVVMViewClass_Binding& Binding :
 			CompiledView->GetBindings())
 		{
@@ -597,7 +589,7 @@ namespace RpgInventoryLeafMvvmAssetTests
 					TEXT("%s canonical source owns every binding"),
 					Contract.Label),
 				CanonicalSource->GetBindings().Num(),
-				Contract.BindingCount);
+				CompiledView->GetBindings().Num());
 		}
 
 		bValid &= Test.TestEqual(
@@ -643,7 +635,6 @@ bool FRpgInventoryLeafMvvmAssetContractsTest::RunTest(
 			URpgActionBarSlotViewModel::StaticClass(),
 			URpgActionBarSlotWidget::
 				ActionBarSlotViewModelSourceName,
-			3,
 			{
 				{
 					TEXT("Icon"),
@@ -681,7 +672,6 @@ bool FRpgInventoryLeafMvvmAssetContractsTest::RunTest(
 			URpgInventoryAddressSlotViewModel::StaticClass(),
 			URpgInventoryAddressSlotWidget::
 				AddressSlotViewModelSourceName,
-			2,
 			{
 				{
 					TEXT("Icon"),
@@ -715,7 +705,6 @@ bool FRpgInventoryLeafMvvmAssetContractsTest::RunTest(
 			URpgEquipmentSlotViewModel::StaticClass(),
 			URpgEquipmentSlotWidget::
 				EquipmentSlotViewModelSourceName,
-			1,
 			{
 				{
 					TEXT("Icon"),
@@ -739,7 +728,6 @@ bool FRpgInventoryLeafMvvmAssetContractsTest::RunTest(
 			URpgBaseResourceEntryViewModel::StaticClass(),
 			URpgBaseResourceEntryWidget::
 				BaseResourceEntryViewModelSourceName,
-			3,
 			{
 				{
 					TEXT("Count"),
