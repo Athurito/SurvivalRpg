@@ -50,7 +50,8 @@ derived from them.
 | 18 | RarityRare | — | 0.16, 0.33, 0.80 | Item frames |
 | 19 | RarityEpic | — | 0.48, 0.18, 0.72 | Item frames |
 
-The rarity roles are darker frame colours. The item text colours stay in
+The rarity roles are darker frame colours; the rarity rings in equipment and
+weapon slots use them. The item text colours stay in
 `RpgInventoryItemizationFragmentViewModel.cpp`.
 
 ## Typography
@@ -159,6 +160,7 @@ material's colour shows.
 | `MI_UI_ItemFill` | Panel | Lighter plate behind an item that occupies cells |
 | `MI_UI_SlotActive` | Panel | Gold glow of the weapon or off-hand item in hand |
 | `MI_UI_SlotStateRing` | Panel | Edge-only ring a slot tints for focus, valid and invalid drops |
+| `MI_UI_RarityRing_Uncommon`, `_Rare`, `_Epic` | Panel | Rarity ring inside equipment and weapon slots; edge and inner glow in the palette rarity role (UI-03) |
 
 `M_UI_Glyph` draws small symbols from signed distances:
 - **`GlyphType`:** 0 lock, 1 forbidden sign, 2 diamond, 3 tab marker.
@@ -174,8 +176,8 @@ style:
 - `Icons/`: skills, professions, categories, crafting and navigation, and
   `Icons/gear` with the equipment glyphs (UI-02). UI-02b adds `Icons/items`
   (item icons), `Icons/building` (buildables and storage upgrades),
-  `Icons/stats` (character values for UI-03), and crafting categories and
-  stations in `Icons/crafting` (for UI-04).
+  `Icons/stats` (character values, used by the stats column), and crafting
+  categories and stations in `Icons/crafting` (for UI-04).
 - `Frames/`: panels, tooltip, slots and controls, and the gear frames
   `T_UI_Gear_Frame_Cell`, `_Equipment`, `_Weapon` and `_Container`.
 - `Ornaments/` (including the paper doll `T_UI_Gear_BodySilhouette`) and
@@ -243,6 +245,10 @@ styles for newly placed widgets.
   text block.
 - Use the shared brushes or styles for panels, slots and buttons. Do not use
   KnightsQuest or the `fantasy_gui_4` frames in new work.
+- Character values (level, experience, health, stamina, armour, load) come from
+  `URpgCharacterStatsViewModel`. Add it with the Resolver creation type, which
+  hands every widget the local player's shared instance; bind its text and
+  progress fields directly.
 - Body text is at least 13 pt. Only labels inside fixed tiles may go down to
   11 pt.
 - A scroll box inside a scale box needs a capped height; otherwise the scale box

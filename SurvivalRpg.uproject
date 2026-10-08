@@ -98,6 +98,10 @@
 			"Enabled": true
 		},
 		{
+			"Name": "MVVMToolset",
+			"Enabled": true
+		},
+		{
 			"Name": "AsyncMessageSystem",
 			"Enabled": true
 		},

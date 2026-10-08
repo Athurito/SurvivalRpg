@@ -5,6 +5,7 @@
 #include "MVVMViewModelBase.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
+#include "SurvivalRpg/Inventory/Itemization/RpgItemizationTypes.h"
 #include "UObject/SoftObjectPtr.h"
 
 #include "RpgLoadoutViewModels.generated.h"
@@ -47,11 +48,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Equipment|ViewModel")
 	bool HasItem() const { return bHasItem; }
 
+	/** Rarity of the item's generated roll; Common when the slot is empty or the item has no generated roll. */
+	UFUNCTION(BlueprintPure, Category = "Equipment|ViewModel")
+	ERpgItemRarity GetRarity() const { return Rarity; }
+
 	/** Fired when this slot object keeps its identity but its item changed. */
 	UPROPERTY(BlueprintAssignable, Category = "Equipment|ViewModel")
 	FRpgEquipmentSlotViewModelChanged OnSlotChanged;
 
 protected:
+	virtual void BeginDestroy() override;
+
 	/** Dedicated slot represented by this UI projection. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Equipment|ViewModel", meta = (AllowPrivateAccess = "true"))
 	ERpgEquipmentSlot EquipmentSlot = ERpgEquipmentSlot::None;
@@ -75,6 +82,17 @@ protected:
 	/** Compact item display name for slot UI. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Equipment|ViewModel", meta = (AllowPrivateAccess = "true"))
 	FText ShortDisplayName;
+
+	/**
+	 * Rarity of the item's server-generated roll, for a rarity frame. Common for an empty slot and for items without a
+	 * generated roll. Follows replicated roll changes while the item stays in the slot.
+	 */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Equipment|ViewModel", meta = (AllowPrivateAccess = "true"))
+	ERpgItemRarity Rarity = ERpgItemRarity::Common;
+
+private:
+	UFUNCTION()
+	void HandleItemizationStateChanged(const FRpgItemizationState& NewState);
 };
 
 /**

@@ -12,6 +12,7 @@
 #include "SurvivalRpg/Inventory/RpgLootSourceAutomationTestTypes.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryEntryViewModel.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryItemizationFragmentViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgLoadoutViewModels.h"
 #include "SurvivalRpg/UI/RpgInventoryItemTooltipWidget.h"
 
 #include "Engine/Engine.h"
@@ -954,6 +955,58 @@ bool FRpgItemizationPresentationTest::RunTest(const FString& Parameters)
 	Tooltip->ClearItem();
 	TestFalse(TEXT("Pooled tooltip clears all item state"), Tooltip->HasItem());
 	TestNull(TEXT("Pooled tooltip releases its itemization presenter"), Tooltip->GetItemizationViewModel());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgItemizationEquipmentSlotRarityTest,
+	"SurvivalRpg.Itemization.UI.EquipmentSlotRarityFollowsRoll",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgItemizationEquipmentSlotRarityTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	FRpgLootRollResult Roll;
+	Roll.Seed = 4242;
+	FRpgLootItemRoll& RolledItem = Roll.Items.AddDefaulted_GetRef();
+	RolledItem.ItemDefinition = URpgItemizationAutomationTestItemDefinition::StaticClass();
+	RolledItem.Quantity = 1;
+	RolledItem.SourceLevel = 30;
+	RolledItem.ItemizationSeed = 4242;
+	FInventoryPickup Pickup;
+	if (!TestTrue(
+			TEXT("The fixture materializes a concrete generated item"),
+			Roll.ToInventoryPickup(GetTransientPackage(), Pickup)) ||
+		Pickup.Instances.Num() != 1 ||
+		!Pickup.Instances[0].Item)
+	{
+		return false;
+	}
+
+	URpgInventoryItemInstance* Item = Pickup.Instances[0].Item;
+	const FRpgItemizationState InitialState = Item->GetItemizationStateRef();
+	URpgEquipmentSlotViewModel* SlotViewModel = NewObject<URpgEquipmentSlotViewModel>();
+	SlotViewModel->InitializeSlot(ERpgEquipmentSlot::Chest, Item);
+	if (!TestTrue(TEXT("The automation profile rolls a rarity above Common"), InitialState.Rarity != ERpgItemRarity::Common))
+	{
+		return false;
+	}
+	TestEqual(TEXT("The slot shows the rarity of the generated roll"), SlotViewModel->GetRarity(), InitialState.Rarity);
+
+	// The same roll without affixes is a valid Common roll.
+	FRpgItemizationState CommonState = InitialState;
+	CommonState.Rarity = ERpgItemRarity::Common;
+	CommonState.Affixes.Reset();
+	TestTrue(TEXT("The authority accepts a Common roll"), Item->ApplyItemizationState(CommonState));
+	TestEqual(TEXT("The slot follows a replicated roll change"), SlotViewModel->GetRarity(), ERpgItemRarity::Common);
+	TestTrue(TEXT("The authority accepts the first roll again"), Item->ApplyItemizationState(InitialState));
+	TestEqual(TEXT("The slot follows the roll back"), SlotViewModel->GetRarity(), InitialState.Rarity);
+
+	SlotViewModel->InitializeSlot(ERpgEquipmentSlot::Chest, nullptr);
+	TestEqual(TEXT("An empty slot shows no rarity"), SlotViewModel->GetRarity(), ERpgItemRarity::Common);
+	Item->ApplyItemizationState(CommonState);
+	Item->ApplyItemizationState(InitialState);
+	TestEqual(TEXT("A slot that dropped the item ignores its later rolls"), SlotViewModel->GetRarity(), ERpgItemRarity::Common);
 	return true;
 }
 

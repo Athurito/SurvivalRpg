@@ -8,11 +8,13 @@
 
 class APlayerController;
 class APawn;
+class URpgCharacterStatsViewModel;
 class URpgPawnExtensionComponent;
 class UAbilitySystemComponent;
 class UPlayerVitalsViewmodel;
 /**
- * 
+ * Owns the view models that follow one local player across pawns. Keeps them bound to the player controller, its
+ * player state and the current pawn's ability system.
  */
 UCLASS()
 class SURVIVALRPG_API URpgUiSubsystem : public ULocalPlayerSubsystem
@@ -21,6 +23,15 @@ class SURVIVALRPG_API URpgUiSubsystem : public ULocalPlayerSubsystem
 
 public:
 	UPlayerVitalsViewmodel* GetVitalsViewmodel() const { return VitalsVM; }
+
+	/** Level, experience, health, stamina, armour and equipment load of this local player. */
+	URpgCharacterStatsViewModel* GetCharacterStatsViewModel() const { return CharacterStatsVM; }
+
+	/** Returns the owned view model of exactly ExpectedType, or null. URpgLocalPlayerViewModelResolver hands it to widgets. */
+	UObject* FindViewModel(const UClass* ExpectedType) const;
+
+	/** Whether this subsystem owns a view model of exactly Class. */
+	static bool ProvidesViewModelClass(const UClass* Class);
 
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
@@ -39,6 +50,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UPlayerVitalsViewmodel> VitalsVM;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URpgCharacterStatsViewModel> CharacterStatsVM;
 
 	UPROPERTY(Transient)
 	TObjectPtr<APlayerController> BoundPlayerController;
