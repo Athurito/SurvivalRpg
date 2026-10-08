@@ -50,7 +50,7 @@ It records the accepted decisions and the task sequence. The style itself
 | UI-02b | Gameplay icons: the user's 59-icon package for items, skills, gear glyphs, buildables, upgrades, stats and crafting; icons keep their aspect ratio in fixed boxes; weapon slots turn long weapons | Done: [#201](https://github.com/Athurito/SurvivalRpg/pull/201) |
 | UI-02c | Coloured item icons: the user's colour version of the gameplay package replaces the 39 item textures in place; every other icon stays bone white | Done: [#203](https://github.com/Athurito/SurvivalRpg/pull/203) |
 | UI-03 | Character stats column (level, XP, load, health, stamina, armour), rarity frames on gear slots, MVVM toolset | Done: [#202](https://github.com/Athurito/SurvivalRpg/pull/202) |
-| UI-04 | Crafting screen: layout, station name, recipe states, categories and search, output preview, job state | In progress |
+| UI-04 | Crafting screen: layout, station name, recipe states, categories and search, output preview, job state | In review: [#204](https://github.com/Athurito/SurvivalRpg/pull/204) |
 | UI-05 | HUD: new arrangement, material bars for health, stamina and mana, XP bar, context fading, action bar and Q/E/R, enemy health bar | Planned |
 | UI-06 | Tooltip, context menu, split and drop dialogs, toasts, drag visual, item-only highlight in grids | Planned |
 | UI-07 | Menus (game menu tabs, main menu, settings, respawn), then remove KnightsQuest | Planned |
