@@ -38,6 +38,20 @@ enum class ERpgCraftingRecipeSortMode : uint8
 	RecentUnlocked
 };
 
+/** Presentation state of one recipe row, derived from the station's unlock and craftability checks. UI read-only. */
+UENUM(BlueprintType)
+enum class ERpgCraftingRecipeState : uint8
+{
+	/** At least one unit can be queued now. */
+	Craftable,
+
+	/** Unlocked, but nothing can be queued now: usually missing materials, also a full queue or no station access. */
+	MissingResources,
+
+	/** Not unlocked yet; the row stays visible so players see what the station offers. */
+	Locked
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FRpgCraftingViewModelListChanged);
 
 /**
@@ -86,7 +100,7 @@ protected:
 /**
  * One output preview row projected for the currently selected quantity.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (MVVMAllowedContextCreationType = "Manual"))
 class SURVIVALRPG_API URpgCraftingOutputViewModel : public UMVVMViewModelBase
 {
 	GENERATED_BODY()
@@ -134,6 +148,10 @@ public:
 	/** Returns true if this row matches the current search text. */
 	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
 	bool MatchesSearchText(const FText& SearchText) const;
+
+	/** Presentation state used to style this row. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	ERpgCraftingRecipeState GetRecipeState() const { return RecipeState; }
 
 protected:
 	/** Static recipe definition used by server commands. */
@@ -184,6 +202,10 @@ protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Recipe", meta = (AllowPrivateAccess = "true"))
 	bool bHasMissingResources = false;
 
+	/** Single presentation state for row styling: Locked before unlock, then Craftable or MissingResources. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Recipe", meta = (AllowPrivateAccess = "true"))
+	ERpgCraftingRecipeState RecipeState = ERpgCraftingRecipeState::Locked;
+
 	/** Compact text such as "2x Plank" for recipe list rows. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Recipe", meta = (AllowPrivateAccess = "true"))
 	FText OutputSummary;
@@ -222,6 +244,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
 	bool CanCancelJob() const { return bCanCancelJob; }
 
+	/** Short player-facing label for the job state. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	FText GetStateText() const { return StateText; }
+
+	/** Formatted time left for the whole job, or empty. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	FText GetRemainingTimeText() const { return RemainingTimeText; }
+
 protected:
 	/** Station that owns this job. UI-only reference, never authoritative gameplay state. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Job", meta = (AllowPrivateAccess = "true"))
@@ -257,6 +287,17 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Job", meta = (AllowPrivateAccess = "true"))
 	float RemainingSeconds = 0.0f;
+
+	/** Short label for State, such as "Queued", "Crafting", "Paused" or "Output full". UI read-only. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Job", meta = (AllowPrivateAccess = "true"))
+	FText StateText;
+
+	/**
+	 * Time left for every unfinished unit of this job, as "12 s", "1:05" or "1:02:03".
+	 * Empty when nothing is left or the job is blocked. Derived from replicated job times; UI read-only.
+	 */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Job", meta = (AllowPrivateAccess = "true"))
+	FText RemainingTimeText;
 };
 
 /**
@@ -328,6 +369,22 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Crafting|ViewModel")
 	void SetCraftQuantityToMax();
 
+	/** Header title for the observed station. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	FText GetStationDisplayName() const { return StationDisplayName; }
+
+	/** Header icon for the observed station, or null. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	TSoftObjectPtr<UTexture2D> GetStationIcon() const { return StationIcon; }
+
+	/** Categories of all recipes offered by the observed station, independent of the active filters. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	FGameplayTagContainer GetAvailableCategories() const { return AvailableCategories; }
+
+	/** True when the current filters leave at least one recipe row. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	bool HasFilteredRecipes() const { return bHasFilteredRecipes; }
+
 	/** Static recipe currently selected by the details panel. */
 	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
 	URpgCraftingRecipeDefinition* GetSelectedRecipe() const { return SelectedRecipe.Get(); }
@@ -398,6 +455,22 @@ protected:
 	/** Replicated station output inventory. Bind this to the same inventory panel used by player/storage views. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Station", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgInventoryManagerComponent> OutputInventory = nullptr;
+
+	/** Header title: the station's authored name, a generic title when it has none, or empty while unbound. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Station", meta = (AllowPrivateAccess = "true"))
+	FText StationDisplayName;
+
+	/** Header icon authored on the observed station, or null. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Station", meta = (AllowPrivateAccess = "true"))
+	TSoftObjectPtr<UTexture2D> StationIcon;
+
+	/** Categories of every recipe this station offers, ignoring the active filters. Category tabs hide absent ones. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Filters", meta = (AllowPrivateAccess = "true"))
+	FGameplayTagContainer AvailableCategories;
+
+	/** True when the current filters leave at least one recipe row; false drives the empty-list hint. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Filters", meta = (AllowPrivateAccess = "true"))
+	bool bHasFilteredRecipes = false;
 
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Recipe", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgCraftingRecipeDefinition> SelectedRecipe = nullptr;
@@ -513,6 +586,9 @@ private:
 	void SatisfyPendingRefresh(uint8 RefreshDomains);
 	void RebuildStationState();
 	void RebuildRecipeList();
+	void ApplyRecipeCatalogState(
+		const FGameplayTagContainer& NewAvailableCategories,
+		bool bNewHasFilteredRecipes);
 	void RebuildSelectedRecipeDetails();
 	void RebuildJobs();
 	void RebuildActionAvailability();

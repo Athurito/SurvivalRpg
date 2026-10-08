@@ -155,6 +155,10 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UCommonListView> IngredientList = nullptr;
 
+	/** Optional output preview rows for the selected quantity, populated with URpgCraftingOutputViewModel items. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UCommonListView> OutputList = nullptr;
+
 	/** Authored replicated queue rows. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UCommonListView> CraftingJobsList = nullptr;

@@ -74,6 +74,14 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UCommonTextBlock> MissingCountText = nullptr;
 
+	/** Cosmetic AvailableCountText colour when enough of the ingredient is available. Override with a palette value. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Ingredient|Style")
+	FSlateColor EnoughCountColor = FSlateColor(FLinearColor(0.45f, 0.85f, 0.45f));
+
+	/** Cosmetic AvailableCountText colour when the ingredient is short. Override with a palette value. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Ingredient|Style")
+	FSlateColor MissingCountColor = FSlateColor(FLinearColor(0.95f, 0.35f, 0.25f));
+
 private:
 	void SetIngredientViewModel(
 		URpgCraftingIngredientViewModel* InViewModel);

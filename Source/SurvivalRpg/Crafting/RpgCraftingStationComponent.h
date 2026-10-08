@@ -4,9 +4,11 @@
 #include "GameplayTagContainer.h"
 #include "RpgCraftingSaveTypes.h"
 #include "SurvivalRpg/Interaction/IInteractableTarget.h"
+#include "UObject/SoftObjectPtr.h"
 
 #include "RpgCraftingStationComponent.generated.h"
 
+class UTexture2D;
 class URpgInventoryItemDefinition;
 class URpgInventoryManagerComponent;
 class ARpgBaseCampActor;
@@ -228,6 +230,14 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Crafting|Recipes", meta = (Categories = "Crafting.Station"))
 	FGameplayTagContainer GetStationTags() const { return StationTags; }
 
+	/** Player-facing station name for crafting screens; empty when the station class did not author one. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|Display")
+	FText GetStationDisplayName() const { return StationDisplayName; }
+
+	/** Optional station icon for crafting screen headers. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|Display")
+	TSoftObjectPtr<UTexture2D> GetStationIcon() const { return StationIcon; }
+
 	/** Returns recipes from the configured set that match this station's tags and base unlock state. Globally locked recipes may still be returned for UI display. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting|Recipes")
 	TArray<URpgCraftingRecipeDefinition*> GetAvailableRecipes() const;
@@ -354,6 +364,18 @@ protected:
 	/** Station identity tags used by recipe definitions to decide where they can be crafted. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Recipes", meta = (Categories = "Crafting.Station"))
 	FGameplayTagContainer StationTags;
+
+	/**
+	 * Player-facing name shown in the crafting screen header, such as "Workbench" or "Kiln".
+	 * Designer-authored static data on the station class or placed instance; not replicated, UI read-only.
+	 * The crafting view model falls back to a generic title when this is empty.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Display")
+	FText StationDisplayName;
+
+	/** Optional icon shown next to StationDisplayName in the crafting screen header. Designer-authored, UI read-only. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Display", meta = (AssetBundles = "Client"))
+	TSoftObjectPtr<UTexture2D> StationIcon;
 
 	/** Data-driven recipe list offered by this station. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Recipes")

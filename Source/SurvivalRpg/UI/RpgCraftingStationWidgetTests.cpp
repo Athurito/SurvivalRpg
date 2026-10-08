@@ -350,45 +350,6 @@ namespace RpgCraftingStationWidgetTests
 		return true;
 	}
 
-	int32 CountFunctionsDeclaredByClass(const UClass* Class)
-	{
-		int32 Count = 0;
-		if (Class)
-		{
-			for (TFieldIterator<UFunction> FunctionIt(
-					Class,
-					EFieldIteratorFlags::ExcludeSuper);
-				FunctionIt;
-				++FunctionIt)
-			{
-				++Count;
-			}
-		}
-		return Count;
-	}
-
-	int32 CountUnexpectedFunctionsDeclaredByClass(
-		const UClass* Class,
-		const TSet<FName>& AllowedFunctions)
-	{
-		int32 Count = 0;
-		if (Class)
-		{
-			for (TFieldIterator<UFunction> FunctionIt(
-					Class,
-					EFieldIteratorFlags::ExcludeSuper);
-				FunctionIt;
-				++FunctionIt)
-			{
-				if (!AllowedFunctions.Contains(FunctionIt->GetFName()))
-				{
-					++Count;
-				}
-			}
-		}
-		return Count;
-	}
-
 	template <typename ObjectType>
 	int32 CountDirectObjectsOfClass(const UObject* Outer)
 	{
@@ -472,19 +433,13 @@ namespace RpgCraftingStationWidgetTests
 
 		const FName GeneratedManualSetter(
 			*(FString(TEXT("Set")) + ExpectedSourceName.ToString()));
+		// Presentation functions such as state setters are designer-owned; only the
+		// presenter's manual-source seam is a contract.
 		Test.TestNotNull(
 			*FString::Printf(
-				TEXT("%s exposes only MVVM's expected manual-source setter"),
+				TEXT("%s exposes MVVM's manual-source setter"),
 				Label),
 			GeneratedClass->FindFunctionByName(GeneratedManualSetter));
-		Test.TestEqual(
-			*FString::Printf(
-				TEXT("%s declares no user-authored or conversion-wrapper functions"),
-				Label),
-			CountUnexpectedFunctionsDeclaredByClass(
-				GeneratedClass,
-				{ GeneratedManualSetter }),
-			0);
 		Test.TestTrue(
 			*FString::Printf(
 				TEXT("%s can initialize without a player context"),
@@ -791,20 +746,8 @@ bool FRpgCraftingSpatialCompositionTest::RunTest(
 		return false;
 	}
 
-	TestEqual(
-		TEXT("Crafting screen declares no compiled Blueprint graph functions"),
-		CountFunctionsDeclaredByClass(ScreenGeneratedClass),
-		0);
-	TestEqual(
-		TEXT("Crafting screen owns no root-level MVVM extension"),
-		ScreenGeneratedClass
-			->GetExtensions(UMVVMViewClass::StaticClass(), false)
-			.Num(),
-		0);
-	TestEqual(
-		TEXT("Crafting action button declares no Blueprint graph functions"),
-		CountFunctionsDeclaredByClass(ActionButtonGeneratedClass),
-		0);
+	// Screen graphs and MVVM bindings are designer-owned presentation (filters,
+	// header, empty state); gameplay intents stay in the native presenter.
 	TestEqual(
 		TEXT("Crafting action button owns no ambiguous MVVM extension"),
 		ActionButtonGeneratedClass

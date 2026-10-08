@@ -168,6 +168,81 @@ namespace
 			|| State == ERpgCraftingJobState::Paused
 			|| State == ERpgCraftingJobState::BlockedOutput;
 	}
+
+	ERpgCraftingRecipeState MakeRecipeState(bool bInIsUnlocked, bool bInCanCraftOne)
+	{
+		if (!bInIsUnlocked)
+		{
+			return ERpgCraftingRecipeState::Locked;
+		}
+		return bInCanCraftOne
+			? ERpgCraftingRecipeState::Craftable
+			: ERpgCraftingRecipeState::MissingResources;
+	}
+
+	FText MakeJobStateText(ERpgCraftingJobState State)
+	{
+		switch (State)
+		{
+		case ERpgCraftingJobState::Queued:
+			return NSLOCTEXT("RpgCrafting", "JobStateQueued", "Queued");
+		case ERpgCraftingJobState::Active:
+			return NSLOCTEXT("RpgCrafting", "JobStateActive", "Crafting");
+		case ERpgCraftingJobState::Paused:
+			return NSLOCTEXT("RpgCrafting", "JobStatePaused", "Paused");
+		case ERpgCraftingJobState::BlockedOutput:
+			return NSLOCTEXT("RpgCrafting", "JobStateBlockedOutput", "Output full");
+		case ERpgCraftingJobState::Completed:
+			return NSLOCTEXT("RpgCrafting", "JobStateCompleted", "Done");
+		}
+		return FText::GetEmpty();
+	}
+
+	FText MakeRemainingTimeText(float Seconds)
+	{
+		// The small bias keeps float noise such as 12.0001 from showing as 13 s.
+		const int32 TotalSeconds = FMath::CeilToInt(FMath::Max(0.0f, Seconds) - 0.001f);
+		if (TotalSeconds <= 0)
+		{
+			return FText::GetEmpty();
+		}
+		if (TotalSeconds < 60)
+		{
+			return FText::Format(
+				NSLOCTEXT("RpgCrafting", "JobRemainingSecondsFormat", "{0} s"),
+				FText::AsNumber(TotalSeconds));
+		}
+
+		FNumberFormattingOptions TwoDigits;
+		TwoDigits.SetMinimumIntegralDigits(2).SetUseGrouping(false);
+		const int32 Hours = TotalSeconds / 3600;
+		const int32 Minutes = (TotalSeconds / 60) % 60;
+		const int32 RemainingSeconds = TotalSeconds % 60;
+		if (Hours > 0)
+		{
+			return FText::Format(
+				NSLOCTEXT("RpgCrafting", "JobRemainingHoursFormat", "{0}:{1}:{2}"),
+				FText::AsNumber(Hours, &FNumberFormattingOptions::DefaultNoGrouping()),
+				FText::AsNumber(Minutes, &TwoDigits),
+				FText::AsNumber(RemainingSeconds, &TwoDigits));
+		}
+		return FText::Format(
+			NSLOCTEXT("RpgCrafting", "JobRemainingMinutesFormat", "{0}:{1}"),
+			FText::AsNumber(Minutes),
+			FText::AsNumber(RemainingSeconds, &TwoDigits));
+	}
+
+	FText MakeStationDisplayName(const URpgCraftingStationComponent* Station)
+	{
+		if (!Station)
+		{
+			return FText::GetEmpty();
+		}
+		const FText AuthoredName = Station->GetStationDisplayName();
+		return AuthoredName.IsEmpty()
+			? NSLOCTEXT("RpgCrafting", "DefaultStationDisplayName", "Crafting Station")
+			: AuthoredName;
+	}
 }
 
 void URpgCraftingIngredientViewModel::InitializeIngredient(TSubclassOf<URpgInventoryItemDefinition> InItemDefinition, int32 InRequiredCount, int32 InAvailableCount)
@@ -280,6 +355,8 @@ void URpgCraftingRecipeViewModel::InitializeRecipe(URpgCraftingStationComponent*
 		? InStation->CanCraftRecipe(InRequestingActor, InRecipe)
 		: false;
 	const bool bNewHasMissingResources = bNewIsUnlocked && NewMaxCraftableQuantity <= 0;
+	const ERpgCraftingRecipeState NewRecipeState =
+		MakeRecipeState(bNewIsUnlocked, bNewCanCraftOne);
 
 	FText NewOutputSummary;
 	if (InRecipe && InRecipe->OutputItems.Num() == 1)
@@ -336,6 +413,7 @@ void URpgCraftingRecipeViewModel::InitializeRecipe(URpgCraftingStationComponent*
 	const bool bIsUnlockedChanged = bIsUnlocked != bNewIsUnlocked;
 	const bool bCanCraftOneChanged = bCanCraftOne != bNewCanCraftOne;
 	const bool bHasMissingResourcesChanged = bHasMissingResources != bNewHasMissingResources;
+	const bool bRecipeStateChanged = RecipeState != NewRecipeState;
 	const bool bOutputSummaryChanged =
 		!OutputSummary.IdenticalTo(NewOutputSummary, CraftingTextIdentityFlags);
 
@@ -351,6 +429,7 @@ void URpgCraftingRecipeViewModel::InitializeRecipe(URpgCraftingStationComponent*
 	bIsUnlocked = bNewIsUnlocked;
 	bCanCraftOne = bNewCanCraftOne;
 	bHasMissingResources = bNewHasMissingResources;
+	RecipeState = NewRecipeState;
 	OutputSummary = NewOutputSummary;
 	SearchString = MoveTemp(NewSearchString);
 
@@ -402,6 +481,10 @@ void URpgCraftingRecipeViewModel::InitializeRecipe(URpgCraftingStationComponent*
 	{
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bHasMissingResources);
 	}
+	if (bRecipeStateChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(RecipeState);
+	}
 	if (bOutputSummaryChanged)
 	{
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(OutputSummary);
@@ -452,6 +535,26 @@ void URpgCraftingJobViewModel::InitializeJobForStation(URpgCraftingStationCompon
 		NewProgress = Job.State == ERpgCraftingJobState::Completed ? 1.0f : 0.0f;
 	}
 
+	// Whole-job time left: the running unit plus every unit that has not started yet.
+	const float FullUnitDuration =
+		Job.Recipe ? FMath::Max(0.0f, Job.Recipe->CraftTime) : 0.0f;
+	const int32 UnfinishedUnits =
+		FMath::Max(0, Job.QuantityTotal - Job.QuantityCompleted);
+	float TotalRemainingSeconds = 0.0f;
+	if (Job.State == ERpgCraftingJobState::Active ||
+		Job.State == ERpgCraftingJobState::Paused)
+	{
+		TotalRemainingSeconds = NewRemainingSeconds +
+			FullUnitDuration * FMath::Max(0, UnfinishedUnits - 1);
+	}
+	else if (Job.State == ERpgCraftingJobState::Queued)
+	{
+		TotalRemainingSeconds = FullUnitDuration * UnfinishedUnits;
+	}
+	const FText NewStateText = MakeJobStateText(NewState);
+	const FText NewRemainingTimeText =
+		MakeRemainingTimeText(TotalRemainingSeconds);
+
 	const bool bCraftingStationChanged = CraftingStation != NewCraftingStation;
 	const bool bJobIdChanged = JobId != NewJobId;
 	const bool bRecipeDefinitionChanged = RecipeDefinition != NewRecipeDefinition;
@@ -464,6 +567,10 @@ void URpgCraftingJobViewModel::InitializeJobForStation(URpgCraftingStationCompon
 	const bool bCanCancelJobChanged = bCanCancelJob != bNewCanCancelJob;
 	const bool bProgressChanged = Progress != NewProgress;
 	const bool bRemainingSecondsChanged = RemainingSeconds != NewRemainingSeconds;
+	const bool bStateTextChanged =
+		!StateText.IdenticalTo(NewStateText, CraftingTextIdentityFlags);
+	const bool bRemainingTimeTextChanged =
+		!RemainingTimeText.IdenticalTo(NewRemainingTimeText, CraftingTextIdentityFlags);
 
 	CraftingStation = NewCraftingStation;
 	JobId = NewJobId;
@@ -476,6 +583,8 @@ void URpgCraftingJobViewModel::InitializeJobForStation(URpgCraftingStationCompon
 	bCanCancelJob = bNewCanCancelJob;
 	Progress = NewProgress;
 	RemainingSeconds = NewRemainingSeconds;
+	StateText = NewStateText;
+	RemainingTimeText = NewRemainingTimeText;
 
 	if (bCraftingStationChanged)
 	{
@@ -520,6 +629,14 @@ void URpgCraftingJobViewModel::InitializeJobForStation(URpgCraftingStationCompon
 	if (bRemainingSecondsChanged)
 	{
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(RemainingSeconds);
+	}
+	if (bStateTextChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(StateText);
+	}
+	if (bRemainingTimeTextChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(RemainingTimeText);
 	}
 }
 
@@ -571,6 +688,8 @@ void URpgCraftingStationViewModel::UnbindCraftingStation()
 	const bool bObservedStationChanged = ObservedStation != nullptr;
 	const bool bRequestingActorChanged = RequestingActor != nullptr;
 	const bool bOutputInventoryChanged = OutputInventory != nullptr;
+	const bool bStationDisplayNameChanged = !StationDisplayName.IsEmpty();
+	const bool bStationIconChanged = !StationIcon.IsNull();
 	const bool bSelectedRecipeChanged = SelectedRecipe != nullptr;
 	const bool bCraftQuantityChanged = CraftQuantity != 1;
 	const bool bMaxSelectedCraftQuantityChanged = MaxSelectedCraftQuantity != 0;
@@ -594,6 +713,8 @@ void URpgCraftingStationViewModel::UnbindCraftingStation()
 	ObservedStation = nullptr;
 	RequestingActor = nullptr;
 	OutputInventory = nullptr;
+	StationDisplayName = FText::GetEmpty();
+	StationIcon.Reset();
 	SelectedRecipe = nullptr;
 	CraftQuantity = 1;
 	MaxSelectedCraftQuantity = 0;
@@ -622,6 +743,14 @@ void URpgCraftingStationViewModel::UnbindCraftingStation()
 	if (bOutputInventoryChanged)
 	{
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(OutputInventory);
+	}
+	if (bStationDisplayNameChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(StationDisplayName);
+	}
+	if (bStationIconChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(StationIcon);
 	}
 	if (bSelectedRecipeChanged)
 	{
@@ -679,6 +808,7 @@ void URpgCraftingStationViewModel::UnbindCraftingStation()
 	{
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Jobs);
 	}
+	ApplyRecipeCatalogState(FGameplayTagContainer(), false);
 	OnRecipesChanged.Broadcast();
 	OnSelectedRecipeDetailsChanged.Broadcast();
 	OnJobsChanged.Broadcast();
@@ -1041,8 +1171,16 @@ void URpgCraftingStationViewModel::RebuildStationState()
 		Station && Station->IsCraftingOutputAutoDepositEnabled();
 	const bool bNewShouldAutoDepositCraftingOutputs =
 		Station && Station->ShouldAutoDepositCraftingOutputs();
+	const FText NewStationDisplayName = MakeStationDisplayName(Station);
+	const TSoftObjectPtr<UTexture2D> NewStationIcon =
+		Station ? Station->GetStationIcon() : TSoftObjectPtr<UTexture2D>();
 
 	const bool bOutputInventoryChanged = OutputInventory != NewOutputInventory;
+	const bool bStationDisplayNameChanged =
+		!StationDisplayName.IdenticalTo(
+			NewStationDisplayName,
+			CraftingTextIdentityFlags);
+	const bool bStationIconChanged = StationIcon != NewStationIcon;
 	const bool bStationPausedChanged = bStationPaused != bNewStationPaused;
 	const bool bPauseResumeButtonTextChanged =
 		!PauseResumeButtonText.IdenticalTo(
@@ -1058,6 +1196,8 @@ void URpgCraftingStationViewModel::RebuildStationState()
 		bNewShouldAutoDepositCraftingOutputs;
 
 	OutputInventory = NewOutputInventory;
+	StationDisplayName = NewStationDisplayName;
+	StationIcon = NewStationIcon;
 	bStationPaused = bNewStationPaused;
 	PauseResumeButtonText = NewPauseResumeButtonText;
 	bCanAutoDepositCraftingOutputs = bNewCanAutoDepositCraftingOutputs;
@@ -1071,6 +1211,14 @@ void URpgCraftingStationViewModel::RebuildStationState()
 	if (bOutputInventoryChanged)
 	{
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(OutputInventory);
+	}
+	if (bStationDisplayNameChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(StationDisplayName);
+	}
+	if (bStationIconChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(StationIcon);
 	}
 	if (bStationPausedChanged)
 	{
@@ -1125,6 +1273,7 @@ void URpgCraftingStationViewModel::RebuildRecipeList()
 		{
 			UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(FilteredRecipes);
 		}
+		ApplyRecipeCatalogState(FGameplayTagContainer(), false);
 		if (bRecipeOrderChanged)
 		{
 			OnRecipesChanged.Broadcast();
@@ -1132,11 +1281,17 @@ void URpgCraftingStationViewModel::RebuildRecipeList()
 		return;
 	}
 
+	FGameplayTagContainer NewAvailableCategories;
 	for (URpgCraftingRecipeDefinition* Recipe : Station->GetAvailableRecipes())
 	{
 		if (!Recipe)
 		{
 			continue;
+		}
+
+		if (Recipe->RecipeCategory.IsValid())
+		{
+			NewAvailableCategories.AddTag(Recipe->RecipeCategory);
 		}
 
 		if (CategoryFilter.IsValid() && Recipe->RecipeCategory != CategoryFilter)
@@ -1275,9 +1430,31 @@ void URpgCraftingStationViewModel::RebuildRecipeList()
 	{
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(FilteredRecipes);
 	}
+	ApplyRecipeCatalogState(NewAvailableCategories, !FilteredRecipes.IsEmpty());
 	if (bRecipeOrderChanged)
 	{
 		OnRecipesChanged.Broadcast();
+	}
+}
+
+void URpgCraftingStationViewModel::ApplyRecipeCatalogState(
+	const FGameplayTagContainer& NewAvailableCategories,
+	bool bNewHasFilteredRecipes)
+{
+	const bool bAvailableCategoriesChanged =
+		AvailableCategories != NewAvailableCategories;
+	const bool bHasFilteredRecipesChanged =
+		bHasFilteredRecipes != bNewHasFilteredRecipes;
+	AvailableCategories = NewAvailableCategories;
+	bHasFilteredRecipes = bNewHasFilteredRecipes;
+
+	if (bAvailableCategoriesChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(AvailableCategories);
+	}
+	if (bHasFilteredRecipesChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bHasFilteredRecipes);
 	}
 }
 

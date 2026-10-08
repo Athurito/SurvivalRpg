@@ -690,6 +690,10 @@ void URpgCraftingStationWidget::ResetCraftingContext()
 	{
 		IngredientList->ClearListItems();
 	}
+	if (OutputList)
+	{
+		OutputList->ClearListItems();
+	}
 	if (CraftingJobsList)
 	{
 		CraftingJobsList->ClearListItems();
@@ -936,6 +940,12 @@ void URpgCraftingStationWidget::RefreshSelectedRecipePresentation()
 			? CraftingViewModel->GetSelectedIngredients()
 			: TArray<URpgCraftingIngredientViewModel*>();
 	ReconcileListItems(IngredientList, Ingredients);
+
+	const TArray<URpgCraftingOutputViewModel*> Outputs =
+		Recipe && CraftingViewModel
+			? CraftingViewModel->GetSelectedOutputs()
+			: TArray<URpgCraftingOutputViewModel*>();
+	ReconcileListItems(OutputList, Outputs);
 	RefreshCraftingActionAvailability();
 }
 
