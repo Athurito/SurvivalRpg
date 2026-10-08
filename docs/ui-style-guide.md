@@ -196,8 +196,13 @@ Rules:
 - **Equipment glyphs** mark empty slots: bone white at about 24 % opacity, set
   per slot through the `EmptyGlyphTexture` variable of `CUI_GearSlot` and
   `CUI_CarrySlot`.
-- **Icons** are bone-white engravings with transparency. Tint them per state
-  through the image colour; do not draw extra frames into the icon.
+- **Icons** are engravings with transparency; do not draw extra frames into
+  an icon.
+  - UI icons (skills, gear glyphs, building, stats, crafting, navigation) are
+    bone white. Tint them per state through the image colour.
+  - Item icons (`Icons/items`, since UI-02c) carry material colours, so items
+    stay distinguishable in a full container. Draw them untinted (white); only
+    dim them, for example for an unavailable recipe.
 - **Item icons have the shape of the item's footprint:** 1:1 for 1 × 1 and
   2 × 2, 1:2 for 1 × 2, 1:3 for 1 × 3, 2:3 for 2 × 3. The grid stretches an
   icon over its footprint, so a new item with a different shape needs matching
