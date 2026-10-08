@@ -4,6 +4,7 @@
 #include "Animation/AnimNotifies/AnimNotify.h"
 #include "Animation/AnimNotifies/AnimNotifyState.h"
 #include "Components/ActorComponent.h"
+#include "EdGraphSchema_K2.h"
 #include "Editor.h"
 #include "Engine/Blueprint.h"
 #include "Engine/BlueprintGeneratedClass.h"
@@ -98,6 +99,39 @@ bool URpgBlueprintAssetTools::ImplementInterface(UBlueprint* Blueprint, TSubclas
 	const FScopedTransaction Transaction(NSLOCTEXT("RpgBlueprintAssetTools", "ImplementInterface", "Implement Blueprint Interface"));
 	Blueprint->Modify();
 	return FBlueprintEditorUtils::ImplementNewInterface(Blueprint, InterfaceClass->GetClassPathName());
+}
+
+bool URpgBlueprintAssetTools::EnsureEventGraph(UBlueprint* Blueprint)
+{
+	if (!IsValid(Blueprint) ||
+		Blueprint->BlueprintType == BPTYPE_Interface ||
+		Blueprint->BlueprintType == BPTYPE_MacroLibrary ||
+		Blueprint->BlueprintType == BPTYPE_FunctionLibrary)
+	{
+		return false;
+	}
+
+	if (FBlueprintEditorUtils::FindEventGraph(Blueprint))
+	{
+		return true;
+	}
+
+	const FScopedTransaction Transaction(NSLOCTEXT("RpgBlueprintAssetTools", "EnsureEventGraph", "Add Event Graph"));
+	Blueprint->Modify();
+	UEdGraph* EventGraph = FBlueprintEditorUtils::CreateNewGraph(
+		Blueprint,
+		UEdGraphSchema_K2::GN_EventGraph,
+		UEdGraph::StaticClass(),
+		UEdGraphSchema_K2::StaticClass());
+	if (!EventGraph)
+	{
+		return false;
+	}
+
+	FBlueprintEditorUtils::AddUbergraphPage(Blueprint, EventGraph);
+	Blueprint->LastEditedDocuments.AddUnique(EventGraph);
+	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+	return FBlueprintEditorUtils::FindEventGraph(Blueprint) == EventGraph;
 }
 
 bool URpgBlueprintAssetTools::ChangeOwnSCSComponentClass(UBlueprint* Blueprint, FName ComponentVariableName,

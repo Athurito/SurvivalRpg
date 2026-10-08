@@ -20,6 +20,14 @@ public:
 	static bool ImplementInterface(UBlueprint* Blueprint, TSubclassOf<UInterface> InterfaceClass);
 
 	/**
+	 * Adds the standard EventGraph to a Blueprint that has none, for example a Widget Blueprint authored without graphs.
+	 * Engine tools can add events only to an existing EventGraph. Idempotent: an existing EventGraph returns true unchanged.
+	 * Interfaces, macro and function libraries are rejected. Records undo; compile and save the Blueprint afterwards.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Blueprint|Editor")
+	static bool EnsureEventGraph(UBlueprint* Blueprint);
+
+	/**
 	 * Changes an existing component declared in this Blueprint's own SCS to an instantiable subclass.
 	 * Keeps its node, variable name/GUID, attachments and graph links; duplicates template defaults and
 	 * owned UObject subobjects, then remaps references within this Blueprint and its generated classes.
