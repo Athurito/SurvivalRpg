@@ -436,7 +436,12 @@ class SURVIVALRPG_API URpgTradeSkillViewModel : public UMVVMViewModelBase
 
 public:
 	/** Projects one replicated skill state. */
-	void UpdateSkill(const FTradeSkillState& SkillState, const FText& InDisplayName, float InXPToNextLevel, int32 InMaxLevel);
+	void UpdateSkill(
+		const FTradeSkillState& SkillState,
+		const FText& InDisplayName,
+		const TSoftObjectPtr<UTexture2D>& InIcon,
+		float InXPToNextLevel,
+		int32 InMaxLevel);
 
 	FGameplayTag GetSkillTag() const { return SkillTag; }
 	int32 GetLevel() const { return Level; }
@@ -449,6 +454,10 @@ protected:
 	/** Player-facing skill name. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Skill", meta = (AllowPrivateAccess = "true"))
 	FText DisplayName;
+
+	/** Profession icon from the trade skill config, or null when none is authored. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Skill", meta = (AllowPrivateAccess = "true"))
+	TSoftObjectPtr<UTexture2D> Icon;
 
 	/** Current level. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Skill", meta = (AllowPrivateAccess = "true"))

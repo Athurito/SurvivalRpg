@@ -8,6 +8,7 @@
 #include "RpgTradeSkillConfigData.generated.h"
 
 class UCurveFloat;
+class UTexture2D;
 
 /** Legacy trade-skill ids retained only as a Blueprint migration adapter. */
 UENUM(BlueprintType)
@@ -31,6 +32,10 @@ struct SURVIVALRPG_API FTradeSkillConfig
 	/** Player-facing skill name for progression UI. Empty shows the last part of the skill tag. Display only. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Progression|Trade Skills")
 	FText DisplayName;
+
+	/** Profession icon for progression UI, an engraved bone-white motif with transparency. Empty shows no icon. Display only. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Progression|Trade Skills")
+	TSoftObjectPtr<UTexture2D> Icon;
 
 	/** Optional XP cost by current level; unset entries use round(100 * Level^1.35). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Progression|Trade Skills")
