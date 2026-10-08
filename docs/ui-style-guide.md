@@ -172,7 +172,10 @@ The shape adapts to any widget size, so no 9-slice margin is needed.
 `Content/SurvivalRpg/UI/Art` holds the user's art set, in one engraving
 style:
 - `Icons/`: skills, professions, categories, crafting and navigation, and
-  `Icons/gear` with the equipment glyphs (UI-02).
+  `Icons/gear` with the equipment glyphs (UI-02). UI-02b adds `Icons/items`
+  (item icons), `Icons/building` (buildables and storage upgrades),
+  `Icons/stats` (character values for UI-03), and crafting categories and
+  stations in `Icons/crafting` (for UI-04).
 - `Frames/`: panels, tooltip, slots and controls, and the gear frames
   `T_UI_Gear_Frame_Cell`, `_Equipment`, `_Weapon` and `_Container`.
 - `Ornaments/` (including the paper doll `T_UI_Gear_BodySilhouette`) and
@@ -193,6 +196,19 @@ Rules:
   `CUI_CarrySlot`.
 - **Icons** are bone-white engravings with transparency. Tint them per state
   through the image colour; do not draw extra frames into the icon.
+- **Item icons have the shape of the item's footprint:** 1:1 for 1 × 1 and
+  2 × 2, 1:2 for 1 × 2, 1:3 for 1 × 3, 2:3 for 2 × 3. The grid stretches an
+  icon over its footprint, so a new item with a different shape needs matching
+  art or a matching footprint. Item icons are 512 px on the long edge and are
+  imported with mips (`SimpleAverage`), because they are drawn far smaller.
+- **Fixed icon boxes keep the aspect ratio.** An item icon in a slot, the
+  quickbar, the quick access wheel or a crafting entry sits in a `ScaleBox`
+  (`ScaleToFit`, named `IconFit` where it was added), and its brush takes the
+  texture size (`bMatchSize`). A plain `Image` in a fill slot would squash a
+  portrait icon into the box.
+- **Weapon slots turn long weapons:** `bTurnPortraitIcons` on `CUI_CarrySlot`
+  turns a portrait icon a quarter turn so a sword fills the wide weapon frame.
+  Weapon I and II set it; the off hand keeps icons upright.
 - **Panel frames:** use a `Border` whose background is
   `T_UI_Frame_PanelWide`, drawn as `Box` with margin 0.074 × 0.11. The
   texture is 969 × 654, so the ornamented corners are about 72 px.

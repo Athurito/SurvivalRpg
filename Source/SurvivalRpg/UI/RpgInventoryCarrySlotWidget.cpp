@@ -14,6 +14,7 @@
 #include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutComponent.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryAddressSlotViewModel.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventorySlotGroupViewModel.h"
+#include "SurvivalRpg/UI/RpgInventoryDragVisualWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryCarrySlotWidget)
@@ -262,10 +263,28 @@ void URpgInventoryCarrySlotWidget::SetCarryItemVisualVisible(bool bVisible)
 void URpgInventoryCarrySlotWidget::SetCarryItemIcon(
 	TSoftObjectPtr<UTexture2D> Icon)
 {
-	if (ItemIcon)
+	if (!ItemIcon)
 	{
-		ItemIcon->SetBrushFromLazyTexture(Icon);
+		return;
 	}
+
+	// Item icons are small UI textures. Loading here applies the brush at once, so its size is known below.
+	const UTexture2D* Texture = Icon.LoadSynchronous();
+	ItemIcon->SetBrushFromLazyTexture(Icon, /*bMatchSize=*/ true);
+
+	// The brush has the texture size, so the authored ScaleBox keeps the aspect ratio. A turned portrait icon swaps
+	// its layout size to fill a wide slot; the inverse render scale restores the aspect before the quarter turn.
+	const bool bTurnIcon = bTurnPortraitIcons && Texture && Texture->GetSizeY() > Texture->GetSizeX();
+	FVector2D LayoutSize = ItemIcon->GetBrush().ImageSize;
+	if (bTurnIcon)
+	{
+		LayoutSize = FVector2D(LayoutSize.Y, LayoutSize.X);
+		FSlateBrush TurnedBrush = ItemIcon->GetBrush();
+		TurnedBrush.ImageSize = LayoutSize;
+		ItemIcon->SetBrush(TurnedBrush);
+	}
+	ItemIcon->SetRenderScale(URpgInventoryDragVisualWidget::CalculateIconRenderScale(LayoutSize, bTurnIcon));
+	ItemIcon->SetRenderTransformAngle(bTurnIcon ? 90.0f : 0.0f);
 }
 
 void URpgInventoryCarrySlotWidget::ApplyCarryPresentationState(

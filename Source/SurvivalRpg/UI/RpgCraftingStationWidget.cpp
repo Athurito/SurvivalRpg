@@ -922,7 +922,8 @@ void URpgCraftingStationWidget::RefreshSelectedRecipePresentation()
 	{
 		if (Recipe && !Recipe->Icon.IsNull())
 		{
-			RecipeIcon->SetBrushFromLazyTexture(Recipe->Icon);
+			// The texture size lets the authored ScaleBox keep portrait item icons at their aspect ratio.
+			RecipeIcon->SetBrushFromLazyTexture(Recipe->Icon, /*bMatchSize=*/ true);
 		}
 		else
 		{
