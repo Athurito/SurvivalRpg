@@ -169,6 +169,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Equipment|Load")
 	ERpgEquipmentLoadTier GetEquipmentLoadTier() const { return CurrentEquipmentLoadTier; }
 
+	/** Returns the designer-tuned first kilogram value classified as Heavy, for example to scale a load bar. */
+	UFUNCTION(BlueprintPure, Category = "Equipment|Load")
+	float GetHeavyLoadThreshold() const { return HeavyLoadThreshold; }
+
 	/** Returns the GAS tag corresponding to the current load tier. Exactly one tier tag is applied on the pawn ASC. */
 	UFUNCTION(BlueprintPure, Category = "Equipment|Load")
 	FGameplayTag GetEquipmentLoadTierTag() const;
