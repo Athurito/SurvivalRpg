@@ -137,6 +137,9 @@ void URpgInventoryAddressSlotViewModel::InitializeSlot(
 		InGroupView.EquipmentSlotRole;
 	const bool bNewGearSlot =
 		InGroupView.GroupKind == ERpgInventorySlotGroupKind::Gear;
+	const ERpgItemRarity NewRarity = bCanRepresentItemFromThisCell
+		? NewItem->GetItemizationStateRef().Rarity
+		: ERpgItemRarity::Common;
 
 	const bool bInventoryChanged = Inventory != InInventory;
 	const bool bInventoryLayoutChanged =
@@ -174,6 +177,7 @@ void URpgInventoryAddressSlotViewModel::InitializeSlot(
 	const bool bEquipmentSlotRoleChanged =
 		EquipmentSlotRole != NewEquipmentSlotRole;
 	const bool bGearSlotChanged = bGearSlot != bNewGearSlot;
+	const bool bRarityChanged = Rarity != NewRarity;
 	const bool bWasChanged =
 		bInventoryChanged ||
 		bInventoryLayoutChanged ||
@@ -198,7 +202,20 @@ void URpgInventoryAddressSlotViewModel::InitializeSlot(
 		bCanDragChanged ||
 		bActionbarBindableChanged ||
 		bEquipmentSlotRoleChanged ||
-		bGearSlotChanged;
+		bGearSlotChanged ||
+		bRarityChanged;
+
+	if (bItemInstanceChanged)
+	{
+		if (ItemInstance)
+		{
+			ItemInstance->OnItemizationStateChanged.RemoveDynamic(this, &ThisClass::HandleItemizationStateChanged);
+		}
+		if (NewItem)
+		{
+			NewItem->OnItemizationStateChanged.AddUniqueDynamic(this, &ThisClass::HandleItemizationStateChanged);
+		}
+	}
 
 	Inventory = InInventory;
 	InventoryLayout = InInventoryLayout;
@@ -224,6 +241,7 @@ void URpgInventoryAddressSlotViewModel::InitializeSlot(
 	bActionbarBindable = bNewActionbarBindable;
 	EquipmentSlotRole = NewEquipmentSlotRole;
 	bGearSlot = bNewGearSlot;
+	Rarity = NewRarity;
 
 	if (bInventoryChanged)
 	{
@@ -321,8 +339,30 @@ void URpgInventoryAddressSlotViewModel::InitializeSlot(
 	{
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bGearSlot);
 	}
+	if (bRarityChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Rarity);
+	}
 
 	if (bWasChanged)
+	{
+		OnSlotChanged.Broadcast(this);
+	}
+}
+
+void URpgInventoryAddressSlotViewModel::BeginDestroy()
+{
+	if (ItemInstance)
+	{
+		ItemInstance->OnItemizationStateChanged.RemoveDynamic(this, &ThisClass::HandleItemizationStateChanged);
+	}
+	Super::BeginDestroy();
+}
+
+void URpgInventoryAddressSlotViewModel::HandleItemizationStateChanged(const FRpgItemizationState& NewState)
+{
+	// Covered cells keep observing the item they share but never draw its frame.
+	if (bRenderItemVisual && UE_MVVM_SET_PROPERTY_VALUE(Rarity, NewState.Rarity))
 	{
 		OnSlotChanged.Broadcast(this);
 	}

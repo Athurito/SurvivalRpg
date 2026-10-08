@@ -115,6 +115,9 @@ void URpgEquipmentSlotViewModel::InitializeSlot(ERpgEquipmentSlot InEquipmentSlo
 		BuildItemPresentation(NewItemInstance);
 	const TSoftObjectPtr<UTexture2D> NewIcon = Presentation.Icon;
 	const FText NewShortDisplayName = Presentation.ShortDisplayName;
+	const ERpgItemRarity NewRarity = NewItemInstance
+		? NewItemInstance->GetItemizationStateRef().Rarity
+		: ERpgItemRarity::Common;
 
 	const bool bEquipmentSlotChanged =
 		EquipmentSlot != NewEquipmentSlot;
@@ -127,13 +130,27 @@ void URpgEquipmentSlotViewModel::InitializeSlot(ERpgEquipmentSlot InEquipmentSlo
 		!ShortDisplayName.IdenticalTo(
 			NewShortDisplayName,
 			LoadoutTextIdentityFlags);
+	const bool bRarityChanged = Rarity != NewRarity;
 	const bool bWasChanged =
 		bEquipmentSlotChanged ||
 		bSlotLabelChanged ||
 		bItemInstanceChanged ||
 		bHasItemChanged ||
 		bIconChanged ||
-		bShortDisplayNameChanged;
+		bShortDisplayNameChanged ||
+		bRarityChanged;
+
+	if (bItemInstanceChanged)
+	{
+		if (ItemInstance)
+		{
+			ItemInstance->OnItemizationStateChanged.RemoveDynamic(this, &ThisClass::HandleItemizationStateChanged);
+		}
+		if (NewItemInstance)
+		{
+			NewItemInstance->OnItemizationStateChanged.AddUniqueDynamic(this, &ThisClass::HandleItemizationStateChanged);
+		}
+	}
 
 	EquipmentSlot = NewEquipmentSlot;
 	SlotLabel = NewSlotLabel;
@@ -141,6 +158,7 @@ void URpgEquipmentSlotViewModel::InitializeSlot(ERpgEquipmentSlot InEquipmentSlo
 	bHasItem = bNewHasItem;
 	Icon = NewIcon;
 	ShortDisplayName = NewShortDisplayName;
+	Rarity = NewRarity;
 
 	if (bEquipmentSlotChanged)
 	{
@@ -166,8 +184,29 @@ void URpgEquipmentSlotViewModel::InitializeSlot(ERpgEquipmentSlot InEquipmentSlo
 	{
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(ShortDisplayName);
 	}
+	if (bRarityChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(Rarity);
+	}
 
 	if (bWasChanged)
+	{
+		OnSlotChanged.Broadcast(this);
+	}
+}
+
+void URpgEquipmentSlotViewModel::BeginDestroy()
+{
+	if (ItemInstance)
+	{
+		ItemInstance->OnItemizationStateChanged.RemoveDynamic(this, &ThisClass::HandleItemizationStateChanged);
+	}
+	Super::BeginDestroy();
+}
+
+void URpgEquipmentSlotViewModel::HandleItemizationStateChanged(const FRpgItemizationState& NewState)
+{
+	if (UE_MVVM_SET_PROPERTY_VALUE(Rarity, NewState.Rarity))
 	{
 		OnSlotChanged.Broadcast(this);
 	}

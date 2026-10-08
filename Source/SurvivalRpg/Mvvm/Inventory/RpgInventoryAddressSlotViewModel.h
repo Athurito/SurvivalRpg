@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "MVVMViewModelBase.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
+#include "SurvivalRpg/Inventory/Itemization/RpgItemizationTypes.h"
 #include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutTypes.h"
 #include "UObject/SoftObjectPtr.h"
 
@@ -129,6 +130,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
 	bool IsGearSlot() const { return bGearSlot; }
 
+	/** Rarity of the drawn item's generated roll; Common for empty and covered cells and unrolled items. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
+	ERpgItemRarity GetRarity() const { return Rarity; }
+
 	/** Fired when this slot object keeps identity but its visible data changed. */
 	UPROPERTY(BlueprintAssignable, Category = "Inventory|Layout ViewModel")
 	FRpgInventoryAddressSlotViewModelChanged OnSlotChanged;
@@ -229,4 +234,17 @@ protected:
 	/** Whether this slot is a dedicated gear slot. Gear slots are normally rendered by CUI_GearSlot widgets. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
 	bool bGearSlot = false;
+
+	/**
+	 * Rarity of the item's server-generated roll on the cell that draws the item, for a rarity frame. Common for empty
+	 * and covered cells and for items without a generated roll. Follows replicated roll changes.
+	 */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
+	ERpgItemRarity Rarity = ERpgItemRarity::Common;
+
+	virtual void BeginDestroy() override;
+
+private:
+	UFUNCTION()
+	void HandleItemizationStateChanged(const FRpgItemizationState& NewState);
 };
