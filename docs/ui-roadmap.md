@@ -47,6 +47,7 @@ It records the accepted decisions and the task sequence. The style itself
 | UI-01 | Style foundation: Cinzel font, palette collection, UI materials, CommonUI text, button and border styles, editor template styles, skill screen as proof, style guide | Done: [#198](https://github.com/Athurito/SurvivalRpg/pull/198) |
 | UI-01b | Skill screen after the concept: art set, octagonal plaques with five states, seals and locks, framed panels, detail panel, Q/E/R slots with icon and key, profession icons, menu tab bar and backdrop | Done: [#199](https://github.com/Athurito/SurvivalRpg/pull/199) |
 | UI-02 | Tarkov inventory: pane in columns, one shared cell size, new gear and carry slots, storage and crafting hosting, presentation-only test contracts relaxed | In review: [#200](https://github.com/Athurito/SurvivalRpg/pull/200) |
+| UI-02b | Gameplay icons: the user's 59-icon package for items, skills, gear glyphs, buildables, upgrades, stats and crafting; icons keep their aspect ratio in fixed boxes; weapon slots turn long weapons | In progress |
 | UI-03 | Character stats column (level, XP, load, health, stamina, armour), rarity frames on gear slots, MVVM toolset | Planned |
 | UI-04 | Crafting screen: layout, station name, recipe states, categories and search, output preview, job state | Planned |
 | UI-05 | HUD: new arrangement, material bars for health, stamina and mana, XP bar, context fading, action bar and Q/E/R, enemy health bar | Planned |
@@ -128,8 +129,8 @@ slots and animations.
   - Icons are 512 px. Frames are trimmed to their visible band and at most
     1024 px. All are imported as UI textures without mips.
   - Skill nodes, both tool trees and all six professions point at the new
-    icons. Four pickaxe nodes (Rift Grip, Wide Rift, Deep Grip, Steady Hands)
-    keep their old icons until their art exists.
+    icons. The four remaining pickaxe nodes (Rift Grip, Wide Rift, Deep Grip,
+    Steady Hands) got theirs in UI-02b.
 - **Profession icons:** `FTradeSkillConfig::Icon`, exposed through
   `URpgTradeSkillProgressionComponent::GetSkillIcon` and
   `URpgTradeSkillViewModel`. This is the only native change.
@@ -206,7 +207,45 @@ slots and animations.
   alpha. `CUI_InventorySlotButtonStyle` lost its last users and is retired.
 - **Not done:**
   - The character stats column (UI-03).
-  - Glyphs for pouch and resource bag; both show the navigation bag icon for
-    now.
+  - Glyphs for pouch and resource bag; UI-02b adds them.
   - The crafting output grid is still scaled with the crafting side (UI-04).
   - The quickbar entries keep the HUD look (UI-05).
+
+## Gameplay icons (UI-02b)
+
+- **Art:** the user's package of 59 engraved icons
+  ([third-party-notices.md](third-party-notices.md)), 512 px on the long
+  edge, imported with mips into `Content/SurvivalRpg/UI/Art/Icons`:
+  - `items`: 35 items and 4 dev placeholders (bow, arrows, spell focus, kiln
+    kit);
+  - `skills`: the four pickaxe nodes;
+  - `gear`: pouch and resource bag glyphs, scaled to 256 px like the other
+    glyphs;
+  - `building`: shared chest, wood storage, Rift Containment and Auto Deposit;
+  - `stats` and `crafting`: character values and crafting categories and
+    stations, imported for UI-03 and UI-04 and not wired yet.
+- **Wiring:**
+  - All 43 item definitions (`RpgInventoryFragment_UIData`), the test
+    backpack's container icon, and the nine recipes, which show their output
+    item.
+  - The four pickaxe skill nodes. The ability icons of Rift Grip, Death Wave,
+    Grave Swarm and Striding Wave now use the skill icons.
+  - Both buildables and both storage upgrades.
+  - The pouch and resource bag slots and container headers in
+    `CUI_PlayerInventoryPane`.
+- **Footprints:** the grid stretches an icon over its footprint, so two items
+  now match their art: the basic two-handed sword is 1 × 3 (it was 1 × 1 and
+  had no `UIData` fragment, so no icon), and the test sword is 1 × 2 like the
+  basic sword.
+- **Aspect ratio in fixed boxes:**
+  - Gear slots, the HUD quickbar, the quick access wheel and the crafting
+    recipe, ingredient, job and selection icons now sit in a `ScaleBox`, and
+    their brushes take the texture size.
+  - Native: the icon setters of the carry slot, wheel and crafting widgets pass
+    `bMatchSize`. The Blueprint `SetSlotIcon` functions of `CUI_GearSlot` and
+    `CUI_ActionBarSlotEntry` do the same.
+- **Weapon slots:** `URpgInventoryCarrySlotWidget::bTurnPortraitIcons` turns a
+  portrait icon a quarter turn. The brush swaps its size, and the inverse
+  render scale from `CalculateIconRenderScale` restores the aspect before the
+  turn. Weapon I and II enable it, so swords, axes and pickaxes lie across the
+  wide frame.
