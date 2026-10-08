@@ -351,6 +351,15 @@ void FRpgInventoryUiActionDomainHandler::
 		FeedbackStackCount);
 }
 
+void FRpgInventoryUiActionDomainHandler::RunQuickTransferCommand(
+	URpgInventoryManagerComponent* SourceInventory,
+	URpgInventoryManagerComponent* TargetInventory,
+	const FRpgInventoryQuickTransferRequest& Request) const
+{
+	FRpgInventoryTransactionActionHandler(GetMutableActionComponent())
+		.QuickTransferItem(SourceInventory, TargetInventory, Request);
+}
+
 bool FRpgInventoryUiActionDomainHandler::TryReplayRecentSplitResult(
 	URpgInventoryManagerComponent* Inventory,
 	const FRpgInventorySplitRequest& Request)

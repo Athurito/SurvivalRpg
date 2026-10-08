@@ -93,6 +93,11 @@ void URpgCraftingStationWidget::ValidateCompiledDefaults(
 		TogglePauseInputAction,
 		LOCTEXT("TogglePauseInputActionLabel", "TogglePauseInputAction"),
 		/*bRequired=*/ true);
+	ValidateCommonInputActionRow(
+		CompileLog,
+		TakeAllInputAction,
+		LOCTEXT("TakeAllInputActionLabel", "TakeAllInputAction"),
+		/*bRequired=*/ false);
 }
 
 #endif
@@ -128,6 +133,11 @@ void URpgCraftingStationWidget::NativeOnInitialized()
 	{
 		QuantityMaxButton->SetCraftButtonText(
 			NSLOCTEXT("RpgCrafting", "CraftMaxButton", "Max"));
+	}
+	if (TakeAllButton)
+	{
+		TakeAllButton->SetCraftButtonText(
+			NSLOCTEXT("RpgCrafting", "TakeAllOutputsButton", "Take all"));
 	}
 
 	if (PlayerInventoryPane)
@@ -464,6 +474,20 @@ void URpgCraftingStationWidget::
 	}
 }
 
+void URpgCraftingStationWidget::RequestTakeAllCraftingOutputs()
+{
+	if (!bCraftingContextBound || !CraftingStation || !OutputInventory)
+	{
+		return;
+	}
+
+	if (URpgInventoryUiActionComponent* UiActions =
+		ResolveInventoryUiActionComponent())
+	{
+		UiActions->RequestTakeAllCraftingOutputs(CraftingStation);
+	}
+}
+
 void URpgCraftingStationWidget::ApplyCraftingScreenPayload(UObject* Payload)
 {
 	URpgCraftingStationScreenPayload* NewPayload =
@@ -545,12 +569,12 @@ bool URpgCraftingStationWidget::BindCraftingContext()
 		GetScreenDragDropCoordinator();
 	URpgInventoryPanelNavigationCoordinator* Navigator =
 		GetScreenPanelNavigationCoordinator();
-	if (!PlayerInventoryPane || !Coordinator || !Navigator)
+	if (!Coordinator || !Navigator)
 	{
 		UE_LOG(
 			LogRpgCraftingStationWidget,
 			Error,
-			TEXT("%s rejected Crafting presentation because the required player pane or screen interaction context is missing."),
+			TEXT("%s rejected Crafting presentation because the screen interaction context is missing."),
 			*GetNameSafe(this));
 		ResetCraftingContext();
 		return false;
@@ -632,10 +656,13 @@ bool URpgCraftingStationWidget::BindCraftingContext()
 	PanePresentationContext.DragDropCoordinator = Coordinator;
 	PanePresentationContext.PanelNavigationCoordinator = Navigator;
 	PanePresentationContext.PresentationHost = this;
-	PlayerInventoryPane->BindPlayerInventory(
-		GetOwningPlayer(),
-		PanePresentationContext,
-		TEXT("Player"));
+	if (PlayerInventoryPane)
+	{
+		PlayerInventoryPane->BindPlayerInventory(
+			GetOwningPlayer(),
+			PanePresentationContext,
+			TEXT("Player"));
+	}
 	if (CraftingViewModel)
 	{
 		CraftingViewModel->BindCraftingStation(
@@ -808,6 +835,12 @@ void URpgCraftingStationWidget::BindAuthoredControlEvents()
 			this,
 			&ThisClass::HandlePauseClicked);
 	}
+	if (TakeAllButton)
+	{
+		TakeAllButton->OnClicked().AddUObject(
+			this,
+			&ThisClass::HandleTakeAllClicked);
+	}
 	if (QuantityMinusButton)
 	{
 		QuantityMinusButton->OnClicked().AddUObject(
@@ -861,6 +894,7 @@ void URpgCraftingStationWidget::UnbindAuthoredControlEvents()
 	URpgCraftingActionButtonWidget* Buttons[] = {
 		CraftButton,
 		PauseButton,
+		TakeAllButton,
 		QuantityMinusButton,
 		QuantityPlusButton,
 		QuantityFiveButton,
@@ -1071,6 +1105,10 @@ void URpgCraftingStationWidget::RefreshCraftingActionAvailability()
 	{
 		TogglePauseActionBinding.SetDisplayInActionBar(bHasContext);
 	}
+	if (TakeAllActionBinding.IsValid())
+	{
+		TakeAllActionBinding.SetDisplayInActionBar(bHasContext);
+	}
 }
 
 void URpgCraftingStationWidget::ConfigureQuickTransferRoutes()
@@ -1142,6 +1180,16 @@ void URpgCraftingStationWidget::RegisterCraftingActionBindings()
 					this,
 					&ThisClass::RequestToggleCraftingPause)));
 	}
+	if (IsActionRowValid(TakeAllInputAction))
+	{
+		TakeAllActionBinding = RegisterUIActionBinding(
+			FBindUIActionArgs(
+				TakeAllInputAction,
+				true,
+				FSimpleDelegate::CreateUObject(
+					this,
+					&ThisClass::RequestTakeAllCraftingOutputs)));
+	}
 }
 
 void URpgCraftingStationWidget::UnregisterCraftingActionBindings()
@@ -1154,8 +1202,13 @@ void URpgCraftingStationWidget::UnregisterCraftingActionBindings()
 	{
 		TogglePauseActionBinding.Unregister();
 	}
+	if (TakeAllActionBinding.IsValid())
+	{
+		TakeAllActionBinding.Unregister();
+	}
 	CraftActionBinding = FUIActionBindingHandle();
 	TogglePauseActionBinding = FUIActionBindingHandle();
+	TakeAllActionBinding = FUIActionBindingHandle();
 }
 
 URpgInventoryUiActionComponent*
@@ -1208,6 +1261,11 @@ void URpgCraftingStationWidget::HandleCraftClicked()
 void URpgCraftingStationWidget::HandlePauseClicked()
 {
 	RequestToggleCraftingPause();
+}
+
+void URpgCraftingStationWidget::HandleTakeAllClicked()
+{
+	RequestTakeAllCraftingOutputs();
 }
 
 void URpgCraftingStationWidget::HandleQuantityMinusClicked()

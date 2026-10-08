@@ -7,6 +7,7 @@
 #include "SurvivalRpg/Crafting/RpgCraftingRecipeDefinition.h"
 #include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryContainerActor.h"
+#include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
@@ -230,5 +231,48 @@ void FRpgCraftingActionHandler::SetOutputAutoDepositEnabled(
 		CraftingStation->SetCraftingOutputAutoDepositEnabled(
 			RequestingActor,
 			bEnabled);
+	}
+}
+
+void FRpgCraftingActionHandler::TakeAllOutputs(
+	URpgCraftingStationComponent* CraftingStation)
+{
+	AActor* RequestingActor = GetRequestingActor();
+	URpgInventoryManagerComponent* OutputInventory =
+		CraftingStation ? CraftingStation->GetOutputInventory() : nullptr;
+	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
+	if (!RequestingActor ||
+		!OutputInventory ||
+		!PlayerInventory ||
+		OutputInventory == PlayerInventory ||
+		!CraftingStation->CanActorAccess(RequestingActor))
+	{
+		return;
+	}
+
+	// Every stack runs the regular quick transfer, so access, direction, base-storage and placement rules stay in one
+	// place. The loop stops at the first stack still in the tray; that transfer's feedback tells the player why.
+	for (const FRpgInventoryEntryView& Entry : OutputInventory->GetAllEntries())
+	{
+		if (!Entry.Instance || Entry.StackCount <= 0)
+		{
+			continue;
+		}
+
+		FRpgInventoryQuickTransferRequest Request;
+		Request.RequestId = FGuid::NewGuid();
+		Request.ItemId = Entry.ItemId;
+		Request.ExpectedEntryId = Entry.EntryId;
+		Request.ExpectedSourcePlacement = Entry.Placement;
+		Request.ExpectedSourceQuantity = Entry.StackCount;
+		Request.StackCount = Entry.StackCount;
+		RunQuickTransferCommand(
+			OutputInventory,
+			PlayerInventory,
+			Request);
+		if (OutputInventory->FindItemById(Entry.ItemId))
+		{
+			break;
+		}
 	}
 }

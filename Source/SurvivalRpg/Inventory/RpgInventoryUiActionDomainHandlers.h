@@ -137,6 +137,12 @@ protected:
 		int32 FeedbackStackCount,
 		URpgInventoryManagerComponent* TargetInventory = nullptr);
 
+	/** Runs one validated quick transfer through the transaction handler, for commands that batch transfers. */
+	void RunQuickTransferCommand(
+		URpgInventoryManagerComponent* SourceInventory,
+		URpgInventoryManagerComponent* TargetInventory,
+		const FRpgInventoryQuickTransferRequest& Request) const;
+
 	UObject* GetItemUseContextOuter() const;
 	FRpgInventoryUseConsumePreflight MakeUseConsumePreflight(
 		TWeakObjectPtr<URpgInventoryManagerComponent> Inventory,
@@ -474,4 +480,7 @@ public:
 	void SetOutputAutoDepositEnabled(
 		URpgCraftingStationComponent* CraftingStation,
 		bool bEnabled);
+
+	/** Quick-transfers each output stack into the player inventory until one stack stays in the tray. */
+	void TakeAllOutputs(URpgCraftingStationComponent* CraftingStation);
 };

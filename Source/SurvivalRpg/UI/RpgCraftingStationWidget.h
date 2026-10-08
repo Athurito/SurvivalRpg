@@ -100,6 +100,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Crafting|Actions")
 	void RequestSetCraftingOutputAutoDepositEnabled(bool bEnabled);
 
+	/** Asks the server to move every output stack into the player inventory; stops at the first stack that does not fit. */
+	UFUNCTION(BlueprintCallable, Category = "Crafting|Actions")
+	void RequestTakeAllCraftingOutputs();
+
 protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeConstruct() override;
@@ -137,10 +141,11 @@ protected:
 	virtual FText ResolveQuickTransferDisplayName() const override;
 
 	/**
-	 * Complete passive player-inventory pane authored in CUI_CraftingStationSpatial.
-	 * The pane owns only read-only presentation state; this activatable screen retains interaction and input ownership.
+	 * Optional passive player-inventory pane. The canonical crafting screen shows only the station and omits it; output
+	 * still reaches the player inventory through quick transfer and Take all. When authored, the pane owns only
+	 * read-only presentation state, and this activatable screen retains interaction and input ownership.
 	 */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<URpgPlayerInventoryPaneWidget> PlayerInventoryPane = nullptr;
 
 	/** Authored reusable pane bound to the station output root. */
@@ -215,6 +220,10 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgCraftingActionButtonWidget> QuantityMaxButton = nullptr;
 
+	/** Optional pointer control that moves every output stack into the player inventory through the server. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgCraftingActionButtonWidget> TakeAllButton = nullptr;
+
 	/** Required local preference controlling whether completed output targets base storage. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UCheckBox> AutoDepositCheckBox = nullptr;
@@ -234,6 +243,14 @@ protected:
 		Category = "Input|Crafting",
 		meta = (RowType = "/Script/CommonUI.CommonInputActionDataBase"))
 	FDataTableRowHandle TogglePauseInputAction;
+
+	/** Optional CommonUI action row for the Take all intent; shown in the action bar while a station is bound. */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "Input|Crafting",
+		meta = (RowType = "/Script/CommonUI.CommonInputActionDataBase"))
+	FDataTableRowHandle TakeAllInputAction;
 
 	/** UI-only progress refresh cadence. Replicated job identity and authoritative completion remain station-owned. */
 	UPROPERTY(
@@ -275,6 +292,7 @@ private:
 	void HandleJobEntryReleased(UUserWidget& EntryWidget);
 	void HandleCraftClicked();
 	void HandlePauseClicked();
+	void HandleTakeAllClicked();
 	void HandleQuantityMinusClicked();
 	void HandleQuantityPlusClicked();
 	void HandleQuantityFiveClicked();
@@ -322,4 +340,5 @@ private:
 	FTimerHandle JobProgressTimer;
 	FUIActionBindingHandle CraftActionBinding;
 	FUIActionBindingHandle TogglePauseActionBinding;
+	FUIActionBindingHandle TakeAllActionBinding;
 };

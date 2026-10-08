@@ -341,6 +341,11 @@ void URpgInventoryUiActionComponent::RequestSetCraftingOutputAutoDepositEnabled_
 		bEnabled);
 }
 
+void URpgInventoryUiActionComponent::RequestTakeAllCraftingOutputs_Implementation(URpgCraftingStationComponent* CraftingStation)
+{
+	FRpgCraftingActionHandler(*this).TakeAllOutputs(CraftingStation);
+}
+
 bool URpgInventoryUiActionComponent::CanAccessInventory(URpgInventoryManagerComponent* Inventory) const
 {
 	return FRpgInventoryUiActionDomainHandler(*this).

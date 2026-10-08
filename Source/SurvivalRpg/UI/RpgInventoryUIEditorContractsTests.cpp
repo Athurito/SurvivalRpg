@@ -155,7 +155,6 @@ bool FRpgInventoryUIRequiredBindWidgetsTest::RunTest(
 		{ URpgInventorySpatialPaneWidget::StaticClass(), TEXT("SpatialGrid") },
 		{ URpgBaseResourceListWidget::StaticClass(), TEXT("ResourceList") },
 		{ URpgCraftingActionButtonWidget::StaticClass(), TEXT("Text") },
-		{ URpgCraftingStationWidget::StaticClass(), TEXT("PlayerInventoryPane") },
 		{ URpgCraftingStationWidget::StaticClass(), TEXT("OutputInventoryPane") },
 		{ URpgCraftingStationWidget::StaticClass(), TEXT("RecipeList") },
 		{ URpgCraftingStationWidget::StaticClass(), TEXT("IngredientList") },

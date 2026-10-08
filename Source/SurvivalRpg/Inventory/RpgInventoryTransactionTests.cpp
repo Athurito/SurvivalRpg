@@ -7069,6 +7069,105 @@ bool FRpgCraftingOutputWithdrawalOnlyTransferTest::RunTest(const FString& Parame
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCraftingOutputTakeAllTest,
+	"SurvivalRpg.Inventory.Transfer.CraftingOutputTakeAll",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCraftingOutputTakeAllTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	auto SpawnTransient = [World](UClass* Class, const TCHAR* BaseName) -> AActor*
+	{
+		FActorSpawnParameters SpawnParameters;
+		SpawnParameters.Name = MakeUniqueObjectName(World, Class, BaseName);
+		SpawnParameters.ObjectFlags = RF_Transient;
+		SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		return World->SpawnActor(Class, nullptr, nullptr, SpawnParameters);
+	};
+	ARpgInventoryAutomationTestPlayerController* Controller = Cast<ARpgInventoryAutomationTestPlayerController>(
+		SpawnTransient(ARpgInventoryAutomationTestPlayerController::StaticClass(), TEXT("TakeAllController")));
+	APawn* ControllerPawn = Cast<APawn>(SpawnTransient(APawn::StaticClass(), TEXT("TakeAllPawn")));
+	ARpgInventoryAutomationTestPlayerState* PlayerState = Cast<ARpgInventoryAutomationTestPlayerState>(
+		SpawnTransient(ARpgInventoryAutomationTestPlayerState::StaticClass(), TEXT("TakeAllPlayerState")));
+	ARpgCraftingStationActor* StationActor = Cast<ARpgCraftingStationActor>(
+		SpawnTransient(ARpgCraftingStationActor::StaticClass(), TEXT("TakeAllStation")));
+	if (!TestNotNull(TEXT("The take-all controller exists"), Controller) ||
+		!TestNotNull(TEXT("The take-all pawn exists"), ControllerPawn) ||
+		!TestNotNull(TEXT("The take-all player state exists"), PlayerState) ||
+		!TestNotNull(TEXT("The take-all station exists"), StationActor))
+	{
+		return false;
+	}
+
+	Controller->SetPlayerState(PlayerState);
+	PlayerState->SetOwner(Controller);
+	Controller->Possess(ControllerPawn);
+	URpgInventoryManagerComponent* PlayerInventory = PlayerState->GetInventoryManagerComponent();
+	URpgInventoryUiActionComponent* UiActions = Controller->GetInventoryUiActionComponent();
+	URpgCraftingStationComponent* CraftingStation = StationActor->GetCraftingStationComponent();
+	URpgInventoryManagerComponent* OutputInventory = StationActor->GetOutputInventoryComponent();
+	if (!TestNotNull(TEXT("The player inventory exists"), PlayerInventory) ||
+		!TestNotNull(TEXT("The UI action component exists"), UiActions) ||
+		!TestNotNull(TEXT("The crafting component exists"), CraftingStation) ||
+		!TestNotNull(TEXT("The output tray exists"), OutputInventory))
+	{
+		return false;
+	}
+
+	const TSubclassOf<URpgInventoryItemDefinition> UnitItem = URpgInventoryAutomationTestUnitItemDefinition::StaticClass();
+	FRpgCraftingOutputItem Output;
+	Output.ItemDefinition = UnitItem;
+	Output.Count = 1;
+	const TArray<FRpgCraftingOutputItem> TwoOutputs = { Output, Output };
+	if (!TestTrue(TEXT("The station produces two output stacks"), CraftingStation->AddCraftingOutputs(TwoOutputs)) ||
+		!TestEqual(TEXT("The tray holds two stacks"), OutputInventory->GetUsedEntryCount(), 2))
+	{
+		return false;
+	}
+
+	// Without access nothing moves. The bare test pawn has no root component, so the station moves instead.
+	StationActor->SetActorLocation(FVector(100000.0, 0.0, 0.0));
+	TestFalse(TEXT("The far station denies access"), CraftingStation->CanActorAccess(ControllerPawn));
+	const FString TrayBeforeDeniedTakeAll = MakeInventorySignature(OutputInventory);
+	const FString PlayerBeforeDeniedTakeAll = MakeInventorySignature(PlayerInventory);
+	UiActions->RequestTakeAllCraftingOutputs(CraftingStation);
+	TestEqual(TEXT("A player out of reach leaves the tray unchanged"), MakeInventorySignature(OutputInventory), TrayBeforeDeniedTakeAll);
+	TestEqual(TEXT("A player out of reach receives nothing"), MakeInventorySignature(PlayerInventory), PlayerBeforeDeniedTakeAll);
+
+	// In reach, every stack moves into the player inventory.
+	StationActor->SetActorLocation(FVector::ZeroVector);
+	const int32 PlayerUnitsBefore = PlayerInventory->GetTotalItemCountByDefinition(UnitItem);
+	UiActions->RequestTakeAllCraftingOutputs(CraftingStation);
+	TestEqual(TEXT("Take all empties the tray"), OutputInventory->GetUsedEntryCount(), 0);
+	TestEqual(TEXT("Take all moves both stacks to the player"), PlayerInventory->GetTotalItemCountByDefinition(UnitItem), PlayerUnitsBefore + 2);
+
+	// A full player inventory stops the loop; the tray keeps what does not fit.
+	for (int32 Guard = 0; Guard < 1000 && PlayerInventory->CanAddItemDefinition(UnitItem, 1); ++Guard)
+	{
+		PlayerInventory->AddItemDefinition(UnitItem, 1);
+	}
+	if (!TestFalse(TEXT("The player inventory is full"), PlayerInventory->CanAddItemDefinition(UnitItem, 1)) ||
+		!TestTrue(TEXT("The station produces two more stacks"), CraftingStation->AddCraftingOutputs(TwoOutputs)))
+	{
+		return false;
+	}
+	const FString TrayBeforeFullTakeAll = MakeInventorySignature(OutputInventory);
+	const FString PlayerBeforeFullTakeAll = MakeInventorySignature(PlayerInventory);
+	UiActions->RequestTakeAllCraftingOutputs(CraftingStation);
+	TestEqual(TEXT("A full inventory leaves every stack in the tray"), MakeInventorySignature(OutputInventory), TrayBeforeFullTakeAll);
+	TestEqual(TEXT("A full inventory is not changed"), MakeInventorySignature(PlayerInventory), PlayerBeforeFullTakeAll);
+	return true;
+}
+
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgExactPlacementStackTransferPolicyTest,
 	"SurvivalRpg.Inventory.Transfer.ExactPlacement.StackCapacityAndPartialAssignment",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

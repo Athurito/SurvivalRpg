@@ -658,6 +658,14 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Crafting")
 	void RequestSetCraftingOutputAutoDepositEnabled(URpgCraftingStationComponent* CraftingStation, bool bEnabled);
 
+	/**
+	 * Moves every stack of an accessible crafting station's output tray into this player's inventory, in tray order,
+	 * through the regular quick-transfer policy. Stops at the first stack that does not fit; that stack's feedback
+	 * explains why. Server-authoritative; the client only names the station.
+	 */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Crafting")
+	void RequestTakeAllCraftingOutputs(URpgCraftingStationComponent* CraftingStation);
+
 	/** Stable-ID chest request. Only this controller's player inventory can be used to pay or deposit. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Physical Storage")
 	void RequestPhysicalStorageCommand(FRpgPhysicalStorageRequest Request);
