@@ -47,7 +47,8 @@ void URpgCraftingRecipeEntryWidget::SetRecipeIcon(
 {
 	if (Icon)
 	{
-		Icon->SetBrushFromLazyTexture(InIcon);
+		// The texture size lets the authored ScaleBox keep portrait item icons at their aspect ratio.
+		Icon->SetBrushFromLazyTexture(InIcon, /*bMatchSize=*/ true);
 	}
 }
 

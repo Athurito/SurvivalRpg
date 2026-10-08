@@ -67,9 +67,10 @@ void URpgQuickAccessRadialSlotWidget::SetIconSource(
 	IconSource = MoveTemp(InIconSource);
 	if (ItemIcon)
 	{
+		// The texture size lets the authored ScaleBox keep portrait item icons at their aspect ratio.
 		ItemIcon->SetBrushFromSoftTexture(
 			IconSource,
-			/*bMatchSize=*/ false);
+			/*bMatchSize=*/ true);
 	}
 }
 

@@ -118,6 +118,14 @@ protected:
 	float StateIndicatorOpacity = 0.08f;
 
 	/**
+	 * Turns portrait item icons (taller than wide) a quarter turn so long weapons fill a wide slot, like a rotated
+	 * item in the grid. Square and landscape icons stay upright. The icon keeps its aspect ratio inside the authored
+	 * ScaleBox either way. Designer-tuned per slot instance and cosmetic only.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Carry Slot|Appearance")
+	bool bTurnPortraitIcons = false;
+
+	/**
 	 * Presentation-only transition hook for animation and styling.
 	 * Stable item data is intentionally absent and remains owned by the Address MVVM source.
 	 */
