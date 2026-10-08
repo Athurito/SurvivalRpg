@@ -362,13 +362,16 @@ slots and animations.
 ## Crafting screen (UI-04)
 
 - **Layout (`CUI_CraftingStationSpatial`)** on the crafting workshop
-  backdrop:
+  backdrop. Panel edges line up across the screen:
   - Left: the Inventory title and the player pane, as on the storage screen.
-  - Right: a header with the station icon and name, the category tabs and a
-    search field. Below them sit two framed panels: the recipes with the queue
-    underneath, and the details of the selected recipe.
-  - The station output tray sits in a framed panel at the bottom. It shows
-    two rows and scrolls.
+  - Right: the station icon, name and search field share one header row. The
+    header has the height of the Inventory title, so both panel rows start on
+    the same line.
+  - Below the header, one framed panel holds three columns: a narrow category
+    rail, the recipe list and the details of the selected recipe.
+  - A second framed panel holds the queue and the output tray as tabs. It
+    ends where the Equipment and Containers panels end; a spacer of the quick
+    access bar's height keeps the bottoms aligned.
   - The scale box is gone, so every grid on the screen uses the shared
     56-unit cell.
 - **Station name and icon:** `URpgCraftingStationComponent` gains
@@ -376,39 +379,51 @@ slots and animations.
   The Workbench, Kiln, Parity Workbench and Shared Workbench set them. A
   station without a name shows "Crafting Station".
 - **Filters:**
-  - `CUI_CraftingCategoryTab` is one tab per category (All, Building,
-    Refining, Weapons) with the crafting category icons.
+  - `CUI_CraftingCategoryTab` is one rail tab per category (All, Building,
+    Refining, Weapons): the crafting category icon over a small caption. The
+    selected tab turns gold.
   - The view model's `AvailableCategories` hides the tabs of categories the
     station does not offer, and `CategoryFilter` marks the active tab.
   - The search field sets `SetSearchText`. When nothing matches,
     `bHasFilteredRecipes` shows "No recipes match the filter."
-- **Recipe rows:** `RecipeState` (Craftable, MissingResources, Locked) drives
-  `SetRecipeState` in `CUI_CraftingRecipeEntrySpatial`:
-  - craftable: full icon, no caption;
-  - missing materials: dimmed icon and a red "Missing materials";
-  - locked: darker icon, the lock glyph and "Locked".
+- **Recipe rows:** one line each: icon, name, and on the right the yield
+  ("×20", the view model's `YieldText`) or a state mark. `RecipeState`
+  (Craftable, MissingResources, Locked) drives `SetRecipeState` in
+  `CUI_CraftingRecipeEntrySpatial`:
+  - craftable: full icon and the yield;
+  - missing materials: dimmed icon and a red "!";
+  - locked: darker icon and the lock glyph.
 
-  The tier is a gold caption, and the selected row has the gold frame of the
-  default button style.
+  Rows use the flat `CUI_ButtonStyle_ListRow`: no frame until hovered, a gold
+  frame when selected. Long names end in an ellipsis.
 - **Details:**
-  - the recipe icon in the crafting result frame, the name, description and
-    total time;
-  - the output preview: `OutputList` with `CUI_CraftingOutputEntrySpatial`
-    shows every output with its count for the chosen quantity;
-  - the requirements in palette colours, the quantity buttons, Craft in the
-    primary style, and Pause or Resume.
+  - the recipe icon in the crafting result frame, the name, the total time and
+    the description;
+  - "Yields": `OutputList` with `CUI_CraftingOutputEntrySpatial` lists every
+    output with its count for the chosen quantity, in one line;
+  - the requirements as a table with the columns Material, Need and Have;
+    a short Have count is red;
+  - the quantity stepper (−, count, +, Max) and below it a wide Craft button.
+    Its label names the output, such as "Craft 20x Arrow" (`CraftActionText`);
+  - a hint that finished items go to the output tray.
 
   Without a selected recipe the details are hidden.
-- **Queue:** each job row shows its state (Queued, Crafting, Paused, Output
-  full, Done) and the time left for the whole job, from the view model's
-  `StateText` and `RemainingTimeText`. The progress bar uses the bar style of
-  the stats column.
+- **Queue and output (`CUI_CraftingPanelTab`):** two tabs with a count badge
+  from `JobCount` and `OutputStackCount`. The queue tab shows the jobs and
+  Pause or Resume; the output tab shows the tray and the auto-deposit switch.
+  Each job row shows its state (Queued, Crafting, Paused, Output full, Done)
+  and the time left for the whole job, from the view model's `StateText` and
+  `RemainingTimeText`. The progress bar uses the bar style of the stats
+  column.
 - **Native, read model and presentation only:**
   - `URpgCraftingStationViewModel`: station name and icon,
-    `AvailableCategories`, `bHasFilteredRecipes`;
-  - `URpgCraftingRecipeViewModel::RecipeState`;
+    `AvailableCategories`, `bHasFilteredRecipes`, `CraftActionText`,
+    `JobCount`, `OutputStackCount`;
+  - `URpgCraftingRecipeViewModel`: `RecipeState` and `YieldText`;
   - `URpgCraftingJobViewModel::StateText` and `RemainingTimeText`;
   - `URpgCraftingStationWidget`: the optional `OutputList` and `StationIcon`;
+    the Craft label comes from `CraftActionText`, and the quantity buttons
+    keep their authored visibility and only disable;
   - `URpgCraftingActionButtonWidget`: the label takes the button style's text
     styles, so a disabled button reads as disabled;
   - `URpgCraftingIngredientEntryWidget`: count colours as properties.
@@ -417,7 +432,8 @@ slots and animations.
   adds one.
 - **Tests:** the crafting widget tests no longer freeze the absence of
   Blueprint graphs or a screen view model. New view model tests cover station
-  identity, recipe states, available categories and job texts.
+  identity, recipe states, available categories, job texts, the craft label,
+  yields and the queue and tray counts.
 - **Not done:**
   - The kiln still crafts on request. Automatic processing is a gameplay task
     ([harvesting-roadmap.md](harvesting-roadmap.md), HARV-09d).
@@ -425,3 +441,5 @@ slots and animations.
   - Tabs exist per known category, so a new category needs a new tab.
   - The search field needs a keyboard; on a gamepad, the tabs filter.
   - The view model's tier filter and sort modes are not shown.
+  - The output tray has no "Take all"; items move by drag or quick transfer.
+    A batch transfer needs a new server request.

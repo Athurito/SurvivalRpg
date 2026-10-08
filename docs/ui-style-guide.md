@@ -238,6 +238,7 @@ Rules:
 | `Buttons/CUI_ButtonStyle_Danger` | Danger frame, default hover | ButtonLabel, hovered label |
 | `Buttons/CUI_ButtonStyle_Slot` | Slot frames, no padding, at least 48 × 48 | TileLabel |
 | `Buttons/CUI_ButtonStyle_Tab` | No normal brush; hover and selection frames | Subheading, hovered label |
+| `Buttons/CUI_ButtonStyle_ListRow` | The Tab brushes with 12 × 6 padding, for selectable list rows | ButtonLabel, hovered label |
 | `Buttons/CUI_ButtonStyle_GearSlot` | Equipment slot frame, dim at rest and bright on hover or focus, 5 px padding | — |
 | `Buttons/CUI_ButtonStyle_WeaponSlot` | Weapon slot frame, the same states | — |
 | `Borders/CUI_BorderStyle_Panel`, `_Inset`, `_Tooltip` | The matching panel instance | — |
@@ -259,13 +260,24 @@ styles for newly placed widgets.
   11 pt.
 - **Filter tabs** use the menu tab styles (`CUI_TabButtonNormalStyle`,
   `_SelectedStyle`): ash at rest, gold with the diamond marker when active.
-  `CUI_CraftingCategoryTab` adds an icon. For radio behaviour, clear the
-  other tabs with `ClearSelection`; `SetIsSelected(false)` only deselects a
-  toggleable button.
+  - A category rail (`CUI_CraftingCategoryTab`) stacks a 28-unit icon over an
+    11 pt caption; panel tabs (`CUI_CraftingPanelTab`) use the section title
+    with a gold count badge.
+  - The tabs tint their label and icon on selection and repeat that on
+    Construct, because a text style resets the colour when the widget is
+    built.
+  - For radio behaviour, clear the other tabs with `ClearSelection`;
+    `SetIsSelected(false)` only deselects a toggleable button.
+- **Aligned panels:** panels side by side share their top and bottom edges.
+  Give titles above them the same height, and fill a missing bar below with a
+  spacer of its height.
+- **Tables** (such as crafting requirements) use caption headers and fixed
+  right-aligned number columns of the same width in header and rows, with a
+  faint gold rule under each row.
 - **Availability states** keep the row readable instead of hiding it:
   - available: full icon and bone text;
   - blocked (for example missing materials): icon dimmed to about 60 % and a
-    blood-red caption;
+    blood-red caption or, in one-line rows, a blood-red "!";
   - locked: icon at about 30 %, the lock glyph (`MI_UI_Glyph_Lock`) on the
     icon and an ash caption.
 - **Search fields** draw on `MI_UI_Panel_Inset` with 14 pt Roboto in bone white
