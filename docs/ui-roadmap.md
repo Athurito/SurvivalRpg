@@ -48,12 +48,13 @@ It records the accepted decisions and the task sequence. The style itself
 | UI-01b | Skill screen after the concept: art set, octagonal plaques with five states, seals and locks, framed panels, detail panel, Q/E/R slots with icon and key, profession icons, menu tab bar and backdrop | Done: [#199](https://github.com/Athurito/SurvivalRpg/pull/199) |
 | UI-02 | Tarkov inventory: pane in columns, one shared cell size, new gear and carry slots, storage and crafting hosting, presentation-only test contracts relaxed | Done: [#200](https://github.com/Athurito/SurvivalRpg/pull/200) |
 | UI-02b | Gameplay icons: the user's 59-icon package for items, skills, gear glyphs, buildables, upgrades, stats and crafting; icons keep their aspect ratio in fixed boxes; weapon slots turn long weapons | Done: [#201](https://github.com/Athurito/SurvivalRpg/pull/201) |
-| UI-02c | Coloured item icons: the user's colour version of the gameplay package replaces the 39 item textures in place; every other icon stays bone white | In review: [#203](https://github.com/Athurito/SurvivalRpg/pull/203) |
-| UI-03 | Character stats column (level, XP, load, health, stamina, armour), rarity frames on gear slots, MVVM toolset | In review: [#202](https://github.com/Athurito/SurvivalRpg/pull/202) |
-| UI-04 | Crafting screen: layout, station name, recipe states, categories and search, output preview, job state | Planned |
+| UI-02c | Coloured item icons: the user's colour version of the gameplay package replaces the 39 item textures in place; every other icon stays bone white | Done: [#203](https://github.com/Athurito/SurvivalRpg/pull/203) |
+| UI-03 | Character stats column (level, XP, load, health, stamina, armour), rarity frames on gear slots, MVVM toolset | Done: [#202](https://github.com/Athurito/SurvivalRpg/pull/202) |
+| UI-04 | Crafting screen: layout, station name, recipe states, categories and search, output preview, job state | In progress |
 | UI-05 | HUD: new arrangement, material bars for health, stamina and mana, XP bar, context fading, action bar and Q/E/R, enemy health bar | Planned |
 | UI-06 | Tooltip, context menu, split and drop dialogs, toasts, drag visual, item-only highlight in grids | Planned |
 | UI-07 | Menus (game menu tabs, main menu, settings, respawn), then remove KnightsQuest | Planned |
+| UI-08 | Inventory layout after Diablo 3: character values left of the equipment, containers below, fewer pocket cells | Planned |
 
 ## Noted for later tasks
 
@@ -67,6 +68,21 @@ It records the accepted decisions and the task sequence. The style itself
   - The cell states live in `URpgInventorySpatialCellWidget`. The address slot
     view model already reports whether a cell is an item's origin or covered
     by it.
+- **Inventory layout after Diablo 3 (UI-08):** the user's request from
+  2026-10-08, with a Diablo 3 inventory as reference.
+  - The character values sit directly left of the equipment instead of in a
+    third column on the right, where they look out of place. They become more
+    compact.
+  - The containers move below the equipment.
+  - The pockets get fewer cells. Today they are 6 × 6 in
+    `DA_PlayerInventoryLayout_Default`; the target size is still open.
+  - Open before starting: the pocket size, and what happens to saves. A saved
+    item outside the new pocket grid fails the player graph check on load, so
+    the world does not load and disk writes stay blocked. Options are
+    clearing the pockets in game before the change, starting a new world, or
+    a save migration.
+  - Storage and crafting host the same pane without the values, so their
+    layouts are checked too.
 
 ## Open findings outside UI
 
@@ -233,7 +249,8 @@ slots and animations.
 - **Not done:**
   - The character stats column (UI-03).
   - Glyphs for pouch and resource bag; UI-02b adds them.
-  - The crafting output grid is still scaled with the crafting side (UI-04).
+  - The crafting output grid is still scaled with the crafting side (done in
+    UI-04).
   - The quickbar entries keep the HUD look (UI-05).
 
 ## Gameplay icons (UI-02b)
@@ -341,3 +358,70 @@ slots and animations.
     `10 XP`). The curve is progression content, not UI.
   - Items in the grids show no rarity yet, and the tooltip keeps its own
     rarity colours (UI-06).
+
+## Crafting screen (UI-04)
+
+- **Layout (`CUI_CraftingStationSpatial`)** on the crafting workshop
+  backdrop:
+  - Left: the Inventory title and the player pane, as on the storage screen.
+  - Right: a header with the station icon and name, the category tabs and a
+    search field. Below them sit two framed panels: the recipes with the queue
+    underneath, and the details of the selected recipe.
+  - The station output tray sits in a framed panel at the bottom. It shows
+    two rows and scrolls.
+  - The scale box is gone, so every grid on the screen uses the shared
+    56-unit cell.
+- **Station name and icon:** `URpgCraftingStationComponent` gains
+  `StationDisplayName` and `StationIcon`, designer data on the station class.
+  The Workbench, Kiln, Parity Workbench and Shared Workbench set them. A
+  station without a name shows "Crafting Station".
+- **Filters:**
+  - `CUI_CraftingCategoryTab` is one tab per category (All, Building,
+    Refining, Weapons) with the crafting category icons.
+  - The view model's `AvailableCategories` hides the tabs of categories the
+    station does not offer, and `CategoryFilter` marks the active tab.
+  - The search field sets `SetSearchText`. When nothing matches,
+    `bHasFilteredRecipes` shows "No recipes match the filter."
+- **Recipe rows:** `RecipeState` (Craftable, MissingResources, Locked) drives
+  `SetRecipeState` in `CUI_CraftingRecipeEntrySpatial`:
+  - craftable: full icon, no caption;
+  - missing materials: dimmed icon and a red "Missing materials";
+  - locked: darker icon, the lock glyph and "Locked".
+
+  The tier is a gold caption, and the selected row has the gold frame of the
+  default button style.
+- **Details:**
+  - the recipe icon in the crafting result frame, the name, description and
+    total time;
+  - the output preview: `OutputList` with `CUI_CraftingOutputEntrySpatial`
+    shows every output with its count for the chosen quantity;
+  - the requirements in palette colours, the quantity buttons, Craft in the
+    primary style, and Pause or Resume.
+
+  Without a selected recipe the details are hidden.
+- **Queue:** each job row shows its state (Queued, Crafting, Paused, Output
+  full, Done) and the time left for the whole job, from the view model's
+  `StateText` and `RemainingTimeText`. The progress bar uses the bar style of
+  the stats column.
+- **Native, read model and presentation only:**
+  - `URpgCraftingStationViewModel`: station name and icon,
+    `AvailableCategories`, `bHasFilteredRecipes`;
+  - `URpgCraftingRecipeViewModel::RecipeState`;
+  - `URpgCraftingJobViewModel::StateText` and `RemainingTimeText`;
+  - `URpgCraftingStationWidget`: the optional `OutputList` and `StationIcon`;
+  - `URpgCraftingActionButtonWidget`: the label takes the button style's text
+    styles, so a disabled button reads as disabled;
+  - `URpgCraftingIngredientEntryWidget`: count colours as properties.
+- **Tooling:** the crafting screen and its button had no EventGraph, which the
+  engine Blueprint tools cannot add. `AssetContractTools.ensure_event_graph`
+  adds one.
+- **Tests:** the crafting widget tests no longer freeze the absence of
+  Blueprint graphs or a screen view model. New view model tests cover station
+  identity, recipe states, available categories and job texts.
+- **Not done:**
+  - The kiln still crafts on request. Automatic processing is a gameplay task
+    ([harvesting-roadmap.md](harvesting-roadmap.md), HARV-09d).
+  - Locked recipes show no unlock condition; the recipe data has none.
+  - Tabs exist per known category, so a new category needs a new tab.
+  - The search field needs a keyboard; on a gamepad, the tabs filter.
+  - The view model's tier filter and sort modes are not shown.

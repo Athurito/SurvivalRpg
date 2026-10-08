@@ -177,7 +177,8 @@ style:
   `Icons/gear` with the equipment glyphs (UI-02). UI-02b adds `Icons/items`
   (item icons), `Icons/building` (buildables and storage upgrades),
   `Icons/stats` (character values, used by the stats column), and crafting
-  categories and stations in `Icons/crafting` (for UI-04).
+  categories and stations in `Icons/crafting` (used by the crafting screen
+  since UI-04).
 - `Frames/`: panels, tooltip, slots and controls, and the gear frames
   `T_UI_Gear_Frame_Cell`, `_Equipment`, `_Weapon` and `_Container`.
 - `Ornaments/` (including the paper doll `T_UI_Gear_BodySilhouette`) and
@@ -256,6 +257,21 @@ styles for newly placed widgets.
   progress fields directly.
 - Body text is at least 13 pt. Only labels inside fixed tiles may go down to
   11 pt.
+- **Filter tabs** use the menu tab styles (`CUI_TabButtonNormalStyle`,
+  `_SelectedStyle`): ash at rest, gold with the diamond marker when active.
+  `CUI_CraftingCategoryTab` adds an icon. For radio behaviour, clear the
+  other tabs with `ClearSelection`; `SetIsSelected(false)` only deselects a
+  toggleable button.
+- **Availability states** keep the row readable instead of hiding it:
+  - available: full icon and bone text;
+  - blocked (for example missing materials): icon dimmed to about 60 % and a
+    blood-red caption;
+  - locked: icon at about 30 %, the lock glyph (`MI_UI_Glyph_Lock`) on the
+    icon and an ash caption.
+- **Search fields** draw on `MI_UI_Panel_Inset` with 14 pt Roboto in bone white
+  and a hint text.
+- **Button labels** of `URpgCraftingActionButtonWidget` take the button
+  style's text styles, so a disabled button also dims its label.
 - A scroll box inside a scale box needs a capped height; otherwise the scale box
   shrinks the whole scroll content.
 - **Controller readiness:**
@@ -288,8 +304,9 @@ palette values:
 - `RpgInventoryItemTooltipWidget.h`, `RpgInventoryFeedbackToastWidget.h`:
   UI-06.
 - `RpgQuickAccessRadialWidget.h`: UI-05.
+- `RpgCraftingIngredientEntryWidget.h` `EnoughCountColor` and
+  `MissingCountColor`: bone white and blood red in
+  `CUI_CraftingIngredientEntrySpatial` (UI-04).
 
-Two colours are fixed in native code:
-- the ingredient count colours in `RpgCraftingIngredientEntryWidget.cpp`, to be
-  replaced in UI-04;
-- the tooltip colours in `RpgInventoryItemTooltipWidget.cpp`, UI-06.
+The tooltip colours in `RpgInventoryItemTooltipWidget.cpp` are still fixed in
+native code (UI-06).
