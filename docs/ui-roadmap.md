@@ -46,9 +46,9 @@ It records the accepted decisions and the task sequence. The style itself
 | --- | --- | --- |
 | UI-01 | Style foundation: Cinzel font, palette collection, UI materials, CommonUI text, button and border styles, editor template styles, skill screen as proof, style guide | Done: [#198](https://github.com/Athurito/SurvivalRpg/pull/198) |
 | UI-01b | Skill screen after the concept: art set, octagonal plaques with five states, seals and locks, framed panels, detail panel, Q/E/R slots with icon and key, profession icons, menu tab bar and backdrop | Done: [#199](https://github.com/Athurito/SurvivalRpg/pull/199) |
-| UI-02 | Tarkov inventory: pane in columns, one shared cell size, new gear and carry slots, storage and crafting hosting, presentation-only test contracts relaxed | In review: [#200](https://github.com/Athurito/SurvivalRpg/pull/200) |
-| UI-02b | Gameplay icons: the user's 59-icon package for items, skills, gear glyphs, buildables, upgrades, stats and crafting; icons keep their aspect ratio in fixed boxes; weapon slots turn long weapons | In review: [#201](https://github.com/Athurito/SurvivalRpg/pull/201) |
-| UI-03 | Character stats column (level, XP, load, health, stamina, armour), rarity frames on gear slots, MVVM toolset | Planned |
+| UI-02 | Tarkov inventory: pane in columns, one shared cell size, new gear and carry slots, storage and crafting hosting, presentation-only test contracts relaxed | Done: [#200](https://github.com/Athurito/SurvivalRpg/pull/200) |
+| UI-02b | Gameplay icons: the user's 59-icon package for items, skills, gear glyphs, buildables, upgrades, stats and crafting; icons keep their aspect ratio in fixed boxes; weapon slots turn long weapons | Done: [#201](https://github.com/Athurito/SurvivalRpg/pull/201) |
+| UI-03 | Character stats column (level, XP, load, health, stamina, armour), rarity frames on gear slots, MVVM toolset | In review |
 | UI-04 | Crafting screen: layout, station name, recipe states, categories and search, output preview, job state | Planned |
 | UI-05 | HUD: new arrangement, material bars for health, stamina and mana, XP bar, context fading, action bar and Q/E/R, enemy health bar | Planned |
 | UI-06 | Tooltip, context menu, split and drop dialogs, toasts, drag visual | Planned |
@@ -222,8 +222,9 @@ slots and animations.
   - `gear`: pouch and resource bag glyphs, scaled to 256 px like the other
     glyphs;
   - `building`: shared chest, wood storage, Rift Containment and Auto Deposit;
-  - `stats` and `crafting`: character values and crafting categories and
-    stations, imported for UI-03 and UI-04 and not wired yet.
+  - `stats`: character values, used by the stats column since UI-03;
+  - `crafting`: crafting categories and stations, imported for UI-04 and not
+    wired yet.
 - **Wiring:**
   - All 43 item definitions (`RpgInventoryFragment_UIData`), the test
     backpack's container icon, and the nine recipes, which show their output
@@ -249,3 +250,51 @@ slots and animations.
   render scale from `CalculateIconRenderScale` restores the aspect before the
   turn. Weapon I and II enable it, so swords, axes and pickaxes lie across the
   wide frame.
+
+## Character stats (UI-03)
+
+- **Column:** `CUI_CharacterStats` is a framed panel like the equipment and
+  container columns. It shows:
+  - level with the experience bar and text;
+  - health and stamina with value and bar;
+  - armour;
+  - load with its tier, a bar up to the heavy threshold, and kilograms.
+
+  Its icons come from `Icons/stats`; load uses the backpack glyph.
+  `CUI_PlayerInventoryPane` hosts it as a third column behind the designer
+  variable `bShowCharacterStats`. Only `CUI_PlayerInventory` turns it on;
+  storage and crafting keep two columns.
+- **Read model:** `URpgCharacterStatsViewModel` mirrors gameplay state:
+  - level and experience from `URpgPlayerProgressionComponent`;
+  - health, stamina and armour from the pawn's ability system;
+  - load and tier from the equipment loadout message.
+
+  It also offers display text and bar fractions, so the widget binds property
+  to property. `URpgUiSubsystem` owns one per local player and rebinds it after
+  a respawn. Widgets get it through `URpgLocalPlayerViewModelResolver`, which
+  `Config/DefaultModelViewViewModel.ini` makes the default resolver. The HUD
+  (UI-05) can bind the same instance. `URpgEquipmentLoadoutComponent` exposes
+  `GetHeavyLoadThreshold` for the load bar.
+- **Rarity frames:**
+  - The gear and carry slot view models expose the generated `Rarity` of the
+    item, and Common for items without a roll.
+  - `CUI_GearSlot` and `CUI_CarrySlot` draw a `RarityRing` inside the frame
+    through their `SetRarityRing` function. `MI_UI_RarityRing_Uncommon`,
+    `_Rare` and `_Epic` take the palette rarity roles; Common shows no ring.
+  - In the weapon slots the ring lies above the gold glow of the weapon in
+    hand.
+- **MVVM toolset:** the project enables the engine's `MVVMToolset`, so view
+  models and property bindings are authored through Unreal MCP; the stats
+  column is bound entirely through it. `AssetContractTools` adds the two
+  missing pieces: a binding to a widget function (`add_view_function_binding`)
+  and a function input of an enum, struct or object type
+  (`add_function_input`). The skill reference
+  [unreal-mcp-asset-authoring.md](../.agents/skills/unreal-lyra-expert/references/unreal-mcp-asset-authoring.md#widget-blueprint)
+  describes them.
+- **Not done:**
+  - Mana, which UI-05 adds once a pawn has the attribute.
+  - `DA_PlayerProgression` has no `XPToNextLevel` curve, so the experience bar
+    stays empty and the text shows only the experience (for example
+    `10 XP`). The curve is progression content, not UI.
+  - Items in the grids show no rarity yet, and the tooltip keeps its own
+    rarity colours (UI-06).
