@@ -1084,6 +1084,11 @@ bool FRpgTradeSkillDisplayNameTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("An authored name wins"), TradeSkills->GetSkillDisplayName(Logging).ToString(), FString(TEXT("Woodcutting")));
 	TestEqual(TEXT("Skills without a name still use the tag leaf"),
 		TradeSkills->GetSkillDisplayName(RpgTradeSkillGameplayTags::Skill_Gathering_Mining).ToString(), FString(TEXT("Mining")));
+
+	const TSoftObjectPtr<UTexture2D> LoggingIcon(FSoftObjectPath(TEXT("/Game/Test/T_LoggingIcon.T_LoggingIcon")));
+	Config->TaggedSkillConfigs.FindChecked(Logging).Icon = LoggingIcon;
+	TestEqual(TEXT("An authored icon is returned"), TradeSkills->GetSkillIcon(Logging), LoggingIcon);
+	TestTrue(TEXT("Skills without an icon return none"), TradeSkills->GetSkillIcon(RpgTradeSkillGameplayTags::Skill_Gathering_Mining).IsNull());
 	return true;
 }
 

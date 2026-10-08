@@ -462,12 +462,14 @@ void URpgSkillTreeViewModel::Rebuild()
 void URpgTradeSkillViewModel::UpdateSkill(
 	const FTradeSkillState& SkillState,
 	const FText& InDisplayName,
+	const TSoftObjectPtr<UTexture2D>& InIcon,
 	const float InXPToNextLevel,
 	const int32 InMaxLevel)
 {
 	const bool bNewIsMaxLevel = SkillState.Level >= InMaxLevel;
 	UE_MVVM_SET_PROPERTY_VALUE(SkillTag, SkillState.SkillTag);
 	UE_MVVM_SET_PROPERTY_VALUE(DisplayName, InDisplayName);
+	UE_MVVM_SET_PROPERTY_VALUE(Icon, InIcon);
 	UE_MVVM_SET_PROPERTY_VALUE(Level, SkillState.Level);
 	UE_MVVM_SET_PROPERTY_VALUE(MaxLevel, InMaxLevel);
 	UE_MVVM_SET_PROPERTY_VALUE(XP, SkillState.XP);
@@ -662,6 +664,7 @@ void URpgSkillProgressionViewModel::Rebuild()
 			Skill->UpdateSkill(
 				SkillState,
 				TradeSkills->GetSkillDisplayName(SkillState.SkillTag),
+				TradeSkills->GetSkillIcon(SkillState.SkillTag),
 				TradeSkills->GetXPToNextLevelByTag(SkillState.SkillTag),
 				TradeSkills->GetMaxSkillLevelByTag(SkillState.SkillTag));
 			NewSkills.Add(Skill);

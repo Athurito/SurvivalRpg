@@ -464,6 +464,12 @@ FText URpgTradeSkillProgressionComponent::GetSkillDisplayName(const FGameplayTag
 	return FText::FromString(LeafName);
 }
 
+TSoftObjectPtr<UTexture2D> URpgTradeSkillProgressionComponent::GetSkillIcon(const FGameplayTag SkillTag) const
+{
+	const FTradeSkillConfig* Config = GetConfig(SkillTag);
+	return Config ? Config->Icon : TSoftObjectPtr<UTexture2D>();
+}
+
 const FTradeSkillConfig* URpgTradeSkillProgressionComponent::GetConfig(const FGameplayTag SkillTag) const
 {
 	if (!ConfigData)

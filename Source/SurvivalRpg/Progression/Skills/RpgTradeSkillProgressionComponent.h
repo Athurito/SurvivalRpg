@@ -69,6 +69,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rpg|Progression|Trade Skills")
 	FText GetSkillDisplayName(FGameplayTag SkillTag) const;
 
+	/** Returns SkillTag's profession icon from ConfigData, or a null reference when none is authored. UI read-only. */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Progression|Trade Skills")
+	TSoftObjectPtr<UTexture2D> GetSkillIcon(FGameplayTag SkillTag) const;
+
 	/** Returns SkillTag's base quantity multiplier; defaults linearly from 1.0 at level 1 to 1.5 at level 100. */
 	UFUNCTION(BlueprintPure, Category = "Rpg|Progression|Trade Skills")
 	float GetSkillYieldMultiplier(FGameplayTag SkillTag) const;
