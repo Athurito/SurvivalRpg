@@ -77,6 +77,10 @@ everything else uses the engine's Roboto. Text styles are in `Text/`.
 | `CUI_TextStyle_ButtonLabelDisabled` | Roboto Bold, spacing 20 | 15 | TextDisabled | Disabled button text |
 | `CUI_TextStyle_TileLabel` | Roboto Bold, shadow | 13 | TextPrimary | Names inside fixed tiles (skill nodes, slots) |
 | `CUI_TextStyle_TileCaption` | Roboto Regular, shadow | 11 | TextMuted | Status lines inside fixed tiles |
+| `CUI_TextStyle_TileCaptionBone`, `_TileCaptionGold`, `_TileCaptionBlood` | Roboto Regular, shadow | 11 | TextPrimary, Accent, Blood | Status lines whose colour carries a state (set with `CommonText SetStyle`) |
+| `CUI_TextStyle_NodeName` | Cinzel Bold, spacing 10, shadow | 12 | TextPrimary | Skill node names |
+| `CUI_TextStyle_StateLabel` | Cinzel Bold, spacing 120, shadow | 18 | Accent | State labels such as LEARNED |
+| `CUI_TextStyle_KeyBadge` | Cinzel Bold, shadow | 16 | TextPrimary | Key badges (Q, E, R) |
 
 ## Spacing and sizes
 
@@ -103,6 +107,13 @@ screen pixels. They multiply by the widget's vertex colour, so a brush tint,
 - **Grain:** `NoiseStrength`, `NoiseScale`, `NoiseScaleCoarse` and
   `NoiseTexture`, an additive grime grain.
 - **Palette:** `FillRole` and `EdgeRole`.
+
+Since UI-01b, `M_UI_Panel` also has:
+- `Chamfer`: corner cut as a fraction of the shorter side. 0.29 draws an
+  octagon, 0.5 a diamond.
+- `TintFillAmount`: how much the widget tint colours the fill. The edge and
+  glow always take the tint. A low value lets a state colour show only in the
+  frame, as on the skill plaques.
 
 `M_UI_ResourceBar` draws bar fills:
 - **Shape:** `Radius`, `EdgeWidth`, `EdgeOpacity` (darkened inner edge).
@@ -134,8 +145,41 @@ material's colour shows.
 | `MI_UI_ResourceBar_Health`, `_Stamina`, `_Mana`, `_XP`, `_Load` | Resource bar | Bar fills |
 | `MI_UI_ResourceBar_Ticks` | Resource bar | Segment ticks only, as an overlay above a bar |
 
+| `MI_UI_Plaque`, `_PlaqueHovered`, `_PlaquePressed` | Panel | Octagonal skill plaques; the widget's state colour tints frame and glow |
+| `MI_UI_PlaqueRing` | Panel | Outer selection ring around a plaque |
+| `MI_UI_Frame_Row` | Panel | List rows; dim iron edge, gold when the widget tints it as selected |
+| `MI_UI_Glyph_Lock`, `_Forbidden`, `_Diamond` | Glyph | Lock, forbidden sign and diamond badges |
+| `MI_UI_TabMarker`, `_TabMarkerDim` | Glyph | Underline marker with a diamond under active and hovered tabs |
+
+`M_UI_Glyph` draws small symbols from signed distances:
+- **`GlyphType`:** 0 lock, 1 forbidden sign, 2 diamond, 3 tab marker.
+- **Other parameters:** `Thickness` and `ColorRole`.
+
 Brushes that use these materials draw as `Image` with a 32 × 32 image size.
 The shape adapts to any widget size, so no 9-slice margin is needed.
+
+## Art set
+
+`Content/SurvivalRpg/UI/Art` holds the user's art set, in one engraving
+style:
+- `Icons/`: skills, professions, categories, crafting and navigation.
+- `Frames/`: panels, tooltip, slots and controls.
+- `Ornaments/` and `Backgrounds/`.
+
+Rules:
+- **Icons** are bone-white engravings with transparency. Tint them per state
+  through the image colour; do not draw extra frames into the icon.
+- **Panel frames:** use a `Border` whose background is
+  `T_UI_Frame_PanelWide`, drawn as `Box` with margin 0.074 × 0.11 and image
+  size 360 × 243.
+  - Lay the frame over an iron fill (`MI_UI_Panel_Inset`).
+  - Use a `Border`, not an `Image`: an image's brush size would force a
+    minimum panel size.
+  - The textures are trimmed to their band, so the frame sits at the panel
+    edge.
+- **Slot frames** (`T_UI_Slot_*`) stay square images.
+- **`CUI_BorderStyle_MenuBackdrop`** draws the darkened night forest behind
+  the game menu.
 
 ## CommonUI styles
 

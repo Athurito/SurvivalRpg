@@ -45,7 +45,7 @@ It records the accepted decisions and the task sequence. The style itself
 | ID | Scope | Status |
 | --- | --- | --- |
 | UI-01 | Style foundation: Cinzel font, palette collection, UI materials, CommonUI text, button and border styles, editor template styles, skill screen as proof, style guide | In review: [#198](https://github.com/Athurito/SurvivalRpg/pull/198) |
-| UI-01b | Skill screen after the concept: octagonal plaques with five states, engraved icons, procedural seals and locks, detail panel, Q/E/R slots with icon and key, profession icons, menu tab bar, short animations | Planned |
+| UI-01b | Skill screen after the concept: art set, octagonal plaques with five states, seals and locks, framed panels, detail panel, Q/E/R slots with icon and key, profession icons, menu tab bar and backdrop | In progress |
 | UI-02 | Tarkov inventory: pane in columns, one shared cell size, new gear and carry slots, storage and crafting hosting, presentation-only test contracts relaxed | Planned |
 | UI-03 | Character stats column (level, XP, load, health, stamina, armour), rarity frames on gear slots, MVVM toolset | Planned |
 | UI-04 | Crafting screen: layout, station name, recipe states, categories and search, output preview, job state | Planned |
@@ -115,3 +115,48 @@ slots and animations.
   - edges brighten on selection;
   - a light pulse runs along unlocked links;
   - a seal is stamped when a node is learned.
+
+### Implementation (UI-01b)
+
+- **Art set:** the user's generated art lives in `Content/SurvivalRpg/UI/Art`
+  ([third-party-notices.md](third-party-notices.md)):
+  - icons for skills, professions, skill tree categories, crafting and
+    navigation;
+  - panel, tooltip and slot frames, plus button, tab, progress and divider
+    controls;
+  - two ornaments and two backgrounds.
+  - Icons are 512 px. Frames are trimmed to their visible band and at most
+    1024 px. All are imported as UI textures without mips.
+  - Skill nodes, both tool trees and all six professions point at the new
+    icons. Four pickaxe nodes (Rift Grip, Wide Rift, Deep Grip, Steady Hands)
+    keep their old icons until their art exists.
+- **Profession icons:** `FTradeSkillConfig::Icon`, exposed through
+  `URpgTradeSkillProgressionComponent::GetSkillIcon` and
+  `URpgTradeSkillViewModel`. This is the only native change.
+- **Nodes:** `CUI_SkillTreeNode` is an octagonal plaque, `M_UI_Panel` with
+  `Chamfer`. Its state colour only tints the frame and glow
+  (`TintFillAmount`).
+  - Learned: gold frame and a seal.
+  - Learnable: bone frame and the point cost.
+  - Unaffordable: ash.
+  - Locked: dark frame, dimmed icon, a procedural lock and the prerequisite.
+  - Excluded: a blood-red frame and a forbidden sign.
+  - The selected node gets an outer ring.
+- **Screen:** `CUI_Skills` has three framed panels on the night forest
+  backdrop:
+  - Left: character, professions with icons, and skill trees; the selected
+    tree has a gold frame.
+  - Centre: the tree over a faint ritual tree sigil, and the equipped
+    abilities. Each Q/E/R slot shows a key badge, the ability icon and its
+    name.
+  - Right: the detail panel with the icon, name, tree and kind, description,
+    state, slot, an Assign Ability button and Reset tree.
+- **Assign Ability:** moves the selected learned ability to the first empty
+  slot. If it already sits in a slot, it moves to the next one.
+- **Menu tabs:** the shared tab styles in
+  `Content/SurvivalRpg/UI/Menus/Shared/Modular/TabList` use Cinzel in ash. The
+  active tab is gold with an underline marker and a diamond (`M_UI_Glyph` type
+  3). This also changes the settings menu tabs.
+- **Not done:**
+  - Animations: the pulse along unlocked links and the seal stamp on learning.
+  - Full gamepad focus styling of the plain node and slot buttons.
