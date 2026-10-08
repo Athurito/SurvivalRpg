@@ -362,18 +362,19 @@ slots and animations.
 ## Crafting screen (UI-04)
 
 - **Layout (`CUI_CraftingStationSpatial`)** on the crafting workshop
-  backdrop. Panel edges line up across the screen:
-  - Left: the Inventory title and the player pane, as on the storage screen.
-  - Right: the station icon, name and search field share one header row. The
-    header has the height of the Inventory title, so both panel rows start on
-    the same line.
-  - Below the header, one framed panel holds three columns: a narrow category
-    rail, the recipe list and the details of the selected recipe.
-  - A second framed panel holds the queue and the output tray as tabs. It
-    ends where the Equipment and Containers panels end; a spacer of the quick
-    access bar's height keeps the bottoms aligned.
+  backdrop. The screen shows only the station, without the player
+  inventory, and uses the full width:
+  - The station icon, name and search field share one header row.
+  - One framed panel holds a narrow category rail, the recipe list and the
+    details of the selected recipe. The details split into two columns:
+    the recipe on the left, requirements and crafting on the right.
+  - Below it, the queue and the output tray sit side by side in two framed
+    panels that share their top and bottom edges.
   - The scale box is gone, so every grid on the screen uses the shared
     56-unit cell.
+  - The Have column counts the player's resources, so the screen needs no
+    player pane. Finished items reach the player inventory through Take all
+    or quick transfer (Ctrl+click, gamepad X).
 - **Station name and icon:** `URpgCraftingStationComponent` gains
   `StationDisplayName` and `StationIcon`, designer data on the station class.
   The Workbench, Kiln, Parity Workbench and Shared Workbench set them. A
@@ -408,22 +409,30 @@ slots and animations.
   - a hint that finished items go to the output tray.
 
   Without a selected recipe the details are hidden.
-- **Queue and output (`CUI_CraftingPanelTab`):** two tabs with a count badge
-  from `JobCount` and `OutputStackCount`. The queue tab shows the jobs and
-  Pause or Resume; the output tab shows the tray and the auto-deposit switch.
-  Each job row shows its state (Queued, Crafting, Paused, Output full, Done)
-  and the time left for the whole job, from the view model's `StateText` and
-  `RemainingTimeText`. The progress bar uses the bar style of the stats
-  column.
+- **Queue and output:** two side-by-side panels with a count in each
+  header (`JobCount`, `OutputStackCount`).
+  - The queue panel has Pause or Resume. Each job row shows its state
+    (Queued, Crafting, Paused, Output full, Done) and the time left for the
+    whole job, from the view model's `StateText` and `RemainingTimeText`.
+    The progress bar uses the bar style of the stats column.
+  - The output panel has Take all and the auto-deposit switch. Take all is
+    disabled while the tray is empty and also sits in the action bar
+    (`UI.Crafting.TakeAll`: T, gamepad right stick press).
+- **Take all:** `URpgInventoryUiActionComponent::RequestTakeAllCraftingOutputs`
+  is a server request. It runs the regular quick transfer for every tray
+  stack, so access, direction and placement rules stay in one place, and
+  stops at the first stack that does not fit. That stack's feedback explains
+  why.
 - **Native, read model and presentation only:**
   - `URpgCraftingStationViewModel`: station name and icon,
     `AvailableCategories`, `bHasFilteredRecipes`, `CraftActionText`,
     `JobCount`, `OutputStackCount`;
   - `URpgCraftingRecipeViewModel`: `RecipeState` and `YieldText`;
   - `URpgCraftingJobViewModel::StateText` and `RemainingTimeText`;
-  - `URpgCraftingStationWidget`: the optional `OutputList` and `StationIcon`;
-    the Craft label comes from `CraftActionText`, and the quantity buttons
-    keep their authored visibility and only disable;
+  - `URpgCraftingStationWidget`: the optional `OutputList`, `StationIcon`
+    and `TakeAllButton`; the player pane is optional. The Craft label comes
+    from `CraftActionText`, and the quantity buttons keep their authored
+    visibility and only disable;
   - `URpgCraftingActionButtonWidget`: the label takes the button style's text
     styles, so a disabled button reads as disabled;
   - `URpgCraftingIngredientEntryWidget`: count colours as properties.
@@ -433,7 +442,9 @@ slots and animations.
 - **Tests:** the crafting widget tests no longer freeze the absence of
   Blueprint graphs or a screen view model. New view model tests cover station
   identity, recipe states, available categories, job texts, the craft label,
-  yields and the queue and tray counts.
+  yields and the queue and tray counts. `CraftingOutputTakeAll` covers Take
+  all: out of reach nothing moves, in reach the tray empties, and a full
+  inventory keeps every stack in the tray.
 - **Not done:**
   - The kiln still crafts on request. Automatic processing is a gameplay task
     ([harvesting-roadmap.md](harvesting-roadmap.md), HARV-09d).
@@ -441,5 +452,3 @@ slots and animations.
   - Tabs exist per known category, so a new category needs a new tab.
   - The search field needs a keyboard; on a gamepad, the tabs filter.
   - The view model's tier filter and sort modes are not shown.
-  - The output tray has no "Take all"; items move by drag or quick transfer.
-    A batch transfer needs a new server request.

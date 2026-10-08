@@ -261,8 +261,7 @@ styles for newly placed widgets.
 - **Filter tabs** use the menu tab styles (`CUI_TabButtonNormalStyle`,
   `_SelectedStyle`): ash at rest, gold with the diamond marker when active.
   - A category rail (`CUI_CraftingCategoryTab`) stacks a 28-unit icon over an
-    11 pt caption; panel tabs (`CUI_CraftingPanelTab`) use the section title
-    with a gold count badge.
+    11 pt caption.
   - The tabs tint their label and icon on selection and repeat that on
     Construct, because a text style resets the colour when the widget is
     built.
@@ -271,6 +270,11 @@ styles for newly placed widgets.
 - **Aligned panels:** panels side by side share their top and bottom edges.
   Give titles above them the same height, and fill a missing bar below with a
   spacer of its height.
+- **Station screens** show only the station and use the full width. Resource
+  counts come from the read model, and output reaches the player inventory
+  through Take all or quick transfer; do not embed the player inventory.
+- **Panel headers** use the section title with a gold count, and put their
+  actions on the right.
 - **Tables** (such as crafting requirements) use caption headers and fixed
   right-aligned number columns of the same width in header and rows, with a
   faint gold rule under each row.
