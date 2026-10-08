@@ -3,7 +3,8 @@
 Load from an editor Python startup script. Standard asset/Blueprint/object tools
 still own duplication, property edits, compilation and saves. These operations
 fill gaps in the UE 5.8 toolsets: complete exports, instanced reference remapping,
-precise montage notify timing, fresh package reloads and gameplay input/view inspection in PIE.
+precise montage notify timing, fresh package reloads, typed function inputs, MVVM function
+bindings and gameplay input/view inspection in PIE.
 """
 import json
 import math
@@ -142,6 +143,108 @@ class AssetContractTools(unreal.ToolsetDefinition):
             if not unreal.RpgAnimationAssetTools.set_variable_tooltip(blueprint, variable_name, tooltip):
                 raise RuntimeError('Could not set variable tooltip; undo the last transaction')
         return True
+
+    @toolset_registry.tool_call
+    @staticmethod
+    def add_function_input(blueprint_path: str, function_name: str, param_name: str, type_path: str) -> bool:
+        """Add an input of an enum, struct or object type to an own Blueprint function graph.
+
+        BlueprintTools.add_function_param only knows basic types. Pass the type's
+        object path: a UEnum such as /Script/SurvivalRpg.ERpgItemRarity, a
+        UScriptStruct or a UClass (object reference). Existing inputs are never
+        replaced. Write the graph with write_graph_dsl afterwards, which compiles.
+        """
+        _guard()
+        if not blueprint_path.startswith('/Game/'):
+            raise RuntimeError('Only project-owned assets can be edited')
+        if not param_name.isidentifier():
+            raise ValueError('Expected an identifier for the new input')
+        blueprint = _asset(blueprint_path)
+        if not isinstance(blueprint, unreal.Blueprint):
+            raise ValueError('Expected a Blueprint')
+        graph = unreal.BlueprintEditorLibrary.find_graph(blueprint, function_name)
+        if graph is None:
+            raise ValueError('Blueprint has no own function graph named ' + function_name)
+        editor = unreal.BlueprintGraphEditor.get_graph_editor(graph)
+        type_object = unreal.load_object(None, type_path)
+        if isinstance(type_object, unreal.Enum):
+            category = 'byte'
+        elif isinstance(type_object, unreal.ScriptStruct):
+            category = 'struct'
+        elif isinstance(type_object, unreal.Class):
+            category = 'object'
+        else:
+            raise ValueError('Expected an enum, struct or class path: ' + type_path)
+        # FEdGraphPinType fields are not Python editor properties in UE 5.8; build the type through struct text.
+        pin_type = unreal.BlueprintEditorLibrary.get_basic_type_by_name('byte')
+        sub_object = '"{}\'{}\'"'.format(type_object.get_class().get_path_name(), type_object.get_path_name())
+        pin_type.import_text(pin_type.export_text()
+                             .replace('PinCategory="byte"', 'PinCategory="{}"'.format(category), 1)
+                             .replace('PinSubCategoryObject=None', 'PinSubCategoryObject=' + sub_object, 1))
+        if type_object.get_path_name() not in pin_type.export_text():
+            raise RuntimeError('Could not construct a pin type for ' + type_path)
+        with unreal.ScopedEditorTransaction('Add Blueprint Function Input'):
+            blueprint.modify()
+            if not editor.add_graph_input_parameter(param_name, pin_type):
+                raise RuntimeError('Could not add function input: ' + param_name)
+        return True
+
+    @toolset_registry.tool_call
+    @staticmethod
+    def add_view_function_binding(widget_blueprint_path: str, view_model_class_path: str,
+                                  source_property: str, function_name: str) -> str:
+        """Bind a view model property one way to a function of the Widget Blueprint itself.
+
+        MVVMToolset.CreateViewBinding only binds properties to properties. A
+        widget function with one input, for example SetRarityRing(Rarity),
+        receives the value whenever the field changes. The view model must
+        already be on the widget. Returns the new binding id, or the existing
+        one when the same binding exists. Compile and save explicitly afterwards.
+        """
+        _guard()
+        if not widget_blueprint_path.startswith('/Game/'):
+            raise RuntimeError('Only project-owned assets can be edited')
+        blueprint = _asset(widget_blueprint_path)
+        if not isinstance(blueprint, unreal.WidgetBlueprint):
+            raise ValueError('Expected a Widget Blueprint')
+        if str(function_name) not in [str(n) for n in unreal.BlueprintEditorLibrary.list_graph_names(blueprint)]:
+            raise ValueError('Widget Blueprint has no own function named ' + function_name)
+        view_model_class = unreal.load_class(None, view_model_class_path)
+        if not view_model_class or not source_property.isidentifier():
+            raise ValueError('Expected a loadable view model class and a property name')
+        view = unreal.get_editor_subsystem(unreal.MVVMEditorSubsystem).get_view(blueprint)
+        class_text = "'{}'".format(view_model_class.get_path_name())
+        context_id = None
+        for context in view.get_editor_property('available_view_models'):
+            text = context.export_text()
+            if class_text in text:
+                context_id = text.split('ViewModelContextId=', 1)[1].split(',', 1)[0]
+        if context_id is None:
+            raise ValueError('Add the view model to the widget first: ' + view_model_class_path)
+        bindings = list(view.get_editor_property('bindings'))
+        for binding in bindings:
+            text = binding.export_text()
+            if ('MemberName="{}"'.format(source_property) in text and 'MemberName="{}"'.format(function_name) in text
+                    and 'ContextId=' + context_id in text):
+                return text.split('BindingId=', 1)[1].split(',', 1)[0]
+        binding_id = unreal.GuidLibrary.new_guid().to_string()
+        binding = unreal.MVVMBlueprintViewBinding()
+        binding.import_text(
+            '(SourcePath=(Paths=((BindingReference=(MemberParent="/Script/CoreUObject.Class{cls}",MemberName="{src}"),'
+            'BindingKind=Property)),WidgetName="",ContextId={ctx},Source=ViewModel,bIsComponent=False,bDeprecatedSource=True),'
+            'DestinationPath=(Paths=((BindingReference=(MemberName="{fn}",bSelfContext=True),BindingKind=Function)),'
+            'WidgetName="",ContextId=00000000000000000000000000000000,Source=SelfContext,bIsComponent=False,'
+            'bDeprecatedSource=True),BindingType=OneWayToDestination,bOverrideExecutionMode=False,'
+            'OverrideExecutionMode=Immediate,Conversion=(DestinationToSourceConversion=None,'
+            'SourceToDestinationConversion=None),BindingId={id},bEnabled=True,bCompile=True)'.format(
+                cls=class_text, src=source_property, ctx=context_id, fn=function_name, id=binding_id))
+        if 'MemberName="{}"'.format(function_name) not in binding.export_text():
+            raise RuntimeError('Could not construct the view binding')
+        with unreal.ScopedEditorTransaction('Add MVVM Function Binding'):
+            view.modify()
+            bindings.append(binding)
+            view.set_editor_property('bindings', bindings)
+        return binding_id
 
     @toolset_registry.tool_call
     @staticmethod

@@ -103,7 +103,11 @@ The task lists use these short toolset names:
 - Expose `BindWidget` members with `ToggleWidgetAsVariable`, and bind delegate events such as `OnClicked` with `BindToEventProperty`.
 - Set widget and slot properties (padding, alignment, anchors) by passing the widget or its `Slot` object from `GetWidgets` to `ObjectTools.set_properties`.
 - `CompileWidgetBlueprint` reports missing `BindWidget` bindings and type errors.
-- UE 5.8 ships an `MVVMToolset`, but `AllToolsets` does not enable it, so no ViewModel or view-binding tools are registered. Treat MVVM authoring as a [capability gap](#capability-gaps).
+- MVVM: the project enables the engine's `MVVMToolset.MVVMToolset` (`AllToolsets` does not include it).
+  - `AddViewModelToWidget(widgetBlueprint, viewModelClass)` adds a view model with its first allowed creation type. For a view model with `MVVMAllowedContextCreationType = "Resolver"`, it also adds the project's default resolver from `Config/DefaultModelViewViewModel.ini` (`URpgLocalPlayerViewModelResolver`).
+  - `CreateViewBinding(widgetBlueprint, sourceContext, sourcePropertyPath, destinationContext, destinationPropertyPath, conversionName)` binds one property to another: the view model class as source context, a widget (`<Widget Blueprint>:WidgetTree.<Name>`) and its property, such as `Text` or `Percent`, as destination.
+  - `ListWidgetViewModels`, `ListWidgetViewBindings`, `RemoveWidgetViewBinding` and `ListConversionFunctions` read and clean up.
+  - It cannot bind to a widget function. Use `AssetContractTools.add_view_function_binding` for a function with one input, and `AssetContractTools.add_function_input` to give that function an enum, struct or object input, which `BlueprintTools.add_function_param` cannot type.
 
 ### DataAssets and ItemDefinition fragments
 
@@ -129,7 +133,10 @@ The task lists use these short toolset names:
 
 Each toolset is named `Game.Build.Tools.Unreal.<module>.<Class>`:
 
-- `AssetContractTools` in `Build/Tools/Unreal/asset_contract_tools.py`: asset contracts and local PIE inspection. Tools: `editor_status`, `export_asset`, `reload_assets`, `montage_contract`, `animation_pose_contract`, `remap_owned_references`, `remap_animation_notify_classes`, `editable_blueprint_component`, `set_pie_input_key`, `set_pie_view_rotation`, `pie_mesh_bone_contract`, and `close_clean_editor`.
+- `AssetContractTools` in `Build/Tools/Unreal/asset_contract_tools.py`: asset contracts, Blueprint members the engine tools cannot author, and local PIE inspection.
+  - Contracts and editor state: `editor_status`, `export_asset`, `reload_assets`, `montage_contract`, `animation_pose_contract`, `remap_owned_references`, `remap_animation_notify_classes`, and `close_clean_editor`.
+  - Blueprint members: `implement_blueprint_interface`, `set_blueprint_variable_tooltips`, `add_soft_class_variable`, `add_function_input`, `add_view_function_binding`, and `editable_blueprint_component`.
+  - PIE: `set_pie_input_key`, `set_pie_view_rotation`, and `pie_mesh_bone_contract`.
 - `AnimationAssetTools` in `Build/Tools/Unreal/animation_asset_tools.py`: animation asset structure.
   - AnimBPs and layers: `create_anim_blueprint`, `set_anim_blueprint_abstract`, `create_animation_layer_interface`, `implement_animation_layer_interface`, `add_animation_layer`, `create_linked_animation_layer_node`, and `configure_linked_animation_layer`.
   - Blueprint metadata: `set_local_function_thread_safety` and `set_variable_tooltip`.
@@ -182,4 +189,4 @@ Describe the toolset, then call its tools with the qualified name:
 If the required operation still cannot be performed after `describe_toolset` and inspection, record the exact missing capability. Only then introduce the smallest reusable editor-only tooling seam that closes that confirmed gap: a tool on the project toolset that owns the area, or a new module in `Build/Tools/Unreal/` for a new area, with any native support in `Source/SurvivalRpgEditor`. Keep it out of runtime modules and do not create one-off tooling for a single content leaf.
 
 - Native editor helpers without a toolset wrapper are not callable through MCP, because `execute_tool_script` cannot import project modules.
-- MVVM authoring is a known gap. Enabling the engine's `MVVMToolset` plugin is the smaller seam to evaluate before writing project tooling.
+- MVVM authoring goes through the engine's `MVVMToolset`; `AssetContractTools` adds function bindings and typed function inputs (see [Widget Blueprint](#widget-blueprint)).
