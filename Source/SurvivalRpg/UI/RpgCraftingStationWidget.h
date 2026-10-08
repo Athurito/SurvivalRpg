@@ -183,6 +183,10 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UCommonLazyImage> RecipeIcon = nullptr;
 
+	/** Optional header icon of the observed station; collapsed while the station authors none. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UCommonLazyImage> StationIcon = nullptr;
+
 	/** Required pointer-facing submit control; authority remains in the crafting station. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgCraftingActionButtonWidget> CraftButton = nullptr;
@@ -256,6 +260,7 @@ private:
 	void UnbindAuthoredControlEvents();
 	void RefreshRecipeItems();
 	void RefreshSelectedRecipePresentation();
+	void RefreshStationHeaderPresentation();
 	void RefreshJobItems();
 	void RefreshCraftingActionAvailability();
 	void ConfigureQuickTransferRoutes();

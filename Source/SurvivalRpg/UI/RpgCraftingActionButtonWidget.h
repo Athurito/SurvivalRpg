@@ -28,10 +28,18 @@ public:
 
 protected:
 	virtual void NativeOnInitialized() override;
+	virtual void NativeOnCurrentTextStyleChanged() override;
 
 	/** Required authored label receiving the button's presentation text. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UCommonTextBlock> Text = nullptr;
+
+	/**
+	 * When true, Text takes the normal, hovered, selected and disabled text styles of the button style, so a disabled
+	 * button also reads as disabled. Cosmetic; turn off when the Widget Blueprint styles the label itself.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Presentation")
+	bool bLabelFollowsButtonTextStyle = true;
 
 private:
 	UPROPERTY(Transient)

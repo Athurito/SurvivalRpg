@@ -645,6 +645,7 @@ bool URpgCraftingStationWidget::BindCraftingContext()
 
 	RefreshRecipeItems();
 	RefreshSelectedRecipePresentation();
+	RefreshStationHeaderPresentation();
 	RefreshJobItems();
 	ConfigureQuickTransferRoutes();
 	StartJobProgressRefresh();
@@ -706,7 +707,31 @@ void URpgCraftingStationWidget::ResetCraftingContext()
 	RequestingActor = nullptr;
 	OutputPaneContainerHandle = FRpgInventoryContainerHandle();
 	RefreshSelectedRecipePresentation();
+	RefreshStationHeaderPresentation();
 	RefreshCraftingActionAvailability();
+}
+
+void URpgCraftingStationWidget::RefreshStationHeaderPresentation()
+{
+	if (!StationIcon)
+	{
+		return;
+	}
+
+	const TSoftObjectPtr<UTexture2D> Icon =
+		bCraftingContextBound && CraftingViewModel
+			? CraftingViewModel->GetStationIcon()
+			: TSoftObjectPtr<UTexture2D>();
+	if (Icon.IsNull())
+	{
+		StationIcon->SetBrushFromTexture(nullptr);
+		StationIcon->SetVisibility(ESlateVisibility::Collapsed);
+		return;
+	}
+
+	// The texture size lets an authored ScaleBox keep the icon's aspect ratio.
+	StationIcon->SetBrushFromLazyTexture(Icon, /*bMatchSize=*/ true);
+	StationIcon->SetVisibility(ESlateVisibility::HitTestInvisible);
 }
 
 void URpgCraftingStationWidget::EnsureCraftingViewModels()
