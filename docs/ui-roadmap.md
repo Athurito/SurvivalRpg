@@ -52,8 +52,21 @@ It records the accepted decisions and the task sequence. The style itself
 | UI-03 | Character stats column (level, XP, load, health, stamina, armour), rarity frames on gear slots, MVVM toolset | In review: [#202](https://github.com/Athurito/SurvivalRpg/pull/202) |
 | UI-04 | Crafting screen: layout, station name, recipe states, categories and search, output preview, job state | Planned |
 | UI-05 | HUD: new arrangement, material bars for health, stamina and mana, XP bar, context fading, action bar and Q/E/R, enemy health bar | Planned |
-| UI-06 | Tooltip, context menu, split and drop dialogs, toasts, drag visual | Planned |
+| UI-06 | Tooltip, context menu, split and drop dialogs, toasts, drag visual, item-only highlight in grids | Planned |
 | UI-07 | Menus (game menu tabs, main menu, settings, respawn), then remove KnightsQuest | Planned |
+
+## Noted for later tasks
+
+- **Item-only highlight in grids (UI-06):**
+  - Hovering or selecting a multi-cell item, for example the 1 × 2 basic sword
+    in the pockets, outlines the item. The grid cell under the pointer also
+    draws its own hover or selection frame.
+  - Only the item should be outlined. A cell covered by an item draws no frame
+    of its own; empty cells keep theirs. Controller focus on an occupied cell
+    highlights the item the same way.
+  - The cell states live in `URpgInventorySpatialCellWidget`. The address slot
+    view model already reports whether a cell is an item's origin or covered
+    by it.
 
 ## Open findings outside UI
 
