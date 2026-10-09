@@ -179,8 +179,9 @@ style:
   `Icons/stats` (character values, used by the stats column), and crafting
   categories and stations in `Icons/crafting` (used by the crafting screen
   since UI-04).
-- `Frames/`: panels, tooltip, slots and controls, and the gear frames
-  `T_UI_Gear_Frame_Cell`, `_Equipment`, `_Weapon` and `_Container`.
+- `Frames/`: panels, tooltip, slots and controls, the gear frames
+  `T_UI_Gear_Frame_Cell`, `_Equipment`, `_Weapon` and `_Container`, and the
+  HUD bar frame `T_UI_Hud_BarFrame` (UI-05).
 - `Ornaments/` (including the paper doll `T_UI_Gear_BodySilhouette`) and
   `Backgrounds/`.
 
@@ -193,7 +194,9 @@ Rules:
   - grid cell frame 64 × 64, margin 0.16 (10 px corners);
   - equipment slot frame 80 × 104, margin 0.16 × 0.123;
   - weapon slot frame 300 × 64, margin 0.034 × 0.16;
-  - container frame 110 × 147, margin 0.16 × 0.12.
+  - container frame 110 × 147, margin 0.16 × 0.12;
+  - HUD bar frame 192 × 18, margin 0.07 left and right, 0 top and bottom, so
+    the pointed ends keep 13 px at any bar width.
 - **Equipment glyphs** mark empty slots: bone white at about 24 % opacity, set
   per slot through the `EmptyGlyphTexture` variable of `CUI_GearSlot` and
   `CUI_CarrySlot`.
@@ -258,6 +261,22 @@ styles for newly placed widgets.
   progress fields directly.
 - Body text is at least 13 pt. Only labels inside fixed tiles may go down to
   11 pt.
+- **HUD** (UI-05):
+  - Bars: a 18-unit row with `T_UI_Hud_BarFrame` on top and the fill inset by
+    12 × 5 units. The track is `MI_UI_ResourceBar_Background`, the fill the
+    palette bar instance. Health and enemy bars put a
+    `URpgTrailingProgressBar` with a pale bone fill (45 % opacity) under the
+    fill and bind `TargetPercent` to the same value.
+  - Slots: 64 units with `MI_UI_GearSlotFill`, `T_UI_Gear_Frame_Cell`, an
+    18-unit key glyph top left and the count bottom right, 8 units apart.
+  - Key glyphs come from `CommonActionWidget`: a data table row for actions
+    of a screen, or `EnhancedInputAction` for gameplay keys, so the glyph
+    follows the mapping and the input device.
+  - Fade HUD groups with `URpgHudFadeBox`: pin while the content matters,
+    pulse on one-off events. Hide completely what only matters on change
+    (vitals, enemy bars); dim controls (quickbar, abilities) to 40 %.
+  - Text over the world sits on a plate (`MI_UI_Panel_Inset` at 75 %) so it
+    stays readable on bright scenes.
 - **Filter tabs** use the menu tab styles (`CUI_TabButtonNormalStyle`,
   `_SelectedStyle`): ash at rest, gold with the diamond marker when active.
   - Tabs that tint their label and icon on selection repeat that on
