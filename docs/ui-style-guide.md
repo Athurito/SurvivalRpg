@@ -260,19 +260,44 @@ styles for newly placed widgets.
   11 pt.
 - **Filter tabs** use the menu tab styles (`CUI_TabButtonNormalStyle`,
   `_SelectedStyle`): ash at rest, gold with the diamond marker when active.
-  - A category rail (`CUI_CraftingCategoryTab`) stacks a 28-unit icon over an
-    11 pt caption.
-  - The tabs tint their label and icon on selection and repeat that on
+  - Tabs that tint their label and icon on selection repeat that on
     Construct, because a text style resets the colour when the widget is
     built.
   - For radio behaviour, clear the other tabs with `ClearSelection`;
     `SetIsSelected(false)` only deselects a toggleable button.
+- **Category trees** (crafting) are a list of `CUI_ButtonStyle_ListRow` rows:
+  - "All" and groups use the strong body style; subcategories are indented
+    and plain.
+  - Each row ends in a caption count; groups also show "-" or "+" for
+    expanded or collapsed. Do not use font-dependent arrow glyphs; Roboto lacks
+    "▾".
+  - The screen mirrors the active filter into the list selection, so the
+    chosen row keeps the gold frame.
+- **Section headers inside lists** (tier sections) are a gold tile caption
+  followed by a faint gold rule, with space above. They are neither selectable
+  nor navigable.
+- **Dropdowns** are a wide action button that names the current choice, over
+  an inline popup list of list rows (dark inset, 4-unit padding). Picking an
+  option or opening another dropdown closes the popup. Do not use
+  `ComboBoxString`, whose popup sits outside CommonUI input routing.
 - **Aligned panels:** panels side by side share their top and bottom edges.
   Give titles above them the same height, and fill a missing bar below with a
   spacer of its height.
-- **Station screens** show only the station and use the full width. Resource
-  counts come from the read model, and output reaches the player inventory
-  through Take all or quick transfer; do not embed the player inventory.
+- **Station screens** show only the station and use the full width, in four
+  columns:
+  - categories;
+  - recipes;
+  - the preview, with a large icon next to the key values;
+  - production, with materials, target, quantity, plan and the start button.
+
+  A framed order strip sits below the panel: label and title on the left,
+  status with counts, a progress bar in the stats bar style and a hint in the
+  middle, Pause and Stop remaining on the right. Long titles end in an
+  ellipsis. Material counts and output targets are connected chests; do not
+  embed the player inventory.
+- **Key values** (`CUI_CraftingDetailRow`) put a caption label on the left
+  and a right-aligned strong value on the right; emphasized values, such as
+  damage, use the accent style.
 - **Panel headers** use the section title with a gold count, and put their
   actions on the right.
 - **Tables** (such as crafting requirements) use caption headers and fixed

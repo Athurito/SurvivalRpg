@@ -1084,6 +1084,11 @@ the client:
   the kiln or a smelter will run a selected recipe automatically, as in other
   survival games, while workbenches stay manual. That needs its own crafting
   task.
+  - **Update (UI-04, 2026-10-09):** resolved differently. Every station, the
+    workbenches included, now runs one order on its own: start once, and the
+    station works through the quantity. It takes each run's materials from
+    connected chests and waits when materials, fuel or space run out. See
+    [ui-roadmap.md](ui-roadmap.md), "Crafting screen (UI-04)".
 - **Icons:** the charcoal icon is a placeholder.
 - **Early release in PIE:** a held power executed before the scripted release
   whenever the script captured the client window during the hold. The capture
@@ -1284,7 +1289,9 @@ straight distance it skipped as walking.
   - Processing stations that run on their own are a separate crafting task.
 - **Station trays:** the bench took the charcoal straight from the kiln's
   output tray, because station trays within its storage radius count as
-  sources. The kit waited in the bench's tray.
+  sources. The kit waited in the bench's tray. UI-04 removed the trays; both
+  stations now deliver into a chosen connected chest, which the other station
+  can use as a source.
 
 ### Harvest time per power
 

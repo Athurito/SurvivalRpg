@@ -203,11 +203,12 @@ CUI_BaseTerminalSpatial
 ├─ CUI_SpatialInventoryPane (URpgInventorySpatialPaneWidget)
 └─ CUI_BaseResourceListSpatial (URpgBaseResourceListWidget)
 
-CUI_CraftingStationSpatial
-├─ CUI_SpatialInventoryPane (Output)
+CUI_CraftingStationSpatial (UI-04: Ablage und Jobliste ersetzt)
+├─ CUI_CraftingCategoryRow / CUI_CraftingTierSection
 ├─ CUI_CraftingRecipeEntrySpatial
 ├─ CUI_CraftingIngredientEntrySpatial
-└─ CUI_CraftingJobEntrySpatial
+├─ CUI_CraftingDetailRow
+└─ CUI_CraftingTierOption / CUI_CraftingStorageOption
 ```
 
 `URpgInventoryInteractionScreenWidget` besitzt genau einen Drag-/Interaction-
