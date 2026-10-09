@@ -339,7 +339,10 @@ protected:
 	bool bSelected = false;
 };
 
-/** One connected chest offered as target storage, with its room for the recipe in context. */
+/**
+ * One target storage choice: a connected chest with its room for the recipe in context, or, with ContainerId None,
+ * automatic storing by chest assignments.
+ */
 UCLASS(BlueprintType, meta = (MVVMAllowedContextCreationType = "Manual"))
 class SURVIVALRPG_API URpgCraftingStorageOptionViewModel : public UMVVMViewModelBase
 {
@@ -348,18 +351,18 @@ class SURVIVALRPG_API URpgCraftingStorageOptionViewModel : public UMVVMViewModel
 public:
 	/** Initializes this option. */
 	void InitializeOption(FName InContainerId, const FText& InDisplayName, int32 InFreeCells, int32 InTotalCells,
-		int32 InUnitsThatFit, const FText& InCapacityText, bool bInSelected, bool bInSuggested);
+		int32 InUnitsThatFit, const FText& InCapacityText, const FText& InContentsText, bool bInSelected, bool bInSuggested);
 
-	/** Persistent container id of the chest. */
+	/** Persistent container id of the chest; None for the automatic choice. */
 	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
 	FName GetContainerId() const { return ContainerId; }
 
 protected:
-	/** Persistent container id of the chest. */
+	/** Persistent container id of the chest; None for the automatic choice. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Storage", meta = (AllowPrivateAccess = "true"))
 	FName ContainerId;
 
-	/** Chest name, numbered when several chests share a name. */
+	/** Chest name with its assignments, such as "Shared Chest (Charcoal)", numbered when names repeat; or "Automatic". */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Storage", meta = (AllowPrivateAccess = "true"))
 	FText DisplayName;
 
@@ -379,11 +382,15 @@ protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Storage", meta = (AllowPrivateAccess = "true"))
 	FText CapacityText;
 
+	/** What the chest holds, such as "80 Wood · 12 Ore" or "Empty"; for the automatic choice, how it picks chests. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Storage", meta = (AllowPrivateAccess = "true"))
+	FText ContentsText;
+
 	/** True for the chosen target. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Storage", meta = (AllowPrivateAccess = "true"))
 	bool bSelected = false;
 
-	/** True for the chest the station suggests for the recipe in context. */
+	/** True for the chest automatic storing would fill next for the recipe in context. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Storage", meta = (AllowPrivateAccess = "true"))
 	bool bSuggested = false;
 };

@@ -40,7 +40,7 @@ struct SURVIVALRPG_API FRpgCraftingOrderSaveData
 	UPROPERTY(SaveGame)
 	TSoftObjectPtr<URpgCraftingRecipeDefinition> Recipe;
 
-	/** Persistent container id of the chest receiving the outputs. */
+	/** Persistent container id of the chest receiving the outputs; None stores automatically. */
 	UPROPERTY(SaveGame)
 	FName TargetContainerId;
 

@@ -455,13 +455,79 @@ bool FRpgCraftingStartRequiresConnectedTargetTest::RunTest(const FString& Parame
 	Recipe->CraftTime = 30.0f;
 	if (!Near || !Far || !Fixture.OfferRecipes(*this, { Recipe })) { return false; }
 
-	TestFalse(TEXT("No target is rejected"), Station->CanStartCraftingOrder(Requester, Recipe, 1, NAME_None));
+	TestTrue(TEXT("No target stores automatically into a connected chest"), Station->CanStartCraftingOrder(Requester, Recipe, 1, NAME_None));
 	TestFalse(TEXT("An unknown target is rejected"), Station->CanStartCraftingOrder(Requester, Recipe, 1, TEXT("Chest_Unknown")));
 	TestNull(TEXT("A chest outside the station's reach is not connected"), Station->FindConnectedStorageInventory(ChestId(Far)));
 	TestFalse(TEXT("A chest outside the station's reach is rejected as target"), Station->StartCraftingOrder(Requester, Recipe, 1, ChestId(Far)));
 	TestTrue(TEXT("A connected chest is accepted"), Station->StartCraftingOrder(Requester, Recipe, 1, ChestId(Near)));
 	TestEqual(TEXT("The order remembers its target"), Station->GetCurrentOrder().TargetContainerId, ChestId(Near));
 	TestFalse(TEXT("A station runs one order at a time"), Station->StartCraftingOrder(Requester, Recipe, 1, ChestId(Near)));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgCraftingAutomaticTargetTest,
+	"SurvivalRpg.Crafting.Order.AutomaticTargetFollowsAssignments",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCraftingAutomaticTargetTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCraftingStationTests;
+	FScopedCraftingWorld Fixture;
+	if (!Fixture.Initialize(*this)) { return false; }
+	URpgCraftingStationComponent* Station = Fixture.GetStation();
+	UWorld* World = Station->GetWorld();
+	AActor* Requester = Fixture.GetRequestingController();
+	const TSubclassOf<URpgInventoryItemDefinition> Material = URpgInventoryAutomationTestMaterialDefinition::StaticClass();
+	const TSubclassOf<URpgInventoryItemDefinition> Product = URpgInventoryAutomationTestUnitItemDefinition::StaticClass();
+	ARpgInventoryContainerActor* MaterialChest = Fixture.CreateChest();
+	ARpgInventoryContainerActor* ProductChest = Fixture.CreateChest(1, 1);
+	ARpgInventoryContainerActor* FreeChest = Fixture.CreateChest(1, 1);
+	URpgCraftingRecipeDefinition* Recipe = Fixture.CreateMaterialRecipe(2, 0.1f);
+	if (!MaterialChest || !ProductChest || !FreeChest || !MaterialChest->GetInventoryManager()->AddItemDefinition(Material, 20) ||
+		!Fixture.OfferRecipes(*this, { Recipe })) { return false; }
+	FRpgStorageAssignment MaterialRule;
+	MaterialRule.ItemDefinition = Material;
+	FRpgStorageAssignment ProductRule;
+	ProductRule.ItemDefinition = Product;
+	MaterialChest->GetContainerComponent()->SetAssignments({ MaterialRule });
+	ProductChest->GetContainerComponent()->SetAssignments({ MaterialRule });
+	FreeChest->GetContainerComponent()->SetAssignments({ MaterialRule });
+	// A chest meant for other materials stays excluded even when it already holds some product.
+	if (!MaterialChest->GetInventoryManager()->AddItemDefinition(Product, 1)) { return false; }
+
+	TestTrue(TEXT("Chests meant for other materials never receive automatic output"), Station->GetOutputTargets(Recipe, NAME_None).IsEmpty());
+	TestFalse(TEXT("Automatic storing without a suitable chest cannot start"), Station->CanStartCraftingOrder(Requester, Recipe, 1, NAME_None));
+	TestTrue(TEXT("A named chest stays a valid explicit target"), Station->CanStartCraftingOrder(Requester, Recipe, 1, ChestId(FreeChest)));
+
+	ProductChest->GetContainerComponent()->SetAssignments({ ProductRule });
+	FreeChest->GetContainerComponent()->SetAssignments({});
+	const TArray<URpgInventoryManagerComponent*> Targets = Station->GetOutputTargets(Recipe, NAME_None);
+	if (!TestEqual(TEXT("The assigned and the unassigned chest are automatic targets"), Targets.Num(), 2)) { return false; }
+	TestTrue(TEXT("The chest assigned to the product comes first"), Targets[0] == ProductChest->GetInventoryManager());
+	TestTrue(TEXT("The unassigned chest follows"), Targets[1] == FreeChest->GetInventoryManager());
+
+	if (!TestTrue(TEXT("An automatic order starts"), Station->StartCraftingOrder(Requester, Recipe, 3, NAME_None))) { return false; }
+	TestTrue(TEXT("The order stores automatically"), Station->GetCurrentOrder().TargetContainerId.IsNone());
+	AdvanceCraftingTimers(World, 0.2f);
+	TestEqual(TEXT("The first unit fills the assigned chest"), CountOf(ProductChest, Product), 1);
+	AdvanceCraftingTimers(World, 0.2f);
+	TestEqual(TEXT("The second unit moves on to the unassigned chest"), CountOf(FreeChest, Product), 1);
+	TestEqual(TEXT("Without room anywhere the order waits for space"), Station->GetCurrentOrder().State, ERpgCraftingOrderState::WaitingForSpace);
+	TestFalse(TEXT("The waiting unit is not paid"), Station->GetCurrentOrder().bUnitPaid);
+	TestEqual(TEXT("Only the two delivered units consumed material"), CountOf(MaterialChest, Material), 16);
+	TestEqual(TEXT("The material chest never receives more product"), CountOf(MaterialChest, Product), 1);
+
+	const FRpgCraftingStationSaveData Save = Station->ExportCraftingState();
+	TestTrue(TEXT("Automatic storing is saved as no target"), Save.bHasOrder && Save.Order.TargetContainerId.IsNone());
+	TestTrue(TEXT("An automatic order restores"), Station->RestoreCraftingState(Save));
+	Station->ResumeRestoredCrafting();
+
+	if (!RemoveFirst(ProductChest, Product)) { return false; }
+	AdvanceCraftingTimers(World, 1.1f);
+	AdvanceCraftingTimers(World, 0.2f);
+	TestEqual(TEXT("Freed room in the assigned chest takes the last unit"), CountOf(ProductChest, Product), 1);
+	TestFalse(TEXT("The order completes"), Station->HasCraftingOrder());
+	TestEqual(TEXT("Three units consumed three costs"), CountOf(MaterialChest, Material), 14);
 	return true;
 }
 

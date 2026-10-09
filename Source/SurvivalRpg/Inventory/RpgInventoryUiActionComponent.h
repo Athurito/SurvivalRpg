@@ -640,7 +640,8 @@ public:
 
 	/**
 	 * Starts an order of Quantity units at an accessible, idle crafting station. Materials come from the station's
-	 * connected chests per unit; outputs go into the connected chest TargetContainerId. Server-authoritative.
+	 * connected chests per unit; outputs go into the connected chest TargetContainerId, or with None into the first
+	 * chest of the station's automatic order that has room. Server-authoritative.
 	 */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Crafting")
 	void RequestStartCraftingOrder(URpgCraftingStationComponent* CraftingStation, URpgCraftingRecipeDefinition* RecipeDefinition, int32 Quantity, FName TargetContainerId);
@@ -649,7 +650,7 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Crafting")
 	void RequestStopCraftingOrder(URpgCraftingStationComponent* CraftingStation, FGuid OrderId);
 
-	/** Changes the connected chest receiving a station order's outputs. */
+	/** Changes the connected chest receiving a station order's outputs; None switches to automatic storing. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Crafting")
 	void RequestSetCraftingOrderTarget(URpgCraftingStationComponent* CraftingStation, FGuid OrderId, FName TargetContainerId);
 

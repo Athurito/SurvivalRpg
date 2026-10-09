@@ -490,17 +490,35 @@ bool FRpgCraftingViewModelTargetStorageTest::RunTest(const FString& Parameters)
 	Fixture.OfferRecipes({ Recipe });
 	ARpgInventoryContainerActor* Full = Fixture.CreateChest(1, 1);
 	ARpgInventoryContainerActor* Roomy = Fixture.CreateChest(2, 2);
-	Full->GetInventoryManager()->AddItemDefinition(URpgInventoryAutomationTestStackItemDefinition::StaticClass(), 1);
-	const bool bFullFirst = ChestId(Full).LexicalLess(ChestId(Roomy));
+	const TSubclassOf<URpgInventoryItemDefinition> Filler = URpgInventoryAutomationTestStackItemDefinition::StaticClass();
+	const TSubclassOf<URpgInventoryItemDefinition> Product = URpgInventoryAutomationTestUnitItemDefinition::StaticClass();
+	Full->GetInventoryManager()->AddItemDefinition(Filler, 1);
+	const FString ProductName = GetDefault<URpgInventoryItemDefinition>(Product)->DisplayName.ToString();
+	const FString FillerName = GetDefault<URpgInventoryItemDefinition>(Filler)->DisplayName.ToString();
+	const auto FindOption = [](URpgCraftingStationViewModel* ViewModel, FName Id) -> URpgCraftingStorageOptionViewModel*
+	{
+		for (URpgCraftingStorageOptionViewModel* Option : ViewModel->GetTargetStorageOptions())
+		{
+			if (Option && Option->GetContainerId() == Id) { return Option; }
+		}
+		return nullptr;
+	};
 
 	URpgCraftingStationViewModel* ViewModel = NewObject<URpgCraftingStationViewModel>(Fixture.Station, NAME_None, RF_Transient);
 	ViewModel->BindCraftingStation(Fixture.Station, Fixture.Requester);
-	TestEqual(TEXT("Both connected chests are offered"), ViewModel->GetTargetStorageOptions().Num(), 2);
-	TestEqual(TEXT("The suggestion skips the full chest"), ViewModel->GetSelectedTargetContainerId(), ChestId(Roomy));
-	TestTrue(TEXT("The roomy target holds the selection"), ReadValue<bool, FBoolProperty>(ViewModel, TEXT("bTargetHasRoom")));
+	TestEqual(TEXT("Automatic storing and both connected chests are offered"), ViewModel->GetTargetStorageOptions().Num(), 3);
+	TestTrue(TEXT("Automatic storing is the first choice"), ViewModel->GetTargetStorageOptions()[0]->GetContainerId().IsNone());
+	TestTrue(TEXT("Automatic storing is the default target"), ViewModel->GetSelectedTargetContainerId().IsNone());
+	TestEqual(TEXT("The dropdown names the automatic choice"), ViewModel->GetSelectedTargetName().ToString(), FString(TEXT("Automatic")));
+	TestTrue(TEXT("Automatic storing finds room"), ReadValue<bool, FBoolProperty>(ViewModel, TEXT("bTargetHasRoom")));
 	TestEqual(TEXT("The room line counts the output"), ReadText(ViewModel, TEXT("TargetCapacityText")),
-		FString::Printf(TEXT("Room for 1 of 1 %s"), *GetDefault<URpgInventoryItemDefinition>(URpgInventoryAutomationTestUnitItemDefinition::StaticClass())->DisplayName.ToString()));
-	TestTrue(TEXT("The selection may start"), ViewModel->CanStartOrder());
+		FString::Printf(TEXT("Room for 1 of 1 %s"), *ProductName));
+	TestTrue(TEXT("The automatic selection may start"), ViewModel->CanStartOrder());
+	TestTrue(TEXT("The chest automatic storing fills next is marked"),
+		FindOption(ViewModel, ChestId(Roomy)) && ReadValue<bool, FBoolProperty>(FindOption(ViewModel, ChestId(Roomy)), TEXT("bSuggested")));
+	TestEqual(TEXT("A chest option names its contents"), ReadText(FindOption(ViewModel, ChestId(Full)), TEXT("ContentsText")),
+		FString::Printf(TEXT("1 %s"), *FillerName));
+	TestEqual(TEXT("An empty chest says so"), ReadText(FindOption(ViewModel, ChestId(Roomy)), TEXT("ContentsText")), FString(TEXT("Empty")));
 
 	ViewModel->SelectTargetStorage(ChestId(Full));
 	TestEqual(TEXT("A picked chest becomes the target"), ViewModel->GetSelectedTargetContainerId(), ChestId(Full));
@@ -510,11 +528,28 @@ bool FRpgCraftingViewModelTargetStorageTest::RunTest(const FString& Parameters)
 	ViewModel->RefreshSelectedRecipeDetails();
 	TestEqual(TEXT("The pick survives a refresh"), ViewModel->GetSelectedTargetContainerId(), ChestId(Full));
 
-	ViewModel->CycleTargetStorage(1);
-	TestEqual(TEXT("Cycling moves to the other chest"), ViewModel->GetSelectedTargetContainerId(), ChestId(Roomy));
-	TestTrue(TEXT("Cycling keeps sorted option order"), bFullFirst
-		? ViewModel->GetTargetStorageOptions()[0]->GetContainerId() == ChestId(Full)
-		: ViewModel->GetTargetStorageOptions()[0]->GetContainerId() == ChestId(Roomy));
+	// Assignments name the chests and steer automatic storing.
+	FRpgStorageAssignment FillerRule;
+	FillerRule.ItemDefinition = Filler;
+	FRpgStorageAssignment ProductRule;
+	ProductRule.ItemDefinition = Product;
+	Full->GetContainerComponent()->SetAssignments({ FillerRule });
+	Roomy->GetContainerComponent()->SetAssignments({ ProductRule });
+	ViewModel->RefreshSelectedRecipeDetails();
+	TestTrue(TEXT("A chest's name carries its assignment"),
+		ReadText(FindOption(ViewModel, ChestId(Roomy)), TEXT("DisplayName")).EndsWith(FString::Printf(TEXT(" (%s)"), *ProductName)));
+	TestEqual(TEXT("A target meant for other materials says so"), ReadText(ViewModel, TEXT("TargetDetailText")),
+		FString::Printf(TEXT("Assigned to %s, not to %s"), *FillerName, *ProductName));
+
+	ViewModel->SelectTargetStorage(NAME_None);
+	TestTrue(TEXT("Automatic storing can be picked again"), ViewModel->GetSelectedTargetContainerId().IsNone());
+	TestTrue(TEXT("Automatic storing uses the assigned chest"), ViewModel->CanStartOrder());
+	TestTrue(TEXT("The automatic detail names the next chest"), ReadText(ViewModel, TEXT("TargetDetailText")).StartsWith(TEXT("Next into ")));
+
+	Roomy->GetContainerComponent()->SetAssignments({ FillerRule });
+	ViewModel->RefreshSelectedRecipeDetails();
+	TestEqual(TEXT("Without a suitable chest automatic storing says so"), ReadText(ViewModel, TEXT("TargetCapacityText")), FString(TEXT("No suitable chest")));
+	TestFalse(TEXT("Without a suitable chest the start is blocked"), ViewModel->CanStartOrder());
 
 	ViewModel->UnbindCraftingStation();
 	TestEqual(TEXT("Unbinding clears the options"), ViewModel->GetTargetStorageOptions().Num(), 0);

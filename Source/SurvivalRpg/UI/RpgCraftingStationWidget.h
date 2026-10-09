@@ -81,11 +81,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Crafting|Actions")
 	void RequestToggleCraftingPause();
 
-	/** Chooses a connected chest as target; while an order runs the server moves its delivery there. */
+	/** Chooses a connected chest as target, or None for automatic storing; while an order runs the server moves its delivery. */
 	UFUNCTION(BlueprintCallable, Category = "Crafting|Actions")
 	void RequestSelectTargetStorage(FName ContainerId);
 
-	/** Moves the target to the next (Direction > 0) or previous connected chest. */
+	/** Moves the target to the next (Direction > 0) or previous choice, automatic storing included. */
 	UFUNCTION(BlueprintCallable, Category = "Crafting|Actions")
 	void RequestCycleTargetStorage(int32 Direction);
 

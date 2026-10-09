@@ -18,6 +18,7 @@
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_EquippableItem.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "Templates/Identity.h"
 
@@ -299,17 +300,86 @@ namespace
 			: MakeTierLabel(Tier);
 	}
 
-	/** Chest names for display, numbered when several connected chests share a name. */
+	const URpgInventoryContainerComponent* FindStorageContainer(const URpgInventoryManagerComponent* Inventory)
+	{
+		const AActor* Owner = Inventory ? Inventory->GetOwner() : nullptr;
+		const URpgInventoryContainerComponent* Container = Owner ? Owner->FindComponentByClass<URpgInventoryContainerComponent>() : nullptr;
+		return Container && Container->GetInventoryManager() == Inventory ? Container : nullptr;
+	}
+
+	/** Names of a chest's assignments: exact items by their name, categories by the tag's last segment. */
+	TArray<FText> MakeAssignmentNames(const URpgInventoryContainerComponent* Container)
+	{
+		TArray<FText> Names;
+		TSet<FString> Seen;
+		for (const FRpgStorageAssignment& Rule : Container ? Container->GetAssignments() : TArray<FRpgStorageAssignment>())
+		{
+			FText Name;
+			if (Rule.ItemDefinition)
+			{
+				Name = GetItemDisplayName(Rule.ItemDefinition);
+			}
+			else if (Rule.Category.IsValid())
+			{
+				FString Leaf = Rule.Category.GetTagName().ToString();
+				int32 Dot = INDEX_NONE;
+				if (Leaf.FindLastChar(TEXT('.'), Dot)) { Leaf.RightChopInline(Dot + 1); }
+				Name = FText::FromString(Leaf);
+			}
+			if (!Name.IsEmpty() && !Seen.Contains(Name.ToString()))
+			{
+				Seen.Add(Name.ToString());
+				Names.Add(Name);
+			}
+		}
+		return Names;
+	}
+
+	/** "80 Wood · 12 Ore" for the two largest stocks of a chest, with "+N more" kinds; "Empty" for an empty chest. */
+	FText MakeStorageContentsText(const URpgInventoryManagerComponent* Inventory)
+	{
+		TMap<UClass*, int32> Counts;
+		for (const URpgInventoryItemInstance* Item : Inventory ? Inventory->GetAllItems() : TArray<URpgInventoryItemInstance*>())
+		{
+			UClass* Definition = Item ? Item->GetItemDef().Get() : nullptr;
+			if (Definition && !Counts.Contains(Definition))
+			{
+				Counts.Add(Definition, Inventory->GetTotalItemCountByDefinition(Definition));
+			}
+		}
+		Counts.ValueSort(TGreater<int32>());
+		TArray<FText> Parts;
+		for (const TPair<UClass*, int32>& Pair : Counts)
+		{
+			if (Parts.Num() == 2) { break; }
+			Parts.Add(MakeCountedName(Pair.Value, GetItemDisplayName(Pair.Key)));
+		}
+		if (Parts.IsEmpty())
+		{
+			return NSLOCTEXT("RpgCrafting", "StorageEmpty", "Empty");
+		}
+		FText Text = JoinTexts(Parts, NSLOCTEXT("RpgCrafting", "NameSeparator", " · "));
+		return Counts.Num() > 2
+			? FText::Format(NSLOCTEXT("RpgCrafting", "StorageContentsMore", "{0} · +{1} more"), Text, FText::AsNumber(Counts.Num() - 2))
+			: Text;
+	}
+
+	/** Chest names for display: the buildable's name plus the chest's assignments, numbered when names repeat. */
 	TArray<FText> MakeStorageNames(const TArray<URpgInventoryManagerComponent*>& Inventories)
 	{
 		TArray<FText> BaseNames;
 		TMap<FString, int32> NameCounts;
 		for (const URpgInventoryManagerComponent* Inventory : Inventories)
 		{
-			const AActor* Owner = Inventory ? Inventory->GetOwner() : nullptr;
-			const URpgInventoryContainerComponent* Container = Owner ? Owner->FindComponentByClass<URpgInventoryContainerComponent>() : nullptr;
+			const URpgInventoryContainerComponent* Container = FindStorageContainer(Inventory);
 			const URpgBaseBuildableDefinition* Buildable = Container ? Container->GetBuildableDefinition() : nullptr;
 			FText Name = Buildable && !Buildable->DisplayName.IsEmpty() ? Buildable->DisplayName : NSLOCTEXT("RpgCrafting", "DefaultStorageName", "Storage Chest");
+			const TArray<FText> Assignments = MakeAssignmentNames(Container);
+			if (!Assignments.IsEmpty())
+			{
+				Name = FText::Format(NSLOCTEXT("RpgCrafting", "AssignedStorageName", "{0} ({1})"), Name,
+					JoinTexts(Assignments, NSLOCTEXT("RpgCrafting", "ListSeparator", ", ")));
+			}
 			++NameCounts.FindOrAdd(Name.ToString());
 			BaseNames.Add(MoveTemp(Name));
 		}
@@ -496,7 +566,7 @@ void URpgCraftingTierOptionViewModel::InitializeOption(int32 InTier, const FText
 }
 
 void URpgCraftingStorageOptionViewModel::InitializeOption(FName InContainerId, const FText& InDisplayName, int32 InFreeCells,
-	int32 InTotalCells, int32 InUnitsThatFit, const FText& InCapacityText, bool bInSelected, bool bInSuggested)
+	int32 InTotalCells, int32 InUnitsThatFit, const FText& InCapacityText, const FText& InContentsText, bool bInSelected, bool bInSuggested)
 {
 	FFieldChanges Changes;
 	RPG_CRAFTING_SET(Changes, ContainerId, InContainerId);
@@ -505,6 +575,7 @@ void URpgCraftingStorageOptionViewModel::InitializeOption(FName InContainerId, c
 	RPG_CRAFTING_SET(Changes, TotalCells, InTotalCells);
 	RPG_CRAFTING_SET(Changes, UnitsThatFit, InUnitsThatFit);
 	RPG_CRAFTING_SET(Changes, CapacityText, InCapacityText);
+	RPG_CRAFTING_SET(Changes, ContentsText, InContentsText);
 	RPG_CRAFTING_SET(Changes, bSelected, bInSelected);
 	RPG_CRAFTING_SET(Changes, bSuggested, bInSuggested);
 	BroadcastChanges(*this, Changes);
@@ -794,10 +865,7 @@ void URpgCraftingStationViewModel::SetCraftQuantityToMax()
 
 void URpgCraftingStationViewModel::SelectTargetStorage(FName ContainerId)
 {
-	if (ContainerId.IsNone())
-	{
-		return;
-	}
+	// None picks automatic storing.
 	if (!bHasActiveOrder && SelectedRecipe)
 	{
 		TargetPickByRecipe.Add(FObjectKey(SelectedRecipe.Get()), ContainerId);
@@ -1342,21 +1410,14 @@ void URpgCraftingStationViewModel::RebuildSelectedRecipeDetails()
 	const bool bSingleItemOutput = OutputDefinition && OutputMaxStack <= 1;
 
 	// Target chests. While an order runs they describe its recipe and remaining units; otherwise the selection.
+	// A target id of None is automatic storing: each unit goes into the first ranked chest with room.
 	const URpgCraftingRecipeDefinition* ContextRecipe = Order ? Order->Recipe.Get() : Recipe;
 	const int32 ContextWantedUnits = Order ? FMath::Max(0, Order->QuantityTotal - Order->QuantityCompleted) : MaxOrderQuantity;
-	FName SuggestedId;
-	if (Station && ContextRecipe && !ContextRecipe->OutputItems.IsEmpty() && Station->GetOwner())
-	{
-		for (const URpgInventoryContainerComponent* Container : RpgStorageAccessRules::GetPhysicalStorageTargets(
-			Station->GetWorld(), Station->GetOwner()->GetActorLocation(), Station->GetStorageSearchRadius(), ContextRecipe->OutputItems[0].ItemDefinition))
-		{
-			if (Container && Storage.Contains(Container->GetInventoryManager()))
-			{
-				SuggestedId = Container->GetPersistentContainerId();
-				break;
-			}
-		}
-	}
+	const TSubclassOf<URpgInventoryItemDefinition> ContextOutput =
+		ContextRecipe && !ContextRecipe->OutputItems.IsEmpty() ? ContextRecipe->OutputItems[0].ItemDefinition : nullptr;
+	const TArray<URpgInventoryManagerComponent*> AutomaticTargets = ContextOutput
+		? URpgCraftingStationComponent::RankAutomaticOutputTargets(Storage, ContextOutput)
+		: TArray<URpgInventoryManagerComponent*>();
 	TArray<FRpgCraftingStorageCapacity> Capacities;
 	TArray<FName> StorageIds;
 	for (const URpgInventoryManagerComponent* Inventory : Storage)
@@ -1371,55 +1432,73 @@ void URpgCraftingStationViewModel::RebuildSelectedRecipeDetails()
 		{
 			RpgCraftingCapacity::GetRootCellUsage(*Inventory, Capacity.UsedCells, Capacity.TotalCells);
 		}
-		if (SuggestedId.IsNone() && ContextRecipe && Capacity.UnitsThatFit > 0)
-		{
-			SuggestedId = StorageIds.Last();
-		}
 	}
-	if (SuggestedId.IsNone() && !StorageIds.IsEmpty())
+	// Automatic room is the sum over its chests, since every unit fills whichever chest still takes it.
+	int32 AutomaticUnits = 0;
+	FName NextAutomaticId;
+	for (const URpgInventoryManagerComponent* Inventory : AutomaticTargets)
 	{
-		SuggestedId = StorageIds[0];
+		const int32 Index = Storage.IndexOfByKey(Inventory);
+		if (!Capacities.IsValidIndex(Index)) { continue; }
+		AutomaticUnits += Capacities[Index].UnitsThatFit;
+		if (NextAutomaticId.IsNone() && Capacities[Index].UnitsThatFit > 0) { NextAutomaticId = StorageIds[Index]; }
 	}
+	AutomaticUnits = FMath::Min(AutomaticUnits, ContextWantedUnits);
+
 	FName NewTargetId;
 	if (Order)
 	{
 		NewTargetId = Order->TargetContainerId;
 	}
-	else if (const FName* Pick = Recipe ? TargetPickByRecipe.Find(FObjectKey(Recipe)) : nullptr; Pick && StorageIds.Contains(*Pick))
+	else if (const FName* Pick = Recipe ? TargetPickByRecipe.Find(FObjectKey(Recipe)) : nullptr; Pick && (Pick->IsNone() || StorageIds.Contains(*Pick)))
 	{
 		NewTargetId = *Pick;
 	}
-	else
-	{
-		NewTargetId = SuggestedId;
-	}
-	const int32 TargetIndex = StorageIds.IndexOfByKey(NewTargetId);
+	const bool bAutomaticTarget = NewTargetId.IsNone();
+	const int32 TargetIndex = bAutomaticTarget ? INDEX_NONE : StorageIds.IndexOfByKey(NewTargetId);
+	const FText AutomaticName = NSLOCTEXT("RpgCrafting", "AutomaticStorageName", "Automatic");
+	const FText SelectedTargetDisplayName = bAutomaticTarget
+		? (Station && !Storage.IsEmpty() ? AutomaticName : FText::GetEmpty())
+		: (StorageNames.IsValidIndex(TargetIndex) ? StorageNames[TargetIndex] : FText::GetEmpty());
+	const FText ContextOutputName = GetItemDisplayName(ContextOutput);
+	const int32 ContextOutputCount = ContextRecipe && !ContextRecipe->OutputItems.IsEmpty() ? ContextRecipe->OutputItems[0].Count : 1;
 
 	TArray<TObjectPtr<URpgCraftingStorageOptionViewModel>> NewTargetOptions;
-	for (int32 Index = 0; Index < Storage.Num(); ++Index)
+	const auto FindOrCreateOption = [this](FName ContainerId)
 	{
-		URpgCraftingStorageOptionViewModel* Option = nullptr;
 		for (URpgCraftingStorageOptionViewModel* Existing : TargetStorageOptions)
 		{
-			if (Existing && Existing->GetContainerId() == StorageIds[Index])
-			{
-				Option = Existing;
-				break;
-			}
+			if (Existing && Existing->GetContainerId() == ContainerId) { return Existing; }
 		}
-		if (!Option)
-		{
-			Option = NewObject<URpgCraftingStorageOptionViewModel>(this);
-		}
+		return NewObject<URpgCraftingStorageOptionViewModel>(this);
+	};
+	if (Station && !Storage.IsEmpty())
+	{
+		URpgCraftingStorageOptionViewModel* Automatic = FindOrCreateOption(NAME_None);
+		const FText AutomaticRoom = !ContextRecipe
+			? FText::Format(NSLOCTEXT("RpgCrafting", "AutomaticChestCount", "{0} {0}|plural(one=chest,other=chests)"), FText::AsNumber(Storage.Num()))
+			: (AutomaticTargets.IsEmpty()
+				? NSLOCTEXT("RpgCrafting", "AutomaticNoChest", "No suitable chest")
+				: FText::Format(NSLOCTEXT("RpgCrafting", "AutomaticRoom", "{0} {0}|plural(one=chest,other=chests) · room for {1} {2}"),
+					FText::AsNumber(AutomaticTargets.Num()), FText::AsNumber(AutomaticUnits * ContextOutputCount), ContextOutputName));
+		Automatic->InitializeOption(NAME_None, AutomaticName, 0, 0, AutomaticUnits, AutomaticRoom,
+			NSLOCTEXT("RpgCrafting", "AutomaticRule", "Assigned chests first, then unassigned ones"),
+			bAutomaticTarget, false);
+		NewTargetOptions.Add(Automatic);
+	}
+	for (int32 Index = 0; Index < Storage.Num(); ++Index)
+	{
+		URpgCraftingStorageOptionViewModel* Option = FindOrCreateOption(StorageIds[Index]);
 		const FRpgCraftingStorageCapacity& Capacity = Capacities[Index];
 		Option->InitializeOption(StorageIds[Index], StorageNames[Index], Capacity.GetFreeCells(), Capacity.TotalCells, Capacity.UnitsThatFit,
 			FText::Format(NSLOCTEXT("RpgCrafting", "StorageOptionFreeCells", "{0} {0}|plural(one=cell,other=cells) free"), FText::AsNumber(Capacity.GetFreeCells())),
-			Index == TargetIndex, StorageIds[Index] == SuggestedId);
+			MakeStorageContentsText(Storage[Index]),
+			Index == TargetIndex, StorageIds[Index] == NextAutomaticId);
 		NewTargetOptions.Add(Option);
 	}
 
 	const FRpgCraftingStorageCapacity* TargetCapacity = Capacities.IsValidIndex(TargetIndex) ? &Capacities[TargetIndex] : nullptr;
-	const int32 UnitsThatFitTarget = TargetCapacity ? TargetCapacity->UnitsThatFit : 0;
+	const int32 UnitsThatFitTarget = bAutomaticTarget ? AutomaticUnits : (TargetCapacity ? TargetCapacity->UnitsThatFit : 0);
 	const int32 NewMaxSelectedCraftQuantity = Recipe ? FMath::Clamp(FMath::Min(NewAffordableUnitCount, UnitsThatFitTarget), 1, MaxOrderQuantity) : 0;
 
 	// Capacity texts of the chosen target.
@@ -1428,40 +1507,77 @@ void URpgCraftingStationViewModel::RebuildSelectedRecipeDetails()
 	bool bNewTargetHasRoom = false;
 	const URpgCraftingRecipeDefinition* CapacityRecipe = ContextRecipe;
 	const int32 CapacityWantedUnits = Order ? ContextWantedUnits : CraftQuantity;
+	const auto MakeRoomText = [&](int32 FitUnits)
+	{
+		return FitUnits > 0
+			? FText::Format(
+				NSLOCTEXT("RpgCrafting", "TargetRoom", "Room for {0} of {1} {2}"),
+				FText::AsNumber(FitUnits * ContextOutputCount),
+				FText::AsNumber(CapacityWantedUnits * ContextOutputCount),
+				ContextOutputName)
+			: FText::Format(NSLOCTEXT("RpgCrafting", "TargetNoRoom", "No room for {0}"), ContextOutputName);
+	};
 	if (Station && Storage.IsEmpty())
 	{
 		NewTargetCapacityText = NSLOCTEXT("RpgCrafting", "NoStorageCapacity", "No connected chest");
 		NewTargetDetailText = NSLOCTEXT("RpgCrafting", "NoStorageCapacityHint", "Place a chest within reach of the station.");
+	}
+	else if (Station && bAutomaticTarget && CapacityRecipe && ContextOutput)
+	{
+		if (AutomaticTargets.IsEmpty())
+		{
+			NewTargetCapacityText = NSLOCTEXT("RpgCrafting", "AutomaticNoChest", "No suitable chest");
+			NewTargetDetailText = FText::Format(
+				NSLOCTEXT("RpgCrafting", "AutomaticNoChestHint", "Every connected chest is assigned to other materials. Assign one to {0} or choose a chest."),
+				ContextOutputName);
+		}
+		else
+		{
+			const int32 FitUnits = FMath::Min(AutomaticUnits, CapacityWantedUnits);
+			bNewTargetHasRoom = FitUnits >= CapacityWantedUnits;
+			NewTargetCapacityText = MakeRoomText(FitUnits);
+			const int32 NextIndex = StorageIds.IndexOfByKey(NextAutomaticId);
+			NewTargetDetailText = StorageNames.IsValidIndex(NextIndex)
+				? FText::Format(NSLOCTEXT("RpgCrafting", "AutomaticNext", "Next into {0} · {1} {1}|plural(one=chest,other=chests) in use"),
+					StorageNames[NextIndex], FText::AsNumber(AutomaticTargets.Num()))
+				: FText::Format(NSLOCTEXT("RpgCrafting", "AutomaticFull", "All {0} {0}|plural(one=chest,other=chests) for {1} are full"),
+					FText::AsNumber(AutomaticTargets.Num()), ContextOutputName);
+		}
 	}
 	else if (Station && Order && !TargetCapacity)
 	{
 		NewTargetCapacityText = NSLOCTEXT("RpgCrafting", "TargetMissing", "Target storage missing");
 		NewTargetDetailText = NSLOCTEXT("RpgCrafting", "TargetMissingHint", "Choose a connected chest as target.");
 	}
-	else if (TargetCapacity && CapacityRecipe && !CapacityRecipe->OutputItems.IsEmpty())
+	else if (TargetCapacity && CapacityRecipe && ContextOutput)
 	{
-		const FRpgCraftingOutputItem& CapacityOutput = CapacityRecipe->OutputItems[0];
-		const FText CapacityOutputName = GetItemDisplayName(CapacityOutput.ItemDefinition);
 		const int32 FitUnits = FMath::Min(TargetCapacity->UnitsThatFit, CapacityWantedUnits);
 		bNewTargetHasRoom = FitUnits >= CapacityWantedUnits;
-		NewTargetCapacityText = FitUnits > 0
-			? FText::Format(
-				NSLOCTEXT("RpgCrafting", "TargetRoom", "Room for {0} of {1} {2}"),
-				FText::AsNumber(FitUnits * CapacityOutput.Count),
-				FText::AsNumber(CapacityWantedUnits * CapacityOutput.Count),
-				CapacityOutputName)
-			: FText::Format(NSLOCTEXT("RpgCrafting", "TargetNoRoom", "No room for {0}"), CapacityOutputName);
-		NewTargetDetailText = TargetCapacity->MaxStackSize > 1
-			? FText::Format(
-				NSLOCTEXT("RpgCrafting", "TargetStackDetail", "{0} present · {1} {1}|plural(one=cell,other=cells) free · {2} per stack"),
-				FText::AsNumber(TargetCapacity->PresentCount),
-				FText::AsNumber(TargetCapacity->GetFreeCells()),
-				FText::AsNumber(TargetCapacity->MaxStackSize))
-			: FText::Format(
-				NSLOCTEXT("RpgCrafting", "TargetItemDetail", "{0} / {1} cells used · {2} each"),
-				FText::AsNumber(TargetCapacity->UsedCells),
-				FText::AsNumber(TargetCapacity->TotalCells),
-				MakeCellsText(TargetCapacity->Footprint));
+		NewTargetCapacityText = MakeRoomText(FitUnits);
+		const URpgInventoryContainerComponent* TargetContainer = FindStorageContainer(Storage[TargetIndex]);
+		int64 AssignmentOrder = 0;
+		const int32 AssignmentRank = TargetContainer ? TargetContainer->GetAssignmentRank(ContextOutput, AssignmentOrder) : INDEX_NONE;
+		if (TargetContainer && !TargetContainer->GetAssignments().IsEmpty() && (AssignmentRank == INDEX_NONE || AssignmentRank > 1))
+		{
+			// The chest is meant for other materials; storing here still works but mixes its contents.
+			NewTargetDetailText = FText::Format(
+				NSLOCTEXT("RpgCrafting", "TargetAssignedElsewhere", "Assigned to {0}, not to {1}"),
+				JoinTexts(MakeAssignmentNames(TargetContainer), NSLOCTEXT("RpgCrafting", "ListSeparator", ", ")), ContextOutputName);
+		}
+		else
+		{
+			NewTargetDetailText = TargetCapacity->MaxStackSize > 1
+				? FText::Format(
+					NSLOCTEXT("RpgCrafting", "TargetStackDetail", "{0} present · {1} {1}|plural(one=cell,other=cells) free · {2} per stack"),
+					FText::AsNumber(TargetCapacity->PresentCount),
+					FText::AsNumber(TargetCapacity->GetFreeCells()),
+					FText::AsNumber(TargetCapacity->MaxStackSize))
+				: FText::Format(
+					NSLOCTEXT("RpgCrafting", "TargetItemDetail", "{0} / {1} cells used · {2} each"),
+					FText::AsNumber(TargetCapacity->UsedCells),
+					FText::AsNumber(TargetCapacity->TotalCells),
+					MakeCellsText(TargetCapacity->Footprint));
+		}
 	}
 
 	// Materials.
@@ -1626,10 +1742,18 @@ void URpgCraftingStationViewModel::RebuildSelectedRecipeDetails()
 			NewStatusText = NSLOCTEXT("RpgCrafting", "StatusMissingMaterials", "Missing materials");
 			NewStatusHint = FText::Format(NSLOCTEXT("RpgCrafting", "StatusMissingMaterialsHint", "The connected chests lack the materials for one {0}."), UnitSingular);
 		}
+		else if (UnitsThatFitTarget <= 0 && bAutomaticTarget)
+		{
+			NewStatusText = AutomaticTargets.IsEmpty()
+				? NSLOCTEXT("RpgCrafting", "StatusNoSuitableChest", "No suitable chest")
+				: FText::Format(NSLOCTEXT("RpgCrafting", "StatusAutomaticFull", "No chest has room for {0}"), OutputName);
+			NewStatusHint = FText::Format(
+				NSLOCTEXT("RpgCrafting", "StatusAutomaticFullHint", "Make room in a chest assigned to {0} or in an unassigned one, or choose a chest."),
+				OutputName);
+		}
 		else if (UnitsThatFitTarget <= 0)
 		{
-			NewStatusText = FText::Format(NSLOCTEXT("RpgCrafting", "StatusTargetFull", "No room in {0}"),
-				StorageNames.IsValidIndex(TargetIndex) ? StorageNames[TargetIndex] : FText::GetEmpty());
+			NewStatusText = FText::Format(NSLOCTEXT("RpgCrafting", "StatusTargetFull", "No room in {0}"), SelectedTargetDisplayName);
 			NewStatusHint = NSLOCTEXT("RpgCrafting", "StatusTargetFullHint", "Empty the chest or choose another target.");
 		}
 		else
@@ -1672,7 +1796,7 @@ void URpgCraftingStationViewModel::RebuildSelectedRecipeDetails()
 	RPG_CRAFTING_SET(Changes, MaterialsSummaryText, NewMaterialsSummary);
 	RPG_CRAFTING_SET(Changes, TargetStorageOptions, NewTargetOptions);
 	RPG_CRAFTING_SET(Changes, SelectedTargetContainerId, NewTargetId);
-	RPG_CRAFTING_SET(Changes, SelectedTargetName, StorageNames.IsValidIndex(TargetIndex) ? StorageNames[TargetIndex] : FText::GetEmpty());
+	RPG_CRAFTING_SET(Changes, SelectedTargetName, SelectedTargetDisplayName);
 	RPG_CRAFTING_SET(Changes, TargetLabelText, Station
 		? (Order ? NSLOCTEXT("RpgCrafting", "TargetLabelOrder", "Target · current order") : NSLOCTEXT("RpgCrafting", "TargetLabel", "Store in"))
 		: FText::GetEmpty());
@@ -1749,6 +1873,7 @@ void URpgCraftingStationViewModel::RebuildOrderStrip()
 		const FText UnitSingular = MakeUnitNoun(Station, 1);
 
 		TArray<FText> StorageNames;
+		const bool bAutomaticOrder = Order->TargetContainerId.IsNone();
 		FText TargetName = NSLOCTEXT("RpgCrafting", "TheTargetChest", "the target chest");
 		const TArray<URpgInventoryManagerComponent*> Storage = GetCachedConnectedStorage();
 		StorageNames = MakeStorageNames(Storage);
@@ -1794,19 +1919,39 @@ void URpgCraftingStationViewModel::RebuildOrderStrip()
 			case ERpgCraftingOrderState::WaitingForSpace:
 				{
 					bNewWaiting = true;
-					NewStatus = FText::Format(NSLOCTEXT("RpgCrafting", "OrderWaitingSpace", "Waiting: {0} full"), TargetName);
 					const TSubclassOf<URpgInventoryItemDefinition> OutputDefinition = Recipe->OutputItems.IsEmpty() ? nullptr : Recipe->OutputItems[0].ItemDefinition;
 					const FRpgInventoryGridSize Footprint = GetItemFootprint(OutputDefinition);
-					NewHint = OutputDefinition && URpgInventoryManagerComponent::GetEffectiveMaxStackSizeForDefinition(OutputDefinition) <= 1 && Footprint.IsValid()
-						? FText::Format(NSLOCTEXT("RpgCrafting", "OrderWaitingSpaceItemHint", "The next {0} needs {1} free cells. Empty the chest or change the target."),
-							UnitSingular, MakeCellsText(Footprint))
-						: NSLOCTEXT("RpgCrafting", "OrderWaitingSpaceHint", "Make room in the chest or change the target.");
+					if (bAutomaticOrder)
+					{
+						NewStatus = NSLOCTEXT("RpgCrafting", "OrderWaitingSpaceAutomatic", "Waiting: no chest has room");
+						NewHint = FText::Format(
+							NSLOCTEXT("RpgCrafting", "OrderWaitingSpaceAutomaticHint", "Make room in a chest assigned to {0} or in an unassigned one, or choose a chest."),
+							GetItemDisplayName(OutputDefinition));
+					}
+					else
+					{
+						NewStatus = FText::Format(NSLOCTEXT("RpgCrafting", "OrderWaitingSpace", "Waiting: {0} full"), TargetName);
+						NewHint = OutputDefinition && URpgInventoryManagerComponent::GetEffectiveMaxStackSizeForDefinition(OutputDefinition) <= 1 && Footprint.IsValid()
+							? FText::Format(NSLOCTEXT("RpgCrafting", "OrderWaitingSpaceItemHint", "The next {0} needs {1} free cells. Empty the chest or change the target."),
+								UnitSingular, MakeCellsText(Footprint))
+							: NSLOCTEXT("RpgCrafting", "OrderWaitingSpaceHint", "Make room in the chest or change the target.");
+					}
 				}
 				break;
 			case ERpgCraftingOrderState::WaitingForTarget:
 				bNewWaiting = true;
-				NewStatus = NSLOCTEXT("RpgCrafting", "OrderWaitingTarget", "Waiting: target storage missing");
-				NewHint = NSLOCTEXT("RpgCrafting", "OrderWaitingTargetHint", "Choose a connected chest as target.");
+				if (bAutomaticOrder)
+				{
+					NewStatus = NSLOCTEXT("RpgCrafting", "OrderWaitingNoSuitableChest", "Waiting: no suitable chest");
+					NewHint = FText::Format(
+						NSLOCTEXT("RpgCrafting", "OrderWaitingNoSuitableChestHint", "Assign a connected chest to {0}, leave one unassigned, or choose a chest."),
+						Recipe->OutputItems.IsEmpty() ? FText::GetEmpty() : GetItemDisplayName(Recipe->OutputItems[0].ItemDefinition));
+				}
+				else
+				{
+					NewStatus = NSLOCTEXT("RpgCrafting", "OrderWaitingTarget", "Waiting: target storage missing");
+					NewHint = NSLOCTEXT("RpgCrafting", "OrderWaitingTargetHint", "Choose a connected chest as target.");
+				}
 				break;
 			}
 		}

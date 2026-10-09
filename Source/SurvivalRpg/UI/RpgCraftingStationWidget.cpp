@@ -350,8 +350,9 @@ void URpgCraftingStationWidget::RequestStartCraftingOrder()
 	URpgCraftingRecipeDefinition* Recipe =
 		CraftingViewModel->GetSelectedRecipe();
 	const int32 Quantity = CraftingViewModel->GetCraftQuantity();
+	// None asks the station to store automatically by chest assignments.
 	const FName TargetId = CraftingViewModel->GetSelectedTargetContainerId();
-	if (!Recipe || Quantity <= 0 || TargetId.IsNone())
+	if (!Recipe || Quantity <= 0)
 	{
 		return;
 	}
@@ -406,7 +407,8 @@ void URpgCraftingStationWidget::RequestToggleCraftingPause()
 
 void URpgCraftingStationWidget::RequestSelectTargetStorage(FName ContainerId)
 {
-	if (!bCraftingContextBound || !CraftingViewModel || ContainerId.IsNone())
+	// None selects automatic storing.
+	if (!bCraftingContextBound || !CraftingViewModel)
 	{
 		return;
 	}

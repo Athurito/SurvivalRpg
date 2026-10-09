@@ -101,7 +101,10 @@ struct SURVIVALRPG_API FRpgCraftingOrder
 	UPROPERTY(BlueprintReadOnly, Category = "Crafting|Order")
 	TObjectPtr<URpgCraftingRecipeDefinition> Recipe = nullptr;
 
-	/** Persistent container id of the connected chest receiving the outputs. */
+	/**
+	 * Persistent container id of the connected chest receiving the outputs. None stores automatically: each unit goes
+	 * into the first chest of GetOutputTargets that has room.
+	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Crafting|Order")
 	FName TargetContainerId;
 
@@ -259,6 +262,22 @@ public:
 	/** Persistent container id of a chest inventory, or None for any other inventory. */
 	static FName GetStorageContainerId(const URpgInventoryManagerComponent* Inventory);
 
+	/**
+	 * Chests that may receive the recipe's outputs, in delivery order. A named target yields just that connected chest.
+	 * None yields the automatic order of RankAutomaticOutputTargets. Works on clients for display.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting|Storage")
+	TArray<URpgInventoryManagerComponent*> GetOutputTargets(const URpgCraftingRecipeDefinition* RecipeDefinition, FName TargetContainerId) const;
+
+	/**
+	 * Automatic delivery order for an output among the given chests. Chests assigned to that exact item come first,
+	 * then chests assigned to its category, then unassigned chests already holding it, then other unassigned chests.
+	 * Chests whose assignments do not name the output are left out, even when they already hold some of it, so the
+	 * station never fills a chest meant for something else.
+	 */
+	static TArray<URpgInventoryManagerComponent*> RankAutomaticOutputTargets(const TArray<URpgInventoryManagerComponent*>& StorageInventories,
+		TSubclassOf<URpgInventoryItemDefinition> OutputDefinition);
+
 	/** Count of one definition in the given chests that orders may consume. */
 	static int32 CountStorageResource(const TArray<URpgInventoryManagerComponent*>& StorageInventories,
 		TSubclassOf<URpgInventoryItemDefinition> ItemDefinition);
@@ -316,8 +335,9 @@ public:
 	int32 GetAffordableUnitCount(const URpgCraftingRecipeDefinition* RecipeDefinition) const;
 
 	/**
-	 * Pre-check shared by UI and server: access, offered and unlocked recipe, idle station, quantity range, connected
-	 * target and the first unit's materials. Room in the target is checked by the server's dry run on start.
+	 * Pre-check shared by UI and server: access, offered and unlocked recipe, idle station, quantity range, at least one
+	 * output target and the first unit's materials. TargetContainerId None stores automatically. Room in the targets is
+	 * checked by the server's dry run on start.
 	 */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting|Order")
 	bool CanStartCraftingOrder(AActor* RequestingActor, const URpgCraftingRecipeDefinition* RecipeDefinition, int32 Quantity, FName TargetContainerId) const;
@@ -336,7 +356,10 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Crafting|Order")
 	bool StopCraftingOrder(AActor* RequestingActor, FGuid OrderId);
 
-	/** Changes the chest receiving the order's outputs; a waiting order retries at once. Server-authoritative. */
+	/**
+	 * Changes the chest receiving the order's outputs; None switches to automatic storing. A waiting order retries at
+	 * once. Server-authoritative.
+	 */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Crafting|Order")
 	bool SetCraftingOrderTarget(AActor* RequestingActor, FGuid OrderId, FName TargetContainerId);
 
@@ -437,7 +460,7 @@ private:
 	TFunction<bool()> MakeContextRevalidator(AActor* RequestingActor, FGuid ExpectedOrderId = FGuid()) const;
 	bool BuildUnitOutputOperations(const URpgCraftingRecipeDefinition* RecipeDefinition, URpgInventoryManagerComponent* Target,
 		TArray<FRpgInventoryBatchOperation>& InOutOperations) const;
-	bool PlanUnitStart(const URpgCraftingRecipeDefinition* RecipeDefinition, URpgInventoryManagerComponent* Target,
+	bool PlanUnitStart(const URpgCraftingRecipeDefinition* RecipeDefinition, const TArray<URpgInventoryManagerComponent*>& Targets,
 		TArray<FRpgInventoryBatchOperation>& OutConsumption, TArray<FRpgCraftingRefundEntry>& OutCredits, ERpgCraftingOrderState& OutBlockedState) const;
 	bool ApplyStationBatch(const TArray<FRpgInventoryBatchOperation>& Operations, TFunction<void()> CommitSideEffects, TFunction<bool()> Revalidate);
 	bool RefundUnitCredits(TFunction<void()> CommitSideEffects);

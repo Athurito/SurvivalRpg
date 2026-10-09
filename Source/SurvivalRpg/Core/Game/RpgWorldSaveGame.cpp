@@ -224,7 +224,7 @@ bool URpgWorldSaveGame::ValidateForLoad(FString& OutError) const
 			continue;
 		}
 		const FRpgCraftingOrderSaveData& Order = Station.Order;
-		if (!Order.OrderId.IsValid() || SavedOrderIds.Contains(Order.OrderId) || Order.Recipe.IsNull() || Order.TargetContainerId.IsNone() ||
+		if (!Order.OrderId.IsValid() || SavedOrderIds.Contains(Order.OrderId) || Order.Recipe.IsNull() ||
 			Order.QuantityTotal <= 0 || Order.QuantityCompleted < 0 || Order.QuantityCompleted >= Order.QuantityTotal ||
 			Order.State > 3 || !FMath::IsFinite(Order.RemainingTime) || Order.RemainingTime < 0.0f ||
 			(!Order.bUnitPaid && !Order.UnitCredits.IsEmpty()))
