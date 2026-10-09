@@ -85,6 +85,13 @@ struct SURVIVALRPG_API FRpgInventoryBatchOperation
 	/** Optional expected revisions; INDEX_NONE asks the kernel to capture current authority state. */
 	int32 ExpectedSourceRevision = INDEX_NONE;
 	int32 ExpectedTargetRevision = INDEX_NONE;
+	/**
+	 * Definition grants only: positive source level rolls itemization for every granted piece through the
+	 * definition's itemization profile. Each piece becomes its own entry and never merges. Zero grants unrolled.
+	 */
+	int32 ItemizationSourceLevel = 0;
+	/** Seed of the operation's itemization stream; the same seed and level roll the same pieces. */
+	int32 ItemizationSeed = 0;
 };
 
 /** Prevalidated capacity expansion participating in an ordinary resource batch. */

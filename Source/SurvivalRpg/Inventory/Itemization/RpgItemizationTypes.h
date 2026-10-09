@@ -112,5 +112,27 @@ struct SURVIVALRPG_API FRpgItemizationState
 	}
 };
 
+/** Inclusive value range of one base stat at a resolved item level, for previews before an item is rolled. */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgItemStatRange
+{
+	GENERATED_BODY()
+
+	/** Rolled stat this range belongs to. */
+	UPROPERTY(BlueprintReadOnly, Category = "Itemization")
+	FGameplayTag StatTag;
+
+	/** Lowest value a roll can produce at the item level. */
+	UPROPERTY(BlueprintReadOnly, Category = "Itemization")
+	float MinValue = 0.0f;
+
+	/** Highest value a roll can produce at the item level; equal to MinValue for a guaranteed value. */
+	UPROPERTY(BlueprintReadOnly, Category = "Itemization")
+	float MaxValue = 0.0f;
+};
+
 /** Returns the fixed first-slice affix count for a rarity tier: 0/1/2/3. */
 SURVIVALRPG_API int32 GetRpgAffixCountForRarity(ERpgItemRarity Rarity);
+
+/** Player-facing name of an Item.Stat tag; unknown tags fall back to the tag name. */
+SURVIVALRPG_API FText GetRpgItemStatDisplayName(const FGameplayTag& StatTag);
