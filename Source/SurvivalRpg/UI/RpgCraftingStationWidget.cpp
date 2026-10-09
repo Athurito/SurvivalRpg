@@ -4,6 +4,7 @@
 #include "CommonLazyImage.h"
 #include "CommonListView.h"
 #include "CommonTextBlock.h"
+#include "Components/EditableTextBox.h"
 #include "Engine/DataTable.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
@@ -42,6 +43,28 @@ URpgCraftingStationWidget::GetCraftingPlayerInventoryViewModel() const
 
 namespace
 {
+	/** Mirrors the view model's choice into a list's single selection, so selectable rows show their selected style. */
+	template <typename ItemType, typename PredicateType>
+	void SyncListSelection(UCommonListView* ListView, const TArray<ItemType*>& Items, PredicateType IsChosen)
+	{
+		if (!ListView)
+		{
+			return;
+		}
+		for (ItemType* Item : Items)
+		{
+			if (Item && IsChosen(Item))
+			{
+				if (ListView->GetSelectedItem() != Item)
+				{
+					ListView->SetSelectedItem(Item);
+				}
+				return;
+			}
+		}
+		ListView->ClearSelection();
+	}
+
 	template <typename ItemType>
 	void ReconcileListItems(
 		UCommonListView* ListView,
@@ -125,6 +148,9 @@ void URpgCraftingStationWidget::NativeOnInitialized()
 		StopOrderButton->SetCraftButtonText(
 			NSLOCTEXT("RpgCrafting", "StopOrderButton", "Stop remaining"));
 	}
+	SetPopupOpen(TierFilterPopup, false);
+	SetPopupOpen(TargetStoragePopup, false);
+	RefreshDropdownLabels();
 
 	if (PlayerInventoryPane)
 	{
@@ -613,6 +639,8 @@ void URpgCraftingStationWidget::ResetCraftingContext()
 			List->ClearListItems();
 		}
 	}
+	SetPopupOpen(TierFilterPopup, false);
+	SetPopupOpen(TargetStoragePopup, false);
 
 	CraftingScreenPayload = nullptr;
 	PlayerInventory = nullptr;
@@ -729,6 +757,12 @@ void URpgCraftingStationWidget::BindAuthoredControlEvents()
 			this,
 			&ThisClass::HandleTargetOptionClicked);
 	}
+	if (RecipeSearchBox)
+	{
+		RecipeSearchBox->OnTextChanged.AddDynamic(
+			this,
+			&ThisClass::HandleSearchTextChanged);
+	}
 	if (CraftButton)
 	{
 		CraftButton->OnClicked().AddUObject(
@@ -752,6 +786,18 @@ void URpgCraftingStationWidget::BindAuthoredControlEvents()
 		SortDirectionButton->OnClicked().AddUObject(
 			this,
 			&ThisClass::HandleSortDirectionClicked);
+	}
+	if (TierFilterButton)
+	{
+		TierFilterButton->OnClicked().AddUObject(
+			this,
+			&ThisClass::HandleTierFilterButtonClicked);
+	}
+	if (TargetStorageButton)
+	{
+		TargetStorageButton->OnClicked().AddUObject(
+			this,
+			&ThisClass::HandleTargetStorageButtonClicked);
 	}
 	if (QuantityMinusButton)
 	{
@@ -793,12 +839,20 @@ void URpgCraftingStationWidget::UnbindAuthoredControlEvents()
 			List->OnItemClicked().RemoveAll(this);
 		}
 	}
+	if (RecipeSearchBox)
+	{
+		RecipeSearchBox->OnTextChanged.RemoveDynamic(
+			this,
+			&ThisClass::HandleSearchTextChanged);
+	}
 
 	URpgCraftingActionButtonWidget* Buttons[] = {
 		CraftButton,
 		PauseButton,
 		StopOrderButton,
 		SortDirectionButton,
+		TierFilterButton,
+		TargetStorageButton,
 		QuantityMinusButton,
 		QuantityPlusButton,
 		QuantityMaxButton
@@ -843,20 +897,32 @@ void URpgCraftingStationWidget::RefreshRecipeItems()
 
 void URpgCraftingStationWidget::RefreshCategoryItems()
 {
-	ReconcileListItems(
-		CategoryList,
+	const TArray<URpgCraftingCategoryViewModel*> Rows =
 		bCraftingContextBound && CraftingViewModel
 			? CraftingViewModel->GetCategoryRows()
-			: TArray<URpgCraftingCategoryViewModel*>());
+			: TArray<URpgCraftingCategoryViewModel*>();
+	ReconcileListItems(CategoryList, Rows);
+	const FGameplayTag Filter = CraftingViewModel ? CraftingViewModel->GetCategoryFilter() : FGameplayTag();
+	SyncListSelection(CategoryList, Rows, [&Filter](const URpgCraftingCategoryViewModel* Row)
+	{
+		return Filter.IsValid()
+			? Row->GetKind() != ERpgCraftingCategoryRowKind::All && Row->GetCategoryTag() == Filter
+			: Row->GetKind() == ERpgCraftingCategoryRowKind::All;
+	});
 }
 
 void URpgCraftingStationWidget::RefreshTierOptionItems()
 {
-	ReconcileListItems(
-		TierFilterList,
+	const TArray<URpgCraftingTierOptionViewModel*> Options =
 		bCraftingContextBound && CraftingViewModel
 			? CraftingViewModel->GetTierOptions()
-			: TArray<URpgCraftingTierOptionViewModel*>());
+			: TArray<URpgCraftingTierOptionViewModel*>();
+	ReconcileListItems(TierFilterList, Options);
+	const int32 Tier = CraftingViewModel ? CraftingViewModel->GetTierFilter() : 0;
+	SyncListSelection(TierFilterList, Options, [Tier](const URpgCraftingTierOptionViewModel* Option)
+	{
+		return Option->GetTier() == Tier;
+	});
 }
 
 void URpgCraftingStationWidget::RefreshSelectedRecipePresentation()
@@ -913,9 +979,16 @@ void URpgCraftingStationWidget::RefreshSelectedRecipePresentation()
 	ReconcileListItems(
 		PreviewStatList,
 		Recipe && bHasDetails ? CraftingViewModel->GetPreviewRows() : TArray<URpgCraftingDetailRowViewModel*>());
-	ReconcileListItems(
-		TargetStorageList,
-		bHasDetails ? CraftingViewModel->GetTargetStorageOptions() : TArray<URpgCraftingStorageOptionViewModel*>());
+	const TArray<URpgCraftingStorageOptionViewModel*> TargetOptions =
+		bHasDetails ? CraftingViewModel->GetTargetStorageOptions() : TArray<URpgCraftingStorageOptionViewModel*>();
+	ReconcileListItems(TargetStorageList, TargetOptions);
+	const FName TargetId = bHasDetails ? CraftingViewModel->GetSelectedTargetContainerId() : NAME_None;
+	SyncListSelection(TargetStorageList, TargetOptions, [TargetId](const URpgCraftingStorageOptionViewModel* Option)
+	{
+		return Option->GetContainerId() == TargetId;
+	});
+	RefreshCategoryItems();
+	RefreshTierOptionItems();
 	RefreshCraftingActionAvailability();
 }
 
@@ -963,6 +1036,15 @@ void URpgCraftingStationWidget::RefreshCraftingActionAvailability()
 	{
 		SortDirectionButton->SetIsEnabled(bHasContext);
 	}
+	if (TierFilterButton)
+	{
+		TierFilterButton->SetIsEnabled(bHasContext);
+	}
+	if (TargetStorageButton)
+	{
+		TargetStorageButton->SetIsEnabled(bHasContext && !CraftingViewModel->GetTargetStorageOptions().IsEmpty());
+	}
+	RefreshDropdownLabels();
 
 	if (CraftActionBinding.IsValid())
 	{
@@ -1105,6 +1187,8 @@ void URpgCraftingStationWidget::HandleTierOptionClicked(UObject* Item)
 	{
 		CraftingViewModel->SetTierFilter(Option->GetTier());
 	}
+	SetPopupOpen(TierFilterPopup, false);
+	RefreshDropdownLabels();
 }
 
 void URpgCraftingStationWidget::HandleTargetOptionClicked(UObject* Item)
@@ -1112,6 +1196,53 @@ void URpgCraftingStationWidget::HandleTargetOptionClicked(UObject* Item)
 	if (const URpgCraftingStorageOptionViewModel* Option = Cast<URpgCraftingStorageOptionViewModel>(Item))
 	{
 		RequestSelectTargetStorage(Option->GetContainerId());
+	}
+	SetPopupOpen(TargetStoragePopup, false);
+	RefreshDropdownLabels();
+}
+
+void URpgCraftingStationWidget::HandleTierFilterButtonClicked()
+{
+	if (TierFilterPopup)
+	{
+		SetPopupOpen(TierFilterPopup, !TierFilterPopup->IsVisible());
+		SetPopupOpen(TargetStoragePopup, false);
+	}
+}
+
+void URpgCraftingStationWidget::HandleTargetStorageButtonClicked()
+{
+	if (TargetStoragePopup)
+	{
+		SetPopupOpen(TargetStoragePopup, !TargetStoragePopup->IsVisible());
+		SetPopupOpen(TierFilterPopup, false);
+	}
+}
+
+void URpgCraftingStationWidget::SetPopupOpen(UWidget* Popup, bool bOpen)
+{
+	if (Popup)
+	{
+		Popup->SetVisibility(bOpen ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+	}
+}
+
+void URpgCraftingStationWidget::RefreshDropdownLabels()
+{
+	const bool bHasContext = bCraftingContextBound && CraftingViewModel;
+	if (SortDirectionButton)
+	{
+		SortDirectionButton->SetCraftButtonText(bHasContext ? CraftingViewModel->GetTierSortText() : FText::GetEmpty());
+	}
+	if (TierFilterButton)
+	{
+		TierFilterButton->SetCraftButtonText(bHasContext ? CraftingViewModel->GetTierFilterText() : FText::GetEmpty());
+	}
+	if (TargetStorageButton)
+	{
+		const FText TargetName = bHasContext ? CraftingViewModel->GetSelectedTargetName() : FText::GetEmpty();
+		TargetStorageButton->SetCraftButtonText(
+			TargetName.IsEmpty() ? NSLOCTEXT("RpgCrafting", "NoTargetStorage", "No connected chest") : TargetName);
 	}
 }
 
@@ -1130,12 +1261,21 @@ void URpgCraftingStationWidget::HandleStopOrderClicked()
 	RequestStopCraftingOrder();
 }
 
+void URpgCraftingStationWidget::HandleSearchTextChanged(const FText& Text)
+{
+	if (bCraftingContextBound && CraftingViewModel)
+	{
+		CraftingViewModel->SetSearchText(Text);
+	}
+}
+
 void URpgCraftingStationWidget::HandleSortDirectionClicked()
 {
 	if (bCraftingContextBound && CraftingViewModel)
 	{
 		CraftingViewModel->ToggleTierSortDirection();
 	}
+	RefreshDropdownLabels();
 }
 
 void URpgCraftingStationWidget::HandleQuantityMinusClicked()

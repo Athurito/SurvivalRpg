@@ -12,6 +12,7 @@
 class UCommonLazyImage;
 class UCommonListView;
 class UCommonTextBlock;
+class UEditableTextBox;
 class UUserWidget;
 class URpgCraftingActionButtonWidget;
 class URpgCraftingCategoryCatalog;
@@ -156,6 +157,10 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UCommonListView> PreviewStatList = nullptr;
 
+	/** Optional search field; every edit filters the recipe list by name through the view model. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UEditableTextBox> RecipeSearchBox = nullptr;
+
 	/** Optional name of the selected recipe; screens may bind the view model instead. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UCommonTextBlock> RecipeNameText = nullptr;
@@ -188,9 +193,25 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<URpgCraftingActionButtonWidget> StopOrderButton = nullptr;
 
-	/** Optional toggle that flips the tier order of the recipe list. */
+	/** Optional toggle that flips the tier order of the recipe list; its label follows the sort direction. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<URpgCraftingActionButtonWidget> SortDirectionButton = nullptr;
+
+	/** Optional dropdown button naming the active tier filter; clicking it shows or hides TierFilterPopup. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgCraftingActionButtonWidget> TierFilterButton = nullptr;
+
+	/** Optional container of TierFilterList; collapsed until TierFilterButton opens it, closed again by a pick. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> TierFilterPopup = nullptr;
+
+	/** Optional dropdown button naming the target chest; clicking it shows or hides TargetStoragePopup. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgCraftingActionButtonWidget> TargetStorageButton = nullptr;
+
+	/** Optional container of TargetStorageList; collapsed until TargetStorageButton opens it, closed again by a pick. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> TargetStoragePopup = nullptr;
 
 	/** Required control that decreases the chosen quantity by one. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
@@ -281,6 +302,10 @@ private:
 	void HandlePauseClicked();
 	void HandleStopOrderClicked();
 	void HandleSortDirectionClicked();
+	void HandleTierFilterButtonClicked();
+	void HandleTargetStorageButtonClicked();
+	void SetPopupOpen(UWidget* Popup, bool bOpen);
+	void RefreshDropdownLabels();
 	void HandleQuantityMinusClicked();
 	void HandleQuantityPlusClicked();
 	void HandleQuantityMaxClicked();
@@ -298,6 +323,9 @@ private:
 
 	UFUNCTION()
 	void HandleSelectedRecipeDetailsChanged();
+
+	UFUNCTION()
+	void HandleSearchTextChanged(const FText& Text);
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgCraftingStationScreenPayload> CraftingScreenPayload = nullptr;

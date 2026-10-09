@@ -559,6 +559,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
 	int32 GetTierFilter() const { return TierFilter; }
 
+	/** Label of the active tier filter, such as "All tiers". */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	FText GetTierFilterText() const { return TierFilterText; }
+
+	/** Label of the tier sort toggle. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	FText GetTierSortText() const { return TierSortText; }
+
+	/** Name of the chosen target chest. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
+	FText GetSelectedTargetName() const { return SelectedTargetName; }
+
 	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
 	TArray<URpgCraftingCategoryViewModel*> GetCategoryRows() const;
 
