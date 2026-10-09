@@ -94,7 +94,7 @@ Evidence: `Saved/PhysicalStorage20260930/build-11.log`, `AutomationSplitMerge11/
 
 ## Station chests
 
-The user decided on 2026-10-09, during UI-04 ([#204](https://github.com/Athurito/SurvivalRpg/pull/204)), to give each crafting station an optional station chest. Branch `claude/station-chest`.
+The user decided on 2026-10-09, during UI-04 ([#204](https://github.com/Athurito/SurvivalRpg/pull/204)), to give each crafting station an optional station chest. Branch `claude/station-chest`, PR [#205](https://github.com/Athurito/SurvivalRpg/pull/205).
 
 - **What it is:** a physical chest built next to a crafting station (`BP_StationChest`, `DA_Buildable_StationChest`, blue lid). It is the station's own output storage.
 - **Link:**
