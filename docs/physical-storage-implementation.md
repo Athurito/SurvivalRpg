@@ -5,14 +5,18 @@ Status: implemented and validated locally, 2026-09-30. Branch: `codex/physical-s
 ## Accepted behavior
 
 - Physical chests own concrete inventory instances; there is no material-count ledger in the new flow.
-- Costs consume the acting player's inventory first, then eligible storage. Other players' inventories are never sources.
+- Construction costs consume the acting player's inventory first, then eligible storage. Crafting orders take materials only from connected chests (UI-04, 2026-10-09). Other players' inventories are never sources.
 - Base areas are horizontal circles and must be disjoint, including their boundaries. A workstation inside a base uses that whole base. An outside workstation uses its positive 3D radius, including individual chests inside a base when they are in range. Sources never extend transitively through another station or base.
 - Deposit targets are exact-item assignments, then matching category assignments, then other chests already containing that exact material. Within each tier: largest exact-material count first, earliest matching assignment order second, stable container ID last. Fill each target before advancing. Overflow may advance through all tiers; leftovers remain at the source.
 - Assignment slots contain an item definition or hierarchical material GameplayTag. Slots are combined with OR. Manual deposits do not learn assignments. Explicit assignments persist at zero stock. Recreating a rule gives it a new server-issued order.
-- Workstation outputs default to the tray; automatic deposit is configurable. Trays are material sources in either mode. Blocked output or refunds remain pending rather than becoming world drops.
+- Workstation trays, auto-deposit and Take all were removed in UI-04. Each station runs one order: a recipe, a quantity and a target, either automatic or one of its connected chests.
+  - Automatic storing (target id None, the default) delivers each unit into the first chest with room. The order is: chests assigned to the exact output, then to its category, then unassigned chests already holding it, then other unassigned chests. A chest whose assignments do not name the output is never used, even if it already holds some.
+  - Each piece or run pays its materials when it starts. A dry run first checks both that payment and the delivery into the target.
+  - A full target makes the order wait before anything is consumed (`WaitingForSpace`); a missing target or missing materials make it wait as well. It retries every second and on changes.
+  - The paid unit's cost is kept as unit credits. Stop remaining refunds them to the source chest, then to other connected chests, then to the target. If the refund fits nowhere, the piece is finished and the order ends. Nothing becomes a world drop.
 - Chest construction and same-base relocation use a preview and server placement checks. Upgrades preserve external footprint, item positions, identity and contents. Prototype grids are 6x4, 6x6 and 6x8.
 - Moving starts with a server-authorized direct interaction. The same pawn may then walk beyond the original chest's interaction radius inside that base. Confirmation requires its controller-scoped session, unchanged chest settings, a reachable target and valid ground/footprint. Cancellation, respawn and a committed move invalidate the authorization. Inventory contents may change normally while the preview is open.
-- World persistence includes physical actor identity, placement, metadata and inventory, plus crafting queues and outstanding refunds. Old prototype saves may be reset; no legacy migration is required.
+- World persistence includes physical actor identity, placement, metadata and inventory, plus each station's order with its unit credits (world save schema 5). Older station entries load as idle stations; the minimum supported schema stays 3.
 - New inventory test map uses the approved project-local GASP blocks, grid and LevelVisuals from `Lvl_RpgGaspMantle`. Existing CMC gameplay composition is reused.
 
 ## Ownership
@@ -23,7 +27,7 @@ Existing inventory managers own items; existing container components own setting
 
 - [x] Physical container metadata, assignment contracts and prepared multi-inventory transactions.
 - [x] Base areas, source/target resolution, actor reconstruction and world persistence.
-- [x] Physical crafting, durable queues/refunds and player-first construction costs.
+- [x] Physical crafting, durable orders/refunds and player-first construction costs (queues and trays replaced by orders in UI-04).
 - [x] Controller commands, assignment UI, chest upgrades and placement/relocation.
 - [x] Concrete assets, isolated GASP test map and reference-safe legacy removal.
 - [x] Editor build, focused automation, asset compilation, multiplayer/late join, manual UI and cook validation.
@@ -105,10 +109,10 @@ Open `Lvl_RpgInventoryStorage` and start PIE. Use **I** for the inventory and **
 - Open a chest to edit its assignment slots, deposit carried materials, upgrade its grid or move it within the same base. A slot can select an exact material or a category; add separate slots to combine wood and iron.
 - The two oak chests start with 25 oak each. The earlier assignment wins that tie. Exact oak assignments take priority over category chests and the unassigned chest, even when those contain more oak.
 - The inside workbench uses the full base despite its deliberately small 1 m station radius. The outside workbench uses its 9 m radius and cannot reach the far chest through the nearby edge chest.
-- Craft planks with **C** and check the output tray. Enable automatic deposit to route its contents and subsequent outputs to the plank chest. **Ctrl + click** transfers a tray stack to the player; a chest's **Einlagern** action routes carried materials. The eight material examples and both base areas are labeled in the map.
+- Pick planks at a workbench, choose a target chest in **Store in**, set the quantity and **Start crafting** (**C**). Each piece takes its oak from the connected chests when it starts, and the planks land in the target chest. A chest's **Einlagern** action routes carried materials. The eight material examples and both base areas are labeled in the map.
 
 ## Transaction and save boundaries
 
 `ApplyInventoryBatch` stages every participant before publishing any inventory. Costs, outputs, capacity changes and caller-owned queue/metadata updates share the commit. Final context checks include region membership, settings and revisions. Construction runs Blueprint setup before payment, gates the pending actor from access and saves, and includes its empty inventory in the batch before publishing it.
 
-Crafting blocks nested queue mutations during staging and publication. Relative remaining times and retained refund claims are saved with chest/tray graphs. World saves cannot overwrite startup state before experience loading and candidate restoration have completed.
+Crafting blocks nested order mutations during staging and publication. The order's remaining unit time and unit credits are saved with the station; chest graphs carry the items. World saves cannot overwrite startup state before experience loading and candidate restoration have completed.

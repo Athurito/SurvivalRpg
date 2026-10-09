@@ -67,6 +67,27 @@ class AssetContractTools(unreal.ToolsetDefinition):
 
     @toolset_registry.tool_call
     @staticmethod
+    def ensure_event_graph(blueprint_path: str) -> bool:
+        """Add the standard EventGraph to a project Blueprint that has none, so events can be authored.
+
+        Widget Blueprints authored without graphs have no EventGraph, and the engine
+        BlueprintTools only add events to an existing one. An existing EventGraph is
+        left unchanged. Compile and save the Blueprint afterwards.
+        """
+        _guard()
+        if (not isinstance(blueprint_path, str)
+                or not unreal.RpgAnimationAssetTools.is_project_content_package(
+                    blueprint_path.split('.', 1)[0])):
+            raise RuntimeError('Expected a Blueprint inside this project or its plugins')
+        blueprint = _asset(blueprint_path)
+        if not isinstance(blueprint, unreal.Blueprint):
+            raise ValueError('Expected a Blueprint')
+        if not unreal.RpgBlueprintAssetTools.ensure_event_graph(blueprint):
+            raise RuntimeError('Could not add an EventGraph to this Blueprint')
+        return True
+
+    @toolset_registry.tool_call
+    @staticmethod
     def set_blueprint_variable_tooltips(blueprint_path: str, tooltips_json: str) -> bool:
         """Document locally authored Blueprint members from a name-to-tooltip JSON object; no compile or save."""
         _guard()

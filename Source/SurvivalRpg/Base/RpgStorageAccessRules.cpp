@@ -8,7 +8,6 @@
 #include "RpgBaseCampActor.h"
 #include "RpgPersonalStorageLockerActor.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
-#include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
 #include "SurvivalRpg/Inventory/RpgDroppedInventoryActor.h"
 #include "SurvivalRpg/Inventory/RpgInventoryContainerComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
@@ -121,14 +120,6 @@ void RpgStorageAccessRules::ResolveStorageSources(const UWorld* World, const FVe
 		{
 			continue;
 		}
-		if (const URpgCraftingStationComponent* Station = Actor->FindComponentByClass<URpgCraftingStationComponent>();
-			Station && !Station->IsPersistenceRestorePending())
-		{
-			if (URpgInventoryManagerComponent* Output = Station->GetOutputInventory())
-			{
-				OutSources.AddUnique(Output);
-			}
-		}
 		if (const URpgInventoryContainerComponent* Container = Actor->FindComponentByClass<URpgInventoryContainerComponent>();
 			Container && Container->IsContainerAccessible() && Container->AllowsCraftingAccess() &&
 			Container->GetTransferPolicy() == ERpgInventoryContainerTransferPolicy::Bidirectional)
@@ -203,11 +194,6 @@ FName RpgStorageAccessRules::GetPersistentInventoryId(const URpgInventoryManager
 	{
 		return NAME_None;
 	}
-	if (const URpgCraftingStationComponent* Station = Owner->FindComponentByClass<URpgCraftingStationComponent>();
-		Station && Station->GetOutputInventory() == Inventory)
-	{
-		return FName(*(TEXT("Station:") + Station->GetPersistentStationId().ToString()));
-	}
 	if (const URpgInventoryContainerComponent* Container = Owner->FindComponentByClass<URpgInventoryContainerComponent>();
 		Container && Container->GetInventoryManager() == Inventory && !Container->GetPersistentContainerId().IsNone())
 	{
@@ -256,8 +242,6 @@ URpgInventoryManagerComponent* RpgStorageAccessRules::FindPersistentInventory(co
 		{
 			if (GetPersistentInventoryId(Inventory) == InventoryId)
 			{
-				const URpgCraftingStationComponent* Station = It->FindComponentByClass<URpgCraftingStationComponent>();
-				if (Station && Station->GetOutputInventory() == Inventory && Station->IsPersistenceRestorePending()) return nullptr;
 				const URpgInventoryContainerComponent* Container = It->FindComponentByClass<URpgInventoryContainerComponent>();
 				if (Container && Container->GetInventoryManager() == Inventory && Container->IsConstructionPending())
 				{

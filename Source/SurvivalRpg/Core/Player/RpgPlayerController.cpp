@@ -127,12 +127,10 @@ void ARpgPlayerController::ClientOpenCraftingInteraction_Implementation(AActor* 
 	URpgCraftingStationScreenPayload* Payload = NewObject<URpgCraftingStationScreenPayload>(this);
 	Payload->ScreenTag = RpgGameplayTags::UI_Screen_Crafting;
 	Payload->PrimaryInventory = PlayerInventory;
-	Payload->SecondaryInventory = CraftingStation->GetOutputInventory();
 	Payload->ContextActor = CraftingActor;
 	Payload->ContextComponent = CraftingStation;
 	Payload->PlayerInventory = PlayerInventory;
 	Payload->CraftingStation = CraftingStation;
-	Payload->OutputInventory = CraftingStation->GetOutputInventory();
 	Payload->RequestingActor = GetPawn();
 	URpgUIScreenBlueprintLibrary::OpenUIScreen(this, RpgGameplayTags::UI_Screen_Crafting, Payload);
 }

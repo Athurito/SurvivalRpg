@@ -142,6 +142,26 @@ int32 URpgItemizationProfile::ResolveItemLevel(int32 SourceLevel) const
 		MaximumItemLevel);
 }
 
+bool URpgItemizationProfile::GetBaseStatRanges(int32 SourceLevel, TArray<FRpgItemStatRange>& OutRanges) const
+{
+	OutRanges.Reset();
+	const int32 ItemLevel = ResolveItemLevel(SourceLevel);
+	for (const FRpgItemStatRollDefinition& Stat : BaseStats)
+	{
+		FRpgItemStatRange& Range = OutRanges.AddDefaulted_GetRef();
+		Range.StatTag = Stat.StatTag;
+		Range.MinValue = Stat.MinimumValue.GetValueAtLevel(ItemLevel);
+		Range.MaxValue = Stat.MaximumValue.GetValueAtLevel(ItemLevel);
+		if (!Stat.StatTag.IsValid() || !FMath::IsFinite(Range.MinValue) || !FMath::IsFinite(Range.MaxValue) ||
+			Range.MinValue > Range.MaxValue)
+		{
+			OutRanges.Reset();
+			return false;
+		}
+	}
+	return true;
+}
+
 bool URpgItemizationProfile::HasValidConfiguration(FString* OutError) const
 {
 	if (MinimumItemLevel <= 0 || MaximumItemLevel < MinimumItemLevel || MaximumItemLevel > 100)

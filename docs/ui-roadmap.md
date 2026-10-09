@@ -37,7 +37,7 @@ It records the accepted decisions and the task sequence. The style itself
 - **Classification:** designer-owned presentation on top of existing view
   models. Fonts, palette, materials, styles and layouts are assets.
 - **Native work:** read models only where data is missing (UI-01b profession
-  icons, UI-03 character stats, UI-04 station name, UI-05 mana), plus test
+  icons, UI-03 character stats, UI-04 crafting orders and read models, UI-05 mana), plus test
   updates where tests froze presentation structure.
 
 ## Tasks
@@ -48,12 +48,13 @@ It records the accepted decisions and the task sequence. The style itself
 | UI-01b | Skill screen after the concept: art set, octagonal plaques with five states, seals and locks, framed panels, detail panel, Q/E/R slots with icon and key, profession icons, menu tab bar and backdrop | Done: [#199](https://github.com/Athurito/SurvivalRpg/pull/199) |
 | UI-02 | Tarkov inventory: pane in columns, one shared cell size, new gear and carry slots, storage and crafting hosting, presentation-only test contracts relaxed | Done: [#200](https://github.com/Athurito/SurvivalRpg/pull/200) |
 | UI-02b | Gameplay icons: the user's 59-icon package for items, skills, gear glyphs, buildables, upgrades, stats and crafting; icons keep their aspect ratio in fixed boxes; weapon slots turn long weapons | Done: [#201](https://github.com/Athurito/SurvivalRpg/pull/201) |
-| UI-02c | Coloured item icons: the user's colour version of the gameplay package replaces the 39 item textures in place; every other icon stays bone white | In review: [#203](https://github.com/Athurito/SurvivalRpg/pull/203) |
-| UI-03 | Character stats column (level, XP, load, health, stamina, armour), rarity frames on gear slots, MVVM toolset | In review: [#202](https://github.com/Athurito/SurvivalRpg/pull/202) |
-| UI-04 | Crafting screen: layout, station name, recipe states, categories and search, output preview, job state | Planned |
+| UI-02c | Coloured item icons: the user's colour version of the gameplay package replaces the 39 item textures in place; every other icon stays bone white | Done: [#203](https://github.com/Athurito/SurvivalRpg/pull/203) |
+| UI-03 | Character stats column (level, XP, load, health, stamina, armour), rarity frames on gear slots, MVVM toolset | Done: [#202](https://github.com/Athurito/SurvivalRpg/pull/202) |
+| UI-04 | Crafting screen after the kiln and smithy concepts: category tree, tier sections, preview with stat ranges, one order per station from connected chests into a target chest, per-piece item rolls | Done: [#204](https://github.com/Athurito/SurvivalRpg/pull/204) |
 | UI-05 | HUD: new arrangement, material bars for health, stamina and mana, XP bar, context fading, action bar and Q/E/R, enemy health bar | Planned |
 | UI-06 | Tooltip, context menu, split and drop dialogs, toasts, drag visual, item-only highlight in grids | Planned |
 | UI-07 | Menus (game menu tabs, main menu, settings, respawn), then remove KnightsQuest | Planned |
+| UI-08 | Inventory layout after Diablo 3: character values left of the equipment, containers below, fewer pocket cells | Planned |
 
 ## Noted for later tasks
 
@@ -67,6 +68,21 @@ It records the accepted decisions and the task sequence. The style itself
   - The cell states live in `URpgInventorySpatialCellWidget`. The address slot
     view model already reports whether a cell is an item's origin or covered
     by it.
+- **Inventory layout after Diablo 3 (UI-08):** the user's request from
+  2026-10-08, with a Diablo 3 inventory as reference.
+  - The character values sit directly left of the equipment instead of in a
+    third column on the right, where they look out of place. They become more
+    compact.
+  - The containers move below the equipment.
+  - The pockets get fewer cells. Today they are 6 × 6 in
+    `DA_PlayerInventoryLayout_Default`; the target size is still open.
+  - Open before starting: the pocket size, and what happens to saves. A saved
+    item outside the new pocket grid fails the player graph check on load, so
+    the world does not load and disk writes stay blocked. Options are
+    clearing the pockets in game before the change, starting a new world, or
+    a save migration.
+  - Storage and crafting host the same pane without the values, so their
+    layouts are checked too.
 
 ## Open findings outside UI
 
@@ -233,7 +249,8 @@ slots and animations.
 - **Not done:**
   - The character stats column (UI-03).
   - Glyphs for pouch and resource bag; UI-02b adds them.
-  - The crafting output grid is still scaled with the crafting side (UI-04).
+  - The crafting output grid is still scaled with the crafting side (done in
+    UI-04).
   - The quickbar entries keep the HUD look (UI-05).
 
 ## Gameplay icons (UI-02b)
@@ -341,3 +358,196 @@ slots and animations.
     `10 XP`). The curve is progression content, not UI.
   - Items in the grids show no rarity yet, and the tooltip keeps its own
     rarity colours (UI-06).
+
+## Crafting screen (UI-04)
+
+The first layout was rejected in review. The user supplied two generated
+concepts, the kiln and the smithy. The screen keeps the project's colours,
+fonts and styles and takes over the concepts' layout and behaviour. The texts
+stay English like the rest of the UI.
+
+### Decisions (2026-10-09)
+
+- **Materials** come only from chests connected to the station. The player
+  inventory is no longer a crafting source; construction stays player-first.
+- **Output** goes into connected chests. The station tray, Take all,
+  auto-deposit and the tray pane are gone.
+  - The default target is **Automatic**. Each unit goes into the first chest
+    with room, in this order: chests assigned to the exact output, then to its
+    category, then unassigned chests already holding it, then other
+    unassigned chests.
+  - Automatic storing never uses a chest whose assignments do not name the
+    output, even if it already holds some, so changed chest assignments steer
+    the station instead of filling the wrong chest.
+  - A fixed chest stays selectable.
+- **One order per station.** It has a recipe, a quantity up to 99 and a
+  target chest. Each piece or run takes its materials when it starts, then
+  delivers into the target. A full or missing target and missing materials
+  make the order wait; it continues by itself. There is no multi-recipe
+  queue.
+- **Items with an itemization profile** are rolled per piece: 20 swords are
+  20 items with their own values.
+
+### C++ boundary
+
+- **Runtime truth:** the order lives in `URpgCraftingStationComponent`
+  (server authority, replicated as `CurrentOrder`, saved). Items live only in
+  chest inventories, and itemization state on the item instances.
+- **Native:**
+  - the order lifecycle;
+  - per-piece itemization in the physical batch kernel
+    (`ItemizationSourceLevel`, `ItemizationSeed`);
+  - the client-safe capacity helper `RpgCraftingCapacity`;
+  - the category catalog schema `URpgCraftingCategoryCatalog`;
+  - the view models;
+  - two generic MVVM list-entry bases, `URpgMvvmListEntryWidget` and
+    `URpgMvvmListEntryButton`. They hand the list item to an authored manual
+    source, which a Widget Blueprint cannot do generically.
+- **Content (Unreal MCP):**
+  - the screen and every entry;
+  - the catalog data `DA_CraftingCategoryCatalog`;
+  - recipe tags and tiers;
+  - the station texts (`Presentation`);
+  - chests in the test maps;
+  - keyboard glyphs.
+
+### Layout (`CUI_CraftingStationSpatial`)
+
+The screen shows only the station on the workshop backdrop.
+
+- **Header:** station icon and name on the left. On the right, "Materials from
+  2 connected chests" and the chest names.
+- **One framed panel with four columns:**
+  1. **Categories:** a list of `CUI_CraftingCategoryRow`.
+     - "All recipes", then collapsible groups with subcategories below.
+     - Each row has a count.
+     - The first click on a group filters it; a second click collapses or
+       expands it ("-" / "+").
+  2. **Recipes:**
+     - title and count, the search field;
+     - a tier dropdown and a sort toggle ("Tier ↑/↓");
+     - the list, grouped by tier sections (`CUI_CraftingTierSection`, for
+       example "II · Iron").
+     - Rows show the name and a detail line: "2 per run · 3 s" for stackables,
+       "1 × 2 cells" for single items.
+  3. **Preview:**
+     - breadcrumb, name and item kind ("Single item · individual stats");
+     - a 176-unit icon next to the key values (`CUI_CraftingDetailRow`):
+       stat ranges at the recipe's item level, or yield, time and stack size;
+     - space per item, tier and description;
+     - the formula panel ("One run uses 2 Wood → 1 Charcoal");
+     - the status with a hint, red when blocked.
+  4. **Production:**
+     - the material table (Material, Each, In chests);
+     - "From connected chests · enough for N runs now";
+     - the target dropdown with "Automatic" first, then each connected chest.
+       - Chests are named with their assignments, such as "Gemeinsame Kiste
+         (Charcoal)".
+       - Each row shows free cells and contents ("80 Wood · 12 Ore"); the
+         chest that automatic storing fills next is marked.
+       - Below the dropdown: the room ("Room for 5 of 5 Charcoal") and either
+         the next chest ("Next into …") or the chest's stack details. A fixed
+         chest meant for other materials warns ("Assigned to Wood, not to
+         Charcoal").
+     - quantity −, +, Max;
+     - the plan ("20 runs → 40 Charcoal", pure time);
+     - the start button, labelled "Start firing" or "Start crafting".
+- **Order strip** below the panel:
+  - the station's order label and the recipe;
+  - status ("Running · 14 s left", "Waiting for materials", "Waiting:
+    <chest> full", "Paused");
+  - "6 / 20 pieces done" and a progress bar;
+  - a hint naming what is missing;
+  - Pause or Resume, and Stop remaining.
+
+### Dropdowns and lists
+
+- The tier filter and the target chest are a `URpgCraftingActionButtonWidget`
+  over an inline popup with a `CommonListView`:
+  - `TierFilterButton` with `TierFilterPopup` and `TierFilterList`
+    (`CUI_CraftingTierOption`);
+  - `TargetStorageButton` with `TargetStoragePopup` and `TargetStorageList`
+    (`CUI_CraftingStorageOption`: name, free cells, contents, and "Next" on
+    the chest automatic storing fills next).
+- The native screen opens and closes the popups and closes one when the other
+  opens or an option is picked. It labels the buttons from the view model.
+  This avoids `ComboBoxString`, whose popup sits outside CommonUI input
+  routing.
+- `RecipeList` takes `TierSectionEntryClass` for section items through
+  `OnGetEntryClassForItem`, and `OnIsItemSelectableOrNavigable` keeps the
+  sections out of selection and navigation.
+- The screen mirrors the view model's category, tier and target choice into
+  the list selection, so the chosen row keeps the selected style of
+  `CUI_ButtonStyle_ListRow`.
+- The native screen forwards the optional `RecipeSearchBox` text to the view
+  model.
+
+### Entries
+
+- New entries are Widget Blueprints on the generic bases. Each has one
+  optional manual source named in `ViewModelSourceName`:
+  - `CUI_CraftingCategoryRow`, `CUI_CraftingTierOption` and
+    `CUI_CraftingStorageOption` use the button base;
+  - `CUI_CraftingTierSection` and `CUI_CraftingDetailRow` use the widget
+    base.
+- Small presentation functions in the entries map flags to visuals:
+  `ApplyRowKind`, `ApplyExpanded`, `SetEmphasized` and `SetSuggested`.
+- Existing entries changed:
+  - `CUI_CraftingRecipeEntrySpatial` binds its second line to `DetailText`;
+  - `CUI_CraftingIngredientEntrySpatial` shows the cost per unit and colours
+    the chest count by `bHasEnoughForOneUnit`.
+- Removed: `CUI_CraftingJobEntrySpatial`, `CUI_CraftingCategoryTab` and
+  `CUI_CraftingOutputEntrySpatial`.
+
+### Station data
+
+- `FRpgCraftingStationPresentation` on the station component holds the noun,
+  start label and order label, for example the kiln's "run/runs", "Start
+  firing" and "Firing".
+- `DA_CraftingCategoryCatalog` gives names, icons and order to the category
+  groups and subcategories (`Crafting.Category.<Group>.<Sub>`), and names to
+  the tiers (I Basic, II Iron).
+- Without a catalog entry, the tag's last segment and a roman numeral are
+  used.
+
+### Input
+
+- `DT_RpgUIActions_Crafting` has these rows:
+  - Start (C, gamepad X);
+  - Pause / Resume (P, gamepad Y);
+  - Stop remaining (X, gamepad right stick).
+- `CommonInputData_Keyboard` gained the C and P glyphs, so these actions show
+  their key in the action bar.
+
+### Tests
+
+These replace the old crafting tests:
+- order lifecycle (`SurvivalRpg.Crafting.Order.*`);
+- batch itemization, stat ranges, capacity and catalog validation;
+- view model tests for categories, tier sections and sort, target options, plan
+  and preview, and order texts;
+- the widget contract, which requires the section entry class, the catalog and
+  the stop row.
+
+Take all and tray tests are removed.
+
+### Not done
+
+- **Remote chests:** no "Open" button for chests or the finished items.
+  Opening a chest remotely needs an access rule.
+- **Header extras:** no gear score, and no base or station names in the
+  header.
+- **Locked recipes:** no unlock reasons; the recipe data has none.
+- **Chest names:** no custom names. Chests show their buildable name
+  (currently the German "Gemeinsame Kiste") with their assignments, and a
+  number when names repeat.
+- **In-world identification:** none. The crafting screen covers the world, so
+  highlighting a chest there would not be visible; the dropdown shows
+  assignments and contents instead.
+- **Station chests:** a dedicated, upgradeable chest built onto a station as
+  its default target is planned as a separate task (decided 2026-10-09).
+- **3D preview:** none; the preview shows the icon.
+- **Gamepad focus** across the new popups had only a basic check.
+- **Maps without chests:** workbenches in `Lvl_RpgBaseline`,
+  `Lvl_ThirdPerson` and `Lvl_LootHarvestSandbox` have no chest nearby, so
+  they cannot craft there until chests are placed or built.

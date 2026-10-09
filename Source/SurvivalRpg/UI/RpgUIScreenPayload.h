@@ -113,7 +113,7 @@ public:
 };
 
 /**
- * Payload used by crafting station screens to bind recipe state, player context, and output inventory.
+ * Payload used by crafting station screens to bind recipe and order state and the player context.
  */
 UCLASS(BlueprintType)
 class SURVIVALRPG_API URpgCraftingStationScreenPayload : public URpgInventoryScreenPayload
@@ -121,17 +121,13 @@ class SURVIVALRPG_API URpgCraftingStationScreenPayload : public URpgInventoryScr
 	GENERATED_BODY()
 
 public:
-	/** Player inventory used for ingredient availability and inventory-side transfers. */
+	/** Player inventory of the viewer. Crafting never consumes from it; screens may show it for context. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crafting")
 	TObjectPtr<URpgInventoryManagerComponent> PlayerInventory = nullptr;
 
-	/** Station that owns recipes, queue state, pause state, and output handling. */
+	/** Station that owns recipes, the order and its pause state. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crafting")
 	TObjectPtr<URpgCraftingStationComponent> CraftingStation = nullptr;
-
-	/** Station output inventory shown beside active jobs and queue. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crafting")
-	TObjectPtr<URpgInventoryManagerComponent> OutputInventory = nullptr;
 
 	/** Local pawn or actor used by the ViewModel for access and resource availability checks. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crafting")

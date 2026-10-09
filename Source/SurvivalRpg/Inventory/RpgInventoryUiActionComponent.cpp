@@ -309,19 +309,28 @@ void URpgInventoryUiActionComponent::RequestContributeMaterialToBaseConstruction
 		bAllowBaseStorage);
 }
 
-void URpgInventoryUiActionComponent::RequestCraftRecipe_Implementation(URpgCraftingStationComponent* CraftingStation, URpgCraftingRecipeDefinition* RecipeDefinition, int32 Quantity)
+void URpgInventoryUiActionComponent::RequestStartCraftingOrder_Implementation(URpgCraftingStationComponent* CraftingStation, URpgCraftingRecipeDefinition* RecipeDefinition, int32 Quantity, FName TargetContainerId)
 {
-	FRpgCraftingActionHandler(*this).CraftRecipe(
+	FRpgCraftingActionHandler(*this).StartOrder(
 		CraftingStation,
 		RecipeDefinition,
-		Quantity);
+		Quantity,
+		TargetContainerId);
 }
 
-void URpgInventoryUiActionComponent::RequestCancelCraftJob_Implementation(URpgCraftingStationComponent* CraftingStation, FGuid JobId)
+void URpgInventoryUiActionComponent::RequestStopCraftingOrder_Implementation(URpgCraftingStationComponent* CraftingStation, FGuid OrderId)
 {
-	FRpgCraftingActionHandler(*this).CancelCraftJob(
+	FRpgCraftingActionHandler(*this).StopOrder(
 		CraftingStation,
-		JobId);
+		OrderId);
+}
+
+void URpgInventoryUiActionComponent::RequestSetCraftingOrderTarget_Implementation(URpgCraftingStationComponent* CraftingStation, FGuid OrderId, FName TargetContainerId)
+{
+	FRpgCraftingActionHandler(*this).SetOrderTarget(
+		CraftingStation,
+		OrderId,
+		TargetContainerId);
 }
 
 void URpgInventoryUiActionComponent::RequestPauseCraftingStation_Implementation(URpgCraftingStationComponent* CraftingStation)
@@ -332,13 +341,6 @@ void URpgInventoryUiActionComponent::RequestPauseCraftingStation_Implementation(
 void URpgInventoryUiActionComponent::RequestResumeCraftingStation_Implementation(URpgCraftingStationComponent* CraftingStation)
 {
 	FRpgCraftingActionHandler(*this).ResumeStation(CraftingStation);
-}
-
-void URpgInventoryUiActionComponent::RequestSetCraftingOutputAutoDepositEnabled_Implementation(URpgCraftingStationComponent* CraftingStation, bool bEnabled)
-{
-	FRpgCraftingActionHandler(*this).SetOutputAutoDepositEnabled(
-		CraftingStation,
-		bEnabled);
 }
 
 bool URpgInventoryUiActionComponent::CanAccessInventory(URpgInventoryManagerComponent* Inventory) const

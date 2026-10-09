@@ -638,25 +638,29 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Base Building")
 	void RequestContributeMaterialToBaseConstructionSite(ARpgBaseConstructionSiteActor* ConstructionSite, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int32 StackCount, bool bAllowBaseStorage);
 
-	/** Queues one or more units of a recipe through an accessible crafting station. */
+	/**
+	 * Starts an order of Quantity units at an accessible, idle crafting station. Materials come from the station's
+	 * connected chests per unit; outputs go into the connected chest TargetContainerId, or with None into the first
+	 * chest of the station's automatic order that has room. Server-authoritative.
+	 */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Crafting")
-	void RequestCraftRecipe(URpgCraftingStationComponent* CraftingStation, URpgCraftingRecipeDefinition* RecipeDefinition, int32 Quantity = 1);
+	void RequestStartCraftingOrder(URpgCraftingStationComponent* CraftingStation, URpgCraftingRecipeDefinition* RecipeDefinition, int32 Quantity, FName TargetContainerId);
 
-	/** Cancels one queued or active crafting job and refunds the unfinished resource credits. */
+	/** Stops the remaining units of a station's order; the paid unit's materials go back to the chests when they fit. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Crafting")
-	void RequestCancelCraftJob(URpgCraftingStationComponent* CraftingStation, FGuid JobId);
+	void RequestStopCraftingOrder(URpgCraftingStationComponent* CraftingStation, FGuid OrderId);
 
-	/** Pauses a whole crafting station queue. */
+	/** Changes the connected chest receiving a station order's outputs; None switches to automatic storing. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Crafting")
+	void RequestSetCraftingOrderTarget(URpgCraftingStationComponent* CraftingStation, FGuid OrderId, FName TargetContainerId);
+
+	/** Pauses a crafting station's order. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Crafting")
 	void RequestPauseCraftingStation(URpgCraftingStationComponent* CraftingStation);
 
-	/** Resumes a paused crafting station queue. */
+	/** Resumes a crafting station's paused order. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Crafting")
 	void RequestResumeCraftingStation(URpgCraftingStationComponent* CraftingStation);
-
-	/** Toggles whether an accessible crafting station auto-deposits finished outputs into linked base storage. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Crafting")
-	void RequestSetCraftingOutputAutoDepositEnabled(URpgCraftingStationComponent* CraftingStation, bool bEnabled);
 
 	/** Stable-ID chest request. Only this controller's player inventory can be used to pay or deposit. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Physical Storage")

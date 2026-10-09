@@ -166,37 +166,43 @@ void FRpgBaseBuildingActionHandler::ContributeMaterial(
 	}
 }
 
-void FRpgCraftingActionHandler::CraftRecipe(
+void FRpgCraftingActionHandler::StartOrder(
 	URpgCraftingStationComponent* CraftingStation,
 	URpgCraftingRecipeDefinition* RecipeDefinition,
-	int32 Quantity)
+	int32 Quantity,
+	FName TargetContainerId)
 {
 	AActor* RequestingActor = GetRequestingActor();
-	if (!CraftingStation ||
-		!RecipeDefinition ||
-		!RequestingActor ||
-		!CraftingStation->CanCraftRecipeQuantity(
+	if (CraftingStation && RecipeDefinition && RequestingActor)
+	{
+		CraftingStation->StartCraftingOrder(
 			RequestingActor,
 			RecipeDefinition,
-			Quantity))
-	{
-		return;
+			Quantity,
+			TargetContainerId);
 	}
-
-	CraftingStation->QueueCraftRecipe(
-		RequestingActor,
-		RecipeDefinition,
-		Quantity);
 }
 
-void FRpgCraftingActionHandler::CancelCraftJob(
+void FRpgCraftingActionHandler::StopOrder(
 	URpgCraftingStationComponent* CraftingStation,
-	FGuid JobId)
+	FGuid OrderId)
 {
 	AActor* RequestingActor = GetRequestingActor();
 	if (CraftingStation && RequestingActor)
 	{
-		CraftingStation->CancelCraftJob(RequestingActor, JobId);
+		CraftingStation->StopCraftingOrder(RequestingActor, OrderId);
+	}
+}
+
+void FRpgCraftingActionHandler::SetOrderTarget(
+	URpgCraftingStationComponent* CraftingStation,
+	FGuid OrderId,
+	FName TargetContainerId)
+{
+	AActor* RequestingActor = GetRequestingActor();
+	if (CraftingStation && RequestingActor)
+	{
+		CraftingStation->SetCraftingOrderTarget(RequestingActor, OrderId, TargetContainerId);
 	}
 }
 
@@ -217,18 +223,5 @@ void FRpgCraftingActionHandler::ResumeStation(
 	if (CraftingStation && RequestingActor)
 	{
 		CraftingStation->ResumeCraftingStation(RequestingActor);
-	}
-}
-
-void FRpgCraftingActionHandler::SetOutputAutoDepositEnabled(
-	URpgCraftingStationComponent* CraftingStation,
-	bool bEnabled)
-{
-	AActor* RequestingActor = GetRequestingActor();
-	if (CraftingStation && RequestingActor)
-	{
-		CraftingStation->SetCraftingOutputAutoDepositEnabled(
-			RequestingActor,
-			bEnabled);
 	}
 }

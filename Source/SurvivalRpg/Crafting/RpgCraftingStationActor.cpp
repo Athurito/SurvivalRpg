@@ -3,7 +3,6 @@
 #include "Components/SceneComponent.h"
 #include "Components/SphereComponent.h"
 #include "RpgCraftingStationComponent.h"
-#include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgCraftingStationActor)
 
@@ -23,7 +22,4 @@ ARpgCraftingStationActor::ARpgCraftingStationActor(const FObjectInitializer& Obj
 	InteractionCollision->SetGenerateOverlapEvents(true);
 
 	CraftingStationComponent = CreateDefaultSubobject<URpgCraftingStationComponent>(TEXT("CraftingStationComponent"));
-
-	OutputInventoryComponent = CreateDefaultSubobject<URpgInventoryManagerComponent>(TEXT("OutputInventoryComponent"));
-	CraftingStationComponent->SetOutputInventoryManager(OutputInventoryComponent);
 }

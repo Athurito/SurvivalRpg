@@ -177,7 +177,8 @@ style:
   `Icons/gear` with the equipment glyphs (UI-02). UI-02b adds `Icons/items`
   (item icons), `Icons/building` (buildables and storage upgrades),
   `Icons/stats` (character values, used by the stats column), and crafting
-  categories and stations in `Icons/crafting` (for UI-04).
+  categories and stations in `Icons/crafting` (used by the crafting screen
+  since UI-04).
 - `Frames/`: panels, tooltip, slots and controls, and the gear frames
   `T_UI_Gear_Frame_Cell`, `_Equipment`, `_Weapon` and `_Container`.
 - `Ornaments/` (including the paper doll `T_UI_Gear_BodySilhouette`) and
@@ -237,6 +238,7 @@ Rules:
 | `Buttons/CUI_ButtonStyle_Danger` | Danger frame, default hover | ButtonLabel, hovered label |
 | `Buttons/CUI_ButtonStyle_Slot` | Slot frames, no padding, at least 48 × 48 | TileLabel |
 | `Buttons/CUI_ButtonStyle_Tab` | No normal brush; hover and selection frames | Subheading, hovered label |
+| `Buttons/CUI_ButtonStyle_ListRow` | The Tab brushes with 12 × 6 padding, for selectable list rows | ButtonLabel, hovered label |
 | `Buttons/CUI_ButtonStyle_GearSlot` | Equipment slot frame, dim at rest and bright on hover or focus, 5 px padding | — |
 | `Buttons/CUI_ButtonStyle_WeaponSlot` | Weapon slot frame, the same states | — |
 | `Borders/CUI_BorderStyle_Panel`, `_Inset`, `_Tooltip` | The matching panel instance | — |
@@ -256,6 +258,64 @@ styles for newly placed widgets.
   progress fields directly.
 - Body text is at least 13 pt. Only labels inside fixed tiles may go down to
   11 pt.
+- **Filter tabs** use the menu tab styles (`CUI_TabButtonNormalStyle`,
+  `_SelectedStyle`): ash at rest, gold with the diamond marker when active.
+  - Tabs that tint their label and icon on selection repeat that on
+    Construct, because a text style resets the colour when the widget is
+    built.
+  - For radio behaviour, clear the other tabs with `ClearSelection`;
+    `SetIsSelected(false)` only deselects a toggleable button.
+- **Category trees** (crafting) are a list of `CUI_ButtonStyle_ListRow` rows:
+  - "All" and groups use the strong body style; subcategories are indented
+    and plain.
+  - Each row ends in a caption count; groups also show "-" or "+" for
+    expanded or collapsed. Do not use font-dependent arrow glyphs; Roboto lacks
+    "▾".
+  - The screen mirrors the active filter into the list selection, so the
+    chosen row keeps the gold frame.
+- **Section headers inside lists** (tier sections) are a gold tile caption
+  followed by a faint gold rule, with space above. They are neither selectable
+  nor navigable.
+- **Storage choices** in a dropdown use up to three lines: the name with its
+  assignments, a caption with free cells, and a caption with the contents. An
+  accent tag on the right marks the chest that automatic storing fills next.
+- **Dropdowns** are a wide action button that names the current choice, over
+  an inline popup list of list rows (dark inset, 4-unit padding). Picking an
+  option or opening another dropdown closes the popup. Do not use
+  `ComboBoxString`, whose popup sits outside CommonUI input routing.
+- **Aligned panels:** panels side by side share their top and bottom edges.
+  Give titles above them the same height, and fill a missing bar below with a
+  spacer of its height.
+- **Station screens** show only the station and use the full width, in four
+  columns:
+  - categories;
+  - recipes;
+  - the preview, with a large icon next to the key values;
+  - production, with materials, target, quantity, plan and the start button.
+
+  A framed order strip sits below the panel: label and title on the left,
+  status with counts, a progress bar in the stats bar style and a hint in the
+  middle, Pause and Stop remaining on the right. Long titles end in an
+  ellipsis. Material counts and output targets are connected chests; do not
+  embed the player inventory.
+- **Key values** (`CUI_CraftingDetailRow`) put a caption label on the left
+  and a right-aligned strong value on the right; emphasized values, such as
+  damage, use the accent style.
+- **Panel headers** use the section title with a gold count, and put their
+  actions on the right.
+- **Tables** (such as crafting requirements) use caption headers and fixed
+  right-aligned number columns of the same width in header and rows, with a
+  faint gold rule under each row.
+- **Availability states** keep the row readable instead of hiding it:
+  - available: full icon and bone text;
+  - blocked (for example missing materials): icon dimmed to about 60 % and a
+    blood-red caption or, in one-line rows, a blood-red "!";
+  - locked: icon at about 30 %, the lock glyph (`MI_UI_Glyph_Lock`) on the
+    icon and an ash caption.
+- **Search fields** draw on `MI_UI_Panel_Inset` with 14 pt Roboto in bone white
+  and a hint text.
+- **Button labels** of `URpgCraftingActionButtonWidget` take the button
+  style's text styles, so a disabled button also dims its label.
 - A scroll box inside a scale box needs a capped height; otherwise the scale box
   shrinks the whole scroll content.
 - **Controller readiness:**
@@ -288,8 +348,9 @@ palette values:
 - `RpgInventoryItemTooltipWidget.h`, `RpgInventoryFeedbackToastWidget.h`:
   UI-06.
 - `RpgQuickAccessRadialWidget.h`: UI-05.
+- `RpgCraftingIngredientEntryWidget.h` `EnoughCountColor` and
+  `MissingCountColor`: bone white and blood red in
+  `CUI_CraftingIngredientEntrySpatial` (UI-04).
 
-Two colours are fixed in native code:
-- the ingredient count colours in `RpgCraftingIngredientEntryWidget.cpp`, to be
-  replaced in UI-04;
-- the tooltip colours in `RpgInventoryItemTooltipWidget.cpp`, UI-06.
+The tooltip colours in `RpgInventoryItemTooltipWidget.cpp` are still fixed in
+native code (UI-06).

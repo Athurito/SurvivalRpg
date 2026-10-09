@@ -2,13 +2,12 @@
 
 #include "CoreMinimal.h"
 #include "UObject/SoftObjectPtr.h"
-#include "SurvivalRpg/Inventory/RpgInventoryGraphTypes.h"
 #include "RpgCraftingSaveTypes.generated.h"
 
 class URpgCraftingRecipeDefinition;
 class URpgInventoryItemDefinition;
 
-/** Durable credit for materials paid into an unfinished recipe; never stores runtime component pointers. */
+/** Durable credit for materials paid into the unit in progress; never stores runtime component pointers. */
 USTRUCT()
 struct SURVIVALRPG_API FRpgCraftingRefundSaveData
 {
@@ -18,50 +17,62 @@ struct SURVIVALRPG_API FRpgCraftingRefundSaveData
 	UPROPERTY(SaveGame)
 	TSoftClassPtr<URpgInventoryItemDefinition> ItemDefinition;
 
-	/** Units still owed if the unfinished job is canceled. */
+	/** Units owed back if the order stops before the paid unit completes. */
 	UPROPERTY(SaveGame)
 	int32 Count = 0;
 
-	/** Stable original inventory identity; an absent source falls back to the station tray. */
+	/** Stable original chest identity; an absent chest falls back to other connected chests. */
 	UPROPERTY(SaveGame)
 	FName InventoryId;
 };
 
-/** One persisted job, with relative time so unloaded worlds never produce items offline. */
+/** The station's one order, with relative time so unloaded worlds never produce items offline. */
 USTRUCT()
-struct SURVIVALRPG_API FRpgCraftingJobSaveData
+struct SURVIVALRPG_API FRpgCraftingOrderSaveData
 {
 	GENERATED_BODY()
 
-	/** Stable identity used by cancellation and UI commands. */
+	/** Stable identity used by stop and target commands. */
 	UPROPERTY(SaveGame)
-	FGuid JobId;
+	FGuid OrderId;
 
-	/** Authored recipe asset, loaded before this job may resume. */
+	/** Authored recipe asset, loaded before the order may resume. */
 	UPROPERTY(SaveGame)
 	TSoftObjectPtr<URpgCraftingRecipeDefinition> Recipe;
 
-	/** Requested recipe units and units whose outputs were committed. */
+	/** Persistent container id of the chest receiving the outputs; None stores automatically. */
+	UPROPERTY(SaveGame)
+	FName TargetContainerId;
+
+	/** Requested units and units whose outputs were committed. */
 	UPROPERTY(SaveGame)
 	int32 QuantityTotal = 0;
 
 	UPROPERTY(SaveGame)
 	int32 QuantityCompleted = 0;
 
-	/** Serialized ERpgCraftingJobState value; validated before restore. */
+	/** Serialized ERpgCraftingOrderState value; validated before restore. */
 	UPROPERTY(SaveGame)
 	uint8 State = 0;
 
-	/** Seconds left on the active unit when the snapshot was captured. */
+	/** Explicit pause survives reload. */
+	UPROPERTY(SaveGame)
+	bool bPaused = false;
+
+	/** True when the unit in progress has already consumed its materials. */
+	UPROPERTY(SaveGame)
+	bool bUnitPaid = false;
+
+	/** Seconds left on the paid unit when the snapshot was captured. */
 	UPROPERTY(SaveGame)
 	float RemainingTime = 0.0f;
 
-	/** Remaining credits are retained even when no refund inventory has space. */
+	/** Exactly one unit's costs while bUnitPaid, otherwise empty. */
 	UPROPERTY(SaveGame)
-	TArray<FRpgCraftingRefundSaveData> Refunds;
+	TArray<FRpgCraftingRefundSaveData> UnitCredits;
 };
 
-/** Station settings and queue saved in the same world snapshot as physical inventory graphs. */
+/** Station order saved in the same world snapshot as the chests' inventory graphs. */
 USTRUCT()
 struct SURVIVALRPG_API FRpgCraftingStationSaveData
 {
@@ -71,23 +82,11 @@ struct SURVIVALRPG_API FRpgCraftingStationSaveData
 	UPROPERTY(SaveGame)
 	FName StationId;
 
-	/** Persisted player choice; retaining outputs in the tray is the default. */
+	/** False for an idle station. */
 	UPROPERTY(SaveGame)
-	bool bAutoDepositOutputs = false;
+	bool bHasOrder = false;
 
-	/** Explicit station pause survives reload. */
+	/** The order, valid only while bHasOrder. */
 	UPROPERTY(SaveGame)
-	bool bPaused = false;
-
-	/** Physical tray dimensions restored before its item graph. */
-	UPROPERTY(SaveGame)
-	FRpgInventoryGridSize OutputGridSize;
-
-	/** Tray items and identities captured with the queue. */
-	UPROPERTY(SaveGame)
-	FRpgInventoryGraphSaveData OutputInventoryGraph;
-
-	/** Ordered unfinished jobs and their exact refund claims. */
-	UPROPERTY(SaveGame)
-	TArray<FRpgCraftingJobSaveData> Jobs;
+	FRpgCraftingOrderSaveData Order;
 };

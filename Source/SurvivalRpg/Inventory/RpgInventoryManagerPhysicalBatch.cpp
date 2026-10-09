@@ -8,6 +8,9 @@
 #include "RpgInventoryItemDefinition.h"
 #include "RpgInventoryItemInstance.h"
 #include "RpgPlayerInventoryLayoutComponent.h"
+#include "Itemization/RpgInventoryFragment_Itemization.h"
+#include "Itemization/RpgItemizationGenerator.h"
+#include "Itemization/RpgItemizationProfile.h"
 #include "UObject/StrongObjectPtr.h"
 
 namespace RpgPhysicalBatchPrivate
@@ -20,7 +23,8 @@ namespace RpgPhysicalBatchPrivate
 			if (A[Index].SourceInventory != B[Index].SourceInventory || A[Index].TargetInventory != B[Index].TargetInventory ||
 				A[Index].ItemId != B[Index].ItemId || A[Index].ItemDefinition != B[Index].ItemDefinition ||
 				A[Index].Quantity != B[Index].Quantity || A[Index].ExpectedSourceRevision != B[Index].ExpectedSourceRevision ||
-				A[Index].ExpectedTargetRevision != B[Index].ExpectedTargetRevision) { return false; }
+				A[Index].ExpectedTargetRevision != B[Index].ExpectedTargetRevision ||
+				A[Index].ItemizationSourceLevel != B[Index].ItemizationSourceLevel || A[Index].ItemizationSeed != B[Index].ItemizationSeed) { return false; }
 		}
 		return true;
 	}
@@ -44,6 +48,17 @@ namespace RpgPhysicalBatchPrivate
 			if (A[Index].FragmentId != B[Index].FragmentId || A[Index].Version != B[Index].Version || A[Index].Payload != B[Index].Payload) { return false; }
 		}
 		return true;
+	}
+
+	/** Profile that rolls a definition grant, or null when the definition is not itemized or not validly configured. */
+	const URpgItemizationProfile* FindGrantItemizationProfile(TSubclassOf<URpgInventoryItemDefinition> Definition)
+	{
+		const URpgInventoryItemDefinition* CDO = Definition ? GetDefault<URpgInventoryItemDefinition>(Definition) : nullptr;
+		const URpgInventoryFragment_Itemization* Fragment = CDO
+			? Cast<URpgInventoryFragment_Itemization>(CDO->FindFragmentByClass(URpgInventoryFragment_Itemization::StaticClass()))
+			: nullptr;
+		const URpgItemizationProfile* Profile = Fragment ? Fragment->ItemizationProfile.Get() : nullptr;
+		return Profile && Profile->HasValidConfiguration() ? Profile : nullptr;
 	}
 }
 
@@ -139,7 +154,9 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ApplyInventoryBatchIn
 	for (const FRpgInventoryBatchOperation& Op : Operations)
 	{
 		if ((!Op.SourceInventory && !Op.TargetInventory) || Op.SourceInventory == Op.TargetInventory || Op.Quantity <= 0 ||
-			(Op.SourceInventory && !Op.ItemId.IsValid()) || (!Op.SourceInventory && (!Op.ItemDefinition || Op.ItemId.IsValid()))) { return Result; }
+			(Op.SourceInventory && !Op.ItemId.IsValid()) || (!Op.SourceInventory && (!Op.ItemDefinition || Op.ItemId.IsValid())) ||
+			Op.ItemizationSourceLevel < 0 ||
+			(Op.ItemizationSourceLevel > 0 && (Op.SourceInventory || !Op.TargetInventory || !FindGrantItemizationProfile(Op.ItemDefinition)))) { return Result; }
 		Requested += Op.Quantity;
 		if (Requested > MAX_int32) { return Result; }
 		AddParticipant(Op.SourceInventory);
@@ -262,11 +279,14 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ApplyInventoryBatchIn
 			}
 		}
 		else { Containers.Add(FRpgInventoryContainerHandle::MakeRoot(Target->Inventory->DefaultContainerId)); }
-		const int32 MaxStack = GetEffectiveMaxStackSizeForDefinition(Definition);
+		// Rolled grants become one entry per piece with its own stats, so they never merge or share a stack.
+		const URpgItemizationProfile* RollProfile = Op.ItemizationSourceLevel > 0 ? FindGrantItemizationProfile(Definition) : nullptr;
+		FRandomStream ItemizationStream(Op.ItemizationSeed);
+		const int32 MaxStack = RollProfile ? 1 : GetEffectiveMaxStackSizeForDefinition(Definition);
 		int32 Remaining = Op.Quantity;
 		for (FRpgInventoryEntry& Entry : Target->Entries)
 		{
-			if (Remaining > 0 && Containers.Contains(Entry.Placement.ContainerHandle) && Prototype->IsStackCompatibleWith(Entry.Instance))
+			if (!RollProfile && Remaining > 0 && Containers.Contains(Entry.Placement.ContainerHandle) && Prototype->IsStackCompatibleWith(Entry.Instance))
 			{
 				const int32 MergeCount = FMath::Min(Remaining, FMath::Max(0, MaxStack - Entry.StackCount));
 				Entry.StackCount += MergeCount;
@@ -280,6 +300,16 @@ FRpgInventoryMutationResult URpgInventoryManagerComponent::ApplyInventoryBatchIn
 			NewEntry.StackCount = FMath::Min(Remaining, MaxStack);
 			NewEntry.Instance = Stage(Target->Inventory, Definition, Prototype, Source && bKeepSourceIdentity && !bUsedOriginalIdentity);
 			if (!NewEntry.Instance) { Result.Code = ERpgInventoryMutationResultCode::InternalError; return Result; }
+			if (RollProfile)
+			{
+				FRpgItemizationState RolledState;
+				if (!FRpgItemizationGenerator::GenerateItemization(RollProfile, Op.ItemizationSourceLevel, ItemizationStream, RolledState) ||
+					!NewEntry.Instance->ApplyItemizationState(RolledState))
+				{
+					Result.Code = ERpgInventoryMutationResultCode::InternalError;
+					return Result;
+				}
+			}
 			NewEntry.EntryId = FGuid::NewGuid();
 			bool bFound = false;
 			for (const FRpgInventoryContainerHandle& Container : Containers)

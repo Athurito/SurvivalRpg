@@ -170,16 +170,13 @@ bool FRpgCraftingStationRetentionTest::RunTest(const FString& Parameters)
 	URpgCraftingRecipeSet* Recipes = NewObject<URpgCraftingRecipeSet>();
 	Recipes->Recipes.Add(Recipe);
 	RecipesProperty->SetObjectPropertyValue_InContainer(Station, Recipes);
-	URpgInventoryItemInstance* TrayItem = Station->GetOutputInventory()->GrantItemDefinition(
-		URpgInventoryAutomationTestStatefulMaterialDefinition::StaticClass(), 3);
-	if (!TestNotNull(TEXT("Stateful tray item"), TrayItem)) return false;
-	const auto* Fragment = TrayItem->FindFragmentByClass<URpgInventoryAutomationTestStatefulFragment>();
-	if (!TestNotNull(TEXT("Tray fragment"), Fragment)) return false;
-	Fragment->SetTestValue(TrayItem, 91);
-	const FRpgInventoryItemId TrayItemId = TrayItem->GetItemId();
-	if (!TestTrue(TEXT("Two units reserve six actual resources"), Station->QueueCraftRecipe(Requester, Recipe, 2)) ||
+	ARpgInventoryContainerActor* Target = Scope.World->SpawnActor<ARpgInventoryContainerActor>();
+	if (!TestNotNull(TEXT("Retention target chest"), Target)) return false;
+	Target->GetContainerComponent()->EnsurePersistentContainerId();
+	const FName TargetId = Target->GetContainerComponent()->GetPersistentContainerId();
+	if (!TestTrue(TEXT("A two-unit order starts"), Station->StartCraftingOrder(Requester, Recipe, 2, TargetId)) ||
 		!TestTrue(TEXT("Explicit pause freezes remaining time"), Station->PauseCraftingStation(Requester))) return false;
-	TestEqual(TEXT("Paid input is no longer in its source"), Source->GetInventoryManager()->GetTotalItemCountByDefinition(Material), 0);
+	TestEqual(TEXT("Only the paid unit left its source"), Source->GetInventoryManager()->GetTotalItemCountByDefinition(Material), 3);
 	const FRpgCraftingStationSaveData Before = Station->ExportCraftingState();
 	// Exercise the GameMode seam called by EndPlay without starting the fixture's Experience or disk persistence.
 	Mode->UnregisterPersistentCraftingStation(Station);
@@ -206,57 +203,41 @@ bool FRpgCraftingStationRetentionTest::RunTest(const FString& Parameters)
 	Station = Returned->GetCraftingStationComponent();
 	Mode->RegisterPersistentCraftingStation(Station);
 	TestTrue(TEXT("Returning station waits for authored BeginPlay"), Station->IsPersistenceRestorePending());
-	Station->SetOutputInventoryManager(Station->GetOutputInventory());
-	Station->GetOutputInventory()->GrantItemDefinition(Product.ItemDefinition, 2);
 	Mode->MarkCraftingSaveDirty(Station);
 	Mode->CaptureCraftingStations();
-	TestEqual(TEXT("Pending notifications retain paid claims"), Mode->CraftingStationSaveDataMap.FindChecked(StationId).Jobs.Num(), 1);
-	TestNull(TEXT("Pending tray cannot receive refunds"), RpgStorageAccessRules::FindPersistentInventory(Scope.World,
-		RpgStorageAccessRules::GetPersistentInventoryId(Station->GetOutputInventory())));
-	TArray<URpgInventoryManagerComponent*> PendingSources;
-	RpgStorageAccessRules::ResolveStorageSources(Scope.World, Returned->GetActorLocation(), 1000.0f, PendingSources);
-	TestFalse(TEXT("Pending tray cannot supply another station"), PendingSources.Contains(Station->GetOutputInventory()));
+	TestTrue(TEXT("Pending notifications retain the paid order"), Mode->CraftingStationSaveDataMap.FindChecked(StationId).bHasOrder);
 	TestFalse(TEXT("Pending station denies direct access"), Station->CanActorAccess(Requester));
 	Mode->UnregisterPersistentCraftingStation(Station);
 	Returned->Destroy();
 	Mode->CaptureCraftingStations();
 	CompleteRegistration();
-	TestEqual(TEXT("Interrupted pending reentry retains paid claims"), Mode->CraftingStationSaveDataMap.FindChecked(StationId).Jobs.Num(), 1);
+	TestTrue(TEXT("Interrupted pending reentry retains the paid order"), Mode->CraftingStationSaveDataMap.FindChecked(StationId).bHasOrder);
 	Returned = SpawnStation();
 	Station = Returned->GetCraftingStationComponent();
 	Mode->RegisterPersistentCraftingStation(Station);
-	Station->GetOutputInventory()->GrantItemDefinition(Product.ItemDefinition, 2);
 	CompleteRegistration();
 	TestFalse(TEXT("Restored station becomes ready"), Station->IsPersistenceRestorePending());
-	TestEqual(TEXT("Saved tray replaces later BeginPlay seeds"), Station->GetOutputInventory()->GetTotalItemCountByDefinition(Product.ItemDefinition), 0);
 	const FRpgCraftingStationSaveData After = Station->ExportCraftingState();
-	if (!TestEqual(TEXT("Returning station has exactly one paid job"), After.Jobs.Num(), 1)) return false;
-	TestTrue(TEXT("Explicit pause survives absence"), After.bPaused);
-	TestEqual(TEXT("Absence applies no offline progress"), After.Jobs[0].RemainingTime, Before.Jobs[0].RemainingTime);
-	if (!TestEqual(TEXT("One durable source credit survives"), After.Jobs[0].Refunds.Num(), 1)) return false;
-	TestEqual(TEXT("All six refund credits survive"), After.Jobs[0].Refunds[0].Count, 6);
-	TrayItem = Station->GetOutputInventory()->FindItemById(TrayItemId);
-	if (!TestNotNull(TEXT("Tray item identity survives absence"), TrayItem)) return false;
-	TestEqual(TEXT("Tray stack count survives"), Station->GetOutputInventory()->GetItemStackCount(TrayItem), 3);
-	TestEqual(TEXT("Tray opaque state survives"), static_cast<int32>(Fragment->GetTestValue(TrayItem)), 91);
-	Station->GetOutputInventory()->GrantItemDefinition(Product.ItemDefinition, 1);
+	if (!TestTrue(TEXT("Returning station has its paid order"), After.bHasOrder)) return false;
+	TestTrue(TEXT("Explicit pause survives absence"), After.Order.bPaused);
+	TestEqual(TEXT("Absence applies no offline progress"), After.Order.RemainingTime, Before.Order.RemainingTime);
+	if (!TestEqual(TEXT("One durable source credit survives"), After.Order.UnitCredits.Num(), 1)) return false;
+	TestEqual(TEXT("The paid unit's three credits survive"), After.Order.UnitCredits[0].Count, 3);
 	Mode->RegisterPersistentCraftingStation(Station);
-	TestEqual(TEXT("Repeated registration does not replace newer live contents"), Station->GetOutputInventory()->GetTotalItemCountByDefinition(Product.ItemDefinition), 1);
-	if (!TestTrue(TEXT("Restored claim refunds once"), Station->CancelCraftJob(Requester, After.Jobs[0].JobId))) return false;
-	TestEqual(TEXT("Original source receives exactly its six paid resources"), Source->GetInventoryManager()->GetTotalItemCountByDefinition(Material), 6);
+	TestEqual(TEXT("Repeated registration does not replace the live order"), Station->GetCurrentOrder().OrderId, After.Order.OrderId);
+	if (!TestTrue(TEXT("The restored paid unit refunds once"), Station->StopCraftingOrder(Requester, After.Order.OrderId))) return false;
+	TestEqual(TEXT("The original source receives exactly its paid resources"), Source->GetInventoryManager()->GetTotalItemCountByDefinition(Material), 6);
 	Mode->CaptureCraftingStations();
-	TestEqual(TEXT("Live empty queue replaces retained paid queue"), Mode->CraftingStationSaveDataMap.FindChecked(StationId).Jobs.Num(), 0);
+	TestFalse(TEXT("The live idle station replaces the retained order"), Mode->CraftingStationSaveDataMap.FindChecked(StationId).bHasOrder);
 	Mode->UnregisterPersistentCraftingStation(Station);
 	Returned->Destroy();
 	Mode->CaptureCraftingStations();
 	Station = SpawnStation()->GetCraftingStationComponent();
 	Mode->RegisterPersistentCraftingStation(Station);
-	Station->GetOutputInventory()->GrantItemDefinition(Product.ItemDefinition, 5);
 	Mode->MarkCraftingSaveDirty(Station);
 	CompleteRegistration();
-	TestEqual(TEXT("Later reentry cannot resurrect a canceled claim"), Station->GetCraftingJobs().Num(), 0);
+	TestFalse(TEXT("Later reentry cannot resurrect a stopped order"), Station->HasCraftingOrder());
 	TestEqual(TEXT("Repeated absence cannot mint another refund"), Source->GetInventoryManager()->GetTotalItemCountByDefinition(Material), 6);
-	TestEqual(TEXT("Latest tray survives a second reentry"), Station->GetOutputInventory()->GetTotalItemCountByDefinition(Product.ItemDefinition), 1);
 	return true;
 }
 

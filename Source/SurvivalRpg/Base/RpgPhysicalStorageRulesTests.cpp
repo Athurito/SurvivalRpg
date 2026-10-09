@@ -8,7 +8,6 @@
 #include "Misc/AutomationTest.h"
 #include "NativeGameplayTags.h"
 #include "SurvivalRpg/Crafting/RpgCraftingStationActor.h"
-#include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
 #include "SurvivalRpg/Inventory/RpgInventoryContainerActor.h"
 #include "SurvivalRpg/Inventory/RpgInventoryContainerComponent.h"
@@ -99,7 +98,10 @@ bool FRpgPhysicalStorageSourceDomainTest::RunTest(const FString& Parameters)
 	TArray<URpgInventoryManagerComponent*> Sources;
 	RpgStorageAccessRules::ResolveStorageSources(Fixture.World, FVector::ZeroVector, 1, Sources);
 	TestTrue(TEXT("Inside station includes far chest on another floor"), Sources.Contains(FarInside->GetInventoryManager()));
-	TestTrue(TEXT("Inside station includes another station tray"), Sources.Contains(Station->GetCraftingStationComponent()->GetOutputInventory()));
+	TestFalse(TEXT("A crafting station owns no storage source of its own"), Sources.ContainsByPredicate([Station](const URpgInventoryManagerComponent* Source)
+	{
+		return Source->GetOwner() == Station;
+	}));
 	TestFalse(TEXT("Inside station excludes outside chest"), Sources.Contains(Outside->GetInventoryManager()));
 	TestFalse(TEXT("Inside station excludes another base"), Sources.Contains(OtherBase->GetInventoryManager()));
 	TestFalse(TEXT("Withdrawal-only loot is never a crafting source"), Sources.Contains(WithdrawalLoot->GetInventoryManager()));
@@ -108,7 +110,6 @@ bool FRpgPhysicalStorageSourceDomainTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Outside station reaches one nearby base chest"), Sources.Contains(NearInside->GetInventoryManager()));
 	TestTrue(TEXT("Outside station reaches an outside chest"), Sources.Contains(Outside->GetInventoryManager()));
 	TestFalse(TEXT("Outside station radius is spatial, not vertical-free"), Sources.Contains(FarInside->GetInventoryManager()));
-	TestFalse(TEXT("A nearby base chest does not expose that base's distant station tray"), Sources.Contains(Station->GetCraftingStationComponent()->GetOutputInventory()));
 	RpgStorageAccessRules::ResolveStorageSources(Fixture.World, FVector(1200, 0, 0), 0, Sources);
 	TestTrue(TEXT("Outside zero radius has no shared sources"), Sources.IsEmpty());
 	return true;

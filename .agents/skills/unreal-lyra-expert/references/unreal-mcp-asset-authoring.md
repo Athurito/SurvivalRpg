@@ -101,6 +101,7 @@ The task lists use these short toolset names:
 - `UMGToolSet.CreateWidgetBlueprint(FolderPath, AssetName, ParentClass)` creates the asset; `GetWidgets` reports an existing Widget Blueprint's `ParentClass` and widget tree.
 - Build the tree with `ListWidgetClasses`, `AddWidget`, `SetNamedSlotContent`, `GetNamedSlots`, `MoveWidget`, `WrapWidgets`, `RenameWidget`, `RemoveWidget`, and the `ReplaceWidgetWith*` tools.
 - Expose `BindWidget` members with `ToggleWidgetAsVariable`, and bind delegate events such as `OnClicked` with `BindToEventProperty`.
+- A Widget Blueprint authored without graphs has no EventGraph, and `BlueprintTools.add_event` then fails. `AssetContractTools.ensure_event_graph` adds the standard one first.
 - Set widget and slot properties (padding, alignment, anchors) by passing the widget or its `Slot` object from `GetWidgets` to `ObjectTools.set_properties`.
 - `CompileWidgetBlueprint` reports missing `BindWidget` bindings and type errors.
 - MVVM: the project enables the engine's `MVVMToolset.MVVMToolset` (`AllToolsets` does not include it).
@@ -135,7 +136,7 @@ Each toolset is named `Game.Build.Tools.Unreal.<module>.<Class>`:
 
 - `AssetContractTools` in `Build/Tools/Unreal/asset_contract_tools.py`: asset contracts, Blueprint members the engine tools cannot author, and local PIE inspection.
   - Contracts and editor state: `editor_status`, `export_asset`, `reload_assets`, `montage_contract`, `animation_pose_contract`, `remap_owned_references`, `remap_animation_notify_classes`, and `close_clean_editor`.
-  - Blueprint members: `implement_blueprint_interface`, `set_blueprint_variable_tooltips`, `add_soft_class_variable`, `add_function_input`, `add_view_function_binding`, and `editable_blueprint_component`.
+  - Blueprint members: `implement_blueprint_interface`, `ensure_event_graph`, `set_blueprint_variable_tooltips`, `add_soft_class_variable`, `add_function_input`, `add_view_function_binding`, and `editable_blueprint_component`.
   - PIE: `set_pie_input_key`, `set_pie_view_rotation`, and `pie_mesh_bone_contract`.
 - `AnimationAssetTools` in `Build/Tools/Unreal/animation_asset_tools.py`: animation asset structure.
   - AnimBPs and layers: `create_anim_blueprint`, `set_anim_blueprint_abstract`, `create_animation_layer_interface`, `implement_animation_layer_interface`, `add_animation_layer`, `create_linked_animation_layer_node`, and `configure_linked_animation_layer`.

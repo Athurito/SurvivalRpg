@@ -23,7 +23,7 @@ namespace RpgStorageAccessRules
 	/** Rejects non-positive/non-finite radii and any overlap with another live base. */
 	SURVIVALRPG_API bool CanPlaceBaseArea(const UWorld* World, const FVector& Center, float Radius, const ARpgBaseCampActor* IgnoredBase = nullptr);
 
-	/** Physical, accessible shared chests and output trays; never player, corpse, dropped-loot or private inventories. */
+	/** Physical, accessible shared chests in the area; never player, corpse, dropped-loot or private inventories. */
 	SURVIVALRPG_API void ResolveStorageSources(const UWorld* World, const FVector& ContextLocation, float OutsideSearchRadius,
 		TArray<URpgInventoryManagerComponent*>& OutSources);
 

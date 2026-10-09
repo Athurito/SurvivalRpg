@@ -151,6 +151,12 @@ public:
 	/** Resolves the source level and offset into this profile's supported range. */
 	int32 ResolveItemLevel(int32 SourceLevel) const;
 
+	/**
+	 * Fills the inclusive base-stat ranges a roll from SourceLevel can produce, in BaseStats order. Read-only preview
+	 * data; returns false and empties the output when a range cannot be evaluated.
+	 */
+	bool GetBaseStatRanges(int32 SourceLevel, TArray<FRpgItemStatRange>& OutRanges) const;
+
 	/** Runtime-safe structural validation shared by generation and editor validation. */
 	bool HasValidConfiguration(FString* OutError = nullptr) const;
 

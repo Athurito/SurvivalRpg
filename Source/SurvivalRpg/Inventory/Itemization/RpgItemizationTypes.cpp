@@ -1,6 +1,7 @@
 #include "RpgItemizationTypes.h"
 
 #include "Math/UnrealMathUtility.h"
+#include "RpgItemizationGameplayTags.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgItemizationTypes)
 
@@ -94,4 +95,22 @@ int32 GetRpgAffixCountForRarity(ERpgItemRarity Rarity)
 	default:
 		return 0;
 	}
+}
+
+FText GetRpgItemStatDisplayName(const FGameplayTag& StatTag)
+{
+	using namespace RpgItemizationGameplayTags;
+	if (StatTag == Item_Stat_WeaponDamage) { return NSLOCTEXT("RpgItemization", "WeaponDamage", "Damage"); }
+	if (StatTag == Item_Stat_WeaponStagger) { return NSLOCTEXT("RpgItemization", "WeaponStagger", "Stagger"); }
+	if (StatTag == Item_Stat_Armor) { return NSLOCTEXT("RpgItemization", "Armor", "Armor"); }
+	if (StatTag == Item_Stat_Strength) { return NSLOCTEXT("RpgItemization", "Strength", "Strength"); }
+	if (StatTag == Item_Stat_Intelligence) { return NSLOCTEXT("RpgItemization", "Intelligence", "Intelligence"); }
+	if (StatTag == Item_Stat_Resilience) { return NSLOCTEXT("RpgItemization", "Resilience", "Resilience"); }
+	if (StatTag == Item_Stat_Vitality) { return NSLOCTEXT("RpgItemization", "Vitality", "Vitality"); }
+	if (StatTag == Item_Stat_ArmorPenetration) { return NSLOCTEXT("RpgItemization", "ArmorPenetration", "Armor Penetration"); }
+	if (StatTag == Item_Stat_CriticalHitChance) { return NSLOCTEXT("RpgItemization", "CriticalHitChance", "Critical Hit Chance"); }
+	if (StatTag == Item_Stat_CriticalHitDamage) { return NSLOCTEXT("RpgItemization", "CriticalHitDamage", "Critical Hit Damage"); }
+	if (StatTag == Item_Stat_CriticalHitResistance) { return NSLOCTEXT("RpgItemization", "CriticalHitResistance", "Critical Hit Resistance"); }
+	if (StatTag == Item_Stat_MaxStamina) { return NSLOCTEXT("RpgItemization", "MaxStamina", "Maximum Stamina"); }
+	return FText::FromName(StatTag.GetTagName());
 }

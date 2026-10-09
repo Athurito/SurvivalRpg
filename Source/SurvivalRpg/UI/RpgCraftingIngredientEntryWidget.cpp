@@ -91,8 +91,6 @@ void URpgCraftingIngredientEntryWidget::SetHasEnough(bool bInHasEnough)
 	if (AvailableCountText)
 	{
 		AvailableCountText->SetColorAndOpacity(
-			bInHasEnough
-				? FSlateColor(FLinearColor(0.45f, 0.85f, 0.45f))
-				: FSlateColor(FLinearColor(0.95f, 0.35f, 0.25f)));
+			bInHasEnough ? EnoughCountColor : MissingCountColor);
 	}
 }

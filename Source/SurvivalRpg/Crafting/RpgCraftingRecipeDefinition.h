@@ -33,7 +33,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crafting|Display", meta = (AssetBundles = "Client"))
 	TSoftObjectPtr<UTexture2D> Icon;
 
-	/** Optional category tag for UI grouping such as Crafting.Category.Refining. */
+	/** Optional category tag for UI grouping, a group or subcategory such as Crafting.Category.Materials.Wood. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crafting", meta = (Categories = "Crafting.Category"))
 	FGameplayTag RecipeCategory;
 
@@ -72,17 +72,27 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crafting|Knowledge", meta = (Categories = "Storage.Knowledge"))
 	FGameplayTagContainer RequiredWorldKnowledgeTags;
 
-	/** Resource costs consumed from player inventory and/or linked base storage. */
+	/**
+	 * Costs of one unit (one piece or run). A station order takes them from the station's connected chests when the
+	 * unit starts, so every ingredient needs a storage profile that allows crafting from physical storage.
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crafting")
 	TArray<FRpgCraftingResourceCost> RequiredResources;
 
-	/** Item stacks created by this recipe. */
+	/** Item stacks created by one unit and delivered into the order's target chest. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crafting")
 	TArray<FRpgCraftingOutputItem> OutputItems;
 
 	/** Time in seconds to produce one unit of this recipe. Values <= 0 are processed immediately. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crafting", meta = (ClampMin = "0", UIMin = "0", Units = "s"))
 	float CraftTime = 0.0f;
+
+	/**
+	 * Source level for outputs whose definition has an itemization profile: every crafted piece rolls its own stats at
+	 * this level (the profile applies its offset and clamp). Designer data; ignored for outputs without a profile.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crafting", meta = (ClampMin = "1", ClampMax = "100", UIMin = "1", UIMax = "100"))
+	int32 OutputItemLevel = 1;
 
 #if WITH_EDITOR
 	/** Validates world-knowledge tags and the recipe's deterministic definition/count contract. */

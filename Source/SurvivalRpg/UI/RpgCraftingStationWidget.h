@@ -9,19 +9,18 @@
 
 #include "RpgCraftingStationWidget.generated.h"
 
-class UCheckBox;
 class UCommonLazyImage;
 class UCommonListView;
 class UCommonTextBlock;
+class UEditableTextBox;
 class UUserWidget;
 class URpgCraftingActionButtonWidget;
-class URpgCraftingJobViewModel;
+class URpgCraftingCategoryCatalog;
 class URpgCraftingRecipeDefinition;
 class URpgCraftingStationComponent;
 class URpgCraftingStationViewModel;
 class URpgInventoryManagerComponent;
 class URpgInventorySpatialGridWidget;
-class URpgInventorySpatialPaneWidget;
 class URpgInventoryUiActionComponent;
 class URpgPlayerInventoryPaneWidget;
 class URpgPlayerInventoryViewModel;
@@ -29,9 +28,9 @@ class URpgPlayerInventoryViewModel;
 /**
  * Native CommonUI presenter for one crafting-station interaction.
  *
- * This screen validates the explicit station payload, owns the stable read-only crafting view model, and connects the
- * authored recipe/details/player-pane/output leaves. Every gameplay mutation is forwarded as a typed intent through
- * the owning controller's URpgInventoryUiActionComponent.
+ * This screen validates the explicit station payload, owns the stable read-only crafting view model, and fills the
+ * authored lists: categories, recipes with tier sections, materials, preview values, tier options and target chests.
+ * Every gameplay mutation is forwarded as a typed intent through the owning controller's URpgInventoryUiActionComponent.
  */
 UCLASS(Abstract, Blueprintable)
 class SURVIVALRPG_API URpgCraftingStationWidget
@@ -64,41 +63,31 @@ public:
 			DeprecationMessage = "Use PlayerInventoryPane.GetPlayerInventoryViewModel instead."))
 	URpgPlayerInventoryViewModel* GetCraftingPlayerInventoryViewModel() const;
 
-	/** Exact station-output pane used by the canonical authored screen. */
-	UFUNCTION(BlueprintPure, Category = "Crafting|Screen")
-	URpgInventorySpatialPaneWidget* GetOutputInventoryPane() const
-	{
-		return OutputInventoryPane.Get();
-	}
-
-	/** Exact root container projected by OutputInventoryPane. */
-	UFUNCTION(BlueprintPure, Category = "Crafting|Screen")
-	FRpgInventoryContainerHandle GetOutputPaneContainerHandle() const
-	{
-		return OutputPaneContainerHandle;
-	}
-
 	/** Local diagnostic generation incremented once for every complete presentation bind. */
 	uint32 GetCraftingPresentationBindGeneration() const
 	{
 		return CraftingPresentationBindGeneration;
 	}
 
-	/** Queues the currently selected recipe and quantity through the server-authoritative action component. */
+	/** Starts the selected recipe, quantity and target chest as the station's order through the server. */
 	UFUNCTION(BlueprintCallable, Category = "Crafting|Actions")
-	void RequestCraftSelectedRecipe();
+	void RequestStartCraftingOrder();
 
-	/** Cancels the exact replicated job represented by one screen-owned job row. */
+	/** Stops the remaining units of the station's order. */
 	UFUNCTION(BlueprintCallable, Category = "Crafting|Actions")
-	void RequestCancelCraftJob(URpgCraftingJobViewModel* JobViewModel);
+	void RequestStopCraftingOrder();
 
-	/** Requests pause or resume according to the latest replicated station state. */
+	/** Requests pause or resume according to the latest replicated order state. */
 	UFUNCTION(BlueprintCallable, Category = "Crafting|Actions")
 	void RequestToggleCraftingPause();
 
-	/** Requests the station's server-authoritative output auto-deposit toggle. */
+	/** Chooses a connected chest as target, or None for automatic storing; while an order runs the server moves its delivery. */
 	UFUNCTION(BlueprintCallable, Category = "Crafting|Actions")
-	void RequestSetCraftingOutputAutoDepositEnabled(bool bEnabled);
+	void RequestSelectTargetStorage(FName ContainerId);
+
+	/** Moves the target to the next (Direction > 0) or previous choice, automatic storing included. */
+	UFUNCTION(BlueprintCallable, Category = "Crafting|Actions")
+	void RequestCycleTargetStorage(int32 Direction);
 
 protected:
 	virtual void NativeOnInitialized() override;
@@ -137,81 +126,114 @@ protected:
 	virtual FText ResolveQuickTransferDisplayName() const override;
 
 	/**
-	 * Complete passive player-inventory pane authored in CUI_CraftingStationSpatial.
-	 * The pane owns only read-only presentation state; this activatable screen retains interaction and input ownership.
+	 * Optional passive player-inventory pane. The canonical crafting screen shows only the station and omits it; output
+	 * still reaches the player inventory through quick transfer and Take all. When authored, the pane owns only
+	 * read-only presentation state, and this activatable screen retains interaction and input ownership.
 	 */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<URpgPlayerInventoryPaneWidget> PlayerInventoryPane = nullptr;
 
-	/** Authored reusable pane bound to the station output root. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<URpgInventorySpatialPaneWidget> OutputInventoryPane = nullptr;
-
-	/** Authored recipe rows, populated from stable recipe view models. */
+	/** Authored recipe list: tier section headers and recipe rows. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UCommonListView> RecipeList = nullptr;
 
-	/** Authored ingredient rows for the selected quantity. */
+	/** Authored material rows of the selected recipe. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UCommonListView> IngredientList = nullptr;
 
-	/** Authored replicated queue rows. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UCommonListView> CraftingJobsList = nullptr;
+	/** Optional category rows: All, collapsible groups and subcategories. Clicks activate a row. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UCommonListView> CategoryList = nullptr;
 
-	/** Required read-only title for the currently selected recipe. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+	/** Optional tier filter options, usually inside an authored popup. Clicks set the filter. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UCommonListView> TierFilterList = nullptr;
+
+	/** Optional connected chests offered as target, usually inside an authored popup. Clicks choose the target. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UCommonListView> TargetStorageList = nullptr;
+
+	/** Optional key values of the selected recipe next to the preview. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UCommonListView> PreviewStatList = nullptr;
+
+	/** Optional search field; every edit filters the recipe list by name through the view model. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UEditableTextBox> RecipeSearchBox = nullptr;
+
+	/** Optional name of the selected recipe; screens may bind the view model instead. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UCommonTextBlock> RecipeNameText = nullptr;
 
-	/** Required read-only description for the currently selected recipe. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+	/** Optional description of the selected recipe; screens may bind the view model instead. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UCommonTextBlock> RecipeDescriptionText = nullptr;
 
-	/** Required read-only formatted craft duration for the current selection. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UCommonTextBlock> CraftTimeText = nullptr;
-
-	/** Required read-only formatted requested craft quantity. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+	/** Optional chosen quantity. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UCommonTextBlock> CraftQuantityText = nullptr;
 
-	/** Required cosmetic icon for the currently selected recipe. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+	/** Optional large preview image of the selected recipe. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UCommonLazyImage> RecipeIcon = nullptr;
 
-	/** Required pointer-facing submit control; authority remains in the crafting station. */
+	/** Optional header icon of the observed station; collapsed while the station authors none. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UCommonLazyImage> StationIcon = nullptr;
+
+	/** Required main action that starts the selection as the station's order. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgCraftingActionButtonWidget> CraftButton = nullptr;
 
-	/** Required pointer-facing pause/resume control for the selected server-owned job. */
+	/** Required pause/resume control of the station's order. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgCraftingActionButtonWidget> PauseButton = nullptr;
 
-	/** Required pointer control that decreases the local requested quantity by one. */
+	/** Optional control that stops the order's remaining units. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgCraftingActionButtonWidget> StopOrderButton = nullptr;
+
+	/** Optional toggle that flips the tier order of the recipe list; its label follows the sort direction. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgCraftingActionButtonWidget> SortDirectionButton = nullptr;
+
+	/** Optional dropdown button naming the active tier filter; clicking it shows or hides TierFilterPopup. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgCraftingActionButtonWidget> TierFilterButton = nullptr;
+
+	/** Optional container of TierFilterList; collapsed until TierFilterButton opens it, closed again by a pick. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> TierFilterPopup = nullptr;
+
+	/** Optional dropdown button naming the target chest; clicking it shows or hides TargetStoragePopup. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgCraftingActionButtonWidget> TargetStorageButton = nullptr;
+
+	/** Optional container of TargetStorageList; collapsed until TargetStorageButton opens it, closed again by a pick. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> TargetStoragePopup = nullptr;
+
+	/** Required control that decreases the chosen quantity by one. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgCraftingActionButtonWidget> QuantityMinusButton = nullptr;
 
-	/** Required pointer control that increases the local requested quantity by one. */
+	/** Required control that increases the chosen quantity by one. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgCraftingActionButtonWidget> QuantityPlusButton = nullptr;
 
-	/** Required pointer shortcut that requests five crafts before server validation. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<URpgCraftingActionButtonWidget> QuantityFiveButton = nullptr;
-
-	/** Required pointer shortcut that requests ten crafts before server validation. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<URpgCraftingActionButtonWidget> QuantityTenButton = nullptr;
-
-	/** Required pointer shortcut that selects the locally projected maximum quantity. */
+	/** Required control that sets the quantity the chests can pay for and the target can hold. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgCraftingActionButtonWidget> QuantityMaxButton = nullptr;
 
-	/** Required local preference controlling whether completed output targets base storage. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UCheckBox> AutoDepositCheckBox = nullptr;
+	/** Names, icons and tier names for the category list and tier headers. Presentation data; null uses tag names. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crafting|Presentation")
+	TObjectPtr<URpgCraftingCategoryCatalog> CategoryCatalog = nullptr;
 
-	/** CommonUI action row for the selected recipe submit intent. */
+	/** Entry class for tier section headers in RecipeList; must implement UserObjectListEntry. Recipe rows use the list's entry class. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crafting|Presentation")
+	TSubclassOf<UUserWidget> TierSectionEntryClass;
+
+	/** CommonUI action row for the start intent. */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
@@ -219,7 +241,7 @@ protected:
 		meta = (RowType = "/Script/CommonUI.CommonInputActionDataBase"))
 	FDataTableRowHandle CraftInputAction;
 
-	/** CommonUI action row for the station pause/resume intent. */
+	/** CommonUI action row for the pause/resume intent. */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
@@ -227,13 +249,21 @@ protected:
 		meta = (RowType = "/Script/CommonUI.CommonInputActionDataBase"))
 	FDataTableRowHandle TogglePauseInputAction;
 
-	/** UI-only progress refresh cadence. Replicated job identity and authoritative completion remain station-owned. */
+	/** Optional CommonUI action row for stopping the order; shown in the action bar while an order exists. */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "Input|Crafting",
+		meta = (RowType = "/Script/CommonUI.CommonInputActionDataBase"))
+	FDataTableRowHandle StopOrderInputAction;
+
+	/** UI-only progress refresh cadence. The order and its completion remain station-owned. */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
 		Category = "Crafting|Presentation",
 		meta = (ClampMin = "0.05", UIMin = "0.05", Units = "s"))
-	float JobProgressRefreshInterval = 0.25f;
+	float OrderProgressRefreshInterval = 0.25f;
 
 private:
 #if WITH_DEV_AUTOMATION_TESTS
@@ -251,49 +281,57 @@ private:
 	void BindAuthoredControlEvents();
 	void UnbindAuthoredControlEvents();
 	void RefreshRecipeItems();
+	void RefreshCategoryItems();
+	void RefreshTierOptionItems();
 	void RefreshSelectedRecipePresentation();
-	void RefreshJobItems();
+	void RefreshStationHeaderPresentation();
 	void RefreshCraftingActionAvailability();
-	void ConfigureQuickTransferRoutes();
-	void StartJobProgressRefresh();
-	void StopJobProgressRefresh();
+	void StartOrderProgressRefresh();
+	void StopOrderProgressRefresh();
 	void RegisterCraftingActionBindings();
 	void UnregisterCraftingActionBindings();
 	URpgInventoryUiActionComponent* ResolveInventoryUiActionComponent() const;
 
+	TSubclassOf<UUserWidget> HandleGetRecipeEntryClass(UObject* Item) const;
+	bool HandleIsRecipeItemSelectable(UObject* Item) const;
 	void HandleRecipeSelectionChanged(UObject* SelectedItem);
-	void HandleJobEntryGenerated(UUserWidget& EntryWidget);
-	void HandleJobEntryReleased(UUserWidget& EntryWidget);
+	void HandleCategoryItemClicked(UObject* Item);
+	void HandleTierOptionClicked(UObject* Item);
+	void HandleTargetOptionClicked(UObject* Item);
 	void HandleCraftClicked();
 	void HandlePauseClicked();
+	void HandleStopOrderClicked();
+	void HandleSortDirectionClicked();
+	void HandleTierFilterButtonClicked();
+	void HandleTargetStorageButtonClicked();
+	void SetPopupOpen(UWidget* Popup, bool bOpen);
+	void RefreshDropdownLabels();
 	void HandleQuantityMinusClicked();
 	void HandleQuantityPlusClicked();
-	void HandleQuantityFiveClicked();
-	void HandleQuantityTenClicked();
 	void HandleQuantityMaxClicked();
-	void HandleJobProgressTimer();
+	void HandleOrderProgressTimer();
 	void HandlePlayerInventoryPaneNavigationPanelsChanged();
-
-	UFUNCTION()
-	void HandleAutoDepositCheckStateChanged(bool bChecked);
 
 	UFUNCTION()
 	void HandleRecipesChanged();
 
 	UFUNCTION()
+	void HandleCategoriesChanged();
+
+	UFUNCTION()
+	void HandleTierOptionsChanged();
+
+	UFUNCTION()
 	void HandleSelectedRecipeDetailsChanged();
 
 	UFUNCTION()
-	void HandleJobsChanged();
+	void HandleSearchTextChanged(const FText& Text);
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgCraftingStationScreenPayload> CraftingScreenPayload = nullptr;
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgInventoryManagerComponent> PlayerInventory = nullptr;
-
-	UPROPERTY(Transient)
-	TObjectPtr<URpgInventoryManagerComponent> OutputInventory = nullptr;
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgCraftingStationComponent> CraftingStation = nullptr;
@@ -304,13 +342,10 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<URpgCraftingStationViewModel> CraftingViewModel = nullptr;
 
-	UPROPERTY(Transient)
-	FRpgInventoryContainerHandle OutputPaneContainerHandle;
-
 	bool bCraftingContextBound = false;
-	bool bApplyingAutoDepositCheckState = false;
 	uint32 CraftingPresentationBindGeneration = 0;
-	FTimerHandle JobProgressTimer;
+	FTimerHandle OrderProgressTimer;
 	FUIActionBindingHandle CraftActionBinding;
 	FUIActionBindingHandle TogglePauseActionBinding;
+	FUIActionBindingHandle StopOrderActionBinding;
 };

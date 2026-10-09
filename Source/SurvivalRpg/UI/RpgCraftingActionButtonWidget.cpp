@@ -14,6 +14,21 @@ void URpgCraftingActionButtonWidget::NativeOnInitialized()
 	}
 }
 
+void URpgCraftingActionButtonWidget::NativeOnCurrentTextStyleChanged()
+{
+	Super::NativeOnCurrentTextStyleChanged();
+
+	if (!Text || !bLabelFollowsButtonTextStyle)
+	{
+		return;
+	}
+
+	if (const TSubclassOf<UCommonTextStyle> TextStyle = GetCurrentTextStyleClass())
+	{
+		Text->SetStyle(TextStyle);
+	}
+}
+
 void URpgCraftingActionButtonWidget::SetCraftButtonText(FText InText)
 {
 	CraftButtonText = MoveTemp(InText);

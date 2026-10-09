@@ -451,7 +451,7 @@ public:
 		bool bAllowBaseStorage);
 };
 
-/** Server-side crafting queue and station-state command handler. */
+/** Server-side crafting order and station-state command handler. */
 class FRpgCraftingActionHandler final
 	: public FRpgInventoryUiActionDomainHandler
 {
@@ -462,16 +462,18 @@ public:
 	{
 	}
 
-	void CraftRecipe(
+	void StartOrder(
 		URpgCraftingStationComponent* CraftingStation,
 		URpgCraftingRecipeDefinition* RecipeDefinition,
-		int32 Quantity);
-	void CancelCraftJob(
+		int32 Quantity,
+		FName TargetContainerId);
+	void StopOrder(
 		URpgCraftingStationComponent* CraftingStation,
-		FGuid JobId);
+		FGuid OrderId);
+	void SetOrderTarget(
+		URpgCraftingStationComponent* CraftingStation,
+		FGuid OrderId,
+		FName TargetContainerId);
 	void PauseStation(URpgCraftingStationComponent* CraftingStation);
 	void ResumeStation(URpgCraftingStationComponent* CraftingStation);
-	void SetOutputAutoDepositEnabled(
-		URpgCraftingStationComponent* CraftingStation,
-		bool bEnabled);
 };

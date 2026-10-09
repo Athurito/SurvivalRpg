@@ -125,9 +125,8 @@ namespace RpgPhysicalStoragePIETests
 	{
 		int32 Result = 0;
 		if (Crafting)
-			for (const FRpgCraftingJobEntry& Job : Crafting->GetCraftingJobs())
-				for (const FRpgCraftingRefundEntry& Refund : Job.RefundEntries)
-					if (Refund.ItemDefinition == ItemClass) Result += Refund.Count;
+			for (const FRpgCraftingRefundEntry& Refund : Crafting->GetCurrentOrder().UnitCredits)
+				if (Refund.ItemDefinition == ItemClass) Result += Refund.Count;
 		return Result;
 	}
 
@@ -155,6 +154,7 @@ NETWORK_TEST_CLASS(PhysicalStoragePIE, "SurvivalRpg.Network")
 	TStrongObjectPtr<URpgCraftingRecipeDefinition> Recipe;
 	TUniquePtr<FPIENetworkComponent<FState>> Network;
 	FName ContainerId;
+	FName OutputContainerId;
 	FRpgInventoryItemId StoredItemId;
 	FRpgPhysicalStorageRequest AssignRequest, DepositRequest, UpgradeRequest, RejectedRequest;
 	int64 AssignedOrder = 0;
@@ -333,51 +333,55 @@ NETWORK_TEST_CLASS(PhysicalStoragePIE, "SurvivalRpg.Network")
 		});
 	}
 
-	/** Real owner RPCs race for one recipe payment and then one concrete stack while the paid job is blocked. */
+	/** Real owner RPCs race for one order's payment and then one concrete stack while the paid unit waits for room. */
 	TEST_METHOD(ConcurrentCraftWithdrawalAndCancellationConserveSharedStock)
 	{
 		using namespace RpgPhysicalStoragePIETests;
 		if (!PrepareCompetition(true)) return;
-		Network->ThenServer(TEXT("Seed one recipe payment and a full one-cell output tray"), [this](FState& State)
+		Network->ThenServer(TEXT("Seed one order payment and an empty one-cell target chest"), [this](FState& State)
 		{
 			auto* Crafting = Station(State.World);
 			ASSERT_THAT(IsNotNull(Crafting)); if (!Crafting) return;
-			ASSERT_THAT(IsFalse(Crafting->ShouldAutoDepositCraftingOutputs()));
-			FRpgInventoryGridSize TraySize; TraySize.Width = 1; TraySize.Height = 1;
-			ASSERT_THAT(IsTrue(Crafting->GetOutputInventory()->SetDefaultGridSize(TraySize)));
-			ASSERT_THAT(IsNotNull(Crafting->GetOutputInventory()->GrantItemDefinition(BlockerClass.Get(), 1)));
+			auto* Output = State.World->SpawnActor<ARpgInventoryContainerActor>(Definition->BuildActorClass, FVector(200, 300, 0), FRotator::ZeroRotator);
+			ASSERT_THAT(IsNotNull(Output)); if (!Output) return;
+			Output->bAlwaysRelevant = true;
+			Output->GetContainerComponent()->EnsurePersistentContainerId();
+			OutputContainerId = Output->GetContainerComponent()->GetPersistentContainerId();
+			FRpgInventoryGridSize OneCell; OneCell.Width = 1; OneCell.Height = 1;
+			ASSERT_THAT(IsTrue(Output->GetInventoryManager()->SetDefaultGridSize(OneCell)));
 			ASSERT_THAT(IsNotNull(Chest(State.World, ContainerId)->GetInventoryManager()->GrantItemDefinition(MaterialClass.Get(), RecipeCost)));
 			for (int32 Index = 0; Index < 2; ++Index)
 			{
 				ASSERT_THAT(IsTrue(Crafting->CanActorAccess(ServerController(State, Index)->GetPawn())));
-				ASSERT_THAT(IsTrue(Crafting->CanCraftRecipeQuantity(ServerController(State, Index)->GetPawn(), Recipe.Get(), 1)));
-				ASSERT_THAT(AreEqual(Crafting->GetAvailableResourceCount(ServerController(State, Index)->GetPawn(), MaterialClass.Get()), RecipeCost));
+				ASSERT_THAT(IsTrue(Crafting->CanStartCraftingOrder(ServerController(State, Index)->GetPawn(), Recipe.Get(), 1, OutputContainerId)));
 			}
+			ASSERT_THAT(AreEqual(Crafting->GetAvailableResourceCount(MaterialClass.Get()), RecipeCost));
 		})
-		.UntilClients(TEXT("Both remote owners observe the same scarce recipe stock and blocked tray"), [this](FState& State)
+		.UntilClients(TEXT("Both remote owners observe the same scarce stock and the empty target chest"), [this](FState& State)
 		{
 			const auto* Crafting = Station(State.World);
 			const auto* Actor = Chest(State.World, ContainerId);
-			return ControllerReady(LocalController(State.World)) && Actor && Crafting && Crafting->GetOutputInventory() &&
-				Actor->GetInventoryManager()->GetTotalItemCountByDefinition(MaterialClass.Get()) == RecipeCost &&
-				Crafting->GetOutputInventory()->GetTotalItemCountByDefinition(BlockerClass.Get()) == 1;
+			return ControllerReady(LocalController(State.World)) && Actor && Crafting && Chest(State.World, OutputContainerId) &&
+				Actor->GetInventoryManager()->GetTotalItemCountByDefinition(MaterialClass.Get()) == RecipeCost;
 		}, Timeout())
-		.ThenClients(TEXT("Both remote clients submit the same recipe before the next server tick"), [this](FState& State)
+		.ThenClients(TEXT("Both remote clients start the same order before the next server tick"), [this](FState& State)
 		{
-			LocalController(State.World)->GetInventoryUiActionComponent()->RequestCraftRecipe(Station(State.World), Recipe.Get(), 1);
+			LocalController(State.World)->GetInventoryUiActionComponent()->RequestStartCraftingOrder(Station(State.World), Recipe.Get(), 1, OutputContainerId);
 			SendBarrier(State);
 		})
-		.UntilServer(TEXT("Both reliable craft requests have reached authority"), [this](FState& State) { return BarriersCompleted(State); }, Timeout())
-		.ThenServer(TEXT("Exactly one paid job wins; the rejected craft cannot spend or produce anything"), [this](FState& State)
+		.UntilServer(TEXT("Both reliable start requests have reached authority"), [this](FState& State) { return BarriersCompleted(State); }, Timeout())
+		.ThenServer(TEXT("Exactly one paid order wins; the rejected start cannot spend or produce anything"), [this](FState& State)
 		{
-			const auto Jobs = Station(State.World)->GetCraftingJobs();
-			ASSERT_THAT(AreEqual(Jobs.Num(), 1)); if (Jobs.Num() != 1) return;
-			PaidJobId = Jobs[0].JobId;
-			ASSERT_THAT(AreEqual(Jobs[0].QuantityTotal, 1));
-			ASSERT_THAT(AreEqual(Jobs[0].QuantityCompleted, 0));
+			const FRpgCraftingOrder& Order = Station(State.World)->GetCurrentOrder();
+			ASSERT_THAT(IsTrue(Order.IsActive())); if (!Order.IsActive()) return;
+			PaidJobId = Order.OrderId;
+			ASSERT_THAT(AreEqual(Order.QuantityTotal, 1));
+			ASSERT_THAT(AreEqual(Order.QuantityCompleted, 0));
 			ASSERT_THAT(AreEqual(RefundCount(Station(State.World), MaterialClass.Get()), RecipeCost));
 			ASSERT_THAT(AreEqual(SharedAndPlayerCount(State, MaterialClass.Get()), 0));
 			ASSERT_THAT(AreEqual(SharedAndPlayerCount(State, Recipe->OutputItems[0].ItemDefinition), 0));
+			// A separate delivery fills the target while the paid unit is produced.
+			ASSERT_THAT(IsNotNull(Chest(State.World, OutputContainerId)->GetInventoryManager()->GrantItemDefinition(BlockerClass.Get(), 1)));
 			// A separate delivery arrives while the original recipe owns its paid refund credit.
 			auto* Item = Chest(State.World, ContainerId)->GetInventoryManager()->GrantItemDefinition(MaterialClass.Get(), 5);
 			ASSERT_THAT(IsNotNull(Item)); if (Item) StoredItemId = Item->GetItemId();
@@ -426,10 +430,10 @@ NETWORK_TEST_CLASS(PhysicalStoragePIE, "SurvivalRpg.Network")
 			ASSERT_THAT(AreEqual(Chest(State.World, ContainerId)->GetInventoryManager()->GetTotalItemCountByDefinition(MaterialClass.Get()), 0));
 			ASSERT_THAT(AreEqual(SharedAndPlayerCount(State, MaterialClass.Get()) + RefundCount(Station(State.World), MaterialClass.Get()), 5 + RecipeCost));
 		})
-		.UntilServer(TEXT("The paid job reaches blocked-output state without losing its refund credit"), [this](FState& State)
+		.UntilServer(TEXT("The paid unit waits for room without losing its refund credit"), [this](FState& State)
 		{
-			const auto Jobs = Station(State.World)->GetCraftingJobs();
-			return Jobs.Num() == 1 && Jobs[0].JobId == PaidJobId && Jobs[0].State == ERpgCraftingJobState::BlockedOutput;
+			const FRpgCraftingOrder& Order = Station(State.World)->GetCurrentOrder();
+			return Order.OrderId == PaidJobId && Order.bUnitPaid && Order.State == ERpgCraftingOrderState::WaitingForSpace;
 		}, Timeout())
 		.ThenServer(TEXT("Validate relocation independently before it races with cancellation"), [this](FState& State)
 		{
@@ -458,10 +462,10 @@ NETWORK_TEST_CLASS(PhysicalStoragePIE, "SurvivalRpg.Network")
 			ASSERT_THAT(IsTrue(ServerController(State, 1)->GetInventoryUiActionComponent()->CanPlacePhysicalStorage(
 				Definition.Get(), FTransform(RelocatedLocation), ContainerId, Reason)));
 		})
-		.ThenClients(TEXT("One owner cancels the paid job while the other relocates its original refund chest"), [this](FState& State)
+		.ThenClients(TEXT("One owner stops the paid order while the other relocates its original refund chest"), [this](FState& State)
 		{
 			auto* Actions = LocalController(State.World)->GetInventoryUiActionComponent();
-			if (State.ClientIndex == 0) Actions->RequestCancelCraftJob(Station(State.World), PaidJobId);
+			if (State.ClientIndex == 0) Actions->RequestStopCraftingOrder(Station(State.World), PaidJobId);
 			else
 			{
 				RelocateRequest = Request(State.World, ContainerId, ERpgPhysicalStorageCommand::Relocate);
@@ -704,10 +708,11 @@ NETWORK_TEST_CLASS(PhysicalStoragePIE, "SurvivalRpg.Network")
 		using namespace RpgPhysicalStoragePIETests;
 		const auto* Actor = Chest(World, ContainerId);
 		const auto* Crafting = Station(World);
-		return Actor && Crafting && Crafting->GetOutputInventory() && Actor->GetActorLocation().Equals(RelocatedLocation, 0.1f) &&
-			Actor->GetInventoryManager()->GetTotalItemCountByDefinition(MaterialClass.Get()) == RecipeCost && Crafting->GetCraftingJobs().IsEmpty() &&
-			Crafting->GetOutputInventory()->GetTotalItemCountByDefinition(BlockerClass.Get()) == 1 &&
-			Crafting->GetOutputInventory()->GetTotalItemCountByDefinition(Recipe->OutputItems[0].ItemDefinition) == 0;
+		const auto* Output = Chest(World, OutputContainerId);
+		return Actor && Crafting && Output && Actor->GetActorLocation().Equals(RelocatedLocation, 0.1f) &&
+			Actor->GetInventoryManager()->GetTotalItemCountByDefinition(MaterialClass.Get()) == RecipeCost && !Crafting->HasCraftingOrder() &&
+			Output->GetInventoryManager()->GetTotalItemCountByDefinition(BlockerClass.Get()) == 1 &&
+			Output->GetInventoryManager()->GetTotalItemCountByDefinition(Recipe->OutputItems[0].ItemDefinition) == 0;
 	}
 
 	FTransform BuildTransform(int32 ClientIndex) const { return FTransform(FVector(400, ClientIndex == 0 ? -250 : 250, 0)); }
