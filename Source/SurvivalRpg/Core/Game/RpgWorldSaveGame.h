@@ -50,8 +50,11 @@ class SURVIVALRPG_API URpgWorldSaveGame : public USaveGame
 	GENERATED_BODY()
 
 public:
-	/** Current top-level save schema emitted by this build. V4 adds WorldFeatures. */
-	static constexpr int32 CurrentSchemaVersion = 4;
+	/**
+	 * Current top-level save schema emitted by this build. V4 adds WorldFeatures; V5 replaces station queues and trays
+	 * with one order per station. Older station entries load as idle stations: their trays and queues are not migrated.
+	 */
+	static constexpr int32 CurrentSchemaVersion = 5;
 
 	/** Physical-storage saves start fresh; prototype quantity-storage saves have no implicit migration. */
 	static constexpr int32 MinimumSupportedSchemaVersion = 3;

@@ -137,12 +137,6 @@ protected:
 		int32 FeedbackStackCount,
 		URpgInventoryManagerComponent* TargetInventory = nullptr);
 
-	/** Runs one validated quick transfer through the transaction handler, for commands that batch transfers. */
-	void RunQuickTransferCommand(
-		URpgInventoryManagerComponent* SourceInventory,
-		URpgInventoryManagerComponent* TargetInventory,
-		const FRpgInventoryQuickTransferRequest& Request) const;
-
 	UObject* GetItemUseContextOuter() const;
 	FRpgInventoryUseConsumePreflight MakeUseConsumePreflight(
 		TWeakObjectPtr<URpgInventoryManagerComponent> Inventory,
@@ -457,7 +451,7 @@ public:
 		bool bAllowBaseStorage);
 };
 
-/** Server-side crafting queue and station-state command handler. */
+/** Server-side crafting order and station-state command handler. */
 class FRpgCraftingActionHandler final
 	: public FRpgInventoryUiActionDomainHandler
 {
@@ -468,19 +462,18 @@ public:
 	{
 	}
 
-	void CraftRecipe(
+	void StartOrder(
 		URpgCraftingStationComponent* CraftingStation,
 		URpgCraftingRecipeDefinition* RecipeDefinition,
-		int32 Quantity);
-	void CancelCraftJob(
+		int32 Quantity,
+		FName TargetContainerId);
+	void StopOrder(
 		URpgCraftingStationComponent* CraftingStation,
-		FGuid JobId);
+		FGuid OrderId);
+	void SetOrderTarget(
+		URpgCraftingStationComponent* CraftingStation,
+		FGuid OrderId,
+		FName TargetContainerId);
 	void PauseStation(URpgCraftingStationComponent* CraftingStation);
 	void ResumeStation(URpgCraftingStationComponent* CraftingStation);
-	void SetOutputAutoDepositEnabled(
-		URpgCraftingStationComponent* CraftingStation,
-		bool bEnabled);
-
-	/** Quick-transfers each output stack into the player inventory until one stack stays in the tray. */
-	void TakeAllOutputs(URpgCraftingStationComponent* CraftingStation);
 };

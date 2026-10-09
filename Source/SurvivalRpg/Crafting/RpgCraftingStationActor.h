@@ -5,15 +5,12 @@
 #include "RpgCraftingStationActor.generated.h"
 
 class URpgCraftingStationComponent;
-class URpgInventoryManagerComponent;
 class USceneComponent;
 class USphereComponent;
 
 /**
- * Placeable V1 crafting station with native output inventory and interaction collision.
- *
- * Designers can subclass this actor to add meshes, recipes, and station visuals while the output
- * inventory stays in the existing replicated inventory manager path.
+ * Placeable crafting station with interaction collision. Orders take materials from and deliver outputs into the
+ * connected chests, so the station owns no inventory. Designers subclass it to add meshes, recipes and visuals.
  */
 UCLASS(Blueprintable)
 class SURVIVALRPG_API ARpgCraftingStationActor : public AActor
@@ -23,13 +20,9 @@ class SURVIVALRPG_API ARpgCraftingStationActor : public AActor
 public:
 	explicit ARpgCraftingStationActor(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
-	/** Crafting rules component that consumes resources and stores recipe outputs. */
+	/** Crafting rules component that runs the station's order. */
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting")
 	URpgCraftingStationComponent* GetCraftingStationComponent() const { return CraftingStationComponent; }
-
-	/** Fixed-slot output inventory where crafted items wait when not auto-deposited. */
-	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting")
-	URpgInventoryManagerComponent* GetOutputInventoryComponent() const { return OutputInventoryComponent; }
 
 protected:
 	/** Simple root so Blueprint children can attach station meshes and VFX. */
@@ -40,11 +33,7 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Crafting")
 	TObjectPtr<USphereComponent> InteractionCollision;
 
-	/** Reusable crafting logic and base-storage linkage. */
+	/** Reusable crafting logic and connected-chest access. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Crafting")
 	TObjectPtr<URpgCraftingStationComponent> CraftingStationComponent;
-
-	/** Replicated output inventory owned by this crafting station actor. */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Crafting")
-	TObjectPtr<URpgInventoryManagerComponent> OutputInventoryComponent;
 };

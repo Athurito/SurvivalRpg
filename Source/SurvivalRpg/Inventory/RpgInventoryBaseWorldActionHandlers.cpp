@@ -7,7 +7,6 @@
 #include "SurvivalRpg/Crafting/RpgCraftingRecipeDefinition.h"
 #include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryContainerActor.h"
-#include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
@@ -167,37 +166,43 @@ void FRpgBaseBuildingActionHandler::ContributeMaterial(
 	}
 }
 
-void FRpgCraftingActionHandler::CraftRecipe(
+void FRpgCraftingActionHandler::StartOrder(
 	URpgCraftingStationComponent* CraftingStation,
 	URpgCraftingRecipeDefinition* RecipeDefinition,
-	int32 Quantity)
+	int32 Quantity,
+	FName TargetContainerId)
 {
 	AActor* RequestingActor = GetRequestingActor();
-	if (!CraftingStation ||
-		!RecipeDefinition ||
-		!RequestingActor ||
-		!CraftingStation->CanCraftRecipeQuantity(
+	if (CraftingStation && RecipeDefinition && RequestingActor)
+	{
+		CraftingStation->StartCraftingOrder(
 			RequestingActor,
 			RecipeDefinition,
-			Quantity))
-	{
-		return;
+			Quantity,
+			TargetContainerId);
 	}
-
-	CraftingStation->QueueCraftRecipe(
-		RequestingActor,
-		RecipeDefinition,
-		Quantity);
 }
 
-void FRpgCraftingActionHandler::CancelCraftJob(
+void FRpgCraftingActionHandler::StopOrder(
 	URpgCraftingStationComponent* CraftingStation,
-	FGuid JobId)
+	FGuid OrderId)
 {
 	AActor* RequestingActor = GetRequestingActor();
 	if (CraftingStation && RequestingActor)
 	{
-		CraftingStation->CancelCraftJob(RequestingActor, JobId);
+		CraftingStation->StopCraftingOrder(RequestingActor, OrderId);
+	}
+}
+
+void FRpgCraftingActionHandler::SetOrderTarget(
+	URpgCraftingStationComponent* CraftingStation,
+	FGuid OrderId,
+	FName TargetContainerId)
+{
+	AActor* RequestingActor = GetRequestingActor();
+	if (CraftingStation && RequestingActor)
+	{
+		CraftingStation->SetCraftingOrderTarget(RequestingActor, OrderId, TargetContainerId);
 	}
 }
 
@@ -218,61 +223,5 @@ void FRpgCraftingActionHandler::ResumeStation(
 	if (CraftingStation && RequestingActor)
 	{
 		CraftingStation->ResumeCraftingStation(RequestingActor);
-	}
-}
-
-void FRpgCraftingActionHandler::SetOutputAutoDepositEnabled(
-	URpgCraftingStationComponent* CraftingStation,
-	bool bEnabled)
-{
-	AActor* RequestingActor = GetRequestingActor();
-	if (CraftingStation && RequestingActor)
-	{
-		CraftingStation->SetCraftingOutputAutoDepositEnabled(
-			RequestingActor,
-			bEnabled);
-	}
-}
-
-void FRpgCraftingActionHandler::TakeAllOutputs(
-	URpgCraftingStationComponent* CraftingStation)
-{
-	AActor* RequestingActor = GetRequestingActor();
-	URpgInventoryManagerComponent* OutputInventory =
-		CraftingStation ? CraftingStation->GetOutputInventory() : nullptr;
-	URpgInventoryManagerComponent* PlayerInventory = FindPlayerInventory();
-	if (!RequestingActor ||
-		!OutputInventory ||
-		!PlayerInventory ||
-		OutputInventory == PlayerInventory ||
-		!CraftingStation->CanActorAccess(RequestingActor))
-	{
-		return;
-	}
-
-	// Every stack runs the regular quick transfer, so access, direction, base-storage and placement rules stay in one
-	// place. The loop stops at the first stack still in the tray; that transfer's feedback tells the player why.
-	for (const FRpgInventoryEntryView& Entry : OutputInventory->GetAllEntries())
-	{
-		if (!Entry.Instance || Entry.StackCount <= 0)
-		{
-			continue;
-		}
-
-		FRpgInventoryQuickTransferRequest Request;
-		Request.RequestId = FGuid::NewGuid();
-		Request.ItemId = Entry.ItemId;
-		Request.ExpectedEntryId = Entry.EntryId;
-		Request.ExpectedSourcePlacement = Entry.Placement;
-		Request.ExpectedSourceQuantity = Entry.StackCount;
-		Request.StackCount = Entry.StackCount;
-		RunQuickTransferCommand(
-			OutputInventory,
-			PlayerInventory,
-			Request);
-		if (OutputInventory->FindItemById(Entry.ItemId))
-		{
-			break;
-		}
 	}
 }

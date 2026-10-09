@@ -6,11 +6,16 @@
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "Misc/AutomationTest.h"
+#include "SurvivalRpg/Crafting/RpgCraftingCategoryCatalog.h"
 #include "SurvivalRpg/Crafting/RpgCraftingRecipeDefinition.h"
 #include "SurvivalRpg/Crafting/RpgCraftingStationActor.h"
 #include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
+#include "SurvivalRpg/Inventory/Itemization/RpgItemizationAutomationTestTypes.h"
 #include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
+#include "SurvivalRpg/Inventory/RpgInventoryContainerActor.h"
+#include "SurvivalRpg/Inventory/RpgInventoryContainerComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
+#include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "UObject/StrongObjectPtr.h"
 #include "UObject/UnrealType.h"
 
@@ -64,6 +69,26 @@ namespace RpgCraftingViewModelPresentationTests
 			Property->SetObjectPropertyValue_InContainer(Station, RecipeSet);
 		}
 
+		/** Chest next to the station; a positive size replaces its grid. */
+		ARpgInventoryContainerActor* CreateChest(int32 Width = 0, int32 Height = 0) const
+		{
+			FActorSpawnParameters SpawnParameters;
+			SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			ARpgInventoryContainerActor* Chest = World->SpawnActor<ARpgInventoryContainerActor>(FVector::ZeroVector, FRotator::ZeroRotator, SpawnParameters);
+			if (Chest)
+			{
+				Chest->GetContainerComponent()->EnsurePersistentContainerId();
+				if (Width > 0 && Height > 0)
+				{
+					FRpgInventoryGridSize Grid;
+					Grid.Width = Width;
+					Grid.Height = Height;
+					Chest->GetInventoryManager()->SetDefaultGridSize(Grid);
+				}
+			}
+			return Chest;
+		}
+
 		TStrongObjectPtr<UGameInstance> GameInstance;
 		UWorld* World = nullptr;
 		ARpgInventoryAutomationTestPlayerController* Requester = nullptr;
@@ -81,6 +106,11 @@ namespace RpgCraftingViewModelPresentationTests
 		Output.ItemDefinition = URpgInventoryAutomationTestUnitItemDefinition::StaticClass();
 		Output.Count = 1;
 		return Recipe;
+	}
+
+	FName ChestId(const ARpgInventoryContainerActor* Chest)
+	{
+		return Chest->GetContainerComponent()->GetPersistentContainerId();
 	}
 
 	/** Counts notifications of one FieldNotify field by its binding name. */
@@ -118,6 +148,20 @@ namespace RpgCraftingViewModelPresentationTests
 		FDelegateHandle Handle;
 	};
 
+	/** Reads a reflected FText field of a view model by name. */
+	FString ReadText(const UObject* Object, const TCHAR* FieldName)
+	{
+		const FTextProperty* Property = FindFProperty<FTextProperty>(Object->GetClass(), FieldName);
+		return Property ? Property->GetPropertyValue_InContainer(Object).ToString() : FString(TEXT("<missing>"));
+	}
+
+	template <typename ValueType, typename PropertyType>
+	ValueType ReadValue(const UObject* Object, const TCHAR* FieldName)
+	{
+		const PropertyType* Property = FindFProperty<PropertyType>(Object->GetClass(), FieldName);
+		return Property ? Property->GetPropertyValue_InContainer(Object) : ValueType();
+	}
+
 	URpgCraftingRecipeViewModel* FindRow(
 		const URpgCraftingStationViewModel* ViewModel,
 		const URpgCraftingRecipeDefinition* Recipe)
@@ -130,6 +174,50 @@ namespace RpgCraftingViewModelPresentationTests
 			}
 		}
 		return nullptr;
+	}
+
+	URpgCraftingCategoryViewModel* FindCategoryRow(
+		const URpgCraftingStationViewModel* ViewModel,
+		ERpgCraftingCategoryRowKind Kind,
+		const FGameplayTag& Tag)
+	{
+		for (URpgCraftingCategoryViewModel* Row : ViewModel->GetCategoryRows())
+		{
+			if (Row && Row->GetKind() == Kind && Row->GetCategoryTag() == Tag)
+			{
+				return Row;
+			}
+		}
+		return nullptr;
+	}
+
+	/** Display names of the category rows in order. */
+	FString DescribeCategoryRows(const URpgCraftingStationViewModel* ViewModel)
+	{
+		TArray<FString> Parts;
+		for (const URpgCraftingCategoryViewModel* Row : ViewModel->GetCategoryRows())
+		{
+			Parts.Add(FString::Printf(TEXT("%s %d"), *ReadText(Row, TEXT("DisplayName")), ReadValue<int32, FIntProperty>(Row, TEXT("RecipeCount"))));
+		}
+		return FString::Join(Parts, TEXT(", "));
+	}
+
+	/** Tier headers and recipe names of the recipe list in order. */
+	FString DescribeRecipeList(const URpgCraftingStationViewModel* ViewModel)
+	{
+		TArray<FString> Parts;
+		for (const UObject* Item : ViewModel->GetRecipeListItems())
+		{
+			if (const URpgCraftingTierSectionViewModel* Section = Cast<URpgCraftingTierSectionViewModel>(Item))
+			{
+				Parts.Add(FString::Printf(TEXT("[%s]"), *ReadText(Section, TEXT("TitleText"))));
+			}
+			else if (const URpgCraftingRecipeViewModel* Row = Cast<URpgCraftingRecipeViewModel>(Item))
+			{
+				Parts.Add(Row->GetRecipeDefinition()->DisplayName.ToString());
+			}
+		}
+		return FString::Join(Parts, TEXT(" "));
 	}
 }
 
@@ -160,17 +248,22 @@ bool FRpgCraftingViewModelStationIdentityTest::RunTest(const FString& Parameters
 		FString(TEXT("Crafting Station")));
 	TestTrue(TEXT("A station without an icon exposes none"), ViewModel->GetStationIcon().IsNull());
 	TestEqual(TEXT("Binding publishes the title once"), NameCounter.Count, 1);
+	TestEqual(TEXT("Without chests the header says so"), ReadText(ViewModel, TEXT("ConnectedStorageText")), FString(TEXT("No connected chest")));
 
 	FindFProperty<FTextProperty>(URpgCraftingStationComponent::StaticClass(), TEXT("StationDisplayName"))
 		->SetPropertyValue_InContainer(Fixture.Station, FText::FromString(TEXT("Kiln")));
 	const FSoftObjectPath IconPath(TEXT("/Game/SurvivalRpg/UI/Art/Icons/crafting/T_UI_Station_Kiln.T_UI_Station_Kiln"));
 	FindFProperty<FSoftObjectProperty>(URpgCraftingStationComponent::StaticClass(), TEXT("StationIcon"))
 		->SetPropertyValue_InContainer(Fixture.Station, FSoftObjectPtr(IconPath));
+	Fixture.CreateChest();
+	Fixture.CreateChest();
 
 	ViewModel->RefreshStationState();
 	TestEqual(TEXT("The authored station name replaces the generic title"), ViewModel->GetStationDisplayName().ToString(), FString(TEXT("Kiln")));
 	TestEqual(TEXT("The authored station icon is exposed"), ViewModel->GetStationIcon().ToSoftObjectPath().ToString(), IconPath.ToString());
 	TestEqual(TEXT("A changed name notifies once"), NameCounter.Count, 2);
+	TestEqual(TEXT("The header counts the connected chests"), ReadText(ViewModel, TEXT("ConnectedStorageText")), FString(TEXT("Materials from 2 connected chests")));
+	TestEqual(TEXT("Chests sharing a name are numbered"), ReadText(ViewModel, TEXT("ConnectedStorageNamesText")), FString(TEXT("Storage Chest 1 · Storage Chest 2")));
 
 	ViewModel->RefreshStationState();
 	TestEqual(TEXT("An unchanged name stays quiet"), NameCounter.Count, 2);
@@ -223,30 +316,36 @@ bool FRpgCraftingViewModelRecipeStateTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("A free unlocked recipe is craftable"), FreeRow->GetRecipeState(), ERpgCraftingRecipeState::Craftable);
 	TestEqual(TEXT("A recipe without its materials is missing resources"), CostlyRow->GetRecipeState(), ERpgCraftingRecipeState::MissingResources);
 	TestEqual(TEXT("A recipe that is not unlocked is locked"), LockedRow->GetRecipeState(), ERpgCraftingRecipeState::Locked);
+	TestEqual(TEXT("A locked row says so"), LockedRow->GetDetailText().ToString(), FString(TEXT("Locked")));
 
 	FFieldCounter StateCounter(CostlyRow, TEXT("RecipeState"));
 	TestTrue(TEXT("RecipeState is a field-notify field"), StateCounter.IsBound());
-	CostlyRow->InitializeRecipe(Fixture.Station, Fixture.Requester, CostlyRecipe);
+	ViewModel->Refresh();
 	TestEqual(TEXT("An unchanged state stays quiet"), StateCounter.Count, 0);
 
 	URpgInventoryManagerComponent* Inventory = NewObject<URpgInventoryManagerComponent>(Fixture.Requester);
 	Fixture.Requester->AddInstanceComponent(Inventory);
 	Inventory->RegisterComponent();
 	Inventory->AddItemDefinition(URpgInventoryAutomationTestMaterialDefinition::StaticClass(), 2);
-	CostlyRow->InitializeRecipe(Fixture.Station, Fixture.Requester, CostlyRecipe);
-	TestEqual(TEXT("Owning the materials makes the recipe craftable"), CostlyRow->GetRecipeState(), ERpgCraftingRecipeState::Craftable);
-	TestEqual(TEXT("The state change notifies once"), StateCounter.Count, 1);
+	ViewModel->Refresh();
+	TestEqual(TEXT("Materials in the player's own inventory do not count"), CostlyRow->GetRecipeState(), ERpgCraftingRecipeState::MissingResources);
+
+	ARpgInventoryContainerActor* Chest = Fixture.CreateChest();
+	Chest->GetInventoryManager()->AddItemDefinition(URpgInventoryAutomationTestMaterialDefinition::StaticClass(), 2);
+	ViewModel->Refresh();
+	TestEqual(TEXT("Materials in a connected chest make the recipe craftable"), CostlyRow->GetRecipeState(), ERpgCraftingRecipeState::Craftable);
+	TestEqual(TEXT("The row is reused and its state notifies once"), StateCounter.Count, 1);
 
 	ViewModel->UnbindCraftingStation();
 	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FRpgCraftingViewModelAvailableCategoriesTest,
-	"SurvivalRpg.Crafting.ViewModel.AvailableCategories",
+	FRpgCraftingViewModelCategoryTreeTest,
+	"SurvivalRpg.Crafting.ViewModel.CategoryTree",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FRpgCraftingViewModelAvailableCategoriesTest::RunTest(const FString& Parameters)
+bool FRpgCraftingViewModelCategoryTreeTest::RunTest(const FString& Parameters)
 {
 	using namespace RpgCraftingViewModelPresentationTests;
 
@@ -257,175 +356,303 @@ bool FRpgCraftingViewModelAvailableCategoriesTest::RunTest(const FString& Parame
 	}
 
 	const FGameplayTag Building = FGameplayTag::RequestGameplayTag(TEXT("Crafting.Category.Building"));
-	const FGameplayTag Refining = FGameplayTag::RequestGameplayTag(TEXT("Crafting.Category.Refining"));
+	const FGameplayTag Materials = FGameplayTag::RequestGameplayTag(TEXT("Crafting.Category.Materials"));
+	const FGameplayTag Wood = FGameplayTag::RequestGameplayTag(TEXT("Crafting.Category.Materials.Wood"));
+	const FGameplayTag Fuel = FGameplayTag::RequestGameplayTag(TEXT("Crafting.Category.Materials.Fuel"));
+	const FGameplayTag Melee = FGameplayTag::RequestGameplayTag(TEXT("Crafting.Category.Weapons.Melee"));
 	const FGameplayTag Weapons = FGameplayTag::RequestGameplayTag(TEXT("Crafting.Category.Weapons"));
-	URpgCraftingRecipeDefinition* Chest = MakeRecipe(TEXT("Chest"));
-	Chest->RecipeCategory = Building;
+	URpgCraftingRecipeDefinition* Plank = MakeRecipe(TEXT("Plank"));
+	Plank->RecipeCategory = Wood;
 	URpgCraftingRecipeDefinition* Charcoal = MakeRecipe(TEXT("Charcoal"));
-	Charcoal->RecipeCategory = Refining;
-	URpgCraftingRecipeDefinition* Uncategorised = MakeRecipe(TEXT("Loose"));
-	Fixture.OfferRecipes({ Chest, Charcoal, Uncategorised });
+	Charcoal->RecipeCategory = Fuel;
+	URpgCraftingRecipeDefinition* Sword = MakeRecipe(TEXT("Sword"));
+	Sword->RecipeCategory = Melee;
+	URpgCraftingRecipeDefinition* Kit = MakeRecipe(TEXT("Kit"));
+	Kit->RecipeCategory = Building;
+	URpgCraftingRecipeDefinition* Loose = MakeRecipe(TEXT("Loose"));
+	Fixture.OfferRecipes({ Plank, Charcoal, Sword, Kit, Loose });
 
 	URpgCraftingStationViewModel* ViewModel = NewObject<URpgCraftingStationViewModel>(Fixture.Station, NAME_None, RF_Transient);
-	FFieldCounter CategoryCounter(ViewModel, TEXT("AvailableCategories"));
-	FFieldCounter HasRecipesCounter(ViewModel, TEXT("bHasFilteredRecipes"));
+	FFieldCounter RowsCounter(ViewModel, TEXT("CategoryRows"));
 	ViewModel->BindCraftingStation(Fixture.Station, Fixture.Requester);
+	TestEqual(TEXT("Groups and subcategories sort by name and count every offered recipe"),
+		DescribeCategoryRows(ViewModel), FString(TEXT("All recipes 5, Building 1, Materials 2, Fuel 1, Wood 1, Weapons 1, Melee 1")));
+	TestEqual(TEXT("Binding publishes the rows once"), RowsCounter.Count, 1);
+	TestEqual(TEXT("The list title names all recipes"), ReadText(ViewModel, TEXT("RecipeListTitleText")), FString(TEXT("All recipes")));
 
-	TestTrue(TEXT("Building is offered"), ViewModel->GetAvailableCategories().HasTagExact(Building));
-	TestTrue(TEXT("Refining is offered"), ViewModel->GetAvailableCategories().HasTagExact(Refining));
-	TestFalse(TEXT("Weapons is not offered"), ViewModel->GetAvailableCategories().HasTagExact(Weapons));
-	TestEqual(TEXT("Recipes without a category add no tag"), ViewModel->GetAvailableCategories().Num(), 2);
-	TestTrue(TEXT("The unfiltered list has recipes"), ViewModel->HasFilteredRecipes());
-	TestEqual(TEXT("Binding publishes the categories once"), CategoryCounter.Count, 1);
+	ViewModel->SetCategoryFilter(Materials);
+	TestEqual(TEXT("A group filter includes its subcategories"), ViewModel->GetFilteredRecipes().Num(), 2);
+	TestEqual(TEXT("The list title names the group"), ReadText(ViewModel, TEXT("RecipeListTitleText")), FString(TEXT("Materials")));
+	TestTrue(TEXT("The group row is selected"), ReadValue<bool, FBoolProperty>(FindCategoryRow(ViewModel, ERpgCraftingCategoryRowKind::Group, Materials), TEXT("bSelected")));
+	TestEqual(TEXT("Selecting reuses the row objects"), RowsCounter.Count, 1);
 
-	ViewModel->SetCategoryFilter(Building);
-	TestEqual(TEXT("The category filter keeps one row"), ViewModel->GetFilteredRecipes().Num(), 1);
-	TestEqual(TEXT("The filter does not narrow the available categories"), ViewModel->GetAvailableCategories().Num(), 2);
-	TestEqual(TEXT("A filter change leaves the categories quiet"), CategoryCounter.Count, 1);
+	ViewModel->ActivateCategoryRow(FindCategoryRow(ViewModel, ERpgCraftingCategoryRowKind::Group, Materials));
+	TestEqual(TEXT("Activating the selected group collapses it"),
+		DescribeCategoryRows(ViewModel), FString(TEXT("All recipes 5, Building 1, Materials 2, Weapons 1, Melee 1")));
+	ViewModel->ActivateCategoryRow(FindCategoryRow(ViewModel, ERpgCraftingCategoryRowKind::Subcategory, Melee));
+	TestEqual(TEXT("A subcategory filters itself"), ViewModel->GetFilteredRecipes().Num(), 1);
+	ViewModel->ActivateCategoryRow(FindCategoryRow(ViewModel, ERpgCraftingCategoryRowKind::Group, Materials));
+	TestEqual(TEXT("Activating another group expands and filters it"), ViewModel->GetCategoryFilter(), Materials);
+	TestNotNull(TEXT("Its subcategories show again"), FindCategoryRow(ViewModel, ERpgCraftingCategoryRowKind::Subcategory, Wood));
+	ViewModel->ActivateCategoryRow(FindCategoryRow(ViewModel, ERpgCraftingCategoryRowKind::All, FGameplayTag()));
+	TestEqual(TEXT("All clears the filter"), ViewModel->GetFilteredRecipes().Num(), 5);
+
+	URpgCraftingCategoryCatalog* Catalog = NewObject<URpgCraftingCategoryCatalog>(GetTransientPackage(), NAME_None, RF_Transient);
+	FRpgCraftingCategoryDisplay& WeaponsRow = Catalog->Categories.AddDefaulted_GetRef();
+	WeaponsRow.Category = Weapons;
+	WeaponsRow.DisplayName = FText::FromString(TEXT("Arms"));
+	WeaponsRow.SortOrder = -1;
+	FRpgCraftingCategoryDisplay& WoodRow = Catalog->Categories.AddDefaulted_GetRef();
+	WoodRow.Category = Wood;
+	WoodRow.DisplayName = FText::FromString(TEXT("Lumber"));
+	ViewModel->SetPresentationCatalog(Catalog);
+	TestEqual(TEXT("The catalog renames and reorders rows"),
+		DescribeCategoryRows(ViewModel), FString(TEXT("All recipes 5, Arms 1, Melee 1, Building 1, Materials 2, Fuel 1, Lumber 1")));
 
 	ViewModel->SetSearchText(FText::FromString(TEXT("no such recipe")));
 	TestFalse(TEXT("A search without matches empties the list"), ViewModel->HasFilteredRecipes());
-	TestEqual(TEXT("The empty list notifies once"), HasRecipesCounter.Count, 2);
+	TestEqual(TEXT("Search leaves the tree counts alone"), ReadValue<int32, FIntProperty>(FindCategoryRow(ViewModel, ERpgCraftingCategoryRowKind::All, FGameplayTag()), TEXT("RecipeCount")), 5);
 
 	ViewModel->UnbindCraftingStation();
-	TestEqual(TEXT("Unbinding clears the categories"), ViewModel->GetAvailableCategories().Num(), 0);
+	TestEqual(TEXT("Unbinding clears the rows"), ViewModel->GetCategoryRows().Num(), 0);
 	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FRpgCraftingViewModelActionAndCountsTest,
-	"SurvivalRpg.Crafting.ViewModel.ActionAndCounts",
+	FRpgCraftingViewModelTierSectionsTest,
+	"SurvivalRpg.Crafting.ViewModel.TierSectionsAndSort",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FRpgCraftingViewModelActionAndCountsTest::RunTest(const FString& Parameters)
+bool FRpgCraftingViewModelTierSectionsTest::RunTest(const FString& Parameters)
 {
 	using namespace RpgCraftingViewModelPresentationTests;
 
 	FScopedStationWorld Fixture;
-	if (!TestTrue(TEXT("The station fixture exists"), Fixture.IsValid()) ||
-		!TestNotNull(TEXT("The station has an output tray"), Fixture.Station->GetOutputInventory()))
+	if (!TestTrue(TEXT("The station fixture exists"), Fixture.IsValid()))
 	{
 		return false;
 	}
 
-	URpgCraftingRecipeDefinition* Arrows = MakeRecipe(TEXT("Arrows"));
-	Arrows->OutputItems[0].Count = 20;
-	URpgCraftingRecipeDefinition* Pair = MakeRecipe(TEXT("Pair"));
-	const FRpgCraftingOutputItem SecondOutput = Pair->OutputItems[0];
-	Pair->OutputItems.Add(SecondOutput);
-	URpgCraftingRecipeDefinition* Slow = MakeRecipe(TEXT("Slow"), 10.0f);
-	Fixture.OfferRecipes({ Arrows, Pair, Slow });
-	const FString OutputName =
-		GetDefault<URpgInventoryItemDefinition>(URpgInventoryAutomationTestUnitItemDefinition::StaticClass())->DisplayName.ToString();
+	URpgCraftingRecipeDefinition* Copper = MakeRecipe(TEXT("Copper"));
+	URpgCraftingRecipeDefinition* Bronze = MakeRecipe(TEXT("Bronze"));
+	URpgCraftingRecipeDefinition* Iron = MakeRecipe(TEXT("Iron"));
+	Iron->RecipeTier = 2;
+	Fixture.OfferRecipes({ Iron, Copper, Bronze });
 
 	URpgCraftingStationViewModel* ViewModel = NewObject<URpgCraftingStationViewModel>(Fixture.Station, NAME_None, RF_Transient);
-	FFieldCounter ActionCounter(ViewModel, TEXT("CraftActionText"));
-	FFieldCounter JobCounter(ViewModel, TEXT("JobCount"));
-	FFieldCounter StackCounter(ViewModel, TEXT("OutputStackCount"));
-	TestTrue(TEXT("The new counts are field-notify fields"), ActionCounter.IsBound() && JobCounter.IsBound() && StackCounter.IsBound());
-	TestTrue(TEXT("An unbound view model has no craft label"), ViewModel->GetCraftActionText().IsEmpty());
-
 	ViewModel->BindCraftingStation(Fixture.Station, Fixture.Requester);
-	const URpgCraftingRecipeViewModel* ArrowRow = FindRow(ViewModel, Arrows);
-	const URpgCraftingRecipeViewModel* PairRow = FindRow(ViewModel, Pair);
-	if (!TestNotNull(TEXT("The arrow recipe has a row"), ArrowRow) ||
-		!TestNotNull(TEXT("The two-output recipe has a row"), PairRow))
-	{
-		ViewModel->UnbindCraftingStation();
-		return false;
-	}
-	TestEqual(TEXT("A single output shows its yield"), ArrowRow->GetYieldText().ToString(), FString(TEXT("×20")));
-	TestTrue(TEXT("Several outputs show no single yield"), PairRow->GetYieldText().IsEmpty());
+	TestEqual(TEXT("Recipes group under tier headers, low tiers first, by name inside a tier"),
+		DescribeRecipeList(ViewModel), FString(TEXT("[Tier I] Bronze Copper [Tier II] Iron")));
+	TestEqual(TEXT("Tier options list all tiers first"), ViewModel->GetTierOptions().Num(), 3);
+	TestEqual(TEXT("The filter starts at all tiers"), ReadText(ViewModel, TEXT("TierFilterText")), FString(TEXT("All tiers")));
+	TestEqual(TEXT("The sort toggle shows ascending"), ReadText(ViewModel, TEXT("TierSortText")), FString(TEXT("Tier ↑")));
 
-	ViewModel->SelectRecipe(Arrows);
-	TestEqual(
-		TEXT("The craft label names the output at quantity one"),
-		ViewModel->GetCraftActionText().ToString(),
-		FString::Printf(TEXT("Craft 20x %s"), *OutputName));
-	ViewModel->SetCraftQuantity(2);
-	TestEqual(
-		TEXT("The craft label follows the quantity"),
-		ViewModel->GetCraftActionText().ToString(),
-		FString::Printf(TEXT("Craft 40x %s"), *OutputName));
-	const int32 ActionNotifications = ActionCounter.Count;
-	ViewModel->RefreshSelectedRecipeDetails();
-	TestEqual(TEXT("An unchanged craft label stays quiet"), ActionCounter.Count, ActionNotifications);
-	ViewModel->SelectRecipe(Pair);
-	TestEqual(TEXT("Several outputs fall back to Craft"), ViewModel->GetCraftActionText().ToString(), FString(TEXT("Craft")));
+	ViewModel->ToggleTierSortDirection();
+	TestEqual(TEXT("The toggle puts high tiers first"), DescribeRecipeList(ViewModel), FString(TEXT("[Tier II] Iron [Tier I] Bronze Copper")));
 
-	TestEqual(TEXT("An idle station has no jobs"), ViewModel->GetJobCount(), 0);
-	TestTrue(TEXT("The station queues a timed job"), Fixture.Station->QueueCraftRecipe(Fixture.Requester, Slow, 1));
-	ViewModel->RefreshJobs();
-	TestEqual(TEXT("The queued job is counted"), ViewModel->GetJobCount(), 1);
-	TestEqual(TEXT("The job count notifies once"), JobCounter.Count, 1);
-	ViewModel->RefreshJobs();
-	TestEqual(TEXT("An unchanged job count stays quiet"), JobCounter.Count, 1);
+	URpgCraftingCategoryCatalog* Catalog = NewObject<URpgCraftingCategoryCatalog>(GetTransientPackage(), NAME_None, RF_Transient);
+	FRpgCraftingTierDisplay& TierRow = Catalog->Tiers.AddDefaulted_GetRef();
+	TierRow.Tier = 2;
+	TierRow.DisplayName = FText::FromString(TEXT("Iron"));
+	ViewModel->SetPresentationCatalog(Catalog);
+	TestEqual(TEXT("Catalog tier names join the numeral"), DescribeRecipeList(ViewModel), FString(TEXT("[II · Iron] Iron [Tier I] Bronze Copper")));
 
-	TestEqual(TEXT("An empty tray has no stacks"), ViewModel->GetOutputStackCount(), 0);
-	FRpgCraftingOutputItem Output;
-	Output.ItemDefinition = URpgInventoryAutomationTestUnitItemDefinition::StaticClass();
-	Output.Count = 1;
-	TestTrue(TEXT("The tray accepts an output"), Fixture.Station->AddCraftingOutputs({ Output }));
-	ViewModel->RefreshStationState();
-	TestEqual(TEXT("The tray stack is counted"), ViewModel->GetOutputStackCount(), 1);
-	TestEqual(TEXT("The stack count notifies once"), StackCounter.Count, 1);
+	ViewModel->SetTierFilter(2);
+	TestEqual(TEXT("The tier filter keeps one tier"), DescribeRecipeList(ViewModel), FString(TEXT("[II · Iron] Iron")));
+	TestEqual(TEXT("The filter label names the tier"), ReadText(ViewModel, TEXT("TierFilterText")), FString(TEXT("Tier II")));
+	ViewModel->CycleTierFilter(1);
+	TestEqual(TEXT("Cycling past the last tier wraps to all tiers"), ViewModel->GetTierFilter(), 0);
+	ViewModel->SetTierFilter(5);
+	TestEqual(TEXT("A tier the station does not offer falls back to all tiers"), ViewModel->GetTierFilter(), 0);
+	TestTrue(TEXT("Section headers are not recipe rows"), ViewModel->GetFilteredRecipes().Num() == 3 && ViewModel->GetRecipeListItems().Num() == 5);
 
 	ViewModel->UnbindCraftingStation();
-	TestTrue(TEXT("Unbinding clears the craft label"), ViewModel->GetCraftActionText().IsEmpty());
-	TestEqual(TEXT("Unbinding clears the job count"), ViewModel->GetJobCount(), 0);
-	TestEqual(TEXT("Unbinding clears the stack count"), ViewModel->GetOutputStackCount(), 0);
+	TestEqual(TEXT("Unbinding clears the list"), ViewModel->GetRecipeListItems().Num(), 0);
 	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FRpgCraftingViewModelJobTextTest,
-	"SurvivalRpg.Crafting.ViewModel.JobText",
+	FRpgCraftingViewModelTargetStorageTest,
+	"SurvivalRpg.Crafting.ViewModel.TargetStorageOptions",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FRpgCraftingViewModelJobTextTest::RunTest(const FString& Parameters)
+bool FRpgCraftingViewModelTargetStorageTest::RunTest(const FString& Parameters)
 {
 	using namespace RpgCraftingViewModelPresentationTests;
 
+	FScopedStationWorld Fixture;
+	if (!TestTrue(TEXT("The station fixture exists"), Fixture.IsValid()))
+	{
+		return false;
+	}
+
+	URpgCraftingRecipeDefinition* Recipe = MakeRecipe(TEXT("Unit"), 1.0f);
+	Fixture.OfferRecipes({ Recipe });
+	ARpgInventoryContainerActor* Full = Fixture.CreateChest(1, 1);
+	ARpgInventoryContainerActor* Roomy = Fixture.CreateChest(2, 2);
+	Full->GetInventoryManager()->AddItemDefinition(URpgInventoryAutomationTestStackItemDefinition::StaticClass(), 1);
+	const bool bFullFirst = ChestId(Full).LexicalLess(ChestId(Roomy));
+
+	URpgCraftingStationViewModel* ViewModel = NewObject<URpgCraftingStationViewModel>(Fixture.Station, NAME_None, RF_Transient);
+	ViewModel->BindCraftingStation(Fixture.Station, Fixture.Requester);
+	TestEqual(TEXT("Both connected chests are offered"), ViewModel->GetTargetStorageOptions().Num(), 2);
+	TestEqual(TEXT("The suggestion skips the full chest"), ViewModel->GetSelectedTargetContainerId(), ChestId(Roomy));
+	TestTrue(TEXT("The roomy target holds the selection"), ReadValue<bool, FBoolProperty>(ViewModel, TEXT("bTargetHasRoom")));
+	TestEqual(TEXT("The room line counts the output"), ReadText(ViewModel, TEXT("TargetCapacityText")),
+		FString::Printf(TEXT("Room for 1 of 1 %s"), *GetDefault<URpgInventoryItemDefinition>(URpgInventoryAutomationTestUnitItemDefinition::StaticClass())->DisplayName.ToString()));
+	TestTrue(TEXT("The selection may start"), ViewModel->CanStartOrder());
+
+	ViewModel->SelectTargetStorage(ChestId(Full));
+	TestEqual(TEXT("A picked chest becomes the target"), ViewModel->GetSelectedTargetContainerId(), ChestId(Full));
+	TestFalse(TEXT("A full target has no room"), ReadValue<bool, FBoolProperty>(ViewModel, TEXT("bTargetHasRoom")));
+	TestTrue(TEXT("The room line says there is no room"), ReadText(ViewModel, TEXT("TargetCapacityText")).StartsWith(TEXT("No room for")));
+	TestFalse(TEXT("A full target blocks the start"), ViewModel->CanStartOrder());
+	ViewModel->RefreshSelectedRecipeDetails();
+	TestEqual(TEXT("The pick survives a refresh"), ViewModel->GetSelectedTargetContainerId(), ChestId(Full));
+
+	ViewModel->CycleTargetStorage(1);
+	TestEqual(TEXT("Cycling moves to the other chest"), ViewModel->GetSelectedTargetContainerId(), ChestId(Roomy));
+	TestTrue(TEXT("Cycling keeps sorted option order"), bFullFirst
+		? ViewModel->GetTargetStorageOptions()[0]->GetContainerId() == ChestId(Full)
+		: ViewModel->GetTargetStorageOptions()[0]->GetContainerId() == ChestId(Roomy));
+
+	ViewModel->UnbindCraftingStation();
+	TestEqual(TEXT("Unbinding clears the options"), ViewModel->GetTargetStorageOptions().Num(), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCraftingViewModelPlanAndPreviewTest,
+	"SurvivalRpg.Crafting.ViewModel.PlanAndPreview",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCraftingViewModelPlanAndPreviewTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCraftingViewModelPresentationTests;
+
+	FScopedStationWorld Fixture;
+	if (!TestTrue(TEXT("The station fixture exists"), Fixture.IsValid()))
+	{
+		return false;
+	}
+
+	FStructProperty* PresentationProperty = FindFProperty<FStructProperty>(URpgCraftingStationComponent::StaticClass(), TEXT("Presentation"));
+	if (!TestNotNull(TEXT("Station texts are designer data"), PresentationProperty))
+	{
+		return false;
+	}
+	FRpgCraftingStationPresentation* Presentation = PresentationProperty->ContainerPtrToValuePtr<FRpgCraftingStationPresentation>(Fixture.Station);
+	Presentation->UnitSingular = FText::FromString(TEXT("run"));
+	Presentation->UnitPlural = FText::FromString(TEXT("runs"));
+	Presentation->StartActionText = FText::FromString(TEXT("Start smelting"));
+
+	URpgCraftingRecipeDefinition* Bars = MakeRecipe(TEXT("Bars"), 3.0f);
+	Bars->OutputItems[0].ItemDefinition = URpgInventoryAutomationTestStackItemDefinition::StaticClass();
+	Bars->OutputItems[0].Count = 2;
+	FRpgCraftingResourceCost& Cost = Bars->RequiredResources.AddDefaulted_GetRef();
+	Cost.ItemDefinition = URpgInventoryAutomationTestMaterialDefinition::StaticClass();
+	Cost.Count = 4;
+	URpgCraftingRecipeDefinition* Blade = MakeRecipe(TEXT("Blade"), 12.0f);
+	Blade->OutputItems[0].ItemDefinition = URpgItemizationAutomationTestItemDefinition::StaticClass();
+	Blade->OutputItemLevel = 10;
+	Fixture.OfferRecipes({ Bars, Blade });
+	ARpgInventoryContainerActor* Chest = Fixture.CreateChest();
+	Chest->GetInventoryManager()->AddItemDefinition(URpgInventoryAutomationTestMaterialDefinition::StaticClass(), 10);
+	const FString MaterialName = GetDefault<URpgInventoryItemDefinition>(URpgInventoryAutomationTestMaterialDefinition::StaticClass())->DisplayName.ToString();
+	const FString StackName = GetDefault<URpgInventoryItemDefinition>(URpgInventoryAutomationTestStackItemDefinition::StaticClass())->DisplayName.ToString();
+
+	URpgCraftingStationViewModel* ViewModel = NewObject<URpgCraftingStationViewModel>(Fixture.Station, NAME_None, RF_Transient);
+	ViewModel->BindCraftingStation(Fixture.Station, Fixture.Requester);
+	ViewModel->SelectRecipe(Bars);
+	ViewModel->SetCraftQuantity(20);
+	TestEqual(TEXT("The plan names runs and results"), ReadText(ViewModel, TEXT("PlanSummaryText")), FString::Printf(TEXT("20 runs → 40 %s"), *StackName));
+	TestEqual(TEXT("A stackable plan shows the pure time"), ReadText(ViewModel, TEXT("PlanDetailText")), FString(TEXT("1 min 00 s pure time")));
+	TestEqual(TEXT("The formula lists one run's inputs"), ReadText(ViewModel, TEXT("FormulaInputsText")), FString::Printf(TEXT("4 %s"), *MaterialName));
+	TestEqual(TEXT("The formula lists one run's outputs"), ReadText(ViewModel, TEXT("FormulaOutputText")), FString::Printf(TEXT("2 %s"), *StackName));
+	TestEqual(TEXT("The station's start text is used"), ViewModel->GetStartActionText().ToString(), FString(TEXT("Start smelting")));
+	TestEqual(TEXT("The materials line counts affordable runs"), ReadText(ViewModel, TEXT("MaterialsSummaryText")), FString(TEXT("From connected chests · enough for 2 runs now")));
+	TestEqual(TEXT("A plan beyond the chests still lets the order start and wait"), ViewModel->CanStartOrder(), true);
+	ViewModel->SetCraftQuantityToMax();
+	TestEqual(TEXT("Max uses what the chests can pay for"), ViewModel->GetCraftQuantity(), 2);
+
+	const TArray<URpgCraftingDetailRowViewModel*> StackRows = ViewModel->GetPreviewRows();
+	if (!TestEqual(TEXT("A stackable output shows yield, time and stack size"), StackRows.Num(), 3)) { return false; }
+	TestEqual(TEXT("Yield leads"), ReadText(StackRows[0], TEXT("Label")), FString(TEXT("Yield per run")));
+	TestEqual(TEXT("Yield counts pieces"), ReadText(StackRows[0], TEXT("ValueText")), FString(TEXT("2 pieces")));
+	TestEqual(TEXT("Time per run is shown"), ReadText(StackRows[1], TEXT("ValueText")), FString(TEXT("3 s")));
+	TestEqual(TEXT("The stack size is shown"), ReadText(StackRows[2], TEXT("ValueText")), FString(TEXT("up to 10")));
+	TestEqual(TEXT("A stackable output says so"), ReadText(ViewModel, TEXT("OutputKindText")), FString(TEXT("Stackable material")));
+
+	ViewModel->SelectRecipe(Blade);
+	TestEqual(TEXT("An itemized output says each piece rolls"), ReadText(ViewModel, TEXT("OutputKindText")), FString(TEXT("Single item · individual stats")));
+	TArray<FRpgItemStatRange> Ranges;
+	GetDefault<URpgItemizationAutomationTestProfile>()->GetBaseStatRanges(10, Ranges);
+	const TArray<URpgCraftingDetailRowViewModel*> BladeRows = ViewModel->GetPreviewRows();
+	TestTrue(TEXT("Stat ranges lead the itemized preview"), !Ranges.IsEmpty() && BladeRows.Num() >= Ranges.Num() &&
+		ReadText(BladeRows[0], TEXT("Label")).StartsWith(GetRpgItemStatDisplayName(Ranges[0].StatTag).ToString()));
+	TestEqual(TEXT("Single items show their cell size"), ReadText(ViewModel, TEXT("OutputSizeText")), FString(TEXT("Space per item 1 × 1 cells")));
+
+	ViewModel->UnbindCraftingStation();
+	TestTrue(TEXT("Unbinding clears the plan"), ReadText(ViewModel, TEXT("PlanSummaryText")).IsEmpty());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCraftingViewModelOrderStatusTest,
+	"SurvivalRpg.Crafting.ViewModel.OrderStatusText",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCraftingViewModelOrderStatusTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCraftingViewModelPresentationTests;
+
+	FScopedStationWorld Fixture;
+	if (!TestTrue(TEXT("The station fixture exists"), Fixture.IsValid()))
+	{
+		return false;
+	}
+
 	URpgCraftingRecipeDefinition* Recipe = MakeRecipe(TEXT("Plank"), 10.0f);
-	URpgCraftingJobViewModel* ViewModel = NewObject<URpgCraftingJobViewModel>(GetTransientPackage(), NAME_None, RF_Transient);
-	FFieldCounter TimeCounter(ViewModel, TEXT("RemainingTimeText"));
-	TestTrue(TEXT("RemainingTimeText is a field-notify field"), TimeCounter.IsBound());
+	FRpgCraftingResourceCost& Cost = Recipe->RequiredResources.AddDefaulted_GetRef();
+	Cost.ItemDefinition = URpgInventoryAutomationTestMaterialDefinition::StaticClass();
+	Cost.Count = 2;
+	Fixture.OfferRecipes({ Recipe });
+	ARpgInventoryContainerActor* Chest = Fixture.CreateChest();
+	Chest->GetInventoryManager()->AddItemDefinition(URpgInventoryAutomationTestMaterialDefinition::StaticClass(), 2);
 
-	FRpgCraftingJobEntry Job;
-	Job.JobId = FGuid::NewGuid();
-	Job.Recipe = Recipe;
-	Job.QuantityTotal = 3;
-	Job.QuantityCompleted = 1;
-	Job.State = ERpgCraftingJobState::Active;
-	Job.StartServerTime = 100.0f;
-	Job.FinishServerTime = 110.0f;
+	URpgCraftingStationViewModel* ViewModel = NewObject<URpgCraftingStationViewModel>(Fixture.Station, NAME_None, RF_Transient);
+	ViewModel->BindCraftingStation(Fixture.Station, Fixture.Requester);
+	TestEqual(TEXT("An idle station waits for the player"), ReadText(ViewModel, TEXT("OrderStatusText")), FString(TEXT("Waiting for your start")));
+	TestEqual(TEXT("The idle title names the station"), ReadText(ViewModel, TEXT("OrderTitleText")), FString(TEXT("Crafting Station ready")));
 
-	ViewModel->InitializeJob(Job, 104.0f);
-	TestEqual(TEXT("An active job reads Crafting"), ViewModel->GetStateText().ToString(), FString(TEXT("Crafting")));
-	TestEqual(TEXT("Active time covers the running unit and the next one"), ViewModel->GetRemainingTimeText().ToString(), FString(TEXT("16 s")));
-	TestEqual(TEXT("The first time text notifies once"), TimeCounter.Count, 1);
+	if (!TestTrue(TEXT("The station starts the order"), Fixture.Station->StartCraftingOrder(Fixture.Requester, Recipe, 2, ChestId(Chest)))) { return false; }
+	ViewModel->Refresh();
+	TestTrue(TEXT("The view model sees the order"), ViewModel->HasActiveOrder());
+	TestTrue(TEXT("A running order shows its remaining time"), ReadText(ViewModel, TEXT("OrderStatusText")).StartsWith(TEXT("Running · ")));
+	TestEqual(TEXT("Counts name the units"), ReadText(ViewModel, TEXT("OrderCountsText")), FString(TEXT("0 / 2 pieces done")));
+	TestEqual(TEXT("The start action is blocked while an order runs"), ViewModel->GetStartActionText().ToString(), FString(TEXT("An order is active")));
+	TestFalse(TEXT("A second order cannot start"), ViewModel->CanStartOrder());
 
-	ViewModel->InitializeJob(Job, 104.2f);
-	TestEqual(TEXT("A sub-second tick keeps the same text"), TimeCounter.Count, 1);
+	FTimerManager& Timers = Fixture.World->GetTimerManager();
+	TGuardValue<uint64> FrameGuard(GFrameCounter, GFrameCounter);
+	++GFrameCounter; Timers.Tick(0.0f);
+	++GFrameCounter; Timers.Tick(11.0f);
+	ViewModel->Refresh();
+	TestEqual(TEXT("Without materials the order waits"), ReadText(ViewModel, TEXT("OrderStatusText")), FString(TEXT("Waiting for materials")));
+	TestTrue(TEXT("The hint names what is missing"),
+		ReadText(ViewModel, TEXT("OrderHintText")).Contains(GetDefault<URpgInventoryItemDefinition>(URpgInventoryAutomationTestMaterialDefinition::StaticClass())->DisplayName.ToString()));
+	TestTrue(TEXT("A waiting order is flagged"), ReadValue<bool, FBoolProperty>(ViewModel, TEXT("bOrderWaiting")));
+	TestEqual(TEXT("Progress covers the delivered unit"), ReadValue<float, FFloatProperty>(ViewModel, TEXT("OrderProgress")), 0.5f);
 
-	Job.State = ERpgCraftingJobState::Paused;
-	Job.QuantityCompleted = 2;
-	Job.PausedRemainingTime = 65.0f;
-	ViewModel->InitializeJob(Job, 200.0f);
-	TestEqual(TEXT("A paused job reads Paused"), ViewModel->GetStateText().ToString(), FString(TEXT("Paused")));
-	TestEqual(TEXT("A minute and more uses minutes and seconds"), ViewModel->GetRemainingTimeText().ToString(), FString(TEXT("1:05")));
+	TestTrue(TEXT("The order pauses"), Fixture.Station->PauseCraftingStation(Fixture.Requester));
+	ViewModel->Refresh();
+	TestEqual(TEXT("A paused order says so"), ReadText(ViewModel, TEXT("OrderStatusText")), FString(TEXT("Paused")));
+	TestTrue(TEXT("The order stops"), Fixture.Station->StopCraftingOrder(Fixture.Requester, ViewModel->GetActiveOrderId()));
+	ViewModel->Refresh();
+	TestFalse(TEXT("The view model sees the idle station"), ViewModel->HasActiveOrder());
 
-	Recipe->CraftTime = 1800.0f;
-	Job.State = ERpgCraftingJobState::Queued;
-	Job.QuantityCompleted = 0;
-	ViewModel->InitializeJob(Job, 200.0f);
-	TestEqual(TEXT("A queued job reads Queued"), ViewModel->GetStateText().ToString(), FString(TEXT("Queued")));
-	TestEqual(TEXT("A queued job counts every unit"), ViewModel->GetRemainingTimeText().ToString(), FString(TEXT("1:30:00")));
-
-	Job.State = ERpgCraftingJobState::BlockedOutput;
-	ViewModel->InitializeJob(Job, 200.0f);
-	TestEqual(TEXT("A blocked job names the full output"), ViewModel->GetStateText().ToString(), FString(TEXT("Output full")));
-	TestTrue(TEXT("A blocked job shows no time"), ViewModel->GetRemainingTimeText().IsEmpty());
+	ViewModel->UnbindCraftingStation();
+	TestTrue(TEXT("Unbinding clears the strip"), ReadText(ViewModel, TEXT("OrderStatusText")).IsEmpty());
 	return true;
 }
 

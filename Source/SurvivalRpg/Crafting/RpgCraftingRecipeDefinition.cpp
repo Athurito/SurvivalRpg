@@ -1,5 +1,8 @@
 #include "RpgCraftingRecipeDefinition.h"
 
+#include "SurvivalRpg/Inventory/Itemization/RpgInventoryFragment_Itemization.h"
+#include "SurvivalRpg/Inventory/Itemization/RpgItemizationProfile.h"
+#include "SurvivalRpg/Inventory/RpgInventoryFragment_StorageProfile.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 
 #if WITH_EDITOR
@@ -40,6 +43,16 @@ EDataValidationResult URpgCraftingRecipeDefinition::IsDataValid(
 				"InvalidRecipeCost",
 				"RequiredResources contains a null definition or non-positive count."));
 			Result = EDataValidationResult::Invalid;
+			continue;
+		}
+		const URpgInventoryFragment_StorageProfile* StorageProfile =
+			URpgInventoryFragment_StorageProfile::ResolveStorageProfile(Cost.ItemDefinition);
+		if (!StorageProfile || !StorageProfile->CanCraftFromPhysicalStorage())
+		{
+			Context.AddError(FText::Format(
+				NSLOCTEXT("RpgCraftingValidation", "IngredientNotCraftableFromStorage", "Ingredient {0} cannot be taken from chests; station orders only use connected chests."),
+				FText::FromString(Cost.ItemDefinition->GetName())));
+			Result = EDataValidationResult::Invalid;
 		}
 	}
 	if (OutputItems.IsEmpty())
@@ -58,6 +71,19 @@ EDataValidationResult URpgCraftingRecipeDefinition::IsDataValid(
 				"RpgCraftingValidation",
 				"InvalidRecipeOutput",
 				"OutputItems contains a null definition or non-positive count."));
+			Result = EDataValidationResult::Invalid;
+			continue;
+		}
+		const URpgInventoryItemDefinition* OutputCDO = GetDefault<URpgInventoryItemDefinition>(Output.ItemDefinition);
+		const URpgInventoryFragment_Itemization* Itemization = Cast<URpgInventoryFragment_Itemization>(
+			OutputCDO->FindFragmentByClass(URpgInventoryFragment_Itemization::StaticClass()));
+		FString ProfileError;
+		if (Itemization && (!Itemization->ItemizationProfile || !Itemization->ItemizationProfile->HasValidConfiguration(&ProfileError)))
+		{
+			Context.AddError(FText::Format(
+				NSLOCTEXT("RpgCraftingValidation", "InvalidOutputItemization", "Output {0} is itemized but its profile cannot roll: {1}"),
+				FText::FromString(Output.ItemDefinition->GetName()),
+				FText::FromString(ProfileError)));
 			Result = EDataValidationResult::Invalid;
 		}
 	}

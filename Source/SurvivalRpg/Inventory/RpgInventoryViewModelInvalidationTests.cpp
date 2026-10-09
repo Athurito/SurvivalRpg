@@ -11,6 +11,8 @@
 #include "SurvivalRpg/Core/Game/RpgGameStateBase.h"
 #include "SurvivalRpg/Crafting/RpgCraftingRecipeDefinition.h"
 #include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
+#include "SurvivalRpg/Inventory/RpgInventoryContainerActor.h"
+#include "SurvivalRpg/Inventory/RpgInventoryContainerComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Mvvm/Base/RpgBaseStorageViewModels.h"
@@ -1420,10 +1422,15 @@ bool FRpgCraftingViewModelInventoryInvalidationTest::RunTest(
 		TestWorld.CreateComponent<URpgCraftingStationComponent>(
 			StationOwner,
 			TEXT("CraftingStation"));
+	// Station orders draw only from connected chests, so a chest beside the station is the relevant source.
+	ARpgInventoryContainerActor* ResourceChest =
+		TestWorld.SpawnActor<ARpgInventoryContainerActor>(TEXT("InvalidationCraftingResourceChest"));
+	if (ResourceChest)
+	{
+		ResourceChest->GetContainerComponent()->EnsurePersistentContainerId();
+	}
 	URpgInventoryManagerComponent* ResourceInventory =
-		TestWorld.CreateComponent<URpgInventoryManagerComponent>(
-			RequestingActor,
-			TEXT("ResourceInventory"));
+		ResourceChest ? ResourceChest->GetInventoryManager() : nullptr;
 	URpgInventoryManagerComponent* ForeignInventory =
 		TestWorld.CreateComponent<URpgInventoryManagerComponent>(
 			ForeignActor,

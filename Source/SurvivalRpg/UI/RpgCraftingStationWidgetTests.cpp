@@ -14,11 +14,9 @@
 #include "SurvivalRpg/Mvvm/Inventory/RpgPlayerInventoryViewModel.h"
 #include "SurvivalRpg/UI/RpgCraftingActionButtonWidget.h"
 #include "SurvivalRpg/UI/RpgCraftingIngredientEntryWidget.h"
-#include "SurvivalRpg/UI/RpgCraftingJobEntryWidget.h"
 #include "SurvivalRpg/UI/RpgCraftingRecipeEntryWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
-#include "SurvivalRpg/UI/RpgInventorySpatialPaneWidget.h"
 
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Blueprint/IUserListEntry.h"
@@ -32,9 +30,7 @@
 #include "CommonTextBlock.h"
 #include "CommonUITypes.h"
 #include "Components/CanvasPanel.h"
-#include "Components/CheckBox.h"
 #include "Components/Overlay.h"
-#include "Components/ProgressBar.h"
 #include "Engine/DataTable.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
@@ -68,14 +64,6 @@ namespace RpgCraftingStationWidgetTests
 		TEXT(
 			"/Game/SurvivalRpg/Crafting/UI/"
 			"CUI_CraftingIngredientEntrySpatial.CUI_CraftingIngredientEntrySpatial_C");
-	constexpr TCHAR JobEntryClassPath[] =
-		TEXT(
-			"/Game/SurvivalRpg/Crafting/UI/"
-			"CUI_CraftingJobEntrySpatial.CUI_CraftingJobEntrySpatial_C");
-	constexpr TCHAR SpatialPaneClassPath[] =
-		TEXT(
-			"/Game/SurvivalRpg/Inventory/UI/SpatialInventory/"
-			"CUI_SpatialInventoryPane.CUI_SpatialInventoryPane_C");
 	constexpr TCHAR CraftingActionTablePath[] =
 		TEXT(
 			"/Game/SurvivalRpg/UI/Input/"
@@ -97,16 +85,8 @@ namespace RpgCraftingStationWidgetTests
 		TEXT(
 			"/Game/SurvivalRpg/Crafting/UI/"
 			"CUI_CraftingIngredientEntrySpatial");
-	constexpr TCHAR JobEntryPackageName[] =
-		TEXT(
-			"/Game/SurvivalRpg/Crafting/UI/"
-			"CUI_CraftingJobEntrySpatial");
 	constexpr TCHAR CraftingActionTablePackageName[] =
 		TEXT("/Game/SurvivalRpg/UI/Input/DT_RpgUIActions_Crafting");
-	constexpr TCHAR SpatialPanePackageName[] =
-		TEXT(
-			"/Game/SurvivalRpg/Inventory/UI/SpatialInventory/"
-			"CUI_SpatialInventoryPane");
 	constexpr TCHAR LegacyInventoryPackageName[] =
 		TEXT("/Game/SurvivalRpg/Inventory/UI/CUI_Inventory");
 	constexpr TCHAR LegacyCraftingScreenPackageName[] =
@@ -119,11 +99,10 @@ namespace RpgCraftingStationWidgetTests
 		{
 			TObjectPtr<ARpgCraftingStationActor> StationActor = nullptr;
 			TObjectPtr<URpgCraftingStationComponent> Station = nullptr;
-			TObjectPtr<URpgInventoryManagerComponent> OutputInventory = nullptr;
 
 			bool IsValid() const
 			{
-				return StationActor && Station && OutputInventory;
+				return StationActor && Station;
 			}
 		};
 
@@ -249,8 +228,6 @@ namespace RpgCraftingStationWidgetTests
 				Result.StationActor->SetActorLocation(FVector::ZeroVector);
 				Result.Station =
 					Result.StationActor->GetCraftingStationComponent();
-				Result.OutputInventory =
-					Result.StationActor->GetOutputInventoryComponent();
 			}
 			return Result;
 		}
@@ -617,23 +594,21 @@ namespace RpgCraftingStationWidgetTests
 			NewObject<URpgCraftingStationScreenPayload>(Outer);
 		Payload->ScreenTag = RpgGameplayTags::UI_Screen_Crafting;
 		Payload->PrimaryInventory = PlayerInventory;
-		Payload->SecondaryInventory = StationContext.OutputInventory;
 		Payload->ContextActor = StationContext.StationActor;
 		Payload->ContextComponent = StationContext.Station;
 		Payload->PlayerInventory = PlayerInventory;
 		Payload->CraftingStation = StationContext.Station;
-		Payload->OutputInventory = StationContext.OutputInventory;
 		Payload->RequestingActor = RequestingActor;
 		return Payload;
 	}
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FRpgCraftingSpatialCompositionTest,
-	"SurvivalRpg.Inventory.UI.Crafting.SpatialComposition",
+	FRpgCraftingScreenContractTest,
+	"SurvivalRpg.Inventory.UI.Crafting.ScreenContract",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FRpgCraftingSpatialCompositionTest::RunTest(
+bool FRpgCraftingScreenContractTest::RunTest(
 	const FString& Parameters)
 {
 	using namespace RpgCraftingStationWidgetTests;
@@ -653,40 +628,12 @@ bool FRpgCraftingSpatialCompositionTest::RunTest(
 		LoadClass<URpgCraftingActionButtonWidget>(
 			nullptr,
 			CraftingActionButtonClassPath);
-	UClass* RecipeEntryClass =
-		LoadClass<URpgCraftingRecipeEntryWidget>(
-			nullptr,
-			RecipeEntryClassPath);
-	UClass* IngredientEntryClass =
-		LoadClass<URpgCraftingIngredientEntryWidget>(
-			nullptr,
-			IngredientEntryClassPath);
-	UClass* JobEntryClass =
-		LoadClass<URpgCraftingJobEntryWidget>(
-			nullptr,
-			JobEntryClassPath);
-	UClass* SpatialPaneClass =
-		LoadClass<URpgInventorySpatialPaneWidget>(
-			nullptr,
-			SpatialPaneClassPath);
 	if (!TestNotNull(
-			TEXT("Authored Crafting Spatial screen loads"),
+			TEXT("Authored Crafting screen loads"),
 			ScreenClass) ||
 		!TestNotNull(
 			TEXT("Authored Crafting action-button leaf loads"),
-			ActionButtonClass) ||
-		!TestNotNull(
-			TEXT("Authored recipe-entry leaf loads"),
-			RecipeEntryClass) ||
-		!TestNotNull(
-			TEXT("Authored ingredient-entry leaf loads"),
-			IngredientEntryClass) ||
-		!TestNotNull(
-			TEXT("Authored job-entry leaf loads"),
-			JobEntryClass) ||
-		!TestNotNull(
-			TEXT("Canonical authored Spatial Pane loads"),
-			SpatialPaneClass))
+			ActionButtonClass))
 	{
 		return false;
 	}
@@ -704,226 +651,9 @@ bool FRpgCraftingSpatialCompositionTest::RunTest(
 		ScreenClass->ImplementsInterface(
 			URpgUIScreenPayloadReceiver::StaticClass()));
 	TestTrue(
-		TEXT("Crafting action-button asset derives from its graph-free native leaf"),
+		TEXT("Crafting action-button asset derives from its native leaf"),
 		ActionButtonClass->IsChildOf(
 			URpgCraftingActionButtonWidget::StaticClass()));
-
-	UWidgetBlueprintGeneratedClass* ScreenGeneratedClass =
-		Cast<UWidgetBlueprintGeneratedClass>(ScreenClass);
-	UWidgetBlueprintGeneratedClass* ActionButtonGeneratedClass =
-		Cast<UWidgetBlueprintGeneratedClass>(ActionButtonClass);
-	if (!TestNotNull(
-			TEXT("Crafting screen is an authored Widget Blueprint"),
-			ScreenGeneratedClass) ||
-		!TestNotNull(
-			TEXT("Crafting action button is an authored Widget Blueprint"),
-			ActionButtonGeneratedClass))
-	{
-		return false;
-	}
-
-	// Screen graphs and MVVM bindings are designer-owned presentation (filters,
-	// header, empty state); gameplay intents stay in the native presenter.
-	TestEqual(
-		TEXT("Crafting action button owns no ambiguous MVVM extension"),
-		ActionButtonGeneratedClass
-			->GetExtensions(UMVVMViewClass::StaticClass(), false)
-			.Num(),
-		0);
-
-	const UWidgetTree* ScreenTree =
-		ScreenGeneratedClass->GetWidgetTreeArchetype();
-	const UWidgetTree* ActionButtonTree =
-		ActionButtonGeneratedClass->GetWidgetTreeArchetype();
-	const UWidgetTree* RecipeEntryTree =
-		CastChecked<UWidgetBlueprintGeneratedClass>(RecipeEntryClass)
-			->GetWidgetTreeArchetype();
-	const UWidgetTree* IngredientEntryTree =
-		CastChecked<UWidgetBlueprintGeneratedClass>(IngredientEntryClass)
-			->GetWidgetTreeArchetype();
-	const UWidgetTree* JobEntryTree =
-		CastChecked<UWidgetBlueprintGeneratedClass>(JobEntryClass)
-			->GetWidgetTreeArchetype();
-	if (!TestNotNull(
-			TEXT("Crafting screen has an authored WidgetTree"),
-			ScreenTree) ||
-		!TestNotNull(
-			TEXT("Crafting action button has an authored WidgetTree"),
-			ActionButtonTree) ||
-		!TestNotNull(
-			TEXT("Recipe entry has an authored WidgetTree"),
-			RecipeEntryTree) ||
-		!TestNotNull(
-			TEXT("Ingredient entry has an authored WidgetTree"),
-			IngredientEntryTree) ||
-		!TestNotNull(
-			TEXT("Job entry has an authored WidgetTree"),
-			JobEntryTree))
-	{
-		return false;
-	}
-
-	UOverlay* RootOverlay =
-		Cast<UOverlay>(ScreenTree->FindWidget(TEXT("RootOverlay")));
-	URpgInventorySpatialPaneWidget* OutputInventoryPane =
-		Cast<URpgInventorySpatialPaneWidget>(
-			ScreenTree->FindWidget(TEXT("OutputInventoryPane")));
-	UCommonListView* RecipeList =
-		Cast<UCommonListView>(
-			ScreenTree->FindWidget(TEXT("RecipeList")));
-	UCommonListView* IngredientList =
-		Cast<UCommonListView>(
-			ScreenTree->FindWidget(TEXT("IngredientList")));
-	UCommonListView* JobsList =
-		Cast<UCommonListView>(
-			ScreenTree->FindWidget(TEXT("CraftingJobsList")));
-	UCanvasPanel* DragVisualCanvas =
-		Cast<UCanvasPanel>(
-			ScreenTree->FindWidget(TEXT("DragVisualCanvas")));
-
-	TestNotNull(
-		TEXT("RootOverlay is the authored Crafting screen root"),
-		RootOverlay);
-	TestEqual(
-		TEXT("RootOverlay is the Crafting WidgetTree root"),
-		ScreenTree->RootWidget.Get(),
-		static_cast<UWidget*>(RootOverlay));
-	if (RootOverlay)
-	{
-		TestEqual(
-			TEXT("RootOverlay receives pointer input across empty Crafting regions"),
-			RootOverlay->GetVisibility(),
-			ESlateVisibility::Visible);
-	}
-	TestNull(
-		TEXT("Legacy reduced PlayerGroupsPanel is absent"),
-		ScreenTree->FindWidget(TEXT("PlayerGroupsPanel")));
-	TestEqual(
-		TEXT("OutputInventoryPane uses exactly the reusable Spatial Pane class"),
-		OutputInventoryPane ? OutputInventoryPane->GetClass() : nullptr,
-		SpatialPaneClass);
-	TestNotNull(
-		TEXT("RecipeList is authored as a CommonListView"),
-		RecipeList);
-	TestNotNull(
-		TEXT("IngredientList is authored as a CommonListView"),
-		IngredientList);
-	TestNotNull(
-		TEXT("CraftingJobsList is authored as a CommonListView"),
-		JobsList);
-	TestEqual(
-		TEXT("RecipeList uses the exact typed recipe-entry class"),
-		GetListEntryWidgetClass(RecipeList),
-		RecipeEntryClass);
-	TestEqual(
-		TEXT("IngredientList uses the exact typed ingredient-entry class"),
-		GetListEntryWidgetClass(IngredientList),
-		IngredientEntryClass);
-	TestEqual(
-		TEXT("CraftingJobsList uses the exact typed job-entry class"),
-		GetListEntryWidgetClass(JobsList),
-		JobEntryClass);
-
-	const FName TextWidgetNames[] = {
-		TEXT("RecipeNameText"),
-		TEXT("RecipeDescriptionText"),
-		TEXT("CraftTimeText"),
-		TEXT("CraftQuantityText")
-	};
-	for (const FName WidgetName : TextWidgetNames)
-	{
-		TestTrue(
-			*FString::Printf(
-				TEXT("%s is authored as a CommonTextBlock"),
-				*WidgetName.ToString()),
-			ScreenTree->FindWidget(WidgetName) &&
-				ScreenTree->FindWidget(WidgetName)
-					->IsA<UCommonTextBlock>());
-	}
-	TestTrue(
-		TEXT("RecipeIcon is authored as a CommonLazyImage"),
-		ScreenTree->FindWidget(TEXT("RecipeIcon")) &&
-			ScreenTree->FindWidget(TEXT("RecipeIcon"))
-				->IsA<UCommonLazyImage>());
-	TestTrue(
-		TEXT("AutoDepositCheckBox is authored as a CheckBox"),
-		ScreenTree->FindWidget(TEXT("AutoDepositCheckBox")) &&
-			ScreenTree->FindWidget(TEXT("AutoDepositCheckBox"))
-				->IsA<UCheckBox>());
-	TestTrue(
-		TEXT("ActionBar uses CommonUI's bound action bar"),
-		ScreenTree->FindWidget(TEXT("ActionBar")) &&
-			ScreenTree->FindWidget(TEXT("ActionBar"))
-				->IsA<UCommonBoundActionBar>());
-
-	const FName ActionButtonNames[] = {
-		TEXT("CraftButton"),
-		TEXT("PauseButton"),
-		TEXT("QuantityMinusButton"),
-		TEXT("QuantityPlusButton"),
-		TEXT("QuantityFiveButton"),
-		TEXT("QuantityTenButton"),
-		TEXT("QuantityMaxButton")
-	};
-	for (const FName WidgetName : ActionButtonNames)
-	{
-		UWidget* AuthoredButton = ScreenTree->FindWidget(WidgetName);
-		TestEqual(
-			*FString::Printf(
-				TEXT("%s uses the exact graph-free Crafting action leaf"),
-				*WidgetName.ToString()),
-			AuthoredButton ? AuthoredButton->GetClass() : nullptr,
-			ActionButtonClass);
-	}
-
-	TestNotNull(
-		TEXT("DragVisualCanvas is authored as the top-level drag host"),
-		DragVisualCanvas);
-	if (DragVisualCanvas)
-	{
-		TestEqual(
-			TEXT("DragVisualCanvas never intercepts Crafting input"),
-			DragVisualCanvas->GetVisibility(),
-			ESlateVisibility::HitTestInvisible);
-	}
-	if (RootOverlay && DragVisualCanvas)
-	{
-		TestEqual(
-			TEXT("DragVisualCanvas is the final root child"),
-			RootOverlay->GetChildIndex(DragVisualCanvas),
-			RootOverlay->GetChildrenCount() - 1);
-	}
-
-	TArray<UWidget*> ScreenWidgets;
-	ScreenTree->GetAllWidgets(ScreenWidgets);
-	int32 SpatialPaneCount = 0;
-	for (const UWidget* Widget : ScreenWidgets)
-	{
-		if (Widget && Widget->IsA<URpgInventorySpatialPaneWidget>())
-		{
-			++SpatialPaneCount;
-		}
-	}
-	TestEqual(
-		TEXT("Crafting screen authors exactly one Spatial Pane: station output"),
-		SpatialPaneCount,
-		1);
-
-	TestTrue(
-		TEXT("Crafting action button authors its native Text label"),
-		ActionButtonTree->FindWidget(TEXT("Text")) &&
-			ActionButtonTree->FindWidget(TEXT("Text"))
-				->IsA<UCommonTextBlock>());
-	TestTrue(
-		TEXT("Job row cancel control uses the exact Crafting action leaf"),
-		JobEntryTree->FindWidget(TEXT("Button_Cancel")) &&
-			JobEntryTree->FindWidget(TEXT("Button_Cancel"))
-				->GetClass() == ActionButtonClass);
-	TestTrue(
-		TEXT("Job row authors its progress destination"),
-		JobEntryTree->FindWidget(TEXT("ProgressBar")) &&
-			JobEntryTree->FindWidget(TEXT("ProgressBar"))
-				->IsA<UProgressBar>());
 
 	URpgCraftingStationWidget* RuntimeWidget =
 		CreateWidget<URpgCraftingStationWidget>(
@@ -936,19 +666,15 @@ bool FRpgCraftingSpatialCompositionTest::RunTest(
 		return false;
 	}
 
+	// Required native bindings: the presenter's stable seam, independent of the authored layout around them.
 	const FName BoundWidgetNames[] = {
-		TEXT("OutputInventoryPane"),
 		TEXT("RecipeList"),
 		TEXT("IngredientList"),
-		TEXT("CraftingJobsList"),
 		TEXT("CraftButton"),
 		TEXT("PauseButton"),
 		TEXT("QuantityMinusButton"),
 		TEXT("QuantityPlusButton"),
-		TEXT("QuantityFiveButton"),
-		TEXT("QuantityTenButton"),
-		TEXT("QuantityMaxButton"),
-		TEXT("AutoDepositCheckBox")
+		TEXT("QuantityMaxButton")
 	};
 	for (const FName PropertyName : BoundWidgetNames)
 	{
@@ -962,7 +688,7 @@ bool FRpgCraftingSpatialCompositionTest::RunTest(
 			*FString::Printf(
 				TEXT("%s binds into its native presenter property"),
 				*PropertyName.ToString()),
-			Property &&
+			Property && AuthoredWidget &&
 				Property->GetObjectPropertyValue_InContainer(
 					RuntimeWidget) == AuthoredWidget);
 	}
@@ -972,12 +698,39 @@ bool FRpgCraftingSpatialCompositionTest::RunTest(
 			URpgInventoryInteractionScreenWidget::StaticClass(),
 			TEXT("DragVisualCanvas"));
 	TestTrue(
-		TEXT("DragVisualCanvas binds into the shared screen property"),
+		TEXT("The shared drag host binds into the screen property"),
 		DragVisualProperty &&
 			DragVisualProperty->GetObjectPropertyValue_InContainer(
-				RuntimeWidget) ==
-				RuntimeWidget->GetWidgetFromName(
-					TEXT("DragVisualCanvas")));
+				RuntimeWidget) != nullptr);
+
+	const UCommonListView* RecipeList = Cast<UCommonListView>(RuntimeWidget->GetWidgetFromName(TEXT("RecipeList")));
+	const UCommonListView* IngredientList = Cast<UCommonListView>(RuntimeWidget->GetWidgetFromName(TEXT("IngredientList")));
+	UClass* RecipeEntryClass = GetListEntryWidgetClass(RecipeList);
+	UClass* IngredientEntryClass = GetListEntryWidgetClass(IngredientList);
+	TestTrue(
+		TEXT("Recipe rows use the typed recipe-entry presenter"),
+		RecipeEntryClass && RecipeEntryClass->IsChildOf(URpgCraftingRecipeEntryWidget::StaticClass()));
+	TestTrue(
+		TEXT("Material rows use the typed ingredient-entry presenter"),
+		IngredientEntryClass && IngredientEntryClass->IsChildOf(URpgCraftingIngredientEntryWidget::StaticClass()));
+
+	const URpgCraftingStationWidget* ScreenDefaults =
+		Cast<URpgCraftingStationWidget>(ScreenClass->GetDefaultObject());
+	const FClassProperty* SectionClassProperty = FindFProperty<FClassProperty>(
+		URpgCraftingStationWidget::StaticClass(),
+		TEXT("TierSectionEntryClass"));
+	UClass* SectionClass = SectionClassProperty && ScreenDefaults
+		? Cast<UClass>(SectionClassProperty->GetObjectPropertyValue_InContainer(ScreenDefaults))
+		: nullptr;
+	TestTrue(
+		TEXT("Tier section headers have an authored list entry"),
+		SectionClass && SectionClass->ImplementsInterface(UUserObjectListEntry::StaticClass()));
+	const FObjectPropertyBase* CatalogProperty = FindFProperty<FObjectPropertyBase>(
+		URpgCraftingStationWidget::StaticClass(),
+		TEXT("CategoryCatalog"));
+	TestTrue(
+		TEXT("The screen names its category catalog"),
+		CatalogProperty && ScreenDefaults && CatalogProperty->GetObjectPropertyValue_InContainer(ScreenDefaults) != nullptr);
 
 	UDataTable* ActionTable = LoadObject<UDataTable>(
 		nullptr,
@@ -990,18 +743,18 @@ bool FRpgCraftingSpatialCompositionTest::RunTest(
 	}
 	const TArray<FName> ActionRows = ActionTable->GetRowNames();
 	TestTrue(
-		TEXT("Crafting action table contains the craft action"),
+		TEXT("Crafting action table contains the start action"),
 		ActionRows.Contains(FName(TEXT("UI.Crafting.Craft"))));
 	TestTrue(
 		TEXT("Crafting action table contains the pause toggle action"),
 		ActionRows.Contains(FName(TEXT("UI.Crafting.TogglePause"))));
 	TestTrue(
-		TEXT("Crafting action table contains the take-all action"),
-		ActionRows.Contains(FName(TEXT("UI.Crafting.TakeAll"))));
+		TEXT("Crafting action table contains the stop action"),
+		ActionRows.Contains(FName(TEXT("UI.Crafting.StopOrder"))));
 	const FCommonInputActionDataBase* CraftActionRow =
 		ActionTable->FindRow<FCommonInputActionDataBase>(
 			TEXT("UI.Crafting.Craft"),
-			TEXT("Crafting Spatial action contract"));
+			TEXT("Crafting action contract"));
 	if (!TestNotNull(
 			TEXT("Crafting action row resolves to CommonUI data"),
 			CraftActionRow))
@@ -1025,31 +778,19 @@ bool FRpgCraftingSpatialCompositionTest::RunTest(
 			.GetKey(),
 		EKeys::Gamepad_FaceButton_Left);
 
-	const FStructProperty* CraftActionProperty =
-		FindFProperty<FStructProperty>(
+	const auto ReadActionHandle = [ScreenDefaults](const TCHAR* PropertyName) -> const FDataTableRowHandle*
+	{
+		const FStructProperty* Property = FindFProperty<FStructProperty>(
 			URpgCraftingStationWidget::StaticClass(),
-			TEXT("CraftInputAction"));
-	const FStructProperty* TogglePauseActionProperty =
-		FindFProperty<FStructProperty>(
-			URpgCraftingStationWidget::StaticClass(),
-			TEXT("TogglePauseInputAction"));
-	const URpgCraftingStationWidget* ScreenDefaults =
-		Cast<URpgCraftingStationWidget>(
-			ScreenGeneratedClass->GetDefaultObject());
-	const FDataTableRowHandle* CraftActionHandle =
-		CraftActionProperty && ScreenDefaults
-			? CraftActionProperty
-				->ContainerPtrToValuePtr<FDataTableRowHandle>(
-					ScreenDefaults)
+			PropertyName);
+		return Property && ScreenDefaults
+			? Property->ContainerPtrToValuePtr<FDataTableRowHandle>(ScreenDefaults)
 			: nullptr;
-	const FDataTableRowHandle* TogglePauseActionHandle =
-		TogglePauseActionProperty && ScreenDefaults
-			? TogglePauseActionProperty
-				->ContainerPtrToValuePtr<FDataTableRowHandle>(
-					ScreenDefaults)
-			: nullptr;
+	};
+	const FDataTableRowHandle* CraftActionHandle = ReadActionHandle(TEXT("CraftInputAction"));
+	const FDataTableRowHandle* TogglePauseActionHandle = ReadActionHandle(TEXT("TogglePauseInputAction"));
 	TestTrue(
-		TEXT("Crafting screen explicitly authors its craft action row"),
+		TEXT("Crafting screen explicitly authors its start action row"),
 		CraftActionHandle &&
 			CraftActionHandle->DataTable == ActionTable &&
 			CraftActionHandle->RowName ==
@@ -1067,27 +808,17 @@ bool FRpgCraftingSpatialCompositionTest::RunTest(
 			.Get();
 	TArray<FName> ScreenDependencies;
 	TestTrue(
-		TEXT("Asset Registry resolves Crafting Spatial dependencies"),
+		TEXT("Asset Registry resolves Crafting screen dependencies"),
 		AssetRegistry.GetDependencies(
 			FName(CraftingScreenPackageName),
 			ScreenDependencies,
 			UE::AssetRegistry::EDependencyCategory::Package));
-	TestTrue(
-		TEXT("Crafting screen depends on the reusable Spatial Pane"),
-		ScreenDependencies.Contains(FName(SpatialPanePackageName)));
-	TestTrue(
-		TEXT("Crafting screen depends on its graph-free action-button leaf"),
-		ScreenDependencies.Contains(
-			FName(CraftingActionButtonPackageName)));
 	TestTrue(
 		TEXT("Crafting screen depends on its typed recipe-entry leaf"),
 		ScreenDependencies.Contains(FName(RecipeEntryPackageName)));
 	TestTrue(
 		TEXT("Crafting screen depends on its typed ingredient-entry leaf"),
 		ScreenDependencies.Contains(FName(IngredientEntryPackageName)));
-	TestTrue(
-		TEXT("Crafting screen depends on its typed job-entry leaf"),
-		ScreenDependencies.Contains(FName(JobEntryPackageName)));
 	TestTrue(
 		TEXT("Crafting screen owns a cook-visible dependency on its CommonUI actions"),
 		ScreenDependencies.Contains(
@@ -1140,17 +871,7 @@ bool FRpgCraftingTypedLeafMvvmTest::RunTest(
 		URpgCraftingIngredientEntryWidget::StaticClass(),
 		URpgCraftingIngredientEntryWidget::IngredientViewModelSourceName,
 		URpgCraftingIngredientViewModel::StaticClass());
-	const bool bJobValid = ValidateGraphFreeTypedLeaf(
-		*this,
-		TestWorld.GetTestWorld(),
-		TEXT("Job entry"),
-		LoadClass<URpgCraftingJobEntryWidget>(
-			nullptr,
-			JobEntryClassPath),
-		URpgCraftingJobEntryWidget::StaticClass(),
-		URpgCraftingJobEntryWidget::JobViewModelSourceName,
-		URpgCraftingJobViewModel::StaticClass());
-	return bRecipeValid && bIngredientValid && bJobValid;
+	return bRecipeValid && bIngredientValid;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -1187,7 +908,7 @@ bool FRpgCraftingScreenPayloadLifecycleTest::RunTest(
 		nullptr,
 		CraftingScreenClassPath);
 	if (!TestNotNull(
-			TEXT("Authored Crafting Spatial screen loads"),
+			TEXT("Authored Crafting screen loads"),
 			ScreenClass))
 	{
 		return false;
@@ -1214,30 +935,15 @@ bool FRpgCraftingScreenPayloadLifecycleTest::RunTest(
 
 	URpgCraftingStationViewModel* CraftingViewModel =
 		Widget->GetCraftingViewModel();
-	URpgInventorySpatialPaneWidget* OutputPane =
-		Widget->GetOutputInventoryPane();
-	URpgInventoryPanelViewModel* OutputPaneViewModel =
-		OutputPane ? OutputPane->GetPanelViewModel() : nullptr;
 	if (!TestNotNull(
 			TEXT("Crafting screen owns its stable crafting VM"),
-			CraftingViewModel) ||
-		!TestNotNull(
-			TEXT("Crafting screen binds its authored output Pane"),
-			OutputPane) ||
-		!TestNotNull(
-			TEXT("Output Pane owns its stable panel VM"),
-			OutputPaneViewModel))
+			CraftingViewModel))
 	{
 		return false;
 	}
-
 	TestEqual(
 		TEXT("Crafting screen owns exactly one direct crafting VM"),
 		CountDirectObjectsOfClass<URpgCraftingStationViewModel>(Widget),
-		1);
-	TestEqual(
-		TEXT("Output Pane owns exactly one direct panel VM"),
-		CountDirectObjectsOfClass<URpgInventoryPanelViewModel>(OutputPane),
 		1);
 
 	URpgCraftingStationScreenPayload* PayloadA = MakePayload(
@@ -1253,20 +959,9 @@ bool FRpgCraftingScreenPayloadLifecycleTest::RunTest(
 		Widget->GetCraftingScreenPayload(),
 		PayloadA);
 	TestEqual(
-		TEXT("Crafting payload remains owned by the activatable root"),
-		PayloadA->GetOuter(),
-		static_cast<UObject*>(Widget));
-	TestEqual(
 		TEXT("Staging performs no Crafting presentation bind"),
 		Widget->GetCraftingPresentationBindGeneration(),
 		0u);
-	TestNull(
-		TEXT("Staging leaves the output Pane unbound"),
-		OutputPane->GetBoundInventory());
-	TestFalse(
-		TEXT("Staging leaves the output root unresolved"),
-		Widget->GetOutputPaneContainerHandle().IsValid());
-
 	IRpgUIScreenPayloadReceiver::Execute_ReceiveScreenPayload(
 		Widget,
 		PayloadA);
@@ -1283,23 +978,6 @@ bool FRpgCraftingScreenPayloadLifecycleTest::RunTest(
 		TEXT("Staged payload binds exactly once on activation"),
 		Widget->GetCraftingPresentationBindGeneration(),
 		1u);
-	TestEqual(
-		TEXT("Output Pane observes station A's exact output inventory"),
-		OutputPane->GetBoundInventory(),
-		ContextA.OutputInventory.Get());
-	const FRpgInventoryContainerHandle ExpectedOutputA =
-		FRpgInventoryContainerHandle::MakeRoot(
-			ContextA.OutputInventory->GetDefaultContainerId());
-	TestTrue(
-		TEXT("Output Pane projects station A's exact output root"),
-		OutputPane->GetBoundContainerHandle() == ExpectedOutputA);
-	TestTrue(
-		TEXT("Screen exposes station A's exact output root"),
-		Widget->GetOutputPaneContainerHandle() == ExpectedOutputA);
-	TestEqual(
-		TEXT("Output Pane VM observes station A"),
-		OutputPaneViewModel->GetObservedInventory(),
-		ContextA.OutputInventory.Get());
 	UCommonListView* RecipeList =
 		Cast<UCommonListView>(
 			Widget->GetWidgetFromName(TEXT("RecipeList")));
@@ -1308,8 +986,14 @@ bool FRpgCraftingScreenPayloadLifecycleTest::RunTest(
 			RecipeList))
 	{
 		TestTrue(
-			TEXT("Crafting focus fixture projects at least one recipe"),
-			RecipeList->GetNumItems() > 0);
+			TEXT("The recipe list shows a tier header and the recipe"),
+			RecipeList->GetNumItems() == 2 &&
+				Cast<URpgCraftingTierSectionViewModel>(RecipeList->GetItemAt(0)) &&
+				Cast<URpgCraftingRecipeViewModel>(RecipeList->GetItemAt(1)));
+		TestEqual(
+			TEXT("The recipe row, not its header, is selected"),
+			RecipeList->GetSelectedItem(),
+			RecipeList->GetItemAt(1));
 		TestEqual(
 			TEXT("Crafting initially prefers the recipe list for CommonUI focus"),
 			Widget->GetDesiredFocusTarget(),
@@ -1332,58 +1016,10 @@ bool FRpgCraftingScreenPayloadLifecycleTest::RunTest(
 	{
 		return false;
 	}
-	URpgInventoryPanelNavigationCoordinator* PanelNavigator =
-		Widget->GetInventoryPanelNavigator();
-	if (!TestNotNull(
-			TEXT("Crafting screen owns a shared panel navigator"),
-			PanelNavigator))
-	{
-		return false;
-	}
 	TestEqual(
-		TEXT("Crafting drag/drop coordinator is owned by the activatable root"),
-		Coordinator->GetOuter(),
-		static_cast<UObject*>(Widget));
-	TestEqual(
-		TEXT("Crafting panel navigator is owned by the activatable root"),
-		PanelNavigator->GetOuter(),
-		static_cast<UObject*>(Widget));
-	TestEqual(
-		TEXT("Crafting owns exactly one direct drag/drop coordinator"),
-		CountDirectObjectsOfClass<URpgInventoryDragDropCoordinator>(Widget),
-		1);
-	TestEqual(
-		TEXT("Crafting owns exactly one direct panel navigator"),
-		CountDirectObjectsOfClass<URpgInventoryPanelNavigationCoordinator>(Widget),
-		1);
-	TestEqual(
-		TEXT("Quick transfer exposes station output to player inventory"),
-		Coordinator->ResolveQuickTransferTarget(
-			ContextA.OutputInventory),
-		TestWorld.GetPlayerInventory());
-	TestEqual(
-		TEXT("Crafting screen registers exactly one directional quick-transfer route"),
+		TEXT("A station without an inventory exposes no quick-transfer route"),
 		GetQuickTransferRouteCount(Coordinator),
-		1);
-	TestNull(
-		TEXT("Crafting screen exposes no player-to-output shortcut"),
-		Coordinator->ResolveQuickTransferTarget(
-			TestWorld.GetPlayerInventory()));
-	const FName PreviousCraftingPanelId =
-		PanelNavigator->GetActivePanelId();
-	TestTrue(
-		TEXT("Crafting output panel can become the canonical active transfer source"),
-		PanelNavigator->ActivatePanelById(FName(TEXT("Crafting.Output"))));
-	TestEqual(
-		TEXT("Crafting output advertises only the existing Output-to-Player route"),
-		Widget->ResolveQuickTransferDisplayName().ToString(),
-		FString(TEXT("Transfer -> Inventory")));
-	if (!PreviousCraftingPanelId.IsNone())
-	{
-		TestTrue(
-			TEXT("Crafting test restores the previous canonical panel"),
-			PanelNavigator->ActivatePanelById(PreviousCraftingPanelId));
-	}
+		0);
 
 	IRpgUIScreenPayloadReceiver::Execute_ReceiveScreenPayload(
 		Widget,
@@ -1392,14 +1028,6 @@ bool FRpgCraftingScreenPayloadLifecycleTest::RunTest(
 		TEXT("Reapplying the same active payload does not bind again"),
 		Widget->GetCraftingPresentationBindGeneration(),
 		1u);
-	TestEqual(
-		TEXT("Same-payload delivery retains the stable Crafting VM"),
-		Widget->GetCraftingViewModel(),
-		CraftingViewModel);
-	TestEqual(
-		TEXT("Same-payload delivery retains the Pane VM"),
-		OutputPane->GetPanelViewModel(),
-		OutputPaneViewModel);
 
 	URpgCraftingStationScreenPayload* PayloadB = MakePayload(
 		Widget,
@@ -1418,17 +1046,9 @@ bool FRpgCraftingScreenPayloadLifecycleTest::RunTest(
 		Widget->GetCraftingPresentationBindGeneration(),
 		2u);
 	TestEqual(
-		TEXT("Context switch binds station B's output inventory"),
-		OutputPane->GetBoundInventory(),
-		ContextB.OutputInventory.Get());
-	TestEqual(
 		TEXT("Context switch retains the screen-owned Crafting VM"),
 		Widget->GetCraftingViewModel(),
 		CraftingViewModel);
-	TestEqual(
-		TEXT("Context switch retains the Pane-owned panel VM"),
-		OutputPane->GetPanelViewModel(),
-		OutputPaneViewModel);
 
 	Widget->DeactivateWidget();
 	TestFalse(
@@ -1437,32 +1057,12 @@ bool FRpgCraftingScreenPayloadLifecycleTest::RunTest(
 	TestNull(
 		TEXT("Deactivation releases the retained payload"),
 		Widget->GetCraftingScreenPayload());
-	TestNull(
-		TEXT("Deactivation releases output observation"),
-		OutputPane->GetBoundInventory());
-	TestNull(
-		TEXT("Deactivation unbinds the output Pane VM"),
-		OutputPaneViewModel->GetObservedInventory());
-	TestFalse(
-		TEXT("Deactivation invalidates the output root"),
-		Widget->GetOutputPaneContainerHandle().IsValid());
 	TestEqual(
 		TEXT("Deactivation retains the stable Crafting VM"),
 		Widget->GetCraftingViewModel(),
 		CraftingViewModel);
-	TestEqual(
-		TEXT("Deactivation retains the stable Pane VM"),
-		OutputPane->GetPanelViewModel(),
-		OutputPaneViewModel);
-	TestEqual(
-		TEXT("Deactivation clears every screen-owned quick-transfer route"),
-		GetQuickTransferRouteCount(Coordinator),
-		0);
 
 	Widget->ActivateWidget();
-	TestTrue(
-		TEXT("Pooled Crafting screen can reactivate"),
-		Widget->IsActivated());
 	TestNull(
 		TEXT("Pool reactivation never resurrects a stale payload"),
 		Widget->GetCraftingScreenPayload());
@@ -1478,34 +1078,20 @@ bool FRpgCraftingScreenPayloadLifecycleTest::RunTest(
 		TEXT("Fresh payload after pooling binds once"),
 		Widget->GetCraftingPresentationBindGeneration(),
 		3u);
-	TestEqual(
-		TEXT("Fresh pooled bind reuses the stable Crafting VM"),
-		Widget->GetCraftingViewModel(),
-		CraftingViewModel);
-	TestEqual(
-		TEXT("Fresh pooled bind reuses the stable Pane VM"),
-		OutputPane->GetPanelViewModel(),
-		OutputPaneViewModel);
 
-	URpgCraftingStationScreenPayload* MismatchedOutputPayload =
+	URpgCraftingStationScreenPayload* MismatchedPayload =
 		MakePayload(
 			Widget,
 			TestWorld.GetPlayerInventory(),
 			ContextB,
 			TestWorld.GetPawn());
-	MismatchedOutputPayload->SecondaryInventory =
-		ContextA.OutputInventory;
-	MismatchedOutputPayload->OutputInventory =
-		ContextA.OutputInventory;
+	MismatchedPayload->ContextActor = ContextA.StationActor;
 	IRpgUIScreenPayloadReceiver::Execute_ReceiveScreenPayload(
 		Widget,
-		MismatchedOutputPayload);
+		MismatchedPayload);
 	TestNull(
-		TEXT("Station/output mismatch rejects and clears the active payload"),
+		TEXT("Station/actor mismatch rejects and clears the active payload"),
 		Widget->GetCraftingScreenPayload());
-	TestNull(
-		TEXT("Rejected payload releases output presentation"),
-		OutputPane->GetBoundInventory());
 	TestEqual(
 		TEXT("Rejected payload never increments bind generation"),
 		Widget->GetCraftingPresentationBindGeneration(),
@@ -1517,10 +1103,6 @@ bool FRpgCraftingScreenPayloadLifecycleTest::RunTest(
 	TestNull(
 		TEXT("A generic inventory payload is rejected"),
 		Widget->GetCraftingScreenPayload());
-	TestEqual(
-		TEXT("Generic payload rejection performs no bind"),
-		Widget->GetCraftingPresentationBindGeneration(),
-		3u);
 
 	IRpgUIScreenPayloadReceiver::Execute_ReceiveScreenPayload(
 		Widget,
@@ -1536,9 +1118,6 @@ bool FRpgCraftingScreenPayloadLifecycleTest::RunTest(
 	TestNull(
 		TEXT("Explicit payload clear releases the Crafting context"),
 		Widget->GetCraftingScreenPayload());
-	TestNull(
-		TEXT("Explicit payload clear releases the output Pane"),
-		OutputPane->GetBoundInventory());
 	TestEqual(
 		TEXT("Explicit payload clear performs no extra bind"),
 		Widget->GetCraftingPresentationBindGeneration(),

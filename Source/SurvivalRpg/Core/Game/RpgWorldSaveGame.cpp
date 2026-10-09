@@ -210,33 +210,35 @@ bool URpgWorldSaveGame::ValidateForLoad(FString& OutError) const
 			return false;
 		}
 	}
-	TSet<FGuid> SavedJobIds;
+	TSet<FGuid> SavedOrderIds;
 	for (const auto& Pair : CraftingStations)
 	{
 		const FRpgCraftingStationSaveData& Station = Pair.Value;
-		if (Pair.Key.IsNone() || Station.StationId != Pair.Key || !Station.OutputGridSize.IsValid() ||
-			!RpgWorldSaveGame::ValidateGraphEnvelope(Station.OutputInventoryGraph, GlobalItemIds, nullptr, OutError))
+		if (Pair.Key.IsNone() || Station.StationId != Pair.Key)
 		{
-			OutError = FString::Printf(TEXT("Crafting station '%s' has invalid identity/output state: %s"), *Pair.Key.ToString(), *OutError);
+			OutError = FString::Printf(TEXT("Crafting station '%s' has an invalid identity."), *Pair.Key.ToString());
 			return false;
 		}
-		for (const FRpgCraftingJobSaveData& Job : Station.Jobs)
+		if (!Station.bHasOrder)
 		{
-			if (!Job.JobId.IsValid() || SavedJobIds.Contains(Job.JobId) || Job.Recipe.IsNull() ||
-				Job.QuantityTotal <= 0 || Job.QuantityCompleted < 0 || Job.QuantityCompleted >= Job.QuantityTotal ||
-				Job.State > 3 || !FMath::IsFinite(Job.RemainingTime) || Job.RemainingTime < 0.0f)
+			continue;
+		}
+		const FRpgCraftingOrderSaveData& Order = Station.Order;
+		if (!Order.OrderId.IsValid() || SavedOrderIds.Contains(Order.OrderId) || Order.Recipe.IsNull() || Order.TargetContainerId.IsNone() ||
+			Order.QuantityTotal <= 0 || Order.QuantityCompleted < 0 || Order.QuantityCompleted >= Order.QuantityTotal ||
+			Order.State > 3 || !FMath::IsFinite(Order.RemainingTime) || Order.RemainingTime < 0.0f ||
+			(!Order.bUnitPaid && !Order.UnitCredits.IsEmpty()))
+		{
+			OutError = TEXT("Crafting save contains an invalid or duplicate order.");
+			return false;
+		}
+		SavedOrderIds.Add(Order.OrderId);
+		for (const FRpgCraftingRefundSaveData& Refund : Order.UnitCredits)
+		{
+			if (Refund.ItemDefinition.IsNull() || Refund.Count <= 0 || Refund.InventoryId.IsNone())
 			{
-				OutError = TEXT("Crafting save contains invalid or duplicate unfinished jobs.");
+				OutError = TEXT("Crafting save contains an invalid refund claim.");
 				return false;
-			}
-			SavedJobIds.Add(Job.JobId);
-			for (const FRpgCraftingRefundSaveData& Refund : Job.Refunds)
-			{
-				if (Refund.ItemDefinition.IsNull() || Refund.Count <= 0 || Refund.InventoryId.IsNone())
-				{
-					OutError = TEXT("Crafting save contains an invalid refund claim.");
-					return false;
-				}
 			}
 		}
 	}

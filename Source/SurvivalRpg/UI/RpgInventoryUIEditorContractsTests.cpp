@@ -155,23 +155,13 @@ bool FRpgInventoryUIRequiredBindWidgetsTest::RunTest(
 		{ URpgInventorySpatialPaneWidget::StaticClass(), TEXT("SpatialGrid") },
 		{ URpgBaseResourceListWidget::StaticClass(), TEXT("ResourceList") },
 		{ URpgCraftingActionButtonWidget::StaticClass(), TEXT("Text") },
-		{ URpgCraftingStationWidget::StaticClass(), TEXT("OutputInventoryPane") },
 		{ URpgCraftingStationWidget::StaticClass(), TEXT("RecipeList") },
 		{ URpgCraftingStationWidget::StaticClass(), TEXT("IngredientList") },
-		{ URpgCraftingStationWidget::StaticClass(), TEXT("CraftingJobsList") },
-		{ URpgCraftingStationWidget::StaticClass(), TEXT("RecipeNameText") },
-		{ URpgCraftingStationWidget::StaticClass(), TEXT("RecipeDescriptionText") },
-		{ URpgCraftingStationWidget::StaticClass(), TEXT("CraftTimeText") },
-		{ URpgCraftingStationWidget::StaticClass(), TEXT("CraftQuantityText") },
-		{ URpgCraftingStationWidget::StaticClass(), TEXT("RecipeIcon") },
 		{ URpgCraftingStationWidget::StaticClass(), TEXT("CraftButton") },
 		{ URpgCraftingStationWidget::StaticClass(), TEXT("PauseButton") },
 		{ URpgCraftingStationWidget::StaticClass(), TEXT("QuantityMinusButton") },
 		{ URpgCraftingStationWidget::StaticClass(), TEXT("QuantityPlusButton") },
-		{ URpgCraftingStationWidget::StaticClass(), TEXT("QuantityFiveButton") },
-		{ URpgCraftingStationWidget::StaticClass(), TEXT("QuantityTenButton") },
-		{ URpgCraftingStationWidget::StaticClass(), TEXT("QuantityMaxButton") },
-		{ URpgCraftingStationWidget::StaticClass(), TEXT("AutoDepositCheckBox") }
+		{ URpgCraftingStationWidget::StaticClass(), TEXT("QuantityMaxButton") }
 	};
 
 	for (const FRequiredWidgetProperty& Required :

@@ -7,58 +7,6 @@
 #include "SurvivalRpg/Base/RpgBaseCampActor.h"
 #include "SurvivalRpg/Base/RpgBaseStorageStationComponent.h"
 #include "SurvivalRpg/Base/RpgPersonalStorageLockerActor.h"
-#include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
-#include "UObject/UObjectIterator.h"
-
-namespace
-{
-	void GatherUiActionCraftingStationsForOutputInventory(
-		const URpgInventoryManagerComponent* Inventory,
-		TArray<const URpgCraftingStationComponent*>& OutStations)
-	{
-		OutStations.Reset();
-		if (!Inventory)
-		{
-			return;
-		}
-
-		const UWorld* InventoryWorld = Inventory->GetWorld();
-		auto AddMatchingStation =
-			[Inventory, InventoryWorld, &OutStations](
-				const URpgCraftingStationComponent* CraftingStation)
-			{
-				if (IsValid(CraftingStation) &&
-					!CraftingStation->HasAnyFlags(
-						RF_ClassDefaultObject | RF_ArchetypeObject) &&
-					CraftingStation->GetOutputInventory() == Inventory &&
-					(!InventoryWorld ||
-						CraftingStation->GetWorld() == InventoryWorld))
-				{
-					OutStations.AddUnique(CraftingStation);
-				}
-			};
-
-		if (const AActor* InventoryOwner = Inventory->GetOwner())
-		{
-			TInlineComponentArray<URpgCraftingStationComponent*> OwnerStations;
-			InventoryOwner->GetComponents(OwnerStations);
-			for (const URpgCraftingStationComponent* CraftingStation :
-				OwnerStations)
-			{
-				AddMatchingStation(CraftingStation);
-			}
-		}
-		if (!OutStations.IsEmpty())
-		{
-			return;
-		}
-
-		for (TObjectIterator<URpgCraftingStationComponent> It; It; ++It)
-		{
-			AddMatchingStation(*It);
-		}
-	}
-}
 
 AActor* FRpgInventoryUiActionDomainHandler::GetOwner() const
 {
@@ -90,25 +38,6 @@ bool FRpgInventoryUiActionDomainHandler::EvaluateInventoryAccess(
 	}
 
 	const AActor* RequestingActor = GetRequestingActor();
-	TArray<const URpgCraftingStationComponent*> CraftingStations;
-	GatherUiActionCraftingStationsForOutputInventory(
-		Inventory,
-		CraftingStations);
-	if (!CraftingStations.IsEmpty())
-	{
-		// Shared output inventories fail closed unless every live claimant
-		// authorizes the requesting actor.
-		for (const URpgCraftingStationComponent* CraftingStation :
-			CraftingStations)
-		{
-			if (!CraftingStation->CanActorAccess(RequestingActor))
-			{
-				return false;
-			}
-		}
-		return true;
-	}
-
 	const AActor* InventoryOwner = Inventory->GetOwner();
 	if (const ARpgPersonalStorageLockerActor* Locker =
 			Cast<ARpgPersonalStorageLockerActor>(InventoryOwner))
@@ -209,13 +138,7 @@ bool FRpgInventoryUiActionDomainHandler::IsUiTransferDirectionAllowed(
 		}
 	}
 
-	// Crafting owns deposits into output buffers. UI actions may only
-	// reorder an output internally or withdraw from it.
-	TArray<const URpgCraftingStationComponent*> CraftingStations;
-	GatherUiActionCraftingStationsForOutputInventory(
-		TargetInventory,
-		CraftingStations);
-	return CraftingStations.IsEmpty();
+	return true;
 }
 
 bool FRpgInventoryUiActionDomainHandler::CanAccessBaseStorageStation(
@@ -349,15 +272,6 @@ void FRpgInventoryUiActionDomainHandler::
 		Result,
 		Item,
 		FeedbackStackCount);
-}
-
-void FRpgInventoryUiActionDomainHandler::RunQuickTransferCommand(
-	URpgInventoryManagerComponent* SourceInventory,
-	URpgInventoryManagerComponent* TargetInventory,
-	const FRpgInventoryQuickTransferRequest& Request) const
-{
-	FRpgInventoryTransactionActionHandler(GetMutableActionComponent())
-		.QuickTransferItem(SourceInventory, TargetInventory, Request);
 }
 
 bool FRpgInventoryUiActionDomainHandler::TryReplayRecentSplitResult(

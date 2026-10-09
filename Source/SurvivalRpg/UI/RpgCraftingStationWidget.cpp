@@ -1,9 +1,9 @@
 #include "RpgCraftingStationWidget.h"
 
+#include "Blueprint/IUserObjectListEntry.h"
 #include "CommonLazyImage.h"
 #include "CommonListView.h"
 #include "CommonTextBlock.h"
-#include "Components/CheckBox.h"
 #include "Engine/DataTable.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
@@ -17,11 +17,8 @@
 #include "SurvivalRpg/Inventory/RpgInventoryUiActionComponent.h"
 #include "SurvivalRpg/Mvvm/Crafting/RpgCraftingViewModels.h"
 #include "SurvivalRpg/UI/RpgCraftingActionButtonWidget.h"
-#include "SurvivalRpg/UI/RpgCraftingJobEntryWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
 #include "SurvivalRpg/UI/RpgInventoryScreenPresentationContext.h"
-#include "SurvivalRpg/UI/RpgInventorySpatialPaneWidget.h"
-#include "SurvivalRpg/UI/RpgInventorySpatialGridWidget.h"
 #include "SurvivalRpg/UI/RpgPlayerInventoryPaneWidget.h"
 #include "TimerManager.h"
 
@@ -45,10 +42,10 @@ URpgCraftingStationWidget::GetCraftingPlayerInventoryViewModel() const
 
 namespace
 {
-	template <typename ViewModelType>
+	template <typename ItemType>
 	void ReconcileListItems(
 		UCommonListView* ListView,
-		const TArray<ViewModelType*>& DesiredItems)
+		const TArray<ItemType*>& DesiredItems)
 	{
 		if (!ListView)
 		{
@@ -66,13 +63,6 @@ namespace
 		{
 			ListView->SetListItems(DesiredItems);
 		}
-	}
-
-	FText MakeCraftTimeText(float Seconds)
-	{
-		return FText::Format(
-			NSLOCTEXT("RpgCrafting", "CraftTimeFormat", "{0} s"),
-			FText::AsNumber(FMath::Max(0.0f, Seconds)));
 	}
 }
 
@@ -95,9 +85,13 @@ void URpgCraftingStationWidget::ValidateCompiledDefaults(
 		/*bRequired=*/ true);
 	ValidateCommonInputActionRow(
 		CompileLog,
-		TakeAllInputAction,
-		LOCTEXT("TakeAllInputActionLabel", "TakeAllInputAction"),
+		StopOrderInputAction,
+		LOCTEXT("StopOrderInputActionLabel", "StopOrderInputAction"),
 		/*bRequired=*/ false);
+	if (TierSectionEntryClass && !TierSectionEntryClass->ImplementsInterface(UUserObjectListEntry::StaticClass()))
+	{
+		CompileLog.Error(LOCTEXT("TierSectionEntryClassInvalid", "TierSectionEntryClass must implement UserObjectListEntry."));
+	}
 }
 
 #endif
@@ -111,7 +105,7 @@ void URpgCraftingStationWidget::NativeOnInitialized()
 	if (CraftButton)
 	{
 		CraftButton->SetCraftButtonText(
-			NSLOCTEXT("RpgCrafting", "CraftButton", "Craft"));
+			NSLOCTEXT("RpgCrafting", "DefaultStartAction", "Start crafting"));
 	}
 	if (QuantityMinusButton)
 	{
@@ -121,32 +115,20 @@ void URpgCraftingStationWidget::NativeOnInitialized()
 	{
 		QuantityPlusButton->SetCraftButtonText(FText::FromString(TEXT("+")));
 	}
-	if (QuantityFiveButton)
-	{
-		QuantityFiveButton->SetCraftButtonText(FText::FromString(TEXT("5")));
-	}
-	if (QuantityTenButton)
-	{
-		QuantityTenButton->SetCraftButtonText(FText::FromString(TEXT("10")));
-	}
 	if (QuantityMaxButton)
 	{
 		QuantityMaxButton->SetCraftButtonText(
 			NSLOCTEXT("RpgCrafting", "CraftMaxButton", "Max"));
 	}
-	if (TakeAllButton)
+	if (StopOrderButton)
 	{
-		TakeAllButton->SetCraftButtonText(
-			NSLOCTEXT("RpgCrafting", "TakeAllOutputsButton", "Take all"));
+		StopOrderButton->SetCraftButtonText(
+			NSLOCTEXT("RpgCrafting", "StopOrderButton", "Stop remaining"));
 	}
 
 	if (PlayerInventoryPane)
 	{
 		PlayerInventoryPane->ReleaseInventoryPresentation();
-	}
-	if (OutputInventoryPane)
-	{
-		OutputInventoryPane->ReleaseInventoryPresentation();
 	}
 	RefreshSelectedRecipePresentation();
 	RefreshCraftingActionAvailability();
@@ -186,7 +168,7 @@ void URpgCraftingStationWidget::NativeOnDeactivated()
 void URpgCraftingStationWidget::NativeDestruct()
 {
 	UnregisterCraftingActionBindings();
-	StopJobProgressRefresh();
+	StopOrderProgressRefresh();
 	UnbindAuthoredControlEvents();
 	UnbindViewModelDelegates();
 	if (PlayerInventoryPane)
@@ -202,10 +184,6 @@ UWidget* URpgCraftingStationWidget::NativeGetDesiredFocusTarget() const
 	if (RecipeList && RecipeList->GetNumItems() > 0)
 	{
 		return RecipeList;
-	}
-	if (OutputInventoryPane && OutputInventoryPane->GetSpatialGrid())
-	{
-		return OutputInventoryPane->GetSpatialGrid();
 	}
 	return Super::NativeGetDesiredFocusTarget();
 }
@@ -231,52 +209,26 @@ void URpgCraftingStationWidget::UnbindInventoryScreenPresentation()
 
 void URpgCraftingStationWidget::ForwardInventoryInteractionContextToChildren()
 {
-	if (!bCraftingContextBound)
+	if (!bCraftingContextBound || !PlayerInventoryPane)
 	{
 		return;
 	}
 
-	URpgInventoryDragDropCoordinator* Coordinator =
-		GetScreenDragDropCoordinator();
-	URpgInventoryPanelNavigationCoordinator* Navigator =
-		GetScreenPanelNavigationCoordinator();
-
-	if (PlayerInventoryPane)
-	{
-		FRpgInventoryScreenPresentationContext Context;
-		Context.DragDropCoordinator = Coordinator;
-		Context.PanelNavigationCoordinator = Navigator;
-		Context.PresentationHost = this;
-		PlayerInventoryPane->SetInteractionContext(
-			Context,
-			TEXT("Player"));
-	}
-
-	if (OutputInventoryPane)
-	{
-		OutputInventoryPane->SetInteractionContext(
-			Coordinator,
-			Navigator,
-			TEXT("Crafting.Output"),
-			this);
-	}
+	FRpgInventoryScreenPresentationContext Context;
+	Context.DragDropCoordinator = GetScreenDragDropCoordinator();
+	Context.PanelNavigationCoordinator = GetScreenPanelNavigationCoordinator();
+	Context.PresentationHost = this;
+	PlayerInventoryPane->SetInteractionContext(
+		Context,
+		TEXT("Player"));
 }
 
 void URpgCraftingStationWidget::RegisterInventoryScreenNavigationPanels(
 	URpgInventoryPanelNavigationCoordinator* Navigator)
 {
-	if (!Navigator || !bCraftingContextBound)
-	{
-		return;
-	}
-
-	if (PlayerInventoryPane)
+	if (Navigator && bCraftingContextBound && PlayerInventoryPane)
 	{
 		PlayerInventoryPane->RegisterNavigationPanels(Navigator);
-	}
-	if (OutputInventoryPane)
-	{
-		OutputInventoryPane->RegisterNavigationPanel(Navigator);
 	}
 }
 
@@ -286,10 +238,6 @@ void URpgCraftingStationWidget::AppendInventoryScreenSpatialGrids(
 	if (PlayerInventoryPane)
 	{
 		PlayerInventoryPane->AppendSpatialGrids(OutGrids);
-	}
-	if (OutputInventoryPane && OutputInventoryPane->GetSpatialGrid())
-	{
-		OutGrids.AddUnique(OutputInventoryPane->GetSpatialGrid());
 	}
 }
 
@@ -362,33 +310,13 @@ void URpgCraftingStationWidget::RefreshInventoryScreenSpecificInteractionPresent
 
 FText URpgCraftingStationWidget::ResolveQuickTransferDisplayName() const
 {
-	const URpgInventoryPanelNavigationCoordinator* Navigator =
-		GetInventoryPanelNavigator();
-	URpgInventoryManagerComponent* ActiveInventory = Navigator
-		? Navigator->GetActiveInventory()
-		: nullptr;
-	const bool bPlayerPanelActive = Navigator &&
-		Navigator->GetActivePanelId().ToString().StartsWith(TEXT("Player."));
-	if (bPlayerPanelActive ||
-		(ActiveInventory &&
-			((OutputInventory && ActiveInventory == OutputInventory) ||
-				(PlayerInventory && ActiveInventory == PlayerInventory))))
-	{
-		// The station exposes Output -> Player as its only cross-inventory route. Player-pane quick transfers remain
-		// player-internal (for example Gear -> Backpack), so every valid shortcut on this screen targets Inventory.
-		return NSLOCTEXT(
-			"RpgCraftingStationWidget",
-			"QuickTransferOutputToInventory",
-			"Transfer -> Inventory");
-	}
-
 	return Super::ResolveQuickTransferDisplayName();
 }
 
-void URpgCraftingStationWidget::RequestCraftSelectedRecipe()
+void URpgCraftingStationWidget::RequestStartCraftingOrder()
 {
 	if (!bCraftingContextBound || !CraftingViewModel ||
-		!CraftingStation || !CraftingViewModel->CanCraftSelectedRecipe())
+		!CraftingStation || !CraftingViewModel->CanStartOrder())
 	{
 		return;
 	}
@@ -396,7 +324,8 @@ void URpgCraftingStationWidget::RequestCraftSelectedRecipe()
 	URpgCraftingRecipeDefinition* Recipe =
 		CraftingViewModel->GetSelectedRecipe();
 	const int32 Quantity = CraftingViewModel->GetCraftQuantity();
-	if (!Recipe || Quantity <= 0)
+	const FName TargetId = CraftingViewModel->GetSelectedTargetContainerId();
+	if (!Recipe || Quantity <= 0 || TargetId.IsNone())
 	{
 		return;
 	}
@@ -404,26 +333,17 @@ void URpgCraftingStationWidget::RequestCraftSelectedRecipe()
 	if (URpgInventoryUiActionComponent* UiActions =
 		ResolveInventoryUiActionComponent())
 	{
-		UiActions->RequestCraftRecipe(
+		UiActions->RequestStartCraftingOrder(
 			CraftingStation,
 			Recipe,
-			Quantity);
+			Quantity,
+			TargetId);
 	}
 }
 
-void URpgCraftingStationWidget::RequestCancelCraftJob(
-	URpgCraftingJobViewModel* JobViewModel)
+void URpgCraftingStationWidget::RequestStopCraftingOrder()
 {
-	if (!bCraftingContextBound || !CraftingViewModel ||
-		!CraftingStation || !JobViewModel ||
-		!JobViewModel->CanCancelJob() ||
-		!CraftingViewModel->GetJobs().Contains(JobViewModel))
-	{
-		return;
-	}
-
-	const FGuid JobId = JobViewModel->GetJobId();
-	if (!JobId.IsValid())
+	if (!bCraftingContextBound || !CraftingStation || !CraftingStation->HasCraftingOrder())
 	{
 		return;
 	}
@@ -431,13 +351,15 @@ void URpgCraftingStationWidget::RequestCancelCraftJob(
 	if (URpgInventoryUiActionComponent* UiActions =
 		ResolveInventoryUiActionComponent())
 	{
-		UiActions->RequestCancelCraftJob(CraftingStation, JobId);
+		UiActions->RequestStopCraftingOrder(
+			CraftingStation,
+			CraftingStation->GetCurrentOrder().OrderId);
 	}
 }
 
 void URpgCraftingStationWidget::RequestToggleCraftingPause()
 {
-	if (!bCraftingContextBound || !CraftingStation)
+	if (!bCraftingContextBound || !CraftingStation || !CraftingStation->HasCraftingOrder())
 	{
 		return;
 	}
@@ -456,35 +378,50 @@ void URpgCraftingStationWidget::RequestToggleCraftingPause()
 	}
 }
 
-void URpgCraftingStationWidget::
-	RequestSetCraftingOutputAutoDepositEnabled(bool bEnabled)
+void URpgCraftingStationWidget::RequestSelectTargetStorage(FName ContainerId)
 {
-	if (!bCraftingContextBound || !CraftingStation ||
-		CraftingStation->IsCraftingOutputAutoDepositEnabled() == bEnabled)
+	if (!bCraftingContextBound || !CraftingViewModel || ContainerId.IsNone())
 	{
 		return;
 	}
 
-	if (URpgInventoryUiActionComponent* UiActions =
-		ResolveInventoryUiActionComponent())
+	CraftingViewModel->SelectTargetStorage(ContainerId);
+	if (CraftingStation && CraftingStation->HasCraftingOrder() &&
+		CraftingStation->GetCurrentOrder().TargetContainerId != ContainerId)
 	{
-		UiActions->RequestSetCraftingOutputAutoDepositEnabled(
-			CraftingStation,
-			bEnabled);
+		if (URpgInventoryUiActionComponent* UiActions =
+			ResolveInventoryUiActionComponent())
+		{
+			UiActions->RequestSetCraftingOrderTarget(
+				CraftingStation,
+				CraftingStation->GetCurrentOrder().OrderId,
+				ContainerId);
+		}
 	}
 }
 
-void URpgCraftingStationWidget::RequestTakeAllCraftingOutputs()
+void URpgCraftingStationWidget::RequestCycleTargetStorage(int32 Direction)
 {
-	if (!bCraftingContextBound || !CraftingStation || !OutputInventory)
+	if (!bCraftingContextBound || !CraftingViewModel)
 	{
 		return;
 	}
 
-	if (URpgInventoryUiActionComponent* UiActions =
-		ResolveInventoryUiActionComponent())
+	const TArray<URpgCraftingStorageOptionViewModel*> Options =
+		CraftingViewModel->GetTargetStorageOptions();
+	if (Options.IsEmpty() || Direction == 0)
 	{
-		UiActions->RequestTakeAllCraftingOutputs(CraftingStation);
+		return;
+	}
+	const FName Current = CraftingViewModel->GetSelectedTargetContainerId();
+	int32 Index = Options.IndexOfByPredicate([Current](const URpgCraftingStorageOptionViewModel* Option)
+	{
+		return Option && Option->GetContainerId() == Current;
+	});
+	Index = (FMath::Max(0, Index) + (Direction > 0 ? 1 : -1) + Options.Num()) % Options.Num();
+	if (Options[Index])
+	{
+		RequestSelectTargetStorage(Options[Index]->GetContainerId());
 	}
 }
 
@@ -501,7 +438,6 @@ void URpgCraftingStationWidget::ApplyCraftingScreenPayload(UObject* Payload)
 	const bool bContextChanged =
 		CraftingScreenPayload != NewPayload ||
 		PlayerInventory != NewPayload->PlayerInventory ||
-		OutputInventory != NewPayload->OutputInventory ||
 		CraftingStation != NewPayload->CraftingStation ||
 		RequestingActor != NewPayload->RequestingActor;
 	if (bContextChanged)
@@ -511,7 +447,6 @@ void URpgCraftingStationWidget::ApplyCraftingScreenPayload(UObject* Payload)
 
 	CraftingScreenPayload = NewPayload;
 	PlayerInventory = NewPayload->PlayerInventory;
-	OutputInventory = NewPayload->OutputInventory;
 	CraftingStation = NewPayload->CraftingStation;
 	RequestingActor = NewPayload->RequestingActor;
 
@@ -531,24 +466,14 @@ void URpgCraftingStationWidget::ApplyCraftingScreenPayload(UObject* Payload)
 bool URpgCraftingStationWidget::IsPayloadCoherent(
 	const URpgCraftingStationScreenPayload* Payload) const
 {
-	if (!Payload ||
-		Payload->ScreenTag != RpgGameplayTags::UI_Screen_Crafting ||
-		!Payload->PlayerInventory ||
-		Payload->PrimaryInventory != Payload->PlayerInventory ||
-		!Payload->OutputInventory ||
-		Payload->SecondaryInventory != Payload->OutputInventory ||
-		Payload->PlayerInventory == Payload->OutputInventory ||
-		!Payload->CraftingStation ||
-		Payload->ContextComponent != Payload->CraftingStation ||
-		Payload->ContextActor != Payload->CraftingStation->GetOwner() ||
-		Payload->CraftingStation->GetOutputInventory() !=
-			Payload->OutputInventory ||
-		!Payload->RequestingActor)
-	{
-		return false;
-	}
-
-	return true;
+	return Payload &&
+		Payload->ScreenTag == RpgGameplayTags::UI_Screen_Crafting &&
+		Payload->PlayerInventory &&
+		Payload->PrimaryInventory == Payload->PlayerInventory &&
+		Payload->CraftingStation &&
+		Payload->ContextComponent == Payload->CraftingStation &&
+		Payload->ContextActor == Payload->CraftingStation->GetOwner() &&
+		Payload->RequestingActor;
 }
 
 bool URpgCraftingStationWidget::BindCraftingContext()
@@ -557,7 +482,6 @@ bool URpgCraftingStationWidget::BindCraftingContext()
 		!IsActivated() ||
 		!CraftingScreenPayload ||
 		!PlayerInventory ||
-		!OutputInventory ||
 		!CraftingStation ||
 		!RequestingActor)
 	{
@@ -583,7 +507,7 @@ bool URpgCraftingStationWidget::BindCraftingContext()
 	if (GetOwningPlayer())
 	{
 		URpgInventoryManagerComponent* CanonicalPlayerInventory =
-			Coordinator ? Coordinator->GetPlayerInventory() : nullptr;
+			Coordinator->GetPlayerInventory();
 		APawn* OwningPawn = GetOwningPlayerPawn();
 		if (!CanonicalPlayerInventory ||
 			CanonicalPlayerInventory != PlayerInventory ||
@@ -615,49 +539,16 @@ bool URpgCraftingStationWidget::BindCraftingContext()
 		return false;
 	}
 
-	OutputPaneContainerHandle = FRpgInventoryContainerHandle::MakeRoot(
-		OutputInventory->GetDefaultContainerId());
-	if (!OutputPaneContainerHandle.IsValid() ||
-		!OutputInventoryPane ||
-		!OutputInventoryPane->GetSpatialGrid())
-	{
-		UE_LOG(
-			LogRpgCraftingStationWidget,
-			Error,
-			TEXT("%s rejected Crafting presentation because the authored output pane or output root is invalid."),
-			*GetNameSafe(this));
-		ResetCraftingContext();
-		return false;
-	}
-
 	EnsureCraftingViewModels();
-	if (OutputInventoryPane)
-	{
-		OutputInventoryPane->BindInventoryContainer(
-			OutputInventory,
-			OutputPaneContainerHandle);
-	}
-	if (OutputInventoryPane->GetBoundInventory() != OutputInventory ||
-		OutputInventoryPane->GetBoundContainerHandle() !=
-			OutputPaneContainerHandle)
-	{
-		UE_LOG(
-			LogRpgCraftingStationWidget,
-			Error,
-			TEXT("%s rejected Crafting presentation because the output pane failed to bind the exact station-output root."),
-			*GetNameSafe(this));
-		ResetCraftingContext();
-		return false;
-	}
 
 	// Arm the lifecycle guard before either VM can synchronously notify the screen during its first projection build.
 	bCraftingContextBound = true;
-	FRpgInventoryScreenPresentationContext PanePresentationContext;
-	PanePresentationContext.DragDropCoordinator = Coordinator;
-	PanePresentationContext.PanelNavigationCoordinator = Navigator;
-	PanePresentationContext.PresentationHost = this;
 	if (PlayerInventoryPane)
 	{
+		FRpgInventoryScreenPresentationContext PanePresentationContext;
+		PanePresentationContext.DragDropCoordinator = Coordinator;
+		PanePresentationContext.PanelNavigationCoordinator = Navigator;
+		PanePresentationContext.PresentationHost = this;
 		PlayerInventoryPane->BindPlayerInventory(
 			GetOwningPlayer(),
 			PanePresentationContext,
@@ -665,17 +556,18 @@ bool URpgCraftingStationWidget::BindCraftingContext()
 	}
 	if (CraftingViewModel)
 	{
+		CraftingViewModel->SetPresentationCatalog(CategoryCatalog);
 		CraftingViewModel->BindCraftingStation(
 			CraftingStation,
 			RequestingActor);
 	}
 
+	RefreshCategoryItems();
+	RefreshTierOptionItems();
 	RefreshRecipeItems();
 	RefreshSelectedRecipePresentation();
 	RefreshStationHeaderPresentation();
-	RefreshJobItems();
-	ConfigureQuickTransferRoutes();
-	StartJobProgressRefresh();
+	StartOrderProgressRefresh();
 	++CraftingPresentationBindGeneration;
 	return true;
 }
@@ -683,7 +575,7 @@ bool URpgCraftingStationWidget::BindCraftingContext()
 void URpgCraftingStationWidget::ResetCraftingContext()
 {
 	bCraftingContextBound = false;
-	StopJobProgressRefresh();
+	StopOrderProgressRefresh();
 
 	if (URpgInventoryDragDropCoordinator* Coordinator =
 		GetScreenDragDropCoordinator())
@@ -702,37 +594,30 @@ void URpgCraftingStationWidget::ResetCraftingContext()
 	{
 		PlayerInventoryPane->ReleaseInventoryPresentation();
 	}
-	if (OutputInventoryPane)
-	{
-		OutputInventoryPane->ReleaseInventoryPresentation();
-	}
 	if (CraftingViewModel)
 	{
 		CraftingViewModel->UnbindCraftingStation();
 	}
-	if (RecipeList)
+	UCommonListView* Lists[] = {
+		RecipeList,
+		IngredientList,
+		CategoryList,
+		TierFilterList,
+		TargetStorageList,
+		PreviewStatList
+	};
+	for (UCommonListView* List : Lists)
 	{
-		RecipeList->ClearListItems();
-	}
-	if (IngredientList)
-	{
-		IngredientList->ClearListItems();
-	}
-	if (OutputList)
-	{
-		OutputList->ClearListItems();
-	}
-	if (CraftingJobsList)
-	{
-		CraftingJobsList->ClearListItems();
+		if (List)
+		{
+			List->ClearListItems();
+		}
 	}
 
 	CraftingScreenPayload = nullptr;
 	PlayerInventory = nullptr;
-	OutputInventory = nullptr;
 	CraftingStation = nullptr;
 	RequestingActor = nullptr;
-	OutputPaneContainerHandle = FRpgInventoryContainerHandle();
 	RefreshSelectedRecipePresentation();
 	RefreshStationHeaderPresentation();
 	RefreshCraftingActionAvailability();
@@ -779,12 +664,15 @@ void URpgCraftingStationWidget::BindViewModelDelegates()
 		CraftingViewModel->OnRecipesChanged.AddUniqueDynamic(
 			this,
 			&ThisClass::HandleRecipesChanged);
+		CraftingViewModel->OnCategoriesChanged.AddUniqueDynamic(
+			this,
+			&ThisClass::HandleCategoriesChanged);
+		CraftingViewModel->OnTierOptionsChanged.AddUniqueDynamic(
+			this,
+			&ThisClass::HandleTierOptionsChanged);
 		CraftingViewModel->OnSelectedRecipeDetailsChanged.AddUniqueDynamic(
 			this,
 			&ThisClass::HandleSelectedRecipeDetailsChanged);
-		CraftingViewModel->OnJobsChanged.AddUniqueDynamic(
-			this,
-			&ThisClass::HandleJobsChanged);
 	}
 }
 
@@ -795,12 +683,15 @@ void URpgCraftingStationWidget::UnbindViewModelDelegates()
 		CraftingViewModel->OnRecipesChanged.RemoveDynamic(
 			this,
 			&ThisClass::HandleRecipesChanged);
+		CraftingViewModel->OnCategoriesChanged.RemoveDynamic(
+			this,
+			&ThisClass::HandleCategoriesChanged);
+		CraftingViewModel->OnTierOptionsChanged.RemoveDynamic(
+			this,
+			&ThisClass::HandleTierOptionsChanged);
 		CraftingViewModel->OnSelectedRecipeDetailsChanged.RemoveDynamic(
 			this,
 			&ThisClass::HandleSelectedRecipeDetailsChanged);
-		CraftingViewModel->OnJobsChanged.RemoveDynamic(
-			this,
-			&ThisClass::HandleJobsChanged);
 	}
 }
 
@@ -813,15 +704,30 @@ void URpgCraftingStationWidget::BindAuthoredControlEvents()
 		RecipeList->OnItemSelectionChanged().AddUObject(
 			this,
 			&ThisClass::HandleRecipeSelectionChanged);
+		RecipeList->OnGetEntryClassForItem().BindUObject(
+			this,
+			&ThisClass::HandleGetRecipeEntryClass);
+		RecipeList->OnIsItemSelectableOrNavigable().BindUObject(
+			this,
+			&ThisClass::HandleIsRecipeItemSelectable);
 	}
-	if (CraftingJobsList)
+	if (CategoryList)
 	{
-		CraftingJobsList->OnEntryWidgetGenerated().AddUObject(
+		CategoryList->OnItemClicked().AddUObject(
 			this,
-			&ThisClass::HandleJobEntryGenerated);
-		CraftingJobsList->OnEntryWidgetReleased().AddUObject(
+			&ThisClass::HandleCategoryItemClicked);
+	}
+	if (TierFilterList)
+	{
+		TierFilterList->OnItemClicked().AddUObject(
 			this,
-			&ThisClass::HandleJobEntryReleased);
+			&ThisClass::HandleTierOptionClicked);
+	}
+	if (TargetStorageList)
+	{
+		TargetStorageList->OnItemClicked().AddUObject(
+			this,
+			&ThisClass::HandleTargetOptionClicked);
 	}
 	if (CraftButton)
 	{
@@ -835,11 +741,17 @@ void URpgCraftingStationWidget::BindAuthoredControlEvents()
 			this,
 			&ThisClass::HandlePauseClicked);
 	}
-	if (TakeAllButton)
+	if (StopOrderButton)
 	{
-		TakeAllButton->OnClicked().AddUObject(
+		StopOrderButton->OnClicked().AddUObject(
 			this,
-			&ThisClass::HandleTakeAllClicked);
+			&ThisClass::HandleStopOrderClicked);
+	}
+	if (SortDirectionButton)
+	{
+		SortDirectionButton->OnClicked().AddUObject(
+			this,
+			&ThisClass::HandleSortDirectionClicked);
 	}
 	if (QuantityMinusButton)
 	{
@@ -853,29 +765,11 @@ void URpgCraftingStationWidget::BindAuthoredControlEvents()
 			this,
 			&ThisClass::HandleQuantityPlusClicked);
 	}
-	if (QuantityFiveButton)
-	{
-		QuantityFiveButton->OnClicked().AddUObject(
-			this,
-			&ThisClass::HandleQuantityFiveClicked);
-	}
-	if (QuantityTenButton)
-	{
-		QuantityTenButton->OnClicked().AddUObject(
-			this,
-			&ThisClass::HandleQuantityTenClicked);
-	}
 	if (QuantityMaxButton)
 	{
 		QuantityMaxButton->OnClicked().AddUObject(
 			this,
 			&ThisClass::HandleQuantityMaxClicked);
-	}
-	if (AutoDepositCheckBox)
-	{
-		AutoDepositCheckBox->OnCheckStateChanged.AddUniqueDynamic(
-			this,
-			&ThisClass::HandleAutoDepositCheckStateChanged);
 	}
 }
 
@@ -884,21 +778,29 @@ void URpgCraftingStationWidget::UnbindAuthoredControlEvents()
 	if (RecipeList)
 	{
 		RecipeList->OnItemSelectionChanged().RemoveAll(this);
+		RecipeList->OnGetEntryClassForItem().Unbind();
+		RecipeList->OnIsItemSelectableOrNavigable().Unbind();
 	}
-	if (CraftingJobsList)
+	UCommonListView* ClickLists[] = {
+		CategoryList,
+		TierFilterList,
+		TargetStorageList
+	};
+	for (UCommonListView* List : ClickLists)
 	{
-		CraftingJobsList->OnEntryWidgetGenerated().RemoveAll(this);
-		CraftingJobsList->OnEntryWidgetReleased().RemoveAll(this);
+		if (List)
+		{
+			List->OnItemClicked().RemoveAll(this);
+		}
 	}
 
 	URpgCraftingActionButtonWidget* Buttons[] = {
 		CraftButton,
 		PauseButton,
-		TakeAllButton,
+		StopOrderButton,
+		SortDirectionButton,
 		QuantityMinusButton,
 		QuantityPlusButton,
-		QuantityFiveButton,
-		QuantityTenButton,
 		QuantityMaxButton
 	};
 	for (URpgCraftingActionButtonWidget* Button : Buttons)
@@ -908,43 +810,53 @@ void URpgCraftingStationWidget::UnbindAuthoredControlEvents()
 			Button->OnClicked().RemoveAll(this);
 		}
 	}
-	if (AutoDepositCheckBox)
-	{
-		AutoDepositCheckBox->OnCheckStateChanged.RemoveDynamic(
-			this,
-			&ThisClass::HandleAutoDepositCheckStateChanged);
-	}
 }
 
 void URpgCraftingStationWidget::RefreshRecipeItems()
 {
-	const TArray<URpgCraftingRecipeViewModel*> Recipes =
+	const TArray<UObject*> Items =
 		bCraftingContextBound && CraftingViewModel
-			? CraftingViewModel->GetFilteredRecipes()
-			: TArray<URpgCraftingRecipeViewModel*>();
-	ReconcileListItems(RecipeList, Recipes);
+			? CraftingViewModel->GetRecipeListItems()
+			: TArray<UObject*>();
+	ReconcileListItems(RecipeList, Items);
 
-	if (!RecipeList || Recipes.IsEmpty())
+	if (!RecipeList || Items.IsEmpty())
 	{
 		return;
 	}
 
 	URpgCraftingRecipeDefinition* SelectedRecipe =
 		CraftingViewModel ? CraftingViewModel->GetSelectedRecipe() : nullptr;
-	URpgCraftingRecipeViewModel* SelectedRow = nullptr;
-	for (URpgCraftingRecipeViewModel* RecipeRow : Recipes)
+	for (UObject* Item : Items)
 	{
-		if (RecipeRow &&
-			RecipeRow->GetRecipeDefinition() == SelectedRecipe)
+		const URpgCraftingRecipeViewModel* RecipeRow = Cast<URpgCraftingRecipeViewModel>(Item);
+		if (RecipeRow && RecipeRow->GetRecipeDefinition() == SelectedRecipe)
 		{
-			SelectedRow = RecipeRow;
+			if (RecipeList->GetSelectedItem() != Item)
+			{
+				RecipeList->SetSelectedItem(Item);
+			}
 			break;
 		}
 	}
-	if (SelectedRow && RecipeList->GetSelectedItem() != SelectedRow)
-	{
-		RecipeList->SetSelectedItem(SelectedRow);
-	}
+}
+
+void URpgCraftingStationWidget::RefreshCategoryItems()
+{
+	ReconcileListItems(
+		CategoryList,
+		bCraftingContextBound && CraftingViewModel
+			? CraftingViewModel->GetCategoryRows()
+			: TArray<URpgCraftingCategoryViewModel*>());
+}
+
+void URpgCraftingStationWidget::RefreshTierOptionItems()
+{
+	ReconcileListItems(
+		TierFilterList,
+		bCraftingContextBound && CraftingViewModel
+			? CraftingViewModel->GetTierOptions()
+			: TArray<URpgCraftingTierOptionViewModel*>());
 }
 
 void URpgCraftingStationWidget::RefreshSelectedRecipePresentation()
@@ -953,10 +865,6 @@ void URpgCraftingStationWidget::RefreshSelectedRecipePresentation()
 		bCraftingContextBound && CraftingViewModel
 			? CraftingViewModel->GetSelectedRecipe()
 			: nullptr;
-	const int32 Quantity =
-		Recipe && CraftingViewModel
-			? CraftingViewModel->GetCraftQuantity()
-			: 0;
 
 	if (RecipeNameText)
 	{
@@ -968,34 +876,29 @@ void URpgCraftingStationWidget::RefreshSelectedRecipePresentation()
 		RecipeDescriptionText->SetText(
 			Recipe ? Recipe->Description : FText::GetEmpty());
 	}
-	if (CraftTimeText)
-	{
-		CraftTimeText->SetText(
-			Recipe && CraftingViewModel
-				? MakeCraftTimeText(
-					CraftingViewModel->GetSelectedTotalCraftTime())
-				: FText::GetEmpty());
-	}
 	if (CraftQuantityText)
 	{
 		CraftQuantityText->SetText(
-			Recipe ? FText::AsNumber(Quantity) : FText::GetEmpty());
+			Recipe && CraftingViewModel ? FText::AsNumber(CraftingViewModel->GetCraftQuantity()) : FText::GetEmpty());
 	}
 	if (CraftButton)
 	{
-		const FText CraftActionText =
-			CraftingViewModel ? CraftingViewModel->GetCraftActionText() : FText::GetEmpty();
+		const FText StartText =
+			bCraftingContextBound && CraftingViewModel ? CraftingViewModel->GetStartActionText() : FText::GetEmpty();
 		CraftButton->SetCraftButtonText(
-			CraftActionText.IsEmpty()
-				? NSLOCTEXT("RpgCrafting", "CraftButton", "Craft")
-				: CraftActionText);
+			StartText.IsEmpty()
+				? NSLOCTEXT("RpgCrafting", "DefaultStartAction", "Start crafting")
+				: StartText);
 	}
 	if (RecipeIcon)
 	{
-		if (Recipe && !Recipe->Icon.IsNull())
+		const TSoftObjectPtr<UTexture2D> Icon = Recipe && CraftingViewModel
+			? CraftingViewModel->GetPreviewIcon()
+			: TSoftObjectPtr<UTexture2D>();
+		if (!Icon.IsNull())
 		{
 			// The texture size lets the authored ScaleBox keep portrait item icons at their aspect ratio.
-			RecipeIcon->SetBrushFromLazyTexture(Recipe->Icon, /*bMatchSize=*/ true);
+			RecipeIcon->SetBrushFromLazyTexture(Icon, /*bMatchSize=*/ true);
 		}
 		else
 		{
@@ -1003,27 +906,16 @@ void URpgCraftingStationWidget::RefreshSelectedRecipePresentation()
 		}
 	}
 
-	const TArray<URpgCraftingIngredientViewModel*> Ingredients =
-		Recipe && CraftingViewModel
-			? CraftingViewModel->GetSelectedIngredients()
-			: TArray<URpgCraftingIngredientViewModel*>();
-	ReconcileListItems(IngredientList, Ingredients);
-
-	const TArray<URpgCraftingOutputViewModel*> Outputs =
-		Recipe && CraftingViewModel
-			? CraftingViewModel->GetSelectedOutputs()
-			: TArray<URpgCraftingOutputViewModel*>();
-	ReconcileListItems(OutputList, Outputs);
-	RefreshCraftingActionAvailability();
-}
-
-void URpgCraftingStationWidget::RefreshJobItems()
-{
-	const TArray<URpgCraftingJobViewModel*> Jobs =
-		bCraftingContextBound && CraftingViewModel
-			? CraftingViewModel->GetJobs()
-			: TArray<URpgCraftingJobViewModel*>();
-	ReconcileListItems(CraftingJobsList, Jobs);
+	const bool bHasDetails = bCraftingContextBound && CraftingViewModel;
+	ReconcileListItems(
+		IngredientList,
+		Recipe && bHasDetails ? CraftingViewModel->GetSelectedIngredients() : TArray<URpgCraftingIngredientViewModel*>());
+	ReconcileListItems(
+		PreviewStatList,
+		Recipe && bHasDetails ? CraftingViewModel->GetPreviewRows() : TArray<URpgCraftingDetailRowViewModel*>());
+	ReconcileListItems(
+		TargetStorageList,
+		bHasDetails ? CraftingViewModel->GetTargetStorageOptions() : TArray<URpgCraftingStorageOptionViewModel*>());
 	RefreshCraftingActionAvailability();
 }
 
@@ -1031,129 +923,83 @@ void URpgCraftingStationWidget::RefreshCraftingActionAvailability()
 {
 	const bool bHasContext =
 		bCraftingContextBound && CraftingStation && CraftingViewModel;
-	const int32 Quantity =
-		bHasContext ? CraftingViewModel->GetCraftQuantity() : 0;
-	const int32 Maximum =
-		bHasContext
-			? CraftingViewModel->GetMaxSelectedCraftQuantity()
-			: 0;
+	const bool bHasOrder = bHasContext && CraftingStation->HasCraftingOrder();
+	const bool bAccess = bHasContext && RequestingActor && CraftingStation->CanActorAccess(RequestingActor);
+	const int32 Quantity = bHasContext ? CraftingViewModel->GetCraftQuantity() : 0;
+	const bool bHasSelection = bHasContext && CraftingViewModel->GetSelectedRecipe();
+	const int32 MaxOrderQuantity = bHasContext ? CraftingStation->GetMaxOrderQuantity() : 0;
 
 	if (CraftButton)
 	{
-		CraftButton->SetIsEnabled(
-			bHasContext &&
-			CraftingViewModel->CanCraftSelectedRecipe());
+		CraftButton->SetIsEnabled(bHasContext && CraftingViewModel->CanStartOrder());
 	}
 	if (PauseButton)
 	{
-		PauseButton->SetIsEnabled(
-			bHasContext &&
-			RequestingActor &&
-			CraftingStation->CanActorAccess(RequestingActor));
+		PauseButton->SetIsEnabled(bHasOrder && bAccess);
 		PauseButton->SetCraftButtonText(
-			bHasContext && CraftingStation->IsCraftingPaused()
+			bHasOrder && CraftingStation->IsCraftingPaused()
 				? NSLOCTEXT("RpgCrafting", "ResumeCraftingButton", "Resume")
 				: NSLOCTEXT("RpgCrafting", "PauseCraftingButton", "Pause"));
+	}
+	if (StopOrderButton)
+	{
+		StopOrderButton->SetIsEnabled(bHasOrder && bAccess);
 	}
 
 	// The quantity controls keep their authored visibility so the details layout does not jump; they only disable.
 	if (QuantityMinusButton)
 	{
-		QuantityMinusButton->SetIsEnabled(Quantity > 1);
+		QuantityMinusButton->SetIsEnabled(bHasSelection && Quantity > 1);
 	}
 	if (QuantityPlusButton)
 	{
-		QuantityPlusButton->SetIsEnabled(
-			Maximum > 0 && Quantity < Maximum);
-	}
-	if (QuantityFiveButton)
-	{
-		QuantityFiveButton->SetIsEnabled(
-			Maximum >= 5 && Quantity != 5);
-	}
-	if (QuantityTenButton)
-	{
-		QuantityTenButton->SetIsEnabled(
-			Maximum >= 10 && Quantity != 10);
+		QuantityPlusButton->SetIsEnabled(bHasSelection && Quantity < MaxOrderQuantity);
 	}
 	if (QuantityMaxButton)
 	{
-		QuantityMaxButton->SetIsEnabled(
-			Maximum > 1 && Quantity < Maximum);
+		QuantityMaxButton->SetIsEnabled(bHasSelection);
 	}
-
-	if (AutoDepositCheckBox)
+	if (SortDirectionButton)
 	{
-		TGuardValue<bool> ApplyingGuard(
-			bApplyingAutoDepositCheckState,
-			true);
-		AutoDepositCheckBox->SetIsEnabled(
-			bHasContext &&
-			CraftingStation->HasCraftingOutputAutoDepositAccess());
-		AutoDepositCheckBox->SetIsChecked(
-			bHasContext &&
-			CraftingStation->IsCraftingOutputAutoDepositEnabled());
+		SortDirectionButton->SetIsEnabled(bHasContext);
 	}
 
-	const bool bCanCraft =
-		bHasContext && CraftingViewModel->CanCraftSelectedRecipe();
 	if (CraftActionBinding.IsValid())
 	{
-		CraftActionBinding.SetDisplayInActionBar(bCanCraft);
+		CraftActionBinding.SetDisplayInActionBar(bHasContext && CraftingViewModel->CanStartOrder());
 	}
 	if (TogglePauseActionBinding.IsValid())
 	{
-		TogglePauseActionBinding.SetDisplayInActionBar(bHasContext);
+		TogglePauseActionBinding.SetDisplayInActionBar(bHasOrder);
 	}
-	if (TakeAllActionBinding.IsValid())
+	if (StopOrderActionBinding.IsValid())
 	{
-		TakeAllActionBinding.SetDisplayInActionBar(bHasContext);
+		StopOrderActionBinding.SetDisplayInActionBar(bHasOrder);
 	}
 }
 
-void URpgCraftingStationWidget::ConfigureQuickTransferRoutes()
+void URpgCraftingStationWidget::StartOrderProgressRefresh()
 {
-	URpgInventoryDragDropCoordinator* Coordinator =
-		GetScreenDragDropCoordinator();
-	if (!Coordinator)
-	{
-		return;
-	}
-
-	Coordinator->ClearQuickTransferTargets();
-	if (OutputInventory && PlayerInventory &&
-		OutputInventory != PlayerInventory)
-	{
-		// The station tray is withdrawal-only. The authoritative transfer policy independently rejects forged
-		// Player -> Output requests, while this screen exposes only the intended convenience direction.
-		Coordinator->SetQuickTransferTarget(
-			OutputInventory,
-			PlayerInventory);
-	}
-}
-
-void URpgCraftingStationWidget::StartJobProgressRefresh()
-{
-	StopJobProgressRefresh();
+	StopOrderProgressRefresh();
 	if (UWorld* World = GetWorld();
-		World && JobProgressRefreshInterval > 0.0f)
+		World && OrderProgressRefreshInterval > 0.0f)
 	{
 		World->GetTimerManager().SetTimer(
-			JobProgressTimer,
+			OrderProgressTimer,
 			this,
-			&ThisClass::HandleJobProgressTimer,
-			FMath::Max(0.05f, JobProgressRefreshInterval),
+			&ThisClass::HandleOrderProgressTimer,
+			FMath::Max(0.05f, OrderProgressRefreshInterval),
 			true);
 	}
 }
 
-void URpgCraftingStationWidget::StopJobProgressRefresh()
+void URpgCraftingStationWidget::StopOrderProgressRefresh()
 {
 	if (UWorld* World = GetWorld())
 	{
-		World->GetTimerManager().ClearTimer(JobProgressTimer);
+		World->GetTimerManager().ClearTimer(OrderProgressTimer);
 	}
-	JobProgressTimer.Invalidate();
+	OrderProgressTimer.Invalidate();
 }
 
 void URpgCraftingStationWidget::RegisterCraftingActionBindings()
@@ -1168,7 +1014,7 @@ void URpgCraftingStationWidget::RegisterCraftingActionBindings()
 				true,
 				FSimpleDelegate::CreateUObject(
 					this,
-					&ThisClass::RequestCraftSelectedRecipe)));
+					&ThisClass::RequestStartCraftingOrder)));
 	}
 	if (IsActionRowValid(TogglePauseInputAction))
 	{
@@ -1180,15 +1026,15 @@ void URpgCraftingStationWidget::RegisterCraftingActionBindings()
 					this,
 					&ThisClass::RequestToggleCraftingPause)));
 	}
-	if (IsActionRowValid(TakeAllInputAction))
+	if (IsActionRowValid(StopOrderInputAction))
 	{
-		TakeAllActionBinding = RegisterUIActionBinding(
+		StopOrderActionBinding = RegisterUIActionBinding(
 			FBindUIActionArgs(
-				TakeAllInputAction,
+				StopOrderInputAction,
 				true,
 				FSimpleDelegate::CreateUObject(
 					this,
-					&ThisClass::RequestTakeAllCraftingOutputs)));
+					&ThisClass::RequestStopCraftingOrder)));
 	}
 }
 
@@ -1202,13 +1048,13 @@ void URpgCraftingStationWidget::UnregisterCraftingActionBindings()
 	{
 		TogglePauseActionBinding.Unregister();
 	}
-	if (TakeAllActionBinding.IsValid())
+	if (StopOrderActionBinding.IsValid())
 	{
-		TakeAllActionBinding.Unregister();
+		StopOrderActionBinding.Unregister();
 	}
 	CraftActionBinding = FUIActionBindingHandle();
 	TogglePauseActionBinding = FUIActionBindingHandle();
-	TakeAllActionBinding = FUIActionBindingHandle();
+	StopOrderActionBinding = FUIActionBindingHandle();
 }
 
 URpgInventoryUiActionComponent*
@@ -1219,6 +1065,17 @@ URpgCraftingStationWidget::ResolveInventoryUiActionComponent() const
 		? PlayerController
 			->FindComponentByClass<URpgInventoryUiActionComponent>()
 		: nullptr;
+}
+
+TSubclassOf<UUserWidget> URpgCraftingStationWidget::HandleGetRecipeEntryClass(UObject* Item) const
+{
+	// Recipe rows fall back to the list's authored entry class.
+	return Cast<URpgCraftingTierSectionViewModel>(Item) ? TierSectionEntryClass : nullptr;
+}
+
+bool URpgCraftingStationWidget::HandleIsRecipeItemSelectable(UObject* Item) const
+{
+	return Cast<URpgCraftingRecipeViewModel>(Item) != nullptr;
 }
 
 void URpgCraftingStationWidget::HandleRecipeSelectionChanged(
@@ -1233,29 +1090,34 @@ void URpgCraftingStationWidget::HandleRecipeSelectionChanged(
 	}
 }
 
-void URpgCraftingStationWidget::HandleJobEntryGenerated(
-	UUserWidget& EntryWidget)
+void URpgCraftingStationWidget::HandleCategoryItemClicked(UObject* Item)
 {
-	if (URpgCraftingJobEntryWidget* JobEntry =
-		Cast<URpgCraftingJobEntryWidget>(&EntryWidget))
+	if (bCraftingContextBound && CraftingViewModel)
 	{
-		JobEntry->SetCommandOwner(this);
+		CraftingViewModel->ActivateCategoryRow(Cast<URpgCraftingCategoryViewModel>(Item));
 	}
 }
 
-void URpgCraftingStationWidget::HandleJobEntryReleased(
-	UUserWidget& EntryWidget)
+void URpgCraftingStationWidget::HandleTierOptionClicked(UObject* Item)
 {
-	if (URpgCraftingJobEntryWidget* JobEntry =
-		Cast<URpgCraftingJobEntryWidget>(&EntryWidget))
+	const URpgCraftingTierOptionViewModel* Option = Cast<URpgCraftingTierOptionViewModel>(Item);
+	if (bCraftingContextBound && CraftingViewModel && Option)
 	{
-		JobEntry->SetCommandOwner(nullptr);
+		CraftingViewModel->SetTierFilter(Option->GetTier());
+	}
+}
+
+void URpgCraftingStationWidget::HandleTargetOptionClicked(UObject* Item)
+{
+	if (const URpgCraftingStorageOptionViewModel* Option = Cast<URpgCraftingStorageOptionViewModel>(Item))
+	{
+		RequestSelectTargetStorage(Option->GetContainerId());
 	}
 }
 
 void URpgCraftingStationWidget::HandleCraftClicked()
 {
-	RequestCraftSelectedRecipe();
+	RequestStartCraftingOrder();
 }
 
 void URpgCraftingStationWidget::HandlePauseClicked()
@@ -1263,9 +1125,17 @@ void URpgCraftingStationWidget::HandlePauseClicked()
 	RequestToggleCraftingPause();
 }
 
-void URpgCraftingStationWidget::HandleTakeAllClicked()
+void URpgCraftingStationWidget::HandleStopOrderClicked()
 {
-	RequestTakeAllCraftingOutputs();
+	RequestStopCraftingOrder();
+}
+
+void URpgCraftingStationWidget::HandleSortDirectionClicked()
+{
+	if (bCraftingContextBound && CraftingViewModel)
+	{
+		CraftingViewModel->ToggleTierSortDirection();
+	}
 }
 
 void URpgCraftingStationWidget::HandleQuantityMinusClicked()
@@ -1284,22 +1154,6 @@ void URpgCraftingStationWidget::HandleQuantityPlusClicked()
 	}
 }
 
-void URpgCraftingStationWidget::HandleQuantityFiveClicked()
-{
-	if (CraftingViewModel)
-	{
-		CraftingViewModel->SetCraftQuantity(5);
-	}
-}
-
-void URpgCraftingStationWidget::HandleQuantityTenClicked()
-{
-	if (CraftingViewModel)
-	{
-		CraftingViewModel->SetCraftQuantity(10);
-	}
-}
-
 void URpgCraftingStationWidget::HandleQuantityMaxClicked()
 {
 	if (CraftingViewModel)
@@ -1308,20 +1162,11 @@ void URpgCraftingStationWidget::HandleQuantityMaxClicked()
 	}
 }
 
-void URpgCraftingStationWidget::HandleJobProgressTimer()
+void URpgCraftingStationWidget::HandleOrderProgressTimer()
 {
 	if (bCraftingContextBound && CraftingViewModel)
 	{
-		CraftingViewModel->RefreshJobs();
-	}
-}
-
-void URpgCraftingStationWidget::HandleAutoDepositCheckStateChanged(
-	bool bChecked)
-{
-	if (!bApplyingAutoDepositCheckState)
-	{
-		RequestSetCraftingOutputAutoDepositEnabled(bChecked);
+		CraftingViewModel->RefreshOrderProgress();
 	}
 }
 
@@ -1331,14 +1176,19 @@ void URpgCraftingStationWidget::HandleRecipesChanged()
 	RefreshSelectedRecipePresentation();
 }
 
+void URpgCraftingStationWidget::HandleCategoriesChanged()
+{
+	RefreshCategoryItems();
+}
+
+void URpgCraftingStationWidget::HandleTierOptionsChanged()
+{
+	RefreshTierOptionItems();
+}
+
 void URpgCraftingStationWidget::HandleSelectedRecipeDetailsChanged()
 {
 	RefreshSelectedRecipePresentation();
-}
-
-void URpgCraftingStationWidget::HandleJobsChanged()
-{
-	RefreshJobItems();
 }
 
 void URpgCraftingStationWidget::HandlePlayerInventoryPaneNavigationPanelsChanged()

@@ -1009,14 +1009,7 @@ void ARpgGameModeBase::MarkCraftingSaveDirty(URpgCraftingStationComponent* Stati
 	{
 		return;
 	}
-	FRpgCraftingStationSaveData Saved = Station->ExportCraftingState();
-	if (!Station->GetOutputInventory() || Saved.OutputInventoryGraph.Items.Num() != Station->GetOutputInventory()->GetAllEntries().Num())
-	{
-		bDiskWritesBlockedByRestoreFailure = true;
-		UE_LOG(LogRpg, Error, TEXT("Crafting tray export was incomplete; refusing disk writes."));
-		return;
-	}
-	CraftingStationSaveDataMap.Add(Station->GetPersistentStationId(), MoveTemp(Saved));
+	CraftingStationSaveDataMap.Add(Station->GetPersistentStationId(), Station->ExportCraftingState());
 	MarkWorldSaveDirty();
 }
 
@@ -1037,7 +1030,7 @@ void ARpgGameModeBase::RegisterPersistentCraftingStation(URpgCraftingStationComp
 		if (!It->IsActorBeingDestroyed() && Other && Other != Station && Other->GetPersistentStationId() == Id)
 		{
 			bDiskWritesBlockedByRestoreFailure = true;
-			UE_LOG(LogRpg, Error, TEXT("Duplicate returning crafting station [%s]; refusing to duplicate its saved tray or claims."), *Id.ToString());
+			UE_LOG(LogRpg, Error, TEXT("Duplicate returning crafting station [%s]; refusing to duplicate its saved order or claims."), *Id.ToString());
 			return;
 		}
 	}
@@ -1060,7 +1053,7 @@ void ARpgGameModeBase::RegisterPersistentCraftingStation(URpgCraftingStationComp
 			if (!bRestored)
 			{
 				bDiskWritesBlockedByRestoreFailure = true;
-				UE_LOG(LogRpg, Error, TEXT("Returning crafting station [%s] could not restore its saved tray and claims; disk writes are blocked."), *Id.ToString());
+				UE_LOG(LogRpg, Error, TEXT("Returning crafting station [%s] could not restore its saved order and claims; disk writes are blocked."), *Id.ToString());
 				return;
 			}
 			Returning->SetPersistenceRestorePending(false);
@@ -1593,14 +1586,7 @@ void ARpgGameModeBase::CaptureCraftingStations()
 			return;
 		}
 		SeenIds.Add(Id);
-		FRpgCraftingStationSaveData Saved = Station->ExportCraftingState();
-		if (!Station->GetOutputInventory() || Saved.OutputInventoryGraph.Items.Num() != Station->GetOutputInventory()->GetAllEntries().Num())
-		{
-			bDiskWritesBlockedByRestoreFailure = true;
-			UE_LOG(LogRpg, Error, TEXT("Crafting tray export was incomplete; refusing disk writes."));
-			return;
-		}
-		CapturedStations.Add(Id, MoveTemp(Saved));
+		CapturedStations.Add(Id, Station->ExportCraftingState());
 		RegisteredCraftingStations.Add(Station);
 	}
 	CraftingStationSaveDataMap = MoveTemp(CapturedStations);
@@ -2712,15 +2698,6 @@ void ARpgGameModeBase::HandleInventoryChanged(FGameplayTag Channel, const FRpgIn
 		MarkPlayerSaveDirty(PlayerState->GetRpgPlayerController());
 		return;
 	}
-	if (URpgCraftingStationComponent* Station = InventoryOwner ? InventoryOwner->FindComponentByClass<URpgCraftingStationComponent>() : nullptr)
-	{
-		if (Station->GetOutputInventory() == Inventory)
-		{
-			MarkCraftingSaveDirty(Station);
-			return;
-		}
-	}
-
 	URpgInventoryContainerComponent* Container = InventoryOwner
 		? InventoryOwner->FindComponentByClass<URpgInventoryContainerComponent>()
 		: nullptr;
