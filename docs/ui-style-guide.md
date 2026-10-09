@@ -276,6 +276,9 @@ styles for newly placed widgets.
 - **Section headers inside lists** (tier sections) are a gold tile caption
   followed by a faint gold rule, with space above. They are neither selectable
   nor navigable.
+- **Storage choices** in a dropdown use up to three lines: the name with its
+  assignments, a caption with free cells, and a caption with the contents. An
+  accent tag on the right marks the chest that automatic storing fills next.
 - **Dropdowns** are a wide action button that names the current choice, over
   an inline popup list of list rows (dark inset, 4-unit padding). Picking an
   option or opening another dropdown closes the popup. Do not use

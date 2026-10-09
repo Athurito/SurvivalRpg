@@ -370,8 +370,16 @@ stay English like the rest of the UI.
 
 - **Materials** come only from chests connected to the station. The player
   inventory is no longer a crafting source; construction stays player-first.
-- **Output** goes into one chosen target chest. The station tray, Take all,
+- **Output** goes into connected chests. The station tray, Take all,
   auto-deposit and the tray pane are gone.
+  - The default target is **Automatic**. Each unit goes into the first chest
+    with room, in this order: chests assigned to the exact output, then to its
+    category, then unassigned chests already holding it, then other
+    unassigned chests.
+  - Automatic storing never uses a chest whose assignments do not name the
+    output, even if it already holds some, so changed chest assignments steer
+    the station instead of filling the wrong chest.
+  - A fixed chest stays selectable.
 - **One order per station.** It has a recipe, a quantity up to 99 and a
   target chest. Each piece or run takes its materials when it starts, then
   delivers into the target. A full or missing target and missing materials
@@ -432,8 +440,15 @@ The screen shows only the station on the workshop backdrop.
   4. **Production:**
      - the material table (Material, Each, In chests);
      - "From connected chests · enough for N runs now";
-     - the target dropdown with its capacity ("Room for 5 of 5 Charcoal",
-       "0 present · 24 cells free · 99 per stack");
+     - the target dropdown with "Automatic" first, then each connected chest.
+       - Chests are named with their assignments, such as "Gemeinsame Kiste
+         (Charcoal)".
+       - Each row shows free cells and contents ("80 Wood · 12 Ore"); the
+         chest that automatic storing fills next is marked.
+       - Below the dropdown: the room ("Room for 5 of 5 Charcoal") and either
+         the next chest ("Next into …") or the chest's stack details. A fixed
+         chest meant for other materials warns ("Assigned to Wood, not to
+         Charcoal").
      - quantity −, +, Max;
      - the plan ("20 runs → 40 Charcoal", pure time);
      - the start button, labelled "Start firing" or "Start crafting".
@@ -452,7 +467,8 @@ The screen shows only the station on the workshop backdrop.
   - `TierFilterButton` with `TierFilterPopup` and `TierFilterList`
     (`CUI_CraftingTierOption`);
   - `TargetStorageButton` with `TargetStoragePopup` and `TargetStorageList`
-    (`CUI_CraftingStorageOption`, with "Suggested").
+    (`CUI_CraftingStorageOption`: name, free cells, contents, and "Next" on
+    the chest automatic storing fills next).
 - The native screen opens and closes the popups and closes one when the other
   opens or an option is picked. It labels the buttons from the view model.
   This avoids `ComboBoxString`, whose popup sits outside CommonUI input
@@ -522,8 +538,14 @@ Take all and tray tests are removed.
 - **Header extras:** no gear score, and no base or station names in the
   header.
 - **Locked recipes:** no unlock reasons; the recipe data has none.
-- **Chest names:** no custom names. Chests show their buildable name with a
-  number, currently the German "Gemeinsame Kiste".
+- **Chest names:** no custom names. Chests show their buildable name
+  (currently the German "Gemeinsame Kiste") with their assignments, and a
+  number when names repeat.
+- **In-world identification:** none. The crafting screen covers the world, so
+  highlighting a chest there would not be visible; the dropdown shows
+  assignments and contents instead.
+- **Station chests:** a dedicated, upgradeable chest built onto a station as
+  its default target is planned as a separate task (decided 2026-10-09).
 - **3D preview:** none; the preview shows the icon.
 - **Gamepad focus** across the new popups had only a basic check.
 - **Maps without chests:** workbenches in `Lvl_RpgBaseline`,
