@@ -12,12 +12,16 @@
 #include "Misc/AutomationTest.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgDefenseSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
+#include "SurvivalRpg/AbilitySystem/Attributes/RpgManaSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgStaminaSet.h"
+#include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Progression/Player/Data/RpgPlayerProgressionData.h"
 #include "SurvivalRpg/Progression/Player/RpgPlayerProgressionComponent.h"
+#include "SurvivalRpg/UI/RpgUISettings.h"
+#include "TimerManager.h"
 #include "UObject/StrongObjectPtr.h"
 
 namespace RpgCharacterStatsViewModelTests
@@ -58,6 +62,12 @@ namespace RpgCharacterStatsViewModelTests
 	{
 		const float* Value = FindField<float>(ViewModel, FieldName);
 		return Value ? *Value : -1.0f;
+	}
+
+	bool ReadBool(const UObject* ViewModel, const TCHAR* FieldName)
+	{
+		const bool* Value = FindField<bool>(ViewModel, FieldName);
+		return Value && *Value;
 	}
 
 	FString ReadText(const UObject* ViewModel, const TCHAR* FieldName)
@@ -222,6 +232,89 @@ bool FRpgCharacterStatsViewModelProgressionAndLoadTest::RunTest(const FString& P
 	TestEqual(TEXT("Unbinding clears the load"), ReadFloat(ViewModel, TEXT("EquipmentLoad")), 0.0f);
 	MessageSubsystem.BroadcastMessage(RpgGameplayTags::Rpg_EquipmentLoadout_Message_SlotsChanged, LoadMessage);
 	TestEqual(TEXT("An unbound view model ignores later loadout messages"), ReadFloat(ViewModel, TEXT("EquipmentLoad")), 0.0f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCharacterStatsViewModelManaAndHudContextTest,
+	"SurvivalRpg.UI.CharacterStats.ManaAndHudContext",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCharacterStatsViewModelManaAndHudContextTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCharacterStatsViewModelTests;
+
+	FScopedWorld ScopedWorld;
+	if (!TestNotNull(TEXT("A standalone test world exists"), ScopedWorld.World))
+	{
+		return false;
+	}
+
+	APawn* Pawn = ScopedWorld.World->SpawnActor<APawn>();
+	URpgAbilitySystemComponent* AbilitySystem = NewObject<URpgAbilitySystemComponent>(Pawn, NAME_None, RF_Transient);
+	Pawn->AddInstanceComponent(AbilitySystem);
+	AbilitySystem->RegisterComponent();
+	URpgHealthSet* HealthSet = NewObject<URpgHealthSet>(Pawn, NAME_None, RF_Transient);
+	HealthSet->InitHealth(100.0f);
+	HealthSet->InitMaxHealth(100.0f);
+	URpgStaminaSet* StaminaSet = NewObject<URpgStaminaSet>(Pawn, NAME_None, RF_Transient);
+	StaminaSet->InitStamina(80.0f);
+	StaminaSet->InitMaxStamina(80.0f);
+	AbilitySystem->AddAttributeSetSubobject(HealthSet);
+	AbilitySystem->AddAttributeSetSubobject(StaminaSet);
+	AbilitySystem->InitAbilityActorInfo(Pawn, Pawn);
+
+	URpgCharacterStatsViewModel* ViewModel = NewObject<URpgCharacterStatsViewModel>();
+	ViewModel->BindAbilitySystem(AbilitySystem);
+	TestFalse(TEXT("Without a mana set there is no mana"), ReadBool(ViewModel, TEXT("bHasMana")));
+	TestTrue(TEXT("Without a mana set the mana text is empty"), ReadText(ViewModel, TEXT("ManaText")).IsEmpty());
+	TestTrue(TEXT("Full health and stamina count as full vitals"), ReadBool(ViewModel, TEXT("bVitalsFull")));
+	TestFalse(TEXT("Full vitals out of combat hide the vitals"), ReadBool(ViewModel, TEXT("bShowVitals")));
+
+	URpgManaSet* ManaSet = NewObject<URpgManaSet>(Pawn, NAME_None, RF_Transient);
+	ManaSet->InitMana(40.0f);
+	ManaSet->InitMaxMana(100.0f);
+	AbilitySystem->AddAttributeSetSubobject(ManaSet);
+	ViewModel->BindAbilitySystem(AbilitySystem);
+	TestTrue(TEXT("A granted mana set shows mana"), ReadBool(ViewModel, TEXT("bHasMana")));
+	TestEqual(TEXT("Mana progress is current over maximum"), ReadFloat(ViewModel, TEXT("ManaProgress")), 0.4f);
+	TestEqual(TEXT("Mana text shows current over maximum"), ReadText(ViewModel, TEXT("ManaText")), FString(TEXT("40 / 100")));
+	TestFalse(TEXT("Missing mana means the vitals are not full"), ReadBool(ViewModel, TEXT("bVitalsFull")));
+	TestTrue(TEXT("A vital below its maximum shows the vitals"), ReadBool(ViewModel, TEXT("bShowVitals")));
+
+	AbilitySystem->SetNumericAttributeBase(URpgManaSet::GetManaAttribute(), 100.0f);
+	TestTrue(TEXT("Refilled mana makes the vitals full"), ReadBool(ViewModel, TEXT("bVitalsFull")));
+	TestFalse(TEXT("Full vitals hide the vitals again"), ReadBool(ViewModel, TEXT("bShowVitals")));
+	TestFalse(TEXT("Regaining a resource is no combat"), ReadBool(ViewModel, TEXT("bInCombat")));
+
+	AbilitySystem->AbilityActivatedCallbacks.Broadcast(GetMutableDefault<URpgGameplayAbility>());
+	TestFalse(TEXT("An ability without an equipment source is no combat"), ReadBool(ViewModel, TEXT("bInCombat")));
+
+	AbilitySystem->SetNumericAttributeBase(URpgHealthSet::GetHealthAttribute(), 90.0f);
+	TestTrue(TEXT("Taking damage starts combat"), ReadBool(ViewModel, TEXT("bInCombat")));
+	AbilitySystem->SetNumericAttributeBase(URpgHealthSet::GetHealthAttribute(), 100.0f);
+	TestTrue(TEXT("Healing to full keeps combat"), ReadBool(ViewModel, TEXT("bInCombat")));
+	TestTrue(TEXT("Combat shows the vitals even when full"), ReadBool(ViewModel, TEXT("bShowVitals")));
+
+	// The timer manager ticks once per frame, so each tick pretends a new frame. A timer set outside a tick starts
+	// counting at the next tick.
+	const float HoldSeconds = GetDefault<URpgUISettings>()->HudCombatHoldSeconds;
+	TGuardValue<uint64> FrameGuard(GFrameCounter, GFrameCounter);
+	++GFrameCounter;
+	ScopedWorld.World->GetTimerManager().Tick(0.0f);
+	++GFrameCounter;
+	ScopedWorld.World->GetTimerManager().Tick(HoldSeconds * 0.5f);
+	TestTrue(TEXT("Combat lasts for the hold time"), ReadBool(ViewModel, TEXT("bInCombat")));
+	++GFrameCounter;
+	ScopedWorld.World->GetTimerManager().Tick(HoldSeconds * 0.5f + 0.1f);
+	TestFalse(TEXT("Combat ends after the hold time"), ReadBool(ViewModel, TEXT("bInCombat")));
+	TestFalse(TEXT("After combat full vitals hide again"), ReadBool(ViewModel, TEXT("bShowVitals")));
+
+	AbilitySystem->SetNumericAttributeBase(URpgHealthSet::GetHealthAttribute(), 50.0f);
+	ViewModel->UnbindAbilitySystem();
+	TestFalse(TEXT("Unbinding ends combat"), ReadBool(ViewModel, TEXT("bInCombat")));
+	TestFalse(TEXT("Unbinding clears mana"), ReadBool(ViewModel, TEXT("bHasMana")));
+	TestFalse(TEXT("Without an ability system the vitals are not full"), ReadBool(ViewModel, TEXT("bVitalsFull")));
 	return true;
 }
 

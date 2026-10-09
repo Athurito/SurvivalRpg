@@ -2,6 +2,7 @@
 
 #include "AttributeSet.h"
 #include "CoreMinimal.h"
+#include "Engine/TimerHandle.h"
 #include "GameFramework/GameplayMessageSubsystem.h"
 #include "MVVMViewModelBase.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
@@ -10,13 +11,17 @@
 
 class APlayerController;
 class UAbilitySystemComponent;
+class UGameplayAbility;
 class URpgPlayerProgressionComponent;
 struct FOnAttributeChangeData;
 struct FRpgEquipmentLoadoutSlotsChangedMessage;
 
 /**
- * Read model of the local player's character values: level and experience, health, stamina, armour and equipment load.
- * The inventory's character stats column shows it; the HUD can bind the same instance.
+ * Read model of the local player's character values: level and experience, health, stamina, mana, armour and
+ * equipment load. The inventory's character stats column and the HUD bind the same instance.
+ *
+ * It also derives the HUD context: whether the character is in combat and whether every vital is full, which the HUD
+ * uses to fade its vitals and action bars.
  *
  * URpgUiSubsystem owns one instance per local player and keeps it bound to the controller, the player state's
  * progression and the pawn's ability system across respawns. Widgets get it through URpgLocalPlayerViewModelResolver.
@@ -102,6 +107,26 @@ protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Character Stats|Stamina", meta = (AllowPrivateAccess = "true"))
 	FText StaminaText;
 
+	/** Whether the ability system owns URpgManaSet. Without it the mana fields stay zero and the HUD hides the mana bar. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Character Stats|Mana", meta = (AllowPrivateAccess = "true"))
+	bool bHasMana = false;
+
+	/** Current mana; zero without a mana set. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Character Stats|Mana", meta = (AllowPrivateAccess = "true"))
+	float Mana = 0.0f;
+
+	/** Maximum mana; zero without a mana set. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Character Stats|Mana", meta = (AllowPrivateAccess = "true"))
+	float MaxMana = 0.0f;
+
+	/** Mana / MaxMana in [0, 1]. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Character Stats|Mana", meta = (AllowPrivateAccess = "true"))
+	float ManaProgress = 0.0f;
+
+	/** Mana as display text, for example "40 / 100"; empty without a mana set. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Character Stats|Mana", meta = (AllowPrivateAccess = "true"))
+	FText ManaText;
+
 	/** Armour attribute of the defense set. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Character Stats|Defense", meta = (AllowPrivateAccess = "true"))
 	float Armor = 0.0f;
@@ -134,6 +159,22 @@ protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Character Stats|Load", meta = (AllowPrivateAccess = "true"))
 	FText EquipmentLoadTierText;
 
+	/**
+	 * Whether the character is in combat: it took damage or used an ability its equipment grants (attacks, block,
+	 * weapon and tool abilities) within URpgUISettings::HudCombatHoldSeconds. Local presentation state of the owning
+	 * client; gameplay never reads it.
+	 */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Character Stats|HUD", meta = (AllowPrivateAccess = "true"))
+	bool bInCombat = false;
+
+	/** Whether health, stamina and, with a mana set, mana are all at their maximum. False without an ability system. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Character Stats|HUD", meta = (AllowPrivateAccess = "true"))
+	bool bVitalsFull = false;
+
+	/** Whether the HUD should show the vitals: in combat or while a vital is not full. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Character Stats|HUD", meta = (AllowPrivateAccess = "true"))
+	bool bShowVitals = false;
+
 private:
 	UFUNCTION()
 	void HandleCharacterLevelChanged(int32 NewLevel);
@@ -142,6 +183,7 @@ private:
 	void HandleCharacterXPChanged(float CurrentXP, float XPToNextLevel);
 
 	void HandleAttributeChanged(const FOnAttributeChangeData& ChangeData);
+	void HandleAbilityActivated(UGameplayAbility* Ability);
 	void HandleEquipmentLoadoutChanged(FGameplayTag Channel, const FRpgEquipmentLoadoutSlotsChangedMessage& Message);
 
 	void ReleaseAbilitySystem();
@@ -151,10 +193,17 @@ private:
 	void ApplyEquipmentLoad(float NewLoad, float NewHeavyThreshold, ERpgEquipmentLoadTier NewTier);
 	void BindProgressionOfPlayerState(const APlayerController* PlayerController, const UAbilitySystemComponent* AbilitySystem);
 	void SetText(FText& Field, const FText& NewValue, UE::FieldNotification::FFieldId FieldId);
+	void EnterCombat();
+	void ExitCombat();
+	void ClearCombat();
+	void RefreshHudContext();
+	UWorld* GetObservedWorld() const;
 
 	TWeakObjectPtr<APlayerController> ObservedPlayerController;
 	TWeakObjectPtr<UAbilitySystemComponent> ObservedAbilitySystem;
 	TWeakObjectPtr<URpgPlayerProgressionComponent> ObservedProgression;
 	TArray<TPair<FGameplayAttribute, FDelegateHandle>> AttributeHandles;
+	FDelegateHandle AbilityActivatedHandle;
 	FGameplayMessageListenerHandle LoadoutChangedHandle;
+	FTimerHandle CombatTimerHandle;
 };

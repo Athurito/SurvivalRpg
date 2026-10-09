@@ -18,6 +18,8 @@
 #include "RpgInventoryManagerComponent.h"
 #include "RpgInventoryUiActionComponent.h"
 #include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgActionBarSlotViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgActionBarViewModel.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Base/RpgBaseCampActor.h"
@@ -5902,6 +5904,24 @@ bool FRpgInventoryCarryQuickAccessBindingTest::RunTest(const FString& Parameters
 	TestFalse(
 		TEXT("The acknowledged binding releases the held drag ghost"),
 		Coordinator->GetInteractionSession()->HasPayload());
+
+	URpgActionBarViewModel* ActionBarViewModel = NewObject<URpgActionBarViewModel>();
+	ActionBarViewModel->BindPlayerController(Controller);
+	const URpgActionBarSlotViewModel* WeaponSlotViewModel = ActionBarViewModel->GetSlotAtIndex(0);
+	const URpgActionBarSlotViewModel* EmptySlotViewModel = ActionBarViewModel->GetSlotAtIndex(1);
+	TestTrue(
+		TEXT("The Quick Access slot of the active main-hand weapon reads as in hand"),
+		WeaponSlotViewModel && WeaponSlotViewModel->IsInHand());
+	TestFalse(
+		TEXT("An empty Quick Access slot is never in hand"),
+		EmptySlotViewModel && EmptySlotViewModel->IsInHand());
+	TestTrue(TEXT("Clearing the main hand succeeds"), EquipmentLoadout->ClearActiveMainHand());
+	ActionBarViewModel->RefreshSlots();
+	TestFalse(
+		TEXT("A holstered weapon's Quick Access slot is no longer in hand"),
+		WeaponSlotViewModel && WeaponSlotViewModel->IsInHand());
+	ActionBarViewModel->UnbindActionBar();
+	TestTrue(TEXT("The weapon returns to the main hand"), EquipmentLoadout->SetMainHandItemActive(Weapon));
 
 	URpgPlayerInventoryLayoutDefinition* TestLayoutDefinition =
 		PlayerState->GetMutableTestInventoryLayoutDefinition();

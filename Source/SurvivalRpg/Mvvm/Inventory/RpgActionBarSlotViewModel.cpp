@@ -257,3 +257,11 @@ void URpgActionBarSlotViewModel::InitializeSlotWithAbilitySystem(
 		OnSlotChanged.Broadcast(this);
 	}
 }
+
+void URpgActionBarSlotViewModel::SetInHand(const bool bInInHand)
+{
+	if (UE_MVVM_SET_PROPERTY_VALUE(bInHand, bInInHand))
+	{
+		OnSlotChanged.Broadcast(this);
+	}
+}

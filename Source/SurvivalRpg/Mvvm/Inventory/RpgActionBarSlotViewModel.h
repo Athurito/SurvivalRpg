@@ -78,6 +78,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Action Bar|ViewModel")
 	FName GetHotkeyActionRowName() const { return HotkeyActionRowName; }
 
+	UFUNCTION(BlueprintPure, Category = "Action Bar|ViewModel")
+	bool IsInHand() const { return bInHand; }
+
+	/** Sets bInHand. URpgActionBarViewModel resolves it from the controller's equipment loadout. */
+	void SetInHand(bool bInInHand);
+
 	UPROPERTY(BlueprintAssignable, Category = "Action Bar|ViewModel")
 	FRpgActionBarSlotViewModelChanged OnSlotChanged;
 
@@ -137,4 +143,11 @@ protected:
 	/** CommonUI action row name expected in CDT_RpgUIActions_All for this slot's hotkey glyph. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
 	FName HotkeyActionRowName;
+
+	/**
+	 * Whether the resolved item is the active main-hand or off-hand item, so the HUD can mark the weapon in hand.
+	 * Mirrors the replicated equipment loadout; UI-read-only.
+	 */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Action Bar|ViewModel", meta = (AllowPrivateAccess = "true"))
+	bool bInHand = false;
 };
