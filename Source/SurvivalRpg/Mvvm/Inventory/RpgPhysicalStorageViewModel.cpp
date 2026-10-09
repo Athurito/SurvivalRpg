@@ -58,6 +58,13 @@ void URpgPhysicalStorageViewModel::Refresh()
 	UE_MVVM_SET_PROPERTY_VALUE(SettingsRevision, bPhysical ? Metadata.SettingsRevision : INDEX_NONE);
 	UE_MVVM_SET_PROPERTY_VALUE(GridWidth, bPhysical ? Metadata.GridSize.Width : 0);
 	UE_MVVM_SET_PROPERTY_VALUE(GridHeight, bPhysical ? Metadata.GridSize.Height : 0);
+	UE_MVVM_SET_PROPERTY_VALUE(bStationChest, bPhysical && !Metadata.LinkedStationId.IsNone());
+	const FText NewDisplayName = bPhysical ? Container->GetStorageDisplayName() : FText::GetEmpty();
+	if (!StorageDisplayName.EqualTo(NewDisplayName))
+	{
+		StorageDisplayName = NewDisplayName;
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(StorageDisplayName);
+	}
 	bool bChanged = Assignments.Num() != Metadata.Assignments.Num();
 	for (int32 Index = 0; !bChanged && Index < Assignments.Num(); ++Index)
 	{

@@ -505,4 +505,71 @@ bool FRpgPhysicalChestSplitMergeSaveTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgStationChestSaveTest,
+	"SurvivalRpg.Save.WorldSave.StationChestLink",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgStationChestSaveTest::RunTest(const FString& Parameters)
+{
+	struct FScopedWorld
+	{
+		UGameInstance* Instance = NewObject<UGameInstance>(GEngine, NAME_None, RF_Transient);
+		UWorld* World = nullptr;
+		FScopedWorld() { Instance->AddToRoot(); Instance->InitializeStandalone(); World = Instance->GetWorld(); }
+		~FScopedWorld()
+		{
+			Instance->Shutdown();
+			if (World) { GEngine->DestroyWorldContext(World); World->DestroyWorld(false); }
+			Instance->RemoveFromRoot();
+		}
+	} Scope;
+	if (!TestNotNull(TEXT("Standalone world"), Scope.World)) return false;
+	ARpgGameModeBase* Mode = Scope.World->SpawnActor<ARpgGameModeBase>();
+	if (!TestNotNull(TEXT("Persistence owner"), Mode)) return false;
+	Mode->bEnableDiskPersistence = false;
+	ARpgCraftingStationActor* StationActor = Scope.World->SpawnActor<ARpgCraftingStationActor>();
+	URpgCraftingStationComponent* Station = StationActor ? StationActor->GetCraftingStationComponent() : nullptr;
+	if (!TestNotNull(TEXT("Crafting station"), Station)) return false;
+	FindFProperty<FNameProperty>(URpgCraftingStationComponent::StaticClass(), TEXT("PersistentStationId"))->SetPropertyValue_InContainer(Station, FName(TEXT("Station_Kiln")));
+	ARpgInventoryContainerActor* Original = Scope.World->SpawnActor<ARpgInventoryContainerActor>(FVector(150, 0, 0), FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("Original station chest"), Original)) return false;
+	Original->GetContainerComponent()->SetRuntimeBuilt(true);
+	Original->GetContainerComponent()->SetLinkedStationId(Station->GetPersistentStationId());
+	const FName SavedContainerId = Original->GetContainerComponent()->GetPersistentContainerId();
+	TestEqual(TEXT("The station targets its chest before saving"), Station->GetDefaultOutputTargetId(), SavedContainerId);
+
+	Mode->MarkWorldContainerSaveDirty(SavedContainerId, Original->GetInventoryManager());
+	URpgWorldSaveGame* Snapshot = NewObject<URpgWorldSaveGame>();
+	Snapshot->WorldContainers = Mode->WorldContainerSaveDataMap;
+	TArray<uint8> Bytes;
+	if (!TestTrue(TEXT("Snapshot serializes"), UGameplayStatics::SaveGameToMemory(Snapshot, Bytes))) return false;
+	URpgWorldSaveGame* Loaded = Cast<URpgWorldSaveGame>(UGameplayStatics::LoadGameFromMemory(Bytes));
+	if (!TestNotNull(TEXT("Snapshot deserializes"), Loaded)) return false;
+	const FRpgWorldContainerSaveData* SavedChest = Loaded->WorldContainers.Find(SavedContainerId);
+	if (!TestNotNull(TEXT("The station chest is saved"), SavedChest)) return false;
+	TestEqual(TEXT("The disk snapshot keeps the station link"), SavedChest->Metadata.LinkedStationId, FName(TEXT("Station_Kiln")));
+
+	Mode->UnregisterPersistentWorldContainer(Original->GetContainerComponent());
+	Original->Destroy();
+	TestTrue(TEXT("Without its chest the station stores automatically"), Station->GetDefaultOutputTargetId().IsNone());
+	Mode->WorldContainerSaveDataMap = Loaded->WorldContainers;
+	if (!TestTrue(TEXT("The missing station chest is reconstructed"), Mode->RestorePlacedWorldContainers())) return false;
+	URpgInventoryContainerComponent* Restored = nullptr;
+	for (TActorIterator<ARpgInventoryContainerActor> It(Scope.World); It; ++It)
+	{
+		if (!It->IsActorBeingDestroyed() && It->GetContainerComponent()->GetPersistentContainerId() == SavedContainerId) { Restored = It->GetContainerComponent(); }
+	}
+	if (!TestNotNull(TEXT("The restored chest keeps its identity"), Restored)) return false;
+	TestEqual(TEXT("The station link survives reconstruction"), Restored->GetLinkedStationId(), FName(TEXT("Station_Kiln")));
+	TestEqual(TEXT("The station targets its restored chest again"), Station->GetDefaultOutputTargetId(), SavedContainerId);
+
+	// Saves written before station chests existed load as ordinary chests.
+	FRpgPhysicalStorageMetadata Legacy = Restored->ExportPhysicalStorageMetadata();
+	Legacy.LinkedStationId = NAME_None;
+	TestTrue(TEXT("Metadata without a link restores"), Restored->RestorePhysicalStorageMetadata(Legacy));
+	TestFalse(TEXT("A chest without a link is ordinary"), Restored->IsStationChest());
+	TestTrue(TEXT("The station falls back to automatic storing"), Station->GetDefaultOutputTargetId().IsNone());
+	return true;
+}
+
 #endif

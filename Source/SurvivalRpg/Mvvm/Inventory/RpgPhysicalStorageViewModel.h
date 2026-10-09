@@ -50,6 +50,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Storage|ViewModel")
 	bool IsCommandPending() const { return bCommandPending; }
 
+	/** Player-facing chest name, such as "Kiln storage" for a station chest; empty for loot presenters. */
+	UFUNCTION(BlueprintPure, Category = "Storage|ViewModel")
+	FText GetStorageDisplayName() const { return StorageDisplayName; }
+
+	/** True for a chest linked to a crafting station; it takes deposits and automatic deliveries only through its assignments. */
+	UFUNCTION(BlueprintPure, Category = "Storage|ViewModel")
+	bool IsStationChest() const { return bStationChest; }
+
 protected:
 	virtual void BeginDestroy() override;
 
@@ -84,6 +92,14 @@ protected:
 	/** Confirmed root-grid height in cells. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Storage|ViewModel")
 	int32 GridHeight = 0;
+
+	/** Chest name from its buildable; a station chest is named after its station. Read-only presentation. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Storage|ViewModel")
+	FText StorageDisplayName;
+
+	/** True while the chest is linked to a crafting station as its station chest. Mirrors replicated metadata. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Storage|ViewModel")
+	bool bStationChest = false;
 
 	/** Local in-flight state for this screen's command; never replicated or saved. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Storage|ViewModel")
