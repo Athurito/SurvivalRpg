@@ -3,12 +3,14 @@
 #include "Components/ActorComponent.h"
 #include "RpgPhysicalStorageTypes.h"
 #include "SurvivalRpg/Interaction/IInteractableTarget.h"
+#include "UObject/SoftObjectPtr.h"
 
 #include "RpgInventoryContainerComponent.generated.h"
 
 class URpgInventoryManagerComponent;
 class URpgBaseBuildableDefinition;
 class USceneComponent;
+class UTexture2D;
 class FDataValidationContext;
 class URpgInventoryContainerComponent;
 
@@ -61,6 +63,29 @@ public:
 	/** Sets the zero-based tier after its capacity/cost transaction has passed validation. */
 	void SetUpgradeTier(int32 NewTier);
 
+	/** Links this station chest to a crafting station by its persistent id; None clears the link. Authority only. */
+	void SetLinkedStationId(FName NewStationId);
+
+	/** Persistent id of the crafting station this chest belongs to; None for an ordinary chest. Replicated and saved. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Storage")
+	FName GetLinkedStationId() const { return PhysicalStorageMetadata.LinkedStationId; }
+
+	/** True for a chest linked to a crafting station. It takes deposits and automatic deliveries only through its assignments. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Storage")
+	bool IsStationChest() const { return !PhysicalStorageMetadata.LinkedStationId.IsNone(); }
+
+	/**
+	 * Player-facing chest name without assignments. A linked station chest formats its buildable's LinkedStationNameFormat
+	 * with the station's name, such as "Kiln storage"; other chests use the buildable's DisplayName. Empty without a
+	 * buildable. UI read-only; works on clients.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Storage")
+	FText GetStorageDisplayName() const;
+
+	/** Icon for chest lists: the linked station's icon for a station chest, otherwise the buildable's icon. UI read-only. */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Inventory|Storage")
+	TSoftObjectPtr<UTexture2D> GetStorageDisplayIcon() const;
+
 	/** Advances settings revision after an authoritative move, invalidating older placement requests. */
 	void MarkPhysicalStorageMoved();
 
@@ -76,7 +101,7 @@ public:
 	/** Replaces destination rules, reusing unchanged rules and assigning new orders on authority. */
 	bool SetAssignments(const TArray<FRpgStorageAssignment>& NewAssignments, int32 ExpectedRevision = INDEX_NONE);
 
-	/** Zero exact item, one category, two existing-stock general chest; INDEX_NONE has no destination. */
+	/** Zero exact item, one category, two existing stock in a chest that is not a station chest; INDEX_NONE has no destination. */
 	int32 GetAssignmentRank(TSubclassOf<URpgInventoryItemDefinition> ItemDefinition, int64& OutOrder) const;
 
 	/** Replicated and saved destination rules; callers must use SetAssignments for changes. */

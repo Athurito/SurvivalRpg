@@ -167,13 +167,16 @@ class AssetContractTools(unreal.ToolsetDefinition):
 
     @toolset_registry.tool_call
     @staticmethod
-    def add_function_input(blueprint_path: str, function_name: str, param_name: str, type_path: str) -> bool:
+    def add_function_input(blueprint_path: str, function_name: str, param_name: str, type_path: str,
+                           soft_reference: bool = False) -> bool:
         """Add an input of an enum, struct or object type to an own Blueprint function graph.
 
         BlueprintTools.add_function_param only knows basic types. Pass the type's
         object path: a UEnum such as /Script/SurvivalRpg.ERpgItemRarity, a
-        UScriptStruct or a UClass (object reference). Existing inputs are never
-        replaced. Write the graph with write_graph_dsl afterwards, which compiles.
+        UScriptStruct or a UClass (object reference). With soft_reference, a
+        UClass becomes a soft object reference, for example to receive a view
+        model's TSoftObjectPtr<UTexture2D>. Existing inputs are never replaced.
+        Write the graph with write_graph_dsl afterwards, which compiles.
         """
         _guard()
         if not blueprint_path.startswith('/Game/'):
@@ -193,9 +196,11 @@ class AssetContractTools(unreal.ToolsetDefinition):
         elif isinstance(type_object, unreal.ScriptStruct):
             category = 'struct'
         elif isinstance(type_object, unreal.Class):
-            category = 'object'
+            category = 'softobject' if soft_reference else 'object'
         else:
             raise ValueError('Expected an enum, struct or class path: ' + type_path)
+        if soft_reference and category != 'softobject':
+            raise ValueError('Only a class can be passed as a soft reference: ' + type_path)
         # FEdGraphPinType fields are not Python editor properties in UE 5.8; build the type through struct text.
         pin_type = unreal.BlueprintEditorLibrary.get_basic_type_by_name('byte')
         sub_object = '"{}\'{}\'"'.format(type_object.get_class().get_path_name(), type_object.get_path_name())

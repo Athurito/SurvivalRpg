@@ -112,6 +112,24 @@ bool PlanCosts(AActor* Player, const FVector& Location, const TArray<FRpgBaseBui
 	TArray<FRpgCraftingRefundEntry> Receipts;
 	return URpgCraftingStationComponent::BuildResourceConsumptionPlan(Player, Sources, ResourceCosts, 1, OutOperations, Receipts);
 }
+
+/** Station a station chest at Location links to; a moving chest keeps its current station while that one qualifies. */
+URpgCraftingStationComponent* FindStationForChestPlacement(const UWorld* World, const URpgBaseBuildableDefinition& Definition,
+	const FVector& Location, const URpgInventoryContainerComponent* MovingChest)
+{
+	return URpgCraftingStationComponent::FindStationForStationChest(World, Location, Definition.CraftingStationLinkRadius, MovingChest,
+		MovingChest ? MovingChest->GetLinkedStationId() : NAME_None);
+}
+
+/** Persistent id of the station a station chest at Location links to; None for an ordinary chest or without a station. */
+FName ResolveStationLink(const UWorld* World, const URpgBaseBuildableDefinition* Definition, const FVector& Location,
+	const URpgInventoryContainerComponent* MovingChest)
+{
+	const URpgCraftingStationComponent* Station = Definition && Definition->CraftingStationLinkRadius > 0.0f
+		? FindStationForChestPlacement(World, *Definition, Location, MovingChest)
+		: nullptr;
+	return Station ? Station->GetPersistentStationId() : NAME_None;
+}
 }
 
 void URpgInventoryUiActionComponent::ClientPhysicalStorageCommandCompleted_Implementation(
@@ -213,6 +231,12 @@ bool URpgInventoryUiActionComponent::CanPlacePhysicalStorage(URpgBaseBuildableDe
 		if (RpgStorageAccessRules::ResolveBaseAtLocation(GetWorld(), Player->GetActorLocation()) != Base)
 		{ OutReason = LOCTEXT("LeaveBase", "Bleibe zum Versetzen innerhalb derselben Basis."); return false; }
 	}
+	if (Definition->CraftingStationLinkRadius > 0.0f && !FindStationForChestPlacement(GetWorld(), *Definition, Transform.GetLocation(),
+		Moving ? Moving->GetContainerComponent() : nullptr))
+	{
+		OutReason = LOCTEXT("NoFreeStation", "Baue die Stationskiste neben eine Werkstation ohne eigene Kiste.");
+		return false;
+	}
 	FCollisionQueryParams Query(SCENE_QUERY_STAT(PhysicalStoragePlacement), false);
 	Query.AddIgnoredActor(Base);
 	if (Moving) { Query.AddIgnoredActor(Moving); }
@@ -289,6 +313,12 @@ bool URpgInventoryUiActionComponent::ExecutePhysicalStorageCommand(const FRpgPhy
 			OutMessage = LOCTEXT("CostsChanged", "Materialbestand hat sich geändert."); return false;
 		}
 		ARpgBaseCampActor* Base = RpgStorageAccessRules::ResolveBaseAtLocation(GetWorld(), Request.Transform.GetLocation());
+		// A station chest links to its station in the same commit that publishes it.
+		const FName LinkedStationId = ResolveStationLink(GetWorld(), Definition, Request.Transform.GetLocation(), nullptr);
+		if (Definition->CraftingStationLinkRadius > 0.0f && LinkedStationId.IsNone())
+		{
+			OutMessage = LOCTEXT("NoFreeStation", "Baue die Stationskiste neben eine Werkstation ohne eigene Kiste."); return false;
+		}
 		ARpgInventoryContainerActor* NewChest = GetWorld()->SpawnActorDeferred<ARpgInventoryContainerActor>(
 			Definition->BuildActorClass, Request.Transform, Base, Player, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 		if (!NewChest) { OutMessage = LOCTEXT("SpawnFailed", "Kiste konnte nicht erstellt werden."); return false; }
@@ -317,7 +347,8 @@ bool URpgInventoryUiActionComponent::ExecutePhysicalStorageCommand(const FRpgPhy
 			return false;
 		}
 		const FName BuiltBaseId = Base->GetBaseId();
-		auto Finish = [NewChest, BuiltBaseId]() {
+		auto Finish = [NewChest, BuiltBaseId, LinkedStationId]() {
+			NewChest->GetContainerComponent()->SetLinkedStationId(LinkedStationId);
 			NewChest->GetContainerComponent()->SetResolvedBaseId(BuiltBaseId);
 			NewChest->GetContainerComponent()->SetConstructionPending(false);
 			NewChest->SetActorHiddenInGame(false); NewChest->SetActorEnableCollision(true); DirtyChest(NewChest);
@@ -327,9 +358,10 @@ bool URpgInventoryUiActionComponent::ExecutePhysicalStorageCommand(const FRpgPhy
 		PreparedChest.Inventory = NewChest->GetInventoryManager();
 		PreparedChest.NewGridSize = PreparedMetadata.GridSize;
 		PreparedChest.ExpectedRevision = PreparedChest.Inventory->GetInventoryRevision();
-		auto Revalidate = [this, Definition, Request, NewChest, Context, PreparedMetadata]() {
+		auto Revalidate = [this, Definition, Request, NewChest, Context, PreparedMetadata, LinkedStationId]() {
 			FText Reason;
 			return IsValid(NewChest) && !NewChest->IsActorBeingDestroyed() && Context.IsCurrent() &&
+				ResolveStationLink(GetWorld(), Definition, Request.Transform.GetLocation(), nullptr) == LinkedStationId &&
 				NewChest->GetActorTransform().Equals(Request.Transform) &&
 				NewChest->GetContainerComponent()->IsConstructionPending() &&
 				NewChest->GetContainerComponent()->GetBuildableDefinition() == Definition &&
@@ -379,13 +411,23 @@ bool URpgInventoryUiActionComponent::ExecutePhysicalStorageCommand(const FRpgPhy
 		OutMessage = LOCTEXT("AssignmentsSaved", "Zuordnungen gespeichert.");
 		return true;
 	case ERpgPhysicalStorageCommand::Relocate:
-		if (!CanPlacePhysicalStorage(Container->GetBuildableDefinition(), Request.Transform, Request.ContainerId, OutMessage)) { return false; }
+	{
+		URpgBaseBuildableDefinition* Definition = Container->GetBuildableDefinition();
+		if (!CanPlacePhysicalStorage(Definition, Request.Transform, Request.ContainerId, OutMessage)) { return false; }
+		// A station chest keeps its station while it stays in range; otherwise it moves to the nearest free station.
+		const bool bStationChest = Definition && Definition->CraftingStationLinkRadius > 0.0f;
+		const FName StationId = bStationChest
+			? ResolveStationLink(GetWorld(), Definition, Request.Transform.GetLocation(), Container)
+			: Container->GetLinkedStationId();
+		if (bStationChest && StationId.IsNone()) { return false; }
 		// Transform callbacks must not reuse this authorization before the settings revision advances.
 		PhysicalStorageRelocationSessionId.Invalidate();
 		if (!Container->TryRelocatePhysicalStorage(Request.Transform, Request.ExpectedSettingsRevision)) { return false; }
+		Container->SetLinkedStationId(StationId);
 		DirtyChest(Chest);
 		OutMessage = LOCTEXT("Moved", "Kiste versetzt.");
 		return true;
+	}
 	case ERpgPhysicalStorageCommand::Upgrade:
 	{
 		const FStorageContextGuard Context(GetWorld(), Chest->GetActorLocation());

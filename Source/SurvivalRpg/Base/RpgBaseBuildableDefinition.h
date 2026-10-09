@@ -103,6 +103,21 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Base Building|Chest")
 	TArray<FRpgBaseChestUpgradeTier> ChestUpgradeTiers;
 
+	/**
+	 * Station chests only: distance in centimeters from the chest to a crafting station's actor location. Server placement
+	 * and relocation link the chest to the nearest station in this radius that has no station chest yet and fail without
+	 * one. Zero builds an ordinary chest. Designer-tuned static data.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Base Building|Station Chest", meta = (ClampMin = "0", UIMin = "0", Units = "cm"))
+	float CraftingStationLinkRadius = 0.0f;
+
+	/**
+	 * Station chests only: name of a linked chest, where {Station} is the station's display name, such as
+	 * "{Station} storage". Empty, or a station without a name, falls back to DisplayName. Designer-tuned, UI read-only.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Base Building|Station Chest", meta = (EditCondition = "CraftingStationLinkRadius > 0"))
+	FText LinkedStationNameFormat;
+
 	/** Base upgrade/unlock tags required before this buildable can be placed. Empty means unlocked by default. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Base Building", meta = (Categories = "Base"))
 	FGameplayTagContainer RequiredUnlockTags;

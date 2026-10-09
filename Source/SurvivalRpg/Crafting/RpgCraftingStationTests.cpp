@@ -28,6 +28,7 @@
 #include "Misc/AutomationTest.h"
 #include "Templates/UnrealTemplate.h"
 #include "TimerManager.h"
+#include "UObject/StrongObjectPtr.h"
 #include "UObject/UnrealType.h"
 
 namespace RpgCraftingStationTests
@@ -1168,6 +1169,88 @@ bool FRpgCraftingPendingSourceRefundTest::RunTest(const FString& Parameters)
 	FRpgInventoryMutationResult Result;
 	TestTrue(TEXT("The delayed source graph replacement completes"), Original->RestoreInventoryGraph(PendingGraph, Result));
 	TestEqual(TEXT("Graph replacement cannot erase the refunded materials"), CountOf(Target, Material) + Original->GetTotalItemCountByDefinition(Material), 2);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgCraftingStationChestTargetTest,
+	"SurvivalRpg.Crafting.StationChest.DefaultTargetAndRouting",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCraftingStationChestTargetTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCraftingStationTests;
+	FScopedCraftingWorld Fixture;
+	if (!Fixture.Initialize(*this)) { return false; }
+	URpgCraftingStationComponent* Station = Fixture.GetStation();
+	UWorld* World = Station->GetWorld();
+	AActor* Requester = Fixture.GetRequestingController();
+	FNameProperty* StationIdProperty = FindFProperty<FNameProperty>(URpgCraftingStationComponent::StaticClass(), TEXT("PersistentStationId"));
+	if (!TestNotNull(TEXT("The station id property exists"), StationIdProperty)) { return false; }
+	StationIdProperty->SetPropertyValue_InContainer(Station, FName(TEXT("Station_Kiln")));
+	const TSubclassOf<URpgInventoryItemDefinition> Material = URpgInventoryAutomationTestMaterialDefinition::StaticClass();
+	const TSubclassOf<URpgInventoryItemDefinition> Product = URpgInventoryAutomationTestUnitItemDefinition::StaticClass();
+	ARpgInventoryContainerActor* MaterialChest = Fixture.CreateChest();
+	ARpgInventoryContainerActor* StationChest = Fixture.CreateChest(4, 4);
+	ARpgInventoryContainerActor* FreeChest = Fixture.CreateChest(4, 4);
+	URpgCraftingRecipeDefinition* Recipe = Fixture.CreateMaterialRecipe(2, 0.1f);
+	if (!MaterialChest || !StationChest || !FreeChest || !MaterialChest->GetInventoryManager()->AddItemDefinition(Material, 20) ||
+		!Fixture.OfferRecipes(*this, { Recipe })) { return false; }
+	FRpgStorageAssignment MaterialRule;
+	MaterialRule.ItemDefinition = Material;
+	FRpgStorageAssignment ProductRule;
+	ProductRule.ItemDefinition = Product;
+	MaterialChest->GetContainerComponent()->SetAssignments({ MaterialRule });
+
+	TestTrue(TEXT("A station without a station chest stores automatically by default"), Station->GetDefaultOutputTargetId().IsNone());
+	TStrongObjectPtr<URpgPhysicalStorageViewModel> ChestModel(NewObject<URpgPhysicalStorageViewModel>());
+	ChestModel->BindContainer(StationChest->GetContainerComponent());
+	TestFalse(TEXT("The chest screen starts with an ordinary chest"), ChestModel->IsStationChest());
+	StationChest->GetContainerComponent()->SetLinkedStationId(Station->GetPersistentStationId());
+	TestEqual(TEXT("The station chest is the default target"), Station->GetDefaultOutputTargetId(), ChestId(StationChest));
+	TestTrue(TEXT("The chest screen follows the replicated link"), ChestModel->IsStationChest());
+
+	// Unassigned, the station chest stays out of automatic storing and deposits, even while it holds the product.
+	if (!StationChest->GetInventoryManager()->AddItemDefinition(Product, 1) || !FreeChest->GetInventoryManager()->AddItemDefinition(Product, 1)) { return false; }
+	TArray<URpgInventoryManagerComponent*> Targets = Station->GetOutputTargets(Recipe, NAME_None);
+	TestTrue(TEXT("Automatic storing skips the unassigned station chest"),
+		Targets.Num() == 1 && Targets[0] == FreeChest->GetInventoryManager());
+	int64 Order = 0;
+	TestEqual(TEXT("Deposits skip the unassigned station chest despite its stock"),
+		StationChest->GetContainerComponent()->GetAssignmentRank(Product, Order), static_cast<int32>(INDEX_NONE));
+	TestEqual(TEXT("An ordinary chest with stock still takes deposits"), FreeChest->GetContainerComponent()->GetAssignmentRank(Product, Order), 2);
+	StationChest->GetContainerComponent()->SetAssignments({ ProductRule });
+	Targets = Station->GetOutputTargets(Recipe, NAME_None);
+	TestTrue(TEXT("An assigned station chest takes automatic output first"),
+		!Targets.IsEmpty() && Targets[0] == StationChest->GetInventoryManager());
+	TestEqual(TEXT("An assigned station chest takes deposits"), StationChest->GetContainerComponent()->GetAssignmentRank(Product, Order), 0);
+	StationChest->GetContainerComponent()->SetAssignments({});
+
+	// An order started with the default target delivers into the station chest.
+	if (!TestTrue(TEXT("An order starts with the default target"), Station->StartCraftingOrder(Requester, Recipe, 2, Station->GetDefaultOutputTargetId()))) { return false; }
+	AdvanceCraftingTimers(World, 0.2f);
+	AdvanceCraftingTimers(World, 0.2f);
+	TestFalse(TEXT("The order completes"), Station->HasCraftingOrder());
+	TestEqual(TEXT("Both units land in the station chest"), CountOf(StationChest, Product), 3);
+	TestEqual(TEXT("The free chest receives nothing"), CountOf(FreeChest, Product), 1);
+
+	// Another station sees the chest as an ordinary connected chest, never as its own default.
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.ObjectFlags = RF_Transient;
+	ARpgCraftingStationActor* OtherActor = World->SpawnActor<ARpgCraftingStationActor>(SpawnParameters);
+	URpgCraftingStationComponent* Other = OtherActor ? OtherActor->GetCraftingStationComponent() : nullptr;
+	if (!TestNotNull(TEXT("A second station exists"), Other)) { return false; }
+	StationIdProperty->SetPropertyValue_InContainer(Other, FName(TEXT("Station_Forge")));
+	if (!Fixture.OfferRecipes(*this, { Recipe }, Other)) { return false; }
+	TestTrue(TEXT("Another station keeps automatic storing as its default"), Other->GetDefaultOutputTargetId().IsNone());
+	TestFalse(TEXT("Another station's automatic storing skips the station chest"),
+		Other->GetOutputTargets(Recipe, NAME_None).Contains(StationChest->GetInventoryManager()));
+	TestTrue(TEXT("Another station may still pick the station chest explicitly"),
+		Other->CanStartCraftingOrder(Requester, Recipe, 1, ChestId(StationChest)));
+
+	StationChest->GetContainerComponent()->SetLinkedStationId(NAME_None);
+	TestFalse(TEXT("Clearing the link makes an ordinary chest again"), ChestModel->IsStationChest());
+	TestTrue(TEXT("Without its chest the station stores automatically"), Station->GetDefaultOutputTargetId().IsNone());
+	ChestModel->UnbindContainer();
 	return true;
 }
 

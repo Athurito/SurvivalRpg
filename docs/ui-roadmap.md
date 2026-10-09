@@ -380,6 +380,8 @@ stay English like the rest of the UI.
     output, even if it already holds some, so changed chest assignments steer
     the station instead of filling the wrong chest.
   - A fixed chest stays selectable.
+  - A station with a station chest uses that chest as its default target
+    instead (follow-up task, see [Station chests](physical-storage-implementation.md#station-chests)).
 - **One order per station.** It has a recipe, a quantity up to 99 and a
   target chest. Each piece or run takes its materials when it starts, then
   delivers into the target. A full or missing target and missing materials
@@ -441,6 +443,8 @@ The screen shows only the station on the workshop backdrop.
      - the material table (Material, Each, In chests);
      - "From connected chests · enough for N runs now";
      - the target dropdown with "Automatic" first, then each connected chest.
+       A station chest comes before "Automatic", carries the station icon and
+       is selected by default.
        - Chests are named with their assignments, such as "Gemeinsame Kiste
          (Charcoal)".
        - Each row shows free cells and contents ("80 Wood · 12 Ore"); the
@@ -544,8 +548,8 @@ Take all and tray tests are removed.
 - **In-world identification:** none. The crafting screen covers the world, so
   highlighting a chest there would not be visible; the dropdown shows
   assignments and contents instead.
-- **Station chests:** a dedicated, upgradeable chest built onto a station as
-  its default target is planned as a separate task (decided 2026-10-09).
+- **Station chests:** done in a follow-up task on top of UI-04; see
+  [Station chests](physical-storage-implementation.md#station-chests).
 - **3D preview:** none; the preview shows the icon.
 - **Gamepad focus** across the new popups had only a basic check.
 - **Maps without chests:** workbenches in `Lvl_RpgBaseline`,

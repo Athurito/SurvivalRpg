@@ -14,6 +14,7 @@ class URpgInventoryManagerComponent;
 class ARpgBaseCampActor;
 class URpgCraftingRecipeDefinition;
 class URpgCraftingRecipeSet;
+class URpgInventoryContainerComponent;
 struct FRpgInventoryBatchOperation;
 
 /** Replicated state of a station's order. Pausing is a separate flag and freezes any of these states. */
@@ -270,10 +271,33 @@ public:
 	TArray<URpgInventoryManagerComponent*> GetOutputTargets(const URpgCraftingRecipeDefinition* RecipeDefinition, FName TargetContainerId) const;
 
 	/**
+	 * Target a new order starts with: the persistent container id of this station's connected station chest, or None
+	 * (automatic storing) without one. Works on clients for the crafting screen.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting|Order")
+	FName GetDefaultOutputTargetId() const;
+
+	/** The chest among the given ones that is linked to StationId as its station chest, or null. */
+	static URpgInventoryManagerComponent* FindStationChestIn(const TArray<URpgInventoryManagerComponent*>& StorageInventories, FName StationId);
+
+	/** Station with this persistent id in the world, or null. Works on clients. */
+	static URpgCraftingStationComponent* FindStationById(const UWorld* World, FName StationId);
+
+	/**
+	 * Station a station chest at Location links to: the nearest one whose actor lies within Radius centimeters, whose id
+	 * is stable across sessions, that has no other linked chest and whose connected chests would include one at
+	 * Location. PreferredStationId wins while it qualifies, so a moved chest keeps its station. IgnoredChest does not
+	 * count as linked. Returns null when no station qualifies. Works on clients for placement previews.
+	 */
+	static URpgCraftingStationComponent* FindStationForStationChest(const UWorld* World, const FVector& Location, float Radius,
+		const URpgInventoryContainerComponent* IgnoredChest = nullptr, FName PreferredStationId = NAME_None);
+
+	/**
 	 * Automatic delivery order for an output among the given chests. Chests assigned to that exact item come first,
 	 * then chests assigned to its category, then unassigned chests already holding it, then other unassigned chests.
 	 * Chests whose assignments do not name the output are left out, even when they already hold some of it, so the
-	 * station never fills a chest meant for something else.
+	 * station never fills a chest meant for something else. Unassigned station chests are left out as well; a station
+	 * targets its own station chest explicitly through GetDefaultOutputTargetId.
 	 */
 	static TArray<URpgInventoryManagerComponent*> RankAutomaticOutputTargets(const TArray<URpgInventoryManagerComponent*>& StorageInventories,
 		TSubclassOf<URpgInventoryItemDefinition> OutputDefinition);
@@ -456,6 +480,8 @@ private:
 	void OnRep_CraftingState();
 
 	bool IsRecipeOfferedByStation(const URpgCraftingRecipeDefinition* RecipeDefinition) const;
+	/** True when the station id is the same on server and clients and across sessions, so a chest may link to it. */
+	bool HasStablePersistentStationId() const;
 	ARpgBaseCampActor* ResolveSpatialBaseCamp() const;
 	TFunction<bool()> MakeContextRevalidator(AActor* RequestingActor, FGuid ExpectedOrderId = FGuid()) const;
 	bool BuildUnitOutputOperations(const URpgCraftingRecipeDefinition* RecipeDefinition, URpgInventoryManagerComponent* Target,

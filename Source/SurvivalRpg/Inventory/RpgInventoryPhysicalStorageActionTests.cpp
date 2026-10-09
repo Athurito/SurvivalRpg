@@ -11,6 +11,8 @@
 #include "SurvivalRpg/Base/RpgBaseCampActor.h"
 #include "SurvivalRpg/Base/RpgBaseConstructionSiteActor.h"
 #include "SurvivalRpg/Base/RpgBaseStorageStationActor.h"
+#include "SurvivalRpg/Crafting/RpgCraftingStationActor.h"
+#include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/SceneComponent.h"
 #include "Engine/Engine.h"
@@ -175,6 +177,58 @@ namespace RpgPhysicalStorageActionTests
 	private:
 		TArray<FRpgBaseBuildResourceCost> PreviousCosts;
 	};
+
+	/** Turns the authored chest definition into a free station chest for one test and restores it afterwards. */
+	class FScopedAuthoredStationChest
+	{
+	public:
+		explicit FScopedAuthoredStationChest(float LinkRadius)
+		{
+			Definition = LoadObject<URpgBaseBuildableDefinition>(nullptr,
+				TEXT("/Game/SurvivalRpg/Storage/Physical/DA_Buildable_SharedChest.DA_Buildable_SharedChest"));
+			if (!Definition) { return; }
+			PreviousCosts = Definition->BuildCosts;
+			PreviousRadius = Definition->CraftingStationLinkRadius;
+			PreviousNameFormat = Definition->LinkedStationNameFormat;
+			Definition->BuildCosts.Reset();
+			Definition->CraftingStationLinkRadius = LinkRadius;
+			Definition->LinkedStationNameFormat = FText::FromString(TEXT("{Station} storage"));
+		}
+		~FScopedAuthoredStationChest()
+		{
+			if (!Definition) { return; }
+			Definition->BuildCosts = MoveTemp(PreviousCosts);
+			Definition->CraftingStationLinkRadius = PreviousRadius;
+			Definition->LinkedStationNameFormat = PreviousNameFormat;
+		}
+		URpgBaseBuildableDefinition* Definition = nullptr;
+	private:
+		TArray<FRpgBaseBuildResourceCost> PreviousCosts;
+		float PreviousRadius = 0.0f;
+		FText PreviousNameFormat;
+	};
+
+	/** Spawns a crafting station; a None id leaves it without a stable identity, like a runtime-spawned station. */
+	URpgCraftingStationComponent* SpawnStation(FFixture& Fixture, FVector Location, FName StationId, const FText& DisplayName = FText::GetEmpty())
+	{
+		ARpgCraftingStationActor* Actor = Fixture.Spawn<ARpgCraftingStationActor>(Location);
+		URpgCraftingStationComponent* Station = Actor ? Actor->GetCraftingStationComponent() : nullptr;
+		if (Station && !StationId.IsNone())
+		{
+			FindFProperty<FNameProperty>(URpgCraftingStationComponent::StaticClass(), TEXT("PersistentStationId"))->SetPropertyValue_InContainer(Station, StationId);
+		}
+		else if (Actor)
+		{
+			// Uninitialized fixture worlds report every actor as a level actor; this one models a runtime spawn.
+			Actor->bNetStartup = false;
+			Actor->bNetLoadOnClient = false;
+		}
+		if (Station && !DisplayName.IsEmpty())
+		{
+			FindFProperty<FTextProperty>(URpgCraftingStationComponent::StaticClass(), TEXT("StationDisplayName"))->SetPropertyValue_InContainer(Station, DisplayName);
+		}
+		return Station;
+	}
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgPhysicalStorageCommandReplayAccessTest,
@@ -509,6 +563,127 @@ bool FRpgPhysicalStorageRejectsLegacyConstructionTest::RunTest(const FString& Pa
 	TestEqual(TEXT("Legacy construction cannot recreate retired virtual storage"), LegacyStations, 0);
 	TestEqual(TEXT("Rejected legacy storage construction preserves player materials"),
 		Fixture.Inventory->GetTotalItemCountByDefinition(FFixture::Material()), 5);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgStationChestPlacementTest,
+	"SurvivalRpg.Storage.Physical.StationChest.LinkOnPlacement",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgStationChestPlacementTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgPhysicalStorageActionTests;
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this)) return false;
+	FScopedAuthoredStationChest Definition(300.0f);
+	if (!TestNotNull(TEXT("Authored chest build definition"), Definition.Definition)) return false;
+	Fixture.AddFloor();
+	auto BuiltChests = [&Fixture]()
+	{
+		TArray<URpgInventoryContainerComponent*> Results;
+		for (TActorIterator<ARpgInventoryContainerActor> It(Fixture.World); It; ++It)
+		{
+			if (!It->IsActorBeingDestroyed() && It->GetContainerComponent()->ExportPhysicalStorageMetadata().bRuntimeBuilt) Results.Add(It->GetContainerComponent());
+		}
+		return Results;
+	};
+	auto CanPlace = [&](FVector Location)
+	{
+		FText Reason;
+		return Fixture.Actions->CanPlacePhysicalStorage(Definition.Definition, FTransform(Location), NAME_None, Reason);
+	};
+	auto Build = [&](FVector Location)
+	{
+		FRpgPhysicalStorageRequest Request;
+		Request.RequestId = FGuid::NewGuid();
+		Request.Command = ERpgPhysicalStorageCommand::Build;
+		Request.BuildableDefinition = Definition.Definition;
+		Request.Transform = FTransform(Location);
+		Fixture.Actions->RequestPhysicalStorageCommand(Request);
+	};
+
+	const FVector FirstLocation(250, 0, 0);
+	TestFalse(TEXT("A station chest needs a crafting station in range"), CanPlace(FirstLocation));
+	Build(FirstLocation);
+	TestEqual(TEXT("Without a station nothing is built"), BuiltChests().Num(), 0);
+
+	URpgCraftingStationComponent* Kiln = SpawnStation(Fixture, FVector(500, 0, 0), TEXT("Station_Kiln"), FText::FromString(TEXT("Kiln")));
+	// Nearer than the kiln, but a station without a stable id cannot keep a saved link. Stations and chests keep their
+	// 120 cm interaction spheres clear of every footprint, since those spheres block the placement test.
+	URpgCraftingStationComponent* Unsaved = SpawnStation(Fixture, FVector(250, -200, 0), NAME_None);
+	if (!TestNotNull(TEXT("Kiln station"), Kiln) || !TestNotNull(TEXT("Station without id"), Unsaved)) return false;
+	TestTrue(TEXT("A free station in range allows placement"), CanPlace(FirstLocation));
+	Build(FirstLocation);
+	TArray<URpgInventoryContainerComponent*> Built = BuiltChests();
+	if (!TestEqual(TEXT("Placement builds one station chest"), Built.Num(), 1)) return false;
+	URpgInventoryContainerComponent* KilnChest = Built[0];
+	TestEqual(TEXT("The chest links to the nearest station with a stable id"), KilnChest->GetLinkedStationId(), FName(TEXT("Station_Kiln")));
+	TestTrue(TEXT("The linked chest is a station chest"), KilnChest->IsStationChest());
+	TestEqual(TEXT("The chest is named after its station"), KilnChest->GetStorageDisplayName().ToString(), FString(TEXT("Kiln storage")));
+	TestEqual(TEXT("The station targets its chest by default"), Kiln->GetDefaultOutputTargetId(), KilnChest->GetPersistentContainerId());
+	TestTrue(TEXT("The station without id keeps automatic storing"), Unsaved->GetDefaultOutputTargetId().IsNone());
+
+	// One chest per station: the kiln is taken, so a second chest needs another free station in range.
+	const FVector SecondLocation(400, 250, 0);
+	TestFalse(TEXT("A station with a chest accepts no second one"), CanPlace(SecondLocation));
+	Build(SecondLocation);
+	TestEqual(TEXT("The rejected second chest is not built"), BuiltChests().Num(), 1);
+	URpgCraftingStationComponent* Forge = SpawnStation(Fixture, FVector(350, 480, 0), TEXT("Station_Forge"), FText::FromString(TEXT("Forge")));
+	if (!TestNotNull(TEXT("Forge station"), Forge)) return false;
+	Build(SecondLocation);
+	Built = BuiltChests();
+	if (!TestEqual(TEXT("The second chest links to the next free station"), Built.Num(), 2)) return false;
+	URpgInventoryContainerComponent* ForgeChest = Built[0] == KilnChest ? Built[1] : Built[0];
+	TestEqual(TEXT("The second chest belongs to the forge"), ForgeChest->GetLinkedStationId(), FName(TEXT("Station_Forge")));
+	TestEqual(TEXT("The kiln keeps its own chest"), Kiln->GetDefaultOutputTargetId(), KilnChest->GetPersistentContainerId());
+	TestEqual(TEXT("The forge targets its own chest"), Forge->GetDefaultOutputTargetId(), ForgeChest->GetPersistentContainerId());
+
+	// Relocation keeps the link within range and rejects a move away from every free station.
+	AActor* KilnChestActor = KilnChest->GetOwner();
+	auto Move = [&](FVector Location)
+	{
+		FRpgPhysicalStorageRequest Begin = Fixture.Request(Cast<ARpgInventoryContainerActor>(KilnChestActor), ERpgPhysicalStorageCommand::BeginRelocate);
+		Fixture.Actions->RequestPhysicalStorageCommand(Begin);
+		FRpgPhysicalStorageRequest Request = Fixture.Request(Cast<ARpgInventoryContainerActor>(KilnChestActor), ERpgPhysicalStorageCommand::Relocate);
+		Request.RelocationSessionId = Begin.RequestId;
+		Request.Transform = FTransform(Location);
+		Fixture.Actions->RequestPhysicalStorageCommand(Request);
+	};
+	Move(FVector(450, -200, 0));
+	TestTrue(TEXT("A move within range is confirmed"), KilnChestActor->GetActorLocation().Equals(FVector(450, -200, 0)));
+	TestEqual(TEXT("The moved chest keeps its station"), KilnChest->GetLinkedStationId(), FName(TEXT("Station_Kiln")));
+	Fixture.Pawn->SetActorLocation(FVector(300, -100, 0));
+	Move(FVector(-200, 0, 0));
+	TestTrue(TEXT("A move away from every free station is rejected"), KilnChestActor->GetActorLocation().Equals(FVector(450, -200, 0)));
+	TestEqual(TEXT("A rejected move keeps the link"), KilnChest->GetLinkedStationId(), FName(TEXT("Station_Kiln")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgStationChestAssetContractTest,
+	"SurvivalRpg.Storage.Physical.StationChest.AssetContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgStationChestAssetContractTest::RunTest(const FString& Parameters)
+{
+	const URpgBaseBuildableDefinition* Definition = LoadObject<URpgBaseBuildableDefinition>(nullptr,
+		TEXT("/Game/SurvivalRpg/Storage/Physical/DA_Buildable_StationChest.DA_Buildable_StationChest"));
+	if (!TestNotNull(TEXT("The station chest definition exists"), Definition)) return false;
+	TestTrue(TEXT("The definition links to a station"), Definition->CraftingStationLinkRadius > 0.0f);
+	TestTrue(TEXT("The linked name includes the station"), Definition->LinkedStationNameFormat.ToString().Contains(TEXT("{Station}")));
+	TestTrue(TEXT("The station chest is upgradeable"), Definition->ChestUpgradeTiers.Num() >= 2);
+	for (int32 Tier = 1; Tier < Definition->ChestUpgradeTiers.Num(); ++Tier)
+	{
+		const FRpgInventoryGridSize& Previous = Definition->ChestUpgradeTiers[Tier - 1].GridSize;
+		const FRpgInventoryGridSize& Current = Definition->ChestUpgradeTiers[Tier].GridSize;
+		TestTrue(TEXT("Every upgrade tier enlarges the grid"),
+			Current.Width >= Previous.Width && Current.Height >= Previous.Height && !(Current == Previous));
+	}
+	const ARpgInventoryContainerActor* Template = Definition->BuildActorClass
+		? Cast<ARpgInventoryContainerActor>(Definition->BuildActorClass->GetDefaultObject())
+		: nullptr;
+	if (!TestNotNull(TEXT("The definition builds a physical chest"), Template)) return false;
+	TestTrue(TEXT("The chest Blueprint uses the station chest definition"),
+		Template->GetContainerComponent()->GetBuildableDefinition() == Definition);
 	return true;
 }
 

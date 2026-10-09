@@ -67,6 +67,15 @@ struct SURVIVALRPG_API FRpgPhysicalStorageMetadata
 	/** True for player-built actors which must be reconstructed from the world save. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, SaveGame, Category = "Storage")
 	bool bRuntimeBuilt = false;
+
+	/**
+	 * Station chests only: persistent id of the crafting station this chest was built onto
+	 * (URpgCraftingStationComponent::GetPersistentStationId). The server sets it on placement and relocation; None marks
+	 * an ordinary chest. A linked chest is its station's default output target and takes deposits and automatic
+	 * deliveries only through its assignments.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, SaveGame, Category = "Storage")
+	FName LinkedStationId;
 };
 
 /** Server-local ordinary resource operation. Authority/access validation belongs to the caller. */

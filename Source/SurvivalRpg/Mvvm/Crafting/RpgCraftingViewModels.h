@@ -351,7 +351,8 @@ class SURVIVALRPG_API URpgCraftingStorageOptionViewModel : public UMVVMViewModel
 public:
 	/** Initializes this option. */
 	void InitializeOption(FName InContainerId, const FText& InDisplayName, int32 InFreeCells, int32 InTotalCells,
-		int32 InUnitsThatFit, const FText& InCapacityText, const FText& InContentsText, bool bInSelected, bool bInSuggested);
+		int32 InUnitsThatFit, const FText& InCapacityText, const FText& InContentsText, bool bInSelected, bool bInSuggested,
+		bool bInStationChest = false, const TSoftObjectPtr<UTexture2D>& InIcon = TSoftObjectPtr<UTexture2D>());
 
 	/** Persistent container id of the chest; None for the automatic choice. */
 	UFUNCTION(BlueprintPure, Category = "Crafting|ViewModel")
@@ -393,6 +394,14 @@ protected:
 	/** True for the chest automatic storing would fill next for the recipe in context. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Storage", meta = (AllowPrivateAccess = "true"))
 	bool bSuggested = false;
+
+	/** True for the observed station's own station chest, listed first as the default target. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Storage", meta = (AllowPrivateAccess = "true"))
+	bool bStationChest = false;
+
+	/** Icon of a station chest (this or another station's): its station's icon. Null for ordinary chests and "Automatic". */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Storage", meta = (AllowPrivateAccess = "true"))
+	TSoftObjectPtr<UTexture2D> Icon;
 };
 
 /** One key value of the recipe preview, such as "Yield per run: 2 pieces" or "Damage: 48–54". */

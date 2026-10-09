@@ -15,6 +15,7 @@ Status: implemented and validated locally, 2026-09-30. Branch: `codex/physical-s
   - A full target makes the order wait before anything is consumed (`WaitingForSpace`); a missing target or missing materials make it wait as well. It retries every second and on changes.
   - The paid unit's cost is kept as unit credits. Stop remaining refunds them to the source chest, then to other connected chests, then to the target. If the refund fits nowhere, the piece is finished and the order ends. Nothing becomes a world drop.
 - Chest construction and same-base relocation use a preview and server placement checks. Upgrades preserve external footprint, item positions, identity and contents. Prototype grids are 6x4, 6x6 and 6x8.
+- A station chest is an optional chest built next to a crafting station; it becomes that station's default output target. See [Station chests](#station-chests).
 - Moving starts with a server-authorized direct interaction. The same pawn may then walk beyond the original chest's interaction radius inside that base. Confirmation requires its controller-scoped session, unchanged chest settings, a reachable target and valid ground/footprint. Cancellation, respawn and a committed move invalidate the authorization. Inventory contents may change normally while the preview is open.
 - World persistence includes physical actor identity, placement, metadata and inventory, plus each station's order with its unit credits (world save schema 5). Older station entries load as idle stations; the minimum supported schema stays 3.
 - New inventory test map uses the approved project-local GASP blocks, grid and LevelVisuals from `Lvl_RpgGaspMantle`. Existing CMC gameplay composition is reused.
@@ -91,6 +92,66 @@ Validation:
 
 Evidence: `Saved/PhysicalStorage20260930/build-11.log`, `AutomationSplitMerge11/index.json`, `editor-20260930-170744.log`, and `ui/splitmerge-{before,split,merged,reloaded}.png` (local, ignored).
 
+## Station chests
+
+The user decided on 2026-10-09, during UI-04 ([#204](https://github.com/Athurito/SurvivalRpg/pull/204)), to give each crafting station an optional station chest. Branch `claude/station-chest`, PR [#205](https://github.com/Athurito/SurvivalRpg/pull/205).
+
+- **What it is:** a physical chest built next to a crafting station (`BP_StationChest`, `DA_Buildable_StationChest`, blue lid). It is the station's own output storage.
+- **Link:**
+  - Server placement links the chest to the nearest crafting station within `CraftingStationLinkRadius` (300 cm between the chest and the station's actor location) that has no station chest yet.
+  - A station has at most one station chest. Without a free station, placement fails with "Baue die Stationskiste neben eine Werkstation ohne eigene Kiste.".
+  - The station needs an id that stays the same on clients and across sessions: an authored `PersistentStationId`, a container id on the station actor, or a level-placed actor. The chest must also be one of the station's connected chests.
+- **Relocation:** a moved station chest keeps its station while it stays in range. Otherwise it links to the nearest free station; without one, the move is rejected.
+- **Persistence:** the link is the station's persistent id in `FRpgPhysicalStorageMetadata::LinkedStationId`.
+  - It replicates with the chest settings and is saved and restored with them, before the items.
+  - Saves written before this field load it as None, so their chests stay ordinary. The world save schema stays 5.
+- **Name and icon:** the chest is named by its definition's `LinkedStationNameFormat` with the station's name, such as "Kiln storage". Station chests show the station's icon in the crafting target list. Without a station name or format, the buildable's `DisplayName` is used.
+- **Upgrades:** the station chest uses the shared chest's tiers: 6x4, then 6x6 and 6x8 for the same costs.
+- **Default target:** the crafting screen lists the station's own chest first and selects it; **Automatic** and every other connected chest stay selectable. Stations without a station chest keep **Automatic** as default.
+- **Routing:**
+  - An unassigned station chest is never a deposit target ("Einlagern"), even when it already holds the item.
+  - It is also skipped by every station's automatic storing. Assignments make it an ordinary assigned target for both.
+  - It stays a material source for every station it is connected to, and other stations may pick it as a fixed target.
+
+- **Screens:**
+  - The build picker (`CUI_PhysicalStorageBuildPicker`) gains **Andere Bauoption**, which cycles through the controller's buildables. The test controller now offers the shared chest and the station chest.
+  - In the crafting target list (`CUI_CraftingStorageOption`), station chests show their station's icon.
+  - The chest screen (`CUI_StorageSpatial`) titles a station chest with its name. Its hint reads "Ohne Zuordnung: nur für Aufträge dieser Werkstation." instead of "allgemeine Kiste". The title is also the quick-transfer destination name.
+
+C++ boundary:
+- **Native:** `LinkedStationId` and its restore path, server linking in the existing build and relocate commands, the default target and the routing exclusion. They touch authority, persistence and replicated settings.
+- **View models:** read-only fields only: `bStationChest` and `Icon` on the crafting storage option, `StorageDisplayName` and `bStationChest` on the chest view model.
+- **Assets (Unreal MCP):** the chest Blueprint, its definition (radius, name format, tiers), the picker, the storage option entry, the chest screen and the test controller's build list.
+- **New native classes:** none.
+- **Editor tooling:** `AssetContractTools.add_function_input` gained `soft_reference`, because the entry's icon function needs a soft texture input.
+
+Validation (2026-10-09; editor closed unless noted):
+- **Build:** `ue.py build` passed with 0 errors and 0 warnings.
+- **New tests**, all passed:
+  - `Storage.Physical.StationChest.LinkOnPlacement`: link on build, rejection without a free station, one chest per station, skipping a station without a stable id, relocation in range and rejection out of range;
+  - `Storage.Physical.StationChest.AssetContract`;
+  - `Crafting.StationChest.DefaultTargetAndRouting`: default target, automatic storing and deposit exclusion, assigned station chests, delivery into the station chest, other stations, the chest view model;
+  - `Save.WorldSave.StationChestLink`: disk serialization, reconstruction and old saves without the field;
+  - `Crafting.ViewModel.StationChestOption`: option order, default selection, name, and Automatic and other chests stay selectable.
+- **Related suites:** `ue.py test SurvivalRpg.Storage SurvivalRpg.Crafting SurvivalRpg.Save SurvivalRpg.Inventory SurvivalRpg.UI SurvivalRpg.BaseStorage --null-rhi` ran 276 tests; 273 passed. The 3 failures are the known, unrelated ones listed for UI-04: two `BaseStorage.ViewModel` tests and `UI.Input.PlayerInventoryNativeTag`. `SurvivalRpg.Network.PhysicalStoragePIE` (rendering): 3/3 passed.
+- **Cook:** `ue.py cook Lvl_RpgInventoryStorage` passed with 0 errors and the 3 known warnings. It ran with the MCP server disabled, because another editor held port 8000. The new and changed assets are in the cooked output.
+- **Assets:** every new and changed Blueprint compiled and was saved through Unreal MCP, then reloaded fresh and read back (parents, definition links, build list).
+- **PIE in `Lvl_RpgInventoryStorage`, standalone, with real Slate clicks:**
+  - **Build:** Kiste bauen, then Andere Bauoption, showed "Station storage". Placement next to `StorageLab_Workbench_A` was valid 290 cm from it and rejected at 300.3 cm with the station chest reason. Bestätigen built a chest linked to the workbench, named "Shared Workbench storage", 6x4.
+  - **Crafting screen:** the target list showed "Shared Workbench storage" first with the workbench icon, selected by default, then Automatic (5 chests, without the station chest) and the shared chests. A 2-piece plank order delivered 4 planks into the station chest.
+  - **Upgrade:** Aufwerten moved the chest to tier 2 (6x6) and kept its link and contents.
+  - **Restore:** a new PIE session restored the chest from the disk save with its link, tier, planks and the station's default target.
+  - **Chest screen:** shows the station name as title and the station hint; an ordinary chest keeps "Storage".
+
+Limits:
+- **Gap to the station:** the 120 cm interaction spheres of stations and chests block the WorldStatic placement test (profile `Interactable_OverlapDynamic`). A station chest with the 62 × 52 cm footprint therefore stands about 1.8–3 m from the station's origin, not directly against it or on top of it. This applies to every chest; the profile was not changed here.
+- **Station ids:** a station without a stable id cannot get a station chest. It needs an authored `PersistentStationId`, a container id or a level placement.
+- **Missing station:** a chest whose station no longer exists keeps its link. It stays out of automatic routing and falls back to the buildable name until it is moved next to a free station.
+- **Placed chests:** level-placed station chests are not linked automatically; only built ones are.
+- **Not run:** a dedicated-server multiplayer test of station chests. The link is part of the replicated chest settings, which the existing network test covers for other fields.
+- **Interaction prompt:** the prompt stays the static "Station storage".
+
+
 ## Test content
 
 - Map: `/Game/SurvivalRpg/Maps/Test/Lvl_RpgInventoryStorage`.
@@ -109,6 +170,7 @@ Open `Lvl_RpgInventoryStorage` and start PIE. Use **I** for the inventory and **
 - Open a chest to edit its assignment slots, deposit carried materials, upgrade its grid or move it within the same base. A slot can select an exact material or a category; add separate slots to combine wood and iron.
 - The two oak chests start with 25 oak each. The earlier assignment wins that tie. Exact oak assignments take priority over category chests and the unassigned chest, even when those contain more oak.
 - The inside workbench uses the full base despite its deliberately small 1 m station radius. The outside workbench uses its 9 m radius and cannot reach the far chest through the nearby edge chest.
+- **Station chest:** in the inventory, choose **Kiste bauen**, then **Andere Bauoption** until "Station storage" shows. Place it 2–3 m from the inside workbench; farther away the preview names the missing station. Open the workbench: **Store in** now starts with "Shared Workbench storage" (workbench icon), and planks go there. **Automatic** and the shared chests stay selectable. The chest itself is titled "Shared Workbench storage" and is upgraded like the shared chest.
 - Pick planks at a workbench, choose a target chest in **Store in**, set the quantity and **Start crafting** (**C**). Each piece takes its oak from the connected chests when it starts, and the planks land in the target chest. A chest's **Einlagern** action routes carried materials. The eight material examples and both base areas are labeled in the map.
 
 ## Transaction and save boundaries

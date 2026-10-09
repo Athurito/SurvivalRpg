@@ -29,6 +29,7 @@
 #include "SurvivalRpg/System/RpgAssetManager.h"
 #include "SurvivalRpg/System/RpgGameData.h"
 #include "TimerManager.h"
+#include "UObject/UObjectIterator.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgCraftingStationComponent)
 
@@ -292,6 +293,80 @@ TArray<URpgInventoryManagerComponent*> URpgCraftingStationComponent::GetOutputTa
 	return RankAutomaticOutputTargets(GetConnectedStorageInventories(), RecipeDefinition->OutputItems[0].ItemDefinition);
 }
 
+FName URpgCraftingStationComponent::GetDefaultOutputTargetId() const
+{
+	return GetStorageContainerId(FindStationChestIn(GetConnectedStorageInventories(), GetPersistentStationId()));
+}
+
+URpgInventoryManagerComponent* URpgCraftingStationComponent::FindStationChestIn(const TArray<URpgInventoryManagerComponent*>& StorageInventories,
+	FName StationId)
+{
+	if (StationId.IsNone()) { return nullptr; }
+	for (URpgInventoryManagerComponent* Inventory : StorageInventories)
+	{
+		const AActor* Owner = Inventory ? Inventory->GetOwner() : nullptr;
+		const URpgInventoryContainerComponent* Container = Owner ? Owner->FindComponentByClass<URpgInventoryContainerComponent>() : nullptr;
+		if (Container && Container->GetInventoryManager() == Inventory && Container->GetLinkedStationId() == StationId) { return Inventory; }
+	}
+	return nullptr;
+}
+
+URpgCraftingStationComponent* URpgCraftingStationComponent::FindStationById(const UWorld* World, FName StationId)
+{
+	if (!World || StationId.IsNone()) { return nullptr; }
+	for (TObjectIterator<URpgCraftingStationComponent> It; It; ++It)
+	{
+		if (It->GetWorld() == World && IsValid(It->GetOwner()) && !It->GetOwner()->IsActorBeingDestroyed() &&
+			It->GetPersistentStationId() == StationId)
+		{
+			return *It;
+		}
+	}
+	return nullptr;
+}
+
+URpgCraftingStationComponent* URpgCraftingStationComponent::FindStationForStationChest(const UWorld* World, const FVector& Location,
+	float Radius, const URpgInventoryContainerComponent* IgnoredChest, FName PreferredStationId)
+{
+	if (!World || Location.ContainsNaN() || !FMath::IsFinite(Radius) || Radius <= 0.0f) { return nullptr; }
+	// Stations that already have a station chest; the moving chest does not hold its own station.
+	TSet<FName> LinkedStations;
+	for (TObjectIterator<URpgInventoryContainerComponent> It; It; ++It)
+	{
+		if (*It != IgnoredChest && It->GetWorld() == World && IsValid(It->GetOwner()) && !It->GetOwner()->IsActorBeingDestroyed() &&
+			It->IsStationChest())
+		{
+			LinkedStations.Add(It->GetLinkedStationId());
+		}
+	}
+	const ARpgBaseCampActor* ChestBase = RpgStorageAccessRules::ResolveBaseAtLocation(World, Location);
+	URpgCraftingStationComponent* Best = nullptr;
+	double BestDistanceSquared = FMath::Square(static_cast<double>(Radius));
+	for (TObjectIterator<URpgCraftingStationComponent> It; It; ++It)
+	{
+		URpgCraftingStationComponent* Station = *It;
+		const AActor* Owner = Station->GetOwner();
+		if (Station->GetWorld() != World || !IsValid(Owner) || Owner->IsActorBeingDestroyed() || !Station->HasStablePersistentStationId()) { continue; }
+		const FName StationId = Station->GetPersistentStationId();
+		const double DistanceSquared = FVector::DistSquared(Owner->GetActorLocation(), Location);
+		if (DistanceSquared > FMath::Square(static_cast<double>(Radius)) || LinkedStations.Contains(StationId)) { continue; }
+		// The chest must be one of the station's connected chests: inside the station's base, or within its outside radius.
+		const ARpgBaseCampActor* StationBase = Station->ResolveSpatialBaseCamp();
+		const bool bConnected = StationBase
+			? ChestBase == StationBase
+			: DistanceSquared <= FMath::Square(static_cast<double>(Station->GetStorageSearchRadius()));
+		if (!bConnected) { continue; }
+		if (!PreferredStationId.IsNone() && StationId == PreferredStationId) { return Station; }
+		if (!Best || DistanceSquared < BestDistanceSquared ||
+			(DistanceSquared == BestDistanceSquared && StationId.LexicalLess(Best->GetPersistentStationId())))
+		{
+			Best = Station;
+			BestDistanceSquared = DistanceSquared;
+		}
+	}
+	return Best;
+}
+
 TArray<URpgInventoryManagerComponent*> URpgCraftingStationComponent::RankAutomaticOutputTargets(
 	const TArray<URpgInventoryManagerComponent*>& StorageInventories, TSubclassOf<URpgInventoryItemDefinition> OutputDefinition)
 {
@@ -319,6 +394,11 @@ TArray<URpgInventoryManagerComponent*> URpgCraftingStationComponent::RankAutomat
 		{
 			Entry.Rank = Container->GetAssignmentRank(OutputDefinition, Entry.Order);
 			if (Entry.Rank != 0 && Entry.Rank != 1) { continue; }
+		}
+		else if (Container->IsStationChest())
+		{
+			// A station chest takes automatic output only through assignments; its own station targets it explicitly.
+			continue;
 		}
 		else
 		{
@@ -1038,6 +1118,16 @@ FName URpgCraftingStationComponent::GetPersistentStationId() const
 		if (!Container->GetPersistentContainerId().IsNone()) { return Container->GetPersistentContainerId(); }
 	}
 	return GetOwner()->GetFName();
+}
+
+bool URpgCraftingStationComponent::HasStablePersistentStationId() const
+{
+	const AActor* Owner = GetOwner();
+	if (!PersistentStationId.IsNone()) { return true; }
+	const URpgInventoryContainerComponent* Container = Owner ? Owner->FindComponentByClass<URpgInventoryContainerComponent>() : nullptr;
+	if (Container && !Container->GetPersistentContainerId().IsNone()) { return true; }
+	// Level actors keep their name on clients and across sessions; spawned actors without an authored id do not.
+	return Owner && (Owner->HasAnyFlags(RF_WasLoaded) || Owner->IsNetStartupActor());
 }
 
 FRpgCraftingStationSaveData URpgCraftingStationComponent::ExportCraftingState() const

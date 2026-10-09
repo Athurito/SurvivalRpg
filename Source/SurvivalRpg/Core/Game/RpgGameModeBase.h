@@ -266,6 +266,7 @@ private:
 	friend class FRpgPhysicalChestRetentionTest;
 	friend class FRpgPhysicalChestSplitMergeSaveTest;
 	friend class FRpgWorldFeatureSaveTest;
+	friend class FRpgStationChestSaveTest;
 
 	/** Derived live registration only; durable absent-station state remains in CraftingStationSaveDataMap. */
 	TSet<TWeakObjectPtr<class URpgCraftingStationComponent>> RegisteredCraftingStations;

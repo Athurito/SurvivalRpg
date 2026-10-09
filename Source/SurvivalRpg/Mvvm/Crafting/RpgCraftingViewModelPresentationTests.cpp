@@ -6,6 +6,7 @@
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "Misc/AutomationTest.h"
+#include "SurvivalRpg/Base/RpgBaseBuildableDefinition.h"
 #include "SurvivalRpg/Crafting/RpgCraftingCategoryCatalog.h"
 #include "SurvivalRpg/Crafting/RpgCraftingRecipeDefinition.h"
 #include "SurvivalRpg/Crafting/RpgCraftingStationActor.h"
@@ -553,6 +554,62 @@ bool FRpgCraftingViewModelTargetStorageTest::RunTest(const FString& Parameters)
 
 	ViewModel->UnbindCraftingStation();
 	TestEqual(TEXT("Unbinding clears the options"), ViewModel->GetTargetStorageOptions().Num(), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCraftingViewModelStationChestTest,
+	"SurvivalRpg.Crafting.ViewModel.StationChestOption",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCraftingViewModelStationChestTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCraftingViewModelPresentationTests;
+
+	FScopedStationWorld Fixture;
+	if (!TestTrue(TEXT("The station fixture exists"), Fixture.IsValid()))
+	{
+		return false;
+	}
+	FindFProperty<FNameProperty>(URpgCraftingStationComponent::StaticClass(), TEXT("PersistentStationId"))
+		->SetPropertyValue_InContainer(Fixture.Station, FName(TEXT("Station_Kiln")));
+	FindFProperty<FTextProperty>(URpgCraftingStationComponent::StaticClass(), TEXT("StationDisplayName"))
+		->SetPropertyValue_InContainer(Fixture.Station, FText::FromString(TEXT("Kiln")));
+	URpgCraftingRecipeDefinition* Recipe = MakeRecipe(TEXT("Unit"), 1.0f);
+	Fixture.OfferRecipes({ Recipe });
+	ARpgInventoryContainerActor* Shared = Fixture.CreateChest(2, 2);
+	ARpgInventoryContainerActor* StationChest = Fixture.CreateChest(2, 2);
+	URpgBaseBuildableDefinition* Definition = NewObject<URpgBaseBuildableDefinition>(GetTransientPackage(), NAME_None, RF_Transient);
+	Definition->DisplayName = FText::FromString(TEXT("Station storage"));
+	Definition->CraftingStationLinkRadius = 300.0f;
+	Definition->LinkedStationNameFormat = FText::FromString(TEXT("{Station} storage"));
+	FindFProperty<FObjectPropertyBase>(URpgInventoryContainerComponent::StaticClass(), TEXT("BuildableDefinition"))
+		->SetObjectPropertyValue_InContainer(StationChest->GetContainerComponent(), Definition);
+	StationChest->GetContainerComponent()->SetLinkedStationId(Fixture.Station->GetPersistentStationId());
+
+	URpgCraftingStationViewModel* ViewModel = NewObject<URpgCraftingStationViewModel>(Fixture.Station, NAME_None, RF_Transient);
+	ViewModel->BindCraftingStation(Fixture.Station, Fixture.Requester);
+	const TArray<URpgCraftingStorageOptionViewModel*> Options = ViewModel->GetTargetStorageOptions();
+	if (!TestEqual(TEXT("The station chest, automatic storing and the shared chest are offered"), Options.Num(), 3))
+	{
+		return false;
+	}
+	TestEqual(TEXT("The station chest leads the options"), Options[0]->GetContainerId(), ChestId(StationChest));
+	TestTrue(TEXT("The station chest option is marked"), ReadValue<bool, FBoolProperty>(Options[0], TEXT("bStationChest")));
+	TestEqual(TEXT("The station chest is named after its station"), ReadText(Options[0], TEXT("DisplayName")), FString(TEXT("Kiln storage")));
+	TestTrue(TEXT("Automatic storing follows the station chest"), Options[1]->GetContainerId().IsNone());
+	TestEqual(TEXT("The shared chest comes last"), Options[2]->GetContainerId(), ChestId(Shared));
+	TestFalse(TEXT("Other chests are not station chests"), ReadValue<bool, FBoolProperty>(Options[2], TEXT("bStationChest")));
+	TestEqual(TEXT("The station chest is the default target"), ViewModel->GetSelectedTargetContainerId(), ChestId(StationChest));
+	TestTrue(TEXT("The default target may start"), ViewModel->CanStartOrder());
+
+	ViewModel->SelectTargetStorage(NAME_None);
+	TestTrue(TEXT("Automatic storing stays selectable"), ViewModel->GetSelectedTargetContainerId().IsNone());
+	ViewModel->RefreshSelectedRecipeDetails();
+	TestTrue(TEXT("The automatic pick survives a refresh"), ViewModel->GetSelectedTargetContainerId().IsNone());
+	ViewModel->SelectTargetStorage(ChestId(Shared));
+	TestEqual(TEXT("Another connected chest stays selectable"), ViewModel->GetSelectedTargetContainerId(), ChestId(Shared));
+	ViewModel->UnbindCraftingStation();
 	return true;
 }
 

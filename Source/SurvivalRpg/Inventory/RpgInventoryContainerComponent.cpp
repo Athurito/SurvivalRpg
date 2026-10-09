@@ -7,9 +7,11 @@
 #include "Net/UnrealNetwork.h"
 #include "RpgInventoryManagerComponent.h"
 #include "RpgInventoryFragment_ItemTraits.h"
+#include "SurvivalRpg/Base/RpgBaseBuildableDefinition.h"
 #include "SurvivalRpg/Base/RpgBaseCampActor.h"
 #include "SurvivalRpg/Base/RpgStorageAccessRules.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
+#include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Interaction/InteractionQuery.h"
 #include "SurvivalRpg/Inventory/RpgDroppedInventoryActor.h"
@@ -189,6 +191,38 @@ void URpgInventoryContainerComponent::SetUpgradeTier(int32 NewTier)
 	}
 }
 
+void URpgInventoryContainerComponent::SetLinkedStationId(FName NewStationId)
+{
+	if (GetOwner() && GetOwner()->HasAuthority() && PhysicalStorageMetadata.LinkedStationId != NewStationId)
+	{
+		PhysicalStorageMetadata.LinkedStationId = NewStationId;
+		NotifyPhysicalStorageSettingsChanged();
+	}
+}
+
+FText URpgInventoryContainerComponent::GetStorageDisplayName() const
+{
+	const FText BuildableName = BuildableDefinition ? BuildableDefinition->DisplayName : FText::GetEmpty();
+	const URpgCraftingStationComponent* Station = IsStationChest() && BuildableDefinition && !BuildableDefinition->LinkedStationNameFormat.IsEmpty()
+		? URpgCraftingStationComponent::FindStationById(GetWorld(), GetLinkedStationId())
+		: nullptr;
+	if (!Station || Station->GetStationDisplayName().IsEmpty())
+	{
+		return BuildableName;
+	}
+	return FText::FormatNamed(BuildableDefinition->LinkedStationNameFormat, TEXT("Station"), Station->GetStationDisplayName());
+}
+
+TSoftObjectPtr<UTexture2D> URpgInventoryContainerComponent::GetStorageDisplayIcon() const
+{
+	const URpgCraftingStationComponent* Station = IsStationChest() ? URpgCraftingStationComponent::FindStationById(GetWorld(), GetLinkedStationId()) : nullptr;
+	if (Station && !Station->GetStationIcon().IsNull())
+	{
+		return Station->GetStationIcon();
+	}
+	return BuildableDefinition ? BuildableDefinition->Icon : TSoftObjectPtr<UTexture2D>();
+}
+
 void URpgInventoryContainerComponent::MarkPhysicalStorageMoved()
 {
 	if (GetOwner() && GetOwner()->HasAuthority())
@@ -289,8 +323,9 @@ int32 URpgInventoryContainerComponent::GetAssignmentRank(TSubclassOf<URpgInvento
 		}
 		else if (Candidate != INDEX_NONE && Candidate == Rank) { OutOrder = FMath::Min(OutOrder, Rule.AssignmentOrder); }
 	}
+	// A station chest belongs to its station's output: existing stock alone never makes it a deposit target.
 	return Rank != INDEX_NONE ? Rank :
-		(GetInventoryManager() && GetInventoryManager()->GetTotalItemCountByDefinition(ItemDefinition) > 0 ? 2 : INDEX_NONE);
+		(!IsStationChest() && GetInventoryManager() && GetInventoryManager()->GetTotalItemCountByDefinition(ItemDefinition) > 0 ? 2 : INDEX_NONE);
 }
 
 void URpgInventoryContainerComponent::NotifyPhysicalStorageSettingsChanged()

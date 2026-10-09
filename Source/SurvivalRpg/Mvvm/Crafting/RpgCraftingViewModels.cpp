@@ -364,7 +364,10 @@ namespace
 			: Text;
 	}
 
-	/** Chest names for display: the buildable's name plus the chest's assignments, numbered when names repeat. */
+	/**
+	 * Chest names for display: the chest's name (a station chest is named after its station) plus its assignments,
+	 * numbered when names repeat.
+	 */
 	TArray<FText> MakeStorageNames(const TArray<URpgInventoryManagerComponent*>& Inventories)
 	{
 		TArray<FText> BaseNames;
@@ -372,8 +375,8 @@ namespace
 		for (const URpgInventoryManagerComponent* Inventory : Inventories)
 		{
 			const URpgInventoryContainerComponent* Container = FindStorageContainer(Inventory);
-			const URpgBaseBuildableDefinition* Buildable = Container ? Container->GetBuildableDefinition() : nullptr;
-			FText Name = Buildable && !Buildable->DisplayName.IsEmpty() ? Buildable->DisplayName : NSLOCTEXT("RpgCrafting", "DefaultStorageName", "Storage Chest");
+			const FText StorageName = Container ? Container->GetStorageDisplayName() : FText::GetEmpty();
+			FText Name = !StorageName.IsEmpty() ? StorageName : NSLOCTEXT("RpgCrafting", "DefaultStorageName", "Storage Chest");
 			const TArray<FText> Assignments = MakeAssignmentNames(Container);
 			if (!Assignments.IsEmpty())
 			{
@@ -566,7 +569,8 @@ void URpgCraftingTierOptionViewModel::InitializeOption(int32 InTier, const FText
 }
 
 void URpgCraftingStorageOptionViewModel::InitializeOption(FName InContainerId, const FText& InDisplayName, int32 InFreeCells,
-	int32 InTotalCells, int32 InUnitsThatFit, const FText& InCapacityText, const FText& InContentsText, bool bInSelected, bool bInSuggested)
+	int32 InTotalCells, int32 InUnitsThatFit, const FText& InCapacityText, const FText& InContentsText, bool bInSelected, bool bInSuggested,
+	bool bInStationChest, const TSoftObjectPtr<UTexture2D>& InIcon)
 {
 	FFieldChanges Changes;
 	RPG_CRAFTING_SET(Changes, ContainerId, InContainerId);
@@ -578,6 +582,8 @@ void URpgCraftingStorageOptionViewModel::InitializeOption(FName InContainerId, c
 	RPG_CRAFTING_SET(Changes, ContentsText, InContentsText);
 	RPG_CRAFTING_SET(Changes, bSelected, bInSelected);
 	RPG_CRAFTING_SET(Changes, bSuggested, bInSuggested);
+	RPG_CRAFTING_SET(Changes, bStationChest, bInStationChest);
+	RPG_CRAFTING_SET(Changes, Icon, InIcon);
 	BroadcastChanges(*this, Changes);
 }
 
@@ -1445,7 +1451,12 @@ void URpgCraftingStationViewModel::RebuildSelectedRecipeDetails()
 	}
 	AutomaticUnits = FMath::Min(AutomaticUnits, ContextWantedUnits);
 
-	FName NewTargetId;
+	// The station's own station chest is the default target and leads the options, above automatic storing.
+	const URpgInventoryManagerComponent* StationChest = Station
+		? URpgCraftingStationComponent::FindStationChestIn(Storage, Station->GetPersistentStationId())
+		: nullptr;
+	const int32 StationChestIndex = StationChest ? Storage.IndexOfByKey(StationChest) : INDEX_NONE;
+	FName NewTargetId = StorageIds.IsValidIndex(StationChestIndex) ? StorageIds[StationChestIndex] : NAME_None;
 	if (Order)
 	{
 		NewTargetId = Order->TargetContainerId;
@@ -1472,6 +1483,23 @@ void URpgCraftingStationViewModel::RebuildSelectedRecipeDetails()
 		}
 		return NewObject<URpgCraftingStorageOptionViewModel>(this);
 	};
+	const auto AddChestOption = [&](int32 Index)
+	{
+		URpgCraftingStorageOptionViewModel* Option = FindOrCreateOption(StorageIds[Index]);
+		const FRpgCraftingStorageCapacity& Capacity = Capacities[Index];
+		const URpgInventoryContainerComponent* Container = FindStorageContainer(Storage[Index]);
+		Option->InitializeOption(StorageIds[Index], StorageNames[Index], Capacity.GetFreeCells(), Capacity.TotalCells, Capacity.UnitsThatFit,
+			FText::Format(NSLOCTEXT("RpgCrafting", "StorageOptionFreeCells", "{0} {0}|plural(one=cell,other=cells) free"), FText::AsNumber(Capacity.GetFreeCells())),
+			MakeStorageContentsText(Storage[Index]),
+			Index == TargetIndex, StorageIds[Index] == NextAutomaticId,
+			Index == StationChestIndex,
+			Container && Container->IsStationChest() ? Container->GetStorageDisplayIcon() : TSoftObjectPtr<UTexture2D>());
+		NewTargetOptions.Add(Option);
+	};
+	if (Storage.IsValidIndex(StationChestIndex))
+	{
+		AddChestOption(StationChestIndex);
+	}
 	if (Station && !Storage.IsEmpty())
 	{
 		URpgCraftingStorageOptionViewModel* Automatic = FindOrCreateOption(NAME_None);
@@ -1488,13 +1516,10 @@ void URpgCraftingStationViewModel::RebuildSelectedRecipeDetails()
 	}
 	for (int32 Index = 0; Index < Storage.Num(); ++Index)
 	{
-		URpgCraftingStorageOptionViewModel* Option = FindOrCreateOption(StorageIds[Index]);
-		const FRpgCraftingStorageCapacity& Capacity = Capacities[Index];
-		Option->InitializeOption(StorageIds[Index], StorageNames[Index], Capacity.GetFreeCells(), Capacity.TotalCells, Capacity.UnitsThatFit,
-			FText::Format(NSLOCTEXT("RpgCrafting", "StorageOptionFreeCells", "{0} {0}|plural(one=cell,other=cells) free"), FText::AsNumber(Capacity.GetFreeCells())),
-			MakeStorageContentsText(Storage[Index]),
-			Index == TargetIndex, StorageIds[Index] == NextAutomaticId);
-		NewTargetOptions.Add(Option);
+		if (Index != StationChestIndex)
+		{
+			AddChestOption(Index);
+		}
 	}
 
 	const FRpgCraftingStorageCapacity* TargetCapacity = Capacities.IsValidIndex(TargetIndex) ? &Capacities[TargetIndex] : nullptr;

@@ -110,7 +110,7 @@ The task lists use these short toolset names:
   - `AddViewModelToWidget(widgetBlueprint, viewModelClass)` adds a view model with its first allowed creation type. For a view model with `MVVMAllowedContextCreationType = "Resolver"`, it also adds the project's default resolver from `Config/DefaultModelViewViewModel.ini` (`URpgLocalPlayerViewModelResolver`).
   - `CreateViewBinding(widgetBlueprint, sourceContext, sourcePropertyPath, destinationContext, destinationPropertyPath, conversionName)` binds one property to another: the view model class as source context, a widget (`<Widget Blueprint>:WidgetTree.<Name>`) and its property, such as `Text` or `Percent`, as destination.
   - `ListWidgetViewModels`, `ListWidgetViewBindings`, `RemoveWidgetViewBinding` and `ListConversionFunctions` read and clean up.
-  - It cannot bind to a widget function. Use `AssetContractTools.add_view_function_binding` for a function with one input, and `AssetContractTools.add_function_input` to give that function an enum, struct or object input, which `BlueprintTools.add_function_param` cannot type.
+  - It cannot bind to a widget function. Use `AssetContractTools.add_view_function_binding` for a function with one input, and `AssetContractTools.add_function_input` to give that function an enum, struct or object input, which `BlueprintTools.add_function_param` cannot type. Its `soft_reference` flag makes a class input a soft object reference, such as a view model's soft texture.
 
 ### DataAssets and ItemDefinition fragments
 
