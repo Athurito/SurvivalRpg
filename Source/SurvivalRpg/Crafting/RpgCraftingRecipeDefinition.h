@@ -33,7 +33,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crafting|Display", meta = (AssetBundles = "Client"))
 	TSoftObjectPtr<UTexture2D> Icon;
 
-	/** Optional category tag for UI grouping such as Crafting.Category.Refining. */
+	/** Optional category tag for UI grouping, a group or subcategory such as Crafting.Category.Materials.Wood. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crafting", meta = (Categories = "Crafting.Category"))
 	FGameplayTag RecipeCategory;
 
