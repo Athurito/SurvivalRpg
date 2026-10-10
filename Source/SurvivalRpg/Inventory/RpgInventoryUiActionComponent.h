@@ -60,9 +60,6 @@ enum class ERpgInventoryActionFeedbackResult : uint8
 	/** Manual dropping is disabled for this item. */
 	CannotDrop,
 
-	/** The server requires the UI to confirm before repeating the request. */
-	RequiresConfirmation,
-
 	/** This action is only valid from the player's own inventory. */
 	WrongInventory,
 
@@ -382,7 +379,7 @@ struct SURVIVALRPG_API FRpgInventoryManualDropRequest
 
 	/**
 	 * Complete source placement captured before dispatch.
-	 * Confirmed retries fail closed if the entry moved container, cell, footprint, or rotation meanwhile.
+	 * The server fails closed if the entry moved container, cell, footprint, or rotation meanwhile.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Drop")
 	FRpgInventoryGridPlacement ExpectedSourcePlacement;
@@ -394,13 +391,6 @@ struct SURVIVALRPG_API FRpgInventoryManualDropRequest
 	/** Exact number of units to drop. The server rejects non-positive or no-longer-available quantities. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Drop", meta = (ClampMin = "1", UIMin = "1"))
 	int32 StackCount = 1;
-
-	/**
-	 * UI acknowledgement for items whose current authoritative manual-drop policy requires confirmation.
-	 * A confirmed follow-up is a new command and must therefore use a fresh RequestId.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Inventory|Drop")
-	bool bConfirmed = false;
 };
 
 /** Gameplay message broadcast on the owning client after inventory UI commands succeed, fail, or need confirmation. */

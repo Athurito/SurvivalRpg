@@ -201,6 +201,8 @@ void FRpgInventoryList::BroadcastChangeMessage(FRpgInventoryEntry& Entry, int32 
 	Message.Placement = Entry.Placement;
 	Message.bOrderChanged = bOrderChanged;
 	Message.bCapacityChanged = false;
+	const URpgInventoryManagerComponent* Manager = Cast<URpgInventoryManagerComponent>(OwnerComponent);
+	Message.bFromRestore = Manager && Manager->IsRestoringInventoryGraph();
 	if (bDeferChangeMessages)
 	{
 		DeferredChangeMessages.Add(MoveTemp(Message));

@@ -102,6 +102,10 @@
 			"Enabled": true
 		},
 		{
+			"Name": "LiveCodingToolset",
+			"Enabled": true
+		},
+		{
 			"Name": "AsyncMessageSystem",
 			"Enabled": true
 		},

@@ -1419,8 +1419,7 @@ bool URpgInventoryUiActionComponent::AreManualDropRequestsEquivalent(
 			A.ExpectedSourcePlacement,
 			B.ExpectedSourcePlacement) &&
 		A.ExpectedSourceQuantity == B.ExpectedSourceQuantity &&
-		A.StackCount == B.StackCount &&
-		A.bConfirmed == B.bConfirmed;
+		A.StackCount == B.StackCount;
 }
 
 bool URpgInventoryUiActionComponent::TryReplayRecentManualDropResult(

@@ -7,6 +7,7 @@
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
 #include "AbilitySystemLog.h"
+#include "GameplayEffect.h"
 #include "RpgAbilityCost.h"
 #include "RpgAbilitySimpleFailureMessage.h"
 #include "GameFramework/GameplayMessageSubsystem.h"
@@ -171,6 +172,21 @@ void URpgGameplayAbility::NativeOnAbilityFailedToActivate(const FGameplayTagCont
 				Message.PlayerController = GetActorInfo().PlayerController.Get();
 				Message.FailureTags = FailedReason;
 				Message.UserFacingReason = *pUserFacingMessage;
+				if (FailedReason.HasTag(UAbilitySystemGlobals::Get().ActivateFailCostTag))
+				{
+					// Lets the HUD show which resource ran short.
+					if (const UGameplayEffect* CostEffect = GetCostGameplayEffect())
+					{
+						for (const FGameplayModifierInfo& Modifier : CostEffect->Modifiers)
+						{
+							if (Modifier.Attribute.IsValid())
+							{
+								Message.CostAttribute = Modifier.Attribute;
+								break;
+							}
+						}
+					}
+				}
 
 				UGameplayMessageSubsystem& MessageSystem = UGameplayMessageSubsystem::Get(GetWorld());
 				MessageSystem.BroadcastMessage(TAG_ABILITY_SIMPLE_FAILURE_MESSAGE, Message);

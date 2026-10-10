@@ -69,7 +69,9 @@ outside this checkout.
 `build` runs `Build.bat` for `SurvivalRpgEditor Win64 Development` with
 `-WaitMutex -NoHotReloadFromIDE`. `--target SurvivalRpg` builds the game and
 `--config` picks `DebugGame` or `Shipping`. Live Coding in an open editor
-blocks the build; close the editor or compile there with Ctrl+Alt+F11.
+blocks the build; close the editor or compile there with Ctrl+Alt+F11 or the
+MCP tool `LiveCodingToolset.CompileLiveCoding`. Live Coding patches only the
+running editor, so build again after closing it.
 
 `test` starts `UnrealEditor-Cmd.exe` on `/Engine/Maps/Entry` with rendered
 offscreen PIE and runs `Automation RunTests` with the filters joined by `+`.

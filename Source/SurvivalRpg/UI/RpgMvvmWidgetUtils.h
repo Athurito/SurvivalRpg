@@ -24,4 +24,7 @@ namespace RpgMvvmWidgetUtils
 		FName SourceName,
 		UMVVMViewModelBase* ViewModel,
 		UClass* ExpectedViewModelClass);
+
+	/** Returns whether the widget's compiled MVVM view declares a view-model source with this name. */
+	SURVIVALRPG_API bool HasViewModelSource(const UUserWidget* Widget, FName SourceName);
 }

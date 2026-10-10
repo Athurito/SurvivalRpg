@@ -113,10 +113,8 @@ public:
 		FRpgInventoryItemId ExpectedItemId,
 		int32 QuickAccessSlotIndex = -1);
 
-	/** Routes manual drop through the screen-owned confirmation contract, or the legacy coordinator when confirmed. */
-	bool RequestAddressItemDrop(
-		int32 StackCount = 0,
-		bool bConfirmed = false);
+	/** Routes manual drop through the hosting screen, or the coordinator when no screen hosts this slot. */
+	bool RequestAddressItemDrop(int32 StackCount = 0);
 
 	/** Internal zero-based 0..7 Quick Access index matching this semantic Carry role or consumable definition. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Address Slot|Context Menu")

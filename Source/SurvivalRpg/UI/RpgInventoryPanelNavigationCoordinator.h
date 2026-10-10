@@ -214,7 +214,7 @@ public:
 
 	/** Runs manual drop on the active panel selection when supported. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Navigation")
-	bool DropActiveSelection(int32 StackCount = 0, bool bConfirmed = false);
+	bool DropActiveSelection(int32 StackCount = 0);
 
 	/**
 	 * Opens the context menu for the active spatial, gear, or carry selection.

@@ -9,10 +9,11 @@
 class APlayerController;
 class APawn;
 class URpgCharacterStatsViewModel;
+class URpgPickupFeedViewModel;
 class URpgPawnExtensionComponent;
 /**
  * Owns the view models that follow one local player across pawns. Keeps them bound to the player controller, its
- * player state and the current pawn's ability system.
+ * player state and the current pawn's ability system: character stats and the pickup feed.
  */
 UCLASS()
 class SURVIVALRPG_API URpgUiSubsystem : public ULocalPlayerSubsystem
@@ -22,6 +23,9 @@ class SURVIVALRPG_API URpgUiSubsystem : public ULocalPlayerSubsystem
 public:
 	/** Level, experience, health, stamina, armour and equipment load of this local player. */
 	URpgCharacterStatsViewModel* GetCharacterStatsViewModel() const { return CharacterStatsVM; }
+
+	/** Items this local player gains from the world, for the HUD pickup notifications. */
+	URpgPickupFeedViewModel* GetPickupFeedViewModel() const { return PickupFeedVM; }
 
 	/** Returns the owned view model of exactly ExpectedType, or null. URpgLocalPlayerViewModelResolver hands it to widgets. */
 	UObject* FindViewModel(const UClass* ExpectedType) const;
@@ -46,6 +50,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgCharacterStatsViewModel> CharacterStatsVM;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URpgPickupFeedViewModel> PickupFeedVM;
 
 	UPROPERTY(Transient)
 	TObjectPtr<APlayerController> BoundPlayerController;

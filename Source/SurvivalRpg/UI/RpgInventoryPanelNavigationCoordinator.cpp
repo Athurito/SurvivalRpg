@@ -817,7 +817,7 @@ bool URpgInventoryPanelNavigationCoordinator::UseOrEquipActiveSelection(int32 St
 	return false;
 }
 
-bool URpgInventoryPanelNavigationCoordinator::DropActiveSelection(int32 StackCount, bool bConfirmed)
+bool URpgInventoryPanelNavigationCoordinator::DropActiveSelection(int32 StackCount)
 {
 	if (!IsValidPanelIndex(ActivePanelIndex))
 	{
@@ -826,13 +826,11 @@ bool URpgInventoryPanelNavigationCoordinator::DropActiveSelection(int32 StackCou
 
 	if (URpgInventorySpatialGridWidget* SpatialGridWidget = Panels[ActivePanelIndex].SpatialGridWidget)
 	{
-		return SpatialGridWidget->DropSelectedCell(StackCount, bConfirmed);
+		return SpatialGridWidget->DropSelectedCell(StackCount);
 	}
 	if (URpgInventoryCarrySlotWidget* CarrySlotWidget = Panels[ActivePanelIndex].CarrySlotWidget)
 	{
-		return CarrySlotWidget->RequestAddressItemDrop(
-			StackCount,
-			bConfirmed);
+		return CarrySlotWidget->RequestAddressItemDrop(StackCount);
 	}
 	if (URpgEquipmentSlotWidget* EquipmentSlotWidget = Panels[ActivePanelIndex].EquipmentSlotWidget)
 	{
@@ -843,15 +841,9 @@ bool URpgInventoryPanelNavigationCoordinator::DropActiveSelection(int32 StackCou
 		}
 
 		// Equipment slots represent whole item instances, so StackCount is intentionally not applied.
-		return bConfirmed
-			? DragDropCoordinator &&
-				DragDropCoordinator->DropEquipmentItem(
-					EquipmentSlotWidget->GetResolvedEquipmentSlot(),
-					Item->GetItemId(),
-					true)
-			: EquipmentSlotWidget->ExecuteEquipmentContextAction(
-				ERpgInventoryContextAction::Drop,
-				Item->GetItemId());
+		return EquipmentSlotWidget->ExecuteEquipmentContextAction(
+			ERpgInventoryContextAction::Drop,
+			Item->GetItemId());
 	}
 
 	return false;

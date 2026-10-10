@@ -1,10 +1,18 @@
 #include "RpgInventoryItemTooltipWidget.h"
 
 #include "Blueprint/WidgetTree.h"
+#include "Framework/Application/SlateApplication.h"
+#include "GameFramework/PlayerController.h"
 #include "Styling/CoreStyle.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
+#include "SurvivalRpg/Inventory/RpgInventoryEquipmentPlacementPolicy.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryEntryViewModel.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryItemizationFragmentViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgItemTooltipViewModels.h"
+#include "SurvivalRpg/UI/RpgMvvmListEntryWidgets.h"
+#include "SurvivalRpg/UI/RpgMvvmWidgetUtils.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/SBoxPanel.h"
@@ -115,6 +123,85 @@ void URpgInventoryItemTooltipWidget::ClearItem()
 	EntryViewModel = nullptr;
 	OwnedEntryViewModel = nullptr;
 	RefreshPresentation();
+}
+
+void URpgInventoryItemTooltipWidget::SetComparisonShown(bool bShown)
+{
+	const bool bNewShown = bShown && TooltipViewModel && TooltipViewModel->CanCompare();
+	if (bNewShown == bComparisonShown)
+	{
+		return;
+	}
+
+	bComparisonShown = bNewShown;
+	if (bComparisonShown)
+	{
+		// Equipment may have changed since the tooltip opened.
+		RefreshComparison();
+	}
+	TooltipViewModel->SetComparisonShown(bComparisonShown);
+	TooltipViewModel->ApplyComparisonBaseline(bComparisonShown ? ComparisonViewModel.Get() : nullptr);
+	if (ComparisonPanel)
+	{
+		ComparisonPanel->SetVisibility(bComparisonShown ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+}
+
+void URpgInventoryItemTooltipWidget::SetComparisonPinned(bool bPinned)
+{
+	bComparisonPinned = bPinned;
+	SetComparisonShown(bPinned);
+}
+
+void URpgInventoryItemTooltipWidget::NativeOnInitialized()
+{
+	Super::NativeOnInitialized();
+
+	TooltipViewModel = NewObject<URpgItemTooltipViewModel>(this);
+	ComparisonViewModel = NewObject<URpgItemTooltipViewModel>(this);
+	ComparisonViewModel->SetIsEquippedComparison(true);
+	// A tooltip may bind the models itself or leave them to its two panels.
+	if (RpgMvvmWidgetUtils::HasViewModelSource(this, TooltipViewModelSourceName))
+	{
+		RpgMvvmWidgetUtils::SetOptionalManualViewModel(
+			this,
+			TooltipViewModelSourceName,
+			TooltipViewModel,
+			URpgItemTooltipViewModel::StaticClass());
+	}
+	if (RpgMvvmWidgetUtils::HasViewModelSource(this, ComparisonViewModelSourceName))
+	{
+		RpgMvvmWidgetUtils::SetOptionalManualViewModel(
+			this,
+			ComparisonViewModelSourceName,
+			ComparisonViewModel,
+			URpgItemTooltipViewModel::StaticClass());
+	}
+	if (ItemPanel)
+	{
+		ItemPanel->SetEntryItem(TooltipViewModel);
+	}
+	if (ComparisonPanel)
+	{
+		ComparisonPanel->SetEntryItem(ComparisonViewModel);
+		ComparisonPanel->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	RefreshPresentation();
+}
+
+void URpgInventoryItemTooltipWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+
+	// Tooltips never hold keyboard focus, so the modifier state is polled while the tooltip is painted.
+	if (TooltipViewModel && TooltipViewModel->CanCompare() && FSlateApplication::IsInitialized())
+	{
+		SetComparisonShown(bComparisonPinned || FSlateApplication::Get().GetModifierKeys().IsShiftDown());
+	}
+	else if (bComparisonShown)
+	{
+		SetComparisonShown(false);
+	}
 }
 
 FText URpgInventoryItemTooltipWidget::GetDisplayName() const
@@ -259,6 +346,12 @@ void URpgInventoryItemTooltipWidget::RefreshBoundItemizationViewModel()
 
 void URpgInventoryItemTooltipWidget::RefreshPresentation()
 {
+	if (TooltipViewModel)
+	{
+		TooltipViewModel->SetEntry(EntryViewModel);
+		RefreshComparison();
+		TooltipViewModel->ApplyComparisonBaseline(bComparisonShown ? ComparisonViewModel.Get() : nullptr);
+	}
 	RefreshNativePresentation();
 	BP_OnTooltipPresentationChanged(EntryViewModel, ItemizationViewModel);
 	OnTooltipPresentationChanged.Broadcast(this);
@@ -332,6 +425,68 @@ void URpgInventoryItemTooltipWidget::RefreshNativePresentation()
 				? EVisibility::Visible
 				: EVisibility::Collapsed);
 	}
+}
+
+void URpgInventoryItemTooltipWidget::RefreshComparison()
+{
+	if (!TooltipViewModel || !ComparisonViewModel)
+	{
+		return;
+	}
+
+	URpgInventoryItemInstance* Counterpart = ResolveEquippedCounterpart();
+	if (Counterpart != ComparedItem.Get() || !Counterpart)
+	{
+		ComparedItem = Counterpart;
+		if (Counterpart)
+		{
+			if (!ComparisonEntryViewModel)
+			{
+				ComparisonEntryViewModel = NewObject<URpgInventoryEntryViewModel>(this);
+			}
+			FRpgInventoryEntryView Entry;
+			Entry.Instance = Counterpart;
+			Entry.ItemId = Counterpart->GetItemId();
+			Entry.StackCount = 1;
+			const TMap<
+				TSubclassOf<URpgInventoryItemFragment>,
+				TSubclassOf<URpgInventoryFragmentViewModel>> NoAdditionalPresenters;
+			ComparisonEntryViewModel->InitializeFromEntry(Entry, NoAdditionalPresenters);
+		}
+		ComparisonViewModel->SetEntry(Counterpart ? ComparisonEntryViewModel.Get() : nullptr);
+	}
+
+	const bool bCanCompare = Counterpart != nullptr;
+	TooltipViewModel->SetCanCompare(bCanCompare);
+	if (!bCanCompare && bComparisonShown)
+	{
+		bComparisonShown = false;
+		TooltipViewModel->SetComparisonShown(false);
+		if (ComparisonPanel)
+		{
+			ComparisonPanel->SetVisibility(ESlateVisibility::Collapsed);
+		}
+	}
+}
+
+URpgInventoryItemInstance* URpgInventoryItemTooltipWidget::ResolveEquippedCounterpart() const
+{
+	const URpgInventoryItemInstance* Item = EntryViewModel ? EntryViewModel->GetItemInstance() : nullptr;
+	const URpgEquipmentDefinition* EquipmentDefinition = Item
+		? FRpgInventoryEquipmentPlacementPolicy::FindEquipmentDefinition(Item)
+		: nullptr;
+	const APlayerController* OwningPlayer = GetOwningPlayer();
+	const URpgEquipmentLoadoutComponent* Loadout = OwningPlayer
+		? OwningPlayer->FindComponentByClass<URpgEquipmentLoadoutComponent>()
+		: nullptr;
+	if (!EquipmentDefinition || !Loadout)
+	{
+		return nullptr;
+	}
+
+	URpgInventoryItemInstance* Equipped =
+		Loadout->GetItemInEquipmentSlot(EquipmentDefinition->GetDefaultEquipSlot());
+	return Equipped != Item ? Equipped : nullptr;
 }
 
 void URpgInventoryItemTooltipWidget::UnbindPresentationDelegates()

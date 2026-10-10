@@ -7,6 +7,8 @@
 
 #include "RpgInventoryContextActionSource.generated.h"
 
+class URpgInventoryItemInstance;
+
 /** Presentation source represented by one immutable context-menu checkout. */
 UENUM()
 enum class ERpgInventoryContextActionSourceKind : uint8
@@ -55,6 +57,10 @@ struct SURVIVALRPG_API FRpgInventoryContextActionSnapshot
 
 	UPROPERTY(Transient)
 	TArray<ERpgInventoryContextAction> Actions;
+
+	/** Item shown in the menu header. Presentation only; dispatch revalidates by ItemId. */
+	UPROPERTY(Transient)
+	TWeakObjectPtr<URpgInventoryItemInstance> ItemInstance;
 
 	bool IsValid() const
 	{

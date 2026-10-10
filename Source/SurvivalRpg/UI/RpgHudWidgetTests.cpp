@@ -1,8 +1,27 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "Blueprint/UserWidget.h"
+#include "Blueprint/WidgetTree.h"
+#include "Engine/Engine.h"
+#include "Engine/GameInstance.h"
+#include "Engine/World.h"
+#include "GameFramework/GameplayMessageSubsystem.h"
 #include "Misc/AutomationTest.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Inventory/Loot/RpgLootResolver.h"
+#include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
+#include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
+#include "SurvivalRpg/Inventory/RpgInventoryManagerMessageTags.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgItemTooltipViewModels.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgPickupFeedViewModels.h"
+#include "SurvivalRpg/UI/RpgHudAutomationTestTypes.h"
 #include "SurvivalRpg/UI/RpgHudFadeBox.h"
+#include "SurvivalRpg/UI/RpgInventoryScreenMessages.h"
 #include "SurvivalRpg/UI/RpgTrailingProgressBar.h"
+#include "SurvivalRpg/UI/RpgUISettings.h"
+#include "SurvivalRpg/UI/RpgViewModelEntryBox.h"
+#include "UObject/UnrealType.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgHudFadeStateTest,
@@ -74,6 +93,268 @@ bool FRpgProgressTrailStateTest::RunTest(const FString& Parameters)
 
 	Trail.SetTarget(0.9f);
 	TestEqual(TEXT("A rise during a trail jumps to the new value"), Trail.Displayed, 0.9f);
+	return true;
+}
+
+namespace RpgHudWidgetTests
+{
+	class FScopedHudWorld
+	{
+	public:
+		FScopedHudWorld()
+		{
+			GameInstance = NewObject<UGameInstance>(GEngine, NAME_None, RF_Transient);
+			if (!GameInstance)
+			{
+				return;
+			}
+
+			GameInstance->AddToRoot();
+			GameInstance->InitializeStandalone();
+			World = GameInstance->GetWorld();
+		}
+
+		~FScopedHudWorld()
+		{
+			UWorld* WorldToDestroy = World;
+			if (GameInstance)
+			{
+				GameInstance->Shutdown();
+			}
+			if (WorldToDestroy)
+			{
+				GEngine->DestroyWorldContext(WorldToDestroy);
+				WorldToDestroy->DestroyWorld(false);
+			}
+			if (GameInstance)
+			{
+				GameInstance->RemoveFromRoot();
+			}
+		}
+
+		UWorld* GetWorld() const { return World; }
+
+	private:
+		TObjectPtr<UGameInstance> GameInstance = nullptr;
+		TObjectPtr<UWorld> World = nullptr;
+	};
+
+	/** Creates a concrete item of ItemDefinition in a scratch inventory outside the player's graph. */
+	URpgInventoryItemInstance* MakeItem(UWorld* World, TSubclassOf<URpgInventoryItemDefinition> ItemDefinition)
+	{
+		FActorSpawnParameters SpawnParameters;
+		SpawnParameters.ObjectFlags = RF_Transient;
+		AActor* Owner = World ? World->SpawnActor<AActor>(SpawnParameters) : nullptr;
+		if (!Owner)
+		{
+			return nullptr;
+		}
+		URpgInventoryManagerComponent* Scratch = NewObject<URpgInventoryManagerComponent>(Owner, NAME_None, RF_Transient);
+		Owner->AddInstanceComponent(Scratch);
+		Scratch->RegisterComponent();
+		return Scratch->AddItemDefinition(ItemDefinition, 1);
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHudPickupFeedTest,
+	"SurvivalRpg.UI.Hud.PickupFeedNetsMergesAndSuppresses",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHudPickupFeedTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgHudWidgetTests;
+	FScopedHudWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	if (!TestNotNull(TEXT("A game world exists"), World))
+	{
+		return false;
+	}
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.ObjectFlags = RF_Transient;
+	ARpgInventoryAutomationTestPlayerController* Controller =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerController>(SpawnParameters);
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerState>(SpawnParameters);
+	if (!TestNotNull(TEXT("The controller fixture exists"), Controller) ||
+		!TestNotNull(TEXT("The player state fixture exists"), PlayerState))
+	{
+		return false;
+	}
+	Controller->SetPlayerState(PlayerState);
+	PlayerState->SetOwner(Controller);
+	URpgInventoryManagerComponent* Inventory = PlayerState->GetInventoryManagerComponent();
+	URpgInventoryManagerComponent* OtherInventory = NewObject<URpgInventoryManagerComponent>(GetTransientPackage());
+	URpgInventoryItemInstance* Wood = MakeItem(World, URpgInventoryAutomationTestStackItemDefinition::StaticClass());
+	URpgInventoryItemInstance* Stone = MakeItem(World, URpgInventoryAutomationTestMaterialDefinition::StaticClass());
+	if (!TestNotNull(TEXT("The player inventory exists"), Inventory) ||
+		!TestNotNull(TEXT("A stack item exists"), Wood) ||
+		!TestNotNull(TEXT("A material item exists"), Stone))
+	{
+		return false;
+	}
+
+	URpgUISettings* Settings = GetMutableDefault<URpgUISettings>();
+	TGuardValue<float> WarmupGuard(Settings->HudPickupWarmupSeconds, 0.0f);
+	UGameplayMessageSubsystem& Messages = UGameplayMessageSubsystem::Get(World);
+	auto Broadcast = [&Messages](UActorComponent* Owner, URpgInventoryItemInstance* Item, int32 Delta, bool bFromRestore = false)
+	{
+		FRpgInventoryChangeMessage Message;
+		Message.InventoryOwner = Owner;
+		Message.Instance = Item;
+		Message.Delta = Delta;
+		Message.NewCount = FMath::Max(0, Delta);
+		Message.bFromRestore = bFromRestore;
+		Messages.BroadcastMessage(TAG_Rpg_Inventory_Message_StackChanged, Message);
+	};
+	auto SetScreenOpen = [&Messages, Controller](bool bOpen)
+	{
+		FRpgInventoryScreenActivationMessage Message;
+		Message.OwningPlayer = Controller;
+		Message.bActive = bOpen;
+		Messages.BroadcastMessage(RpgGameplayTags::Rpg_Inventory_Message_ScreenActivation, Message);
+	};
+
+	URpgPickupFeedViewModel* Feed = NewObject<URpgPickupFeedViewModel>(GetTransientPackage());
+	Feed->BindPlayerController(Controller);
+	auto CountOf = [Feed](const URpgInventoryItemInstance* Item)
+	{
+		for (const URpgPickupFeedEntryViewModel* Entry : Feed->GetEntries())
+		{
+			if (Entry && Entry->GetItemDefinition() == Item->GetItemDef())
+			{
+				return Entry->GetCount();
+			}
+		}
+		return 0;
+	};
+
+	Broadcast(Inventory, Wood, 5);
+	Feed->FlushPendingGains();
+	TestEqual(TEXT("A gain shows one notification"), Feed->GetEntries().Num(), 1);
+	TestEqual(TEXT("The notification counts the gained units"), CountOf(Wood), 5);
+
+	Broadcast(Inventory, Wood, 3);
+	Feed->FlushPendingGains();
+	TestEqual(TEXT("A further gain of the same item merges"), Feed->GetEntries().Num(), 1);
+	TestEqual(TEXT("The merged notification adds up"), CountOf(Wood), 8);
+
+	Broadcast(Inventory, Wood, -2);
+	Broadcast(Inventory, Wood, 2);
+	Broadcast(Inventory, Wood, -3);
+	Broadcast(OtherInventory, Wood, 4);
+	Broadcast(Inventory, Wood, 6, true);
+	Feed->FlushPendingGains();
+	TestEqual(TEXT("Moves, losses, other inventories and restores add nothing"), CountOf(Wood), 8);
+
+	Broadcast(Inventory, Stone, 2);
+	Feed->FlushPendingGains();
+	TestEqual(TEXT("Another item gets its own notification"), Feed->GetEntries().Num(), 2);
+	TestTrue(
+		TEXT("The newest notification comes last"),
+		Feed->GetEntries().Last() && Feed->GetEntries().Last()->GetItemDefinition() == Stone->GetItemDef());
+
+	SetScreenOpen(true);
+	Broadcast(Inventory, Wood, 1);
+	Feed->FlushPendingGains();
+	SetScreenOpen(false);
+	Broadcast(Inventory, Wood, 1);
+	Feed->FlushPendingGains();
+	TestEqual(TEXT("Gains while a screen is open or just closed are screen moves"), CountOf(Wood), 8);
+
+	const double HoldSeconds = Settings->HudPickupHoldSeconds;
+	const double FadeSeconds = Settings->HudPickupFadeSeconds;
+	Feed->UpdateExpiry(HoldSeconds + 0.01);
+	TestTrue(
+		TEXT("Notifications past their hold fade out"),
+		Feed->GetEntries().Num() == 2 && Feed->GetEntries()[0]->IsExpiring());
+	Feed->AddGain(Wood->GetItemDef(), 1);
+	TestFalse(TEXT("A new gain revives a fading notification"), Feed->GetEntries()[0]->IsExpiring());
+	Feed->UpdateExpiry(HoldSeconds + FadeSeconds + 0.01);
+	TestEqual(TEXT("Faded notifications are removed"), Feed->GetEntries().Num(), 0);
+
+	const TArray<TSubclassOf<URpgInventoryItemDefinition>> Definitions = {
+		URpgInventoryAutomationTestUnitItemDefinition::StaticClass(),
+		URpgInventoryAutomationTestNoTraitsItemDefinition::StaticClass(),
+		URpgInventoryAutomationTestStackItemDefinition::StaticClass(),
+		URpgInventoryAutomationTestMaterialDefinition::StaticClass(),
+		URpgInventoryAutomationTestBulkConsumableDefinition::StaticClass(),
+		URpgInventoryAutomationTestWideItemDefinition::StaticClass(),
+		URpgInventoryAutomationTestLargeItemDefinition::StaticClass()};
+	for (const TSubclassOf<URpgInventoryItemDefinition>& Definition : Definitions)
+	{
+		Feed->AddGain(Definition, 1);
+	}
+	const int32 MaxEntries = FMath::Max(1, Settings->HudPickupMaxEntries);
+	TestEqual(TEXT("The feed keeps at most the configured number of notifications"), Feed->GetEntries().Num(), FMath::Min(MaxEntries, Definitions.Num()));
+	TestTrue(
+		TEXT("The oldest notification goes first"),
+		Feed->GetEntries().Last() && Feed->GetEntries().Last()->GetItemDefinition() == Definitions.Last());
+
+	Feed->Unbind();
+	TestEqual(TEXT("Unbinding clears the feed"), Feed->GetEntries().Num(), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHudViewModelEntryBoxTest,
+	"SurvivalRpg.UI.Hud.ViewModelEntryBoxKeepsEntries",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHudViewModelEntryBoxTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgHudWidgetTests;
+	FScopedHudWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	URpgHudAutomationTestEntry* Host = World
+		? CreateWidget<URpgHudAutomationTestEntry>(World, URpgHudAutomationTestEntry::StaticClass())
+		: nullptr;
+	if (Host && !Host->WidgetTree)
+	{
+		Host->WidgetTree = NewObject<UWidgetTree>(Host, TEXT("WidgetTree"), RF_Transient);
+	}
+	// Entries are created through the box's owning widget tree, as in an authored Widget Blueprint.
+	URpgViewModelEntryBox* Box = Host ? NewObject<URpgViewModelEntryBox>(Host->WidgetTree) : nullptr;
+	const FClassProperty* EntryClassProperty =
+		FindFProperty<FClassProperty>(URpgViewModelEntryBox::StaticClass(), TEXT("EntryWidgetClass"));
+	if (!TestNotNull(TEXT("A host widget exists"), Host) ||
+		!TestNotNull(TEXT("The entry box exists"), Box) ||
+		!TestNotNull(TEXT("The entry class property exists"), EntryClassProperty))
+	{
+		return false;
+	}
+	EntryClassProperty->SetObjectPropertyValue_InContainer(Box, URpgHudAutomationTestEntry::StaticClass());
+
+	UObject* ItemA = NewObject<URpgItemStatRowViewModel>(GetTransientPackage());
+	UObject* ItemB = NewObject<URpgItemStatRowViewModel>(GetTransientPackage());
+	UObject* ItemC = NewObject<URpgItemStatRowViewModel>(GetTransientPackage());
+	auto ShownItems = [Box]()
+	{
+		TArray<UObject*> Items;
+		for (UUserWidget* Entry : Box->GetAllEntries())
+		{
+			const URpgHudAutomationTestEntry* TestEntry = Cast<URpgHudAutomationTestEntry>(Entry);
+			Items.Add(TestEntry ? TestEntry->GetEntryItem() : nullptr);
+		}
+		return Items;
+	};
+
+	Box->SetViewModelItems({ItemA, ItemB});
+	TestTrue(TEXT("Each item gets one entry in order"), ShownItems() == TArray<UObject*>({ItemA, ItemB}));
+	UUserWidget* EntryForB = Box->GetAllEntries().IsValidIndex(1) ? Box->GetAllEntries()[1] : nullptr;
+
+	Box->SetViewModelItems({ItemB, ItemC});
+	TestTrue(TEXT("Removing and appending keeps the order"), ShownItems() == TArray<UObject*>({ItemB, ItemC}));
+	TestTrue(
+		TEXT("A surviving item keeps its entry widget"),
+		EntryForB && Box->GetAllEntries().IsValidIndex(0) && Box->GetAllEntries()[0] == EntryForB);
+
+	Box->SetViewModelItems({ItemC, ItemB});
+	TestTrue(TEXT("A reorder rebuilds in the new order"), ShownItems() == TArray<UObject*>({ItemC, ItemB}));
+
+	Box->ClearViewModelItems();
+	TestEqual(TEXT("Clearing removes every entry"), Box->GetNumEntries(), 0);
 	return true;
 }
 

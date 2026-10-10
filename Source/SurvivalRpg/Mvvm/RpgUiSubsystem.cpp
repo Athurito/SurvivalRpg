@@ -4,6 +4,7 @@
 #include "RpgUiSubsystem.h"
 
 #include "Character/RpgCharacterStatsViewModel.h"
+#include "Inventory/RpgPickupFeedViewModels.h"
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/PlayerController.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
@@ -19,12 +20,17 @@ UObject* URpgUiSubsystem::FindViewModel(const UClass* ExpectedType) const
 	{
 		return CharacterStatsVM;
 	}
+	if (PickupFeedVM && PickupFeedVM->GetClass() == ExpectedType)
+	{
+		return PickupFeedVM;
+	}
 	return nullptr;
 }
 
 bool URpgUiSubsystem::ProvidesViewModelClass(const UClass* Class)
 {
-	return Class == URpgCharacterStatsViewModel::StaticClass();
+	return Class == URpgCharacterStatsViewModel::StaticClass() ||
+		Class == URpgPickupFeedViewModel::StaticClass();
 }
 
 void URpgUiSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -32,6 +38,7 @@ void URpgUiSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	Super::Initialize(Collection);
 
 	CharacterStatsVM = NewObject<URpgCharacterStatsViewModel>(this);
+	PickupFeedVM = NewObject<URpgPickupFeedViewModel>(this);
 
 	if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
 	{
@@ -44,6 +51,7 @@ void URpgUiSubsystem::Deinitialize()
 	UnbindFromPlayerController();
 
 	CharacterStatsVM = nullptr;
+	PickupFeedVM = nullptr;
 
 	Super::Deinitialize();
 }
@@ -80,6 +88,10 @@ void URpgUiSubsystem::BindToPlayerController(APlayerController* NewPlayerControl
 	{
 		CharacterStatsVM->BindPlayerController(BoundPlayerController);
 	}
+	if (PickupFeedVM)
+	{
+		PickupFeedVM->BindPlayerController(BoundPlayerController);
+	}
 
 	HandlePawnChanged(nullptr, BoundPlayerController->GetPawn());
 }
@@ -96,6 +108,10 @@ void URpgUiSubsystem::UnbindFromPlayerController()
 	if (CharacterStatsVM)
 	{
 		CharacterStatsVM->Unbind();
+	}
+	if (PickupFeedVM)
+	{
+		PickupFeedVM->Unbind();
 	}
 }
 

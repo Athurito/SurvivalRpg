@@ -67,6 +67,7 @@ The task lists use these short toolset names:
 | EditorAppToolset | `EditorToolset.EditorAppToolset` |
 | LogsToolset | `EditorToolset.LogsToolset` |
 | AutomationTestToolset | `AutomationTestToolset.AutomationTestToolset` |
+| LiveCodingToolset | `LiveCodingToolset.LiveCodingToolset` |
 
 ### Inspect
 
@@ -130,6 +131,15 @@ The task lists use these short toolset names:
 - Run automation tests inside the editor with `AutomationTestToolset.DiscoverTests`, then `RunTestsByFilter`, `GetTestStatus`, and `GetTestResults`. Command-line builds, tests, and cooks go through `Build/Tools/Unreal/ue.py` instead.
 - Check gameplay with `EditorAppToolset.StartPIE`, `IsPIERunning`, `CaptureViewport`, and `StopPIE`. `AssetContractTools.set_pie_input_key` and `set_pie_view_rotation` drive a local PIE player, and `SlateInspectorToolset.SlateInspectorToolset` (`Snapshot`, `Click`, `Screenshot`) inspects UI.
 - Check Game Feature activation with `GameFeaturesToolset.ListEnabledGameFeaturePlugins`, `GetGameFeatureState`, and `RequestActivateGameFeature`.
+
+### Compile C++ in the running editor
+
+The project enables the engine's `LiveCodingToolset` (`AllToolsets` does not include it), so C++ can change during an MCP session without closing the editor.
+
+- `LiveCodingToolset.CompileLiveCoding` starts a Live Coding compile, waits for it, and returns `Result: Success`, `NoChanges`, or a failure status. Live Coding must be enabled in the editor preferences.
+- In UE 5.8.2 a compile error returns only `CompileNotStarted` and a pointer to the Live Coding console, without the compiler messages, which are missing from the editor log too. Read them from the changed file's `.cpp.sarif` under `Intermediate/Build/Win64/x64/UnrealEditor/Development/<Module>/` after checking its timestamp, or run `ue.py build` with the editor closed.
+- Use it only for function bodies in `.cpp` files. Header, reflection (`UCLASS`, `UPROPERTY`, `UFUNCTION`), constructor or default-value, `.Build.cs` and new-file changes need `ue.py build` with the editor closed.
+- Live Coding patches only the running editor process. Run `ue.py build` after closing the editor and before tests or a PR; a successful Live Coding compile does not prove that the project builds.
 
 ## Project toolsets
 

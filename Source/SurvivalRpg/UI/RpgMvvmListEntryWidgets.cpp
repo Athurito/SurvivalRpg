@@ -95,3 +95,13 @@ void URpgMvvmListEntryButton::AssignEntryItem(UObject* Item)
 	EntryItem = Item;
 	RpgMvvmListEntryWidgets::AssignSource(this, ViewModelSourceName, ViewModelClass, Item);
 }
+
+void URpgMvvmListEntryWidget::SetEntryItem(UObject* Item)
+{
+	AssignEntryItem(Item);
+}
+
+void URpgMvvmListEntryButton::SetEntryItem(UObject* Item)
+{
+	AssignEntryItem(Item);
+}

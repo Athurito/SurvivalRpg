@@ -12,6 +12,7 @@
 #include "SurvivalRpg/Inventory/RpgLootSourceAutomationTestTypes.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryEntryViewModel.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryItemizationFragmentViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgItemTooltipViewModels.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgLoadoutViewModels.h"
 #include "SurvivalRpg/UI/RpgInventoryItemTooltipWidget.h"
 
@@ -1060,6 +1061,121 @@ bool FRpgLootItemizationValidationTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("Unsupported-level validation reports the 1..100 contract"),
 		UnsupportedLevelError.Contains(TEXT("1..100")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgItemizationTooltipComparisonTest,
+	"SurvivalRpg.Itemization.UI.TooltipComparesWithEquipped",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgItemizationTooltipComparisonTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	auto MakeEntry = [this](int32 Seed) -> URpgInventoryEntryViewModel*
+	{
+		FRpgLootRollResult Roll;
+		Roll.Seed = Seed;
+		FRpgLootItemRoll& RolledItem = Roll.Items.AddDefaulted_GetRef();
+		RolledItem.ItemDefinition = URpgItemizationAutomationTestItemDefinition::StaticClass();
+		RolledItem.Quantity = 1;
+		RolledItem.SourceLevel = 30;
+		RolledItem.ItemizationSeed = Seed;
+		FInventoryPickup Pickup;
+		if (!Roll.ToInventoryPickup(GetTransientPackage(), Pickup) || Pickup.Instances.Num() != 1 || !Pickup.Instances[0].Item)
+		{
+			return nullptr;
+		}
+
+		URpgInventoryItemInstance* Item = Pickup.Instances[0].Item;
+		FRpgInventoryEntryView Entry;
+		Entry.Instance = Item;
+		Entry.ItemId = Item->GetItemId();
+		Entry.StackCount = 1;
+		URpgInventoryEntryViewModel* EntryViewModel = NewObject<URpgInventoryEntryViewModel>();
+		const TMap<
+			TSubclassOf<URpgInventoryItemFragment>,
+			TSubclassOf<URpgInventoryFragmentViewModel>> NoAdditionalPresenters;
+		EntryViewModel->InitializeFromEntry(Entry, NoAdditionalPresenters);
+		return EntryViewModel;
+	};
+
+	URpgInventoryEntryViewModel* HoveredEntry = MakeEntry(1111);
+	URpgInventoryEntryViewModel* EquippedEntry = MakeEntry(2222);
+	if (!TestNotNull(TEXT("The hovered item is generated"), HoveredEntry) ||
+		!TestNotNull(TEXT("The equipped item is generated"), EquippedEntry))
+	{
+		return false;
+	}
+
+	URpgItemTooltipViewModel* Hovered = NewObject<URpgItemTooltipViewModel>();
+	URpgItemTooltipViewModel* Equipped = NewObject<URpgItemTooltipViewModel>();
+	Hovered->SetEntry(HoveredEntry);
+	Equipped->SetEntry(EquippedEntry);
+	if (!TestTrue(TEXT("The tooltip shows the hovered item"), Hovered->HasItem()) ||
+		!TestFalse(TEXT("A generated item has base stats"), Hovered->GetBaseStats().IsEmpty()))
+	{
+		return false;
+	}
+
+	auto ForEachRow = [Hovered](TFunctionRef<void(const URpgItemStatRowViewModel&)> Visit)
+	{
+		for (const TArray<TObjectPtr<URpgItemStatRowViewModel>>* Rows : {&Hovered->GetBaseStats(), &Hovered->GetAffixes()})
+		{
+			for (const URpgItemStatRowViewModel* Row : *Rows)
+			{
+				if (Row)
+				{
+					Visit(*Row);
+				}
+			}
+		}
+	};
+	TMap<FGameplayTag, float> EquippedValues;
+	for (const TArray<TObjectPtr<URpgItemStatRowViewModel>>* Rows : {&Equipped->GetBaseStats(), &Equipped->GetAffixes()})
+	{
+		for (const URpgItemStatRowViewModel* Row : *Rows)
+		{
+			EquippedValues.FindOrAdd(Row->GetStatTag()) += Row->GetValue();
+		}
+	}
+
+	ForEachRow([this](const URpgItemStatRowViewModel& Row)
+	{
+		TestEqual(TEXT("Rows start without a comparison"), Row.GetComparison(), ERpgItemStatComparison::None);
+	});
+
+	Hovered->ApplyComparisonBaseline(Equipped);
+	ForEachRow([this, &EquippedValues](const URpgItemStatRowViewModel& Row)
+	{
+		const float Delta = Row.GetValue() - EquippedValues.FindRef(Row.GetStatTag());
+		const ERpgItemStatComparison Expected = FMath::Abs(Delta) < 0.005f
+			? ERpgItemStatComparison::Equal
+			: (Delta > 0.0f ? ERpgItemStatComparison::Better : ERpgItemStatComparison::Worse);
+		TestEqual(TEXT("Each stat compares with the same stat on the equipped item"), Row.GetComparison(), Expected);
+		TestEqual(
+			TEXT("Only a difference shows a delta"),
+			Row.GetDeltaText().IsEmpty(),
+			Expected == ERpgItemStatComparison::Equal);
+	});
+
+	Hovered->ApplyComparisonBaseline(Hovered);
+	ForEachRow([this](const URpgItemStatRowViewModel& Row)
+	{
+		TestEqual(TEXT("An item equals itself"), Row.GetComparison(), ERpgItemStatComparison::Equal);
+	});
+
+	Hovered->ApplyComparisonBaseline(nullptr);
+	ForEachRow([this](const URpgItemStatRowViewModel& Row)
+	{
+		TestEqual(TEXT("Clearing the baseline clears the comparison"), Row.GetComparison(), ERpgItemStatComparison::None);
+	});
+
+	Hovered->SetEntry(nullptr);
+	TestFalse(TEXT("A cleared tooltip shows no item"), Hovered->HasItem());
+	TestTrue(
+		TEXT("A cleared tooltip shows no stats"),
+		Hovered->GetBaseStats().IsEmpty() && Hovered->GetAffixes().IsEmpty());
 	return true;
 }
 

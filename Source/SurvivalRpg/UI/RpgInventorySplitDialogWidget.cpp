@@ -7,8 +7,13 @@
 #include "InputCoreTypes.h"
 #include "PrimaryGameLayout.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryAddressSlotViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryEntryViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgInventorySplitViewModel.h"
+#include "SurvivalRpg/UI/RpgMvvmWidgetUtils.h"
 #include "SurvivalRpg/UI/RpgInventoryAddressSlotWidget.h"
 #include "SurvivalRpg/UI/RpgInventorySpatialGridWidget.h"
 
@@ -52,6 +57,12 @@ void URpgInventorySplitDialogWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
 
+	SplitViewModel = NewObject<URpgInventorySplitViewModel>(this);
+	RpgMvvmWidgetUtils::SetOptionalManualViewModel(
+		this,
+		SplitViewModelSourceName,
+		SplitViewModel,
+		URpgInventorySplitViewModel::StaticClass());
 	BindSplitControls();
 }
 
@@ -146,6 +157,18 @@ bool URpgInventorySplitDialogWidget::InitializeSplitDialog(
 	SpinBox_Amount->SetMinSliderValue(static_cast<float>(MinimumSplitCount));
 	SpinBox_Amount->SetMaxSliderValue(static_cast<float>(MaximumSplitCount));
 	SpinBox_Amount->SetDelta(1.0f);
+	const URpgInventoryEntryViewModel* SelectedEntry = InSourceGrid->GetSelectedEntryViewModel();
+	const URpgInventoryAddressSlotViewModel* SelectedAddress = InSourceGrid->GetSelectedAddressSlot();
+	if (SelectedEntry && SelectedEntry->GetItemInstance())
+	{
+		PresentSplitStack(SelectedEntry->GetItemInstance(), SelectedEntry->GetStackCount());
+	}
+	else
+	{
+		PresentSplitStack(
+			SelectedAddress ? SelectedAddress->GetItemInstance() : nullptr,
+			SelectedAddress ? SelectedAddress->GetStackCount() : MaximumSplitCount + 1);
+	}
 	SetSelectedSplitCount(InDefaultCount);
 	RequestRefreshFocus();
 	return true;
@@ -192,9 +215,15 @@ bool URpgInventorySplitDialogWidget::InitializeAddressSplitDialog(
 	SpinBox_Amount->SetMinSliderValue(static_cast<float>(MinimumSplitCount));
 	SpinBox_Amount->SetMaxSliderValue(static_cast<float>(MaximumSplitCount));
 	SpinBox_Amount->SetDelta(1.0f);
+	PresentSplitStack(CurrentItem, AddressViewModel->GetStackCount());
 	SetSelectedSplitCount(InDefaultCount);
 	RequestRefreshFocus();
 	return true;
+}
+
+void URpgInventorySplitDialogWidget::SelectHalfStack()
+{
+	SetSelectedSplitCount(FMath::Max(1, SplitStackCount) / 2);
 }
 
 bool URpgInventorySplitDialogWidget::ConfirmSplitDialog()
@@ -247,6 +276,10 @@ void URpgInventorySplitDialogWidget::SetSelectedSplitCount(int32 InSplitCount)
 	{
 		SpinBox_Amount->SetValue(static_cast<float>(SelectedSplitCount));
 	}
+	if (SplitViewModel)
+	{
+		SplitViewModel->SetSelectedCount(SelectedSplitCount);
+	}
 }
 
 void URpgInventorySplitDialogWidget::BindSplitControls()
@@ -271,6 +304,40 @@ void URpgInventorySplitDialogWidget::BindSplitControls()
 	{
 		Button_Cancel->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCancelClicked);
 	}
+	if (Button_Decrease)
+	{
+		Button_Decrease->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleDecreaseClicked);
+	}
+	if (Button_Increase)
+	{
+		Button_Increase->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleIncreaseClicked);
+	}
+	if (Button_Half)
+	{
+		Button_Half->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleHalfClicked);
+	}
+}
+
+void URpgInventorySplitDialogWidget::PresentSplitStack(const URpgInventoryItemInstance* Item, int32 StackCount)
+{
+	SplitStackCount = FMath::Max(0, StackCount);
+	if (!SplitViewModel)
+	{
+		return;
+	}
+
+	const TSubclassOf<URpgInventoryItemDefinition> ItemDefinition = Item ? Item->GetItemDef() : nullptr;
+	const URpgInventoryItemDefinition* ItemCDO = ItemDefinition
+		? GetDefault<URpgInventoryItemDefinition>(ItemDefinition)
+		: nullptr;
+	const URpgInventoryFragment_UIData* UIData = ItemCDO
+		? Cast<URpgInventoryFragment_UIData>(ItemCDO->FindFragmentByClass(URpgInventoryFragment_UIData::StaticClass()))
+		: nullptr;
+	SplitViewModel->SetStack(
+		ItemCDO ? ItemCDO->DisplayName : FText::GetEmpty(),
+		UIData ? UIData->Icon : TSoftObjectPtr<UTexture2D>(),
+		SplitStackCount);
+	SplitViewModel->SetRange(MinimumSplitCount, MaximumSplitCount);
 }
 
 void URpgInventorySplitDialogWidget::CloseSplitDialog()
@@ -305,6 +372,11 @@ void URpgInventorySplitDialogWidget::ResetSplitState(bool bCancelGridRequest)
 	MinimumSplitCount = 1;
 	MaximumSplitCount = 1;
 	SelectedSplitCount = 1;
+	SplitStackCount = 0;
+	if (SplitViewModel)
+	{
+		SplitViewModel->Clear();
+	}
 }
 
 void URpgInventorySplitDialogWidget::HandleSliderValueChanged(float NewValue)
@@ -331,4 +403,19 @@ void URpgInventorySplitDialogWidget::HandleConfirmClicked()
 void URpgInventorySplitDialogWidget::HandleCancelClicked()
 {
 	CancelSplitDialog();
+}
+
+void URpgInventorySplitDialogWidget::HandleDecreaseClicked()
+{
+	SetSelectedSplitCount(SelectedSplitCount - 1);
+}
+
+void URpgInventorySplitDialogWidget::HandleIncreaseClicked()
+{
+	SetSelectedSplitCount(SelectedSplitCount + 1);
+}
+
+void URpgInventorySplitDialogWidget::HandleHalfClicked()
+{
+	SelectHalfStack();
 }

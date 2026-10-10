@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "AttributeSet.h"
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
 #include "NativeGameplayTags.h"
@@ -24,4 +25,8 @@ public:
 
 	UPROPERTY(BlueprintReadWrite)
 	FText UserFacingReason;
+
+	/** Attribute the ability's cost reduces, set when activation failed on its cost; UI read-only. */
+	UPROPERTY(BlueprintReadWrite)
+	FGameplayAttribute CostAttribute;
 };

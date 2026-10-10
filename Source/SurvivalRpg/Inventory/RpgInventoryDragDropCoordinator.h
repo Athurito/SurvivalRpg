@@ -331,13 +331,13 @@ public:
 	/** Dispatches the same exact in-place rotation for a current player-layout content address. */
 	bool RotateAddressSlotInPlace(URpgInventoryAddressSlotViewModel* SlotViewModel);
 
-	/** Requests a manual world drop for the focused entry. Confirmed must be true for confirm-protected items. */
+	/** Requests a manual world drop for the focused entry. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
-	bool DropEntry(URpgInventoryEntryViewModel* EntryViewModel, int32 StackCount = 0, bool bConfirmed = false);
+	bool DropEntry(URpgInventoryEntryViewModel* EntryViewModel, int32 StackCount = 0);
 
 	/** Requests a manual world drop for one logical player-inventory address slot. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Shortcuts")
-	bool DropAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel, int32 StackCount = 0, bool bConfirmed = false);
+	bool DropAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel, int32 StackCount = 0);
 
 	/**
 	 * Captures an immutable, caller-correlated manual-drop snapshot for one spatial inventory entry.
@@ -370,7 +370,7 @@ public:
 	 * Final ownership, drop-policy, and physical equipment cleanup remain server authoritative.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Equipment Actions")
-	bool DropEquipmentItem(ERpgEquipmentSlot EquipmentSlot, FRpgInventoryItemId ExpectedItemId, bool bConfirmed = false);
+	bool DropEquipmentItem(ERpgEquipmentSlot EquipmentSlot, FRpgInventoryItemId ExpectedItemId);
 
 	/** Captures a stable drop snapshot only while the equipment slot still represents ExpectedItemId. */
 	bool PrepareDropEquipmentItemRequest(
@@ -382,8 +382,7 @@ public:
 	/**
 	 * Revalidates and dispatches a prepared request through the ID-based server-authoritative drop path.
 	 *
-	 * Confirmation retries call this with a fresh RequestId and bConfirmed=true after atomically consuming the
-	 * screen-owned pending intent. No gameplay mutation occurs when the captured entry, source, or quantity is stale.
+	 * No gameplay mutation occurs when the captured entry, source, or quantity is stale.
 	 */
 	bool DispatchManualDropRequest(
 		URpgInventoryManagerComponent* Inventory,
