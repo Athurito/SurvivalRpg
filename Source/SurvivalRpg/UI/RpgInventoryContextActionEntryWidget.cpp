@@ -18,6 +18,13 @@ void URpgInventoryContextActionEntryWidget::NativeOnInitialized()
 	RefreshActionPresentation();
 }
 
+void URpgInventoryContextActionEntryWidget::NativeConstruct()
+{
+	Super::NativeConstruct();
+	// Building the label applies its text style, which resets the destructive colour set before construction.
+	RefreshActionPresentation();
+}
+
 void URpgInventoryContextActionEntryWidget::InitializeContextAction(
 	URpgInventoryContextMenuWidget* InOwningMenu,
 	ERpgInventoryContextAction InAction,

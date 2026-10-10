@@ -158,9 +158,17 @@ bool URpgInventorySplitDialogWidget::InitializeSplitDialog(
 	SpinBox_Amount->SetMaxSliderValue(static_cast<float>(MaximumSplitCount));
 	SpinBox_Amount->SetDelta(1.0f);
 	const URpgInventoryEntryViewModel* SelectedEntry = InSourceGrid->GetSelectedEntryViewModel();
-	PresentSplitStack(
-		SelectedEntry ? SelectedEntry->GetItemInstance() : nullptr,
-		SelectedEntry ? SelectedEntry->GetStackCount() : MaximumSplitCount + 1);
+	const URpgInventoryAddressSlotViewModel* SelectedAddress = InSourceGrid->GetSelectedAddressSlot();
+	if (SelectedEntry && SelectedEntry->GetItemInstance())
+	{
+		PresentSplitStack(SelectedEntry->GetItemInstance(), SelectedEntry->GetStackCount());
+	}
+	else
+	{
+		PresentSplitStack(
+			SelectedAddress ? SelectedAddress->GetItemInstance() : nullptr,
+			SelectedAddress ? SelectedAddress->GetStackCount() : MaximumSplitCount + 1);
+	}
 	SetSelectedSplitCount(InDefaultCount);
 	RequestRefreshFocus();
 	return true;

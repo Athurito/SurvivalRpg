@@ -98,6 +98,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Tooltip")
 	void SetComparisonShown(bool bShown);
 
+	/** Keeps the comparison shown without Shift, for example from a gamepad button. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Tooltip")
+	void SetComparisonPinned(bool bPinned);
+
 protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void ReleaseSlateResources(bool bReleaseChildren) override;
@@ -201,6 +205,7 @@ private:
 	TWeakObjectPtr<URpgInventoryItemInstance> ComparedItem;
 
 	bool bComparisonShown = false;
+	bool bComparisonPinned = false;
 
 	TSharedPtr<STextBlock> NativeNameText;
 	TSharedPtr<STextBlock> NativeRarityAndLevelText;

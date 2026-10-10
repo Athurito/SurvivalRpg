@@ -147,6 +147,12 @@ void URpgInventoryItemTooltipWidget::SetComparisonShown(bool bShown)
 	}
 }
 
+void URpgInventoryItemTooltipWidget::SetComparisonPinned(bool bPinned)
+{
+	bComparisonPinned = bPinned;
+	SetComparisonShown(bPinned);
+}
+
 void URpgInventoryItemTooltipWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
@@ -183,7 +189,7 @@ void URpgInventoryItemTooltipWidget::NativeTick(const FGeometry& MyGeometry, flo
 	// Tooltips never hold keyboard focus, so the modifier state is polled while the tooltip is painted.
 	if (TooltipViewModel && TooltipViewModel->CanCompare() && FSlateApplication::IsInitialized())
 	{
-		SetComparisonShown(FSlateApplication::Get().GetModifierKeys().IsShiftDown());
+		SetComparisonShown(bComparisonPinned || FSlateApplication::Get().GetModifierKeys().IsShiftDown());
 	}
 	else if (bComparisonShown)
 	{

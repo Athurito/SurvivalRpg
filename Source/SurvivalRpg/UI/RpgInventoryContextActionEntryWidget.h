@@ -49,6 +49,7 @@ public:
 
 protected:
 	virtual void NativeOnInitialized() override;
+	virtual void NativeConstruct() override;
 	virtual void NativeOnClicked() override;
 
 	/** Required localized label owned and styled by the canonical authored action-row Blueprint. */
