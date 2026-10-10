@@ -270,9 +270,16 @@ Rules:
   shape. A box with a fixed width and height stretches every glyph to that
   box; it suits only slots that always show square glyphs.
 - **Gamepad type:** Windows reports every XInput controller as `Generic`, so
-  Xbox glyphs are the default. PS5 glyphs show after
-  `UCommonInputSubsystem::SetGamepadInputType("PS5")`; a player setting for
-  this belongs to the settings menu (UI-07).
+  Xbox glyphs are the default. Players pick Xbox or PlayStation under
+  *Game → Controller → Gamepad Prompts*. `URpgControllerGlyphSubsystem`
+  applies the choice to CommonInput and saves it in `GameUserSettings.ini`.
+  Its options are the gamepad controller data registered for the platform,
+  named by their `GamepadDisplayName`, so a new glyph set needs only its data
+  asset and the `+ControllerData` line in `Config/DefaultGame.ini`.
+- **Controller pictures** for the settings overview are the controller
+  data's `ControllerTexture`. A picture fills the overview, so it keeps the
+  controller at the size and position of `XboxSeriesX_Diagram_upscaled`
+  (2900 × 1728, body about x 690–2200, y 420–1350).
 - **A new key** needs its cap and a brush map entry:
   1. Import `T_UI_Key_<Key>.png` from the input art pack into `Art/Keys`
      through Unreal MCP, and copy the texture settings (compression, mips,
@@ -414,6 +421,16 @@ styles for newly placed widgets.
     blood-red caption or, in one-line rows, a blood-red "!";
   - locked: icon at about 30 %, the lock glyph (`MI_UI_Glyph_Lock`) on the
     icon and an ash caption.
+- **Settings rows** (UI-07) are inset iron plates (`MI_UI_Panel_Inset`) that
+  show `MI_UI_Frame_Row` tinted gold on hover, with the name in the strong
+  body style. Categories are a heading over `MI_UI_Divider_Accent`. In option
+  rows the value bars are ash and the chosen bar gold; sliders are a thin
+  `AccentDim` line with the gold diamond (`MI_UI_Glyph_Diamond`) as thumb.
+- **Controller overview labels** come from the input actions'
+  `ActionDescription` in the contexts the overview lists
+  (`DescribedContexts`); stick and trigger axes are folded onto the stick and
+  trigger callouts (`AliasKeys`, `AliasTargets`). Give a new gameplay action
+  an English description to show it there; actions without one stay out.
 - **Search fields** draw on `MI_UI_Panel_Inset` with 14 pt Roboto in bone white
   and a hint text.
 - **Button labels** of `URpgCraftingActionButtonWidget` take the button

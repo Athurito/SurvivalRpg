@@ -55,7 +55,7 @@ It records the accepted decisions and the task sequence. The style itself
 | UI-04 | Crafting screen after the kiln and smithy concepts: category tree, tier sections, preview with stat ranges, one order per station from connected chests into a target chest, per-piece item rolls | Done: [#204](https://github.com/Athurito/SurvivalRpg/pull/204) |
 | UI-05 | HUD after the user's concept: vitals and XP, quickbar and Q/E/R, menu key hints, enemy health bar, context fading, mana attribute set | Done: [#206](https://github.com/Athurito/SurvivalRpg/pull/206), vitals cleanup [#208](https://github.com/Athurito/SurvivalRpg/pull/208) |
 | UI-06 | Item interactions after the user's concept: tooltip with Shift compare, item action menu, split dialog, pickup notifications, feedback toasts with icons, key caps, item-only highlight; no drop confirmation | Done: [#213](https://github.com/Athurito/SurvivalRpg/pull/213) |
-| UI-07 | Menus (game menu tabs, main menu, settings with the controller glyph choice Xbox / PlayStation, respawn), then remove KnightsQuest | Planned |
+| UI-07 | Menus (game menu tabs, main menu, settings with the controller glyph choice Xbox / PlayStation, respawn), then remove KnightsQuest | In progress: settings menu in PR (part 1); game and pause menu, main menu, respawn and the font removal follow |
 | UI-08 | Inventory layout after Diablo 3: character values left of the equipment, containers below, fewer pocket cells | Planned |
 
 ## Noted for later tasks
@@ -763,12 +763,10 @@ project's colours and styles; texts stay English.
 
 ### Not done
 
-- **PlayStation glyphs:** the Xbox set shows by default, and the PS5 set
-  after `SetGamepadInputType("PS5")`. Windows cannot tell a DualSense from
-  an Xbox controller over XInput, so players need a glyph setting (UI-07).
-- **Controller overview** in the settings menu
-  (`CUI_ControllerMappingOverview`) still uses the old Xbox One glyphs from
-  `UI/Menus/Shared/Platform/GamepadXboxOne` (UI-07).
+- **PlayStation glyphs:** the Xbox set shows by default. Windows cannot
+  tell a DualSense from an Xbox controller over XInput, so the settings menu
+  got a glyph choice in UI-07 ([Settings menu](#settings-menu-ui-07)).
+- **Controller overview:** moved to the new glyphs in UI-07.
 - **Gamepad compare:** `SetComparisonPinned` exists, but no button calls it.
 - **Resource fill in the HUD toast:** abilities do not use GAS cost effects
   yet, so no failure names a cost attribute; only the harvesting skill level
@@ -779,3 +777,88 @@ project's colours and styles; texts stay English.
 - **Toasts** show one message at a time instead of a stack.
 - The slider shows no gold fill left of the thumb, and hovered menu rows
   show the row highlight without the concept's chevron.
+
+## Settings menu (UI-07)
+
+The first part of UI-07. The user kept the settings menu's layout and asked
+for the shared style and the controller glyph choice; there was no concept.
+The design is unchanged: tabs Game, Graphic, Audio, Input (gamepad only) and
+Controls, one row per setting.
+
+### Behavior
+
+- **Style:** the rows are inset iron plates with a gold frame on hover
+  (`MI_UI_Panel_Inset`, `MI_UI_Frame_Row`). Categories are Cinzel headings
+  over a faint gold rule instead of grey bars. Labels use the shared text
+  styles (strong body for names, number style for slider values).
+- **Controls in a row:**
+  - the option arrows show the hover and pressed frames;
+  - the bars below a value are ash, and the chosen one is gold;
+  - the slider is a thin old-gold line with a gold diamond thumb;
+  - Auto Set Quality uses the default button frames.
+- **Fonts:** KnightsQuest is gone from the settings menu, from the shared
+  action bar button (`CUI_ActionButtonBase`, used by every screen's
+  Esc Back bar) and from `CUI_SettingDescriptionTextStyle`, which the server
+  browser and save slots also use.
+- **Gamepad Prompts:** a new *Controller* category in the Game tab offers
+  Xbox and PlayStation. The choice applies at once to every CommonUI glyph
+  and is saved per user in `GameUserSettings.ini`. The next start applies it
+  before any screen shows a prompt.
+- **Controller overview** (Input tab, gamepad only):
+  - the controller picture and the glyphs follow the chosen set;
+  - each glyph is labelled with the gameplay actions on that button, read
+    from the input actions' descriptions in the player's mapping contexts;
+  - unbound buttons are dimmed.
+
+  It covers move, look, jump, interact, sprint, menu, inventory and quick
+  access; LT, RT, RB, the stick presses, B / Circle, Y / Triangle and the
+  D-pad except up are unbound on a gamepad today.
+- **Graphic tab:** the preview area on the right stays for the planned
+  pictures of each graphics setting; it no longer shows the "Text Block"
+  placeholder before a setting is hovered.
+
+### C++ boundary
+
+- **Classification:** presentation on existing pages, plus one small native
+  mechanism for the glyph choice.
+- **Runtime truth:** `UCommonInputSubsystem`'s gamepad name per local
+  player. The choice is local presentation; it never replicates and gameplay
+  never reads it.
+- **Native:** `URpgControllerGlyphSubsystem` (local player subsystem):
+  - lists the gamepad glyph sets registered for the platform;
+  - sets the chosen one on CommonInput and saves it in
+    `GameUserSettings.ini`, applying it again when the local player starts;
+  - returns key brushes and the controller picture, which CommonInput does
+    not expose to Blueprint.
+- **Content (Unreal MCP):** every widget and style, the option row and its
+  graph, the overview graphs, the display name *Xbox* and the controller
+  pictures on the controller data (`ControllerTexture`), and English
+  descriptions on the described input actions.
+- **PS5 picture:** `PS5_Diagram_Overview` places the existing PS5 line
+  drawing at the Xbox picture's size and position, so both fill the overview
+  the same way. It has no leader lines: the PS5 D-pad sits above the left
+  stick, so lines to the fixed callout rows would cross.
+
+### Tests
+
+- `SurvivalRpg.UI.Input.GamepadGlyphOptions`: the platform offers more than
+  one glyph set, including its default gamepad, each named once with a
+  player-facing name and a face button glyph; unknown names are rejected.
+- `SurvivalRpg.UI.Input.PlayerInventoryNativeTag` expects the Tab key that
+  UI-05 added to the inventory action, so the suite passes again.
+
+### Not done
+
+- **Key rebinding:** the Controls tab is empty. Its list only reads
+  `IMC_UI_PlayerHUD`, and no mapping there is marked player-mappable;
+  rebinding needs a decision on which actions players may rebind.
+- **Gamepad bindings:** attacks, block, abilities and most menus have no
+  gamepad keys yet, so the overview shows them unbound.
+- **Graphics previews:** the hover pictures are still placeholder key
+  textures from `UI/Menus/Shared/Platform/Keyboard___Mouse`.
+- **Old prompts:** apart from the controller pictures and those
+  placeholders, the old Xbox One, PS4 and keyboard prompt textures in
+  `UI/Menus/Shared/Platform` are now unused. They can go with the
+  KnightsQuest removal.
+- **Inventory:** the build button at the top right of the inventory still
+  reads "Kiste bauen".
