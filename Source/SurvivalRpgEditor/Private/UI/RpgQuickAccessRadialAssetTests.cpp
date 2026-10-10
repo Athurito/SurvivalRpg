@@ -486,7 +486,8 @@ bool FRpgInteractionInputAssetTest::RunTest(
 		}
 
 		++InteractionMappingCount;
-		KeyboardMappingCount += Mapping.Key == EKeys::E ? 1 : 0;
+		// F, not E: GF_Combat_Core's IMC_Combat binds E to IA_WeaponAbility02.
+		KeyboardMappingCount += Mapping.Key == EKeys::F ? 1 : 0;
 		GamepadMappingCount +=
 			Mapping.Key == EKeys::Gamepad_FaceButton_Left ? 1 : 0;
 		TestTrue(
@@ -498,7 +499,7 @@ bool FRpgInteractionInputAssetTest::RunTest(
 			FName(TEXT("Interact")));
 		TestTrue(
 			TEXT("The interaction mapping uses an authored default"),
-			Mapping.Key == EKeys::E ||
+			Mapping.Key == EKeys::F ||
 				Mapping.Key == EKeys::Gamepad_FaceButton_Left);
 	}
 	TestEqual(
@@ -506,7 +507,7 @@ bool FRpgInteractionInputAssetTest::RunTest(
 		InteractionMappingCount,
 		2);
 	TestEqual(
-		TEXT("IA_Interact has one keyboard E default"),
+		TEXT("IA_Interact has one keyboard F default"),
 		KeyboardMappingCount,
 		1);
 	TestEqual(
