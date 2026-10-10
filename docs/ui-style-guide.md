@@ -188,10 +188,16 @@ style:
   and as wide as the label needs; mouse buttons are square caps with a mouse
   glyph. `CommonInputData_Keyboard` maps every key to its cap, so CommonUI
   glyphs show them everywhere.
-- The caps and the action icons come from the user's input art pack
-  (*DarkFantasy Input UI*, kept outside the repository). The pack also has
-  caps for every other keyboard key and Xbox and PS5 glyphs; only the keys
-  the game shows are imported.
+- `Gamepad/Xbox` and `Gamepad/PS5`: the controller glyphs `T_UI_Xbox_*` and
+  `T_UI_PS5_*` in the same style, 192 px high: round face and system
+  buttons, wide shoulder caps, triggers, and sticks with a direction or
+  press arrow. `CommonInputData_Gamepad` (gamepad name `Generic`, the
+  Windows default) maps the Xbox set, `CommonInputData_GamepadPS5` (gamepad
+  name `PS5`) the PS5 set.
+- The caps, the controller glyphs and the action icons come from the user's
+  input art pack (*DarkFantasy Input UI*, kept outside the repository). The
+  pack also has caps for every other keyboard key and further controller
+  variants; only the keys the game can show are imported.
 - `Frames/`: panels, tooltip, slots and controls, the gear frames
   `T_UI_Gear_Frame_Cell`, `_Equipment`, `_Weapon` and `_Container`, and the
   HUD bar frame `T_UI_Hud_BarFrame` (UI-05). `T_UI_Frame_Tooltip` is the
@@ -250,13 +256,23 @@ Rules:
   on top. Give the frame image an image size of 32 × 32: the image size is
   the image's desired size, so the texture size would force every popup to
   at least 458 × 207.
-- **Key caps** come from `CommonInputData_Keyboard` through a
-  `CommonActionWidget` wherever an input action is shown. A fixed hint
-  outside an action, such as "Shift Compare" or the split dialog's Esc and
-  Enter, uses the cap texture directly; size its brush to the texture's
-  aspect ratio at the wanted height. A `SizeBox` with a fixed width and
-  height around a `CommonActionWidget` stretches the cap to that box, so give
-  it the bound key's aspect ratio (Tab in `CUI_HudKeyHints` is 43 × 28).
+- **Key caps and controller glyphs** come from the CommonInput data through
+  a `CommonActionWidget` wherever an input action is shown, so the glyph
+  follows the active device. A dialog button names its UI action row (the
+  split dialog's Cancel and Split use `UI.Back` and `UI.Accept`: Esc and
+  Enter, B and A, Circle and Cross). Only a hint without an action, such as
+  "Shift Compare", uses a cap texture directly; size its brush to the
+  texture's aspect ratio at the wanted height.
+- **Glyph size:** to show a glyph at a set height, put the
+  `CommonActionWidget` in a `ScaleBox` (`ScaleToFitY`) inside a `SizeBox`
+  with only a height override. The width then follows each glyph's aspect
+  ratio: a key cap, a round face button and a wide stick glyph keep their
+  shape. A box with a fixed width and height stretches every glyph to that
+  box; it suits only slots that always show square glyphs.
+- **Gamepad type:** Windows reports every XInput controller as `Generic`, so
+  Xbox glyphs are the default. PS5 glyphs show after
+  `UCommonInputSubsystem::SetGamepadInputType("PS5")`; a player setting for
+  this belongs to the settings menu (UI-07).
 - **A new key** needs its cap and a brush map entry:
   1. Import `T_UI_Key_<Key>.png` from the input art pack into `Art/Keys`
      through Unreal MCP, and copy the texture settings (compression, mips,
@@ -269,6 +285,11 @@ Rules:
   3. The texture is named after the Unreal key, except the digits (`One`
      uses `T_UI_Key_1`) and `MouseWheel`, which `MouseWheelAxis` uses.
      Right-hand modifiers reuse the left-hand caps.
+  4. A gamepad key goes into both gamepad data assets the same way, with
+     its glyph from `Art/Gamepad/Xbox` and `Art/Gamepad/PS5`. The pack's
+     `Mappings/InputMappings.csv` names the Unreal key of every glyph; the
+     system buttons use the symbol glyphs (`T_UI_Xbox_ViewGlyph`,
+     `T_UI_PS5_CreateGlyph` for `Gamepad_Special_Left`).
 - **Slot frames** (`T_UI_Slot_*`) stay square images.
 - **`CUI_BorderStyle_MenuBackdrop`** draws the darkened night forest behind
   the game menu.

@@ -55,7 +55,7 @@ It records the accepted decisions and the task sequence. The style itself
 | UI-04 | Crafting screen after the kiln and smithy concepts: category tree, tier sections, preview with stat ranges, one order per station from connected chests into a target chest, per-piece item rolls | Done: [#204](https://github.com/Athurito/SurvivalRpg/pull/204) |
 | UI-05 | HUD after the user's concept: vitals and XP, quickbar and Q/E/R, menu key hints, enemy health bar, context fading, mana attribute set | Done: [#206](https://github.com/Athurito/SurvivalRpg/pull/206), vitals cleanup [#208](https://github.com/Athurito/SurvivalRpg/pull/208) |
 | UI-06 | Item interactions after the user's concept: tooltip with Shift compare, item action menu, split dialog, pickup notifications, feedback toasts with icons, key caps, item-only highlight; no drop confirmation | Done: [#213](https://github.com/Athurito/SurvivalRpg/pull/213) |
-| UI-07 | Menus (game menu tabs, main menu, settings, respawn), then remove KnightsQuest | Planned |
+| UI-07 | Menus (game menu tabs, main menu, settings with the controller glyph choice Xbox / PlayStation, respawn), then remove KnightsQuest | Planned |
 | UI-08 | Inventory layout after Diablo 3: character values left of the equipment, containers below, fewer pocket cells | Planned |
 
 ## Noted for later tasks
@@ -687,6 +687,11 @@ project's colours and styles; texts stay English.
   widget changed; only the brush sizes of the caps followed the new aspect
   ratios. The mouse wheel directions and the side buttons gained caps of
   their own.
+- **Controller glyphs:** the same pack's Xbox and PS5 glyphs replace the old
+  Xbox One glyphs in `CommonInputData_Gamepad` and fill the new
+  `CommonInputData_GamepadPS5`. The split dialog's Esc and Enter became
+  action glyphs (`UI.Back`, `UI.Accept`), so a gamepad shows B and A there,
+  and the HUD key hints size their glyphs by height only.
 
 ### C++ boundary
 
@@ -758,9 +763,12 @@ project's colours and styles; texts stay English.
 
 ### Not done
 
-- **Gamepad glyphs:** the art pack has Xbox and PS5 glyphs, but
-  `CommonInputData_Gamepad` still uses the old Xbox One glyphs from
-  `UI/Menus/Shared/Platform/GamepadXboxOne`.
+- **PlayStation glyphs:** the Xbox set shows by default, and the PS5 set
+  after `SetGamepadInputType("PS5")`. Windows cannot tell a DualSense from
+  an Xbox controller over XInput, so players need a glyph setting (UI-07).
+- **Controller overview** in the settings menu
+  (`CUI_ControllerMappingOverview`) still uses the old Xbox One glyphs from
+  `UI/Menus/Shared/Platform/GamepadXboxOne` (UI-07).
 - **Gamepad compare:** `SetComparisonPinned` exists, but no button calls it.
 - **Resource fill in the HUD toast:** abilities do not use GAS cost effects
   yet, so no failure names a cost attribute; only the harvesting skill level
