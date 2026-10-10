@@ -1207,11 +1207,12 @@ bool URpgAbilitySystemComponent::GrantAbilitySet(const URpgAbilitySet* AbilitySe
 		return false;
 	}
 
-	// Wenn Client: an Server delegieren
+	// Like Lyra, only authoritative code grants sets; clients receive the replicated specs.
 	if (!HasGrantAuthority())
 	{
-		Server_GrantAbilitySet(AbilitySet, SourceObject);
-		return true; // Anfrage raus, Server repliziert Ergebnis
+		UE_LOG(LogRpgAbilitySystem, Warning, TEXT("GrantAbilitySet: ignored [%s] on [%s] without grant authority."),
+			*GetNameSafe(AbilitySet), *GetNameSafe(GetOwner()));
+		return false;
 	}
 
 	if (OwnerPlayerState)
@@ -1219,7 +1220,16 @@ bool URpgAbilitySystemComponent::GrantAbilitySet(const URpgAbilitySet* AbilitySe
 		OwnerPlayerState->SendAbilitiesChangedEvent();
 	}
 
-	return GrantAbilitySet_Internal(AbilitySet, SourceObject);
+	if (GrantedAbilitySets.Contains(AbilitySet))
+	{
+		return false;
+	}
+
+	FRpgAbilitySet_GrantedHandles Handles;
+	AbilitySet->GiveToAbilitySystem(this, &Handles, SourceObject);
+
+	GrantedAbilitySets.Add(AbilitySet, Handles);
+	return true;
 }
 
 bool URpgAbilitySystemComponent::RemoveAbilitySet(const URpgAbilitySet* AbilitySet)
@@ -1231,8 +1241,9 @@ bool URpgAbilitySystemComponent::RemoveAbilitySet(const URpgAbilitySet* AbilityS
 
 	if (!HasGrantAuthority())
 	{
-		Server_RemoveAbilitySet(AbilitySet);
-		return true;
+		UE_LOG(LogRpgAbilitySystem, Warning, TEXT("RemoveAbilitySet: ignored [%s] on [%s] without grant authority."),
+			*GetNameSafe(AbilitySet), *GetNameSafe(GetOwner()));
+		return false;
 	}
 
 	if (OwnerPlayerState)
@@ -1240,7 +1251,15 @@ bool URpgAbilitySystemComponent::RemoveAbilitySet(const URpgAbilitySet* AbilityS
 		OwnerPlayerState->SendAbilitiesChangedEvent();
 	}
 
-	return RemoveAbilitySet_Internal(AbilitySet);
+	FRpgAbilitySet_GrantedHandles* Handles = GrantedAbilitySets.Find(AbilitySet);
+	if (!Handles)
+	{
+		return false;
+	}
+
+	Handles->TakeFromAbilitySystem(this);
+	GrantedAbilitySets.Remove(AbilitySet);
+	return true;
 }
 
 bool URpgAbilitySystemComponent::HasAbilitySet(const URpgAbilitySet* AbilitySet) const
@@ -1258,54 +1277,6 @@ bool URpgAbilitySystemComponent::HasGrantAuthority() const
 #endif
 
 	return IsOwnerActorAuthoritative();
-}
-
-void URpgAbilitySystemComponent::Server_GrantAbilitySet_Implementation(const URpgAbilitySet* AbilitySet, UObject* SourceObject)
-{
-	GrantAbilitySet_Internal(AbilitySet, SourceObject);
-}
-
-void URpgAbilitySystemComponent::Server_RemoveAbilitySet_Implementation(const URpgAbilitySet* AbilitySet)
-{
-	RemoveAbilitySet_Internal(AbilitySet);
-}
-
-bool URpgAbilitySystemComponent::GrantAbilitySet_Internal(const URpgAbilitySet* AbilitySet, UObject* SourceObject)
-{
-	if (!IsValid(AbilitySet))
-	{
-		return false;
-	}
-
-	// Optional: doppelt grant verhindern
-	if (GrantedAbilitySets.Contains(AbilitySet))
-	{
-		return false;
-	}
-
-	FRpgAbilitySet_GrantedHandles Handles;
-	AbilitySet->GiveToAbilitySystem(this, &Handles, SourceObject);
-
-	GrantedAbilitySets.Add(AbilitySet, Handles);
-	return true;
-}
-
-bool URpgAbilitySystemComponent::RemoveAbilitySet_Internal(const URpgAbilitySet* AbilitySet)
-{
-	if (!IsValid(AbilitySet))
-	{
-		return false;
-	}
-
-	FRpgAbilitySet_GrantedHandles* Handles = GrantedAbilitySets.Find(AbilitySet);
-	if (!Handles)
-	{
-		return false;
-	}
-
-	Handles->TakeFromAbilitySystem(this);
-	GrantedAbilitySets.Remove(AbilitySet);
-	return true;
 }
 
 void URpgAbilitySystemComponent::ApplyDefaultAbilitySetupIfNeeded(UObject* SourceObject)
