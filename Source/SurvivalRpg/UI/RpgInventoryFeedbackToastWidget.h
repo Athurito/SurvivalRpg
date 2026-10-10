@@ -7,7 +7,9 @@
 #include "RpgInventoryFeedbackToastWidget.generated.h"
 
 class UBorder;
+class UCommonLazyImage;
 class UTextBlock;
+class UTexture2D;
 
 /**
  * Small authored owner-local inventory result toast.
@@ -54,6 +56,33 @@ protected:
 	/** Background tint for rejected or blocked requests. Cosmetic client-only tuning. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Feedback|Style")
 	FLinearColor FailureColor = FLinearColor(0.38f, 0.045f, 0.035f, 0.96f);
+
+	/**
+	 * Whether successful requests show a toast. Off by default: a completed move or drop is already visible in the
+	 * grid or the world, so only rejections need words. Cosmetic client-only tuning.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Feedback")
+	bool bShowSuccessFeedback = false;
+
+	/** Optional icon shown beside the text. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Inventory|Feedback")
+	TObjectPtr<UCommonLazyImage> FeedbackIcon = nullptr;
+
+	/** Icon for successful requests. Cosmetic client-only tuning. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Feedback|Style")
+	TSoftObjectPtr<UTexture2D> SuccessIcon;
+
+	/** Icon for rejected requests. Cosmetic client-only tuning. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Feedback|Style")
+	TSoftObjectPtr<UTexture2D> FailureIcon;
+
+	/** Text and icon colour for successful requests. Cosmetic client-only tuning. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Feedback|Style")
+	FSlateColor SuccessTextColor = FSlateColor(FLinearColor::White);
+
+	/** Text and icon colour for rejected requests. Cosmetic client-only tuning. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|Feedback|Style")
+	FSlateColor FailureTextColor = FSlateColor(FLinearColor::White);
 
 	/** Optional presentation hook for sound, pulse, or project-specific localized copy. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|Feedback", meta = (DisplayName = "On Inventory Action Feedback Shown"))

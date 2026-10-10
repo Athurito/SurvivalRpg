@@ -14,6 +14,8 @@ class UVerticalBox;
 class UWidget;
 class URpgInventoryContextActionEntryWidget;
 class URpgQuickAccessSlotPickerEntryWidget;
+class URpgInventoryEntryViewModel;
+class URpgItemTooltipViewModel;
 struct FUIInputConfig;
 
 /**
@@ -79,6 +81,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Context Menu")
 	FRpgInventoryItemId GetContextItemId() const { return ContextItemId; }
 
+	/** Read model of the item the menu acts on, for the menu header. UI read-only. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Context Menu")
+	URpgItemTooltipViewModel* GetContextItemViewModel() const { return ContextItemViewModel; }
+
 	//~UCommonActivatableWidget interface
 	virtual TOptional<FUIInputConfig> GetDesiredInputConfig() const override;
 	//~End of UCommonActivatableWidget interface
@@ -125,6 +131,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Context Menu|Entries")
 	TSubclassOf<URpgQuickAccessSlotPickerEntryWidget> QuickAccessSlotEntryWidgetClass;
 
+	/** Manual MVVM source in the Widget Blueprint that receives ContextItemViewModel. Designer data. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Context Menu")
+	FName ContextItemViewModelSourceName = TEXT("ContextItem");
+
 private:
 	void BindDismissControl();
 	void RebuildActionButtons();
@@ -134,6 +144,7 @@ private:
 	FText ResolveQuickAccessBindingLabel(int32 SlotIndex, bool& bOutOccupied) const;
 	void UpdateContextMenuPosition();
 	void ResetContextState();
+	void PresentContextItem();
 	void HandleContextActionClicked(ERpgInventoryContextAction Action);
 	friend class URpgInventoryContextActionEntryWidget;
 	friend class URpgQuickAccessSlotPickerEntryWidget;
@@ -175,6 +186,14 @@ private:
 	/** Runtime-created picker entries retained for focus and safe page rebuilds. */
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<URpgQuickAccessSlotPickerEntryWidget>> QuickAccessSlotButtons;
+
+	/** Header read model assigned to ContextItemViewModelSourceName. */
+	UPROPERTY(Transient)
+	TObjectPtr<URpgItemTooltipViewModel> ContextItemViewModel = nullptr;
+
+	/** Entry presenter built for the header item. */
+	UPROPERTY(Transient)
+	TObjectPtr<URpgInventoryEntryViewModel> ContextEntryViewModel = nullptr;
 
 	FVector2D RequestedScreenPosition = FVector2D::ZeroVector;
 	bool bContextPositionPending = false;

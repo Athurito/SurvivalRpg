@@ -622,6 +622,7 @@ bool URpgInventoryAddressSlotWidget::QueryInventoryContextActions(
 		ERpgInventoryContextActionSourceKind::Address;
 	OutSnapshot.EntryId = SlotViewModel->GetEntryId();
 	OutSnapshot.ItemId = Item->GetItemId();
+	OutSnapshot.ItemInstance = SlotViewModel->GetItemInstance();
 	OutSnapshot.SourcePlacement =
 		SlotViewModel->GetItemPlacement();
 	OutSnapshot.SlotAddress =

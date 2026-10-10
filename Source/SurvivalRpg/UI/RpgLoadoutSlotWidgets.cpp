@@ -245,6 +245,7 @@ bool URpgEquipmentSlotWidget::QueryInventoryContextActions(
 	OutSnapshot.SourceKind =
 		ERpgInventoryContextActionSourceKind::Equipment;
 	OutSnapshot.ItemId = ItemInstance->GetItemId();
+	OutSnapshot.ItemInstance = GetRepresentedItem();
 	OutSnapshot.EquipmentSlot =
 		GetResolvedEquipmentSlot();
 	OutSnapshot.Actions =

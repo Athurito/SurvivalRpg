@@ -823,6 +823,7 @@ bool URpgInventorySpatialGridWidget::QueryInventoryContextActions(
 			ERpgInventoryContextActionSourceKind::Address;
 		OutSnapshot.EntryId = AddressSlot->GetEntryId();
 		OutSnapshot.ItemId = Item->GetItemId();
+		OutSnapshot.ItemInstance = AddressSlot->GetItemInstance();
 		OutSnapshot.SourcePlacement =
 			AddressSlot->GetItemPlacement();
 		OutSnapshot.SlotAddress =
@@ -848,6 +849,7 @@ bool URpgInventorySpatialGridWidget::QueryInventoryContextActions(
 			ERpgInventoryContextActionSourceKind::SpatialEntry;
 		OutSnapshot.EntryId = EntryViewModel->GetEntryId();
 		OutSnapshot.ItemId = Item->GetItemId();
+		OutSnapshot.ItemInstance = EntryViewModel->GetItemInstance();
 		OutSnapshot.SourcePlacement =
 			EntryViewModel->GetPlacement();
 		OutSnapshot.StackCount =
@@ -2182,11 +2184,7 @@ URpgInventorySpatialGridWidget::GetCellVisualState(
 		}
 	}
 
-	if (bCanShowCursor)
-	{
-		return ERpgInventorySpatialCellVisualState::Selected;
-	}
-
+	// A cell under an item never draws its own cursor frame; the item outlines its whole footprint instead.
 	if (URpgInventoryAddressSlotViewModel* AddressSlot = FindAddressItemAtCell(X, Y))
 	{
 		const FRpgInventoryGridPlacement Placement = AddressSlot->GetItemPlacement().IsValid()
@@ -2205,7 +2203,9 @@ URpgInventorySpatialGridWidget::GetCellVisualState(
 			: ERpgInventorySpatialCellVisualState::Covered;
 	}
 
-	return ERpgInventorySpatialCellVisualState::Normal;
+	return bCanShowCursor
+		? ERpgInventorySpatialCellVisualState::Selected
+		: ERpgInventorySpatialCellVisualState::Normal;
 }
 
 bool URpgInventorySpatialGridWidget::BuildCellPreviewDescriptor(
