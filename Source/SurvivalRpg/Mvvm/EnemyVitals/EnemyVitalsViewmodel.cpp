@@ -1,6 +1,8 @@
 #include "EnemyVitalsViewmodel.h"
 
+#include "AbilitySystemComponent.h"
 #include "AbilitySystemInterface.h"
+#include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 
@@ -32,7 +34,7 @@ void UEnemyVitalsViewmodel::BindToActor(AActor* InObservedActor)
 
 	if (const IAbilitySystemInterface* AbilitySystemActor = Cast<IAbilitySystemInterface>(InObservedActor))
 	{
-		BindASC(AbilitySystemActor->GetAbilitySystemComponent());
+		BindAbilitySystem(AbilitySystemActor->GetAbilitySystemComponent());
 	}
 }
 
@@ -45,7 +47,7 @@ void UEnemyVitalsViewmodel::UnbindFromActor()
 		BoundPawnExtension = nullptr;
 	}
 
-	BindASC(nullptr);
+	UnbindAbilitySystem();
 	ObservedActor.Reset();
 }
 
@@ -60,11 +62,76 @@ void UEnemyVitalsViewmodel::HandleAbilitySystemInitialized()
 {
 	if (BoundPawnExtension)
 	{
-		BindASC(BoundPawnExtension->GetRpgAbilitySystemComponent());
+		BindAbilitySystem(BoundPawnExtension->GetRpgAbilitySystemComponent());
 	}
 }
 
 void UEnemyVitalsViewmodel::HandleAbilitySystemUninitialized()
 {
-	BindASC(nullptr);
+	UnbindAbilitySystem();
+}
+
+void UEnemyVitalsViewmodel::BindAbilitySystem(UAbilitySystemComponent* InAbilitySystem)
+{
+	if (AbilitySystem.Get() != InAbilitySystem)
+	{
+		UnbindAbilitySystem();
+		AbilitySystem = InAbilitySystem;
+		if (!InAbilitySystem)
+		{
+			return;
+		}
+
+		HealthChangedHandle = InAbilitySystem->GetGameplayAttributeValueChangeDelegate(URpgHealthSet::GetHealthAttribute())
+			.AddUObject(this, &ThisClass::HandleHealthChanged);
+		MaxHealthChangedHandle = InAbilitySystem->GetGameplayAttributeValueChangeDelegate(URpgHealthSet::GetMaxHealthAttribute())
+			.AddUObject(this, &ThisClass::HandleMaxHealthChanged);
+	}
+
+	if (InAbilitySystem)
+	{
+		SetHealth(InAbilitySystem->GetNumericAttribute(URpgHealthSet::GetHealthAttribute()));
+		SetMaxHealth(InAbilitySystem->GetNumericAttribute(URpgHealthSet::GetMaxHealthAttribute()));
+	}
+}
+
+void UEnemyVitalsViewmodel::UnbindAbilitySystem()
+{
+	if (UAbilitySystemComponent* BoundAbilitySystem = AbilitySystem.Get())
+	{
+		BoundAbilitySystem->GetGameplayAttributeValueChangeDelegate(URpgHealthSet::GetHealthAttribute())
+			.Remove(HealthChangedHandle);
+		BoundAbilitySystem->GetGameplayAttributeValueChangeDelegate(URpgHealthSet::GetMaxHealthAttribute())
+			.Remove(MaxHealthChangedHandle);
+	}
+
+	HealthChangedHandle.Reset();
+	MaxHealthChangedHandle.Reset();
+	AbilitySystem.Reset();
+}
+
+void UEnemyVitalsViewmodel::HandleHealthChanged(const FOnAttributeChangeData& Data)
+{
+	SetHealth(Data.NewValue);
+}
+
+void UEnemyVitalsViewmodel::HandleMaxHealthChanged(const FOnAttributeChangeData& Data)
+{
+	SetMaxHealth(Data.NewValue);
+}
+
+void UEnemyVitalsViewmodel::SetHealth(float NewValue)
+{
+	if (UE_MVVM_SET_PROPERTY_VALUE(Health, NewValue))
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(GetHealthPercent);
+	}
+}
+
+void UEnemyVitalsViewmodel::SetMaxHealth(float NewValue)
+{
+	if (UE_MVVM_SET_PROPERTY_VALUE(MaxHealth, NewValue))
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(GetHealthPercent);
+	}
 }

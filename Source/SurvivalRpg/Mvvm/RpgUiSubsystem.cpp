@@ -6,7 +6,6 @@
 #include "Character/RpgCharacterStatsViewModel.h"
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/PlayerController.h"
-#include "PlayerVitals/PlayerVitalsViewmodel.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 
@@ -20,23 +19,18 @@ UObject* URpgUiSubsystem::FindViewModel(const UClass* ExpectedType) const
 	{
 		return CharacterStatsVM;
 	}
-	if (VitalsVM && VitalsVM->GetClass() == ExpectedType)
-	{
-		return VitalsVM;
-	}
 	return nullptr;
 }
 
 bool URpgUiSubsystem::ProvidesViewModelClass(const UClass* Class)
 {
-	return Class == URpgCharacterStatsViewModel::StaticClass() || Class == UPlayerVitalsViewmodel::StaticClass();
+	return Class == URpgCharacterStatsViewModel::StaticClass();
 }
 
 void URpgUiSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 
-	VitalsVM = NewObject<UPlayerVitalsViewmodel>(this);
 	CharacterStatsVM = NewObject<URpgCharacterStatsViewModel>(this);
 
 	if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
@@ -49,12 +43,6 @@ void URpgUiSubsystem::Deinitialize()
 {
 	UnbindFromPlayerController();
 
-	if (VitalsVM)
-	{
-		VitalsVM->UnbindASC();
-	}
-
-	VitalsVM = nullptr;
 	CharacterStatsVM = nullptr;
 
 	Super::Deinitialize();
@@ -113,7 +101,7 @@ void URpgUiSubsystem::UnbindFromPlayerController()
 
 void URpgUiSubsystem::BindToPawn(APawn* NewPawn)
 {
-	if (!NewPawn || !VitalsVM)
+	if (!NewPawn || !CharacterStatsVM)
 	{
 		return;
 	}
@@ -139,10 +127,6 @@ void URpgUiSubsystem::UnbindFromPawnExtension(bool bResetViewModel)
 		BoundPawnExtension = nullptr;
 	}
 
-	if (bResetViewModel && VitalsVM)
-	{
-		VitalsVM->UnbindASC();
-	}
 	if (bResetViewModel && CharacterStatsVM)
 	{
 		CharacterStatsVM->UnbindAbilitySystem();
@@ -158,10 +142,6 @@ void URpgUiSubsystem::HandleAbilitySystemInitialized()
 
 	if (URpgAbilitySystemComponent* ASC = BoundPawnExtension->GetRpgAbilitySystemComponent())
 	{
-		if (VitalsVM)
-		{
-			VitalsVM->BindASC(ASC);
-		}
 		if (CharacterStatsVM)
 		{
 			CharacterStatsVM->BindAbilitySystem(ASC);
@@ -171,10 +151,6 @@ void URpgUiSubsystem::HandleAbilitySystemInitialized()
 
 void URpgUiSubsystem::HandleAbilitySystemUninitialized()
 {
-	if (VitalsVM)
-	{
-		VitalsVM->UnbindASC();
-	}
 	if (CharacterStatsVM)
 	{
 		CharacterStatsVM->UnbindAbilitySystem();

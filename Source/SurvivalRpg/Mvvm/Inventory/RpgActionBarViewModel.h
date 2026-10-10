@@ -13,6 +13,7 @@
 class APlayerController;
 class URpgInventoryManagerComponent;
 class URpgPlayerInventoryLayoutComponent;
+struct FRpgEquipmentLoadoutSlotsChangedMessage;
 struct FRpgInventoryChangeMessage;
 struct FRpgPlayerInventoryLayoutChangedMessage;
 
@@ -73,6 +74,7 @@ private:
 	void HandleActionBarSlotsChanged(FGameplayTag Channel, const FRpgActionBarSlotsChangedMessage& Message);
 	void HandlePlayerInventoryChanged(FGameplayTag Channel, const FRpgInventoryChangeMessage& Message);
 	void HandlePlayerInventoryLayoutChanged(FGameplayTag Channel, const FRpgPlayerInventoryLayoutChangedMessage& Message);
+	void HandleEquipmentLoadoutChanged(FGameplayTag Channel, const FRpgEquipmentLoadoutSlotsChangedMessage& Message);
 
 	TWeakObjectPtr<URpgActionBarComponent> ObservedActionBar;
 	TWeakObjectPtr<URpgInventoryManagerComponent> ObservedPlayerInventory;
@@ -80,5 +82,6 @@ private:
 	FGameplayMessageListenerHandle SlotsChangedHandle;
 	FGameplayMessageListenerHandle InventoryChangedHandle;
 	FGameplayMessageListenerHandle LayoutChangedHandle;
+	FGameplayMessageListenerHandle EquipmentLoadoutChangedHandle;
 	FRpgViewModelInvalidationQueue RefreshSlotsQueue;
 };
