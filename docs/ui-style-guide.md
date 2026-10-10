@@ -85,6 +85,8 @@ everything else uses the engine's Roboto. Text styles are in `Text/`.
 | `CUI_TextStyle_SectionTitle` | Cinzel Bold, spacing 100, shadow | 15 | TextPrimary | Container titles such as POCKETS and BACKPACK |
 | `CUI_TextStyle_SlotCaption` | Cinzel Regular, spacing 140, shadow | 11 | TextMuted | Captions above equipment slots |
 | `CUI_TextStyle_StackCount` | Roboto Bold, shadow | 11 | TextPrimary | Stack counts on inventory items |
+| `CUI_TextStyle_StatValue` | Roboto Bold | 28 | TextPrimary | Base stat values in item tooltips |
+| `CUI_TextStyle_StatBetter`, `_StatWorse` | Roboto Bold | 13 | Brightened Valid and Blood | Comparison differences: higher and lower than the equipped item |
 
 ## Spacing and sizes
 
@@ -178,10 +180,19 @@ style:
   (item icons), `Icons/building` (buildables and storage upgrades),
   `Icons/stats` (character values, used by the stats column), and crafting
   categories and stations in `Icons/crafting` (used by the crafting screen
-  since UI-04).
+  since UI-04). UI-06 adds `Icons/actions` (`T_UI_Action_*`, one per item
+  action) and `Icons/feedback` (`T_UI_Feedback_Success`, `_Blocked`,
+  `_Cooldown`); both are generated placeholders until the user's set
+  replaces them in place under the same names.
+- `Keys/`: key caps `T_UI_Key_<Key>` for keyboard keys and mouse buttons
+  (UI-06): a dark cap with a gold rim and a bone white Roboto Bold label,
+  96 units high and 96 or more wide. `CommonInputData_Keyboard` maps every
+  key to its cap, so CommonUI glyphs show them everywhere.
+  `Build/Tools/UiKeyCaps` generates the caps and describes how to add a key.
 - `Frames/`: panels, tooltip, slots and controls, the gear frames
   `T_UI_Gear_Frame_Cell`, `_Equipment`, `_Weapon` and `_Container`, and the
-  HUD bar frame `T_UI_Hud_BarFrame` (UI-05).
+  HUD bar frame `T_UI_Hud_BarFrame` (UI-05). `T_UI_Frame_Tooltip` is the
+  popup frame since UI-06.
 - `Ornaments/` (including the paper doll `T_UI_Gear_BodySilhouette`) and
   `Backgrounds/`.
 
@@ -196,7 +207,9 @@ Rules:
   - weapon slot frame 300 × 64, margin 0.034 × 0.16;
   - container frame 110 × 147, margin 0.16 × 0.12;
   - HUD bar frame 192 × 18, margin 0.07 left and right, 0 top and bottom, so
-    the pointed ends keep 13 px at any bar width.
+    the pointed ends keep 13 px at any bar width;
+  - popup frame `T_UI_Frame_Tooltip` 458 × 207, margin 18 px on every side
+    (0.039 × 0.087).
 - **Equipment glyphs** mark empty slots: bone white at about 24 % opacity, set
   per slot through the `EmptyGlyphTexture` variable of `CUI_GearSlot` and
   `CUI_CarrySlot`.
@@ -228,6 +241,18 @@ Rules:
     minimum panel size.
   - The textures are trimmed to their band, so the frame sits at the panel
     edge.
+- **Popup frames** (tooltips, item menus, dialogs, toasts, pickup
+  notifications, the interaction prompt): an overlay of `MI_UI_Panel_Tooltip`
+  inset by 3 units and an `Image` with `T_UI_Frame_Tooltip` drawn as `Box`
+  on top. Give the frame image an image size of 32 × 32: the image size is
+  the image's desired size, so the texture size would force every popup to
+  at least 458 × 207.
+- **Key caps** come from `CommonInputData_Keyboard` through a
+  `CommonActionWidget` wherever an input action is shown. A fixed hint
+  outside an action, such as "Shift Compare" or the split dialog's Esc and
+  Enter, uses the cap texture directly; size its brush to the texture's
+  aspect ratio at the wanted height. A new key needs a new `T_UI_Key_*` cap
+  and an entry in the brush map (see `Build/Tools/UiKeyCaps/README.md`).
 - **Slot frames** (`T_UI_Slot_*`) stay square images.
 - **`CUI_BorderStyle_MenuBackdrop`** draws the darkened night forest behind
   the game menu.
@@ -277,6 +302,27 @@ styles for newly placed widgets.
     (vitals, enemy bars); dim controls (quickbar, abilities) to 40 %.
   - Text over the world sits on a plate (`MI_UI_Panel_Inset` at 75 %) so it
     stays readable on bright scenes.
+- **Item interactions** (UI-06):
+  - Item tooltips are 380 units wide: icon, name, rarity and level on top,
+    base stats as large values in columns, affixes, the description, then
+    the compare hint. The equipped item appears to the left with an
+    "Equipped" caption; every stat of the hovered item shows its difference
+    to it.
+  - Rarity colours only the rarity label; the name and stats stay bone
+    white, and differences use the better and worse styles.
+  - Item menus are list rows with a 24-unit icon and the label. Destructive
+    actions (Drop) are blood red and sit below a faint divider at the end.
+  - Toasts appear only when an action is rejected: amber text with the
+    blocked icon on a popup plate. A success is visible in the grid itself.
+  - Pickup notifications stack on the right side of the HUD, newest at the
+    bottom, as 280 × 58 plates with the item icon and "12 × Wood". A plate
+    that gains more of its item is refreshed instead of repeated, and fades
+    out after its hold time.
+  - Drag ghosts and drop previews take palette colours: Valid for a move,
+    merge or equip, Accent for a swap or binding, Pending while waiting, and
+    Blood for a blocked or rejected drop.
+  - A grid cell under an item draws no hover or selection frame of its own;
+    the item outlines its footprint.
 - **Filter tabs** use the menu tab styles (`CUI_TabButtonNormalStyle`,
   `_SelectedStyle`): ash at rest, gold with the diamond marker when active.
   - Tabs that tint their label and icon on selection repeat that on
@@ -364,18 +410,23 @@ palette values:
 - `RpgInventorySpatialGridWidget.h`, `RpgInventorySpatialCellWidget.h`,
   `RpgInventorySpatialItemWidget.h`, `RpgInventoryDragVisualWidget.h`:
   overridden in `CUI_SpatialInventoryGrid`, `_Cell`, `_Item` and
-  `CUI_InventoryDragVisual` (UI-02). The drag visual's layout follows in
-  UI-06.
+  `CUI_InventoryDragVisual` (UI-02).
 - `RpgStorageInventoryWidget.h` title colours: overridden in
   `CUI_StorageSpatial` (UI-02).
 - `RpgInventoryCarrySlotWidget.h` `StateIndicatorOpacity`: 1 in
   `CUI_CarrySlot`, because `MI_UI_SlotActive` carries its own opacity (UI-02).
-- `RpgInventoryItemTooltipWidget.h`, `RpgInventoryFeedbackToastWidget.h`:
-  UI-06.
+- `RpgInventoryFeedbackToastWidget.h` text colours: bone white and
+  AccentBright in `CUI_InventoryFeedbackToastSpatial` (UI-06).
+- `RpgInventoryContextActionEntryWidget.h` `DestructiveColor`: a brightened
+  blood red in `CUI_InventoryContextActionEntrySpatial` (UI-06).
+- `RpgInventoryDragVisualWidget.h` state colours: palette roles in
+  `CUI_InventoryDragVisual` (UI-06).
 - `RpgQuickAccessRadialWidget.h`: UI-05.
 - `RpgCraftingIngredientEntryWidget.h` `EnoughCountColor` and
   `MissingCountColor`: bone white and blood red in
   `CUI_CraftingIngredientEntrySpatial` (UI-04).
 
-The tooltip colours in `RpgInventoryItemTooltipWidget.cpp` are still fixed in
-native code (UI-06).
+`RpgInventoryItemTooltipWidget` keeps a plain native fallback layout with its
+own colours for a tooltip class without a widget tree. `CUI_ItemTooltip`
+authors two `CUI_ItemTooltipPanel` cards instead, so those colours never show
+in game.

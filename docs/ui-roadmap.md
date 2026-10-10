@@ -29,6 +29,7 @@ It records the accepted decisions and the task sequence. The style itself
 | Icons | One engraving material makes the existing icons monochrome in bone white or old gold and dims locked ones. A real engraved icon set can replace the textures later. |
 | Inventory | Tarkov-style paper doll and container grids with one cell size everywhere. The standalone inventory shows three columns: equipment, containers and character stats. |
 | HUD | After the user's concept (UI-05): vitals with level and XP bottom left, quickbar and Q/E/R bottom centre, menu key hints bottom right. Mana shows only while a pawn has a mana attribute. Groups fade by context so the HUD stays out of the way. |
+| Item feedback | After the user's concept (UI-06): framed tooltips and menus, Shift compares with the equipped item, dropping never asks, pickup notifications merge gains of the same item, only rejections raise a toast. |
 | Controller support | Wanted later; every task keeps visible focus states, no mouse-only actions and scroll-into-view on focus (see the style guide). |
 | Base terminal | Out of scope: it is a leftover of the old inventory whose screen route was removed ([physical-storage-implementation.md](physical-storage-implementation.md)). |
 
@@ -37,7 +38,8 @@ It records the accepted decisions and the task sequence. The style itself
 - **Classification:** designer-owned presentation on top of existing view
   models. Fonts, palette, materials, styles and layouts are assets.
 - **Native work:** read models only where data is missing (UI-01b profession
-  icons, UI-03 character stats, UI-04 crafting orders and read models, UI-05 mana), plus test
+  icons, UI-03 character stats, UI-04 crafting orders and read models, UI-05 mana,
+  UI-06 tooltip comparison, pickup notifications and split), plus test
   updates where tests froze presentation structure.
 
 ## Tasks
@@ -52,22 +54,12 @@ It records the accepted decisions and the task sequence. The style itself
 | UI-03 | Character stats column (level, XP, load, health, stamina, armour), rarity frames on gear slots, MVVM toolset | Done: [#202](https://github.com/Athurito/SurvivalRpg/pull/202) |
 | UI-04 | Crafting screen after the kiln and smithy concepts: category tree, tier sections, preview with stat ranges, one order per station from connected chests into a target chest, per-piece item rolls | Done: [#204](https://github.com/Athurito/SurvivalRpg/pull/204) |
 | UI-05 | HUD after the user's concept: vitals and XP, quickbar and Q/E/R, menu key hints, enemy health bar, context fading, mana attribute set | Done: [#206](https://github.com/Athurito/SurvivalRpg/pull/206), vitals cleanup [#208](https://github.com/Athurito/SurvivalRpg/pull/208) |
-| UI-06 | Tooltip, context menu, split and drop dialogs, toasts, drag visual, item-only highlight in grids | Planned |
+| UI-06 | Item interactions after the user's concept: tooltip with Shift compare, item action menu, split dialog, pickup notifications, feedback toasts with icons, key caps, item-only highlight; no drop confirmation | In review: branch `claude/ui-06-item-interactions` |
 | UI-07 | Menus (game menu tabs, main menu, settings, respawn), then remove KnightsQuest | Planned |
 | UI-08 | Inventory layout after Diablo 3: character values left of the equipment, containers below, fewer pocket cells | Planned |
 
 ## Noted for later tasks
 
-- **Item-only highlight in grids (UI-06):**
-  - Hovering or selecting a multi-cell item, for example the 1 × 2 basic sword
-    in the pockets, outlines the item. The grid cell under the pointer also
-    draws its own hover or selection frame.
-  - Only the item should be outlined. A cell covered by an item draws no frame
-    of its own; empty cells keep theirs. Controller focus on an occupied cell
-    highlights the item the same way.
-  - The cell states live in `URpgInventorySpatialCellWidget`. The address slot
-    view model already reports whether a cell is an item's origin or covered
-    by it.
 - **Inventory layout after Diablo 3 (UI-08):** the user's request from
   2026-10-08, with a Diablo 3 inventory as reference.
   - The character values sit directly left of the equipment instead of in a
@@ -357,8 +349,8 @@ slots and animations.
   - `DA_PlayerProgression` has no `XPToNextLevel` curve, so the experience bar
     stays empty and the text shows only the experience (for example
     `10 XP`). The curve is progression content, not UI.
-  - Items in the grids show no rarity yet, and the tooltip keeps its own
-    rarity colours (UI-06).
+  - Items in the grids show no rarity yet; the item tooltip shows it since
+    UI-06.
 
 ## Crafting screen (UI-04)
 
@@ -656,3 +648,124 @@ colours and styles; texts stay English.
   bar stays empty (see open findings).
 - **Damage dealt** does not start combat by itself; using the weapon does.
 - **Boss bars** and enemy names are not part of this task.
+
+## Item interactions (UI-06)
+
+The user supplied a generated concept with four panels: HUD hints
+(interaction prompt, pickup notifications, an ability failure), the split
+dialog, the item action menu and the item tooltip. The widgets keep the
+project's colours and styles; texts stay English.
+
+### Decisions (2026-10-10)
+
+- **No drop confirmation:** a dropped item lies in the world and can be
+  picked up again, so dropping never asks. The `Confirm` drop policy and its
+  dialog are gone; quest items stay blocked through `Disabled`.
+- **Tooltip:** a framed card with the icon, the name, rarity and item level,
+  the base stats as large values, the affixes, the description and a
+  "Shift Compare" hint.
+- **Compare:** while Shift is held, the item equipped in the hovered item's
+  default slot appears beside the tooltip, marked "Equipped". Every stat of
+  the hovered item shows its difference, green when higher and red when
+  lower; a stat the equipped item lacks counts against zero.
+- **Item actions:** a framed menu with the item, its count, and one row per
+  action with an icon. Drop is red and sits below a divider.
+- **Split:** the stack and its total, minus, the amount, plus and Half, a
+  slider from 1 to the stack size minus one, "49 split · 50 remain", and
+  Cancel and Split with their key caps.
+- **Pickup notifications:** only gains from the world (pickups, harvest
+  yields, recovered loot). Moves inside the inventory cancel out; gains while
+  an inventory, storage or crafting screen is open count as screen moves.
+  Gains of the same item add up in one notification while it is shown
+  (`HudPickupHoldSeconds`, 4 s, project setting *RPG UI → HUD*), so
+  harvesting does not spam "1 × Wood".
+- **Feedback:** the inventory toast shows only rejections, in amber with an
+  icon; completed moves are visible in the grid. The HUD toast shows an icon
+  per failure and, for a missing resource, its fill.
+- **Key caps:** one generated set for keyboard and mouse (dark cap, gold rim,
+  Roboto) replaces the white CommonUI defaults everywhere.
+- **Icons:** the action and feedback icons are placeholders under their
+  final names until the user's set arrives; replacing the textures in place
+  needs no widget change.
+
+### C++ boundary
+
+- **Runtime truth:** items live in the player inventory graph, equipment in
+  the loadout component, ability failures in GAS. The widgets only read.
+- **Native:**
+  - removal of the drop confirmation: the `Confirm` policy, the
+    `RequiresConfirmation` result, the `bConfirmed` request flag, the dialog
+    class and the screen plumbing;
+  - `URpgItemTooltipViewModel` and `URpgItemStatRowViewModel`: the tooltip
+    read model and the stat comparison; the tooltip widget resolves the
+    equipped counterpart, polls Shift (or `SetComparisonPinned`) and hands
+    both models to its two authored panels;
+  - `URpgPickupFeedViewModel` and its entries: nets the player inventory's
+    stack changes per item, suppresses screen moves, restored saves and the
+    first replication burst, and merges gains. `URpgUiSubsystem` provides it
+    per local player; stack messages carry `bFromRestore`, inventory screens
+    send `Rpg.Inventory.Message.ScreenActivation`;
+  - `URpgInventorySplitViewModel`, the item header of the context menu, icons
+    and destructive styling of action rows, icon and colours of the inventory
+    toast, and the cost attribute plus presentation rows of the HUD toast;
+  - grid cells under an item no longer draw a cursor frame of their own; the
+    item outlines its footprint;
+  - two reusable primitives: `URpgViewModelEntryBox`, a non-scrolling box
+    that shows one entry per view model and keeps surviving entries, and
+    `URpgLazyImage`, a lazy image with a one-argument setter for MVVM.
+- **Content (Unreal MCP):** every widget, the bindings, three text styles,
+  the key caps, the placeholder icons, the popup frame, the keyboard brush
+  map and the Use / Equip label.
+
+### Widgets
+
+- `CUI_ItemTooltip`: two `CUI_ItemTooltipPanel` cards (`ComparisonPanel`,
+  `ItemPanel`). A card binds its manual source `Item`; base stats use
+  `CUI_ItemStatColumn` and affixes `CUI_ItemAffixRow` through view-model
+  entry boxes. The spatial item, gear slot and carry slot use it.
+- `CUI_InventoryContextMenuSpatial`: the framed panel with the header bound
+  to `ContextItem`. `CUI_InventoryContextActionEntrySpatial` holds the icon
+  per action and the destructive colour as class defaults.
+- `CUI_InventorySplitDialogSpatial`: the new layout, bound to `Split`.
+- `CUI_InventoryFeedbackToastSpatial` and `CUI_AbilityFailureToast`: amber
+  text with an icon; the HUD toast lists its icons and resource bars per
+  failure tag (cost with stamina or mana, cost, cooldown, blocked, missing
+  tags, harvesting skill level).
+- `CUI_HudPickupFeed` and `CUI_HudPickupEntry`: framed notifications on the
+  right of the HUD, newest at the bottom; an entry fades out when it expires.
+- `CUI_InteractionPrompt`: the framed plate with the key cap and the label
+  in the subheading style.
+- `CUI_InventoryDragVisual` and `CUI_SpatialInventoryCell`: drag and preview
+  colours from the palette.
+- `T_UI_Frame_Tooltip`: re-exported at screen size (458 × 207, 18 px
+  corners) for every popup.
+
+### Tests
+
+- `SurvivalRpg.Inventory.Drop.AuthorityAndReplay` (renamed from the
+  confirmation test) drops a weapon stack directly and keeps the stale,
+  oversized, replay and collision checks.
+- `SurvivalRpg.Itemization.UI.TooltipComparesWithEquipped`: rows compare
+  with the equipped item, against themselves and without a baseline.
+- `SurvivalRpg.UI.Hud.PickupFeedNetsMergesAndSuppresses`: netting, merging,
+  screen and restore suppression, expiry and the entry limit.
+- `SurvivalRpg.UI.Hud.ViewModelEntryBoxKeepsEntries`: surviving entries keep
+  their widget, a reorder rebuilds.
+- Relaxed presentation freezes: the action widget test no longer requires
+  the absence of graphs and MVVM and accepts styled subclasses of the bound
+  widget types (`CommonTextBlock` for a text block), and the interaction HUD
+  test no longer fixes the key glyph at 24 px.
+
+### Not done
+
+- **Icons** for actions and feedback are placeholders.
+- **Gamepad compare:** `SetComparisonPinned` exists, but no button calls it.
+- **Resource fill in the HUD toast:** abilities do not use GAS cost effects
+  yet, so no failure names a cost attribute; only the harvesting skill level
+  has a user-facing message today.
+- **Inspect** still only selects the item.
+- **Compare** uses only the hovered item's default equip slot, so a second
+  ring or the off hand is not compared.
+- **Toasts** show one message at a time instead of a stack.
+- The slider shows no gold fill left of the thumb, and hovered menu rows
+  show the row highlight without the concept's chevron.
