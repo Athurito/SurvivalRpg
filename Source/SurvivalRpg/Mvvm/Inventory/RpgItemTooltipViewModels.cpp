@@ -160,7 +160,7 @@ void URpgItemTooltipViewModel::SetEntry(const URpgInventoryEntryViewModel* Entry
 	RPG_TOOLTIP_SET(Changes, Icon, bNewHasItem ? Entry->GetIcon() : TSoftObjectPtr<UTexture2D>());
 	RPG_TOOLTIP_SET(Changes, bHasRarity, bGenerated);
 	RPG_TOOLTIP_SET(Changes, RarityLabel, bGenerated ? Itemization->GetRarityLabel() : FText::GetEmpty());
-	RPG_TOOLTIP_SET(Changes, RarityColor, bGenerated ? Itemization->GetRarityColor() : FLinearColor::White);
+	RPG_TOOLTIP_SET(Changes, RarityColor, FSlateColor(bGenerated ? Itemization->GetRarityColor() : FLinearColor::White));
 	RPG_TOOLTIP_SET(Changes, SubtitleText, NewSubtitle);
 	RPG_TOOLTIP_SET(Changes, QuantityText, StackCount > 1
 		? FText::Format(LOCTEXT("Quantity", "{0} pieces"), FText::AsNumber(StackCount))

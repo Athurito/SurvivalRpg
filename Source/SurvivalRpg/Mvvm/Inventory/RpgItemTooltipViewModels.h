@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
 #include "MVVMViewModelBase.h"
+#include "Styling/SlateColor.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemTypes.h"
 #include "UObject/SoftObjectPtr.h"
 
@@ -146,9 +147,9 @@ protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Tooltip", meta = (AllowPrivateAccess = "true"))
 	FText RarityLabel;
 
-	/** Presentation colour of the rarity; white without a roll. */
+	/** Presentation colour of the rarity, ready for a text colour binding; white without a roll. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Tooltip", meta = (AllowPrivateAccess = "true"))
-	FLinearColor RarityColor = FLinearColor::White;
+	FSlateColor RarityColor = FSlateColor(FLinearColor::White);
 
 	/** "Item Level N" for generated items, otherwise the item category, for example "Material". */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Tooltip", meta = (AllowPrivateAccess = "true"))
