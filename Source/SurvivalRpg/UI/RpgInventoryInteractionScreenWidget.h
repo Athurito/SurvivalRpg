@@ -257,6 +257,7 @@ private:
 	bool BeginPreparedInventoryDrop(
 		URpgInventoryManagerComponent* SourceInventory,
 		const FRpgInventoryManualDropRequest& Request);
+	void BroadcastScreenActivation(bool bActive);
 	void RegisterInventoryFeedbackListener();
 	void UnregisterInventoryFeedbackListener();
 	void HandleInventoryActionFeedback(
@@ -302,6 +303,8 @@ private:
 
 	/** Guards the paired CommonUI activation/deactivation composition transaction, including pooled destruction. */
 	bool bInventoryScreenPresentationBound = false;
+	/** Last activation state sent on Rpg.Inventory.Message.ScreenActivation, so open and close stay paired. */
+	bool bScreenActivationBroadcast = false;
 	bool bDeferredInventoryScreenRefreshQueued = false;
 	bool bHasLastPointerDragScreenPosition = false;
 	bool bRoutingPointerPreview = false;

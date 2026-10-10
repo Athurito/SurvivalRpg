@@ -10,6 +10,7 @@ class SVerticalBox;
 class URpgInventoryEntryViewModel;
 class URpgInventoryItemInstance;
 class URpgInventoryItemizationFragmentViewModel;
+class URpgItemTooltipViewModel;
 
 /** Broadcast when a tooltip's read-only inventory presentation changes. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
@@ -21,7 +22,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
  * Read-only inventory tooltip for static item UI data and replicated generated-item rolls.
  *
  * The native class renders a complete fallback tooltip. A Widget Blueprint child may provide its own widget tree and
- * react to BP_OnTooltipPresentationChanged or bind to the exposed entry/itemization view models instead.
+ * bind the two manual MVVM sources: the hovered item and, for equippable items, the item currently equipped in the
+ * same slot. While the player holds Shift the hovered model shows the comparison.
  */
 UCLASS(Blueprintable)
 class SURVIVALRPG_API URpgInventoryItemTooltipWidget : public UUserWidget
@@ -83,10 +85,32 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Inventory|Tooltip")
 	FRpgInventoryItemTooltipChanged OnTooltipPresentationChanged;
 
+	/** Read model of the hovered item. UI read-only. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Tooltip")
+	URpgItemTooltipViewModel* GetTooltipViewModel() const { return TooltipViewModel; }
+
+	/** Read model of the equipped counterpart; HasItem is false when nothing comparable is equipped. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Tooltip")
+	URpgItemTooltipViewModel* GetComparisonViewModel() const { return ComparisonViewModel; }
+
+	/** Shows or hides the comparison, as holding Shift does. Ignored while nothing comparable is equipped. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Tooltip")
+	void SetComparisonShown(bool bShown);
+
 protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void ReleaseSlateResources(bool bReleaseChildren) override;
+	virtual void NativeOnInitialized() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	virtual void NativeDestruct() override;
+
+	/** Manual MVVM source in the Widget Blueprint that receives the hovered item's read model. Designer data. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Tooltip")
+	FName TooltipViewModelSourceName = TEXT("Tooltip");
+
+	/** Manual MVVM source in the Widget Blueprint that receives the equipped counterpart's read model. Designer data. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Tooltip")
+	FName ComparisonViewModelSourceName = TEXT("Comparison");
 
 	/**
 	 * Presentation hook for authored Widget Blueprint tooltips.
@@ -136,7 +160,9 @@ private:
 	void RefreshBoundItemizationViewModel();
 	void RefreshPresentation();
 	void RefreshNativePresentation();
+	void RefreshComparison();
 	void UnbindPresentationDelegates();
+	URpgInventoryItemInstance* ResolveEquippedCounterpart() const;
 
 	/** External or internally-created read-only entry presenter currently displayed. */
 	UPROPERTY(Transient)
@@ -149,6 +175,23 @@ private:
 	/** Itemization presenter observed for replicated roll changes. */
 	UPROPERTY(Transient)
 	TObjectPtr<URpgInventoryItemizationFragmentViewModel> ItemizationViewModel = nullptr;
+
+	/** Read model of the hovered item, assigned to TooltipViewModelSourceName. */
+	UPROPERTY(Transient)
+	TObjectPtr<URpgItemTooltipViewModel> TooltipViewModel = nullptr;
+
+	/** Read model of the equipped counterpart, assigned to ComparisonViewModelSourceName. */
+	UPROPERTY(Transient)
+	TObjectPtr<URpgItemTooltipViewModel> ComparisonViewModel = nullptr;
+
+	/** Entry presenter built for the equipped counterpart. */
+	UPROPERTY(Transient)
+	TObjectPtr<URpgInventoryEntryViewModel> ComparisonEntryViewModel = nullptr;
+
+	/** Equipped counterpart the comparison was built for. */
+	TWeakObjectPtr<URpgInventoryItemInstance> ComparedItem;
+
+	bool bComparisonShown = false;
 
 	TSharedPtr<STextBlock> NativeNameText;
 	TSharedPtr<STextBlock> NativeRarityAndLevelText;

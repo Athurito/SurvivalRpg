@@ -19,6 +19,7 @@
 #include "SurvivalRpg/UI/RpgInventoryDragVisualWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryFeedbackToastWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
+#include "SurvivalRpg/UI/RpgInventoryScreenMessages.h"
 #include "SurvivalRpg/UI/RpgLoadoutSlotWidgets.h"
 #include "SurvivalRpg/UI/RpgInventorySpatialGridWidget.h"
 #include "TimerManager.h"
@@ -430,6 +431,7 @@ void URpgInventoryInteractionScreenWidget::NativeOnActivated()
 	ForwardInventoryInteractionContextToChildren();
 	RefreshInventoryScreenNavigationPanels();
 	RegisterInventoryFeedbackListener();
+	BroadcastScreenActivation(true);
 
 	// Controller actions register only after the derived presentation has supplied a complete panel registry.
 	Super::NativeOnActivated();
@@ -440,6 +442,7 @@ void URpgInventoryInteractionScreenWidget::NativeOnActivated()
 void URpgInventoryInteractionScreenWidget::NativeOnDeactivated()
 {
 	ReleaseInventoryScreenPresentation();
+	BroadcastScreenActivation(false);
 
 	Super::NativeOnDeactivated();
 }
@@ -447,6 +450,7 @@ void URpgInventoryInteractionScreenWidget::NativeOnDeactivated()
 void URpgInventoryInteractionScreenWidget::NativeDestruct()
 {
 	ReleaseInventoryScreenPresentation();
+	BroadcastScreenActivation(false);
 
 	Super::NativeDestruct();
 }
@@ -1011,6 +1015,23 @@ void URpgInventoryInteractionScreenWidget::HandleSplitDialogDeactivated(
 		ActiveSplitDialog.Reset();
 		ActiveSplitDialogSource.Reset();
 	}
+}
+
+void URpgInventoryInteractionScreenWidget::BroadcastScreenActivation(bool bActive)
+{
+	UWorld* World = GetWorld();
+	if (bScreenActivationBroadcast == bActive || !World)
+	{
+		return;
+	}
+
+	bScreenActivationBroadcast = bActive;
+	FRpgInventoryScreenActivationMessage Message;
+	Message.OwningPlayer = GetOwningPlayer();
+	Message.bActive = bActive;
+	UGameplayMessageSubsystem::Get(World).BroadcastMessage(
+		RpgGameplayTags::Rpg_Inventory_Message_ScreenActivation,
+		Message);
 }
 
 void URpgInventoryInteractionScreenWidget::RegisterInventoryFeedbackListener()

@@ -136,6 +136,7 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Layout_Role_Carry_OffHand, "Rpg.Inventory.Layout.Role.Carry.OffHand", "Unique off-hand authored Carry group shown by the player inventory UI.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Layout_Role_Carry_Utility, "Rpg.Inventory.Layout.Role.Carry.Utility", "Automation and designer extension seam for an additional unique Carry group.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Message_ActionFeedback, "Rpg.Inventory.Message.ActionFeedback", "Owning-client gameplay message for inventory shortcut or server validation feedback.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Message_ScreenActivation, "Rpg.Inventory.Message.ScreenActivation", "Local gameplay message sent when an inventory, storage or crafting screen opens or closes.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_BaseStorage_Message_CommandFeedback, "Rpg.BaseStorage.Message.CommandFeedback", "Owning-client structured result for one authoritative base-storage network command.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Action_Transfer, "Rpg.Inventory.Action.Transfer", "Inventory UI action tag for transfer requests.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Inventory_Action_Split, "Rpg.Inventory.Action.Split", "Inventory UI action tag for split-stack requests.");
