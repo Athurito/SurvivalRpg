@@ -14,9 +14,13 @@
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgInventoryEntryViewModel.h"
+#include "SurvivalRpg/Mvvm/Inventory/RpgItemTooltipViewModels.h"
 #include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutComponent.h"
 #include "SurvivalRpg/UI/RpgInventoryContextActionEntryWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryUiGeometry.h"
+#include "SurvivalRpg/UI/RpgMvvmWidgetUtils.h"
 #include "SurvivalRpg/UI/RpgQuickAccessSlotPickerEntryWidget.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgInventoryContextMenuWidget)
@@ -93,6 +97,13 @@ TOptional<FUIInputConfig> URpgInventoryContextMenuWidget::GetDesiredInputConfig(
 void URpgInventoryContextMenuWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
+
+	ContextItemViewModel = NewObject<URpgItemTooltipViewModel>(this);
+	RpgMvvmWidgetUtils::SetOptionalManualViewModel(
+		this,
+		ContextItemViewModelSourceName,
+		ContextItemViewModel,
+		URpgItemTooltipViewModel::StaticClass());
 
 	BindDismissControl();
 	if (QuickAccessSlotsBox)
@@ -215,6 +226,7 @@ bool URpgInventoryContextMenuWidget::InitializeContextMenu(
 
 	ContextQuickAccessSlotIndex =
 		Snapshot.QuickAccessSlotIndex;
+	PresentContextItem();
 	RebuildActionButtons();
 	if (ActionButtons.IsEmpty())
 	{
@@ -568,6 +580,33 @@ void URpgInventoryContextMenuWidget::UpdateContextMenuPosition()
 	}
 }
 
+void URpgInventoryContextMenuWidget::PresentContextItem()
+{
+	if (!ContextItemViewModel)
+	{
+		return;
+	}
+
+	URpgInventoryItemInstance* Item = ContextSnapshot.ItemInstance.Get();
+	if (Item)
+	{
+		if (!ContextEntryViewModel)
+		{
+			ContextEntryViewModel = NewObject<URpgInventoryEntryViewModel>(this);
+		}
+		FRpgInventoryEntryView Entry;
+		Entry.Instance = Item;
+		Entry.ItemId = Item->GetItemId();
+		Entry.EntryId = ContextSnapshot.EntryId;
+		Entry.StackCount = FMath::Max(1, ContextSnapshot.StackCount);
+		const TMap<
+			TSubclassOf<URpgInventoryItemFragment>,
+			TSubclassOf<URpgInventoryFragmentViewModel>> NoAdditionalPresenters;
+		ContextEntryViewModel->InitializeFromEntry(Entry, NoAdditionalPresenters);
+	}
+	ContextItemViewModel->SetEntry(Item ? ContextEntryViewModel.Get() : nullptr);
+}
+
 void URpgInventoryContextMenuWidget::ResetContextState()
 {
 	if (ActionsBox)
@@ -593,6 +632,10 @@ void URpgInventoryContextMenuWidget::ResetContextState()
 	ContextActions.Reset();
 	ActionButtons.Reset();
 	QuickAccessSlotButtons.Reset();
+	if (ContextItemViewModel)
+	{
+		ContextItemViewModel->SetEntry(nullptr);
+	}
 	RequestedScreenPosition = FVector2D::ZeroVector;
 	bContextPositionPending = false;
 	bShowingQuickAccessPicker = false;

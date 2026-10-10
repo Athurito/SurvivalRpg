@@ -338,6 +338,10 @@ struct FRpgInventoryChangeMessage
 	/** True when the inventory refreshed because capacity changed rather than an item stack changing. */
 	UPROPERTY(BlueprintReadOnly, Category = Inventory)
 	bool bCapacityChanged = false;
+
+	/** True when the change comes from restoring a saved inventory on the server, not from gameplay. */
+	UPROPERTY(BlueprintReadOnly, Category = Inventory)
+	bool bFromRestore = false;
 };
 
 /** A single entry in an inventory */
@@ -982,6 +986,9 @@ private:
 		ERpgInventoryMutationResultCode& OutCode) const;
 	/** True while a multi-step authoritative operation must reject nested inventory mutation. */
 	bool IsInventoryMutationLocked() const;
+
+	/** True while a saved inventory graph is being restored on the server. */
+	bool IsRestoringInventoryGraph() const { return bIsRestoringInventoryGraph; }
 	bool TryBuildRemovalDeltas(
 		const FRpgInventoryEntry& RootEntry,
 		int32 Quantity,

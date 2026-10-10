@@ -31,6 +31,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "List Entry")
 	void SetEntryIcon(TSoftObjectPtr<UTexture2D> InIcon);
 
+	/** Assigns the represented item outside a list view, for example from URpgViewModelEntryBox. */
+	void SetEntryItem(UObject* Item);
+
 protected:
 	virtual void NativeOnListItemObjectSet(UObject* ListItemObject) override;
 	virtual void NativeOnEntryReleased() override;
@@ -70,6 +73,9 @@ public:
 	/** Shows a lazily loaded icon in the optional Icon widget, collapsed when the icon is null. Binding target for MVVM. */
 	UFUNCTION(BlueprintCallable, Category = "List Entry")
 	void SetEntryIcon(TSoftObjectPtr<UTexture2D> InIcon);
+
+	/** Assigns the represented item outside a list view, for example from URpgViewModelEntryBox. */
+	void SetEntryItem(UObject* Item);
 
 protected:
 	virtual void NativeOnListItemObjectSet(UObject* ListItemObject) override;

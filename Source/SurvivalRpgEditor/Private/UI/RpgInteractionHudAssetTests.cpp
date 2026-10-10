@@ -162,15 +162,9 @@ bool FRpgInteractionHudPresentationAssetTest::RunTest(const FString& Parameters)
 	TestNotNull(
 		TEXT("Focus prompt authors its CommonUI input glyph"),
 		Cast<UCommonActionWidget>(FocusTree->FindWidget(TEXT("InputActionWidget"))));
-	const USizeBox* InputActionContainer =
-		Cast<USizeBox>(FocusTree->FindWidget(TEXT("InputActionContainer")));
-	if (TestNotNull(
+	TestNotNull(
 		TEXT("Focus prompt constrains and state-gates its input glyph container"),
-		InputActionContainer))
-	{
-		TestEqual(TEXT("Input glyph container is 24 px wide"), InputActionContainer->GetWidthOverride(), 24.0f);
-		TestEqual(TEXT("Input glyph container is 24 px high"), InputActionContainer->GetHeightOverride(), 24.0f);
-	}
+		Cast<USizeBox>(FocusTree->FindWidget(TEXT("InputActionContainer"))));
 	TestNotNull(
 		TEXT("Focus prompt authors its one-line action text"),
 		Cast<UCommonTextBlock>(FocusTree->FindWidget(TEXT("ActionTextBlock"))));

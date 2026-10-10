@@ -731,10 +731,10 @@ bool FRpgInventoryItemCapabilitiesTest::RunTest(
 			NoDropItem),
 		ERpgInventoryManualDropPolicy::Disabled);
 	TestEqual(
-		TEXT("A default weapon policy still resolves to confirmation"),
+		TEXT("A default weapon policy drops directly"),
 		FRpgInventoryItemCapabilities::ResolveManualDropPolicy(
 			HybridItem),
-		ERpgInventoryManualDropPolicy::Confirm);
+		ERpgInventoryManualDropPolicy::Direct);
 
 	TestFalse(
 		TEXT("A normal spatial item does not invent an item-container contract"),
@@ -2421,7 +2421,6 @@ bool FRpgInventoryUnauthorizedFeedbackRedactionTest::RunTest(
 	DropRequest.ExpectedSourcePlacement = DropEntry.Placement;
 	DropRequest.ExpectedSourceQuantity = DropEntry.StackCount;
 	DropRequest.StackCount = 1;
-	DropRequest.bConfirmed = true;
 	const int32 AuthorizedDropIndex = FeedbackMessages.Num();
 	UiActions->RequestDropInventoryItemById(ContainerInventory, DropRequest);
 	TestEqual(
@@ -2565,11 +2564,11 @@ bool FRpgInventoryUnauthorizedFeedbackRedactionTest::RunTest(
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FRpgInventoryManualDropConfirmationAuthorityTest,
-	"SurvivalRpg.Inventory.Drop.ConfirmationAuthorityAndReplay",
+	FRpgInventoryManualDropAuthorityTest,
+	"SurvivalRpg.Inventory.Drop.AuthorityAndReplay",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FRpgInventoryManualDropConfirmationAuthorityTest::RunTest(
+bool FRpgInventoryManualDropAuthorityTest::RunTest(
 	const FString& Parameters)
 {
 	using namespace RpgInventoryTransactionTests;
@@ -2584,7 +2583,7 @@ bool FRpgInventoryManualDropConfirmationAuthorityTest::RunTest(
 	ControllerSpawnParameters.Name = MakeUniqueObjectName(
 		World,
 		ARpgInventoryAutomationTestPlayerController::StaticClass(),
-		TEXT("ManualDropConfirmationController"));
+		TEXT("ManualDropController"));
 	ControllerSpawnParameters.ObjectFlags = RF_Transient;
 	ARpgInventoryAutomationTestPlayerController* Controller =
 		World->SpawnActor<ARpgInventoryAutomationTestPlayerController>(
@@ -2594,7 +2593,7 @@ bool FRpgInventoryManualDropConfirmationAuthorityTest::RunTest(
 	PlayerStateSpawnParameters.Name = MakeUniqueObjectName(
 		World,
 		ARpgInventoryAutomationTestPlayerState::StaticClass(),
-		TEXT("ManualDropConfirmationPlayerState"));
+		TEXT("ManualDropPlayerState"));
 	PlayerStateSpawnParameters.ObjectFlags = RF_Transient;
 	ARpgInventoryAutomationTestPlayerState* PlayerState =
 		World->SpawnActor<ARpgInventoryAutomationTestPlayerState>(
@@ -2627,7 +2626,7 @@ bool FRpgInventoryManualDropConfirmationAuthorityTest::RunTest(
 			9,
 			MakePlacement(Pockets, 0, 0));
 	if (!TestNotNull(
-			TEXT("A confirm-protected stackable item exists"),
+			TEXT("A stackable weapon item exists"),
 			Item))
 	{
 		return false;
@@ -2636,7 +2635,7 @@ bool FRpgInventoryManualDropConfirmationAuthorityTest::RunTest(
 	const FRpgInventoryItemId ItemId = Item->GetItemId();
 	FRpgInventoryEntryView InitialEntry;
 	if (!TestTrue(
-			TEXT("The confirm-protected item has a stable replicated entry"),
+			TEXT("The weapon stack has a stable replicated entry"),
 			GetEntryView(Inventory, ItemId, InitialEntry)))
 	{
 		return false;
@@ -2690,72 +2689,17 @@ bool FRpgInventoryManualDropConfirmationAuthorityTest::RunTest(
 				FeedbackMessages.Add(Message);
 			});
 
-	FRpgInventoryManualDropRequest UnconfirmedRequest;
-	UnconfirmedRequest.RequestId = FGuid::NewGuid();
-	UnconfirmedRequest.EntryId = InitialEntry.EntryId;
-	UnconfirmedRequest.ItemId = InitialEntry.ItemId;
-	UnconfirmedRequest.ExpectedSourcePlacement = InitialEntry.Placement;
-	UnconfirmedRequest.ExpectedSourceQuantity = InitialEntry.StackCount;
-	UnconfirmedRequest.StackCount = 3;
-	const int32 UnconfirmedFeedbackIndex = FeedbackMessages.Num();
-	UiActions->RequestDropInventoryItemById(
-		Inventory,
-		UnconfirmedRequest);
-
-	TestEqual(
-		TEXT("An unconfirmed request emits exactly one owner-local result"),
-		FeedbackMessages.Num(),
-		UnconfirmedFeedbackIndex + 1);
-	const FRpgInventoryActionFeedbackMessage* UnconfirmedFeedback =
-		FeedbackMessages.IsValidIndex(UnconfirmedFeedbackIndex)
-			? &FeedbackMessages[UnconfirmedFeedbackIndex]
-			: nullptr;
-	if (TestNotNull(
-		TEXT("The unconfirmed request produced feedback"),
-		UnconfirmedFeedback))
-	{
-		TestEqual(
-			TEXT("The server requires confirmation for the weapon stack"),
-			UnconfirmedFeedback->Result,
-			ERpgInventoryActionFeedbackResult::RequiresConfirmation);
-		TestEqual(
-			TEXT("Confirmation feedback retains the caller's request id"),
-			UnconfirmedFeedback->RequestId,
-			UnconfirmedRequest.RequestId);
-		TestTrue(
-			TEXT("Confirmation feedback retains the persistent item id"),
-			UnconfirmedFeedback->ItemId == ItemId);
-		TestEqual(
-			TEXT("Confirmation feedback retains the exact source inventory"),
-			UnconfirmedFeedback->InventoryOwner.Get(),
-			static_cast<UActorComponent*>(Inventory));
-		TestEqual(
-			TEXT("Confirmation feedback retains the exact requested quantity"),
-			UnconfirmedFeedback->StackCount,
-			UnconfirmedRequest.StackCount);
-		TestTrue(
-			TEXT("Confirmation feedback uses the semantic Drop action"),
-			UnconfirmedFeedback->ActionTag ==
-				RpgGameplayTags::Rpg_Inventory_Action_Drop);
-		TestEqual(
-			TEXT("Confirmation feedback is addressed to the requesting controller"),
-			UnconfirmedFeedback->Recipient.Get(),
-			static_cast<APlayerController*>(Controller));
-	}
-	TestEqual(
-		TEXT("An unconfirmed request leaves the source stack unchanged"),
-		Inventory->GetItemStackCount(Item),
-		9);
-	TestEqual(
-		TEXT("An unconfirmed request spawns no dropped inventory actor"),
-		CountDroppedActors(),
-		0);
-
+	FRpgInventoryManualDropRequest BaseRequest;
+	BaseRequest.RequestId = FGuid::NewGuid();
+	BaseRequest.EntryId = InitialEntry.EntryId;
+	BaseRequest.ItemId = InitialEntry.ItemId;
+	BaseRequest.ExpectedSourcePlacement = InitialEntry.Placement;
+	BaseRequest.ExpectedSourceQuantity = InitialEntry.StackCount;
+	BaseRequest.StackCount = 3;
 	FRpgInventoryManualDropRequest StaleSourceRequest =
-		UnconfirmedRequest;
+		BaseRequest;
 	StaleSourceRequest.RequestId = FGuid::NewGuid();
 	StaleSourceRequest.ExpectedSourcePlacement.X += 1;
-	StaleSourceRequest.bConfirmed = true;
 	const int32 StaleFeedbackIndex = FeedbackMessages.Num();
 	UiActions->RequestDropInventoryItemById(
 		Inventory,
@@ -2781,10 +2725,9 @@ bool FRpgInventoryManualDropConfirmationAuthorityTest::RunTest(
 		0);
 
 	FRpgInventoryManualDropRequest OversizedRequest =
-		UnconfirmedRequest;
+		BaseRequest;
 	OversizedRequest.RequestId = FGuid::NewGuid();
 	OversizedRequest.StackCount = 10;
-	OversizedRequest.bConfirmed = true;
 	const int32 OversizedFeedbackIndex = FeedbackMessages.Num();
 	UiActions->RequestDropInventoryItemById(
 		Inventory,
@@ -2809,39 +2752,38 @@ bool FRpgInventoryManualDropConfirmationAuthorityTest::RunTest(
 		CountDroppedActors(),
 		0);
 
-	FRpgInventoryManualDropRequest ConfirmedRequest =
-		UnconfirmedRequest;
-	ConfirmedRequest.RequestId = FGuid::NewGuid();
-	ConfirmedRequest.bConfirmed = true;
-	const int32 ConfirmedFeedbackIndex = FeedbackMessages.Num();
+	FRpgInventoryManualDropRequest DropRequest =
+		BaseRequest;
+	DropRequest.RequestId = FGuid::NewGuid();
+	const int32 DropFeedbackIndex = FeedbackMessages.Num();
 	UiActions->RequestDropInventoryItemById(
 		Inventory,
-		ConfirmedRequest);
+		DropRequest);
 	TestEqual(
-		TEXT("A valid confirmed request emits exactly one result"),
+		TEXT("A valid request emits exactly one result"),
 		FeedbackMessages.Num(),
-		ConfirmedFeedbackIndex + 1);
-	if (FeedbackMessages.IsValidIndex(ConfirmedFeedbackIndex))
+		DropFeedbackIndex + 1);
+	if (FeedbackMessages.IsValidIndex(DropFeedbackIndex))
 	{
 		TestEqual(
-			TEXT("The valid confirmed request succeeds"),
-			FeedbackMessages[ConfirmedFeedbackIndex].Result,
+			TEXT("A weapon stack drops without confirmation"),
+			FeedbackMessages[DropFeedbackIndex].Result,
 			ERpgInventoryActionFeedbackResult::Success);
 		TestEqual(
-			TEXT("Success feedback retains the fresh confirmed request id"),
-			FeedbackMessages[ConfirmedFeedbackIndex].RequestId,
-			ConfirmedRequest.RequestId);
+			TEXT("Success feedback retains the request id"),
+			FeedbackMessages[DropFeedbackIndex].RequestId,
+			DropRequest.RequestId);
 	}
 	TestEqual(
-		TEXT("A valid confirmed request removes exactly three source units"),
+		TEXT("A valid request removes exactly three source units"),
 		Inventory->GetItemStackCount(Item),
 		6);
 	TestEqual(
-		TEXT("A valid confirmed request creates exactly one drop actor"),
+		TEXT("A valid request creates exactly one drop actor"),
 		CountDroppedActors(),
 		1);
 	TestEqual(
-		TEXT("The world drop contains exactly the confirmed quantity"),
+		TEXT("The world drop contains exactly the requested quantity"),
 		CountDroppedUnits(),
 		3);
 
@@ -2855,18 +2797,18 @@ bool FRpgInventoryManualDropConfirmationAuthorityTest::RunTest(
 		}
 	}
 	if (TestNotNull(
-			TEXT("The confirmed command owns one durable physical drop target"),
+			TEXT("The drop command owns one durable physical drop target"),
 			PhysicalDropActor))
 	{
 		FRpgInventoryTransferIntent PhysicalReplayIntent;
-		PhysicalReplayIntent.RequestId = ConfirmedRequest.RequestId;
-		PhysicalReplayIntent.ItemId = ConfirmedRequest.ItemId;
-		PhysicalReplayIntent.ExpectedEntryId = ConfirmedRequest.EntryId;
+		PhysicalReplayIntent.RequestId = DropRequest.RequestId;
+		PhysicalReplayIntent.ItemId = DropRequest.ItemId;
+		PhysicalReplayIntent.ExpectedEntryId = DropRequest.EntryId;
 		PhysicalReplayIntent.ExpectedSourcePlacement =
-			ConfirmedRequest.ExpectedSourcePlacement;
+			DropRequest.ExpectedSourcePlacement;
 		PhysicalReplayIntent.ExpectedSourceQuantity =
-			ConfirmedRequest.ExpectedSourceQuantity;
-		PhysicalReplayIntent.Quantity = ConfirmedRequest.StackCount;
+			DropRequest.ExpectedSourceQuantity;
+		PhysicalReplayIntent.Quantity = DropRequest.StackCount;
 		const FRpgInventoryMutationResult PhysicalReplay =
 			PhysicalDropActor->TransferItemFromInventoryByIntent(
 				Inventory,
@@ -2874,7 +2816,7 @@ bool FRpgInventoryManualDropConfirmationAuthorityTest::RunTest(
 		TestEqual(
 			TEXT("The physical drop kernel replays the caller's exact request id"),
 			PhysicalReplay.RequestId,
-			ConfirmedRequest.RequestId);
+			DropRequest.RequestId);
 		TestTrue(
 			TEXT("The identical physical retry replays success"),
 			PhysicalReplay.IsSuccess());
@@ -2891,36 +2833,36 @@ bool FRpgInventoryManualDropConfirmationAuthorityTest::RunTest(
 	const int32 ReplayFeedbackIndex = FeedbackMessages.Num();
 	UiActions->RequestDropInventoryItemById(
 		Inventory,
-		ConfirmedRequest);
+		DropRequest);
 	TestEqual(
-		TEXT("Replaying the exact confirmed request emits one cached result"),
+		TEXT("Replaying the exact request emits one cached result"),
 		FeedbackMessages.Num(),
 		ReplayFeedbackIndex + 1);
 	if (FeedbackMessages.IsValidIndex(ReplayFeedbackIndex))
 	{
 		TestEqual(
-			TEXT("The identical confirmed request replays its cached success"),
+			TEXT("The identical request replays its cached success"),
 			FeedbackMessages[ReplayFeedbackIndex].Result,
 			ERpgInventoryActionFeedbackResult::Success);
 		TestEqual(
-			TEXT("The replay retains the original confirmed request id"),
+			TEXT("The replay retains the original request id"),
 			FeedbackMessages[ReplayFeedbackIndex].RequestId,
-			ConfirmedRequest.RequestId);
+			DropRequest.RequestId);
 	}
 	TestEqual(
-		TEXT("A confirmed request replay cannot remove another source quantity"),
+		TEXT("A request replay cannot remove another source quantity"),
 		Inventory->GetItemStackCount(Item),
 		6);
 	TestEqual(
-		TEXT("A confirmed request replay cannot spawn another drop actor"),
+		TEXT("A request replay cannot spawn another drop actor"),
 		CountDroppedActors(),
 		1);
 	TestEqual(
-		TEXT("A confirmed request replay cannot add another dropped quantity"),
+		TEXT("A request replay cannot add another dropped quantity"),
 		CountDroppedUnits(),
 		3);
 
-	FRpgInventoryManualDropRequest CollidingRequest = ConfirmedRequest;
+	FRpgInventoryManualDropRequest CollidingRequest = DropRequest;
 	CollidingRequest.StackCount = 1;
 	const int32 CollisionFeedbackIndex = FeedbackMessages.Num();
 	AddExpectedError(
@@ -2931,7 +2873,7 @@ bool FRpgInventoryManualDropConfirmationAuthorityTest::RunTest(
 		Inventory,
 		CollidingRequest);
 	TestEqual(
-		TEXT("A different payload under the confirmed request id emits one rejection"),
+		TEXT("A different payload under the same request id emits one rejection"),
 		FeedbackMessages.Num(),
 		CollisionFeedbackIndex + 1);
 	if (FeedbackMessages.IsValidIndex(CollisionFeedbackIndex))
@@ -3002,7 +2944,6 @@ bool FRpgInventoryManualDropConfirmationAuthorityTest::RunTest(
 	ProtectedSubtreeRequest.ExpectedSourceQuantity =
 		ProviderEntry.StackCount;
 	ProtectedSubtreeRequest.StackCount = 1;
-	ProtectedSubtreeRequest.bConfirmed = true;
 	const int32 ProtectedFeedbackIndex = FeedbackMessages.Num();
 	UiActions->RequestDropInventoryItemById(
 		Inventory,

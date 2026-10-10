@@ -178,7 +178,7 @@ public:
 
 	/** Shortcut helper for dropping the item under the cursor into the world. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial Grid|Actions")
-	bool DropSelectedCell(int32 StackCount = 0, bool bConfirmed = false);
+	bool DropSelectedCell(int32 StackCount = 0);
 
 	/** Toggles the target rotation used when the current held payload is dropped onto this grid. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Spatial Grid|Actions")

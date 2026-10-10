@@ -11,6 +11,8 @@ class USlider;
 class USpinBox;
 class UWidget;
 class URpgInventoryAddressSlotWidget;
+class URpgInventoryItemInstance;
+class URpgInventorySplitViewModel;
 class URpgInventorySpatialGridWidget;
 struct FUIInputConfig;
 
@@ -75,6 +77,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Split")
 	FGuid GetSplitEntryId() const { return SplitEntryId; }
 
+	/** Read model of the stack and the chosen amount. UI read-only. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Split")
+	URpgInventorySplitViewModel* GetSplitViewModel() const { return SplitViewModel; }
+
+	/** Selects half of the stack, rounded down and clamped to the legal range. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Split")
+	void SelectHalfStack();
+
 	//~UCommonActivatableWidget interface
 	virtual TOptional<FUIInputConfig> GetDesiredInputConfig() const override;
 	//~End of UCommonActivatableWidget interface
@@ -108,10 +118,27 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "Inventory|Split|Controls")
 	TObjectPtr<UButton> Button_Cancel = nullptr;
 
+	/** Optional button that lowers the amount by one. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Inventory|Split|Controls")
+	TObjectPtr<UButton> Button_Decrease = nullptr;
+
+	/** Optional button that raises the amount by one. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Inventory|Split|Controls")
+	TObjectPtr<UButton> Button_Increase = nullptr;
+
+	/** Optional button that selects half of the stack. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Inventory|Split|Controls")
+	TObjectPtr<UButton> Button_Half = nullptr;
+
+	/** Manual MVVM source in the Widget Blueprint that receives SplitViewModel. Designer data. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Split")
+	FName SplitViewModelSourceName = TEXT("Split");
+
 private:
 	void BindSplitControls();
 	void CloseSplitDialog();
 	void ResetSplitState(bool bCancelGridRequest);
+	void PresentSplitStack(const URpgInventoryItemInstance* Item, int32 StackCount);
 
 	/** Synchronizes the numeric control when the slider changes. */
 	UFUNCTION()
@@ -128,6 +155,22 @@ private:
 	/** Handles the native or Blueprint-bound cancel button. */
 	UFUNCTION()
 	void HandleCancelClicked();
+
+	UFUNCTION()
+	void HandleDecreaseClicked();
+
+	UFUNCTION()
+	void HandleIncreaseClicked();
+
+	UFUNCTION()
+	void HandleHalfClicked();
+
+	/** Read model assigned to SplitViewModelSourceName. */
+	UPROPERTY(Transient)
+	TObjectPtr<URpgInventorySplitViewModel> SplitViewModel = nullptr;
+
+	/** Size of the stack being split. */
+	int32 SplitStackCount = 0;
 
 	/** Weak UI-only source; gameplay mutation still routes through its authoritative coordinator path. */
 	UPROPERTY(Transient)

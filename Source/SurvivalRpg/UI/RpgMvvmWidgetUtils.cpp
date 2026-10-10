@@ -80,3 +80,14 @@ bool RpgMvvmWidgetUtils::SetOptionalManualViewModel(
 
 	return View->GetViewModel(SourceName).GetObject() == ViewModel;
 }
+
+bool RpgMvvmWidgetUtils::HasViewModelSource(const UUserWidget* Widget, FName SourceName)
+{
+	const UMVVMView* View = Widget ? UMVVMSubsystem::GetViewFromUserWidget(Widget) : nullptr;
+	const UMVVMViewClass* ViewClass = View ? View->GetViewClass() : nullptr;
+	return ViewClass && ViewClass->GetSources().ContainsByPredicate(
+		[SourceName](const FMVVMViewClass_Source& Candidate)
+		{
+			return Candidate.IsViewModel() && Candidate.GetName() == SourceName;
+		});
+}

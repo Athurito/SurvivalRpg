@@ -37,13 +37,6 @@ ERpgInventoryManualDropPolicy URpgInventoryFragment_ItemTraits::GetResolvedManua
 		return ERpgInventoryManualDropPolicy::Disabled;
 	}
 
-	if (ItemCategory == ERpgInventoryItemCategory::Weapon ||
-		ItemCategory == ERpgInventoryItemCategory::Shield ||
-		ItemCategory == ERpgInventoryItemCategory::Armor)
-	{
-		return ERpgInventoryManualDropPolicy::Confirm;
-	}
-
 	return ERpgInventoryManualDropPolicy::Direct;
 }
 

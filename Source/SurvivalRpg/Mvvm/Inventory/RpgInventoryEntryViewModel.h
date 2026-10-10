@@ -77,6 +77,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
 	FText GetDescription() const { return Description; }
 
+	/** Broad item category from ItemTraits. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
+	ERpgInventoryItemCategory GetItemCategory() const { return ItemCategory; }
+
 	/** Generated-item presenter for this concrete item, or null for ordinary materials and legacy items. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|ViewModel")
 	URpgInventoryItemizationFragmentViewModel* GetItemizationViewModel() const;

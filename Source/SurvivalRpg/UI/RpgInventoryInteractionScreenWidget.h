@@ -15,7 +15,6 @@ class UWidget;
 class URpgEquipmentSlotWidget;
 class URpgInventoryAddressSlotWidget;
 class URpgInventoryContextMenuWidget;
-class URpgInventoryDropConfirmationDialogWidget;
 class URpgInventoryDragVisualWidget;
 class URpgInventoryFeedbackToastWidget;
 class URpgInventoryInteractionSession;
@@ -24,54 +23,6 @@ class URpgInventoryManagerComponent;
 class URpgInventoryPanelNavigationCoordinator;
 class URpgInventorySplitDialogWidget;
 class URpgInventorySpatialGridWidget;
-
-/**
- * Transient owner-client snapshot for one manual drop awaiting an authoritative confirmation result.
- *
- * This state is presentation-only. It retains weak source/inventory references and an immutable server-validatable
- * request, then atomically consumes that request before constructing exactly one confirmed retry.
- */
-struct SURVIVALRPG_API FRpgInventoryDropConfirmationIntent
-{
-	/** Arms a new request before its first server RPC, preventing synchronous listen-server feedback races. */
-	bool Arm(
-		UWidget* InSourceWidget,
-		URpgInventoryManagerComponent* InSourceInventory,
-		const FRpgInventoryManualDropRequest& InRequest);
-
-	/** True while the exact source and request snapshot are still available for confirmation. */
-	bool IsArmed() const;
-
-	/** Exact owner-local request correlation used before opening the confirmation modal. */
-	bool DoesFeedbackMatch(
-		const APlayerController* OwningPlayer,
-		const FRpgInventoryActionFeedbackMessage& Message) const;
-
-	/**
-	 * Consumes the initial request before producing a fresh confirmed retry.
-	 * A second call with the same initial id always fails.
-	 */
-	bool ConsumeConfirmedRetry(
-		const FGuid& InitialRequestId,
-		URpgInventoryManagerComponent*& OutSourceInventory,
-		FRpgInventoryManualDropRequest& OutConfirmedRequest);
-
-	/** Clears this intent only when SourceWidget is the leaf that originally armed it. */
-	bool ResetForSource(const UWidget* SourceWidget);
-
-	/** Discards every weak reference and request field without mutating inventory state. */
-	void Reset();
-
-	FGuid GetInitialRequestId() const { return Request.RequestId; }
-	UWidget* GetSourceWidget() const { return SourceWidget.Get(); }
-	URpgInventoryManagerComponent* GetSourceInventory() const { return SourceInventory.Get(); }
-	const FRpgInventoryManualDropRequest& GetRequest() const { return Request; }
-
-private:
-	TWeakObjectPtr<UWidget> SourceWidget;
-	TWeakObjectPtr<URpgInventoryManagerComponent> SourceInventory;
-	FRpgInventoryManualDropRequest Request;
-};
 
 /**
  * Shared CommonUI interaction shell for one inventory screen.
@@ -117,26 +68,20 @@ public:
 	/** Closes only the transient modal opened by a source that is being rebound, released, or pooled. */
 	void DismissInventoryPresentationForSource(const UWidget* SourceWidget);
 
-	/** Arms and sends an unconfirmed drop for the stable item currently selected by a spatial grid. */
+	/** Sends a drop for the stable item currently selected by a spatial grid. */
 	bool RequestInventoryDrop(
 		URpgInventorySpatialGridWidget* SourceGrid,
 		int32 StackCount = 0);
 
-	/** Arms and sends an unconfirmed drop for one logical address or Carry-slot presenter. */
+	/** Sends a drop for one logical address or Carry-slot presenter. */
 	bool RequestInventoryDrop(
 		URpgInventoryAddressSlotWidget* SourceAddressSlot,
 		int32 StackCount = 0);
 
-	/** Arms and sends an unconfirmed drop only while the equipment presenter still represents ExpectedItemId. */
+	/** Sends a drop only while the equipment presenter still represents ExpectedItemId. */
 	bool RequestInventoryDrop(
 		URpgEquipmentSlotWidget* SourceEquipmentSlot,
 		FRpgInventoryItemId ExpectedItemId);
-
-	/** Atomically consumes InitialRequestId and dispatches one fresh bConfirmed=true retry after local revalidation. */
-	bool ConfirmPendingInventoryDrop(FGuid InitialRequestId);
-
-	/** Discards InitialRequestId without sending a gameplay request. Safe to call repeatedly during modal teardown. */
-	void CancelPendingInventoryDrop(FGuid InitialRequestId);
 
 protected:
 	virtual void NativeOnInitialized() override;
@@ -266,10 +211,6 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Presentation")
 	TSubclassOf<URpgInventorySplitDialogWidget> SplitDialogWidgetClass;
 
-	/** Exact authored drop-confirmation class used for server-requested manual-drop confirmation on this screen. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Presentation")
-	TSubclassOf<URpgInventoryDropConfirmationDialogWidget> DropConfirmationDialogWidgetClass;
-
 	/**
 	 * Authored owner-local result toast retained with the CommonUI screen across pooling.
 	 * It is UI-read-only and never owns authoritative inventory state.
@@ -304,7 +245,6 @@ private:
 
 	void DismissActiveContextMenuPresentation();
 	void DismissActiveSplitDialogPresentation();
-	void DismissActiveDropConfirmationPresentation();
 	void DismissInventoryModalPresentation();
 	void TrackContextMenuCheckout(
 		URpgInventoryContextMenuWidget& ContextMenu,
@@ -312,19 +252,12 @@ private:
 	void TrackSplitDialogCheckout(
 		URpgInventorySplitDialogWidget& SplitDialog,
 		UWidget* SourceWidget);
-	void TrackDropConfirmationCheckout(
-		URpgInventoryDropConfirmationDialogWidget& DropConfirmation);
 	void HandleContextMenuDeactivated(URpgInventoryContextMenuWidget* DeactivatedMenu);
 	void HandleSplitDialogDeactivated(URpgInventorySplitDialogWidget* DeactivatedDialog);
-	void HandleDropConfirmationDeactivated(URpgInventoryDropConfirmationDialogWidget* DeactivatedDialog);
 	bool BeginPreparedInventoryDrop(
-		UWidget* SourceWidget,
 		URpgInventoryManagerComponent* SourceInventory,
 		const FRpgInventoryManualDropRequest& Request);
-	bool OpenPendingDropConfirmation();
-	void ShowLocalDropRetryRejection(
-		URpgInventoryManagerComponent* SourceInventory,
-		const FRpgInventoryManualDropRequest& ConfirmedRequest);
+	void BroadcastScreenActivation(bool bActive);
 	void RegisterInventoryFeedbackListener();
 	void UnregisterInventoryFeedbackListener();
 	void HandleInventoryActionFeedback(
@@ -370,6 +303,8 @@ private:
 
 	/** Guards the paired CommonUI activation/deactivation composition transaction, including pooled destruction. */
 	bool bInventoryScreenPresentationBound = false;
+	/** Last activation state sent on Rpg.Inventory.Message.ScreenActivation, so open and close stay paired. */
+	bool bScreenActivationBroadcast = false;
 	bool bDeferredInventoryScreenRefreshQueued = false;
 	bool bHasLastPointerDragScreenPosition = false;
 	bool bRoutingPointerPreview = false;
@@ -387,8 +322,6 @@ private:
 	TWeakObjectPtr<UWidget> ActivePointerDropTarget;
 	TWeakObjectPtr<URpgInventoryContextMenuWidget> ActiveContextMenu;
 	TWeakObjectPtr<URpgInventorySplitDialogWidget> ActiveSplitDialog;
-	TWeakObjectPtr<URpgInventoryDropConfirmationDialogWidget> ActiveDropConfirmation;
 	TWeakObjectPtr<UWidget> ActiveContextMenuSource;
 	TWeakObjectPtr<UWidget> ActiveSplitDialogSource;
-	FRpgInventoryDropConfirmationIntent PendingDropConfirmation;
 };

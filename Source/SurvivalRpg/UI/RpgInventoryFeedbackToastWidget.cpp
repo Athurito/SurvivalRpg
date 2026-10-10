@@ -1,5 +1,6 @@
 #include "RpgInventoryFeedbackToastWidget.h"
 
+#include "CommonLazyImage.h"
 #include "Components/Border.h"
 #include "Components/TextBlock.h"
 #include "Engine/World.h"
@@ -35,8 +36,29 @@ void URpgInventoryFeedbackToastWidget::ShowInventoryActionFeedback(const FRpgInv
 	}
 
 	const bool bSucceeded = Message.Result == ERpgInventoryActionFeedbackResult::Success;
+	if (bSucceeded && !bShowSuccessFeedback)
+	{
+		return;
+	}
+
+	const FSlateColor& TextColor = bSucceeded ? SuccessTextColor : FailureTextColor;
 	FeedbackBorder->SetBrushColor(bSucceeded ? SuccessColor : FailureColor);
 	FeedbackText->SetText(BuildFeedbackText(Message));
+	FeedbackText->SetColorAndOpacity(TextColor);
+	if (FeedbackIcon)
+	{
+		const TSoftObjectPtr<UTexture2D>& Icon = bSucceeded ? SuccessIcon : FailureIcon;
+		if (Icon.IsNull())
+		{
+			FeedbackIcon->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		else
+		{
+			FeedbackIcon->SetBrushFromLazyTexture(Icon);
+			FeedbackIcon->SetColorAndOpacity(TextColor.GetSpecifiedColor());
+			FeedbackIcon->SetVisibility(ESlateVisibility::HitTestInvisible);
+		}
+	}
 	SetVisibility(ESlateVisibility::HitTestInvisible);
 	BP_OnInventoryActionFeedbackShown(Message);
 
@@ -77,8 +99,6 @@ FText URpgInventoryFeedbackToastWidget::BuildFeedbackText(const FRpgInventoryAct
 		return LOCTEXT("CannotUse", "Item cannot be used now");
 	case ERpgInventoryActionFeedbackResult::CannotDrop:
 		return LOCTEXT("CannotDrop", "This item cannot be dropped");
-	case ERpgInventoryActionFeedbackResult::RequiresConfirmation:
-		return LOCTEXT("RequiresConfirmation", "This drop requires confirmation");
 	case ERpgInventoryActionFeedbackResult::WrongInventory:
 		return LOCTEXT("WrongInventory", "Action is not available from this inventory");
 	case ERpgInventoryActionFeedbackResult::NotEquippable:

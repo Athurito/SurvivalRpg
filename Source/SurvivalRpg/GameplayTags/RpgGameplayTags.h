@@ -142,6 +142,7 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Inventory_Layout_Role_Carry_OffHand);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Inventory_Layout_Role_Carry_Utility);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Inventory_Message_ActionFeedback);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Inventory_Message_ScreenActivation);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_BaseStorage_Message_CommandFeedback);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Inventory_Action_Transfer);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Inventory_Action_Split);

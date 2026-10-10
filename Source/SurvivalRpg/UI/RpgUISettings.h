@@ -34,4 +34,26 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Config, Category = "HUD", meta = (ClampMin = "0.5", UIMin = "0.5", UIMax = "30", Units = "s"))
 	float HudCombatHoldSeconds = 6.0f;
+
+	/**
+	 * Seconds a pickup notification stays after its last gain. Further gains of the same item within this time add
+	 * to the same notification instead of creating a new one. Presentation only.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Config, Category = "HUD", meta = (ClampMin = "0.5", UIMin = "0.5", UIMax = "15", Units = "s"))
+	float HudPickupHoldSeconds = 4.0f;
+
+	/** Seconds a pickup notification takes to fade out before it is removed. Presentation only. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Config, Category = "HUD", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "3", Units = "s"))
+	float HudPickupFadeSeconds = 0.6f;
+
+	/** Maximum pickup notifications shown at once; the oldest goes first. Presentation only. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Config, Category = "HUD", meta = (ClampMin = "1", UIMin = "1", UIMax = "10"))
+	int32 HudPickupMaxEntries = 5;
+
+	/**
+	 * Seconds after the HUD starts observing a player inventory during which gains are not announced, so the initial
+	 * replication, starting gear or a loaded save do not show as pickups. Presentation only.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Config, Category = "HUD", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "10", Units = "s"))
+	float HudPickupWarmupSeconds = 3.0f;
 };
