@@ -161,11 +161,15 @@ protected:
 	
 public:
 	
-	/** BP-friendly: kann von Client aufgerufen werden, läuft server-autoritatv */
-	UFUNCTION(BlueprintCallable, Category="RPG|AbilitySet")
+	/**
+	 * Grants AbilitySet once and tracks its handles by set. Authority only: clients never request grants, they receive
+	 * the replicated specs. Returns false without a grant on non-authority, for invalid sets, or when already granted.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category="RPG|AbilitySet")
 	bool GrantAbilitySet(const URpgAbilitySet* AbilitySet, UObject* SourceObject);
 
-	UFUNCTION(BlueprintCallable, Category="RPG|AbilitySet")
+	/** Removes a set granted through GrantAbilitySet. Authority only; returns false on non-authority or when the set is not granted. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category="RPG|AbilitySet")
 	bool RemoveAbilitySet(const URpgAbilitySet* AbilitySet);
 
 	UFUNCTION(BlueprintCallable, Category="RPG|AbilitySet")
@@ -222,14 +226,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
-	
-	/** Server-RPCs */
-	UFUNCTION(Server, Reliable)
-	void Server_GrantAbilitySet(const URpgAbilitySet* AbilitySet, UObject* SourceObject);
 
-	UFUNCTION(Server, Reliable)
-	void Server_RemoveAbilitySet(const URpgAbilitySet* AbilitySet);
-	
 	virtual void OnRep_ActivateAbilities() override;
 	
 protected:
@@ -304,8 +301,6 @@ private:
 	bool bForceGrantAuthorityForTests = false;
 #endif
 
-	bool GrantAbilitySet_Internal(const URpgAbilitySet* AbilitySet, UObject* SourceObject);
-	bool RemoveAbilitySet_Internal(const URpgAbilitySet* AbilitySet);
 	void ClearLifecycleTags();
 	void ClearLifecycleEffects();
 };
