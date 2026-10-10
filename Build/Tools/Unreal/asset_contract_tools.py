@@ -4,7 +4,7 @@ Load from an editor Python startup script. Standard asset/Blueprint/object tools
 still own duplication, property edits, compilation and saves. These operations
 fill gaps in the UE 5.8 toolsets: complete exports, instanced reference remapping,
 precise montage notify timing, fresh package reloads, typed function inputs, MVVM function
-bindings and gameplay input/view inspection in PIE.
+bindings, float curve keys and gameplay input/view inspection in PIE.
 """
 import json
 import math
@@ -300,6 +300,45 @@ class AssetContractTools(unreal.ToolsetDefinition):
         if not isinstance(result, unreal.ActorComponent) or result.get_outermost() != blueprint.get_outermost():
             raise RuntimeError('Editor did not provide a component owned by the requested Blueprint')
         return result
+
+    @toolset_registry.tool_call
+    @staticmethod
+    def import_float_curve(folder_path: str, asset_name: str, keys_json: str) -> unreal.CurveFloat:
+        """Create or replace a project CurveFloat from [[time, value], ...] keys; no save.
+
+        UCurveFloat keys are not editable reflected properties, so this writes the keys
+        to a CSV below project Saved and runs the engine's CSV curve import, like
+        CurveTableTools.import_file. Keys interpolate linearly; that CSV stays the
+        asset's reimport source. Read the keys back with export_asset.
+        """
+        _guard()
+        package_name = folder_path.rstrip('/') + '/' + asset_name
+        if not unreal.RpgAnimationAssetTools.is_project_content_package(package_name):
+            raise RuntimeError('Expected a curve inside this project or its plugins')
+        keys = json.loads(keys_json)
+        if (not isinstance(keys, list) or not keys
+                or any(not isinstance(key, list) or len(key) != 2 for key in keys)):
+            raise ValueError('Expected a nonempty [[time, value], ...] array')
+        keys = [(float(time), float(value)) for time, value in keys]
+        if (not all(math.isfinite(number) for key in keys for number in key)
+                or len({time for time, _ in keys}) != len(keys)):
+            raise ValueError('Key times must be unique and every key finite')
+        root = Path(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_saved_dir())).resolve()
+        source = root / 'AssetContractTools' / (asset_name + '.csv')
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text(''.join(f'{time!r},{value!r}\n' for time, value in sorted(keys)), encoding='utf-8')
+        factory = unreal.CSVImportFactory()
+        factory.automated_import_settings.import_type = unreal.CSVImportType.ECSV_CURVE_FLOAT
+        task = unreal.AssetImportTask()
+        for name, value in {'filename': str(source), 'destination_path': folder_path.rstrip('/'),
+                            'destination_name': asset_name, 'factory': factory, 'automated': True,
+                            'replace_existing': True, 'save': False}.items():
+            task.set_editor_property(name, value)
+        unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])
+        curve = unreal.load_asset(package_name)
+        if not isinstance(curve, unreal.CurveFloat):
+            raise RuntimeError('CurveFloat import failed: ' + package_name)
+        return curve
 
     @toolset_registry.tool_call
     @staticmethod
