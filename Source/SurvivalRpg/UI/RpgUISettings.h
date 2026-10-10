@@ -26,4 +26,12 @@ public:
 	/** Config fallback mappings used when no ScreenRegistry asset is assigned or the asset lacks a requested screen. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Config, Category = "Screens")
 	TArray<FRpgUIScreenRegistryEntry> DefaultScreenMappings;
+
+	/**
+	 * Seconds the HUD keeps its combat context after the local character last took damage or used an ability that
+	 * its equipment grants. While the context lasts, the HUD shows the vitals and the full action bars.
+	 * Presentation only; gameplay never reads it.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Config, Category = "HUD", meta = (ClampMin = "0.5", UIMin = "0.5", UIMax = "30", Units = "s"))
+	float HudCombatHoldSeconds = 6.0f;
 };

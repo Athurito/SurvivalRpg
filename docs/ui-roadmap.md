@@ -28,7 +28,7 @@ It records the accepted decisions and the task sequence. The style itself
 | Materials | Subtle procedural UI materials driven by one palette (`MPC_UI_Palette`), restyled through material instance parameters. Seals, locks, diamonds, fine lines and edge scratches are procedural too; there are no filigree textures. The `fantasy_gui_4` marketplace frames are not used. |
 | Icons | One engraving material makes the existing icons monochrome in bone white or old gold and dims locked ones. A real engraved icon set can replace the textures later. |
 | Inventory | Tarkov-style paper doll and container grids with one cell size everywhere. The standalone inventory shows three columns: equipment, containers and character stats. |
-| HUD | Health, stamina and mana bars; mana is prepared but hidden until a pawn has a mana attribute. An XP bar. Positions may change so the HUD stays out of the way during play. |
+| HUD | After the user's concept (UI-05): vitals with level and XP bottom left, quickbar and Q/E/R bottom centre, menu key hints bottom right. Mana shows only while a pawn has a mana attribute. Groups fade by context so the HUD stays out of the way. |
 | Controller support | Wanted later; every task keeps visible focus states, no mouse-only actions and scroll-into-view on focus (see the style guide). |
 | Base terminal | Out of scope: it is a leftover of the old inventory whose screen route was removed ([physical-storage-implementation.md](physical-storage-implementation.md)). |
 
@@ -51,7 +51,7 @@ It records the accepted decisions and the task sequence. The style itself
 | UI-02c | Coloured item icons: the user's colour version of the gameplay package replaces the 39 item textures in place; every other icon stays bone white | Done: [#203](https://github.com/Athurito/SurvivalRpg/pull/203) |
 | UI-03 | Character stats column (level, XP, load, health, stamina, armour), rarity frames on gear slots, MVVM toolset | Done: [#202](https://github.com/Athurito/SurvivalRpg/pull/202) |
 | UI-04 | Crafting screen after the kiln and smithy concepts: category tree, tier sections, preview with stat ranges, one order per station from connected chests into a target chest, per-piece item rolls | Done: [#204](https://github.com/Athurito/SurvivalRpg/pull/204) |
-| UI-05 | HUD: new arrangement, material bars for health, stamina and mana, XP bar, context fading, action bar and Q/E/R, enemy health bar | Planned |
+| UI-05 | HUD after the user's concept: vitals and XP, quickbar and Q/E/R, menu key hints, enemy health bar, context fading, mana attribute set | Done: [#206](https://github.com/Athurito/SurvivalRpg/pull/206) |
 | UI-06 | Tooltip, context menu, split and drop dialogs, toasts, drag visual, item-only highlight in grids | Planned |
 | UI-07 | Menus (game menu tabs, main menu, settings, respawn), then remove KnightsQuest | Planned |
 | UI-08 | Inventory layout after Diablo 3: character values left of the equipment, containers below, fewer pocket cells | Planned |
@@ -352,7 +352,8 @@ slots and animations.
   [unreal-mcp-asset-authoring.md](../.agents/skills/unreal-lyra-expert/references/unreal-mcp-asset-authoring.md#widget-blueprint)
   describes them.
 - **Not done:**
-  - Mana, which UI-05 adds once a pawn has the attribute.
+  - Mana: UI-05 added `URpgManaSet` and the mana fields; no pawn grants the
+    set yet.
   - `DA_PlayerProgression` has no `XPToNextLevel` curve, so the experience bar
     stays empty and the text shows only the experience (for example
     `10 XP`). The curve is progression content, not UI.
@@ -555,3 +556,96 @@ Take all and tray tests are removed.
 - **Maps without chests:** workbenches in `Lvl_RpgBaseline`,
   `Lvl_ThirdPerson` and `Lvl_LootHarvestSandbox` have no chest nearby, so
   they cannot craft there until chests are placed or built.
+
+## HUD (UI-05)
+
+The user supplied a generated HUD concept: three framed bars with icons
+bottom left, the quickbar 1–8 and Q/E/R as one row of square slots bottom
+centre, and key hints for menus bottom right. The HUD keeps the project's
+colours and styles; texts stay English.
+
+### Decisions (2026-10-10)
+
+- **Arrangement:** vitals bottom left, quickbar and Q/E/R bottom centre, menu
+  key hints bottom right, notifications above the slots, the enemy bar above
+  the enemy.
+- **Vitals:** health (heart), mana (drop) and stamina (runner), each a bar in
+  `T_UI_Hud_BarFrame` with the palette bar materials. Health keeps a pale trail
+  for a moment after a hit. The concept has no XP, so a thin gold experience
+  bar with the level sits under the bars and fades with them.
+- **Mana:** `URpgManaSet` (Mana, MaxMana) exists but no pawn grants it. The
+  mana row appears by itself once an AbilitySet grants the set.
+- **Context fading:**
+  - The character is in combat for `HudCombatHoldSeconds` (6 s, project
+    setting *RPG UI → HUD*) after taking damage or using an ability its
+    equipment grants: attacks, block, weapon and tool abilities. Movement,
+    interaction and reactions do not count.
+  - The vitals and XP show while in combat or while a vital is not full, and
+    for a few seconds after gained experience; otherwise they fade out.
+  - The quickbar and Q/E/R dim to 40 % out of combat.
+  - The enemy bar appears on a hit and fades 5 s after the last one.
+- **Key hints** show only menus that have a key today: Tab Inventory and
+  H Skills. Keys for the map, journal, character and pause menus belong to
+  UI-07; a new hint is one more entry in `CUI_HudKeyHints`.
+
+### C++ boundary
+
+- **Runtime truth:** vitals and mana live in the ability system, experience in
+  the progression component, the hands in the equipment loadout. The HUD only
+  reads them.
+- **Native:**
+  - `URpgManaSet`, replicated and clamped like the stamina set;
+  - `URpgCharacterStatsViewModel`: mana fields, `bVitalsFull`, `bInCombat`
+    and `bShowVitals`;
+  - `URpgActionBarSlotViewModel::bInHand`, resolved from the loadout and
+    refreshed on loadout messages;
+  - two reusable presentation primitives: `URpgHudFadeBox`, a size box that
+    fades its content by pin and pulse, and `URpgTrailingProgressBar`, a
+    progress bar whose drops linger and drain. Both keep their timing in
+    small Slate-free state structs that tests drive directly.
+- **Content (Unreal MCP):** every widget and its bindings, the bar frame
+  texture, the Tab key glyph, and Tab ordered before I for the inventory
+  action, so the hint names Tab.
+
+### Widgets
+
+- `CUI_RpgHudLayout`: the extension points sit directly in the safe zone
+  (vitals bottom left, action bar bottom centre, notifications above it), and
+  `CUI_HudKeyHints` bottom right.
+- `CUI_PlayerVitalls`: now binds `URpgCharacterStatsViewModel` instead of the
+  old vitals view model. `VitalsFade` is pinned by `bShowVitals` and pulsed
+  by `CharacterXP`; `SetManaShown` collapses the mana row without a mana set.
+- `CUI_HudBottomBar`: `BarsFade` (hidden opacity 0.4) pinned by `bInCombat`
+  around the fixed-width quickbar (8 × 72) and ability bar (3 × 72).
+- `CUI_ActionBarSlotEntry` and `CUI_WeaponAbilityBarSlot`: 64-unit slots with
+  the gear slot fill, `T_UI_Gear_Frame_Cell`, the key glyph top left and the
+  stack count bottom right.
+  - The weapon in hand gets a gold ring, the active glow and a diamond below
+    (`SetInHand`).
+  - An ability on cooldown gets a dark veil and the remaining time from
+    `CooldownText` (`SetCooldownActive`).
+  - The inventory's quick access row uses the same entry.
+- `W_EnemyHealthBarIndicator` (GF_Combat_Core): the vitals bar style at 150 ×
+  18 with the trail; `EnemyFade` is pulsed by every health change.
+
+### Tests
+
+- `SurvivalRpg.UI.Hud.FadeHoldsThenFades` and
+  `SurvivalRpg.UI.Hud.TrailDrainsAfterDelay` drive the fade and trail states.
+- `SurvivalRpg.UI.CharacterStats.ManaAndHudContext` covers the mana set, full
+  vitals and the combat hold.
+- `SurvivalRpg.Inventory.QuickAccess.WeaponSlot1DragCommitsAuthorityBinding`
+  checks that the quick access slot of the main-hand weapon reads as in hand.
+- The action bar entry pooling test no longer freezes the number of bindings.
+
+### Not done
+
+- **Menu keys:** the map, journal, character and pause menus have no working
+  key, so the hints show only Inventory and Skills (UI-07).
+- **Input type at start:** `DefaultInputType=Gamepad` for Windows
+  (`Config/DefaultGame.ini`) makes CommonUI show gamepad glyphs until the
+  first mouse or keyboard input.
+- **XP curve:** `DA_PlayerProgression` still has no curve, so the experience
+  bar stays empty (see open findings).
+- **Damage dealt** does not start combat by itself; using the weapon does.
+- **Boss bars** and enemy names are not part of this task.

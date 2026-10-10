@@ -1,16 +1,22 @@
 #include "RpgCharacterStatsViewModel.h"
 
 #include "AbilitySystemComponent.h"
+#include "Abilities/GameplayAbility.h"
+#include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgDefenseSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
+#include "SurvivalRpg/AbilitySystem/Attributes/RpgManaSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgStaminaSet.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentInstance.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Progression/Player/Data/RpgPlayerProgressionData.h"
 #include "SurvivalRpg/Progression/Player/RpgPlayerProgressionComponent.h"
+#include "SurvivalRpg/UI/RpgUISettings.h"
+#include "TimerManager.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgCharacterStatsViewModel)
 
@@ -78,6 +84,10 @@ namespace
 void URpgCharacterStatsViewModel::BeginDestroy()
 {
 	// Only release the observers here; no view should receive field changes from an object being destroyed.
+	if (UWorld* World = GetObservedWorld())
+	{
+		World->GetTimerManager().ClearTimer(CombatTimerHandle);
+	}
 	ReleaseProgression();
 	ReleaseAbilitySystem();
 	if (LoadoutChangedHandle.IsValid())
@@ -127,6 +137,8 @@ void URpgCharacterStatsViewModel::BindAbilitySystem(UAbilitySystemComponent* InA
 				URpgHealthSet::GetMaxHealthAttribute(),
 				URpgStaminaSet::GetStaminaAttribute(),
 				URpgStaminaSet::GetMaxStaminaAttribute(),
+				URpgManaSet::GetManaAttribute(),
+				URpgManaSet::GetMaxManaAttribute(),
 				URpgDefenseSet::GetArmorAttribute(),
 			};
 			for (const FGameplayAttribute& Attribute : ObservedAttributes)
@@ -135,6 +147,7 @@ void URpgCharacterStatsViewModel::BindAbilitySystem(UAbilitySystemComponent* InA
 					Attribute,
 					InAbilitySystem->GetGameplayAttributeValueChangeDelegate(Attribute).AddUObject(this, &ThisClass::HandleAttributeChanged));
 			}
+			AbilityActivatedHandle = InAbilitySystem->AbilityActivatedCallbacks.AddUObject(this, &ThisClass::HandleAbilityActivated);
 		}
 	}
 
@@ -145,6 +158,7 @@ void URpgCharacterStatsViewModel::BindAbilitySystem(UAbilitySystemComponent* InA
 void URpgCharacterStatsViewModel::UnbindAbilitySystem()
 {
 	ReleaseAbilitySystem();
+	ClearCombat();
 	RefreshAttributes();
 }
 
@@ -179,8 +193,10 @@ void URpgCharacterStatsViewModel::ReleaseAbilitySystem()
 		{
 			AbilitySystem->GetGameplayAttributeValueChangeDelegate(Handle.Key).Remove(Handle.Value);
 		}
+		AbilitySystem->AbilityActivatedCallbacks.Remove(AbilityActivatedHandle);
 	}
 	AttributeHandles.Reset();
+	AbilityActivatedHandle.Reset();
 	ObservedAbilitySystem.Reset();
 }
 
@@ -207,6 +223,25 @@ void URpgCharacterStatsViewModel::HandleCharacterXPChanged(float CurrentXP, floa
 void URpgCharacterStatsViewModel::HandleAttributeChanged(const FOnAttributeChangeData& ChangeData)
 {
 	RefreshAttributes();
+	if (ChangeData.Attribute == URpgHealthSet::GetHealthAttribute() && ChangeData.NewValue < ChangeData.OldValue)
+	{
+		EnterCombat();
+	}
+}
+
+void URpgCharacterStatsViewModel::HandleAbilityActivated(UGameplayAbility* Ability)
+{
+	// Equipment grants attacks, block and weapon or tool abilities. Movement, interaction and reactions do not count.
+	UAbilitySystemComponent* AbilitySystem = ObservedAbilitySystem.Get();
+	if (!Ability || !AbilitySystem || !Ability->IsInstantiated())
+	{
+		return;
+	}
+	const FGameplayAbilitySpec* Spec = AbilitySystem->FindAbilitySpecFromHandle(Ability->GetCurrentAbilitySpecHandle());
+	if (Spec && Cast<URpgEquipmentInstance>(Spec->SourceObject.Get()))
+	{
+		EnterCombat();
+	}
 }
 
 void URpgCharacterStatsViewModel::HandleEquipmentLoadoutChanged(
@@ -239,6 +274,9 @@ void URpgCharacterStatsViewModel::RefreshAttributes()
 	const float NewMaxHealth = ReadAttribute(URpgHealthSet::GetMaxHealthAttribute());
 	const float NewStamina = ReadAttribute(URpgStaminaSet::GetStaminaAttribute());
 	const float NewMaxStamina = ReadAttribute(URpgStaminaSet::GetMaxStaminaAttribute());
+	const bool bNewHasMana = AbilitySystem && AbilitySystem->HasAttributeSetForAttribute(URpgManaSet::GetManaAttribute());
+	const float NewMana = ReadAttribute(URpgManaSet::GetManaAttribute());
+	const float NewMaxMana = ReadAttribute(URpgManaSet::GetMaxManaAttribute());
 	const float NewArmor = ReadAttribute(URpgDefenseSet::GetArmorAttribute());
 
 	UE_MVVM_SET_PROPERTY_VALUE(Health, NewHealth);
@@ -249,8 +287,18 @@ void URpgCharacterStatsViewModel::RefreshAttributes()
 	UE_MVVM_SET_PROPERTY_VALUE(MaxStamina, NewMaxStamina);
 	UE_MVVM_SET_PROPERTY_VALUE(StaminaProgress, GetRatio(NewStamina, NewMaxStamina));
 	SetText(StaminaText, MakeValueOfMaxText(NewStamina, NewMaxStamina), FFieldNotificationClassDescriptor::StaminaText);
+	UE_MVVM_SET_PROPERTY_VALUE(bHasMana, bNewHasMana);
+	UE_MVVM_SET_PROPERTY_VALUE(Mana, NewMana);
+	UE_MVVM_SET_PROPERTY_VALUE(MaxMana, NewMaxMana);
+	UE_MVVM_SET_PROPERTY_VALUE(ManaProgress, GetRatio(NewMana, NewMaxMana));
+	SetText(ManaText, bNewHasMana ? MakeValueOfMaxText(NewMana, NewMaxMana) : FText::GetEmpty(), FFieldNotificationClassDescriptor::ManaText);
 	UE_MVVM_SET_PROPERTY_VALUE(Armor, NewArmor);
 	SetText(ArmorText, FText::AsNumber(FMath::RoundToInt(NewArmor)), FFieldNotificationClassDescriptor::ArmorText);
+
+	const bool bNewVitalsFull = AbilitySystem && NewMaxHealth > 0.0f
+		&& NewHealth >= NewMaxHealth && NewStamina >= NewMaxStamina && (!bNewHasMana || NewMana >= NewMaxMana);
+	UE_MVVM_SET_PROPERTY_VALUE(bVitalsFull, bNewVitalsFull);
+	RefreshHudContext();
 }
 
 void URpgCharacterStatsViewModel::RefreshProgression()
@@ -313,6 +361,54 @@ void URpgCharacterStatsViewModel::BindProgressionOfPlayerState(
 	{
 		BindProgression(PlayerState->FindComponentByClass<URpgPlayerProgressionComponent>());
 	}
+}
+
+void URpgCharacterStatsViewModel::EnterCombat()
+{
+	UWorld* World = GetObservedWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	World->GetTimerManager().SetTimer(
+		CombatTimerHandle,
+		FTimerDelegate::CreateUObject(this, &ThisClass::ExitCombat),
+		FMath::Max(0.5f, GetDefault<URpgUISettings>()->HudCombatHoldSeconds),
+		false);
+	UE_MVVM_SET_PROPERTY_VALUE(bInCombat, true);
+	RefreshHudContext();
+}
+
+void URpgCharacterStatsViewModel::ExitCombat()
+{
+	CombatTimerHandle.Invalidate();
+	UE_MVVM_SET_PROPERTY_VALUE(bInCombat, false);
+	RefreshHudContext();
+}
+
+void URpgCharacterStatsViewModel::ClearCombat()
+{
+	if (UWorld* World = GetObservedWorld())
+	{
+		World->GetTimerManager().ClearTimer(CombatTimerHandle);
+	}
+	ExitCombat();
+}
+
+void URpgCharacterStatsViewModel::RefreshHudContext()
+{
+	UE_MVVM_SET_PROPERTY_VALUE(bShowVitals, bInCombat || !bVitalsFull);
+}
+
+UWorld* URpgCharacterStatsViewModel::GetObservedWorld() const
+{
+	if (const UAbilitySystemComponent* AbilitySystem = ObservedAbilitySystem.Get())
+	{
+		return AbilitySystem->GetWorld();
+	}
+	const APlayerController* PlayerController = ObservedPlayerController.Get();
+	return PlayerController ? PlayerController->GetWorld() : nullptr;
 }
 
 void URpgCharacterStatsViewModel::SetText(FText& Field, const FText& NewValue, const UE::FieldNotification::FFieldId FieldId)

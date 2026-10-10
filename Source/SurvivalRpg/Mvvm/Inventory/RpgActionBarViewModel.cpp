@@ -4,6 +4,7 @@
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
@@ -84,6 +85,9 @@ void URpgActionBarViewModel::RefreshSlots()
 	URpgPlayerInventoryLayoutComponent* InventoryLayout = ObservedInventoryLayout.Get();
 	const ARpgPlayerController* RpgPlayerController = ActionBar ? Cast<ARpgPlayerController>(ActionBar->GetOwner()) : nullptr;
 	const URpgAbilitySystemComponent* AbilitySystem = RpgPlayerController ? RpgPlayerController->GetRpgAbilitySystemComponent() : nullptr;
+	const URpgEquipmentLoadoutComponent* EquipmentLoadout = RpgPlayerController ? RpgPlayerController->GetEquipmentLoadoutComponent() : nullptr;
+	const URpgInventoryItemInstance* MainHandItem = EquipmentLoadout ? EquipmentLoadout->GetItemInEquipmentSlot(ERpgEquipmentSlot::MainHand) : nullptr;
+	const URpgInventoryItemInstance* OffHandItem = EquipmentLoadout ? EquipmentLoadout->GetItemInEquipmentSlot(ERpgEquipmentSlot::OffHand) : nullptr;
 	const TArray<FRpgActionBarSlot> SourceSlots = ActionBar ? ActionBar->GetSlots() : TArray<FRpgActionBarSlot>();
 	const int32 SlotCount = ActionBar ? FMath::Max(ActionBar->GetNumSlots(), SourceSlots.Num()) : FMath::Max(1, DefaultSlotCount);
 
@@ -124,6 +128,7 @@ void URpgActionBarViewModel::RefreshSlots()
 			StackCount,
 			AbilitySystem,
 			CarryDisplayName);
+		SlotViewModel->SetInHand(ResolvedItem && (ResolvedItem == MainHandItem || ResolvedItem == OffHandItem));
 		Slots.Add(SlotViewModel);
 	}
 
@@ -183,6 +188,11 @@ void URpgActionBarViewModel::RegisterMessageListener()
 		RpgGameplayTags::Rpg_InventoryLayout_Message_Changed,
 		this,
 		&ThisClass::HandlePlayerInventoryLayoutChanged);
+
+	EquipmentLoadoutChangedHandle = MessageSubsystem.RegisterListener<FRpgEquipmentLoadoutSlotsChangedMessage>(
+		RpgGameplayTags::Rpg_EquipmentLoadout_Message_SlotsChanged,
+		this,
+		&ThisClass::HandleEquipmentLoadoutChanged);
 }
 
 void URpgActionBarViewModel::UnregisterMessageListener()
@@ -200,6 +210,11 @@ void URpgActionBarViewModel::UnregisterMessageListener()
 	if (LayoutChangedHandle.IsValid())
 	{
 		LayoutChangedHandle.Unregister();
+	}
+
+	if (EquipmentLoadoutChangedHandle.IsValid())
+	{
+		EquipmentLoadoutChangedHandle.Unregister();
 	}
 }
 
@@ -268,6 +283,16 @@ void URpgActionBarViewModel::HandlePlayerInventoryLayoutChanged(FGameplayTag Cha
 {
 	const URpgPlayerInventoryLayoutComponent* InventoryLayout = ObservedInventoryLayout.Get();
 	if (InventoryLayout && Message.LayoutComponent == InventoryLayout)
+	{
+		RequestRefreshSlots();
+	}
+}
+
+void URpgActionBarViewModel::HandleEquipmentLoadoutChanged(FGameplayTag Channel, const FRpgEquipmentLoadoutSlotsChangedMessage& Message)
+{
+	// The hands changed; the slot holding the weapon in hand moves.
+	const URpgActionBarComponent* ActionBar = ObservedActionBar.Get();
+	if (ActionBar && Message.Owner == ActionBar->GetOwner())
 	{
 		RequestRefreshSlots();
 	}
