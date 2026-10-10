@@ -606,6 +606,10 @@ colours and styles; texts stay English.
 - **Content (Unreal MCP):** every widget and its bindings, the bar frame
   texture, the Tab key glyph, and Tab ordered before I for the inventory
   action, so the hint names Tab.
+- **Removed:** the local-player vitals path that `CUI_PlayerVitalls` no
+  longer uses: `UPlayerVitalsViewmodel`, `UPlayerVitalsResolver` and the
+  vitals view model of `URpgUiSubsystem`. `UEnemyVitalsViewmodel` now
+  mirrors health itself instead of deriving from the player model.
 
 ### Widgets
 
@@ -626,7 +630,9 @@ colours and styles; texts stay English.
     `CooldownText` (`SetCooldownActive`).
   - The inventory's quick access row uses the same entry.
 - `W_EnemyHealthBarIndicator` (GF_Combat_Core): the vitals bar style at 150 ×
-  18 with the trail; `EnemyFade` is pulsed by every health change.
+  18 with the trail; `EnemyFade` is pulsed by every health change. Its
+  manual source `EnemyVitals` takes the `UEnemyVitalsViewmodel` that
+  `URpgEnemyVitalsIndicatorWidget` binds to the hit actor.
 
 ### Tests
 
@@ -637,6 +643,10 @@ colours and styles; texts stay English.
 - `SurvivalRpg.Inventory.QuickAccess.WeaponSlot1DragCommitsAuthorityBinding`
   checks that the quick access slot of the main-hand weapon reads as in hand.
 - The action bar entry pooling test no longer freezes the number of bindings.
+- `SurvivalRpg.UI.EnemyVitals.HealthFollowsPawnExtension` follows an enemy's
+  health through ability system teardown and re-initialization, and
+  `SurvivalRpg.UI.EnemyVitals.IndicatorWidgetTakesViewModel` checks that the
+  indicator has exactly one settable source for that view model and binds it.
 
 ### Not done
 
