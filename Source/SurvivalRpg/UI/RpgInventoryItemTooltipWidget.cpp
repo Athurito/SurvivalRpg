@@ -160,16 +160,23 @@ void URpgInventoryItemTooltipWidget::NativeOnInitialized()
 	TooltipViewModel = NewObject<URpgItemTooltipViewModel>(this);
 	ComparisonViewModel = NewObject<URpgItemTooltipViewModel>(this);
 	ComparisonViewModel->SetIsEquippedComparison(true);
-	RpgMvvmWidgetUtils::SetOptionalManualViewModel(
-		this,
-		TooltipViewModelSourceName,
-		TooltipViewModel,
-		URpgItemTooltipViewModel::StaticClass());
-	RpgMvvmWidgetUtils::SetOptionalManualViewModel(
-		this,
-		ComparisonViewModelSourceName,
-		ComparisonViewModel,
-		URpgItemTooltipViewModel::StaticClass());
+	// A tooltip may bind the models itself or leave them to its two panels.
+	if (RpgMvvmWidgetUtils::HasViewModelSource(this, TooltipViewModelSourceName))
+	{
+		RpgMvvmWidgetUtils::SetOptionalManualViewModel(
+			this,
+			TooltipViewModelSourceName,
+			TooltipViewModel,
+			URpgItemTooltipViewModel::StaticClass());
+	}
+	if (RpgMvvmWidgetUtils::HasViewModelSource(this, ComparisonViewModelSourceName))
+	{
+		RpgMvvmWidgetUtils::SetOptionalManualViewModel(
+			this,
+			ComparisonViewModelSourceName,
+			ComparisonViewModel,
+			URpgItemTooltipViewModel::StaticClass());
+	}
 	if (ItemPanel)
 	{
 		ItemPanel->SetEntryItem(TooltipViewModel);
