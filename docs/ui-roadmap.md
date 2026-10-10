@@ -687,6 +687,11 @@ project's colours and styles; texts stay English.
   widget changed; only the brush sizes of the caps followed the new aspect
   ratios. The mouse wheel directions and the side buttons gained caps of
   their own.
+- **Controller glyphs:** the same pack's Xbox and PS5 glyphs replace the old
+  Xbox One glyphs in `CommonInputData_Gamepad` and fill the new
+  `CommonInputData_GamepadPS5`. The split dialog's Esc and Enter became
+  action glyphs (`UI.Back`, `UI.Accept`), so a gamepad shows B and A there,
+  and the HUD key hints size their glyphs by height only.
 
 ### C++ boundary
 
@@ -758,9 +763,12 @@ project's colours and styles; texts stay English.
 
 ### Not done
 
-- **Gamepad glyphs:** the art pack has Xbox and PS5 glyphs, but
-  `CommonInputData_Gamepad` still uses the old Xbox One glyphs from
-  `UI/Menus/Shared/Platform/GamepadXboxOne`.
+- **PlayStation glyphs:** the Xbox set shows by default, and the PS5 set
+  after `SetGamepadInputType("PS5")`. Windows cannot tell a DualSense from
+  an Xbox controller over XInput, so players need a glyph setting (UI-07).
+- **Controller overview** in the settings menu
+  (`CUI_ControllerMappingOverview`) still uses the old Xbox One glyphs from
+  `UI/Menus/Shared/Platform/GamepadXboxOne` (UI-07).
 - **Gamepad compare:** `SetComparisonPinned` exists, but no button calls it.
 - **Resource fill in the HUD toast:** abilities do not use GAS cost effects
   yet, so no failure names a cost attribute; only the harvesting skill level
