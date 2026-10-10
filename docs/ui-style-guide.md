@@ -347,6 +347,12 @@ styles for newly placed widgets.
   - Show tooltips on focus too.
   - Scroll boxes scroll the focused widget into view.
   - Interactive targets are at least 48 units.
+  - Windows starts with mouse and keyboard (`DefaultInputType` in
+    `Config/DefaultGame.ini`), so glyphs, the cursor and hover selection are
+    right from the first frame. CommonUI switches to gamepad glyphs and focus
+    on the first gamepad input and back on mouse or keyboard input. Never rely
+    on the input type at start; follow `OnInputMethodChanged` as the settings
+    keybinding page does.
 
 ## Native colour defaults
 

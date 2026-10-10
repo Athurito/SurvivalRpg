@@ -652,9 +652,6 @@ colours and styles; texts stay English.
 
 - **Menu keys:** the map, journal, character and pause menus have no working
   key, so the hints show only Inventory and Skills (UI-07).
-- **Input type at start:** `DefaultInputType=Gamepad` for Windows
-  (`Config/DefaultGame.ini`) makes CommonUI show gamepad glyphs until the
-  first mouse or keyboard input.
 - **XP curve:** `DA_PlayerProgression` still has no curve, so the experience
   bar stays empty (see open findings).
 - **Damage dealt** does not start combat by itself; using the weapon does.
