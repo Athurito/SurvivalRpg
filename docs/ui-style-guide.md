@@ -186,7 +186,7 @@ style:
   replaces them in place under the same names.
 - `Keys/`: key caps `T_UI_Key_<Key>` for keyboard keys and mouse buttons
   (UI-06): a dark cap with a gold rim and a bone white Roboto Bold label,
-  96 units high and 96 or more wide. `CommonInputData_Keyboard` maps every
+  96 px high and 96 px or more wide. `CommonInputData_Keyboard` maps every
   key to its cap, so CommonUI glyphs show them everywhere.
   `Build/Tools/UiKeyCaps` generates the caps and describes how to add a key.
 - `Frames/`: panels, tooltip, slots and controls, the gear frames
