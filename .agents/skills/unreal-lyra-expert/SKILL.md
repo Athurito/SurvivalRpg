@@ -73,7 +73,7 @@ python Build/Tools/Unreal/ue.py cook Lvl_RpgGaspMantle
 ```
 
 - Exit code 0 means passed, 1 failed, and 2 a setup error such as a missing engine or unverified NetworkPrediction/Mover overrides. Act on the printed errors or failed tests; open the named log or report only for details.
-- Build after C++ or `.Build.cs` changes and before testing them. An open editor with Live Coding blocks the build, so close it first.
+- Build after C++ or `.Build.cs` changes and before testing them. An open editor with Live Coding blocks the build, so close it first. While an MCP session needs that editor, compile function-body changes there with the [Live Coding tool](references/unreal-mcp-asset-authoring.md#compile-c-in-the-running-editor); it never replaces `ue.py build`.
 - PIE network tests need rendering, so use `--null-rhi` only for native and asset tests. Add `--expect-tests N` when a filter must select exactly N tests.
 - `Build/Tools/Unreal/README.md` lists the remaining options and the engine lookup.
 
