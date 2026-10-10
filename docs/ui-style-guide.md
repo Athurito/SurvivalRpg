@@ -182,13 +182,16 @@ style:
   categories and stations in `Icons/crafting` (used by the crafting screen
   since UI-04). UI-06 adds `Icons/actions` (`T_UI_Action_*`, one per item
   action) and `Icons/feedback` (`T_UI_Feedback_Success`, `_Blocked`,
-  `_Cooldown`); both are generated placeholders until the user's set
-  replaces them in place under the same names.
+  `_Cooldown`): flat bone white silhouettes, 512 × 512.
 - `Keys/`: key caps `T_UI_Key_<Key>` for keyboard keys and mouse buttons
-  (UI-06): a dark cap with a gold rim and a bone white Roboto Bold label,
-  96 px high and 96 px or more wide. `CommonInputData_Keyboard` maps every
-  key to its cap, so CommonUI glyphs show them everywhere.
-  `Build/Tools/UiKeyCaps` generates the caps and describes how to add a key.
+  (UI-06): a dark cap with a gold rim and a bone white label, 192 px high
+  and as wide as the label needs; mouse buttons are square caps with a mouse
+  glyph. `CommonInputData_Keyboard` maps every key to its cap, so CommonUI
+  glyphs show them everywhere.
+- The caps and the action icons come from the user's input art pack
+  (*DarkFantasy Input UI*, kept outside the repository). The pack also has
+  caps for every other keyboard key and Xbox and PS5 glyphs; only the keys
+  the game shows are imported.
 - `Frames/`: panels, tooltip, slots and controls, the gear frames
   `T_UI_Gear_Frame_Cell`, `_Equipment`, `_Weapon` and `_Container`, and the
   HUD bar frame `T_UI_Hud_BarFrame` (UI-05). `T_UI_Frame_Tooltip` is the
@@ -251,8 +254,21 @@ Rules:
   `CommonActionWidget` wherever an input action is shown. A fixed hint
   outside an action, such as "Shift Compare" or the split dialog's Esc and
   Enter, uses the cap texture directly; size its brush to the texture's
-  aspect ratio at the wanted height. A new key needs a new `T_UI_Key_*` cap
-  and an entry in the brush map (see `Build/Tools/UiKeyCaps/README.md`).
+  aspect ratio at the wanted height. A `SizeBox` with a fixed width and
+  height around a `CommonActionWidget` stretches the cap to that box, so give
+  it the bound key's aspect ratio (Tab in `CUI_HudKeyHints` is 43 × 28).
+- **A new key** needs its cap and a brush map entry:
+  1. Import `T_UI_Key_<Key>.png` from the input art pack into `Art/Keys`
+     through Unreal MCP, and copy the texture settings (compression, mips,
+     LOD group, sRGB, filter, streaming) from an existing cap.
+  2. Add the key to `InputBrushDataMap` of
+     `UI/Menus/Shared/Platform/CommonInputData_Keyboard`: draw as `Image`,
+     50 units high and as wide as the PNG's aspect ratio gives (a 288 × 192
+     cap is 75 × 50). Read the size from the PNG; the texture asset reports
+     32 × 32 while it still compiles.
+  3. The texture is named after the Unreal key, except the digits (`One`
+     uses `T_UI_Key_1`) and `MouseWheel`, which `MouseWheelAxis` uses.
+     Right-hand modifiers reuse the left-hand caps.
 - **Slot frames** (`T_UI_Slot_*`) stay square images.
 - **`CUI_BorderStyle_MenuBackdrop`** draws the darkened night forest behind
   the game menu.

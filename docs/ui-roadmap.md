@@ -682,11 +682,14 @@ project's colours and styles; texts stay English.
 - **Feedback:** the inventory toast shows only rejections, in amber with an
   icon; completed moves are visible in the grid. The HUD toast shows an icon
   per failure and, for a missing resource, its fill.
-- **Key caps:** one generated set for keyboard and mouse (dark cap, gold rim,
-  Roboto) replaces the white CommonUI defaults everywhere.
-- **Icons:** the action and feedback icons are placeholders under their
-  final names until the user's set arrives; replacing the textures in place
-  needs no widget change.
+- **Key caps:** one set for keyboard and mouse (dark cap, gold rim, bone
+  white label) replaces the white CommonUI defaults everywhere.
+- **Icons:** one icon per item action and per feedback kind.
+- **Art:** the caps and icons first shipped as generated placeholders. The
+  user's input art pack replaced them in place under the same names, so no
+  widget changed; only the brush sizes of the caps followed the new aspect
+  ratios. The mouse wheel directions and the side buttons gained caps of
+  their own.
 
 ### C++ boundary
 
@@ -714,8 +717,8 @@ project's colours and styles; texts stay English.
     that shows one entry per view model and keeps surviving entries, and
     `URpgLazyImage`, a lazy image with a one-argument setter for MVVM.
 - **Content (Unreal MCP):** every widget, the bindings, three text styles,
-  the key caps, the placeholder icons, the popup frame, the keyboard brush
-  map and the Use / Equip label.
+  the key caps, the action and feedback icons, the popup frame, the keyboard
+  brush map and the Use / Equip label.
 
 ### Widgets
 
@@ -758,7 +761,9 @@ project's colours and styles; texts stay English.
 
 ### Not done
 
-- **Icons** for actions and feedback are placeholders.
+- **Gamepad glyphs:** the art pack has Xbox and PS5 glyphs, but
+  `CommonInputData_Gamepad` still uses the old Xbox One glyphs from
+  `UI/Menus/Shared/Platform/GamepadXboxOne`.
 - **Gamepad compare:** `SetComparisonPinned` exists, but no button calls it.
 - **Resource fill in the HUD toast:** abilities do not use GAS cost effects
   yet, so no failure names a cost attribute; only the harvesting skill level
