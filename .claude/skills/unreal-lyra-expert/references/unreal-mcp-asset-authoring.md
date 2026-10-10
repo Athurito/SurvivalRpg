@@ -119,6 +119,7 @@ The task lists use these short toolset names:
 - Blueprint-class definitions such as `URpgExperienceDefinition`, `URpgInventoryItemDefinition`, and `URpgEquipmentDefinition`: create with `BlueprintTools.create` and the native definition class as `asset_type`, then call `ObjectTools.set_properties` on the Blueprint.
 - Instanced properties such as an ItemDefinition's `Fragments`: an element `{"refPath": "/Script/SurvivalRpg.<FragmentClass>"}` creates a new fragment instance owned by the asset, and an existing subobject path keeps that instance. Read the result back with `get_properties`, then configure each fragment by calling `set_properties` on its subobject path.
 - Arrays are replaced as a whole, so send the complete new array with the existing elements as `get_properties` returned them. A call that changes the array size and existing elements together is rejected; split it into separate calls.
+- Float curves (`UCurveFloat`), such as a level curve a DataAsset references: no engine toolset creates them or edits their keys, and `set_properties` rejects their key data. Create or replace them with `AssetContractTools.import_float_curve`, then assign the curve with `set_properties` and read the keys back with `export_asset`.
 
 ### Save and validate
 
@@ -149,6 +150,7 @@ Each toolset is named `Game.Build.Tools.Unreal.<module>.<Class>`:
 - `AssetContractTools` in `Build/Tools/Unreal/asset_contract_tools.py`: asset contracts, Blueprint members the engine tools cannot author, and local PIE inspection.
   - Contracts and editor state: `editor_status`, `export_asset`, `reload_assets`, `montage_contract`, `animation_pose_contract`, `remap_owned_references`, `remap_animation_notify_classes`, and `close_clean_editor`.
   - Blueprint members: `implement_blueprint_interface`, `ensure_event_graph`, `set_blueprint_variable_tooltips`, `add_soft_class_variable`, `add_function_input`, `add_view_function_binding`, and `editable_blueprint_component`.
+  - Curves: `import_float_curve`.
   - PIE: `set_pie_input_key`, `set_pie_view_rotation`, and `pie_mesh_bone_contract`.
 - `AnimationAssetTools` in `Build/Tools/Unreal/animation_asset_tools.py`: animation asset structure.
   - AnimBPs and layers: `create_anim_blueprint`, `set_anim_blueprint_abstract`, `create_animation_layer_interface`, `implement_animation_layer_interface`, `add_animation_layer`, `create_linked_animation_layer_node`, and `configure_linked_animation_layer`.
