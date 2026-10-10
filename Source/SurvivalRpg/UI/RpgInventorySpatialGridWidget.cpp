@@ -974,7 +974,7 @@ bool URpgInventorySpatialGridWidget::UseOrEquipSelectedCell(int32 StackCount)
 	return DragDropCoordinator->UseOrEquipEntry(GetSelectedEntryViewModel(), StackCount);
 }
 
-bool URpgInventorySpatialGridWidget::DropSelectedCell(int32 StackCount, bool bConfirmed)
+bool URpgInventorySpatialGridWidget::DropSelectedCell(int32 StackCount)
 {
 	if (!DragDropCoordinator)
 	{
@@ -999,7 +999,7 @@ bool URpgInventorySpatialGridWidget::DropSelectedCell(int32 StackCount, bool bCo
 		return false;
 	}
 
-	if (!bConfirmed && InventoryPresentationHost)
+	if (InventoryPresentationHost)
 	{
 		return InventoryPresentationHost->RequestInventoryDrop(
 			this,
@@ -1008,10 +1008,10 @@ bool URpgInventorySpatialGridWidget::DropSelectedCell(int32 StackCount, bool bCo
 
 	if (AddressSlot)
 	{
-		return DragDropCoordinator->DropAddressSlot(AddressSlot, StackCount, bConfirmed);
+		return DragDropCoordinator->DropAddressSlot(AddressSlot, StackCount);
 	}
 
-	return DragDropCoordinator->DropEntry(EntryViewModel, StackCount, bConfirmed);
+	return DragDropCoordinator->DropEntry(EntryViewModel, StackCount);
 }
 
 bool URpgInventorySpatialGridWidget::ToggleHeldItemRotation()

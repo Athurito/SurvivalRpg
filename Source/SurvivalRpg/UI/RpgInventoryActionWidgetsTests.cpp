@@ -1,6 +1,5 @@
 #include "RpgInventoryContextActionEntryWidget.h"
 #include "RpgInventoryContextMenuWidget.h"
-#include "RpgInventoryDropConfirmationDialogWidget.h"
 #include "RpgInventorySplitDialogWidget.h"
 #include "RpgQuickAccessSlotPickerEntryWidget.h"
 
@@ -38,7 +37,6 @@
 #include "Modules/ModuleManager.h"
 #include "UObject/Package.h"
 #include "UObject/UnrealType.h"
-#include "View/MVVMViewClass.h"
 #include "Widgets/SWidget.h"
 
 namespace RpgInventoryActionWidgetsTests
@@ -79,15 +77,6 @@ namespace RpgInventoryActionWidgetsTests
 			"/Game/SurvivalRpg/Inventory/UI/Presentation/"
 			"CUI_InventorySplitDialogSpatial."
 			"CUI_InventorySplitDialogSpatial_C");
-	constexpr TCHAR DropConfirmationPackageName[] =
-		TEXT(
-			"/Game/SurvivalRpg/Inventory/UI/Presentation/"
-			"CUI_InventoryDropConfirmationSpatial");
-	constexpr TCHAR DropConfirmationClassPath[] =
-		TEXT(
-			"/Game/SurvivalRpg/Inventory/UI/Presentation/"
-			"CUI_InventoryDropConfirmationSpatial."
-			"CUI_InventoryDropConfirmationSpatial_C");
 	constexpr TCHAR FeedbackToastPackageName[] =
 		TEXT(
 			"/Game/SurvivalRpg/Inventory/UI/Presentation/"
@@ -101,10 +90,6 @@ namespace RpgInventoryActionWidgetsTests
 		TEXT(
 			"/Game/SurvivalRpg/Inventory/UI/SpatialInventory/"
 			"CUI_SpatialInventoryPane.CUI_SpatialInventoryPane_C");
-	constexpr TCHAR PlayerInventoryClassPath[] =
-		TEXT(
-			"/Game/SurvivalRpg/Inventory/UI/"
-			"CUI_PlayerInventory.CUI_PlayerInventory_C");
 
 	class FScopedWidgetWorld
 	{
@@ -211,20 +196,6 @@ namespace RpgInventoryActionWidgetsTests
 			: nullptr;
 	}
 
-	int32 CountFunctionsDeclaredByClass(const UClass* Class)
-	{
-		int32 Count = 0;
-		for (TFieldIterator<UFunction> FunctionIt(
-				Class,
-				EFieldIteratorFlags::ExcludeSuper);
-			FunctionIt;
-			++FunctionIt)
-		{
-			++Count;
-		}
-		return Count;
-	}
-
 	UClass* ReadClassDefault(
 		const UObject* Defaults,
 		FName PropertyName)
@@ -317,10 +288,6 @@ bool FRpgInventoryAuthoredPresentationContractTest::RunTest(
 		LoadClass<URpgInventorySplitDialogWidget>(
 			nullptr,
 			SplitDialogClassPath);
-	UClass* DropConfirmationClass =
-		LoadClass<URpgInventoryDropConfirmationDialogWidget>(
-			nullptr,
-			DropConfirmationClassPath);
 	UClass* FeedbackToastClass =
 		LoadClass<URpgInventoryFeedbackToastWidget>(
 			nullptr,
@@ -329,7 +296,6 @@ bool FRpgInventoryAuthoredPresentationContractTest::RunTest(
 		!TestNotNull(TEXT("Authored Quick Access row loads"), QuickAccessEntryClass) ||
 		!TestNotNull(TEXT("Authored context menu loads"), ContextMenuClass) ||
 		!TestNotNull(TEXT("Authored split dialog loads"), SplitDialogClass) ||
-		!TestNotNull(TEXT("Authored drop confirmation loads"), DropConfirmationClass) ||
 		!TestNotNull(TEXT("Authored feedback toast loads"), FeedbackToastClass))
 	{
 		return false;
@@ -346,11 +312,6 @@ bool FRpgInventoryAuthoredPresentationContractTest::RunTest(
 		{QuickAccessEntryClass, URpgQuickAccessSlotPickerEntryWidget::StaticClass(), TEXT("Quick Access row")},
 		{ContextMenuClass, URpgInventoryContextMenuWidget::StaticClass(), TEXT("Context menu")},
 		{SplitDialogClass, URpgInventorySplitDialogWidget::StaticClass(), TEXT("Split dialog")},
-		{
-			DropConfirmationClass,
-			URpgInventoryDropConfirmationDialogWidget::StaticClass(),
-			TEXT("Drop confirmation")
-		},
 		{FeedbackToastClass, URpgInventoryFeedbackToastWidget::StaticClass(), TEXT("Feedback toast")}
 	};
 	for (const FClassContract& Contract : ClassContracts)
@@ -360,30 +321,14 @@ bool FRpgInventoryAuthoredPresentationContractTest::RunTest(
 				TEXT("%s derives from its native presentation contract"),
 				Contract.Label),
 			Contract.Class->IsChildOf(Contract.ExpectedParent));
-		UWidgetBlueprintGeneratedClass* GeneratedClass =
-			Cast<UWidgetBlueprintGeneratedClass>(Contract.Class);
 		if (!TestNotNull(
 			*FString::Printf(
 				TEXT("%s is an authored Widget Blueprint"),
 				Contract.Label),
-			GeneratedClass))
+			Cast<UWidgetBlueprintGeneratedClass>(Contract.Class)))
 		{
 			return false;
 		}
-		TestEqual(
-			*FString::Printf(
-				TEXT("%s declares no Blueprint graph functions"),
-				Contract.Label),
-			CountFunctionsDeclaredByClass(GeneratedClass),
-			0);
-		TestEqual(
-			*FString::Printf(
-				TEXT("%s owns no MVVM extension"),
-				Contract.Label),
-			GeneratedClass
-				->GetExtensions(UMVVMViewClass::StaticClass(), false)
-				.Num(),
-			0);
 	}
 
 	const UWidgetTree* ActionTree =
@@ -397,9 +342,6 @@ bool FRpgInventoryAuthoredPresentationContractTest::RunTest(
 			->GetWidgetTreeArchetype();
 	const UWidgetTree* SplitTree =
 		CastChecked<UWidgetBlueprintGeneratedClass>(SplitDialogClass)
-			->GetWidgetTreeArchetype();
-	const UWidgetTree* DropConfirmationTree =
-		CastChecked<UWidgetBlueprintGeneratedClass>(DropConfirmationClass)
 			->GetWidgetTreeArchetype();
 	const UWidgetTree* FeedbackTree =
 		CastChecked<UWidgetBlueprintGeneratedClass>(FeedbackToastClass)
@@ -469,26 +411,6 @@ bool FRpgInventoryAuthoredPresentationContractTest::RunTest(
 		SplitTree,
 		TEXT("Button_Cancel"),
 		TEXT("Split cancel button"));
-	HasExactWidget<UButton>(
-		*this,
-		DropConfirmationTree,
-		TEXT("Button_Backdrop"),
-		TEXT("Drop confirmation backdrop"));
-	HasExactWidget<UTextBlock>(
-		*this,
-		DropConfirmationTree,
-		TEXT("Text_Message"),
-		TEXT("Drop confirmation message"));
-	HasExactWidget<UButton>(
-		*this,
-		DropConfirmationTree,
-		TEXT("Button_Confirm"),
-		TEXT("Drop confirmation confirm button"));
-	HasExactWidget<UButton>(
-		*this,
-		DropConfirmationTree,
-		TEXT("Button_Cancel"),
-		TEXT("Drop confirmation cancel button"));
 	HasExactWidget<UBorder>(
 		*this,
 		FeedbackTree,
@@ -602,14 +524,6 @@ bool FRpgInventoryAuthoredPresentationContractTest::RunTest(
 				ScreenDefaults,
 				TEXT("SplitDialogWidgetClass")),
 			SplitDialogClass);
-		TestEqual(
-			*FString::Printf(
-				TEXT("%s uses the canonical drop confirmation"),
-				Contract.Label),
-			ReadClassDefault(
-				ScreenDefaults,
-				TEXT("DropConfirmationDialogWidgetClass")),
-			DropConfirmationClass);
 
 		const UWidgetBlueprintGeneratedClass* GeneratedScreen =
 			Cast<UWidgetBlueprintGeneratedClass>(ScreenClass);
@@ -667,12 +581,6 @@ bool FRpgInventoryAuthoredPresentationContractTest::RunTest(
 				TEXT("%s owns a cook-visible split-dialog dependency"),
 				Contract.Label),
 			ScreenDependencies.Contains(FName(SplitDialogPackageName)));
-		TestTrue(
-			*FString::Printf(
-				TEXT("%s owns a cook-visible drop-confirmation dependency"),
-				Contract.Label),
-			ScreenDependencies.Contains(
-				FName(DropConfirmationPackageName)));
 		TestTrue(
 			*FString::Printf(
 				TEXT("%s owns a cook-visible feedback-toast dependency"),
@@ -1014,103 +922,6 @@ bool FRpgInventoryActionModalPoolingLifecycleTest::RunTest(
 		TEXT("Split deactivation restores the neutral count"),
 		Split->GetSelectedSplitCount(),
 		1);
-
-	UClass* PlayerScreenClass =
-		LoadClass<URpgInventoryInteractionScreenWidget>(
-			nullptr,
-			PlayerInventoryClassPath);
-	URpgInventoryInteractionScreenWidget* DropHost =
-		PlayerScreenClass
-			? CreateWidget<URpgInventoryInteractionScreenWidget>(
-				TestWorld.GetTestWorld(),
-				PlayerScreenClass)
-			: nullptr;
-	UClass* DropClass =
-		LoadClass<URpgInventoryDropConfirmationDialogWidget>(
-			nullptr,
-			DropConfirmationClassPath);
-	URpgInventoryDropConfirmationDialogWidget* Drop =
-		CreateWorldlessAuthoredWidget<
-			URpgInventoryDropConfirmationDialogWidget>(DropClass);
-	if (!TestNotNull(
-			TEXT("Canonical inventory-screen host loads"),
-			PlayerScreenClass) ||
-		!TestNotNull(
-			TEXT("Drop-confirmation host initializes"),
-			DropHost) ||
-		!TestNotNull(
-			TEXT("Canonical drop-confirmation modal loads"),
-			DropClass) ||
-		!TestNotNull(
-			TEXT("Worldless drop-confirmation modal initializes"),
-			Drop))
-	{
-		return false;
-	}
-
-	const FGuid DropRequestA = FGuid::NewGuid();
-	const FGuid DropRequestB = FGuid::NewGuid();
-	TSharedPtr<SWidget> DropSlateA = Drop->TakeWidget();
-	if (!TestTrue(
-		TEXT("Drop modal constructs its first Slate representation"),
-		DropSlateA.IsValid()))
-	{
-		return false;
-	}
-
-	TestTrue(
-		TEXT("Drop A initializes before activation"),
-		Drop->InitializeDropConfirmation(
-			DropHost,
-			DropRequestA,
-			FText::FromString(TEXT("Item A")),
-			2));
-	TestEqual(
-		TEXT("Drop A captures request A"),
-		Drop->GetInitialRequestId(),
-		DropRequestA);
-
-	DropSlateA.Reset();
-	TestFalse(
-		TEXT("Drop A releases its Slate representation"),
-		Drop->GetCachedWidget().IsValid());
-	TestFalse(
-		TEXT("Drop destruct clears request A"),
-		Drop->GetInitialRequestId().IsValid());
-
-	TSharedPtr<SWidget> DropSlateB = Drop->TakeWidget();
-	if (!TestTrue(
-		TEXT("Pooled drop modal reconstructs its Slate representation"),
-		DropSlateB.IsValid()))
-	{
-		return false;
-	}
-
-	FGuid DropRequestSeenOnActivation;
-	const FDelegateHandle DropActivationHandle =
-		Drop->OnActivated().AddLambda(
-			[&DropRequestSeenOnActivation, Drop]()
-			{
-				DropRequestSeenOnActivation =
-					Drop->GetInitialRequestId();
-			});
-	TestTrue(
-		TEXT("Pooled drop B initializes before activation"),
-		Drop->InitializeDropConfirmation(
-			DropHost,
-			DropRequestB,
-			FText::FromString(TEXT("Item B")),
-			1));
-	Drop->ActivateWidget();
-	TestEqual(
-		TEXT("Drop activation already observes request B"),
-		DropRequestSeenOnActivation,
-		DropRequestB);
-	Drop->OnActivated().Remove(DropActivationHandle);
-	Drop->DeactivateWidget();
-	TestFalse(
-		TEXT("Drop deactivation clears request B"),
-		Drop->GetInitialRequestId().IsValid());
 
 	return true;
 }

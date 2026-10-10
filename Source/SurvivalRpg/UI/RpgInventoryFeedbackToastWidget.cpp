@@ -77,8 +77,6 @@ FText URpgInventoryFeedbackToastWidget::BuildFeedbackText(const FRpgInventoryAct
 		return LOCTEXT("CannotUse", "Item cannot be used now");
 	case ERpgInventoryActionFeedbackResult::CannotDrop:
 		return LOCTEXT("CannotDrop", "This item cannot be dropped");
-	case ERpgInventoryActionFeedbackResult::RequiresConfirmation:
-		return LOCTEXT("RequiresConfirmation", "This drop requires confirmation");
 	case ERpgInventoryActionFeedbackResult::WrongInventory:
 		return LOCTEXT("WrongInventory", "Action is not available from this inventory");
 	case ERpgInventoryActionFeedbackResult::NotEquippable:

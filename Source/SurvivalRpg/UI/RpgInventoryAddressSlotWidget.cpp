@@ -693,8 +693,7 @@ bool URpgInventoryAddressSlotWidget::ExecuteAddressContextAction(
 }
 
 bool URpgInventoryAddressSlotWidget::RequestAddressItemDrop(
-	int32 StackCount,
-	bool bConfirmed)
+	int32 StackCount)
 {
 	if (!DragDropCoordinator || !SlotViewModel ||
 		!DragDropCoordinator->CanExecuteContextAction(
@@ -704,7 +703,7 @@ bool URpgInventoryAddressSlotWidget::RequestAddressItemDrop(
 		return false;
 	}
 
-	if (!bConfirmed && InventoryPresentationHost)
+	if (InventoryPresentationHost)
 	{
 		return InventoryPresentationHost->RequestInventoryDrop(
 			this,
@@ -713,8 +712,7 @@ bool URpgInventoryAddressSlotWidget::RequestAddressItemDrop(
 
 	return DragDropCoordinator->DropAddressSlot(
 		SlotViewModel,
-		StackCount,
-		bConfirmed);
+		StackCount);
 }
 
 int32 URpgInventoryAddressSlotWidget::GetQuickAccessSlotIndex() const

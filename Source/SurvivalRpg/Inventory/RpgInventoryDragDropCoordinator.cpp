@@ -1983,7 +1983,7 @@ bool URpgInventoryDragDropCoordinator::RotateAddressSlotInPlace(
 		SlotViewModel->GetItemPlacement());
 }
 
-bool URpgInventoryDragDropCoordinator::DropEntry(URpgInventoryEntryViewModel* EntryViewModel, int32 StackCount, bool bConfirmed)
+bool URpgInventoryDragDropCoordinator::DropEntry(URpgInventoryEntryViewModel* EntryViewModel, int32 StackCount)
 {
 	if (!CanExecuteContextAction(EntryViewModel, ERpgInventoryContextAction::Drop))
 	{
@@ -1997,11 +1997,10 @@ bool URpgInventoryDragDropCoordinator::DropEntry(URpgInventoryEntryViewModel* En
 		return false;
 	}
 
-	Request.bConfirmed = bConfirmed;
 	return DispatchManualDropRequest(Inventory, Request);
 }
 
-bool URpgInventoryDragDropCoordinator::DropAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel, int32 StackCount, bool bConfirmed)
+bool URpgInventoryDragDropCoordinator::DropAddressSlot(URpgInventoryAddressSlotViewModel* SlotViewModel, int32 StackCount)
 {
 	if (!CanExecuteContextAction(SlotViewModel, ERpgInventoryContextAction::Drop))
 	{
@@ -2015,7 +2014,6 @@ bool URpgInventoryDragDropCoordinator::DropAddressSlot(URpgInventoryAddressSlotV
 		return false;
 	}
 
-	Request.bConfirmed = bConfirmed;
 	return DispatchManualDropRequest(Inventory, Request);
 }
 
@@ -2126,8 +2124,7 @@ bool URpgInventoryDragDropCoordinator::UnequipEquipmentItem(
 
 bool URpgInventoryDragDropCoordinator::DropEquipmentItem(
 	ERpgEquipmentSlot EquipmentSlot,
-	FRpgInventoryItemId ExpectedItemId,
-	bool bConfirmed)
+	FRpgInventoryItemId ExpectedItemId)
 {
 	if (!CanExecuteContextAction(
 			EquipmentSlot,
@@ -2144,7 +2141,6 @@ bool URpgInventoryDragDropCoordinator::DropEquipmentItem(
 		return false;
 	}
 
-	Request.bConfirmed = bConfirmed;
 	return DispatchManualDropRequest(Inventory, Request);
 }
 
@@ -3745,7 +3741,6 @@ bool URpgInventoryDragDropCoordinator::BuildManualDropRequest(
 		OutRequest.ExpectedSourcePlacement = Entry.Placement;
 		OutRequest.ExpectedSourceQuantity = Entry.StackCount;
 		OutRequest.StackCount = RequestedStackCount;
-		OutRequest.bConfirmed = false;
 		return true;
 	}
 

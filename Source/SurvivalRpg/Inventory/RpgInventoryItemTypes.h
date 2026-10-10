@@ -44,17 +44,14 @@ enum class ERpgInventoryDeathDropRule : uint8
 UENUM(BlueprintType)
 enum class ERpgInventoryManualDropPolicy : uint8
 {
-	/** Use category defaults: gear asks for confirmation, quest items are blocked, normal backpack items drop directly. */
+	/** Use category defaults: quest items are blocked, everything else drops directly. */
 	Default,
 
 	/** The item can never be manually dropped from UI. */
 	Disabled,
 
 	/** The item may be dropped immediately through a shortcut or context action. */
-	Direct,
-
-	/** The item may be dropped only after the UI confirms the request with the player. */
-	Confirm
+	Direct
 };
 
 /**

@@ -404,8 +404,7 @@ bool FRpgInventoryUIAuthoredScreenDefaultsTest::RunTest(
 			{
 				TEXT("FreeDragVisualWidgetClass"),
 				TEXT("ContextMenuWidgetClass"),
-				TEXT("SplitDialogWidgetClass"),
-				TEXT("DropConfirmationDialogWidgetClass")
+				TEXT("SplitDialogWidgetClass")
 			})
 		{
 			const FClassProperty* ClassProperty =

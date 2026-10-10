@@ -240,18 +240,6 @@ void FRpgInventoryManualDropActionHandler::DropInventoryItemById(
 		return;
 	}
 
-	if (DropPolicy == ERpgInventoryManualDropPolicy::Confirm &&
-		!Request.bConfirmed)
-	{
-		SendAndCacheManualDropFeedback(
-			Inventory,
-			Request,
-			ERpgInventoryActionFeedbackResult::RequiresConfirmation,
-			Item,
-			Request.StackCount);
-		return;
-	}
-
 	const bool bDropAsStackTemplate =
 		IsManualDropStackableItem(Item);
 	if (!bDropAsStackTemplate && Request.StackCount != AvailableCount)
@@ -289,7 +277,6 @@ void FRpgInventoryManualDropActionHandler::DropInventoryItemById(
 	}
 
 	bool bSubtreeContainsDisabledItem = false;
-	bool bSubtreeRequiresConfirmation = false;
 	for (const FRpgInventoryMutationDelta& Delta : DropPlan.Deltas)
 	{
 		URpgInventoryItemInstance* PlannedItem =
@@ -305,17 +292,10 @@ void FRpgInventoryManualDropActionHandler::DropInventoryItemById(
 			return;
 		}
 
-		switch (FRpgInventoryItemCapabilities::
-			ResolveManualDropPolicy(PlannedItem))
+		if (FRpgInventoryItemCapabilities::ResolveManualDropPolicy(PlannedItem) ==
+			ERpgInventoryManualDropPolicy::Disabled)
 		{
-		case ERpgInventoryManualDropPolicy::Disabled:
 			bSubtreeContainsDisabledItem = true;
-			break;
-		case ERpgInventoryManualDropPolicy::Confirm:
-			bSubtreeRequiresConfirmation = true;
-			break;
-		default:
-			break;
 		}
 	}
 	if (bSubtreeContainsDisabledItem)
@@ -324,16 +304,6 @@ void FRpgInventoryManualDropActionHandler::DropInventoryItemById(
 			Inventory,
 			Request,
 			ERpgInventoryActionFeedbackResult::CannotDrop,
-			Item,
-			Request.StackCount);
-		return;
-	}
-	if (bSubtreeRequiresConfirmation && !Request.bConfirmed)
-	{
-		SendAndCacheManualDropFeedback(
-			Inventory,
-			Request,
-			ERpgInventoryActionFeedbackResult::RequiresConfirmation,
 			Item,
 			Request.StackCount);
 		return;
