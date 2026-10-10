@@ -292,8 +292,9 @@ bool FRpgPlayerControllerInventoryInputAssetTest::RunTest(const FString& Paramet
 			MenuKeys.Add(Mapping.Key);
 		}
 	}
-	TestEqual(TEXT("IA_UI_Inventory has exactly two default mappings"), InventoryKeys.Num(), 2);
+	TestEqual(TEXT("IA_UI_Inventory has exactly three default mappings"), InventoryKeys.Num(), 3);
 	TestEqual(TEXT("IA_UI_Inventory maps I exactly once"), CountKey(InventoryKeys, EKeys::I), 1);
+	TestEqual(TEXT("IA_UI_Inventory maps Tab exactly once"), CountKey(InventoryKeys, EKeys::Tab), 1);
 	TestEqual(
 		TEXT("IA_UI_Inventory maps Gamepad Special Right exactly once"),
 		CountKey(InventoryKeys, EKeys::Gamepad_Special_Right),
