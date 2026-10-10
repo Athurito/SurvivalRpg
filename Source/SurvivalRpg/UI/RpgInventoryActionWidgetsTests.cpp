@@ -211,8 +211,9 @@ namespace RpgInventoryActionWidgetsTests
 			: nullptr;
 	}
 
+	/** The authored widget exists and satisfies its BindWidget type; styled subclasses such as CommonTextBlock count. */
 	template <typename WidgetType>
-	bool HasExactWidget(
+	bool HasBoundWidget(
 		FAutomationTestBase& Test,
 		const UWidgetTree* Tree,
 		FName WidgetName,
@@ -224,10 +225,10 @@ namespace RpgInventoryActionWidgetsTests
 		return Test.TestNotNull(ContractLabel, Widget) &&
 			Test.TestTrue(
 				*FString::Printf(
-					TEXT("%s has exact type %s"),
+					TEXT("%s is a %s"),
 					ContractLabel,
 					*WidgetType::StaticClass()->GetName()),
-				Widget && Widget->GetClass() == WidgetType::StaticClass());
+				Widget && Widget->IsA<WidgetType>());
 	}
 }
 
@@ -346,77 +347,77 @@ bool FRpgInventoryAuthoredPresentationContractTest::RunTest(
 	const UWidgetTree* FeedbackTree =
 		CastChecked<UWidgetBlueprintGeneratedClass>(FeedbackToastClass)
 			->GetWidgetTreeArchetype();
-	HasExactWidget<UTextBlock>(
+	HasBoundWidget<UTextBlock>(
 		*this,
 		ActionTree,
 		TEXT("Text_ActionLabel"),
 		TEXT("Context action label"));
-	HasExactWidget<UTextBlock>(
+	HasBoundWidget<UTextBlock>(
 		*this,
 		QuickAccessTree,
 		TEXT("Text_SlotLabel"),
 		TEXT("Quick Access label"));
-	HasExactWidget<UButton>(
+	HasBoundWidget<UButton>(
 		*this,
 		ContextTree,
 		TEXT("Button_Dismiss"),
 		TEXT("Context dismiss target"));
-	HasExactWidget<UCanvasPanel>(
+	HasBoundWidget<UCanvasPanel>(
 		*this,
 		ContextTree,
 		TEXT("ContextMenuCanvas"),
 		TEXT("Context position canvas"));
-	HasExactWidget<UBorder>(
+	HasBoundWidget<UBorder>(
 		*this,
 		ContextTree,
 		TEXT("ContextMenuBorder"),
 		TEXT("Context visual border"));
-	HasExactWidget<UVerticalBox>(
+	HasBoundWidget<UVerticalBox>(
 		*this,
 		ContextTree,
 		TEXT("ActionsBox"),
 		TEXT("Context action host"));
-	HasExactWidget<UVerticalBox>(
+	HasBoundWidget<UVerticalBox>(
 		*this,
 		ContextTree,
 		TEXT("QuickAccessSlotsBox"),
 		TEXT("Quick Access picker host"));
-	HasExactWidget<UButton>(
+	HasBoundWidget<UButton>(
 		*this,
 		ContextTree,
 		TEXT("Button_QuickAccessBack"),
 		TEXT("Quick Access back button"));
-	HasExactWidget<UButton>(
+	HasBoundWidget<UButton>(
 		*this,
 		SplitTree,
 		TEXT("Button_Backdrop"),
 		TEXT("Split backdrop"));
-	HasExactWidget<USlider>(
+	HasBoundWidget<USlider>(
 		*this,
 		SplitTree,
 		TEXT("Slider_Amount"),
 		TEXT("Split amount slider"));
-	HasExactWidget<USpinBox>(
+	HasBoundWidget<USpinBox>(
 		*this,
 		SplitTree,
 		TEXT("SpinBox_Amount"),
 		TEXT("Split amount input"));
-	HasExactWidget<UButton>(
+	HasBoundWidget<UButton>(
 		*this,
 		SplitTree,
 		TEXT("Button_Confirm"),
 		TEXT("Split confirm button"));
-	HasExactWidget<UButton>(
+	HasBoundWidget<UButton>(
 		*this,
 		SplitTree,
 		TEXT("Button_Cancel"),
 		TEXT("Split cancel button"));
-	HasExactWidget<UBorder>(
+	HasBoundWidget<UBorder>(
 		*this,
 		FeedbackTree,
 		TEXT("FeedbackBorder"),
 		TEXT("Feedback border"));
-	HasExactWidget<UTextBlock>(
+	HasBoundWidget<UTextBlock>(
 		*this,
 		FeedbackTree,
 		TEXT("FeedbackText"),
