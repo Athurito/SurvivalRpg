@@ -51,7 +51,7 @@ It records the accepted decisions and the task sequence. The style itself
 | UI-02c | Coloured item icons: the user's colour version of the gameplay package replaces the 39 item textures in place; every other icon stays bone white | Done: [#203](https://github.com/Athurito/SurvivalRpg/pull/203) |
 | UI-03 | Character stats column (level, XP, load, health, stamina, armour), rarity frames on gear slots, MVVM toolset | Done: [#202](https://github.com/Athurito/SurvivalRpg/pull/202) |
 | UI-04 | Crafting screen after the kiln and smithy concepts: category tree, tier sections, preview with stat ranges, one order per station from connected chests into a target chest, per-piece item rolls | Done: [#204](https://github.com/Athurito/SurvivalRpg/pull/204) |
-| UI-05 | HUD after the user's concept: vitals and XP, quickbar and Q/E/R, menu key hints, enemy health bar, context fading, mana attribute set | Done: [#206](https://github.com/Athurito/SurvivalRpg/pull/206) |
+| UI-05 | HUD after the user's concept: vitals and XP, quickbar and Q/E/R, menu key hints, enemy health bar, context fading, mana attribute set | Done: [#206](https://github.com/Athurito/SurvivalRpg/pull/206), vitals cleanup [#208](https://github.com/Athurito/SurvivalRpg/pull/208) |
 | UI-06 | Tooltip, context menu, split and drop dialogs, toasts, drag visual, item-only highlight in grids | Planned |
 | UI-07 | Menus (game menu tabs, main menu, settings, respawn), then remove KnightsQuest | Planned |
 | UI-08 | Inventory layout after Diablo 3: character values left of the equipment, containers below, fewer pocket cells | Planned |
@@ -606,6 +606,10 @@ colours and styles; texts stay English.
 - **Content (Unreal MCP):** every widget and its bindings, the bar frame
   texture, the Tab key glyph, and Tab ordered before I for the inventory
   action, so the hint names Tab.
+- **Removed:** the local-player vitals path that `CUI_PlayerVitalls` no
+  longer uses: `UPlayerVitalsViewmodel`, `UPlayerVitalsResolver` and the
+  vitals view model of `URpgUiSubsystem`. `UEnemyVitalsViewmodel` now
+  mirrors health itself instead of deriving from the player model.
 
 ### Widgets
 
@@ -626,7 +630,9 @@ colours and styles; texts stay English.
     `CooldownText` (`SetCooldownActive`).
   - The inventory's quick access row uses the same entry.
 - `W_EnemyHealthBarIndicator` (GF_Combat_Core): the vitals bar style at 150 ×
-  18 with the trail; `EnemyFade` is pulsed by every health change.
+  18 with the trail; `EnemyFade` is pulsed by every health change. Its
+  manual source `EnemyVitals` takes the `UEnemyVitalsViewmodel` that
+  `URpgEnemyVitalsIndicatorWidget` binds to the hit actor.
 
 ### Tests
 
@@ -637,6 +643,10 @@ colours and styles; texts stay English.
 - `SurvivalRpg.Inventory.QuickAccess.WeaponSlot1DragCommitsAuthorityBinding`
   checks that the quick access slot of the main-hand weapon reads as in hand.
 - The action bar entry pooling test no longer freezes the number of bindings.
+- `SurvivalRpg.UI.EnemyVitals.HealthFollowsPawnExtension` follows an enemy's
+  health through ability system teardown and re-initialization, and
+  `SurvivalRpg.UI.EnemyVitals.IndicatorWidgetTakesViewModel` checks that the
+  indicator has exactly one settable source for that view model and binds it.
 
 ### Not done
 

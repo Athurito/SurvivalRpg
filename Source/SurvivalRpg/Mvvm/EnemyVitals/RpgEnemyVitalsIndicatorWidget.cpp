@@ -28,7 +28,7 @@ void URpgEnemyVitalsIndicatorWidget::BindIndicator_Implementation(UIndicatorDesc
 	{
 		if (!View->SetViewModelByClass(ViewmodelInterface))
 		{
-			UE_LOG(LogRpg, Warning, TEXT("Enemy indicator widget [%s] has no unique PlayerVitals-compatible MVVM source."), *GetNameSafe(this));
+			UE_LOG(LogRpg, Warning, TEXT("Enemy indicator widget [%s] has no unique EnemyVitals-compatible MVVM source."), *GetNameSafe(this));
 		}
 	}
 	else
