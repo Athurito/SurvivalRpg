@@ -86,14 +86,9 @@ It records the accepted decisions and the task sequence. The style itself
 
 ## Open findings outside UI
 
-- **Character XP curve:** `DA_PlayerProgression` has no `XPToNextLevel`
-  curve.
-  - `URpgPlayerProgressionComponent::TryLevelUp` stops when the next level
-    costs nothing, so the character level never rises.
-  - The stats column (UI-03) therefore shows only the experience (`10 XP`)
-    with an empty bar.
-  - This is progression content and is fixed in a separate task. Once the
-    curve is assigned, the column shows `XP / next` without UI changes.
+None. The character XP curve, the last finding here, is now assigned; see
+[character-progression.md](character-progression.md). The stats column shows
+`XP / next` without UI changes.
 
 ## Style foundation (UI-01)
 
@@ -354,9 +349,10 @@ slots and animations.
 - **Not done:**
   - Mana: UI-05 added `URpgManaSet` and the mana fields; no pawn grants the
     set yet.
-  - `DA_PlayerProgression` has no `XPToNextLevel` curve, so the experience bar
-    stays empty and the text shows only the experience (for example
-    `10 XP`). The curve is progression content, not UI.
+  - `DA_PlayerProgression` had no `XPToNextLevel` curve, so the experience
+    bar stayed empty and the text showed only the experience (for example
+    `10 XP`). The curve is progression content and was added later
+    ([character-progression.md](character-progression.md)).
   - Items in the grids show no rarity yet, and the tooltip keeps its own
     rarity colours (UI-06).
 
@@ -652,7 +648,8 @@ colours and styles; texts stay English.
 
 - **Menu keys:** the map, journal, character and pause menus have no working
   key, so the hints show only Inventory and Skills (UI-07).
-- **XP curve:** `DA_PlayerProgression` still has no curve, so the experience
-  bar stays empty (see open findings).
+- **XP curve:** `DA_PlayerProgression` still had no curve, so the experience
+  bar stayed empty. It was added later
+  ([character-progression.md](character-progression.md)).
 - **Damage dealt** does not start combat by itself; using the weapon does.
 - **Boss bars** and enemy names are not part of this task.
