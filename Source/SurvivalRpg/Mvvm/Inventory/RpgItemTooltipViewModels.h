@@ -71,6 +71,14 @@ protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Tooltip", meta = (AllowPrivateAccess = "true"))
 	bool bHasComparison = false;
 
+	/** True when the stat is higher than on the equipped item. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Tooltip", meta = (AllowPrivateAccess = "true"))
+	bool bIsBetter = false;
+
+	/** True when the stat is lower than on the equipped item. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Tooltip", meta = (AllowPrivateAccess = "true"))
+	bool bIsWorse = false;
+
 private:
 	float Value = 0.0f;
 	FGameplayTag StatTag;

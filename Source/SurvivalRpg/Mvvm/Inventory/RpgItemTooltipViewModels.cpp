@@ -88,6 +88,8 @@ void URpgItemStatRowViewModel::SetComparison(TOptional<float> BaselineValue)
 	RPG_TOOLTIP_SET(Changes, Comparison, NewComparison);
 	RPG_TOOLTIP_SET(Changes, DeltaText, NewDeltaText);
 	RPG_TOOLTIP_SET(Changes, bHasComparison, NewComparison != ERpgItemStatComparison::None);
+	RPG_TOOLTIP_SET(Changes, bIsBetter, NewComparison == ERpgItemStatComparison::Better);
+	RPG_TOOLTIP_SET(Changes, bIsWorse, NewComparison == ERpgItemStatComparison::Worse);
 	RpgItemTooltipViewModels::BroadcastChanges(*this, Changes);
 }
 

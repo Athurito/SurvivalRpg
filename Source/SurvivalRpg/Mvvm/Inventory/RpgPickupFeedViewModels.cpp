@@ -48,6 +48,7 @@ void URpgPickupFeedEntryViewModel::InitializeEntry(
 	UE_MVVM_SET_PROPERTY_VALUE(Icon, UIData ? UIData->Icon : TSoftObjectPtr<UTexture2D>());
 	UE_MVVM_SET_PROPERTY_VALUE(Count, FMath::Max(1, InCount));
 	UE_MVVM_SET_PROPERTY_VALUE(bExpiring, false);
+	UE_MVVM_SET_PROPERTY_VALUE(bActive, true);
 	RefreshLabel();
 }
 
@@ -56,12 +57,14 @@ void URpgPickupFeedEntryViewModel::AddCount(int32 Extra, double Now)
 	LastGainTime = Now;
 	UE_MVVM_SET_PROPERTY_VALUE(Count, Count + FMath::Max(0, Extra));
 	UE_MVVM_SET_PROPERTY_VALUE(bExpiring, false);
+	UE_MVVM_SET_PROPERTY_VALUE(bActive, true);
 	RefreshLabel();
 }
 
 void URpgPickupFeedEntryViewModel::SetExpiring(bool bInExpiring)
 {
 	UE_MVVM_SET_PROPERTY_VALUE(bExpiring, bInExpiring);
+	UE_MVVM_SET_PROPERTY_VALUE(bActive, !bInExpiring);
 }
 
 void URpgPickupFeedEntryViewModel::RefreshLabel()

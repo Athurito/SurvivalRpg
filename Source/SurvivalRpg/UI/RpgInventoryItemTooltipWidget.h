@@ -11,6 +11,7 @@ class URpgInventoryEntryViewModel;
 class URpgInventoryItemInstance;
 class URpgInventoryItemizationFragmentViewModel;
 class URpgItemTooltipViewModel;
+class URpgMvvmListEntryWidget;
 
 /** Broadcast when a tooltip's read-only inventory presentation changes. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
@@ -111,6 +112,14 @@ protected:
 	/** Manual MVVM source in the Widget Blueprint that receives the equipped counterpart's read model. Designer data. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Tooltip")
 	FName ComparisonViewModelSourceName = TEXT("Comparison");
+
+	/** Optional authored panel that shows the hovered item; it receives the hovered read model as its entry item. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Inventory|Tooltip")
+	TObjectPtr<URpgMvvmListEntryWidget> ItemPanel = nullptr;
+
+	/** Optional authored panel for the equipped counterpart; it is collapsed while the comparison is hidden. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Inventory|Tooltip")
+	TObjectPtr<URpgMvvmListEntryWidget> ComparisonPanel = nullptr;
 
 	/**
 	 * Presentation hook for authored Widget Blueprint tooltips.

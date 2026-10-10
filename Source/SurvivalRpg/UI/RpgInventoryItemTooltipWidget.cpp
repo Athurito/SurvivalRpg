@@ -11,6 +11,7 @@
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryEntryViewModel.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgInventoryItemizationFragmentViewModel.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgItemTooltipViewModels.h"
+#include "SurvivalRpg/UI/RpgMvvmListEntryWidgets.h"
 #include "SurvivalRpg/UI/RpgMvvmWidgetUtils.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
@@ -140,6 +141,10 @@ void URpgInventoryItemTooltipWidget::SetComparisonShown(bool bShown)
 	}
 	TooltipViewModel->SetComparisonShown(bComparisonShown);
 	TooltipViewModel->ApplyComparisonBaseline(bComparisonShown ? ComparisonViewModel.Get() : nullptr);
+	if (ComparisonPanel)
+	{
+		ComparisonPanel->SetVisibility(bComparisonShown ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
 }
 
 void URpgInventoryItemTooltipWidget::NativeOnInitialized()
@@ -159,6 +164,15 @@ void URpgInventoryItemTooltipWidget::NativeOnInitialized()
 		ComparisonViewModelSourceName,
 		ComparisonViewModel,
 		URpgItemTooltipViewModel::StaticClass());
+	if (ItemPanel)
+	{
+		ItemPanel->SetEntryItem(TooltipViewModel);
+	}
+	if (ComparisonPanel)
+	{
+		ComparisonPanel->SetEntryItem(ComparisonViewModel);
+		ComparisonPanel->SetVisibility(ESlateVisibility::Collapsed);
+	}
 	RefreshPresentation();
 }
 
@@ -435,6 +449,10 @@ void URpgInventoryItemTooltipWidget::RefreshComparison()
 	{
 		bComparisonShown = false;
 		TooltipViewModel->SetComparisonShown(false);
+		if (ComparisonPanel)
+		{
+			ComparisonPanel->SetVisibility(ESlateVisibility::Collapsed);
+		}
 	}
 }
 

@@ -54,9 +54,13 @@ protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "HUD|Pickups", meta = (AllowPrivateAccess = "true"))
 	FText LabelText;
 
-	/** True while the notification fades out; widgets unpin their fade box. */
+	/** True while the notification fades out. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "HUD|Pickups", meta = (AllowPrivateAccess = "true"))
 	bool bExpiring = false;
+
+	/** True while the notification is shown and not fading out; widgets pin their fade box to it. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "HUD|Pickups", meta = (AllowPrivateAccess = "true"))
+	bool bActive = false;
 
 private:
 	void RefreshLabel();
