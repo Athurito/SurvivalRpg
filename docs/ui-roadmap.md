@@ -817,6 +817,13 @@ Controls, one row per setting.
 - **Graphic tab:** the preview area on the right stays for the planned
   pictures of each graphics setting; it no longer shows the "Text Block"
   placeholder before a setting is hovered.
+- **Gamepad focus (fix):** opening the menu or switching tabs focuses the
+  page's first setting again. Each page sits in a lazy-loading wrapper
+  (`CUI_LazySettingsPage`) that did not support activation focus, so
+  CommonUI left the pages out of focus routing and focused the menu's tab
+  button instead, which takes no focus. The wrapper now passes activation
+  focus to its page, and the menu's own focus target is the active page's
+  target. The Input and Controls tabs have nothing to focus.
 
 ### C++ boundary
 
@@ -847,6 +854,8 @@ Controls, one row per setting.
   player-facing name and a face button glyph; unknown names are rejected.
 - `SurvivalRpg.UI.Input.PlayerInventoryNativeTag` expects the Tab key that
   UI-05 added to the inventory action, so the suite passes again.
+- `SurvivalRpg.UI.Frontend.LocalizedTextBindings` checks that every lazy
+  settings page passes activation focus to its page.
 
 ### Not done
 
