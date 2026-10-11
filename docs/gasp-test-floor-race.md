@@ -118,6 +118,11 @@ the ignored `Saved/ToolRuns/20261011-*` folders of that worktree.
   ("Both legs actually animate during directional movement") and then passed
   2 of 2 in isolation. Neither test file nor its floor changed.
 
+After merging `master` `de30a390` (GASP-ENG-01 and the UI-07 main menu) into
+the branch: overrides still verified against the merged manifest, all LFS
+files present, `ue.py build` passed in 235 s without warnings, and the CMC
+late-join test passed 2 of 2 in isolation.
+
 Failed attempts:
 
 - The first isolated CMC run failed in 28 s because 220 of this worktree's
