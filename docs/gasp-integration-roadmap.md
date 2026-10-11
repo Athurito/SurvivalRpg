@@ -13,10 +13,11 @@ frühere Fassung mit Schnellstart-Verlauf und Aufgabenverträgen liegt in der
 
 ## Nächster bereiter Schritt
 
-Kein Schritt ist **Bereit**. `GASP-08` (Manny-Skelett-Pilot) ist als
-[#228](https://github.com/Athurito/SurvivalRpg/pull/228) offen. Die automatische
-Auswertung spricht für **Pass**; Sichtabnahme und Exit-Entscheidung des Nutzers
-stehen aus ([Pilotbericht](gasp-manny-skeleton-pilot.md)).
+Kein Schritt ist **Bereit**. `GASP-08` (Manny-Skelett-Pilot) hat die
+Exit-Entscheidung **Pass** des Nutzers (11.10.2026); der Merge von
+[#228](https://github.com/Athurito/SurvivalRpg/pull/228) folgt
+([Pilotbericht](gasp-manny-skeleton-pilot.md)). Danach wählt der Nutzer das
+nächste Paket aus den [geplanten Paketen](#geplante-pakete).
 `GASP-01`, `GASP-03` bis `GASP-07` und das Engine-Update `GASP-ENG-01` sind
 gemergt; offen bleiben `GASP-VAL-01`, `GASP-VAL-02` und die
 [offenen Befunde](gasp-integration-handoff.md#offene-befunde).
@@ -59,7 +60,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-06` | Erweiterbare Block-Locomotion | **Gemergt** | [#160](https://github.com/Athurito/SurvivalRpg/pull/160) | [Block-Locomotion](gasp-block-locomotion.md) |
 | `GASP-07` | CMC-Sprint mit GAS-Ausdauer | **Gemergt** | [#161](https://github.com/Athurito/SurvivalRpg/pull/161) | [CMC-Sprint](gasp-cmc-sprint.md) |
 | `GASP-ENG-01` | Engine-Update auf UE 5.8.3: NetworkPrediction-/Mover-Overrides und Build-Pin | **Gemergt** | [#221](https://github.com/Athurito/SurvivalRpg/pull/221) | [UE 5.8.3](gasp-engine-5-8-3.md) |
-| `GASP-08` | Pilot: GASP-Locomotion offline auf UE5-Manny-Skelett | **PR offen**: Sichtabnahme durch den Nutzer ausstehend | [#228](https://github.com/Athurito/SurvivalRpg/pull/228) | [Manny-Pilot](gasp-manny-skeleton-pilot.md) |
+| `GASP-08` | Pilot: GASP-Locomotion offline auf UE5-Manny-Skelett | **PR offen**: Exit-Entscheidung **Pass** (Nutzer, 11.10.2026), Merge folgt | [#228](https://github.com/Athurito/SurvivalRpg/pull/228) | [Manny-Pilot](gasp-manny-skeleton-pilot.md) |
 
 Statuswerte: **Geplant**, **Bereit**, **In Arbeit**, **Validierung**,
 **PR offen**, **Gemergt**, **Blockiert**, **Zurückgestellt**.

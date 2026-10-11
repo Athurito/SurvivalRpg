@@ -1,6 +1,6 @@
 # GASP-08 – UE5 Manny skeleton pilot
 
-Status: **PR open** ([#228](https://github.com/Athurito/SurvivalRpg/pull/228), draft; implemented 2026-10-11 on `claude/gasp-08-manny-skeleton-pilot`). Phases A–D are done, and the automated evidence supports **Pass**. The user's side-by-side visual check is still open, and the exit decision waits for it. Results, failed attempts, and limits are under [Results](#results); the asset manifest is [gasp-08-manny-pilot.json](assets/gasp-08-manny-pilot.json).
+Status: **PR open** ([#228](https://github.com/Athurito/SurvivalRpg/pull/228); implemented 2026-10-11 on `claude/gasp-08-manny-skeleton-pilot`). Phases A–D are done. Exit decision: **Pass**, taken by the user on 2026-10-11 together with the request to merge. The follow-ups are planned as `GASP-14` to `GASP-16` in the [movement plan](gasp-movement-plan.md). Results, failed attempts, and limits are under [Results](#results); the asset manifest is [gasp-08-manny-pilot.json](assets/gasp-08-manny-pilot.json).
 
 ## Goal
 
@@ -124,7 +124,7 @@ All numbers come from runs in this task on UE 5.8.3 in the editor of the produci
 | Foot contact | **Met in aggregate; strict per-clip reading misses by ≤4.2 cm/s in 9 clips.** At identical 60 Hz sample times, horizontal foot speed during contact has a median of per-clip medians of 10.50 (source), 10.78 (bake), and 10.37 cm/s (runtime follower). The median of per-clip p95 values is 99.69, 99.58, and 99.71 cm/s. Per clip, the bake's p95 exceeds the runtime's by more than 1 cm/s in 9 clips (maximum +4.2 cm/s, +2.3 %, `M_Neutral_Run_Reface_Start_F_L_180`) and is lower by more than 1 cm/s in 4 clips. For the ball bone, the bake is worse in 5 clips and better in 9. |
 | Pose Search | **Met; differences explained.** The pilot databases build and serve searches, and no Pose Search error occurs in the route sessions. Against a UEFN control with the same eight databases, the best match agrees in 98.9 % of route frames. Against the existing UEFN path it agrees in 90.6 %; the difference comes from the reduced database and normalization set, not from the bake (see Phase D). |
 | Performance | **Measured.** The Manny pawn costs 0.31 ms game-thread animation and 0.50 ms animation-worker time (median), against 0.47 and 0.69–0.71 ms for UEFN plus runtime follower: one skeletal mesh tick instead of two. |
-| User check | **Open.** It needs the side-by-side visual check described under [Repro](#repro). |
+| User check | **Accepted.** The user looked at the pilot on the GASP presentation map (their material complaint was fixed in `5cac636a`), accepted the pilot, and asked for the merge on 2026-10-11. |
 | Rollback | **Met.** No asset outside the pilot folders references any of the 208 pilot packages. The only changed existing asset is the Lyra `SK_Mannequin` (two added blend profiles, approved by the user). The existing save file is unchanged, and so are the source maps. |
 
 ### Phase A – inventory and skeleton contract
@@ -215,11 +215,10 @@ Both refuse partial or overwriting edits and never save. `SurvivalRpgEditor` Win
 
 ### Limits
 
-- **Pending:** the visual check is the user's, and the exit decision waits for it.
 - **Bake mesh:** `SKM_Manny_Simple` has no corrective bones. A production Manny or marketplace mesh needs its post-process AnimBP.
 - **Coverage:** the pilot covers only standing idles, turn in place, and walk and run starts, loops, and stops. Pivots, spin transitions, sprint, crouch, jumps, lands, and traversal have no pilot databases; when the chooser would select them, the pilot plays without that set.
 - **Normalization:** the pilot normalizes over eight databases, unlike production. The UEFN control isolates that effect.
-- **Costs:** they come from a fresh `MotionMatch` call, not from the node's internal search with continuing-pose bias. The Pose Search Rewind Debugger view is part of the user check.
+- **Costs:** they come from a fresh `MotionMatch` call, not from the node's internal search with continuing-pose bias. No Rewind Debugger comparison of the variants was recorded.
 - **Turn in place on the route:** the control-yaw snaps (+90°, +180°) produced no turn-in-place animation in any variant. Turn in place was observed after the backward stop (`Stand_Turn_180_R`) in all three variants, and after the right stop only on the existing path.
 - **Pelvis:** the baked pelvis sits a constant 3.09 cm further forward than the runtime follower's; feet are unaffected.
 - **Foot contact:** in a strict per-clip reading, 9 of 144 clips have a p95 up to 4.2 cm/s (2.3 %) above the runtime follower; 4 are better.
@@ -233,9 +232,16 @@ Both refuse partial or overwriting edits and never save. `SurvivalRpgEditor` Win
 
 Delete `/Game/SurvivalRpg/Characters/GASP/Pilot` and `/Game/SurvivalRpg/System/Experiences/Gasp08Pilot`, then revert `Content/SurvivalRpg/Characters/Mannequins/Meshes/SK_Mannequin.uasset`. The two tools are generic and may stay.
 
-### Proposed exit decision
+### Decision
 
-**Pass, pending the user check.** The bake keeps every authored contract, needs three recorded retargeter changes, and matches the runtime follower's foot contact in aggregate. Motion Matching on Manny selects the same animations as UEFN with the same database set, at about two thirds of the animation cost. If the user check passes, the follow-ups below apply. The next one should first bake the full CMC closure, with the missing databases and the production normalization set.
+**Pass**, decided by the user on 2026-10-11. The bake keeps every authored contract, needs three recorded retargeter changes, and matches the runtime follower's foot contact in aggregate. Motion Matching on Manny selects the same animations as UEFN with the same database set, at about two thirds of the animation cost.
+
+The follow-ups listed under [Exit decision](#exit-decision) are planned in the [movement plan](gasp-movement-plan.md):
+- `GASP-14` bakes the full CMC closure, with the missing databases, traversal, and a production normalization set. It waits for the animation-set choice in `GASP-10`, so it does not bake databases the game will not use.
+- `GASP-15` makes the Manny-skeleton character the gameplay mesh and retires the runtime follower for gameplay characters.
+- `GASP-16` runs the character and armor pilot.
+
+The [limits](#limits) carry into `GASP-14` and `GASP-15`.
 
 ## Repro
 

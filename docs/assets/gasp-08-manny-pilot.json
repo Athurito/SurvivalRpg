@@ -1,7 +1,13 @@
 {
  "schema_version": 1,
  "task": "GASP-08 UE5 Manny skeleton pilot",
- "status": "pr_open_awaiting_user_visual_check",
+ "status": "exit_decision_pass",
+ "exit_decision": {
+  "result": "pass",
+  "decided_by": "user",
+  "date": "2026-10-11",
+  "follow_ups": "GASP-14 to GASP-16 in docs/gasp-movement-plan.md"
+ },
  "repository_base": "679a6340336b6345bb785fbd7c2e9bdd6d3ee42c",
  "branch": "claude/gasp-08-manny-skeleton-pilot",
  "engine_version": "5.8.3",

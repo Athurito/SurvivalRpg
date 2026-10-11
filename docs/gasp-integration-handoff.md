@@ -11,10 +11,10 @@ diese Datei **ersetzen, nicht ergänzen**. Das frühere fortlaufende Protokoll b
 | Feld | Wert |
 | --- | --- |
 | Stand | 11.10.2026 |
-| Aktive Aufgabe, Status, zuständiger Chat | `GASP-08` Manny-Skelett-Pilot, **PR offen** (Draft). Phasen A–D umgesetzt und automatisch ausgewertet; Sichtabnahme und Exit-Entscheidung durch den Nutzer stehen aus. |
-| Branch, Worktree, Basis / PR | `claude/gasp-08-manny-skeleton-pilot` im Worktree `.claude/worktrees/musing-ishizaka-7bac20`, Basis `master` `679a6340`; [#228](https://github.com/Athurito/SurvivalRpg/pull/228). |
-| Offene Abnahmepunkte | Side-by-Side-Sichtabnahme gemäß [Repro](gasp-manny-skeleton-pilot.md#repro) und danach die Exit-Entscheidung (vorgeschlagen: **Pass**). Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
-| Akzeptierter Runtime-Stand | `master` `679a6340`; enthält alle GASP-Schritte bis GASP-07 (#161), GASP-ENG-01 (#221) und GASP-STAB-03 (#223, nur Testcode). GASP-08 ist nicht gemergt. |
+| Aktive Aufgabe, Status, zuständiger Chat | `GASP-08` Manny-Skelett-Pilot, **PR offen**. Phasen A–D umgesetzt und automatisch ausgewertet; Exit-Entscheidung **Pass** durch den Nutzer am 11.10.2026, Merge angefordert. |
+| Branch, Worktree, Basis / PR | `claude/gasp-08-manny-skeleton-pilot` im Worktree `.claude/worktrees/musing-ishizaka-7bac20`, Basis `master` `679a6340`, `master` `4999a026` (Bewegungsplan, nur Doku) eingemergt; [#228](https://github.com/Athurito/SurvivalRpg/pull/228). |
+| Offene Abnahmepunkte | Keine für `GASP-08`; nur noch der Merge von #228. Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
+| Akzeptierter Runtime-Stand | `master` `4999a026`; enthält alle GASP-Schritte bis GASP-07 (#161), GASP-ENG-01 (#221), GASP-STAB-03 (#223, nur Testcode) und den [Bewegungsplan](gasp-movement-plan.md) (#229, nur Doku). GASP-08 ist nicht gemergt. |
 | Dateibesitz / Sperren | `GASP-08`: `/Game/SurvivalRpg/Characters/GASP/Pilot/`, `/Game/SurvivalRpg/System/Experiences/Gasp08Pilot/`, die zwei ergänzten Blend-Profile im Lyra-`SK_Mannequin` sowie `docs/gasp-manny-skeleton-pilot.md` und `docs/assets/gasp-08-manny-pilot.json`. Andere Chats ändern das Lyra-`SK_Mannequin` bis zum Merge nicht. Eine separate Claude-Sitzung untersucht den zeitabhängigen Remote-Melee-Test aus den offenen Befunden. |
 | Editor / PIE / Builds | Installiert ist UE 5.8.3 (CL 58210709), `master` pinnt 5.8.3. Branches ohne GASP-ENG-01 bauen erst nach Übernahme von `master`. PIE-Netzwerktests nur in einem Prozess gleichzeitig laufen lassen. Vor eigener Editor-/MCP-Nutzung andere Checkouts und Sitzungen prüfen. |
 | Plugin-Overrides | Git-ignoriert und checkout-lokal. In jedem Worktree vor Build oder Branchwechsel gemäß [README](../Build/Patches/NetworkPrediction/README.md) prüfen; Engine-Wechsel nach dem Abschnitt „Engine updates“. |
@@ -22,12 +22,10 @@ diese Datei **ersetzen, nicht ergänzen**. Das frühere fortlaufende Protokoll b
 
 ## Nächster Handgriff
 
-Der Nutzer prüft die drei Pilotkarten gemäß [Repro](gasp-manny-skeleton-pilot.md#repro)
-und trifft die Exit-Entscheidung. Bei **Pass**: Bericht und PR um die Entscheidung
-ergänzen, mergen und als nächsten begrenzten Schritt den vollständigen CMC-Bake
-(Dense, Sparse, Traversal, Chooser) mit Produktions-Normalisierung definieren.
-Bei **Fail**: Gründe im Bericht festhalten, Pilot gemäß Rollback-Abschnitt
-zurücknehmen und UEFN plus Runtime-Retargeting beibehalten.
+#228 mergen und `GASP-08` in einem kleinen Doku-PR als **Gemergt** führen.
+Danach ist kein Paket **Bereit**: Der Nutzer wählt das nächste aus dem
+[Bewegungsplan](gasp-movement-plan.md). `GASP-09` kann sofort starten; der
+vollständige Manny-Bake `GASP-14` wartet auf die Animationsset-Wahl in `GASP-10`.
 
 ## Offene Befunde
 

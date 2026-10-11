@@ -1,6 +1,6 @@
 # GASP movement plan (CMC)
 
-Status: planning document, 2026-10-11. `GASP-08` is implemented in the open draft [#228](https://github.com/Athurito/SurvivalRpg/pull/228) and awaits the user's visual check and exit decision. Every other package here is **Planned**. Each package gets its own task report and PR when it starts. This page holds the shared findings, the design rules, the package outlines, and their order.
+Status: planning document, 2026-10-11. `GASP-08` is implemented in [#228](https://github.com/Athurito/SurvivalRpg/pull/228), and the user decided **Pass** on 2026-10-11. Every other package here is **Planned**. Each package gets its own task report and PR when it starts. This page holds the shared findings, the design rules, the package outlines, and their order.
 
 ## Design rules
 
@@ -52,15 +52,15 @@ The AnimBP itself matches the original except for the block layer and the disabl
 
 ### GASP-08: Manny skeleton pilot
 
-**PR open** as [#228](https://github.com/Athurito/SurvivalRpg/pull/228); see the [pilot report](gasp-manny-skeleton-pilot.md). It decides whether humanoid characters standardize on the UE5 Manny skeleton by baking GASP clips offline with the official retargeter. It touches only pilot copies.
+**Pass**, decided by the user on 2026-10-11, in [#228](https://github.com/Athurito/SurvivalRpg/pull/228); see the [pilot report](gasp-manny-skeleton-pilot.md). It decides whether humanoid characters standardize on the UE5 Manny skeleton by baking GASP clips offline with the official retargeter. It touches only pilot copies.
 
-The automated evaluation proposes a **Pass**:
+The automated evaluation supported the pass:
 - 144/144 clips are preserved and root speed is unchanged.
 - Foot contact matches the runtime follower.
 - Motion Matching agrees with the eight-database control in 98.9 % of frames.
 - Animation cost is lower than UEFN plus follower.
 
-The user's side-by-side check and the exit decision are still open. Its recorded limits carry into GASP-14 and GASP-15:
+Its recorded limits carry into GASP-14 and GASP-15:
 - the bake targets `SKM_Manny_Simple` without corrective bones;
 - the pelvis sits 3.09 cm forward;
 - the normalization is pilot-only;
