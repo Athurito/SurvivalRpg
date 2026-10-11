@@ -1,6 +1,6 @@
 # GASP-STAB-03: Floor before pawns in CQTest network tests
 
-Status: **PR open**. Branch `claude/gasp-stab-03-test-floor-race`, stacked on
+Status: **PR open**, [#223](https://github.com/Athurito/SurvivalRpg/pull/223). Branch `claude/gasp-stab-03-test-floor-race`, stacked on
 `GASP-ENG-01` (`claude/gasp-eng-01-ue-5-8-3` at `2e15e87e`,
 [PR #221](https://github.com/Athurito/SurvivalRpg/pull/221)), because only the
 UE 5.8.3 pin builds on the installed engine. Implementation commit `a36ebe44`.

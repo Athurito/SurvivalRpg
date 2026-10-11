@@ -44,7 +44,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-02` | Gezielte Stabilisierung, Register unten | **Teilweise abgeschlossen** | #145–#150 | Registerzeilen |
 | `GASP-STAB-01` | Block-Cleanup nach entferntem DefenseSet | **Gemergt** | [#145](https://github.com/Athurito/SurvivalRpg/pull/145) | [Block-Cleanup](gasp-block-cleanup.md) |
 | `GASP-STAB-02` | Falling bei belegtem Respawn | **Gemergt** | [#146](https://github.com/Athurito/SurvivalRpg/pull/146) | [Respawn-Falling](gasp-respawn-falling.md) |
-| `GASP-STAB-03` | Testboden vor den Pawns in CQTest-Netzwerktests | **PR offen** | PR_STAB | [Testboden](gasp-test-floor-race.md) |
+| `GASP-STAB-03` | Testboden vor den Pawns in CQTest-Netzwerktests | **PR offen** | [#223](https://github.com/Athurito/SurvivalRpg/pull/223) | [Testboden](gasp-test-floor-race.md) |
 | `GASP-NET-01` | Rollback während aktivem Mantle | **Gemergt** | [#147](https://github.com/Athurito/SurvivalRpg/pull/147) | [Mantle-Rollback](gasp-active-mantle-rollback.md) |
 | `GASP-NET-02` | Terminaler Mantle-Grund bei Reconciliation | **Gemergt** | [#148](https://github.com/Athurito/SurvivalRpg/pull/148) | [Reconciliation](gasp-terminal-reconciliation.md) |
 | `GASP-NET-03` | Rekonstruktion nach Paketpause | **Gemergt**; Grenze bewertet, Werkzeug validiert, Runtime-Grenze bleibt | [#149](https://github.com/Athurito/SurvivalRpg/pull/149) | [Paketpause](gasp-packet-gap-recovery.md) |
