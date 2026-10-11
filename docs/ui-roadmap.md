@@ -999,6 +999,13 @@ use the panels, frames and text styles of the earlier parts.
   - Load loads the slot and opens the level as the old start page did. The
     multiplayer list names its button Host and only loads the slot, as its
     old intermediate page did.
+- **Quit after a sub-page:** the main menu, the New Game choice and the
+  keybinding page each applied `IMC_UI_GenericActions` as their CommonUI
+  input mapping. Closing a sub-page removed the context while the main menu
+  still needed it, so Quit lost its B key and B reached the main menu's back
+  handler, which hid the menu and left a black screen. Only the root screens
+  (main menu, pause menu, game menu) apply the context now, and the main menu
+  no longer handles back itself.
 - **Credits:** Cinzel headings; "Enviroment" is now "Environment".
 - **Server list:** rows in the settings row style.
 - **Fonts:** the last KnightsQuest references (two `fantasy_gui_4` tooltip
@@ -1048,6 +1055,10 @@ use the panels, frames and text styles of the earlier parts.
   tables; the editor scripting API cannot add string table entries.
 - **Gamepad:** the A press on cards and rows was checked with synthetic Slate
   key presses; a pass with a real controller is still owed.
+- **Shared input mapping:** CommonUI still removes a screen's mapping context
+  outright on deactivation. Two root screens with the same context must not
+  be open at once; a native guard in `URpgActivatableWidget` is drafted but
+  waits for the project to build on the installed UE 5.8.3.
 - **Leftover:** `Content/Crafting/UI/CUI_CraftJobEntry`, an unreferenced
   asset outside `SurvivalRpg`, still names an old KnightsQuest path that no
   longer exists.
