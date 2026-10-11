@@ -1,6 +1,6 @@
 # GASP-08 – UE5 Manny skeleton pilot
 
-Status: **PR open** ([#228](https://github.com/Athurito/SurvivalRpg/pull/228); implemented 2026-10-11 on `claude/gasp-08-manny-skeleton-pilot`). Phases A–D are done. Exit decision: **Pass**, taken by the user on 2026-10-11 together with the request to merge. The follow-ups are planned as `GASP-14` to `GASP-16` in the [movement plan](gasp-movement-plan.md). Results, failed attempts, and limits are under [Results](#results); the asset manifest is [gasp-08-manny-pilot.json](assets/gasp-08-manny-pilot.json).
+Status: **Merged** ([#228](https://github.com/Athurito/SurvivalRpg/pull/228) as `031f338b` on 2026-10-11, final head `645da8d7`; implemented on `claude/gasp-08-manny-skeleton-pilot`). Phases A–D are done. Exit decision: **Pass**, taken by the user on 2026-10-11 together with the request to merge. The follow-ups are planned as `GASP-14` to `GASP-16` in the [movement plan](gasp-movement-plan.md). Results, failed attempts, and limits are under [Results](#results); the asset manifest is [gasp-08-manny-pilot.json](assets/gasp-08-manny-pilot.json).
 
 ## Goal
 

@@ -1,6 +1,6 @@
 # GASP movement plan (CMC)
 
-Status: planning document, 2026-10-11. `GASP-08` is implemented in [#228](https://github.com/Athurito/SurvivalRpg/pull/228), and the user decided **Pass** on 2026-10-11. Every other package here is **Planned**. Each package gets its own task report and PR when it starts. This page holds the shared findings, the design rules, the package outlines, and their order.
+Status: planning document, 2026-10-11. `GASP-08` is merged ([#228](https://github.com/Athurito/SurvivalRpg/pull/228)); the user decided **Pass** on 2026-10-11. Every other package here is **Planned**. Each package gets its own task report and PR when it starts. This page holds the shared findings, the design rules, the package outlines, and their order.
 
 ## Design rules
 
@@ -52,7 +52,7 @@ The AnimBP itself matches the original except for the block layer and the disabl
 
 ### GASP-08: Manny skeleton pilot
 
-**Pass**, decided by the user on 2026-10-11, in [#228](https://github.com/Athurito/SurvivalRpg/pull/228); see the [pilot report](gasp-manny-skeleton-pilot.md). It decides whether humanoid characters standardize on the UE5 Manny skeleton by baking GASP clips offline with the official retargeter. It touches only pilot copies.
+**Merged** with the user's **Pass** decision of 2026-10-11, in [#228](https://github.com/Athurito/SurvivalRpg/pull/228); see the [pilot report](gasp-manny-skeleton-pilot.md). It decides whether humanoid characters standardize on the UE5 Manny skeleton by baking GASP clips offline with the official retargeter. It touches only pilot copies.
 
 The automated evaluation supported the pass:
 - 144/144 clips are preserved and root speed is unchanged.
@@ -177,7 +177,7 @@ Its recorded limits carry into GASP-14 and GASP-15:
 
 ## Order and parallelism
 
-1. **GASP-08** (pilot copies only) can run in parallel with **GASP-09**.
+1. **GASP-08** is merged; **GASP-09** can start at any time.
 2. **GASP-10 → GASP-11 → GASP-12 → GASP-13** run one after another; they share the pawn, its Blueprint, and the movement component.
 3. After a GASP-08 pass: **GASP-14 → GASP-15**, then **GASP-16**, then the final dodge montages for #124.
 4. If GASP-08 fails: GASP-14 and GASP-15 are dropped. GASP-16 then targets the runtime follower path, and the dodge montages are retargeted to UEFN like the block set.

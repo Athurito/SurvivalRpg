@@ -13,12 +13,10 @@ frühere Fassung mit Schnellstart-Verlauf und Aufgabenverträgen liegt in der
 
 ## Nächster bereiter Schritt
 
-Kein Schritt ist **Bereit**. `GASP-08` (Manny-Skelett-Pilot) hat die
-Exit-Entscheidung **Pass** des Nutzers (11.10.2026); der Merge von
-[#228](https://github.com/Athurito/SurvivalRpg/pull/228) folgt
-([Pilotbericht](gasp-manny-skeleton-pilot.md)). Danach wählt der Nutzer das
-nächste Paket aus den [geplanten Paketen](#geplante-pakete).
-`GASP-01`, `GASP-03` bis `GASP-07` und das Engine-Update `GASP-ENG-01` sind
+Kein Schritt ist **Bereit**. Der Nutzer wählt das nächste Paket aus den
+[geplanten Paketen](#geplante-pakete). `GASP-09` kann sofort starten; der
+vollständige Manny-Bake `GASP-14` wartet auf die Animationsset-Wahl in `GASP-10`.
+`GASP-01`, `GASP-03` bis `GASP-08` und das Engine-Update `GASP-ENG-01` sind
 gemergt; offen bleiben `GASP-VAL-01`, `GASP-VAL-02` und die
 [offenen Befunde](gasp-integration-handoff.md#offene-befunde).
 
@@ -30,6 +28,7 @@ gemergt; offen bleiben `GASP-VAL-01`, `GASP-VAL-02` und die
 | CMC | GASP-Locomotion, Mantle, Vault und Hurdle in bestehenden Experiences; GAS-Sprint mit Ausdauer | [CMC](gasp-cmc-integration.md), [Mantle](gasp-mantle-integration.md), [Vault](gasp-vault-integration.md), [Hurdle](gasp-hurdle-integration.md), [Sprint](gasp-cmc-sprint.md) |
 | Block-Locomotion | Gemeinsamer Linked Layer mit Datenkindern pro Animationssatz auf CMC und Mover | [Block-Locomotion](gasp-block-locomotion.md) |
 | Runtime-Retargeting | Optionales Profil; UEFN bleibt Gameplay-Mesh und sichtbarer Standard; noch kein fest ausgewählter neuer Hauptcharacter | [Retargeting](gasp-runtime-retargeting.md), [Mover-Anbindung](gasp-mover-gameplay.md) |
+| Manny-Skelett-Pilot | Bestanden: 144 CMC-Dense-Clips offline mit dem offiziellen Retargeter auf das Lyra-`SK_Mannequin` gebacken, isolierte Pilot-Pawns und -Experiences; die Produktion nutzt weiter UEFN, bis `GASP-14`/`GASP-15` umstellen | [Manny-Pilot](gasp-manny-skeleton-pilot.md), [Manifest](assets/gasp-08-manny-pilot.json) |
 | Mover-Grundlage | Eigene `RpgGaspMoverExperience`, Bewegung inklusive Sprint-Eingabe, Equipment/GAS, Tod/Respawn und optionales Retargeting | [Foundation](gasp-mover-foundation.md), [Gameplay](gasp-mover-gameplay.md), [Lifecycle](gasp-mover-lifecycle.md) |
 | Mover-Traversal | Mantle, Vault und Grounded Hurdle | [Mover-Mantle](gasp-mover-mantle.md), [Mover-Vault](gasp-mover-vault.md), [Mover-Hurdle](gasp-mover-hurdle.md) |
 | Mover-Netzwerk | Fixed 50 Hz; versionierte UE-5.8.3-Interpolationserholung; entfernte Traversal-Animation folgt angezeigter Bewegung | [Fixed](gasp-mover-fixed-tick.md), [Recovery](gasp-mover-network-recovery.md), [Darstellung](gasp-mover-traversal-presentation.md) |
@@ -60,7 +59,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-06` | Erweiterbare Block-Locomotion | **Gemergt** | [#160](https://github.com/Athurito/SurvivalRpg/pull/160) | [Block-Locomotion](gasp-block-locomotion.md) |
 | `GASP-07` | CMC-Sprint mit GAS-Ausdauer | **Gemergt** | [#161](https://github.com/Athurito/SurvivalRpg/pull/161) | [CMC-Sprint](gasp-cmc-sprint.md) |
 | `GASP-ENG-01` | Engine-Update auf UE 5.8.3: NetworkPrediction-/Mover-Overrides und Build-Pin | **Gemergt** | [#221](https://github.com/Athurito/SurvivalRpg/pull/221) | [UE 5.8.3](gasp-engine-5-8-3.md) |
-| `GASP-08` | Pilot: GASP-Locomotion offline auf UE5-Manny-Skelett | **PR offen**: Exit-Entscheidung **Pass** (Nutzer, 11.10.2026), Merge folgt | [#228](https://github.com/Athurito/SurvivalRpg/pull/228) | [Manny-Pilot](gasp-manny-skeleton-pilot.md) |
+| `GASP-08` | Pilot: GASP-Locomotion offline auf UE5-Manny-Skelett | **Gemergt**; Exit-Entscheidung **Pass** (Nutzer) | [#228](https://github.com/Athurito/SurvivalRpg/pull/228) | [Manny-Pilot](gasp-manny-skeleton-pilot.md) |
 
 Statuswerte: **Geplant**, **Bereit**, **In Arbeit**, **Validierung**,
 **PR offen**, **Gemergt**, **Blockiert**, **Zurückgestellt**.
@@ -82,10 +81,9 @@ Geplante, noch nicht bereite Pakete aus dem [Bewegungsplan](gasp-movement-plan.m
 Befunde, Abhängigkeiten und Reihenfolge stehen dort. Ein Paket wechselt erst
 mit **Bereit** in die Statustabelle oben.
 
-- `GASP-09` kann parallel zu `GASP-08` laufen.
 - `GASP-10` bis `GASP-13` folgen nacheinander, weil sie denselben Pawn, Blueprint
   und dieselbe Movement-Komponente ändern.
-- `GASP-14`/`GASP-15` gibt es nur bei bestandenem `GASP-08`.
+- `GASP-14`/`GASP-15` setzen den bestandenen `GASP-08` fort.
 - Die Animationsset-Wahl aus `GASP-10` legt fest, welche Datenbanken `GASP-14` backt.
 
 | ID | Arbeitspaket | Status | Plan |
