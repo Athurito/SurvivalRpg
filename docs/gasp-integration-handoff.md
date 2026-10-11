@@ -10,23 +10,40 @@ diese Datei **ersetzen, nicht ergänzen**. Das frühere fortlaufende Protokoll b
 
 | Feld | Wert |
 | --- | --- |
-| Stand | 01.10.2026 |
-| Aktive Aufgabe, Status, zuständiger Chat | Keine. Kein GASP-Gameplay-Schritt begonnen. |
-| Branch, Worktree, Basis / PR | – |
-| Offene Abnahmepunkte bis Merge | – |
-| Akzeptierter Runtime-Stand | `master` mit [PR #161](https://github.com/Athurito/SurvivalRpg/pull/161), Merge `849dc7aa`, geprüfter Head `78074034`; enthält GASP-06 (#160) und alle früheren GASP-Schritte. Seitdem nur Dokumentations- und Agent-Tooling-Änderungen. |
-| Dateibesitz / Sperren | Keine eingetragen. |
-| Editor / PIE / Builds | Beim letzten GASP-Abschluss am 28.09.2026 lief kein UnrealEditor-Prozess. Vor eigener Editor-/MCP-Nutzung andere Checkouts und Sitzungen prüfen. |
-| Plugin-Overrides | Git-ignoriert und checkout-lokal. In jedem Worktree vor Build oder Branchwechsel gemäß [README](../Build/Patches/NetworkPrediction/README.md) prüfen. |
+| Stand | 11.10.2026 |
+| Aktive Aufgabe, Status, zuständiger Chat | `GASP-ENG-01` Engine-Update auf UE 5.8.3, **PR offen**; Claude-Chat der UI-07-Sitzung. |
+| Branch, Worktree, Basis / PR | `claude/gasp-eng-01-ue-5-8-3`, Worktree `survival-rpg-harvesting-review-66df3a`, Basis `master` `f563bd08` / PR_ENG |
+| Offene Abnahmepunkte bis Merge | Nutzerfreigabe zum Merge. Danach muss jeder Checkout seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
+| Akzeptierter Runtime-Stand | `master` `f563bd08`; enthält alle GASP-Schritte bis GASP-07 (#161). Spätere Merges betreffen andere Systeme. |
+| Dateibesitz / Sperren | `Build/Patches/NetworkPrediction/**`, `Source/SurvivalRpg.Target.cs` bis zum Merge von GASP-ENG-01. |
+| Editor / PIE / Builds | Installiert ist UE 5.8.3 (CL 58210709). Ohne GASP-ENG-01 bricht jeder Build am 5.8.2-Pin ab. Vor eigener Editor-/MCP-Nutzung andere Checkouts und Sitzungen prüfen. |
+| Plugin-Overrides | Git-ignoriert und checkout-lokal. In jedem Worktree vor Build oder Branchwechsel gemäß [README](../Build/Patches/NetworkPrediction/README.md) prüfen; Engine-Wechsel nach dem Abschnitt „Engine updates“. |
 | Lokale Belege | `Saved/...` existiert nur im erzeugenden Checkout; versioniert sind Zusammenfassungen in Berichten und Manifesten unter `docs/assets`. |
 
 ## Nächster Handgriff
 
-Kein Paket ist bereit. Mit dem Nutzer das nächste Paket festlegen, etwa
-`GASP-VAL-02` oder einen Punkt aus den offenen Befunden, und es in der Roadmap
-als **Bereit** eintragen, bevor die Umsetzung beginnt.
+`GASP-ENG-01` nach Nutzerfreigabe mergen, Roadmap-Status und diese Übergabe
+nachziehen. Danach ist kein Paket bereit: mit dem Nutzer das nächste Paket
+festlegen, etwa `GASP-VAL-02` oder einen Punkt aus den offenen Befunden.
 
 ## Offene Befunde
+
+- `GASP-ENG-01`: UE 5.8.3 ändert den Mover-Rollback für Bewegungsmodifikatoren;
+  nach einem Rollback laufen `OnStart`/`OnEnd` jetzt, beim Mover-Ducken also die
+  Kapselanpassung des `FStanceModifier`. Kein Projekttest prüft Ducken während
+  eines erzwungenen Rollbacks. [Bericht](gasp-engine-5-8-3.md)
+- CMC-Testaufbau: `GaspCMCExperiencePIE.RemoteMovementLateJoinAndEquipmentMontage`
+  scheitert zeitabhängig (7 von 18 isolierten Läufen unter 5.8.3). Die Pawns
+  spawnen auf der leeren CQTest-Karte und fallen, bevor der Testboden im ersten
+  Schritt entsteht; liegt der Remote-Pawn dann schon unter z=0, fällt er endlos.
+  Korrektur des Fixtures als eigener Auftrag. [Bericht](gasp-engine-5-8-3.md)
+- Der VAL-03-Vault-Fall verfehlte unter 5.8.3 seine Überlappungsbedingung in
+  3 von 6 isolierten Läufen (siehe Pending-Replay-Fall unten).
+- `BlockLocomotionPIE.MoverFixedRollbackPreservesHeldBlockAndReplaysBlockedHistoryAcrossRelease`
+  bestand unter 5.8.3 nur 1 von 3 isolierten Läufen. Bei Frameversatz 22
+  landet die Wiederherstellung genau auf dem verfolgten Frame, an dem der Block
+  schon gelöst ist; bei Versatz 24 einen Frame davor, und der Test besteht.
+  Testaufbau zeitabhängig; kein 5.8.2-Vergleich mehr möglich. [Bericht](gasp-engine-5-8-3.md)
 
 - `GASP-VAL-02`: Cooked/packaged und WAN bzw. gezielt emulierte
   Netzbedingungen nie geprüft (verschiedene Render-FPS, Delay/Jitter/Loss,

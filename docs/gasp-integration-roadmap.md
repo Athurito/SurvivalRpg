@@ -1,6 +1,6 @@
 # GASP-Integration: Roadmap
 
-Stand: **01.10.2026**. Zentraler Arbeitsplan für die GASP-/Lyra-Integration:
+Stand: **11.10.2026**. Zentraler Arbeitsplan für die GASP-/Lyra-Integration:
 Bewegung und ihre RPG-Anbindung, keine Gesamtplanung für Combat, Crafting oder
 Portale (dafür gilt die [Spielvision](game-vision.md)).
 
@@ -29,7 +29,7 @@ als **Bereit** eingetragen, bevor die Umsetzung beginnt.
 | Runtime-Retargeting | Optionales Profil; UEFN bleibt Gameplay-Mesh und sichtbarer Standard; noch kein fest ausgewählter neuer Hauptcharacter | [Retargeting](gasp-runtime-retargeting.md), [Mover-Anbindung](gasp-mover-gameplay.md) |
 | Mover-Grundlage | Eigene `RpgGaspMoverExperience`, Bewegung inklusive Sprint-Eingabe, Equipment/GAS, Tod/Respawn und optionales Retargeting | [Foundation](gasp-mover-foundation.md), [Gameplay](gasp-mover-gameplay.md), [Lifecycle](gasp-mover-lifecycle.md) |
 | Mover-Traversal | Mantle, Vault und Grounded Hurdle | [Mover-Mantle](gasp-mover-mantle.md), [Mover-Vault](gasp-mover-vault.md), [Mover-Hurdle](gasp-mover-hurdle.md) |
-| Mover-Netzwerk | Fixed 50 Hz; versionierte UE-5.8.2-Interpolationserholung; entfernte Traversal-Animation folgt angezeigter Bewegung | [Fixed](gasp-mover-fixed-tick.md), [Recovery](gasp-mover-network-recovery.md), [Darstellung](gasp-mover-traversal-presentation.md) |
+| Mover-Netzwerk | Fixed 50 Hz; versionierte UE-5.8.3-Interpolationserholung; entfernte Traversal-Animation folgt angezeigter Bewegung | [Fixed](gasp-mover-fixed-tick.md), [Recovery](gasp-mover-network-recovery.md), [Darstellung](gasp-mover-traversal-presentation.md) |
 | Mover-Ragdoll | Begrenzter Pilot mit eigener Experience/PawnData, stationärem lebendem Ragdoll/Getup und verankerter Capsule | [Source-Audit](gasp-mover-ragdoll-source-audit.md), [Pilot](gasp-mover-ragdoll-pilot.md) |
 
 „Drei Varianten“ meint **CMC, Mover und Mover-Ragdoll**. Bestehende Baseline-
@@ -55,6 +55,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-05` | Importbereinigung: Audit und Entfernung | **Gemergt** | [#156](https://github.com/Athurito/SurvivalRpg/pull/156), [#158](https://github.com/Athurito/SurvivalRpg/pull/158) | [Audit](gasp-import-cleanup-audit.md), [Entfernung](gasp-original-import-removal.md) |
 | `GASP-06` | Erweiterbare Block-Locomotion | **Gemergt** | [#160](https://github.com/Athurito/SurvivalRpg/pull/160) | [Block-Locomotion](gasp-block-locomotion.md) |
 | `GASP-07` | CMC-Sprint mit GAS-Ausdauer | **Gemergt** | [#161](https://github.com/Athurito/SurvivalRpg/pull/161) | [CMC-Sprint](gasp-cmc-sprint.md) |
+| `GASP-ENG-01` | Engine-Update auf UE 5.8.3: NetworkPrediction-/Mover-Overrides und Build-Pin | **PR offen** | PR_ENG | [UE 5.8.3](gasp-engine-5-8-3.md) |
 
 Statuswerte: **Geplant**, **Bereit**, **In Arbeit**, **Validierung**,
 **PR offen**, **Gemergt**, **Blockiert**, **Zurückgestellt**.
@@ -112,7 +113,8 @@ manuelle Sichtprüfungen werden dadurch nicht als automatisch erledigt behauptet
 
 ### Unreal-Umgebung und bestehende Grenzen
 
-- Verwendeter Stand: **UE 5.8.2**, Fixed 50 Hz / 20 ms. Render-FPS und
+- Verwendeter Stand: **UE 5.8.3** (seit `GASP-ENG-01`; ältere Berichte nennen
+  ihre damalige Version 5.8.2), Fixed 50 Hz / 20 ms. Render-FPS und
   Simulationsrate sind verschieden. Keine globale FPS-Kappung, langsamere
   Montage oder Rückkehr zu Independent als Ersatz für eine Ursachenanalyse.
 - Der versionierte [NetworkPrediction-Patch](../Build/Patches/NetworkPrediction/README.md)
