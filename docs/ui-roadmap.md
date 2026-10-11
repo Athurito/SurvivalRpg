@@ -55,7 +55,7 @@ It records the accepted decisions and the task sequence. The style itself
 | UI-04 | Crafting screen after the kiln and smithy concepts: category tree, tier sections, preview with stat ranges, one order per station from connected chests into a target chest, per-piece item rolls | Done: [#204](https://github.com/Athurito/SurvivalRpg/pull/204) |
 | UI-05 | HUD after the user's concept: vitals and XP, quickbar and Q/E/R, menu key hints, enemy health bar, context fading, mana attribute set | Done: [#206](https://github.com/Athurito/SurvivalRpg/pull/206), vitals cleanup [#208](https://github.com/Athurito/SurvivalRpg/pull/208) |
 | UI-06 | Item interactions after the user's concept: tooltip with Shift compare, item action menu, split dialog, pickup notifications, feedback toasts with icons, key caps, item-only highlight; no drop confirmation | Done: [#213](https://github.com/Athurito/SurvivalRpg/pull/213) |
-| UI-07 | Menus (game menu tabs, main menu, settings with the controller glyph choice Xbox / PlayStation, respawn), then remove KnightsQuest | In progress: settings menu [#216](https://github.com/Athurito/SurvivalRpg/pull/216), game menu, pause menu and respawn [#217](https://github.com/Athurito/SurvivalRpg/pull/217); the main menu and the font removal follow |
+| UI-07 | Menus (game menu tabs, main menu, settings with the controller glyph choice Xbox / PlayStation, respawn), then remove KnightsQuest | Done: settings menu [#216](https://github.com/Athurito/SurvivalRpg/pull/216), game menu, pause menu and respawn [#217](https://github.com/Athurito/SurvivalRpg/pull/217), main menu, load page and font removal (PR_PART3) |
 | UI-08 | Inventory layout after Diablo 3: character values left of the equipment, containers below, fewer pocket cells | Planned |
 
 ## Noted for later tasks
@@ -857,10 +857,6 @@ Controls, one row per setting.
   gamepad keys yet, so the overview shows them unbound.
 - **Graphics previews:** the hover pictures are still placeholder key
   textures from `UI/Menus/Shared/Platform/Keyboard___Mouse`.
-- **Old prompts:** apart from the controller pictures and those
-  placeholders, the old Xbox One, PS4 and keyboard prompt textures in
-  `UI/Menus/Shared/Platform` are now unused. They can go with the
-  KnightsQuest removal.
 - **Inventory:** the build button at the top right of the inventory still
   reads "Kiste bauen".
 
@@ -878,7 +874,8 @@ frames and text styles of the skill screen.
 - **Keys:** M Map, J Journal, N Character (as authored; C is crouch in the
   Mover experiences) and Esc for the pause menu, which replaces the old Y.
 - **Button glyphs:** a menu button shows its click glyph only while a
-  gamepad is active; with mouse and keyboard there is no "Enter" cap.
+  gamepad is active; with mouse and keyboard there is no "Enter" cap. Part 3
+  replaced the click glyph with a "Select" hint in the action bar.
 
 ### Behavior
 
@@ -944,8 +941,6 @@ frames and text styles of the skill screen.
 
 ### Not done
 
-- **Main menu** and its sub-screens keep their layout; only their buttons
-  follow the shared style. KnightsQuest is still used there (part 3).
 - **Gamepad:** Map, Journal, Character and Skills have no gamepad button;
   inside the game menu the shoulder buttons switch tabs.
 - **Respawn:** no countdown; the hint text stays the same when the button
@@ -954,3 +949,105 @@ frames and text styles of the skill screen.
   save first.
 - **Dev sandbox:** `IMC_Sandbox` also uses M, J and N (visual override,
   teleport, next pawn), so in sandbox maps those keys do both.
+
+## Main menu (UI-07)
+
+The third part of UI-07. There was no concept; the main menu and its pages
+use the panels, frames and text styles of the earlier parts.
+
+### Decisions (2026-10-11)
+
+- **Button glyphs:** after part 2 the user found the click glyph inside a
+  focused button redundant next to the action bar, and 24 units almost too
+  small inside buttons. Menu buttons no longer show the click glyph; menu
+  screens list "Select" in the action bar on a gamepad. The user suggested
+  exposing it through a project class. A button with its own key keeps that
+  glyph, now 28 units high.
+- **Title:** a placeholder "SurvivalRpg" in Cinzel until the game has a name.
+- **Backdrop:** the main menu art, darkened, stays behind every frontend page
+  instead of black.
+- **Load:** one page with the save list on the left and the selected save on
+  the right. The empty page with only "Start Game" is gone.
+
+### Behavior
+
+- **Main menu:** the title and the divider ornament sit above a framed menu
+  panel on the left of the menu art; the buttons are 320 × 52 like the pause
+  menu. On a gamepad the action bar shows A Select and Quit shows its B glyph.
+- **Select hint:** the main menu, pause menu, game menu, settings, dialogs,
+  New Game and Load choices, load lists, new game pages and the server list
+  show "A Select" next to "B Back" on a gamepad. Mouse and keyboard show no
+  Select and no Enter cap.
+- **Backdrop:** frontend pages show the main menu art under a dark vignette.
+  The same background widget keeps the blur over the world in game, so the
+  pause menu and the settings opened from it are unchanged.
+- **New Game and Load choices:** framed picture cards with a caption plate
+  (Cinzel heading, gold rule, one line); the frame brightens on hover or
+  focus. The pages are titled "New Game" and "Load Game", and the load cards
+  describe continuing a saved world.
+- **New World:** a heading and a world name row in the settings row style;
+  the field uses Roboto instead of KnightsQuest. The host page labels its
+  options "LAN Only" and "Max Players". "Reset to defaults" on both pages did
+  nothing (the host page only printed a debug value) and is gone.
+- **Load:**
+  - The list shows each save's world name ("Unnamed World" when it has none)
+    and its save time in local time. It read "11 10 2.026 0:53:12" before:
+    UTC, with digit grouping in the year.
+  - The first save is selected when the page opens; selecting a row shows the
+    world name and save time in a framed panel on the right. Rows select on
+    focus, so a gamepad previews saves while moving through the list.
+  - Load loads the slot and opens the level as the old start page did. The
+    multiplayer list names its button Host and only loads the slot, as its
+    old intermediate page did.
+- **Credits:** Cinzel headings; "Enviroment" is now "Environment".
+- **Server list:** rows in the settings row style.
+- **Fonts:** the last KnightsQuest references (two `fantasy_gui_4` tooltip
+  templates) now use Cinzel. KnightsQuest, the unused Hamletornot font and
+  the old main menu button text style are deleted.
+- **Old prompts:** 261 unused Xbox One, PS4 and keyboard prompt textures in
+  `UI/Menus/Shared/Platform` are deleted. The controller drawings, the
+  CommonInput data assets and the five graphics preview placeholders stay.
+
+### C++ boundary
+
+- **Classification:** one reusable mechanism (the select hint); everything
+  else is presentation on existing seams.
+- **Runtime truth:** none. The hint mirrors CommonUI's click action and the
+  current input type; saves stay in `SG_SaveSlotManager`.
+- **Native:** `URpgActivatableWidget` gains
+  `bIsSelectActionDisplayedInActionBar` and `SelectActionDisplayName`. Like
+  CommonUI's back action, it registers the platform click action as a
+  binding, but one that never consumes input, and shows it in the action bar
+  only while a gamepad is active. Blueprint cannot register a display-only
+  binding or switch its display with the input type.
+- **Content (Unreal MCP):** `CUI_SaveBrowser` (save list, details panel, a
+  button group for the selection), the save rows, the main menu (now a
+  `URpgFrontendScreenWidget`), the frontend backdrop in `CUI_Background`,
+  `MI_UI_Backdrop_Shade`, `CUI_TextStyle_Display`, the cards, page titles,
+  new game pages, credits and server rows, the button and screen flags, and
+  the removed load settings pages, their payload and their registry routes.
+
+### Tests
+
+- `SurvivalRpg.UI.Input.SelectActionHint`: the hint uses the platform click
+  action, never consumes the press, starts hidden and shows only on a
+  gamepad; the click action has a gamepad key.
+- `SurvivalRpg.UI.Frontend.CommonUIComposition` no longer expects the two
+  load settings routes, and the load pages no longer count as screen-opening
+  pages.
+- `SurvivalRpg.UI.Frontend.LocalizedTextBindings` no longer expects the play
+  menu's string table descriptions on the load cards.
+
+### Not done
+
+- **Multiplayer:** Host on a saved world loads the slot, and Create on the
+  host page creates a slot, but neither starts a session (unchanged
+  prototype).
+- **Level:** Load and Create Game always open `Lvl_ThirdPerson` (unchanged).
+- **Localization:** the new texts use `NSLOCTEXT`, not the frontend string
+  tables; the editor scripting API cannot add string table entries.
+- **Gamepad:** the A press on cards and rows was checked with synthetic Slate
+  key presses; a pass with a real controller is still owed.
+- **Leftover:** `Content/Crafting/UI/CUI_CraftJobEntry`, an unreferenced
+  asset outside `SurvivalRpg`, still names an old KnightsQuest path that no
+  longer exists.
