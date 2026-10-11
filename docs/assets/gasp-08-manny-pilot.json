@@ -1,7 +1,7 @@
 {
  "schema_version": 1,
  "task": "GASP-08 UE5 Manny skeleton pilot",
- "status": "exit_decision_pass",
+ "status": "merged",
  "exit_decision": {
   "result": "pass",
   "decided_by": "user",
@@ -718,6 +718,7 @@
  },
  "evidence": "Raw files under Saved/Gasp08 and Saved/Profiling/CSV of the producing checkout; not versioned.",
  "pull_request": "https://github.com/Athurito/SurvivalRpg/pull/228",
+ "merge_commit": "031f338b2647f6bbdc438e7fdbd6e0091691b198",
  "target_hashes": {
   "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/ABP_RpgGasp08_CMC_Manny.uasset": "f9c91bb404cbca66df160e0fb580956696417f7638dfec3d89ee6cd8cac529c4",
   "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Loop_B.uasset": "6d58d859051193d58794665132cd41d8127d0e724daba495be6115364e32bd3c",
