@@ -77,7 +77,22 @@ public:
 	/** Immutable authorized speed in cm/s, or zero without a current local activation. */
 	UFUNCTION(BlueprintPure, Category = "Rpg|Sprint")
 	float GetSprintMovementSpeed() const;
-	
+
+	/**
+	 * Acquires the facing commitment of this exact predicted/authority activation, replacing an older one.
+	 * SteeringRate is the yaw rate in deg/s at which the avatar may still turn toward the camera; zero or less holds at once.
+	 */
+	uint32 BeginFacingCommitment(UGameplayAbility* Ability, float SteeringRate);
+	/** Stops steering for the matching lease and holds the current facing until the lease ends. */
+	void HoldFacingCommitment(UGameplayAbility* Ability, uint32 Lease);
+	/** Retires only the matching lease; delayed cleanup cannot clear a newer activation's commitment. */
+	void EndFacingCommitment(UGameplayAbility* Ability, uint32 Lease);
+	/**
+	 * Live local lease on owner and authority; simulated proxies never hold one and receive replicated rotation.
+	 * OutSteeringRate is the remaining steering yaw rate in deg/s, or zero while the facing is held.
+	 */
+	bool GetFacingCommitment(float& OutSteeringRate) const;
+
 	
 	bool IsActivationGroupBlocked(ERpgAbilityActivationGroup Group) const;
 	void AddAbilityToActivationGroup(ERpgAbilityActivationGroup Group, URpgGameplayAbility* RpgAbility);
@@ -256,6 +271,15 @@ private:
 	uint32 BlockMovementLease = 0;
 	uint32 LastBlockMovementLease = 0;
 	float BlockMovementSpeedLimit = 0.f;
+
+	void ResetFacingCommitment();
+	TWeakObjectPtr<UGameplayAbility> FacingCommitmentAbility;
+	TWeakObjectPtr<AActor> FacingCommitmentAvatar;
+	FPredictionKey FacingCommitmentActivationKey;
+	// Local ownership tokens are never network authority; movement records the sampled policy in its own history.
+	uint32 FacingCommitmentLease = 0;
+	uint32 LastFacingCommitmentLease = 0;
+	float FacingCommitmentSteeringRate = 0.f;
 
 	bool IsSimulatedMoverTraversalMontage(const UAnimMontage* Montage) const;
 	void StopPresentedMoverTraversal(const TCHAR* Reason = TEXT("reset"), const FMontageBlendSettings* BlendSettings = nullptr);

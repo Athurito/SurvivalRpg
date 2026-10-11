@@ -77,7 +77,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rpg|Ability|Dodge")
 	FRpgResolvedDodgeProfile GetResolvedDodgeProfile() const { return ResolvedDodgeProfile; }
 
-	/** Caches this predicted/server activation's equipment profile; rejects an invalid avatar or an inactive/ending activation. */
+	/**
+	 * Caches this predicted/server activation's equipment profile and holds the avatar's facing for the roll;
+	 * rejects an invalid avatar or an inactive/ending activation.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Ability|Dodge")
 	bool ResolveDodgeProfileForActivation();
 

@@ -10,9 +10,11 @@
 #include "GameFramework/Character.h"
 #include "Net/UnrealNetwork.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
+#include "RpgCharacter.h"
 #include "RpgHealthComponent.h"
 
-/** Authorization and speeds remain local history; only the sprint request bit crosses the movement wire. */
+/** Authorization, speeds, stance and facing remain local history; only the sprint request bit crosses the movement wire. */
 class FSavedMove_RpgCharacter : public FSavedMove_Character
 {
 public:
@@ -22,9 +24,12 @@ public:
 		Super::Clear();
 		bBlocking = false;
 		SpeedLimit = 0.f;
-		BlockControlRotation = FRotator::ZeroRotator;
+		ControlRotation = FRotator::ZeroRotator;
 		bSprintAuthorized = false;
 		SprintSpeed = 0.f;
+		bEquipmentInHands = false;
+		bFacingCommitted = false;
+		FacingSteeringRate = 0.f;
 	}
 
 	virtual void SetMoveFor(ACharacter* Character, float InDeltaTime, FVector const& NewAccel,
@@ -33,8 +38,10 @@ public:
 		Super::SetMoveFor(Character, InDeltaTime, NewAccel, ClientData);
 		const URpgCharacterMovementComponent* Movement = CastChecked<URpgCharacterMovementComponent>(Character->GetCharacterMovement());
 		bBlocking = Movement->SampleBlockMovement(SpeedLimit);
-		BlockControlRotation = Character->GetControlRotation();
+		ControlRotation = Character->GetControlRotation();
 		bSprintAuthorized = Movement->SampleSprintMovement(SprintSpeed);
+		bEquipmentInHands = Movement->SampleEquipmentInHands();
+		bFacingCommitted = Movement->SampleFacingCommitment(FacingSteeringRate);
 	}
 
 	virtual void PrepMoveFor(ACharacter* Character) override
@@ -43,10 +50,13 @@ public:
 		URpgCharacterMovementComponent* Movement = CastChecked<URpgCharacterMovementComponent>(Character->GetCharacterMovement());
 		Movement->bBlockMovementForMove = bBlocking;
 		Movement->BlockMovementSpeedLimitForMove = SpeedLimit;
-		Movement->BlockControlRotationForMove = BlockControlRotation;
+		Movement->ControlRotationForMove = ControlRotation;
 		Movement->bSprintAuthorizedForMove = bSprintAuthorized;
 		Movement->SprintSpeedForMove = SprintSpeed;
 		Movement->bWantsSprint = bSprintAuthorized;
+		Movement->bEquipmentInHandsForMove = bEquipmentInHands;
+		Movement->bFacingCommittedForMove = bFacingCommitted;
+		Movement->FacingSteeringRateForMove = FacingSteeringRate;
 	}
 
 	virtual uint8 GetCompressedFlags() const override
@@ -59,15 +69,19 @@ public:
 		const FSavedMove_RpgCharacter* Other = static_cast<const FSavedMove_RpgCharacter*>(NewMove.Get());
 		return bBlocking == Other->bBlocking && SpeedLimit == Other->SpeedLimit
 			&& bSprintAuthorized == Other->bSprintAuthorized && SprintSpeed == Other->SprintSpeed
-			&& Super::CanCombineWith(NewMove, Character, MaxDelta);
+			&& bEquipmentInHands == Other->bEquipmentInHands && bFacingCommitted == Other->bFacingCommitted
+			&& FacingSteeringRate == Other->FacingSteeringRate && Super::CanCombineWith(NewMove, Character, MaxDelta);
 	}
 
 private:
 	bool bBlocking = false;
 	float SpeedLimit = 0.f;
-	FRotator BlockControlRotation = FRotator::ZeroRotator;
+	FRotator ControlRotation = FRotator::ZeroRotator;
 	bool bSprintAuthorized = false;
 	float SprintSpeed = 0.f;
+	bool bEquipmentInHands = false;
+	bool bFacingCommitted = false;
+	float FacingSteeringRate = 0.f;
 };
 
 class FNetworkPredictionData_Client_RpgCharacter : public FNetworkPredictionData_Client_Character
@@ -130,6 +144,60 @@ bool URpgCharacterMovementComponent::GetBlockMovementForMove(float& OutSpeedLimi
 	return SampleBlockMovement(OutSpeedLimit);
 }
 
+bool URpgCharacterMovementComponent::SampleEquipmentInHands() const
+{
+	const ARpgCharacter* Character = Cast<ARpgCharacter>(CharacterOwner);
+	const URpgEquipmentManagerComponent* Equipment = Character ? Character->GetEquipmentManagerComponent() : nullptr;
+	return Equipment && Equipment->HasEquipmentInHands();
+}
+
+bool URpgCharacterMovementComponent::SampleFacingCommitment(float& OutSteeringRate) const
+{
+	OutSteeringRate = 0.f;
+	const URpgAbilitySystemComponent* AbilitySystem = Cast<URpgAbilitySystemComponent>(
+		UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(GetOwner()));
+	return AbilitySystem && AbilitySystem->GetAvatarActor() == GetOwner() && AbilitySystem->GetFacingCommitment(OutSteeringRate);
+}
+
+bool URpgCharacterMovementComponent::IsCombatStanceForMove() const
+{
+	float BlockLimit = 0.f;
+	return (bInBlockMovementScope ? bEquipmentInHandsForMove : SampleEquipmentInHands()) || GetBlockMovementForMove(BlockLimit);
+}
+
+bool URpgCharacterMovementComponent::GetFacingCommitmentForMove(float& OutSteeringRate) const
+{
+	if (bInBlockMovementScope)
+	{
+		OutSteeringRate = FacingSteeringRateForMove;
+		return bFacingCommittedForMove;
+	}
+	return SampleFacingCommitment(OutSteeringRate);
+}
+
+FRotator URpgCharacterMovementComponent::GetControlRotationForMove() const
+{
+	// Stock PostUpdate_Replay overwrites SavedControlRotation from today's controller. PrepMoveFor
+	// installs our immutable original instead, including when the same move is corrected repeatedly.
+	if (!CharacterOwner) { return FRotator::ZeroRotator; }
+	return CharacterOwner->bClientUpdating ? ControlRotationForMove : CharacterOwner->GetControlRotation();
+}
+
+bool URpgCharacterMovementComponent::IsSprintDirectionAllowedForMove() const
+{
+	// The stance faces the camera, so the move's control yaw is the facing on owner, replay and server alike.
+	const FVector Direction = Acceleration.GetSafeNormal2D();
+	if (Direction.IsNearlyZero() || !FMath::IsFinite(CombatStanceSprintAngle)) { return false; }
+	const float Delta = FMath::Abs(FMath::FindDeltaAngleDegrees(GetControlRotationForMove().Yaw, Direction.Rotation().Yaw));
+	return Delta <= FMath::Clamp(CombatStanceSprintAngle, 0.f, 180.f);
+}
+
+bool URpgCharacterMovementComponent::IsInCombatStance() const
+{
+	// Simulated proxies sample the replicated equipment list and, through the block read model, the replicated blocking tag.
+	return bUseRotationModes && CharacterOwner && IsCombatStanceForMove();
+}
+
 bool URpgCharacterMovementComponent::SampleSprintMovement(float& OutSprintSpeed) const
 {
 	OutSprintSpeed = 0.f;
@@ -156,6 +224,7 @@ bool URpgCharacterMovementComponent::CanSprintForMove(float& OutSprintSpeed) con
 	if (!FMath::IsFinite(InputStrength) || InputStrength < MinimumSprintInput) { return false; }
 	float BlockLimit = 0.f;
 	if (GetBlockMovementForMove(BlockLimit)) { return false; }
+	if (bUseRotationModes && IsCombatStanceForMove() && !IsSprintDirectionAllowedForMove()) { return false; }
 	const URpgHealthComponent* Health = URpgHealthComponent::FindHealthComponent(CharacterOwner);
 	if (Health && Health->IsDeadOrDying()) { return false; }
 	if (const UAbilitySystemComponent* ASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(GetOwner()))
@@ -188,6 +257,8 @@ void URpgCharacterMovementComponent::PerformMovement(float DeltaTime)
 	{
 		bBlockMovementForMove = SampleBlockMovement(BlockMovementSpeedLimitForMove);
 		bSprintAuthorizedForMove = SampleSprintMovement(SprintSpeedForMove);
+		bEquipmentInHandsForMove = SampleEquipmentInHands();
+		bFacingCommittedForMove = SampleFacingCommitment(FacingSteeringRateForMove);
 		const bool bUsesRemoteRequest = CharacterOwner && CharacterOwner->HasAuthority()
 			&& !CharacterOwner->IsLocallyControlled() && CharacterOwner->GetRemoteRole() == ROLE_AutonomousProxy;
 		if (!bUsesRemoteRequest) { bWantsSprint = bSprintAuthorizedForMove; }
@@ -303,6 +374,27 @@ void URpgCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 	// Pawn::FaceRotation is gated separately: controller updates and saved-move replay can call it outside CMC physics.
 	// Reuse the ability's existing lease so cancellation, rejection, death and replication release both policies together.
 	if (IsMantleControllingRotation()) { return; }
+	if (bUseRotationModes && CharacterOwner && CharacterOwner->GetLocalRole() != ROLE_SimulatedProxy)
+	{
+		// Movement is the single yaw writer: an ability's facing commitment first, then the stance or free movement.
+		float SteeringRate = 0.f;
+		const bool bFacingCommitted = GetFacingCommitmentForMove(SteeringRate);
+		if (bFacingCommitted && SteeringRate <= 0.f) { return; }
+		const float YawRate = bFacingCommitted ? SteeringRate : (IsFalling() ? AirRotationRate : GroundRotationRate);
+		const bool bSavedOrientToMovement = bOrientRotationToMovement;
+		const bool bSavedControllerDesired = bUseControllerDesiredRotation;
+		bOrientRotationToMovement = true;
+		bUseControllerDesiredRotation = false;
+		{
+			// A negative engine rate turns at once; ComputeOrientToMovementRotation supplies the camera target.
+			TGuardValue<FRotator> RateScope(RotationRate, FRotator(0.f, FMath::IsFinite(YawRate) && YawRate > 0.f ? YawRate : -1.f, 0.f));
+			TGuardValue<bool> TargetScope(bFaceControlRotationInPhysics, bFacingCommitted || IsCombatStanceForMove());
+			Super::PhysicsRotation(DeltaTime);
+		}
+		bOrientRotationToMovement = bSavedOrientToMovement;
+		bUseControllerDesiredRotation = bSavedControllerDesired;
+		return;
+	}
 	if (IsBlockControllingRotation())
 	{
 		const bool bSavedOrientToMovement = bOrientRotationToMovement;
@@ -319,11 +411,9 @@ void URpgCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 FRotator URpgCharacterMovementComponent::ComputeOrientToMovementRotation(const FRotator& CurrentRotation,
 	float DeltaTime, FRotator& DeltaRotation) const
 {
-	if (IsBlockControllingRotation())
+	if (bFaceControlRotationInPhysics || IsBlockControllingRotation())
 	{
-		// Stock PostUpdate_Replay overwrites SavedControlRotation from today's controller. PrepMoveFor
-		// installs our immutable original instead, including when the same move is corrected repeatedly.
-		return CharacterOwner->bClientUpdating ? BlockControlRotationForMove : CharacterOwner->GetControlRotation();
+		return GetControlRotationForMove();
 	}
 	return Super::ComputeOrientToMovementRotation(CurrentRotation, DeltaTime, DeltaRotation);
 }

@@ -178,6 +178,13 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Equipment")
 	bool IsEquipmentSlotBlocked(ERpgEquipmentSlot Slot) const;
 
+	/**
+	 * Replicated read model: true while an applied equipment instance occupies the main or off hand, weapon or tool.
+	 * Authority, owner, simulated proxies and late joiners read the same replicated equipment list.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Equipment")
+	bool HasEquipmentInHands() const;
+
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Equipment")
 	bool IsEquipmentInstanceActiveForInputTag(const URpgEquipmentInstance* EquipmentInstance, FGameplayTag InputTag) const;
 

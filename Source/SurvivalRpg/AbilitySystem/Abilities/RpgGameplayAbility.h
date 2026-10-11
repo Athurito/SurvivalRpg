@@ -152,7 +152,23 @@ public:
 	// Clears the ability's camera mode.  Automatically called if needed when the ability ends.
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Ability")
 	void ClearCameraMode();
-	
+
+	/**
+	 * Commits the avatar's facing for this activation on characters whose movement uses rotation modes. The avatar may
+	 * still turn toward the camera at SteeringRate deg/s; zero or less holds the current facing at once. The owner and
+	 * authority each acquire their own lease; it ends with the activation. Other characters ignore it.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Ability|Facing")
+	void BeginFacingCommitment(float SteeringRate);
+
+	/** Stops steering and holds the current facing until the activation ends. Does nothing without a commitment. */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Ability|Facing")
+	void HoldFacingCommitment();
+
+	/** Releases this activation's facing commitment before the activation ends. Automatically called when it ends. */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Ability|Facing")
+	void EndFacingCommitment();
+
 	void OnAbilityFailedToActivate(const FGameplayTagContainer& FailedReason) const
 	{
 		NativeOnAbilityFailedToActivate(FailedReason);
@@ -238,4 +254,7 @@ protected:
 	
 	// Current camera mode set by the ability.
 	TSubclassOf<URpgCameraMode> ActiveCameraMode;
+
+	// Local facing-commitment lease of the current activation, zero when none is held.
+	uint32 FacingCommitmentLease = 0;
 };

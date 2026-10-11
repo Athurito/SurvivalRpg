@@ -269,6 +269,7 @@ void URpgGameplayAbility::ActivateAbility(const FGameplayAbilitySpecHandle Handl
 void URpgGameplayAbility::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)
 {
 	ClearCameraMode();
+	EndFacingCommitment();
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
 
@@ -562,5 +563,39 @@ void URpgGameplayAbility::ClearCameraMode()
 		}
 
 		ActiveCameraMode = nullptr;
+	}
+}
+
+void URpgGameplayAbility::BeginFacingCommitment(float SteeringRate)
+{
+	ENSURE_ABILITY_IS_INSTANTIATED_OR_RETURN(BeginFacingCommitment, );
+
+	if (URpgAbilitySystemComponent* AbilitySystem = GetRpgAbilitySystemComponentFromActorInfo())
+	{
+		// A replacement drops the older lease of this activation, so EndAbility releases only the current one.
+		FacingCommitmentLease = AbilitySystem->BeginFacingCommitment(this, SteeringRate);
+	}
+}
+
+void URpgGameplayAbility::HoldFacingCommitment()
+{
+	ENSURE_ABILITY_IS_INSTANTIATED_OR_RETURN(HoldFacingCommitment, );
+
+	if (URpgAbilitySystemComponent* AbilitySystem = GetRpgAbilitySystemComponentFromActorInfo())
+	{
+		AbilitySystem->HoldFacingCommitment(this, FacingCommitmentLease);
+	}
+}
+
+void URpgGameplayAbility::EndFacingCommitment()
+{
+	// EndAbility calls this for every instancing policy; only an instance can hold a lease.
+	if (FacingCommitmentLease && IsInstantiated())
+	{
+		if (URpgAbilitySystemComponent* AbilitySystem = GetRpgAbilitySystemComponentFromActorInfo())
+		{
+			AbilitySystem->EndFacingCommitment(this, FacingCommitmentLease);
+		}
+		FacingCommitmentLease = 0;
 	}
 }
