@@ -47,6 +47,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
 	static bool RegisterAnimationSlot(USkeleton* Skeleton, FName SlotName);
 
+	/**
+	 * Copies named blend profiles to another skeleton by bone name, keeping each profile's mode and per-bone
+	 * scales. Every name must exist on the source and be absent on the target, and every profiled bone must
+	 * exist on the target; otherwise nothing changes. Records undo and marks the target dirty; never saves.
+	 * Returns the number of created profiles, or -1 when refused.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
+	static int32 CopySkeletonBlendProfiles(USkeleton* SourceSkeleton, USkeleton* TargetSkeleton, const TArray<FName>& ProfileNames);
+
 	/** Sets serialized metadata on an own function entry; this declares intent, not proof of thread safety. Compile afterwards. */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
 	static bool SetLocalFunctionThreadSafety(UBlueprint* Blueprint, FName FunctionName, bool bThreadSafe);
@@ -71,4 +80,12 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
 	static bool ConfigureChooser(UChooserTable* Chooser, const FString& ConfigurationJson);
+
+	/**
+	 * Sets the editor-only disabled-row flags of a root Chooser asset or one of its embedded tables, named as in
+	 * the Chooser editor. One flag per result row; rows, columns and results are otherwise unchanged. Disabled
+	 * rows are skipped in editor evaluation and stripped when cooking. Recompiles the root; records undo, never saves.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
+	static bool SetChooserDisabledRows(UChooserTable* RootChooser, FName NestedTableName, const TArray<bool>& DisabledRows);
 };

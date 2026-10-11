@@ -4,6 +4,7 @@
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimLayerInterface.h"
 #include "Animation/AnimSequence.h"
+#include "Animation/BlendProfile.h"
 #include "Animation/BlendSpace.h"
 #include "Animation/Skeleton.h"
 #include "AnimationGraph.h"
@@ -292,6 +293,60 @@ bool URpgAnimationAssetTools::RegisterAnimationSlot(USkeleton* Skeleton, FName S
 	return Skeleton->ContainsSlotName(SlotName);
 }
 
+int32 URpgAnimationAssetTools::CopySkeletonBlendProfiles(USkeleton* SourceSkeleton, USkeleton* TargetSkeleton, const TArray<FName>& ProfileNames)
+{
+	if (!CanEdit(TargetSkeleton) || !IsValid(SourceSkeleton) || SourceSkeleton == TargetSkeleton || ProfileNames.IsEmpty())
+	{
+		Fail(TEXT("Blend profile copy needs a source skeleton, a different editable project target skeleton and at least one name"));
+		return -1;
+	}
+	// Preflight everything so a refused copy leaves the shared target skeleton untouched.
+	const FReferenceSkeleton& TargetBones = TargetSkeleton->GetReferenceSkeleton();
+	TSet<FName> SeenNames;
+	TArray<const UBlendProfile*> Sources;
+	for (const FName ProfileName : ProfileNames)
+	{
+		bool bDuplicate = false;
+		SeenNames.Add(ProfileName, &bDuplicate);
+		const UBlendProfile* Source = ProfileName.IsNone() || bDuplicate ? nullptr : SourceSkeleton->GetBlendProfile(ProfileName);
+		if (!Source)
+		{
+			Fail(FString::Printf(TEXT("Blend profile '%s' is missing on the source or listed twice"), *ProfileName.ToString()));
+			return -1;
+		}
+		if (TargetSkeleton->GetBlendProfile(ProfileName))
+		{
+			Fail(FString::Printf(TEXT("Blend profile '%s' already exists on the target; existing profiles are never replaced"), *ProfileName.ToString()));
+			return -1;
+		}
+		for (int32 EntryIndex = 0; EntryIndex < Source->GetNumBlendEntries(); ++EntryIndex)
+		{
+			const FName BoneName = Source->GetEntry(EntryIndex).BoneReference.BoneName;
+			if (TargetBones.FindBoneIndex(BoneName) == INDEX_NONE)
+			{
+				Fail(FString::Printf(TEXT("Blend profile '%s' uses bone '%s', which the target skeleton lacks"), *ProfileName.ToString(), *BoneName.ToString()));
+				return -1;
+			}
+		}
+		Sources.Add(Source);
+	}
+
+	const FScopedTransaction Transaction(NSLOCTEXT("RpgAnimationAssetTools", "CopyBlendProfiles", "Copy Skeleton Blend Profiles"));
+	TargetSkeleton->Modify();
+	for (const UBlendProfile* Source : Sources)
+	{
+		UBlendProfile* Copy = TargetSkeleton->CreateNewBlendProfile(Source->GetFName());
+		Copy->Mode = Source->Mode;
+		for (int32 EntryIndex = 0; EntryIndex < Source->GetNumBlendEntries(); ++EntryIndex)
+		{
+			const FBlendProfileBoneEntry& Entry = Source->GetEntry(EntryIndex);
+			Copy->SetBoneBlendScale(Entry.BoneReference.BoneName, Entry.BlendScale, false, true);
+		}
+	}
+	TargetSkeleton->MarkPackageDirty();
+	return Sources.Num();
+}
+
 int32 URpgAnimationAssetTools::SetBlendSpaceSamples(UBlendSpace* BlendSpace, const TArray<UAnimSequence*>& Animations, const TArray<FVector>& Positions)
 {
 	if (!CanEdit(BlendSpace) || Animations.IsEmpty() || Animations.Num() != Positions.Num()) return -1;
@@ -351,5 +406,21 @@ bool URpgAnimationAssetTools::ConfigureChooser(UChooserTable* Chooser, const FSt
 	if (Chooser->FallbackResult.IsValid()) Chooser->FallbackResult.GetMutable<FObjectChooserBase>().Compile(Chooser, true);
 	Chooser->PostEditChange();
 	Chooser->MarkPackageDirty();
+	return true;
+}
+
+bool URpgAnimationAssetTools::SetChooserDisabledRows(UChooserTable* RootChooser, FName NestedTableName, const TArray<bool>& DisabledRows)
+{
+	if (!CanEdit(RootChooser) || RootChooser->RootChooser) return Fail(TEXT("Expected an editable root Chooser asset"));
+	UChooserTable* Table = NestedTableName.IsNone() ? RootChooser : FindObject<UChooserTable>(RootChooser, *NestedTableName.ToString());
+	if (!Table || (Table != RootChooser && Table->GetRootChooser() != RootChooser))
+		return Fail(FString::Printf(TEXT("Chooser table '%s' is not embedded in this root Chooser"), *NestedTableName.ToString()));
+	if (DisabledRows.Num() != Table->ResultsStructs.Num()) return Fail(TEXT("DisabledRows must have one flag per result row"));
+	const FScopedTransaction Transaction(NSLOCTEXT("RpgAnimationAssetTools", "ChooserDisabledRows", "Set Chooser Disabled Rows"));
+	Table->Modify();
+	Table->DisabledRows = DisabledRows;
+	Table->PostEditChange();
+	RootChooser->Compile(true);
+	RootChooser->MarkPackageDirty();
 	return true;
 }

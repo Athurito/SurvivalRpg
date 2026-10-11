@@ -1,0 +1,932 @@
+{
+ "schema_version": 1,
+ "task": "GASP-08 UE5 Manny skeleton pilot",
+ "status": "exit_decision_pass",
+ "exit_decision": {
+  "result": "pass",
+  "decided_by": "user",
+  "date": "2026-10-11",
+  "follow_ups": "GASP-14 to GASP-16 in docs/gasp-movement-plan.md"
+ },
+ "repository_base": "679a6340336b6345bb785fbd7c2e9bdd6d3ee42c",
+ "branch": "claude/gasp-08-manny-skeleton-pilot",
+ "engine_version": "5.8.3",
+ "scope": "Offline bake of the 144 sequences of eight CMC Dense databases from UEFN onto the Lyra SK_Mannequin, plus an isolated Motion Matching pilot. Pivots, sprint, crouch, jumps, lands, traversal, Mover and existing pawns are out of scope.",
+ "target_skeleton": "/Game/SurvivalRpg/Characters/Mannequins/Meshes/SK_Mannequin",
+ "bake_source_mesh": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Meshes/SKM_UEFN_Mannequin",
+ "bake_target_mesh": "/Game/SurvivalRpg/Characters/Mannequins/Meshes/SKM_Manny_Simple",
+ "retargeter": {
+  "official": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UE5_Mannequins/Rigs/RTG_UEFN_to_UE5_Mannequin",
+  "pilot_copy": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Retargeting/RTG_UEFN_to_UE5_Mannequin_PilotBake",
+  "deviations": [
+   {
+    "op": "Pin IK Bones (added)",
+    "setting": "ik_foot_root and ik_hand_root from root, ik_foot_l/r from foot_l/r, ik_hand_l/r from hand_l/r, ik_hand_gun from hand_r; target skeleton, global position and rotation",
+    "reason": "The official op stack leaves IK bones in the reference pose; the source clips keep them on the FK bones, and the copied AnimBP consumes them."
+   },
+   {
+    "op": "Retarget FK Chains, Root chain",
+    "setting": "TranslationMode GloballyScaled -> Absolute",
+    "reason": "The batch evaluates source poses with root motion in the pose; global scaling moved the root 3.3 % further per metre than the blend-to-source feet."
+   },
+   {
+    "op": "Pelvis Motion",
+    "setting": "BlendToAbsoluteOffset (0,0,0) -> (1,1,0)",
+    "reason": "The same drift for the pelvis; vertical motion stays scaled as at runtime."
+   }
+  ]
+ },
+ "runtime_follower_profile": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Retargeting/DA_RpgGasp08_RuntimeRetarget_Manny",
+ "presentation_mesh": {
+  "path": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Meshes/SKM_Manny_Simple_GaspLook",
+  "note": "Copy of the Lyra SKM_Manny_Simple with the grey GASP MI_Manny_01/02 materials; same LOD0 geometry and skeleton. Used by the Manny pilot pawn and the follower profile. The Phase C follower capture used the original Lyra mesh."
+ },
+ "modified_existing_assets": [
+  {
+   "path": "/Game/SurvivalRpg/Characters/Mannequins/Meshes/SK_Mannequin",
+   "change": "Added blend profiles FastFeet+Root_Weight and FastHead_Weight, copied by bone name from SK_UEFN_Mannequin; approved by the user on 2026-10-11. Rollback reverts this file."
+  }
+ ],
+ "counts": {
+  "baked_sequences": 144,
+  "pose_assets": 20,
+  "pilot_packages": 209
+ },
+ "baked_sequences": [
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Crouch/M_Neutral_Transition_Crouch_to_Stand",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Transition_Crouch_to_Stand"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Idle/M_Neutral_Stand_Idle_Loop",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Stand_Idle_Loop"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Idle/M_Neutral_Stand_Turn_045_L",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Stand_Turn_045_L"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Idle/M_Neutral_Stand_Turn_045_R",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Stand_Turn_045_R"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Idle/M_Neutral_Stand_Turn_090_L",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Stand_Turn_090_L"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Idle/M_Neutral_Stand_Turn_090_R",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Stand_Turn_090_R"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Idle/M_Neutral_Stand_Turn_135_L",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Stand_Turn_135_L"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Idle/M_Neutral_Stand_Turn_135_R",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Stand_Turn_135_R"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Idle/M_Neutral_Stand_Turn_180_L",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Stand_Turn_180_L"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Idle/M_Neutral_Stand_Turn_180_R",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Stand_Turn_180_R"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Loop_B",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Loop_B"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Loop_BL",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Loop_BL"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Loop_BR",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Loop_BR"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Loop_F",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Loop_F"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Loop_FL",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Loop_FL"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Loop_FR",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Loop_FR"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Loop_F_L_20",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Loop_F_L_20"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Loop_F_R_20",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Loop_F_R_20"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Loop_LL",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Loop_LL"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Loop_LR_offset",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Loop_LR_offset"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Loop_RL",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Loop_RL"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Loop_RR_offset",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Loop_RR_offset"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Reface_Start_B_L_090",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Reface_Start_B_L_090"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Reface_Start_B_L_180",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Reface_Start_B_L_180"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Reface_Start_B_R_090",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Reface_Start_B_R_090"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Reface_Start_B_R_180",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Reface_Start_B_R_180"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Reface_Start_F_L_090",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Reface_Start_F_L_090"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Reface_Start_F_L_180",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Reface_Start_F_L_180"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Reface_Start_F_R_090",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Reface_Start_F_R_090"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Reface_Start_F_R_180",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Reface_Start_F_R_180"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Shuffle_LR_to_LL_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Shuffle_LR_to_LL_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Shuffle_LR_to_LL_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Shuffle_LR_to_LL_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Shuffle_RR_to_RL_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Shuffle_RR_to_RL_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Shuffle_RR_to_RL_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Shuffle_RR_to_RL_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Start_BL_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_BL_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Start_BL_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_BL_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Start_BR_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_BR_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Start_BR_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_BR_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Start_B_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_B_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Start_B_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_B_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Start_FL_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_FL_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Start_FL_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_FL_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Start_FR_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_FR_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Start_FR_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_FR_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Start_F_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_F_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Start_F_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_F_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Start_LL_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_LL_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Start_LL_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_LL_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Start_LR_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_LR_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Start_LR_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_LR_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Start_RL_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_RL_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Start_RL_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_RL_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Start_RR_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_RR_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Start_RR_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_RR_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Stop_BL_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_BL_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Stop_BL_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_BL_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Stop_BR_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_BR_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Stop_BR_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_BR_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Stop_B_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_B_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Stop_B_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_B_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Stop_FL_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_FL_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Stop_FL_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_FL_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Stop_FR_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_FR_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Stop_FR_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_FR_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Stop_F_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_F_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Stop_F_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_F_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Stop_LL_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_LL_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Stop_LL_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_LL_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Stop_LR_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_LR_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Stop_LR_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_LR_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Stop_RL_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_RL_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Stop_RL_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_RL_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Stop_RR_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_RR_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Run_Stop_RR_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_RR_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Transition_Sprint_to_Run_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Transition_Sprint_to_Run_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Transition_Sprint_to_Run_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Transition_Sprint_to_Run_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Transition_Walk_to_Run_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Transition_Walk_to_Run_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Run/M_Neutral_Transition_Walk_to_Run_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Transition_Walk_to_Run_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Transition_Run_to_Walk_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Transition_Run_to_Walk_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Transition_Run_to_Walk_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Transition_Run_to_Walk_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Loop_B",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Loop_B"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Loop_BL",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Loop_BL"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Loop_BR",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Loop_BR"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Loop_F",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Loop_F"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Loop_FL",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Loop_FL"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Loop_FR",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Loop_FR"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Loop_F_L_20",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Loop_F_L_20"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Loop_F_R_20",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Loop_F_R_20"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Loop_LL",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Loop_LL"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Loop_LR_offset",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Loop_LR_offset"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Loop_RL",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Loop_RL"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Loop_RR_offset",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Loop_RR_offset"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Reface_Start_B_L_090",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Reface_Start_B_L_090"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Reface_Start_B_L_180",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Reface_Start_B_L_180"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Reface_Start_B_R_090",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Reface_Start_B_R_090"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Reface_Start_B_R_180",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Reface_Start_B_R_180"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Reface_Start_F_L_090",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Reface_Start_F_L_090"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Reface_Start_F_L_180",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Reface_Start_F_L_180"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Reface_Start_F_R_090",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Reface_Start_F_R_090"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Reface_Start_F_R_180",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Reface_Start_F_R_180"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Shuffle_LR_to_LL_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Shuffle_LR_to_LL_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Shuffle_LR_to_LL_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Shuffle_LR_to_LL_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Shuffle_RR_to_RL_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Shuffle_RR_to_RL_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Shuffle_RR_to_RL_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Shuffle_RR_to_RL_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Start_BL_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_BL_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Start_BL_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_BL_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Start_BR_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_BR_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Start_BR_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_BR_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Start_B_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_B_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Start_B_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_B_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Start_FL_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_FL_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Start_FL_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_FL_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Start_FR_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_FR_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Start_FR_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_FR_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Start_F_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_F_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Start_F_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_F_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Start_LL_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_LL_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Start_LL_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_LL_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Start_LR_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_LR_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Start_LR_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_LR_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Start_RL_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_RL_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Start_RL_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_RL_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Start_RR_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_RR_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Start_RR_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_RR_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Stop_BL_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_BL_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Stop_BL_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_BL_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Stop_BR_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_BR_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Stop_BR_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_BR_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Stop_B_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_B_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Stop_B_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_B_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Stop_FL_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_FL_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Stop_FL_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_FL_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Stop_FR_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_FR_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Stop_FR_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_FR_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Stop_F_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_F_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Stop_F_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_F_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Stop_LL_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_LL_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Stop_LL_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_LL_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Stop_LR_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_LR_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Stop_LR_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_LR_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Stop_RL_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_RL_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Stop_RL_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_RL_Rfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Stop_RR_Lfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_RR_Lfoot"
+  },
+  {
+   "source": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Walk/M_Neutral_Walk_Stop_RR_Rfoot",
+   "target": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_RR_Rfoot"
+  }
+ ],
+ "pose_assets": {
+  "source_blendspaces": [
+   "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/AimOffset/BS_Neutral_AO_Stand",
+   "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/Poses/BS1D_Additive_Lean_Run"
+  ],
+  "target_folder": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/Poses",
+  "note": "Two blendspaces and their 18 additive pose sequences, needed by the copied AnimBP; additive types and reference poses are preserved."
+ },
+ "composition_assets": {
+  "manny": {
+   "schemas": "PSS_Default, PSS_Stop, PSS_Idle -> PSS_*_Manny",
+   "databases": "PSD_Dense_Stand_<8> -> PSD_Dense_Stand_<8>_Manny",
+   "normalization_set": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/MotionMatching/PSN_Dense_Pilot_Manny (8 databases)",
+   "mirror_table": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Rigs/MDT_RpgGasp08_Manny",
+   "anim_blueprint": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/ABP_RpgGasp08_CMC_Manny",
+   "choosers": [
+    "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Choosers/CHT_PoseSearchDatabases_Manny",
+    "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Choosers/CHT_PoseSearchDatabases_Dense_Manny (non-pilot rows disabled)",
+    "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Choosers/CHT_CMCCharacterAnimations_Manny (disabled experimental path; context only)"
+   ],
+   "pawn": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Pawns/BP_RpgGasp08_CMC_Manny",
+   "pawn_data": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/PawnData/DA_PawnData_Gasp08_Manny",
+   "experience": "/Game/SurvivalRpg/System/Experiences/Gasp08Pilot/RpgGasp08MannyExperience",
+   "map": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Maps/Lvl_RpgGasp08_Manny"
+  },
+  "uefn_existing_with_follower": {
+   "pawn": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Pawns/BP_RpgGasp08_CMC_UefnFollower",
+   "pawn_data": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/PawnData/DA_PawnData_Gasp08_UefnFollower",
+   "experience": "/Game/SurvivalRpg/System/Experiences/Gasp08Pilot/RpgGasp08UefnFollowerExperience",
+   "map": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Maps/Lvl_RpgGasp08_UefnFollower"
+  },
+  "uefn_control_8_databases": {
+   "databases": "PSD_Dense_Stand_<8>_UefnCtrl",
+   "normalization_set": "/Game/SurvivalRpg/Characters/GASP/Pilot/UefnControl/MotionMatching/PSN_Dense_Pilot_UefnCtrl",
+   "anim_blueprint": "/Game/SurvivalRpg/Characters/GASP/Pilot/UefnControl/ABP_RpgGasp08_CMC_UefnCtrl",
+   "pawn": "/Game/SurvivalRpg/Characters/GASP/Pilot/UefnControl/Pawns/BP_RpgGasp08_CMC_UefnControl",
+   "experience": "/Game/SurvivalRpg/System/Experiences/Gasp08Pilot/RpgGasp08UefnControlExperience",
+   "map": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Maps/Lvl_RpgGasp08_UefnControl"
+  },
+  "map_base": "/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMantle without traversal obstacles and with one PlayerStart"
+ },
+ "metrics": {
+  "preservation": "144/144 identical length, frame count, root-motion flags, rate scale, curve names and values, and 1295 notifies; no sync markers in source or bake",
+  "root_speed_ratio_bake_over_source": 1.0,
+  "foot_contact_speed_cm_s_at_runtime_sample_times": {
+   "source": {
+    "median_of_medians": 10.5,
+    "median_of_p95": 99.69,
+    "max_p95": 209.26
+   },
+   "bake": {
+    "median_of_medians": 10.78,
+    "median_of_p95": 99.58,
+    "max_p95": 209.52
+   },
+   "runtime": {
+    "median_of_medians": 10.37,
+    "median_of_p95": 99.71,
+    "max_p95": 209.23
+   }
+  },
+  "foot_contact_bake_worse_than_runtime_p95_clips": 9,
+  "foot_contact_bake_better_than_runtime_p95_clips": 4,
+  "pelvis_offset_bake_vs_runtime_cm": 3.09,
+  "route_best_match_agreement_percent": {
+   "manny_vs_uefn_control_8_databases": 98.9,
+   "manny_vs_uefn_existing": 90.6
+  },
+  "performance_ms_median": {
+   "Manny (bake, own MM)": {
+    "game_thread_animation": 0.309,
+    "animation_worker_tasks": 0.497,
+    "skeletal_mesh_ticks": 1.0
+   },
+   "UEFN control (8 DB) + follower": {
+    "game_thread_animation": 0.474,
+    "animation_worker_tasks": 0.685,
+    "skeletal_mesh_ticks": 2.0
+   },
+   "UEFN existing + follower": {
+    "game_thread_animation": 0.47,
+    "animation_worker_tasks": 0.708,
+    "skeletal_mesh_ticks": 2.0
+   }
+  }
+ },
+ "evidence": "Raw files under Saved/Gasp08 and Saved/Profiling/CSV of the producing checkout; not versioned.",
+ "pull_request": "https://github.com/Athurito/SurvivalRpg/pull/228",
+ "target_hashes": {
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/ABP_RpgGasp08_CMC_Manny.uasset": "f9c91bb404cbca66df160e0fb580956696417f7638dfec3d89ee6cd8cac529c4",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Loop_B.uasset": "6d58d859051193d58794665132cd41d8127d0e724daba495be6115364e32bd3c",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Loop_BL.uasset": "279e1c21af1d87123f61f6d9a625c532cb838081b5878b2f72fb523acf40a111",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Loop_BR.uasset": "41f28c58f4c90dbf056b1bb5e955864b90898964618bbc3a0c03c76d4aebdff9",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Loop_F.uasset": "575f78023f7f5a468479ba56cb1d219eefbb7d77c1b91eed2ed9463e3ca1232e",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Loop_FL.uasset": "ed27067041c991207c2303f3cd57315f9732937145c398d1f69cadfe9a842c83",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Loop_FR.uasset": "7c2187a435a4b0ef34f609de0c41eb50f388e105a51e5634a372a6d811e3d364",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Loop_F_L_20.uasset": "c591b7f2dad2bce1f39cb29ad8c94573a1dd3f3c1e2d40fdcd625df6a18a4450",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Loop_F_R_20.uasset": "d8a02d5521ab5ce595fd08097e308c8cbcf9e1cb79b5c94b0a6d1dce517337f6",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Loop_LL.uasset": "713432cf2870bc0fafa85a43715cc3cdec6224fedefaf2cdf7ac9fb916304835",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Loop_LR_offset.uasset": "b1d22e857d5b90f91adb4690a46ce4c8a76fe6400699b0a2ddec7dcec1f0a713",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Loop_RL.uasset": "4c901c45ef592cbc0a748d1d1c3522654b1c06fc3a8859de13d0f993ce5ca037",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Loop_RR_offset.uasset": "50d64fda59cc8504fee0e8f24f990727f499c4ac7abf8eda21e3acbd5f0adc8c",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Reface_Start_B_L_090.uasset": "594c90a5ad1b2b73b8c5f7bbac7abd296f8fcc460e107d95d694559287f00004",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Reface_Start_B_L_180.uasset": "f99a47f662fbc244fa91f5d29f0c292386101b6d4fe4a6fe79b66fe96c8ce3a8",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Reface_Start_B_R_090.uasset": "16b5c5a38a0f839362bdda4974282fbbd61659d7901f876bce976cae5f36e7d5",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Reface_Start_B_R_180.uasset": "a1035abf7e8fa6a2ae92850917beda1fc76482d3bdc167260ead1600385e3ef2",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Reface_Start_F_L_090.uasset": "0cbdcda4cf6cd43eb4d1a7b24c248eb491cf03821aaaaf5468df4304d98be202",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Reface_Start_F_L_180.uasset": "7b17d655158dea64c4e5aa45ac39b3a75c179ee9793b65b2972bd18d8de4e3eb",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Reface_Start_F_R_090.uasset": "27d58669ae02da2ea40d83220bcfc881d4f59c38041e4ced5acac9603119896b",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Reface_Start_F_R_180.uasset": "822a0e03bf354c2ced69784892b805eab935ff9859e2c262150e81b304e2ab35",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Shuffle_LR_to_LL_Lfoot.uasset": "4953a48ecfd5b4cf3846f97fe7120776d7233fb8378214deff768438b8d6523c",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Shuffle_LR_to_LL_Rfoot.uasset": "175f11a86f81941e72fc104f0bcf7afc38fd7174ec8ca2734d4bca9765bc777b",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Shuffle_RR_to_RL_Lfoot.uasset": "1d6d3b4d48b268c6f06789d74dd0607b39688f8a9ee939bad5788c96eaa5a78a",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Shuffle_RR_to_RL_Rfoot.uasset": "dd7b035bb3a757a5668ccb576c665354aee6c1a91d1920b1ef2504600b909996",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_BL_Lfoot.uasset": "d72857bfad28aac7bd6520df98863428cf7f74257f08418dee164c22b85f83a1",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_BL_Rfoot.uasset": "a905f0f6103d19deb1d81ac1fede71af6b4e0cdac54553b114576bd7bf40962c",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_BR_Lfoot.uasset": "bf8e35b4a43ae085db56c5fde7919a1b31408bc2180e0b3d3299ed669f6da8bd",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_BR_Rfoot.uasset": "1233429ea9ac510529414cfb3e8332f06c47727c27da930f6cdc32667d450d54",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_B_Lfoot.uasset": "c7e2deaba0c3977449dbe32b4b8f72cb8d6d39f5f2f0b36eca451afd2aaa5a30",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_B_Rfoot.uasset": "d75c08a9de6d1758577bae55f7fc8981d5ae83acbe1c08389540010a3735aae3",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_FL_Lfoot.uasset": "c19448b26426af13bb98f4ab5ed4688c4dece999692c84f96d47eccbf748cd80",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_FL_Rfoot.uasset": "8bd1a222793ff7a24848896fd16f4ecd8c0be72d7f6f4fa3c8b06f3ed40d8caa",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_FR_Lfoot.uasset": "95081c411dce709f07ea312d8ab30dd3fd7dd9552f2f6a96e1b6f611a1d3e91b",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_FR_Rfoot.uasset": "cf4ead59f0491f0a0a28cfc4fb4651ac53fbda3f06c208980a9be889314701d5",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_F_Lfoot.uasset": "d579fbcc8a8c114c4f55a745e1b39de9d80ae957fbc6cb9b256be0896ffd2464",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_F_Rfoot.uasset": "cf846def0c676ab48b43ddae6f822e4e9d52d483c59c816fbefb41c5de30dff2",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_LL_Lfoot.uasset": "ebe620a4729bd6c9be531f35ac18f7b687343f8a20c01fa02b6e490a81c19234",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_LL_Rfoot.uasset": "036725efa6212317e7c781c082e61d5373386994e5f76afb020a4ad1a579fca7",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_LR_Lfoot.uasset": "bd34e6aa59e99f4d39081e8fbaf7c3e8555d04c734fd6170bf023a39919d2e4b",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_LR_Rfoot.uasset": "dc0cbbc0eaf186b516975bc10ed4334bbc22a2ce4e7c16b0a54d657f48ff6e75",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_RL_Lfoot.uasset": "07f0538110399a94ddd467e39035227b52c4ddd131059cb7da85651bdb65b58c",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_RL_Rfoot.uasset": "7a46d7857e37fe1ffcf6b45109baaeef20f1fdcae0f4a74b34a24ea6179f0a8f",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_RR_Lfoot.uasset": "263d8485bf48690963487ca57bef383faab7dd68971a74e2eb91f39412348413",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Start_RR_Rfoot.uasset": "1e45b135a96e154ad9d94bbc70c2fa7076193b7358effeea517fb8909367dcdf",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_BL_Lfoot.uasset": "1d8ef113c1f0f078e693cf3349da64f4a1446e90fc3c73d56c1a4293e39d2042",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_BL_Rfoot.uasset": "2f9affe1925d5a3edf5b13d9b6e397b7858f55b5f5e3bbb9b315e0de089cbc51",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_BR_Lfoot.uasset": "286dcef742279d74260634ad37a93bcecf8a28c8b1c2da3bb992e51768fd4f7b",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_BR_Rfoot.uasset": "57a10c550e004b0e4ea4789d4ee507a0f46dd38daa8bb88d03641964e1fa076b",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_B_Lfoot.uasset": "fe3aabaf6341063db2a3442ae728ae479078b4cb3eda13712eccc63f569bcf7c",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_B_Rfoot.uasset": "0157475b471d288ea54cb9605fa4a745a67daab6d515b93096cee0d3c999b8aa",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_FL_Lfoot.uasset": "02002ae5683888453bcb032c1a32951ac93bbc3e321ef36127a8990a02ed5836",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_FL_Rfoot.uasset": "9f5501ba14130d8078baf795aff0af0b6bba7d1599f3f8ed93d9b946e1241d4f",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_FR_Lfoot.uasset": "4cfc1e490e97ee25ffe6b6f10fcd75c2cb7290159e7386f9ad80cf492653308d",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_FR_Rfoot.uasset": "3b61149e129f41f631fe460b7238af36f77c976d582d8d8609f117a073ed9017",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_F_Lfoot.uasset": "f68cf69d88de511ef2c21b98acad51564f9b37fb7f4f16e56fb9787bb401979f",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_F_Rfoot.uasset": "ceac964f2146f7f9c07211ca3f5ab87c4ead8561573c95fb0b2cbe0b4481b1b3",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_LL_Lfoot.uasset": "3c86a9572751f833470f6cc6b1be68a56177e80c68ea666d048be21b5e3a22ce",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_LL_Rfoot.uasset": "066a17ee43763565cbf6ed2ecbfb10278046db2b72acf3c03994b8fd16ae2606",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_LR_Lfoot.uasset": "4e18513967c4c489ab9e34b56ac14e3131db5db5e54b2c690e924ae70cae6c83",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_LR_Rfoot.uasset": "2eef40caea1ea5e03e24bebd669a3be0a9429330e8887254d80fa2170b971199",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_RL_Lfoot.uasset": "d1d0c28038e509c6c1baf90f83f10b6e18d094afaee952b3eecb1121f68d66c2",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_RL_Rfoot.uasset": "7b8bf888d3218a2ebc1104487bcc4ba395174dd7dc8b999e49b31e54b9963e77",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_RR_Lfoot.uasset": "e8295f9aa59c9cd9087a64705ddd3d570c0dde944ad99ddea7cbc8eae3c926bb",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Run_Stop_RR_Rfoot.uasset": "2ebfbef17ad03712b9479c71591683c78c526de1145b9f02b51b9743bd396f70",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Stand_Idle_Loop.uasset": "6b8ac6bf8b941b33f4cb815eec69dd2a74fd28230b1d029849e2ab1a21000987",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Stand_Turn_045_L.uasset": "b07d4230aa142bfc597c2adbb5ba5f1b4489c0e4058cee06337bfc55e6a1bc87",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Stand_Turn_045_R.uasset": "0d0871bc1a7763f1f6f1bd2a1616fda092fe8d84ed54e726440dcda0e2d2b524",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Stand_Turn_090_L.uasset": "23021af08c0ebd1814421622016dd05017d0fc8f4438bdf6fc7f62f49eb86ca4",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Stand_Turn_090_R.uasset": "15e5a9663b643fbc1148bda867b2cc65946ed29ef769e7bea7585c61dbe32e0b",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Stand_Turn_135_L.uasset": "daea0a157e8de8cbc8ac36977abad4fe22d2f13996924a6df9ae06cbd628561e",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Stand_Turn_135_R.uasset": "5c6418eb376536b7d71d118a6dea10ceea05f31d7d881b9e750035eb898ffe42",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Stand_Turn_180_L.uasset": "32dc7438442aef2aa58e46c39a938588004613eaabce19d745f8712e24fc0105",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Stand_Turn_180_R.uasset": "308e48d08dcf343459bf399395e593d468c0aef40cbaa7f664cd7c3e54af3f0a",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Transition_Crouch_to_Stand.uasset": "29f7ed4a5aa6b13d44bd208888f5c96b51cc3dd08e2fbda393c7b8813bcaf293",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Transition_Run_to_Walk_Lfoot.uasset": "94f5e3fcbf1d0c370d532d4f51c6946b8f15e4021c32ad281d58fb795ea966f6",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Transition_Run_to_Walk_Rfoot.uasset": "ff7ba53ffb2a14719557ca5264aeb7d5fd60fe367203eaecf6d923650b49b3c1",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Transition_Sprint_to_Run_Lfoot.uasset": "dacbe8e5bff46ee0a2fcb476446d4302b1ae097d09b8694560921e5c1a231aca",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Transition_Sprint_to_Run_Rfoot.uasset": "dfa5fe3c5d6043cc78dc0156941de090771a98b9c355cb6781ae9ce327e3d8ab",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Transition_Walk_to_Run_Lfoot.uasset": "5df010286ac2e1703b352ef7cfba69f97d86ab4647dd1e78f29d0485581643bc",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Transition_Walk_to_Run_Rfoot.uasset": "aa3278cb15f60f53daa22a7a36ff325748247f4f52da35fe6fd3807e5eae33d9",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Loop_B.uasset": "a0d387df247dc718ac849364a7d35f3a240142421c93f7781d37a1218f666738",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Loop_BL.uasset": "ee571aafdf5564c35021a0f63fae02b3a04005179036fe7faff954fdf9e99e67",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Loop_BR.uasset": "76a2bb56f61c1acaf3b098e84b1ffe4dad0fe0c73f51f4560aed1852319ab5f7",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Loop_F.uasset": "7862bf6d4e1e5008d2b1dab1a97569d46d9e4f8f6b1e66bd3ad5b30302b49122",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Loop_FL.uasset": "274155cd016390788e812417510d7d1551157f49d6f32fba7a9f3c7efac20d9d",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Loop_FR.uasset": "8b32d01f0391e175b1ababfc50da41da784abd21dbbbad753718af55dc8ac471",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Loop_F_L_20.uasset": "9693ac6f4a5833be1d0305c6b23a03671bf9f24b7a89bef04167fea0df170dd0",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Loop_F_R_20.uasset": "86080043dc221fd7b66804de6c423f96e4000e1bb36c6184fd207204350dd611",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Loop_LL.uasset": "ec4d1e2f3065846438dc8b907136001b13bca8b79be2864bab2d7600cd496480",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Loop_LR_offset.uasset": "9a0a7b4bce79c10991aabe7145beabe719b2bb2545670bc5000d927a1a31f594",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Loop_RL.uasset": "69aa8ddc7bc06cb6c0963265c17daa1311fdb663967be66326e6ae02261aaace",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Loop_RR_offset.uasset": "da4f1e4e0a6dc86a8d00a1d7ce04021da342e1871eacf539c50288e41163a7c1",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Reface_Start_B_L_090.uasset": "39ba2d5699be83143ad0c9f53149805e23b1f92df4bb66d2ef81dd81ee514fcb",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Reface_Start_B_L_180.uasset": "063d143f87460961797ccac76f83dcc9a0b534e204bbd0906b5684a291b7bc6f",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Reface_Start_B_R_090.uasset": "2964a666deff1469b5404680c54a62bb31705754f93071ab01621e819c87f08d",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Reface_Start_B_R_180.uasset": "4fb53089b6f2728a9e76bb0c8409af5f4250e77cb429ae67d1c9d495ce348eba",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Reface_Start_F_L_090.uasset": "96848a8ac657ba74c93b06fa6c154fa04b63af1cbbbd7306df8893c953c5bd3f",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Reface_Start_F_L_180.uasset": "28901c6478c1217a60a5c8e73b1c6ceeb887d528b33f9f889a5f7b4b949b1101",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Reface_Start_F_R_090.uasset": "56fe613e3411f24206293ffc9d499493e61248f015108f3d761513c3bbce9417",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Reface_Start_F_R_180.uasset": "81207074a3d4bc0b5e62e5ddd7657840a2a423f68d49155c8b2549d2483f0136",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Shuffle_LR_to_LL_Lfoot.uasset": "8dbd14c3c9d0f1e14c64cd749315c2c9a7b0a96b85eadf0cbae173a2c6ae0540",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Shuffle_LR_to_LL_Rfoot.uasset": "e87916f4891a16b99c08e9ccb5c54044780fbbbc9e9d20784198f7946bd11581",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Shuffle_RR_to_RL_Lfoot.uasset": "8b4eda02a9a681279891a83b3c372ab2be48c9d1586057957370f85b8d173de9",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Shuffle_RR_to_RL_Rfoot.uasset": "4343db89e1b934ecf442264f098b072f734a8481f3dc143be72c23e18202142c",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_BL_Lfoot.uasset": "dbf199cf2ed77dff8aae83fd0bcfcf75388b9d25d77a72643bada3baff94871f",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_BL_Rfoot.uasset": "3e44af61a7275a523b9081906e09a9b02916b0fab9af6c187126f0ffc8125929",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_BR_Lfoot.uasset": "72cd2cb05d5acf8fe4a8bd5fc6ebbc6b24dbd5d32272d1dd3b398f2ccabdb73a",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_BR_Rfoot.uasset": "e1407095455a55472e36b7258b1da3b45bbdb5ac81d76dc5d360cc09d31dc679",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_B_Lfoot.uasset": "788e6dc0beba1867263e6daa7465ae4fc9f319b8c8bf992ded707b17411f3705",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_B_Rfoot.uasset": "0fc1b28335133c32ab7bbb334b3fffa1e9d7f0c006caea98ae94ecff91371830",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_FL_Lfoot.uasset": "05b7c859ea9918dd91c5176d1ed51c4955cdec0d2695a91147347f8e7070915a",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_FL_Rfoot.uasset": "0fcedaeceecb5feca9fb3089a40184d04e9ccf341586eb94654049088fcac2c6",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_FR_Lfoot.uasset": "f9b9e90cd9ecf1139e2107da9cc3bd3fa20de07fb7f12072b8b57325154f87e5",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_FR_Rfoot.uasset": "4195616c2824bcf489e921e3b33688d27c1220f45757a72d8317c1c9e43ec26c",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_F_Lfoot.uasset": "04d870864de50d918932514422ad30e0d45f87154401b2b8a3ce4502b2a1fa1c",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_F_Rfoot.uasset": "3e6e2f53be567eda3a9c99a191e4b3e65770c83f13e675c984b5ce942fffd330",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_LL_Lfoot.uasset": "e61fce1406a618ad945bd0201bd68fc60b08b85c38dde30acdbd78bbbb71bc9f",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_LL_Rfoot.uasset": "1ec71ad846350d5fc801477cfa2742a413582599083638b04752764b46cef48e",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_LR_Lfoot.uasset": "0eb7db3b3d54fec1fc940186794da95172d1bb865ba3997b2a7997d4bdf957e7",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_LR_Rfoot.uasset": "dac46f36c09ae747794c3b5afda37202c3cfc6b2c3184fabbdaa97a53e764e11",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_RL_Lfoot.uasset": "4495c7fca05e9239e58ac9bd3355f7a15bac930d0220259da92e548ec6c070ea",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_RL_Rfoot.uasset": "14f0591a5ccc53a83e620a0b883c5d46784b30339bdf017010bf4f58394c0592",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_RR_Lfoot.uasset": "fb758c7d859803490d7965a6916a4100f944480a950688e02babaec8d2658b72",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Start_RR_Rfoot.uasset": "4c3386a75ef285a425d273980b1a60bf25d790ec5c8cac9ebe0e1609682efb88",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_BL_Lfoot.uasset": "fc65585fb8df8e87414b7955b0726330181690ab2f347bdec695d8b6929fd04f",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_BL_Rfoot.uasset": "64e76e571db403d40c2badd1fdc8d83c5a5218eaa632ea2165cda8298b724956",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_BR_Lfoot.uasset": "d42143c23d5dd18d55b260f4e3c29e06ddf17771017c14db25795d2737b856ee",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_BR_Rfoot.uasset": "314bf87bcf4d26a64c4135f272aa8980c814344c4b77c7da8161c024dd9355cf",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_B_Lfoot.uasset": "765f0e16eb330fd09fd639d1674eb8aa8e19eccd3a2971e0e10ac04b3517d4d1",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_B_Rfoot.uasset": "9a131429cd0d253261bd629a36a50217ac5983fc5c8be17e7ab06602d8fc0313",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_FL_Lfoot.uasset": "d2064785c59010b029175fc263b08f66485ede0343e9e5d0a3ce969635d833a2",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_FL_Rfoot.uasset": "70245e20d206210154c3601a4174ffda7f7a1f96bc1345bc44cf7fd176df88e7",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_FR_Lfoot.uasset": "be0ffdd0595cb79471016eb7c903fdbd9a6fb2beab0ed70107af5b09154467ea",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_FR_Rfoot.uasset": "85ae5d9c03c1af90da8882a09c2c3c2c235c57d77c544dd80528f1ac653add11",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_F_Lfoot.uasset": "385ff984ada6729d3799b4c092ebffa5739d8a09bf0045471333ab1d52fc485a",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_F_Rfoot.uasset": "d84833bd6636072a79530b82dbbd06f1c8bd1e6de8effe5066dfc836b8b94aa4",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_LL_Lfoot.uasset": "105f92a91a85bd24caacd213efa32cdd6d3874720de026a591f6d86ea9d58c80",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_LL_Rfoot.uasset": "b50dfac44a08e2a4313e3dfd0a09ef1c43a2227487e59f3ded509fc7eb49827d",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_LR_Lfoot.uasset": "13ec4d263cba6dc6eb9feb7ecfa98d6f75c5f402cf31a1e17e7ea5ea6d2a8314",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_LR_Rfoot.uasset": "a132a40b62443680a7a98c02f308260ab21b10112c6ff5e2c627a81ebf1bf5c6",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_RL_Lfoot.uasset": "d307b30e0582604d8d36af329379641ec68c9ad1b6b24118c43fa6789328da3a",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_RL_Rfoot.uasset": "909a60b5754f0066bb7f9457629cc908e5577a03e6a5220c1c3eaf2e541d6785",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_RR_Lfoot.uasset": "5e8a36228c50adf4cdf7ddda13a6641a051ea45f87417a892a5fe622f57f40e2",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/M_Neutral_Walk_Stop_RR_Rfoot.uasset": "c54b364ea3b9cc679b01f81bfd6c15ed425a922c27fe80e5a3217477ccef4f02",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/Poses/BS1D_Additive_Lean_Run.uasset": "419d83acf8112242f8a68fb58236d8ea178ad2c2e514813df6db4e242baeb621",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/Poses/BS_Neutral_AO_Stand.uasset": "acab1255ca42a5c6e7271ae03b6e919e3ace65ef6a027a999eea00f830ac1c7b",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/Poses/M_Neutral_AO_Stand_X+45_Y+90.uasset": "56676738b97db40637850f1c8ef9770cce3103d0e76afbb809feac83e2ec75c3",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/Poses/M_Neutral_AO_Stand_X+45_Y-90.uasset": "b2604c5154f566b5e6419805f0339becc90730687dc0943e0a7a1d9c6a6be64c",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/Poses/M_Neutral_AO_Stand_X+45_Y0.uasset": "4425ae87da51afa904f353094b674065a59378af9a881d67f1d99b1131beffc9",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/Poses/M_Neutral_AO_Stand_X+90_Y+90.uasset": "4f1fc37acb4f94fdfc1681ae7932b2ef4a2980edbe79729d3a54312031de54af",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/Poses/M_Neutral_AO_Stand_X+90_Y-90.uasset": "5534a00c399f5efcb6743e84926a225713ce32262c0975b559530073a86a4aa0",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/Poses/M_Neutral_AO_Stand_X+90_Y0.uasset": "0fdb70e24124df30a2e9e6897a7766e07d888af015809f371db1158b2af110e8",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/Poses/M_Neutral_AO_Stand_X-45_Y+90.uasset": "e8fe15568a2737753f1796b91ea6608d6c0f1e1daac80d269bdc146ed9bf7983",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/Poses/M_Neutral_AO_Stand_X-45_Y-90.uasset": "3147f0261e47184277fab1d60ac9ed898e75fdf18f28a034af86f034fb9d85a3",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/Poses/M_Neutral_AO_Stand_X-45_Y0.uasset": "a8c661cf2332302398eb38a3a24e5630f3ecf63e0681980d57f6e469a21cb4a2",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/Poses/M_Neutral_AO_Stand_X-90_Y+90.uasset": "c66508a579021c6c967cba40a86f7ff2c5b03e6390667a568431e81ae7f44290",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/Poses/M_Neutral_AO_Stand_X-90_Y-90.uasset": "d95e2b55a7d01d1eb22bd4ba93fefbb6f251907dfdf03110374f22adb20c87d4",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/Poses/M_Neutral_AO_Stand_X-90_Y0.uasset": "2d9c879e7ee3eae0137560a2696af8f9707ffa92bce0dcdd15884c1e847bac21",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/Poses/M_Neutral_AO_Stand_X0_Y+90.uasset": "56a0173a6d8b1c8c3240ad4de2fac597c53185255a77536a46c1dbd502aa5fbd",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/Poses/M_Neutral_AO_Stand_X0_Y-90.uasset": "80f335f740a8602d232b82006fb07af65eefeda79c5f8fac5889928fddd5157b",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/Poses/M_Neutral_AO_Stand_X0_Y0.uasset": "7299b6466d457eaf29c19927392dee22b094b8df5e1f0dd6372cf21a868a7d85",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/Poses/M_Neutral_Run_Lean_Pose_Base.uasset": "59222e63c3bc73648aade531c014fd1ef89921458ff3ed7279ce273e0378d557",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/Poses/M_Neutral_Run_Lean_Pose_Left.uasset": "220096129762339fc845ee82209b468a77ae01d0e6148370e13fa097ea1c7626",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Animations/Poses/M_Neutral_Run_Lean_Pose_Right.uasset": "4d14c3e0fc2cc40f8c78e624be4a2c47a935669027ec5a2d3335075e6cc202f7",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Choosers/CHT_CMCCharacterAnimations_Manny.uasset": "7294447e6ca81db7298854d1ca8a02dad8f8b58beafe2ac6a0253f8ad3daee0e",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Choosers/CHT_PoseSearchDatabases_Dense_Manny.uasset": "74f81bfafb2bc46beca0add6016bfdbf379afcfbd47c62a06aa963d381e8629a",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Choosers/CHT_PoseSearchDatabases_Manny.uasset": "4eef07d2e17ae559e12c8cf5df1e0b259d806a358174d798b49e18f7281f514c",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Maps/Lvl_RpgGasp08_Manny.umap": "fd11930825abaef6f26c02693ced0c91969f83dba754d899acc385881fcd6f2f",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Maps/Lvl_RpgGasp08_UefnControl.umap": "bd2485771447061e9d8b0f744d43f37fe2f8e5fd93cc7e3def45c8f6dbf68ae4",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Maps/Lvl_RpgGasp08_UefnFollower.umap": "f2bdd949f8575efc2e84abe23b710e65a09e9b1bf383f6fdee05932a4a220e8d",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Meshes/SKM_Manny_Simple_GaspLook.uasset": "51566125938ca1cc1d35dcf364a13800497a1c0721b16b94ccfd35a0bd884784",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/MotionMatching/Databases/PSD_Dense_Stand_Idles_Manny.uasset": "b5aa36703f60f7fa04e970d445d73f40dad0b754522f49df99b69efb8506c9a6",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/MotionMatching/Databases/PSD_Dense_Stand_Run_Loops_Manny.uasset": "546e4ce742c3f67800a976140f75d9de1cd13e5abc95e8b14a0f11ba444c5b02",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/MotionMatching/Databases/PSD_Dense_Stand_Run_Starts_Manny.uasset": "2515609d177c1c9ae3dd825211d00c3cc5db0ff2c2a6b1834688388c02e8b5c8",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/MotionMatching/Databases/PSD_Dense_Stand_Run_Stops_Manny.uasset": "5be31e66cc173105db9b31fbc6c72e3690d597babcd02455a910d860c1922e3c",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/MotionMatching/Databases/PSD_Dense_Stand_TurnInPlace_Manny.uasset": "462580cc7e670bd0b3261afe204431f86a9e44340395bb066cb51575c50b3a86",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/MotionMatching/Databases/PSD_Dense_Stand_Walk_Loops_Manny.uasset": "b9f08f6d29a02c0443948b24ee31f276c7ea1e995d8435d7728374f5e6510772",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/MotionMatching/Databases/PSD_Dense_Stand_Walk_Starts_Manny.uasset": "2e4cfb065eb3a548e2fbe077da10d415fb91e908547d85a4a154fb9a66cba0d5",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/MotionMatching/Databases/PSD_Dense_Stand_Walk_Stops_Manny.uasset": "9859d1af6c96fcf8ac7807ad817771f64dec6c094a5bf61934348fa6ec01af49",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/MotionMatching/PSN_Dense_Pilot_Manny.uasset": "d0c2a12c326cd402e57cf66d25acd33660980a51dcd0314387dcc124627152ae",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/MotionMatching/Schemas/PSS_Default_Manny.uasset": "b5d8aacc16d29617805a9238ee2f3194e408f76afa71bf1635c3f4990845f81f",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/MotionMatching/Schemas/PSS_Idle_Manny.uasset": "b5b8f27a1e93b026376703fd75eb7973f2a3a9ab75d1cd3e3827c726c2309112",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/MotionMatching/Schemas/PSS_Stop_Manny.uasset": "9d519fc2d1ca7e92f00de546773f513fc4f0224227d377af3ce10b37a3b9e996",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/PawnData/DA_PawnData_Gasp08_Manny.uasset": "a336ef7a503ca9e9e9e82655af152710e9debc8f47cc6459324e21d89c2db75b",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/PawnData/DA_PawnData_Gasp08_UefnFollower.uasset": "d42daa9bf05e9da4e52d2af47624e001e64ee425919970917a6e630a6b4dd4d1",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Pawns/BP_RpgGasp08_CMC_Manny.uasset": "66416fad12c795b278354cce93a49c0e9fb170af21742a599c4f5749856bd39a",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Pawns/BP_RpgGasp08_CMC_UefnFollower.uasset": "bd9a0975cbe0b781381e098e4a6d104f4228985c9670b7816c0b79e18cc021ce",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Retargeting/DA_RpgGasp08_RuntimeRetarget_Manny.uasset": "e13b28cc4a089638b2e766f7fdaa033e53c0bef7fc7683fe1beadade06c7d26a",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Retargeting/RTG_UEFN_to_UE5_Mannequin_PilotBake.uasset": "ffc7f7e3f294f30966b6abe4853faa93ff84f79fc7c2c8f8caff2cdc96fa63c0",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Rigs/MDT_RpgGasp08_Manny.uasset": "2c701f482570bb8ea9ace660519267127341edb2a07321fa4c387e58eb5fa828",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/UefnControl/ABP_RpgGasp08_CMC_UefnCtrl.uasset": "9b8bcdb9ffb96016c69bba8cbd8baff0078b605452c139666c5ed52662e68c22",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/UefnControl/Choosers/CHT_CMCCharacterAnimations_UefnCtrl.uasset": "42e4505d94c9daae4f1371ac574d6f317b62f40d6c736d59c83270ef48abc3ab",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/UefnControl/Choosers/CHT_PoseSearchDatabases_Dense_UefnCtrl.uasset": "f227bbc4f62da3f470a2d71335f39c6a7f31f28b892c2354a1b6ef098f195098",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/UefnControl/Choosers/CHT_PoseSearchDatabases_UefnCtrl.uasset": "b3054e8c41a42256b767627460fa4e95c850c353cd77328f104e84d28390af87",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/UefnControl/MotionMatching/Databases/PSD_Dense_Stand_Idles_UefnCtrl.uasset": "8870f34b2c681ff414bfd3a9af6fee9c5987c049b3097ac19bdc8f73eae071e8",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/UefnControl/MotionMatching/Databases/PSD_Dense_Stand_Run_Loops_UefnCtrl.uasset": "b19bc0fde214a39fe0d316649a7de08230e95b650c2d1a2ca9aeb2bfb24f16e3",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/UefnControl/MotionMatching/Databases/PSD_Dense_Stand_Run_Starts_UefnCtrl.uasset": "4416538f8665ba9d0d4d6b43e071f7d27184c25f17b01397cb830c4e98607904",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/UefnControl/MotionMatching/Databases/PSD_Dense_Stand_Run_Stops_UefnCtrl.uasset": "36432b6f34a545495d80716e703a531fc365701147a78c7f7b2c786fe8d0ec51",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/UefnControl/MotionMatching/Databases/PSD_Dense_Stand_TurnInPlace_UefnCtrl.uasset": "b34e38ca4b19a4496d5a94793452c9bf9aa9555b249efc64b3708efaa93a74d9",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/UefnControl/MotionMatching/Databases/PSD_Dense_Stand_Walk_Loops_UefnCtrl.uasset": "72263606494b25d54cc0a1ddc715da2e3d19c81acf5076c401c9ddba8e282cf1",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/UefnControl/MotionMatching/Databases/PSD_Dense_Stand_Walk_Starts_UefnCtrl.uasset": "215ab18bb696b2421a1c5b149bb4d405913aa8f5d88e653dc0146766598e33ef",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/UefnControl/MotionMatching/Databases/PSD_Dense_Stand_Walk_Stops_UefnCtrl.uasset": "631e4d8771514eb59ce7761c809efb478dad8101d78ad1b6f00f9bbb4e4a9af0",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/UefnControl/MotionMatching/PSN_Dense_Pilot_UefnCtrl.uasset": "3358b6d4085a26be2db4037d739ec4afd8fa34f1896f559ccda469659538e20c",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/UefnControl/PawnData/DA_PawnData_Gasp08_UefnControl.uasset": "1d01d935c7fdadc18c8cc269a3915fea736d838c2a0e78ddcc98a34a766487f2",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/UefnControl/Pawns/BP_RpgGasp08_CMC_UefnControl.uasset": "ccf1624f1e4bc4370b5034c0fd9b50eed287e86d93fb66a834668498dcc6b041",
+  "Content/SurvivalRpg/System/Experiences/Gasp08Pilot/RpgGasp08MannyExperience.uasset": "283a74b4af9b662dd6e2dbb2abfc45b2a32a06ce24f9e278cebb94f5a843ee3c",
+  "Content/SurvivalRpg/System/Experiences/Gasp08Pilot/RpgGasp08UefnControlExperience.uasset": "3b1358bac4c9c3794b03a5bb783c5e2cb0359480d5539b04934f58456531e68c",
+  "Content/SurvivalRpg/System/Experiences/Gasp08Pilot/RpgGasp08UefnFollowerExperience.uasset": "3b382294d78e897c19583c53463a99233eea4f46215381a2c3b6586b007200e0"
+ }
+}
