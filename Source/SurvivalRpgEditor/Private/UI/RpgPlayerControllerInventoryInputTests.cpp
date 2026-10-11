@@ -1,10 +1,12 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "SurvivalRpg/Core/Character/RpgPawnData.h"
+#include "SurvivalRpg/Core/Player/RpgPlayerGameplayInputRouterComponent.h"
 #include "SurvivalRpg/Core/Game/Experience/RpgExperienceDefinition.h"
 #include "SurvivalRpg/GameFeatures/RpgGameFeatureAction_AddInputContextMapping.h"
 #include "SurvivalRpg/Input/RpgInputConfig.h"
 #include "SurvivalRpg/UI/RpgUIScreenBlueprintLibrary.h"
+#include "SurvivalRpg/UI/RpgUIScreenRegistry.h"
 
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"
@@ -302,7 +304,7 @@ bool FRpgPlayerControllerInventoryInputAssetTest::RunTest(const FString& Paramet
 	TestEqual(TEXT("IA_UI_Inventory does not own the legacy Y key"), CountKey(InventoryKeys, EKeys::Y), 0);
 
 	TestEqual(TEXT("IA_UI_Menu has exactly two default mappings"), MenuKeys.Num(), 2);
-	TestEqual(TEXT("IA_UI_Menu keeps Y exactly once"), CountKey(MenuKeys, EKeys::Y), 1);
+	TestEqual(TEXT("IA_UI_Menu maps Escape exactly once"), CountKey(MenuKeys, EKeys::Escape), 1);
 	TestEqual(
 		TEXT("IA_UI_Menu maps Gamepad Special Left exactly once"),
 		CountKey(MenuKeys, EKeys::Gamepad_Special_Left),
@@ -544,6 +546,131 @@ bool FRpgPlayerHudMappingCompositionAuthorityTest::RunTest(const FString& Parame
 			PrototypeExperiencePackage,
 			PlayerHudMappingPackage));
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgMenuHotkeyRoutingTest,
+	"SurvivalRpg.UI.Input.MenuHotkeys",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgMenuHotkeyRoutingTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgPlayerControllerInventoryInputTests;
+	const UInputMappingContext* PlayerHudContext =
+		LoadObject<UInputMappingContext>(nullptr, PlayerHudMappingContextPath);
+	const URpgUIScreenRegistry* Registry = LoadObject<URpgUIScreenRegistry>(
+		nullptr,
+		TEXT("/Game/SurvivalRpg/UI/DA_RpgUIScreenRegistry.DA_RpgUIScreenRegistry"));
+	if (!TestNotNull(TEXT("IMC_UI_PlayerHUD loads"), PlayerHudContext) ||
+		!TestNotNull(TEXT("UI screen registry loads"), Registry))
+	{
+		return false;
+	}
+
+	// Every pawn input config that opens the inventory must open the menus too, so no pawn loses a menu key.
+	const IAssetRegistry& AssetRegistry =
+		FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
+	TArray<FAssetData> InputConfigAssets;
+	AssetRegistry.GetAssetsByClass(
+		URpgInputConfig::StaticClass()->GetClassPathName(),
+		InputConfigAssets,
+		/*bSearchSubClasses=*/ true);
+	TArray<const URpgInputConfig*> PlayerInputConfigs;
+	for (const FAssetData& InputConfigAsset : InputConfigAssets)
+	{
+		const URpgInputConfig* InputConfig = Cast<URpgInputConfig>(InputConfigAsset.GetAsset());
+		if (InputConfig &&
+			InputConfig->FindNativeInputActionForTag(GetInventoryInputTag(), /*bLogNotFound=*/ false))
+		{
+			PlayerInputConfigs.Add(InputConfig);
+		}
+	}
+	if (!TestTrue(TEXT("At least one input config opens the inventory"), PlayerInputConfigs.Num() > 0))
+	{
+		return false;
+	}
+
+	struct FMenuHotkey
+	{
+		const TCHAR* ActionPath;
+		const TCHAR* InputTag;
+		// Game menu tab the key opens; empty for the pause menu.
+		const TCHAR* GameMenuTab;
+	};
+	const FMenuHotkey Hotkeys[] = {
+		{ TEXT("/Game/SurvivalRpg/Input/Actions/PlayerHUDActions/IA_UI_Map.IA_UI_Map"), TEXT("InputTag.UI.Map"), TEXT("UI.Screen.GameMenu.Map") },
+		{ TEXT("/Game/SurvivalRpg/Input/Actions/PlayerHUDActions/IA_UI_Journal.IA_UI_Journal"), TEXT("InputTag.UI.Journal"), TEXT("UI.Screen.GameMenu.Journal") },
+		{ TEXT("/Game/SurvivalRpg/Input/Actions/PlayerHUDActions/IA_UI_Character.IA_UI_Character"), TEXT("InputTag.UI.Character"), TEXT("UI.Screen.GameMenu.Character") },
+		{ TEXT("/Game/SurvivalRpg/Input/Actions/PlayerHUDActions/IA_UI_Skills.IA_UI_Skills"), TEXT("InputTag.UI.Skills"), TEXT("UI.Screen.GameMenu.Skills") },
+		{ MenuInputActionPath, TEXT("InputTag.UI.Menu"), nullptr },
+	};
+
+	for (const FMenuHotkey& Hotkey : Hotkeys)
+	{
+		const UInputAction* Action = LoadObject<UInputAction>(nullptr, Hotkey.ActionPath);
+		const FGameplayTag InputTag =
+			FGameplayTag::RequestGameplayTag(FName(Hotkey.InputTag), /*ErrorIfNotFound=*/ false);
+		if (!TestNotNull(*FString::Printf(TEXT("%s loads"), Hotkey.ActionPath), Action) ||
+			!TestTrue(*FString::Printf(TEXT("%s is registered"), Hotkey.InputTag), InputTag.IsValid()))
+		{
+			continue;
+		}
+
+		TestTrue(
+			*FString::Printf(TEXT("%s is a Boolean action"), *Action->GetName()),
+			Action->ValueType == EInputActionValueType::Boolean);
+		for (const URpgInputConfig* InputConfig : PlayerInputConfigs)
+		{
+			TestEqual(
+				*FString::Printf(
+					TEXT("%s resolves %s to %s"),
+					*InputConfig->GetName(),
+					Hotkey.InputTag,
+					*Action->GetName()),
+				InputConfig->FindNativeInputActionForTag(InputTag, /*bLogNotFound=*/ false),
+				Action);
+			TestNull(
+				*FString::Printf(
+					TEXT("%s does not route %s through GAS ability input"),
+					*InputConfig->GetName(),
+					Hotkey.InputTag),
+				InputConfig->FindAbilityInputActionForTag(InputTag, /*bLogNotFound=*/ false));
+		}
+
+		int32 KeyCount = 0;
+		for (const FEnhancedActionKeyMapping& Mapping : PlayerHudContext->GetMappings())
+		{
+			KeyCount += Mapping.Action == Action ? 1 : 0;
+		}
+		TestTrue(
+			*FString::Printf(TEXT("IMC_UI_PlayerHUD maps a key to %s"), *Action->GetName()),
+			KeyCount > 0);
+
+		const FGameplayTag ExpectedTab = Hotkey.GameMenuTab
+			? FGameplayTag::RequestGameplayTag(FName(Hotkey.GameMenuTab), /*ErrorIfNotFound=*/ false)
+			: FGameplayTag();
+		TestTrue(
+			*FString::Printf(TEXT("%s opens the expected game menu tab"), Hotkey.InputTag),
+			URpgPlayerGameplayInputRouterComponent::GetGameMenuTabForInputTag(InputTag) == ExpectedTab);
+	}
+
+	// The router opens these screens; both need a registry route.
+	for (const TCHAR* ScreenTagName : { TEXT("UI.Screen.GameMenu"), TEXT("UI.Screen.Pause") })
+	{
+		FRpgUIScreenRegistryEntry Entry;
+		const FGameplayTag ScreenTag =
+			FGameplayTag::RequestGameplayTag(FName(ScreenTagName), /*ErrorIfNotFound=*/ false);
+		if (TestTrue(
+				*FString::Printf(TEXT("%s has a registry route"), ScreenTagName),
+				Registry->FindScreen(ScreenTag, Entry)))
+		{
+			const UClass* ScreenClass = Entry.WidgetClass.LoadSynchronous();
+			TestTrue(
+				*FString::Printf(TEXT("%s opens an activatable widget"), ScreenTagName),
+				ScreenClass && ScreenClass->IsChildOf(UCommonActivatableWidget::StaticClass()));
+		}
+	}
 	return true;
 }
 

@@ -688,6 +688,10 @@ void URpgPawnGameplayComponent::BindRoutedGameplayHotkeys(const URpgInputConfig*
 	{
 		RpgGameplayTags::InputTag_UI_Inventory,
 		RpgGameplayTags::InputTag_UI_Skills,
+		RpgGameplayTags::InputTag_UI_Map,
+		RpgGameplayTags::InputTag_UI_Journal,
+		RpgGameplayTags::InputTag_UI_Character,
+		RpgGameplayTags::InputTag_UI_Menu,
 	};
 	for (const FGameplayTag& ScreenHotkey : ScreenHotkeys)
 	{

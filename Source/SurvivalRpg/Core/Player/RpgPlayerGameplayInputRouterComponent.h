@@ -34,7 +34,10 @@ public:
 	virtual void ReceivedPlayer() override;
 	//~ End UControllerComponent interface
 
-	/** Routes an owning-client system command such as inventory, actionbar, or weapon-ability input. */
+	/**
+	 * Routes an owning-client system command: inventory, the game menu tabs, the pause menu, actionbar or
+	 * weapon-ability input.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Input")
 	void HandleGameplayInputPressed(FGameplayTag InputTag);
 
@@ -73,6 +76,13 @@ public:
 	 */
 	UFUNCTION(BlueprintPure, Category = "Rpg|Input|Quick Access")
 	static int32 ResolveQuickAccessRadialSelection(FVector2D StickInput, float DeadZone);
+
+	/**
+	 * Returns the game menu tab (UI.Screen.GameMenu.*) that a menu hotkey such as InputTag.UI.Map opens,
+	 * or an empty tag when InputTag is not a game menu hotkey.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Input")
+	static FGameplayTag GetGameMenuTabForInputTag(FGameplayTag InputTag);
 
 	/** UI-read-only local state change used to drive the gameplay radial without owning its bindings. */
 	UPROPERTY(BlueprintAssignable, Category = "Rpg|Input|Quick Access")

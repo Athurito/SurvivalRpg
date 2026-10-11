@@ -55,7 +55,7 @@ It records the accepted decisions and the task sequence. The style itself
 | UI-04 | Crafting screen after the kiln and smithy concepts: category tree, tier sections, preview with stat ranges, one order per station from connected chests into a target chest, per-piece item rolls | Done: [#204](https://github.com/Athurito/SurvivalRpg/pull/204) |
 | UI-05 | HUD after the user's concept: vitals and XP, quickbar and Q/E/R, menu key hints, enemy health bar, context fading, mana attribute set | Done: [#206](https://github.com/Athurito/SurvivalRpg/pull/206), vitals cleanup [#208](https://github.com/Athurito/SurvivalRpg/pull/208) |
 | UI-06 | Item interactions after the user's concept: tooltip with Shift compare, item action menu, split dialog, pickup notifications, feedback toasts with icons, key caps, item-only highlight; no drop confirmation | Done: [#213](https://github.com/Athurito/SurvivalRpg/pull/213) |
-| UI-07 | Menus (game menu tabs, main menu, settings with the controller glyph choice Xbox / PlayStation, respawn), then remove KnightsQuest | In progress: settings menu [#216](https://github.com/Athurito/SurvivalRpg/pull/216); game and pause menu, main menu, respawn and the font removal follow |
+| UI-07 | Menus (game menu tabs, main menu, settings with the controller glyph choice Xbox / PlayStation, respawn), then remove KnightsQuest | In progress: settings menu [#216](https://github.com/Athurito/SurvivalRpg/pull/216), game menu, pause menu and respawn [#217](https://github.com/Athurito/SurvivalRpg/pull/217); the main menu and the font removal follow |
 | UI-08 | Inventory layout after Diablo 3: character values left of the equipment, containers below, fewer pocket cells | Planned |
 
 ## Noted for later tasks
@@ -572,9 +572,10 @@ colours and styles; texts stay English.
     for a few seconds after gained experience; otherwise they fade out.
   - The quickbar and Q/E/R dim to 40 % out of combat.
   - The enemy bar appears on a hit and fades 5 s after the last one.
-- **Key hints** show only menus that have a key today: Tab Inventory and
-  H Skills. Keys for the map, journal, character and pause menus belong to
-  UI-07; a new hint is one more entry in `CUI_HudKeyHints`.
+- **Key hints** show only menus that have a key: Tab Inventory and
+  H Skills at first; UI-07 added N Character, M Map, J Journal and Esc Menu
+  ([Game menu and pause menu](#game-menu-and-pause-menu-ui-07)). A new hint
+  is one more entry in `CUI_HudKeyHints`.
 
 ### C++ boundary
 
@@ -638,8 +639,8 @@ colours and styles; texts stay English.
 
 ### Not done
 
-- **Menu keys:** the map, journal, character and pause menus have no working
-  key, so the hints show only Inventory and Skills (UI-07).
+- **Menu keys:** the map, journal, character and pause menus had no working
+  key, so the hints showed only Inventory and Skills. UI-07 added them.
 - **XP curve:** `DA_PlayerProgression` still had no curve, so the experience
   bar stayed empty. It was added later
   ([character-progression.md](character-progression.md)).
@@ -862,3 +863,94 @@ Controls, one row per setting.
   KnightsQuest removal.
 - **Inventory:** the build button at the top right of the inventory still
   reads "Kiste bauen".
+
+## Game menu and pause menu (UI-07)
+
+The second part of UI-07. There was no concept; the pages use the panels,
+frames and text styles of the skill screen.
+
+### Decisions (2026-10-11)
+
+- **Map and Journal** stay as tabs with a styled empty state, although no
+  map or quest system exists yet. Their keys work and the HUD lists them.
+- **Character** is a character sheet: the character values and the trade
+  skill levels.
+- **Keys:** M Map, J Journal, N Character (as authored; C is crouch in the
+  Mover experiences) and Esc for the pause menu, which replaces the old Y.
+- **Button glyphs:** a menu button shows its click glyph only while a
+  gamepad is active; with mouse and keyboard there is no "Enter" cap.
+
+### Behavior
+
+- **Hotkeys:** M, J, N and H open the game menu on the Map, Journal,
+  Character and Skills tab. Esc, or View on a gamepad, opens the pause menu.
+  CommonUI's Back closes both. All four player input configs (the base pawn,
+  GASP CMC, Mover and Mover ragdoll) route the keys.
+- **Map and Journal:** a framed page with the compass or book icon, a Cinzel
+  title ("Uncharted", "No Entries"), a gold rule and one line of text.
+- **Character:** the inventory's character column (level and XP, health,
+  stamina, armour, load) next to a framed Professions panel with every trade
+  skill, its level and XP bar; both panels share their edges.
+- **Pause menu:** a framed panel with Return to Game, Save (host only),
+  Settings, then a gold rule, Return to Menu and Quit to Desktop. It uses
+  menu input mode (cursor, no gameplay input) and shows Esc Back.
+  - Settings opens the settings menu above it; Back returns to the pause
+    menu.
+  - Return to Menu and Quit to Desktop ask first. The dialogs use the same
+    framed panel with the question in Cinzel; Return to Menu leaves the
+    session and loads the main menu.
+  - The game keeps running: the menu does not pause the world.
+- **Respawn:** the respawn screen is a framed panel with "You Died" in
+  Cinzel and blood red, the hint in body text and the respawn button with
+  the shared button frames.
+- **Menu buttons:** `CUI_MainMenuButtonBase` now uses
+  `CUI_ButtonStyle_Default` and the button label style instead of the grey
+  plates and KnightsQuest. The main menu, the play and load screens and the
+  popups use it too, so their buttons changed with it; their layouts are
+  part 3.
+- **HUD key hints:** six hints wrap into two rows next to the Q/E/R slots. A
+  hint hides while its key has no glyph on the current device, so a gamepad
+  shows only Inventory and Menu.
+- **Glyph sizes:** button, action bar and HUD hint glyphs are 24 units high,
+  the tab bar's 32. The menu and apply buttons no longer grow when their
+  gamepad glyph appears on focus, which made the pause menu buttons jump.
+
+### C++ boundary
+
+- **Classification:** presentation and input composition on existing
+  seams; no new native classes.
+- **Runtime truth:** none. The menus read the character stats and skill
+  progression view models; the hotkeys are local UI commands.
+- **Native:** four input tags (`InputTag.UI.Map`, `.Journal`, `.Character`,
+  `.Menu`) and three tab tags (`UI.Screen.GameMenu.Map`, `.Journal`,
+  `.Character`). The pawn binds the four keys like Inventory and Skills, and
+  `URpgPlayerGameplayInputRouterComponent` maps them to the game menu tab or
+  the pause screen (`GetGameMenuTabForInputTag`).
+- **Content (Unreal MCP):** the input config entries, the M and Esc mappings
+  and English action descriptions, the `UI.Screen.Pause` registry route, the
+  pause menu's parent (`URpgActivatableWidget`, menu input), the game menu's
+  tab tags, every page, dialog and style change, and the HUD hints with
+  their sync graph.
+
+### Tests
+
+- `SurvivalRpg.UI.Input.MenuHotkeys`: every input config that opens the
+  inventory also routes Map, Journal, Character, Skills and Menu to their
+  input actions (not as GAS abilities), the HUD context maps each action,
+  each key opens its tab, and the game menu and pause menu have registry
+  routes.
+- `SurvivalRpg.UI.Input.PlayerInventoryNativeTag` expects Esc instead of Y
+  on the menu action.
+
+### Not done
+
+- **Main menu** and its sub-screens keep their layout; only their buttons
+  follow the shared style. KnightsQuest is still used there (part 3).
+- **Gamepad:** Map, Journal, Character and Skills have no gamepad button;
+  inside the game menu the shoulder buttons switch tabs.
+- **Respawn:** no countdown; the hint text stays the same when the button
+  becomes available.
+- **Save** in the pause menu gives no feedback, and Return to Menu does not
+  save first.
+- **Dev sandbox:** `IMC_Sandbox` also uses M, J and N (visual override,
+  teleport, next pawn), so in sandbox maps those keys do both.
