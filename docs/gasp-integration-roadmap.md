@@ -13,9 +13,11 @@ frühere Fassung mit Schnellstart-Verlauf und Aufgabenverträgen liegt in der
 
 ## Nächster bereiter Schritt
 
-Kein Schritt ist **Bereit**. Der Nutzer wählt das nächste Paket aus den
-[geplanten Paketen](#geplante-pakete). `GASP-09` kann sofort starten; der
-vollständige Manny-Bake `GASP-14` wartet auf die Animationsset-Wahl in `GASP-10`.
+**`GASP-09` Rotationsmodi und Kampfhaltung** ist **Bereit**
+([Bericht](gasp-rotation-modes.md)). Vor Phase B klärt der umsetzende Chat drei
+Entscheidungen mit dem Nutzer: auslösende Handgegenstände, Blickrichtung beim
+Angriff und Drehung in die Haltung. Der vollständige Manny-Bake `GASP-14` wartet
+auf die Animationsset-Wahl in `GASP-10`.
 `GASP-01`, `GASP-03` bis `GASP-08` und das Engine-Update `GASP-ENG-01` sind
 gemergt; offen bleiben `GASP-VAL-01`, `GASP-VAL-02` und die
 [offenen Befunde](gasp-integration-handoff.md#offene-befunde).
@@ -60,6 +62,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-07` | CMC-Sprint mit GAS-Ausdauer | **Gemergt** | [#161](https://github.com/Athurito/SurvivalRpg/pull/161) | [CMC-Sprint](gasp-cmc-sprint.md) |
 | `GASP-ENG-01` | Engine-Update auf UE 5.8.3: NetworkPrediction-/Mover-Overrides und Build-Pin | **Gemergt** | [#221](https://github.com/Athurito/SurvivalRpg/pull/221) | [UE 5.8.3](gasp-engine-5-8-3.md) |
 | `GASP-08` | Pilot: GASP-Locomotion offline auf UE5-Manny-Skelett | **Gemergt**; Exit-Entscheidung **Pass** (Nutzer) | [#228](https://github.com/Athurito/SurvivalRpg/pull/228) | [Manny-Pilot](gasp-manny-skeleton-pilot.md) |
+| `GASP-09` | Rotationsmodi: freie Bewegung und Kampfhaltung (Strafe), Sprint-Richtungs-Gate | **Bereit** | – | [Rotationsmodi](gasp-rotation-modes.md) |
 
 Statuswerte: **Geplant**, **Bereit**, **In Arbeit**, **Validierung**,
 **PR offen**, **Gemergt**, **Blockiert**, **Zurückgestellt**.
@@ -88,7 +91,6 @@ mit **Bereit** in die Statustabelle oben.
 
 | ID | Arbeitspaket | Status | Plan |
 | --- | --- | --- | --- |
-| `GASP-09` | Rotationsmodi: freie Bewegung und Kampfhaltung (Strafe), Sprint-Richtungs-Gate | **Geplant** | [Plan](gasp-movement-plan.md#gasp-09-rotation-modes-and-combat-stance) |
 | `GASP-10` | Animationsset und Tempo-Parität (Relaxed empfohlen), Ducktempo | **Geplant** | [Plan](gasp-movement-plan.md#gasp-10-animation-set-and-speed-parity) |
 | `GASP-11` | Gemeinsames Bewegungsprofil (Trägheit, Drehung, Luft), lastunabhängig | **Geplant** | [Plan](gasp-movement-plan.md#gasp-11-shared-movement-profile) |
 | `GASP-12` | Walk-Gait und Analog-Schwelle | **Geplant** | [Plan](gasp-movement-plan.md#gasp-12-walk-gait-and-analog-input) |
