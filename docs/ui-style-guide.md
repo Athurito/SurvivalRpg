@@ -263,6 +263,12 @@ Rules:
   Enter, B and A, Circle and Cross). Only a hint without an action, such as
   "Shift Compare", uses a cap texture directly; size its brush to the
   texture's aspect ratio at the wanted height.
+- **Button glyphs:** a CommonUI button shows the default click action
+  while hovered, which is Enter with a keyboard. Menu buttons show it only on
+  a gamepad: button bases with an `InputActionWidget`
+  (`CUI_MainMenuButtonBase`, `CUI_ApplyButtonBase`, `CUI_PlayButtonBase`)
+  set `bHideInputActionWithKeyboard`. Action bar buttons
+  (`CUI_ActionButtonBase`, "Esc Back") keep their keys on every device.
 - **Glyph size:** to show a glyph at a set height, put the
   `CommonActionWidget` in a `ScaleBox` (`ScaleToFitY`) inside a `SizeBox`
   with only a height override. The width then follows each glyph's aspect
@@ -346,6 +352,11 @@ styles for newly placed widgets.
     (vitals, enemy bars); dim controls (quickbar, abilities) to 40 %.
   - Text over the world sits on a plate (`MI_UI_Panel_Inset` at 75 %) so it
     stays readable on bright scenes.
+  - Menu key hints (`CUI_HudKeyHints`) sit in a right-aligned wrap box, two
+    rows of three. A hint hides while its key has no glyph on the current
+    device (`F_SyncHint` on `OnInputMethodChanged`, shown again on
+    `OnInputIconUpdated`), so a gamepad never shows a label without a
+    button.
 - **Item interactions** (UI-06):
   - Item tooltips are 380 units wide: icon, name, rarity and level on top,
     base stats as large values in columns, affixes, the description, then
@@ -426,6 +437,16 @@ styles for newly placed widgets.
   body style. Categories are a heading over `MI_UI_Divider_Accent`. In option
   rows the value bars are ash and the chosen bar gold; sliders are a thin
   `AccentDim` line with the gold diamond (`MI_UI_Glyph_Diamond`) as thumb.
+- **Menu panels** (pause menu, confirmation dialogs, respawn, game menu
+  pages) are the skill screen panel: `MI_UI_Panel_Inset` inset by 4 units
+  under `T_UI_Frame_PanelWide` drawn as `Box` (margins 0.074 / 0.11). Menu
+  buttons are `CUI_MainMenuButtonBase` at 52 units high; a gold rule
+  (`MI_UI_Divider_Accent`) separates leaving actions from the rest. A
+  confirmation dialog states its question in the subheading style above
+  Accept and Cancel, with Cancel focused.
+- **Empty states** (a tab whose system does not exist yet) fill the page
+  panel and centre a 128-unit navigation icon at 55 % opacity, a title, the
+  `T_UI_Control_Divider` ornament and one line of muted body text.
 - **Controller overview labels** come from the input actions'
   `ActionDescription` in the contexts the overview lists
   (`DescribedContexts`); stick and trigger axes are folded onto the stick and
