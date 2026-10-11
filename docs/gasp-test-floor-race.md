@@ -1,11 +1,13 @@
 # GASP-STAB-03: Floor before pawns in CQTest network tests
 
-Status: **PR open**, [#223](https://github.com/Athurito/SurvivalRpg/pull/223).
-Branch `claude/gasp-stab-03-test-floor-race`, first stacked on `GASP-ENG-01`
-(`2e15e87e`), because only the UE 5.8.3 pin builds on the installed engine;
-after [PR #221](https://github.com/Athurito/SurvivalRpg/pull/221) merged as
-`e13ab82b`, retargeted to `master` and merged with it. Implementation commit
-`a36ebe44`.
+Status: **Merged.** [PR #223](https://github.com/Athurito/SurvivalRpg/pull/223)
+from branch `claude/gasp-stab-03-test-floor-race` was merged on 2026-10-11 at
+15:14:07 UTC as `426c3fa3`; final reviewed head `0e44a720`. The branch was
+first stacked on `GASP-ENG-01` (`2e15e87e`), because only the UE 5.8.3 pin
+builds on the installed engine; after
+[PR #221](https://github.com/Athurito/SurvivalRpg/pull/221) merged as
+`e13ab82b`, it was retargeted to `master` and merged with it. Implementation
+commit `a36ebe44`. This status update ran no new builds or tests.
 
 ## Problem
 
