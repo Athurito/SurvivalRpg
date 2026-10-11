@@ -11,20 +11,19 @@ diese Datei **ersetzen, nicht ergänzen**. Das frühere fortlaufende Protokoll b
 | Feld | Wert |
 | --- | --- |
 | Stand | 11.10.2026 |
-| Aktive Aufgabe, Status, zuständiger Chat | `GASP-ENG-01` Engine-Update auf UE 5.8.3, **PR offen**; Claude-Chat der UI-07-Sitzung. |
-| Branch, Worktree, Basis / PR | `claude/gasp-eng-01-ue-5-8-3`, Worktree `survival-rpg-harvesting-review-66df3a`, Basis `master` `f563bd08` / [#221](https://github.com/Athurito/SurvivalRpg/pull/221) |
-| Offene Abnahmepunkte bis Merge | Nutzerfreigabe zum Merge. Danach muss jeder Checkout seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
-| Akzeptierter Runtime-Stand | `master` `f563bd08`; enthält alle GASP-Schritte bis GASP-07 (#161). Spätere Merges betreffen andere Systeme. |
-| Dateibesitz / Sperren | `Build/Patches/NetworkPrediction/**`, `Source/SurvivalRpg.Target.cs` bis zum Merge von GASP-ENG-01. |
-| Editor / PIE / Builds | Installiert ist UE 5.8.3 (CL 58210709). Ohne GASP-ENG-01 bricht jeder Build am 5.8.2-Pin ab. Vor eigener Editor-/MCP-Nutzung andere Checkouts und Sitzungen prüfen. |
+| Aktive Aufgabe, Status, zuständiger Chat | Keine. Zuletzt `GASP-ENG-01` Engine-Update auf UE 5.8.3, **gemergt**. |
+| Branch, Worktree, Basis / PR | Kein aktiver Branch. Zuletzt `claude/gasp-eng-01-ue-5-8-3` / [#221](https://github.com/Athurito/SurvivalRpg/pull/221), gemergt als `e13ab82b`. |
+| Offene Abnahmepunkte | Keine. Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
+| Akzeptierter Runtime-Stand | `master` `e13ab82b`; enthält alle GASP-Schritte bis GASP-07 (#161) und GASP-ENG-01 (#221). Spätere Merges betreffen andere Systeme. |
+| Dateibesitz / Sperren | Keine. Eine separate Claude-Sitzung bearbeitet die CMC-Testboden-Korrektur aus den offenen Befunden. |
+| Editor / PIE / Builds | Installiert ist UE 5.8.3 (CL 58210709), `master` pinnt 5.8.3. Branches ohne GASP-ENG-01 bauen erst nach Übernahme von `master`. Vor eigener Editor-/MCP-Nutzung andere Checkouts und Sitzungen prüfen. |
 | Plugin-Overrides | Git-ignoriert und checkout-lokal. In jedem Worktree vor Build oder Branchwechsel gemäß [README](../Build/Patches/NetworkPrediction/README.md) prüfen; Engine-Wechsel nach dem Abschnitt „Engine updates“. |
 | Lokale Belege | `Saved/...` existiert nur im erzeugenden Checkout; versioniert sind Zusammenfassungen in Berichten und Manifesten unter `docs/assets`. |
 
 ## Nächster Handgriff
 
-`GASP-ENG-01` nach Nutzerfreigabe mergen, Roadmap-Status und diese Übergabe
-nachziehen. Danach ist kein Paket bereit: mit dem Nutzer das nächste Paket
-festlegen, etwa `GASP-VAL-02` oder einen Punkt aus den offenen Befunden.
+Kein Paket ist bereit: mit dem Nutzer das nächste Paket festlegen, etwa
+`GASP-VAL-02` oder einen Punkt aus den offenen Befunden.
 
 ## Offene Befunde
 
