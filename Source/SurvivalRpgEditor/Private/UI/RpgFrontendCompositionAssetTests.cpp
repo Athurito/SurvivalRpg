@@ -741,6 +741,13 @@ namespace RpgFrontendCompositionAssetTests
 					TabIds.Contains(TabId));
 				TabIds.Add(TabId);
 
+				// CommonUI leaves a page out of focus routing when its wrapper does not support activation focus,
+				// so a gamepad would never focus the page's first setting.
+				const UCommonActivatableWidget* Page = Cast<UCommonActivatableWidget>(Widget);
+				Test.TestTrue(
+					*FString::Printf(TEXT("%s passes activation focus to its page"), *PageLabel),
+					Page && Page->SupportsActivationFocus());
+
 				const FText TabLabel =
 					TabLabelProperty->GetPropertyValue_InContainer(Widget);
 				Test.TestFalse(
