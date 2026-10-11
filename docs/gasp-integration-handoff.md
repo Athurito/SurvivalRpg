@@ -11,25 +11,32 @@ diese Datei **ersetzen, nicht ergänzen**. Das frühere fortlaufende Protokoll b
 | Feld | Wert |
 | --- | --- |
 | Stand | 11.10.2026 |
-| Aktive Aufgabe, Status, zuständiger Chat | `GASP-08` Manny-Skelett-Pilot, **In Arbeit** (Claude-Sitzung ab 11.10.2026), Phase A. Zuletzt gemergt: `GASP-STAB-03`. |
-| Branch, Worktree, Basis / PR | `claude/gasp-08-manny-skeleton-pilot` im Worktree `.claude/worktrees/musing-ishizaka-7bac20`, Basis `master` `679a6340`; noch kein PR. |
-| Offene Abnahmepunkte | Keine. Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
-| Akzeptierter Runtime-Stand | `master` `426c3fa3`; enthält alle GASP-Schritte bis GASP-07 (#161), GASP-ENG-01 (#221) und GASP-STAB-03 (#223, nur Testcode). Spätere Merges betreffen andere Systeme. |
-| Dateibesitz / Sperren | `GASP-08`: neuer Ordner `/Game/SurvivalRpg/Characters/GASP/Pilot/` (Clips, Schema-/Datenbank-Kopien, Pilot-AnimBP, Chooser, Pawn, PawnData, Experience, Karte) und `docs/gasp-manny-skeleton-pilot.md`. Bestehende GASP-Assets werden nur gelesen. Eine separate Claude-Sitzung untersucht den zeitabhängigen Remote-Melee-Test aus den offenen Befunden. |
+| Aktive Aufgabe, Status, zuständiger Chat | `GASP-08` Manny-Skelett-Pilot, **PR offen** (Draft). Phasen A–D umgesetzt und automatisch ausgewertet; Sichtabnahme und Exit-Entscheidung durch den Nutzer stehen aus. |
+| Branch, Worktree, Basis / PR | `claude/gasp-08-manny-skeleton-pilot` im Worktree `.claude/worktrees/musing-ishizaka-7bac20`, Basis `master` `679a6340`; [#228](https://github.com/Athurito/SurvivalRpg/pull/228). |
+| Offene Abnahmepunkte | Side-by-Side-Sichtabnahme gemäß [Repro](gasp-manny-skeleton-pilot.md#repro) und danach die Exit-Entscheidung (vorgeschlagen: **Pass**). Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
+| Akzeptierter Runtime-Stand | `master` `679a6340`; enthält alle GASP-Schritte bis GASP-07 (#161), GASP-ENG-01 (#221) und GASP-STAB-03 (#223, nur Testcode). GASP-08 ist nicht gemergt. |
+| Dateibesitz / Sperren | `GASP-08`: `/Game/SurvivalRpg/Characters/GASP/Pilot/`, `/Game/SurvivalRpg/System/Experiences/Gasp08Pilot/`, die zwei ergänzten Blend-Profile im Lyra-`SK_Mannequin` sowie `docs/gasp-manny-skeleton-pilot.md` und `docs/assets/gasp-08-manny-pilot.json`. Andere Chats ändern das Lyra-`SK_Mannequin` bis zum Merge nicht. Eine separate Claude-Sitzung untersucht den zeitabhängigen Remote-Melee-Test aus den offenen Befunden. |
 | Editor / PIE / Builds | Installiert ist UE 5.8.3 (CL 58210709), `master` pinnt 5.8.3. Branches ohne GASP-ENG-01 bauen erst nach Übernahme von `master`. PIE-Netzwerktests nur in einem Prozess gleichzeitig laufen lassen. Vor eigener Editor-/MCP-Nutzung andere Checkouts und Sitzungen prüfen. |
 | Plugin-Overrides | Git-ignoriert und checkout-lokal. In jedem Worktree vor Build oder Branchwechsel gemäß [README](../Build/Patches/NetworkPrediction/README.md) prüfen; Engine-Wechsel nach dem Abschnitt „Engine updates“. |
-| Lokale Belege | `Saved/...` existiert nur im erzeugenden Checkout; versioniert sind Zusammenfassungen in Berichten und Manifesten unter `docs/assets`. |
+| Lokale Belege | `Saved/...` existiert nur im erzeugenden Checkout; versioniert sind Zusammenfassungen in Berichten und Manifesten unter `docs/assets`. GASP-08-Rohdaten liegen in `Saved/Gasp08` und `Saved/Profiling/CSV` des Worktrees `musing-ishizaka-7bac20`. |
 
 ## Nächster Handgriff
 
-`GASP-08` gemäß [Pilotbericht](gasp-manny-skeleton-pilot.md) mit Phase A beginnen:
-beide `SK_Mannequin`-Assets vergleichen, Ziel-Skelett festlegen und die
-Einstellungen des offiziellen `RTG_UEFN_to_UE5_Mannequin` auslesen. Vorher hier
-Status **In Arbeit**, Branch und Dateibesitz eintragen und die Overrides für
-UE 5.8.3 gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates)
-neu stagen.
+Der Nutzer prüft die drei Pilotkarten gemäß [Repro](gasp-manny-skeleton-pilot.md#repro)
+und trifft die Exit-Entscheidung. Bei **Pass**: Bericht und PR um die Entscheidung
+ergänzen, mergen und als nächsten begrenzten Schritt den vollständigen CMC-Bake
+(Dense, Sparse, Traversal, Chooser) mit Produktions-Normalisierung definieren.
+Bei **Fail**: Gründe im Bericht festhalten, Pilot gemäß Rollback-Abschnitt
+zurücknehmen und UEFN plus Runtime-Retargeting beibehalten.
 
 ## Offene Befunde
+
+- `GASP-08` (PR #228, nicht gemergt): Der Bake zielt auf `SKM_Manny_Simple`
+  ohne Korrekturknochen. Das gebackene Becken sitzt konstant 3,09 cm weiter vorn
+  als beim Runtime-Follower. Im Fußkontakt liegt der p95-Wert in 9 von 144 Clips
+  bis zu 4,2 cm/s über dem Follower, in 4 Clips darunter. Pilot-Normalisierung
+  und Datenbankauswahl weichen von der Produktion ab; Multiplayer und Gameplay
+  auf einem Manny-Mesh sind ungeprüft. [Bericht](gasp-manny-skeleton-pilot.md#limits)
 
 - CMC-Review 11.10.2026 (UE 5.8.2, ohne Paket): Der Pawn folgt per
   `bUseControllerRotationYaw` der Kamera, der AnimBP bekommt aber

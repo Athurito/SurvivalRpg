@@ -1,6 +1,6 @@
 # GASP-08 – UE5 Manny skeleton pilot
 
-Status: **PR open** (implemented 2026-10-11 on `claude/gasp-08-manny-skeleton-pilot`). Phases A–D are done, and the automated evidence supports **Pass**. The user's side-by-side visual check is still open, and the exit decision waits for it. Results, failed attempts, and limits are under [Results](#results); the asset manifest is [gasp-08-manny-pilot.json](assets/gasp-08-manny-pilot.json).
+Status: **PR open** ([#228](https://github.com/Athurito/SurvivalRpg/pull/228), draft; implemented 2026-10-11 on `claude/gasp-08-manny-skeleton-pilot`). Phases A–D are done, and the automated evidence supports **Pass**. The user's side-by-side visual check is still open, and the exit decision waits for it. Results, failed attempts, and limits are under [Results](#results); the asset manifest is [gasp-08-manny-pilot.json](assets/gasp-08-manny-pilot.json).
 
 ## Goal
 
