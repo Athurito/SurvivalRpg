@@ -10,11 +10,11 @@ diese Datei **ersetzen, nicht ergänzen**. Das frühere fortlaufende Protokoll b
 
 | Feld | Wert |
 | --- | --- |
-| Stand | 01.10.2026 |
-| Aktive Aufgabe, Status, zuständiger Chat | Keine. Kein GASP-Gameplay-Schritt begonnen. |
+| Stand | 11.10.2026 |
+| Aktive Aufgabe, Status, zuständiger Chat | Keine in Arbeit. `GASP-08` (Manny-Skelett-Pilot) ist **Bereit**, noch keinem Chat zugeordnet. |
 | Branch, Worktree, Basis / PR | – |
 | Offene Abnahmepunkte bis Merge | – |
-| Akzeptierter Runtime-Stand | `master` mit [PR #161](https://github.com/Athurito/SurvivalRpg/pull/161), Merge `849dc7aa`, geprüfter Head `78074034`; enthält GASP-06 (#160) und alle früheren GASP-Schritte. Seitdem nur Dokumentations- und Agent-Tooling-Änderungen. |
+| Akzeptierter Runtime-Stand | `master` mit [PR #161](https://github.com/Athurito/SurvivalRpg/pull/161), Merge `849dc7aa`, geprüfter Head `78074034`; enthält GASP-06 (#160) und alle früheren GASP-Schritte. Seitdem keine Änderung an GASP-Locomotion, AnimBPs oder Traversal; andere Features änderten nur GASP-InputConfigs/-Actions und nicht-lokomotorische Character-Komponenten. |
 | Dateibesitz / Sperren | Keine eingetragen. |
 | Editor / PIE / Builds | Beim letzten GASP-Abschluss am 28.09.2026 lief kein UnrealEditor-Prozess. Vor eigener Editor-/MCP-Nutzung andere Checkouts und Sitzungen prüfen. |
 | Plugin-Overrides | Git-ignoriert und checkout-lokal. In jedem Worktree vor Build oder Branchwechsel gemäß [README](../Build/Patches/NetworkPrediction/README.md) prüfen. |
@@ -22,12 +22,20 @@ diese Datei **ersetzen, nicht ergänzen**. Das frühere fortlaufende Protokoll b
 
 ## Nächster Handgriff
 
-Kein Paket ist bereit. Mit dem Nutzer das nächste Paket festlegen, etwa
-`GASP-VAL-02` oder einen Punkt aus den offenen Befunden, und es in der Roadmap
-als **Bereit** eintragen, bevor die Umsetzung beginnt.
+`GASP-08` gemäß [Pilotbericht](gasp-manny-skeleton-pilot.md) mit Phase A beginnen:
+beide `SK_Mannequin`-Assets vergleichen, Ziel-Skelett festlegen und die
+Einstellungen des offiziellen `RTG_UEFN_to_UE5_Mannequin` auslesen. Vorher hier
+Status **In Arbeit**, Branch und Dateibesitz eintragen.
 
 ## Offene Befunde
 
+- CMC-Review 11.10.2026 (ohne Paket): Der Pawn folgt per
+  `bUseControllerRotationYaw` der Kamera, der AnimBP bekommt aber
+  „OrientToMovement“ gemeldet. Der CMC fährt Relaxed-Tempi (375/585 cm/s) auf
+  Neutral-Animationen (gemessen 500/350/300 bzw. 700 cm/s). Anfahren und
+  Bremsen sind deutlich direkter als im Original (gemessen 0,24 s bzw.
+  0,125 s/18,5 cm gegenüber ca. 0,6 s bzw. 0,25 s/62 cm). Bewegung bleibt
+  lastunabhängig ([Spielvision](game-vision.md)).
 - `GASP-VAL-02`: Cooked/packaged und WAN bzw. gezielt emulierte
   Netzbedingungen nie geprüft (verschiedene Render-FPS, Delay/Jitter/Loss,
   Late Join, Traversal, Korrekturen, Respawn). Lokale uncooked Ergebnisse

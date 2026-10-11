@@ -1,6 +1,6 @@
 # GASP-Integration: Roadmap
 
-Stand: **01.10.2026**. Zentraler Arbeitsplan für die GASP-/Lyra-Integration:
+Stand: **11.10.2026**. Zentraler Arbeitsplan für die GASP-/Lyra-Integration:
 Bewegung und ihre RPG-Anbindung, keine Gesamtplanung für Combat, Crafting oder
 Portale (dafür gilt die [Spielvision](game-vision.md)).
 
@@ -13,11 +13,12 @@ frühere Fassung mit Schnellstart-Verlauf und Aufgabenverträgen liegt in der
 
 ## Nächster bereiter Schritt
 
-Kein Arbeitspaket ist als **Bereit** eingetragen. `GASP-01` und `GASP-03` bis
-`GASP-07` sind gemergt. Offen sind die Registerpunkte `GASP-VAL-01` und
-`GASP-VAL-02` sowie die [offenen Befunde](gasp-integration-handoff.md#offene-befunde).
-Das nächste Paket legt der Nutzer fest; es wird hier und in der Statustabelle
-als **Bereit** eingetragen, bevor die Umsetzung beginnt.
+`GASP-08` ist **Bereit**: Pilot, ob GASP-Locomotion fest (offline) mit dem
+offiziellen GASP-Retargeter auf das UE5-Manny-Skelett gebracht werden kann,
+statt UEFN als verstecktes Gameplay-Mesh mit Runtime-Retargeting zu behalten.
+Auftrag, Umfang und Abnahme stehen im [Pilotbericht](gasp-manny-skeleton-pilot.md).
+`GASP-01` und `GASP-03` bis `GASP-07` sind gemergt; offen bleiben `GASP-VAL-01`,
+`GASP-VAL-02` und die [offenen Befunde](gasp-integration-handoff.md#offene-befunde).
 
 ## Bereits vorhanden
 
@@ -55,6 +56,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-05` | Importbereinigung: Audit und Entfernung | **Gemergt** | [#156](https://github.com/Athurito/SurvivalRpg/pull/156), [#158](https://github.com/Athurito/SurvivalRpg/pull/158) | [Audit](gasp-import-cleanup-audit.md), [Entfernung](gasp-original-import-removal.md) |
 | `GASP-06` | Erweiterbare Block-Locomotion | **Gemergt** | [#160](https://github.com/Athurito/SurvivalRpg/pull/160) | [Block-Locomotion](gasp-block-locomotion.md) |
 | `GASP-07` | CMC-Sprint mit GAS-Ausdauer | **Gemergt** | [#161](https://github.com/Athurito/SurvivalRpg/pull/161) | [CMC-Sprint](gasp-cmc-sprint.md) |
+| `GASP-08` | Pilot: GASP-Locomotion offline auf UE5-Manny-Skelett | **Bereit** | – | [Manny-Pilot](gasp-manny-skeleton-pilot.md) |
 
 Statuswerte: **Geplant**, **Bereit**, **In Arbeit**, **Validierung**,
 **PR offen**, **Gemergt**, **Blockiert**, **Zurückgestellt**.
