@@ -31,6 +31,10 @@
   ]
  },
  "runtime_follower_profile": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Retargeting/DA_RpgGasp08_RuntimeRetarget_Manny",
+ "presentation_mesh": {
+  "path": "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Meshes/SKM_Manny_Simple_GaspLook",
+  "note": "Copy of the Lyra SKM_Manny_Simple with the grey GASP MI_Manny_01/02 materials; same LOD0 geometry and skeleton. Used by the Manny pilot pawn and the follower profile. The Phase C follower capture used the original Lyra mesh."
+ },
  "modified_existing_assets": [
   {
    "path": "/Game/SurvivalRpg/Characters/Mannequins/Meshes/SK_Mannequin",
@@ -40,7 +44,7 @@
  "counts": {
   "baked_sequences": 144,
   "pose_assets": 20,
-  "pilot_packages": 208
+  "pilot_packages": 209
  },
  "baked_sequences": [
   {
@@ -880,6 +884,7 @@
   "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Maps/Lvl_RpgGasp08_Manny.umap": "fd11930825abaef6f26c02693ced0c91969f83dba754d899acc385881fcd6f2f",
   "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Maps/Lvl_RpgGasp08_UefnControl.umap": "bd2485771447061e9d8b0f744d43f37fe2f8e5fd93cc7e3def45c8f6dbf68ae4",
   "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Maps/Lvl_RpgGasp08_UefnFollower.umap": "f2bdd949f8575efc2e84abe23b710e65a09e9b1bf383f6fdee05932a4a220e8d",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Meshes/SKM_Manny_Simple_GaspLook.uasset": "51566125938ca1cc1d35dcf364a13800497a1c0721b16b94ccfd35a0bd884784",
   "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/MotionMatching/Databases/PSD_Dense_Stand_Idles_Manny.uasset": "b5aa36703f60f7fa04e970d445d73f40dad0b754522f49df99b69efb8506c9a6",
   "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/MotionMatching/Databases/PSD_Dense_Stand_Run_Loops_Manny.uasset": "546e4ce742c3f67800a976140f75d9de1cd13e5abc95e8b14a0f11ba444c5b02",
   "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/MotionMatching/Databases/PSD_Dense_Stand_Run_Starts_Manny.uasset": "2515609d177c1c9ae3dd825211d00c3cc5db0ff2c2a6b1834688388c02e8b5c8",
@@ -894,9 +899,9 @@
   "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/MotionMatching/Schemas/PSS_Stop_Manny.uasset": "9d519fc2d1ca7e92f00de546773f513fc4f0224227d377af3ce10b37a3b9e996",
   "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/PawnData/DA_PawnData_Gasp08_Manny.uasset": "a336ef7a503ca9e9e9e82655af152710e9debc8f47cc6459324e21d89c2db75b",
   "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/PawnData/DA_PawnData_Gasp08_UefnFollower.uasset": "d42daa9bf05e9da4e52d2af47624e001e64ee425919970917a6e630a6b4dd4d1",
-  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Pawns/BP_RpgGasp08_CMC_Manny.uasset": "c8c7a7b443bb183a1e6a750b219ba469a1190df044f06b32b69d7f1c050ccc7e",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Pawns/BP_RpgGasp08_CMC_Manny.uasset": "66416fad12c795b278354cce93a49c0e9fb170af21742a599c4f5749856bd39a",
   "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Pawns/BP_RpgGasp08_CMC_UefnFollower.uasset": "bd9a0975cbe0b781381e098e4a6d104f4228985c9670b7816c0b79e18cc021ce",
-  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Retargeting/DA_RpgGasp08_RuntimeRetarget_Manny.uasset": "77346b20e6bb68af70ec8718ecbea5cf8940a34eea425ab2c21f090f15c1e1a3",
+  "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Retargeting/DA_RpgGasp08_RuntimeRetarget_Manny.uasset": "e13b28cc4a089638b2e766f7fdaa033e53c0bef7fc7683fe1beadade06c7d26a",
   "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Retargeting/RTG_UEFN_to_UE5_Mannequin_PilotBake.uasset": "ffc7f7e3f294f30966b6abe4853faa93ff84f79fc7c2c8f8caff2cdc96fa63c0",
   "Content/SurvivalRpg/Characters/GASP/Pilot/Manny/Rigs/MDT_RpgGasp08_Manny.uasset": "2c701f482570bb8ea9ace660519267127341edb2a07321fa4c387e58eb5fa828",
   "Content/SurvivalRpg/Characters/GASP/Pilot/UefnControl/ABP_RpgGasp08_CMC_UefnCtrl.uasset": "9b8bcdb9ffb96016c69bba8cbd8baff0078b605452c139666c5ed52662e68c22",
