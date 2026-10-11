@@ -198,7 +198,6 @@ namespace RpgCombatPIENetworkTests
 
 	struct FNetworkState : public FBasePIENetworkComponentState
 	{
-		ARpgCombatNetworkFloorFixture* Floor = nullptr;
 		ARpgCombatNetworkTargetFixture* Target = nullptr;
 		int32 SubjectPlayerId = INDEX_NONE;
 		TWeakObjectPtr<URpgWeaponInstance> AuthorityWeapon;
@@ -620,6 +619,7 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 
 	// Keep the hooks alive through CQTest network teardown; never restore persistence on test actors.
 	RpgCombatPIENetworkTests::FScopedPIEWorldSaveIsolation WorldSaveIsolation;
+	FRpgScopedNetworkTestGround Ground;
 	RpgCombatPIENetworkTests::FScopedAbilityLifecycle HitReactionLifecycle;
 	FPIENetworkComponent<FNetworkState> Network{
 		TestRunner,
@@ -1246,6 +1246,7 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 			}
 		}
 		WorldSaveIsolation.Start();
+		Ground.Start();
 		CombatSettings->bLogWeaponAttackLifecycle = true;
 		PrototypeGameModeClass = LoadClass<ARpgGameModeBase>(
 			nullptr,
@@ -1294,10 +1295,6 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 				{
 					ASSERT_THAT(IsTrue(WorldSaveIsolation.IsWorldIsolated(State.World)));
 				})
-			.SpawnAndReplicate<
-				ARpgCombatNetworkFloorFixture,
-				&FNetworkState::Floor>(
-				NetworkTimeout())
 			.SpawnAndReplicate<
 				ARpgCombatNetworkTargetFixture,
 				&FNetworkState::Target>(

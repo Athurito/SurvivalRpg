@@ -11,19 +11,21 @@ diese Datei **ersetzen, nicht ergänzen**. Das frühere fortlaufende Protokoll b
 | Feld | Wert |
 | --- | --- |
 | Stand | 11.10.2026 |
-| Aktive Aufgabe, Status, zuständiger Chat | Keine. Zuletzt `GASP-ENG-01` Engine-Update auf UE 5.8.3, **gemergt**. |
-| Branch, Worktree, Basis / PR | Kein aktiver Branch. Zuletzt `claude/gasp-eng-01-ue-5-8-3` / [#221](https://github.com/Athurito/SurvivalRpg/pull/221), gemergt als `e13ab82b`. |
-| Offene Abnahmepunkte | Keine. Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
+| Aktive Aufgabe, Status, zuständiger Chat | `GASP-STAB-03` Testboden vor den Pawns in CQTest-Netzwerktests, **PR offen**; Claude-Chat. Zuletzt gemergt: `GASP-ENG-01` Engine-Update auf UE 5.8.3. |
+| Branch, Worktree, Basis / PR | `claude/gasp-stab-03-test-floor-race`, Worktree `musing-ishizaka-7bac20`, Basis `master` / [#223](https://github.com/Athurito/SurvivalRpg/pull/223). `GASP-ENG-01`: [#221](https://github.com/Athurito/SurvivalRpg/pull/221), gemergt als `e13ab82b`. |
+| Offene Abnahmepunkte | Merge von `GASP-STAB-03`. Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
 | Akzeptierter Runtime-Stand | `master` `e13ab82b`; enthält alle GASP-Schritte bis GASP-07 (#161) und GASP-ENG-01 (#221). Spätere Merges betreffen andere Systeme. |
-| Dateibesitz / Sperren | Keine. Eine separate Claude-Sitzung bearbeitet die CMC-Testboden-Korrektur aus den offenen Befunden. |
-| Editor / PIE / Builds | Installiert ist UE 5.8.3 (CL 58210709), `master` pinnt 5.8.3. Branches ohne GASP-ENG-01 bauen erst nach Übernahme von `master`. Vor eigener Editor-/MCP-Nutzung andere Checkouts und Sitzungen prüfen. |
+| Dateibesitz / Sperren | `GASP-STAB-03` bis zum Merge: `RpgCombatNetworkTestTypes.*`, `RpgGaspCMCIntegrationTests.cpp`, `RpgRuntimeRetargetTests.cpp`, `RpgMantleIntegrationTests.cpp` und `RpgCombatPIENetworkTests.cpp` unter `Source/SurvivalRpgEditor/Private/Network`. |
+| Editor / PIE / Builds | Installiert ist UE 5.8.3 (CL 58210709), `master` pinnt 5.8.3. Branches ohne GASP-ENG-01 bauen erst nach Übernahme von `master`. PIE-Netzwerktests nur in einem Prozess gleichzeitig laufen lassen. Vor eigener Editor-/MCP-Nutzung andere Checkouts und Sitzungen prüfen. |
 | Plugin-Overrides | Git-ignoriert und checkout-lokal. In jedem Worktree vor Build oder Branchwechsel gemäß [README](../Build/Patches/NetworkPrediction/README.md) prüfen; Engine-Wechsel nach dem Abschnitt „Engine updates“. |
 | Lokale Belege | `Saved/...` existiert nur im erzeugenden Checkout; versioniert sind Zusammenfassungen in Berichten und Manifesten unter `docs/assets`. |
 
 ## Nächster Handgriff
 
-Kein Paket ist bereit: mit dem Nutzer das nächste Paket festlegen, etwa
-`GASP-VAL-02` oder einen Punkt aus den offenen Befunden.
+`GASP-STAB-03` (#223) nach Nutzerfreigabe mergen, danach Roadmap-Status und
+diese Übergabe nachziehen. Dann ist kein Paket bereit: mit dem Nutzer das
+nächste Paket festlegen, etwa `GASP-VAL-02` oder einen Punkt aus den offenen
+Befunden.
 
 ## Offene Befunde
 
@@ -31,11 +33,18 @@ Kein Paket ist bereit: mit dem Nutzer das nächste Paket festlegen, etwa
   nach einem Rollback laufen `OnStart`/`OnEnd` jetzt, beim Mover-Ducken also die
   Kapselanpassung des `FStanceModifier`. Kein Projekttest prüft Ducken während
   eines erzwungenen Rollbacks. [Bericht](gasp-engine-5-8-3.md)
-- CMC-Testaufbau: `GaspCMCExperiencePIE.RemoteMovementLateJoinAndEquipmentMontage`
-  scheitert zeitabhängig (7 von 18 isolierten Läufen unter 5.8.3). Die Pawns
-  spawnen auf der leeren CQTest-Karte und fallen, bevor der Testboden im ersten
-  Schritt entsteht; liegt der Remote-Pawn dann schon unter z=0, fällt er endlos.
-  Korrektur des Fixtures als eigener Auftrag. [Bericht](gasp-engine-5-8-3.md)
+- CMC-Testaufbau: Der Bodenwettlauf von
+  `GaspCMCExperiencePIE.RemoteMovementLateJoinAndEquipmentMontage` (7 von 18
+  isolierten Läufen gescheitert) ist in `GASP-STAB-03` behoben, PR offen: Boden
+  und PlayerStarts entstehen in `InitGame`, danach 8 von 8 isolierten Läufen
+  bestanden. Dasselbe gilt für RuntimeRetarget, Mantle-Lifecycle und Remote
+  Melee. [Bericht](gasp-test-floor-race.md)
+- `CombatRemoteMeleePIE.RemoteClientAttackWindowDamageAndCancellation`
+  verfehlt zeitabhängig bei einem zufälligen der 21 Angriffe das Ziel
+  (Basis 2 von 4, mit `GASP-STAB-03` 2 von 5 bestanden). Der Boden ist nicht
+  die Ursache; vermutlich der feste, inhaltskalibrierte Kontakt-Offset des
+  Tests. Außerhalb von GASP, eigener Auftrag.
+  [Bericht](gasp-test-floor-race.md)
 - Der VAL-03-Vault-Fall verfehlte unter 5.8.3 seine Überlappungsbedingung in
   3 von 6 isolierten Läufen (siehe Pending-Replay-Fall unten).
 - `BlockLocomotionPIE.MoverFixedRollbackPreservesHeldBlockAndReplaysBlockedHistoryAcrossRelease`

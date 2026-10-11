@@ -196,6 +196,18 @@ namespace RpgRuntimeRetargetTests
 	{
 		return Character && Character->GetCharacterMovement()->IsMovingOnGround() && Character->GetVelocity().Size2D() < 5.0;
 	}
+	/** Every logged-in player's pawn is ready and standing on the floor in this world. */
+	bool AllPlayersGrounded(UWorld* World)
+	{
+		const AGameStateBase* State = ActiveWorld(World) ? World->GetGameState() : nullptr;
+		if (!State || State->PlayerArray.IsEmpty()) return false;
+		for (const APlayerState* Player : State->PlayerArray)
+		{
+			ARpgCharacter* Character = Player ? Player->GetPawn<ARpgCharacter>() : nullptr;
+			if (!Ready(World, Character) || !Grounded(Character)) return false;
+		}
+		return true;
+	}
 	bool VisibleTarget(ARpgCharacter* Character)
 	{
 		const URpgRuntimeRetargetComponent* Component = Retarget(Character);
@@ -398,7 +410,6 @@ namespace RpgRuntimeRetargetTests
 	}
 	struct FState : FBasePIENetworkComponentState
 	{
-		ARpgCombatNetworkFloorFixture* Floor = nullptr;
 		TWeakObjectPtr<ARpgCharacter> PawnBeforeDeath;
 		TWeakObjectPtr<USkeletalMeshComponent> FollowerBeforeDeath;
 		TWeakObjectPtr<URpgAbilitySystemComponent> PersistentASC;
@@ -432,6 +443,7 @@ NETWORK_TEST_CLASS(GaspRuntimeRetargetPIE, "SurvivalRpg.GASP.RuntimeRetarget")
 {
 	using FState = RpgRuntimeRetargetTests::FState;
 	RpgRuntimeRetargetTests::FScopedSaveIsolation Isolation;
+	FRpgScopedNetworkTestGround Ground;
 	RpgRuntimeRetargetTests::FScopedInput Input;
 	RpgRuntimeRetargetTests::FScopedObservations Observations;
 	RpgRuntimeRetargetTests::FScopedDefaultProfile DefaultProfileOverride;
@@ -465,6 +477,7 @@ NETWORK_TEST_CLASS(GaspRuntimeRetargetPIE, "SurvivalRpg.GASP.RuntimeRetarget")
 		ASSERT_THAT(IsNotNull(EnabledProfile->Retargeter.Get()));
 		ASSERT_THAT(IsNotNull(EnabledProfile->RetargetAnimClass.Get()));
 		Isolation.Start();
+		Ground.Start();
 		OriginalExperience = GetDefault<URpgDeveloperSettings>()->ExperienceOverride;
 		GetMutableDefault<URpgDeveloperSettings>()->ExperienceOverride = ExperienceId();
 		bConfigured = true;
@@ -588,7 +601,8 @@ NETWORK_TEST_CLASS(GaspRuntimeRetargetPIE, "SurvivalRpg.GASP.RuntimeRetarget")
 		if (!bConfigured) return;
 		Network.ThenServer(TEXT("Persistence is isolated before any pawn initializes"), [this](FState& State)
 			{ ASSERT_THAT(IsTrue(Isolation.IsIsolated(State.World))); })
-			.SpawnAndReplicate<ARpgCombatNetworkFloorFixture, &FState::Floor>(Timeout())
+			.UntilServer(TEXT("Listen server has every pawn grounded on the floor that preceded it"), [](FState& State)
+				{ return AllPlayersGrounded(State.World); }, Timeout())
 			.UntilClient(TEXT("Default traversal pawn is ready without an optional target"), 0, [](FState& State)
 				{ return Ready(State.World, LocalCharacter(State.World)) && Grounded(LocalCharacter(State.World)); }, Timeout())
 			.ThenClient(TEXT("Enable transient Manny only for the owning client's presentation"), 0, [this](FState& State)
