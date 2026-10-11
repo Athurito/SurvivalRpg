@@ -80,4 +80,12 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
 	static bool ConfigureChooser(UChooserTable* Chooser, const FString& ConfigurationJson);
+
+	/**
+	 * Sets the editor-only disabled-row flags of a root Chooser asset or one of its embedded tables, named as in
+	 * the Chooser editor. One flag per result row; rows, columns and results are otherwise unchanged. Disabled
+	 * rows are skipped in editor evaluation and stripped when cooking. Recompiles the root; records undo, never saves.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
+	static bool SetChooserDisabledRows(UChooserTable* RootChooser, FName NestedTableName, const TArray<bool>& DisabledRows);
 };

@@ -408,3 +408,19 @@ bool URpgAnimationAssetTools::ConfigureChooser(UChooserTable* Chooser, const FSt
 	Chooser->MarkPackageDirty();
 	return true;
 }
+
+bool URpgAnimationAssetTools::SetChooserDisabledRows(UChooserTable* RootChooser, FName NestedTableName, const TArray<bool>& DisabledRows)
+{
+	if (!CanEdit(RootChooser) || RootChooser->RootChooser) return Fail(TEXT("Expected an editable root Chooser asset"));
+	UChooserTable* Table = NestedTableName.IsNone() ? RootChooser : FindObject<UChooserTable>(RootChooser, *NestedTableName.ToString());
+	if (!Table || (Table != RootChooser && Table->GetRootChooser() != RootChooser))
+		return Fail(FString::Printf(TEXT("Chooser table '%s' is not embedded in this root Chooser"), *NestedTableName.ToString()));
+	if (DisabledRows.Num() != Table->ResultsStructs.Num()) return Fail(TEXT("DisabledRows must have one flag per result row"));
+	const FScopedTransaction Transaction(NSLOCTEXT("RpgAnimationAssetTools", "ChooserDisabledRows", "Set Chooser Disabled Rows"));
+	Table->Modify();
+	Table->DisabledRows = DisabledRows;
+	Table->PostEditChange();
+	RootChooser->Compile(true);
+	RootChooser->MarkPackageDirty();
+	return true;
+}

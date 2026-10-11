@@ -456,6 +456,24 @@ class AnimationAssetTools(unreal.ToolsetDefinition):
             raise RuntimeError('Chooser configuration rejected; inspect editor diagnostics')
         return True
 
+    @toolset_registry.tool_call
+    @staticmethod
+    def set_chooser_disabled_rows(asset_path: str, nested_table_name: str, disabled_rows_json: str) -> bool:
+        """Set the editor-only disabled flags of a root Chooser or one embedded table; never saves.
+
+        nested_table_name is the embedded table's name as shown in the Chooser editor, or empty for
+        the root. Pass one boolean per result row. Disabled rows are skipped in editor evaluation and
+        stripped when cooking; rows, columns and results are otherwise unchanged.
+        """
+        _guard()
+        flags = json.loads(disabled_rows_json)
+        if not isinstance(flags, list) or not all(isinstance(f, bool) for f in flags):
+            raise RuntimeError('Expected a JSON array of booleans')
+        if not unreal.RpgAnimationAssetTools.set_chooser_disabled_rows(
+                _asset(asset_path, unreal.ChooserTable), nested_table_name or 'None', flags):
+            raise RuntimeError('Disabled rows rejected; see LogRpgAnimationAssetTools')
+        return True
+
 
 registration = Registration([AnimationAssetTools])
 registration.register()
