@@ -186,6 +186,27 @@ class AnimationAssetTools(unreal.ToolsetDefinition):
 
     @toolset_registry.tool_call
     @staticmethod
+    def copy_skeleton_blend_profiles(source_skeleton_path: str, target_skeleton_path: str, profile_names_json: str) -> int:
+        """Copy named blend profiles by bone name to a project skeleton and mark it dirty; never saves.
+
+        Keeps each profile's mode and per-bone scales. Every name must exist on the source,
+        be absent on the target, and use only bones the target has; otherwise nothing changes.
+        """
+        _guard()
+        names = json.loads(profile_names_json)
+        if not isinstance(names, list) or not names or not all(isinstance(n, str) and n for n in names):
+            raise RuntimeError('Expected a nonempty JSON array of blend profile names')
+        source = unreal.load_asset(source_skeleton_path)
+        if not isinstance(source, unreal.Skeleton):
+            raise RuntimeError('Source skeleton is missing: ' + source_skeleton_path)
+        count = unreal.RpgAnimationAssetTools.copy_skeleton_blend_profiles(
+            source, _asset(target_skeleton_path, unreal.Skeleton), names)
+        if count < 0:
+            raise RuntimeError('Blend profile copy was refused; see LogRpgAnimationAssetTools')
+        return count
+
+    @toolset_registry.tool_call
+    @staticmethod
     def create_montage_from_sequence(asset_path: str, sequence_path: str) -> str:
         """Create a single-segment montage with the source sequence's skeleton and duration.
 

@@ -154,6 +154,7 @@ Each toolset is named `Game.Build.Tools.Unreal.<module>.<Class>`:
   - AnimBPs and layers: `create_anim_blueprint`, `set_anim_blueprint_abstract`, `create_animation_layer_interface`, `implement_animation_layer_interface`, `add_animation_layer`, `create_linked_animation_layer_node`, and `configure_linked_animation_layer`.
   - Blueprint metadata: `set_local_function_thread_safety` and `set_variable_tooltip`.
   - Montages and notifies: `create_montage_from_sequence`, `register_animation_slot`, `add_animation_notifies`, and `animation_notify_contract`.
+  - Skeletons: `copy_skeleton_blend_profiles`.
   - BlendSpaces and Choosers: `create_blend_space`, `set_blend_space_samples`, `create_chooser`, and `configure_chooser`.
 - `AnimationRetargetTools` in `Build/Tools/Unreal/animation_retarget_tools.py`: derived animation batches through the IK retargeter. Tools: `retarget_animation_batch`, `retarget_asset_contract`, and `normalize_derived_sequence`.
 - `GaspImportAuditTools` in `Build/Tools/Unreal/gasp_import_audit.py`: read-only registry inventory for the GASP import cleanup. Tool: `collect_registry`; the workflow is in `Build/Tools/GaspImportAudit/README.md`.

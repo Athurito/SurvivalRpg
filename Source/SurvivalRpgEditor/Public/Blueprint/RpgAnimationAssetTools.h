@@ -47,6 +47,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
 	static bool RegisterAnimationSlot(USkeleton* Skeleton, FName SlotName);
 
+	/**
+	 * Copies named blend profiles to another skeleton by bone name, keeping each profile's mode and per-bone
+	 * scales. Every name must exist on the source and be absent on the target, and every profiled bone must
+	 * exist on the target; otherwise nothing changes. Records undo and marks the target dirty; never saves.
+	 * Returns the number of created profiles, or -1 when refused.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
+	static int32 CopySkeletonBlendProfiles(USkeleton* SourceSkeleton, USkeleton* TargetSkeleton, const TArray<FName>& ProfileNames);
+
 	/** Sets serialized metadata on an own function entry; this declares intent, not proof of thread safety. Compile afterwards. */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
 	static bool SetLocalFunctionThreadSafety(UBlueprint* Blueprint, FName FunctionName, bool bThreadSafe);
