@@ -911,6 +911,9 @@ frames and text styles of the skill screen.
 - **HUD key hints:** six hints wrap into two rows next to the Q/E/R slots. A
   hint hides while its key has no glyph on the current device, so a gamepad
   shows only Inventory and Menu.
+- **Glyph sizes:** button, action bar and HUD hint glyphs are 24 units high,
+  the tab bar's 32. The menu and apply buttons no longer grow when their
+  gamepad glyph appears on focus, which made the pause menu buttons jump.
 
 ### C++ boundary
 

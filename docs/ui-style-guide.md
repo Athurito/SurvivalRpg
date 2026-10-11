@@ -275,6 +275,12 @@ Rules:
   ratio: a key cap, a round face button and a wide stick glyph keep their
   shape. A box with a fixed width and height stretches every glyph to that
   box; it suits only slots that always show square glyphs.
+  - Heights: 24 units in buttons, action bars ("Esc Back") and HUD key
+    hints; 32 units for the tab bar's previous and next glyphs.
+  - A glyph that appears on focus or hover (a button's click glyph on a
+    gamepad) must fit inside the button's minimum height, or the button
+    grows and the buttons below it jump. A `SizeBox` whose overrides are
+    off does not limit anything; check that its height override is on.
 - **Gamepad type:** Windows reports every XInput controller as `Generic`, so
   Xbox glyphs are the default. Players pick Xbox or PlayStation under
   *Game → Controller → Gamepad Prompts*. `URpgControllerGlyphSubsystem`
