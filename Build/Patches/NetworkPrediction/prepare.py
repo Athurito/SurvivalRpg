@@ -135,7 +135,9 @@ def main() -> None:
 
     engine = args.engine.resolve()
     version = json.loads((engine / "Build/Build.version").read_text())
-    require(tuple(version[k] for k in ("MajorVersion", "MinorVersion", "PatchVersion")) == (5, 8, 2), "This patch requires exactly UE 5.8.2")
+    pinned = manifest["engine_version"]
+    require(tuple(version[k] for k in ("MajorVersion", "MinorVersion", "PatchVersion")) == tuple(int(part) for part in pinned.split(".")),
+            f"This patch requires exactly UE {pinned}; review the upstream plugin changes before moving the pin")
     for name, plugin in manifest["plugins"].items():
         check_hashes(engine / "Plugins" / plugin["source"], plugin["baseline"])
     for name, expected in manifest["overlay"].items():
@@ -146,7 +148,7 @@ def main() -> None:
     patched = apply_exact_patch(original.read_text(encoding="utf-8-sig"), (HERE / "fixed-interpolation-recovery.patch").read_text())
     require(hashlib.sha256(patched.encode()).hexdigest() == manifest["patched"][patched_relative], "Patched output hash mismatch")
     if args.action == "check":
-        print("check: exact UE 5.8.2 plugin source/content baselines and patch hashes match")
+        print(f"check: exact UE {pinned} plugin source/content baselines and patch hashes match")
         return
 
     existing = [destination(name).exists() for name in manifest["plugins"]]
