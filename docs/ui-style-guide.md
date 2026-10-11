@@ -61,6 +61,7 @@ everything else uses the engine's Roboto. Text styles are in `Text/`.
 
 | Style | Font | Size | Colour | Use |
 | --- | --- | --- | --- | --- |
+| `CUI_TextStyle_Display` | Cinzel Bold, spacing 160, shadow 2 × 2 | 60 | TextPrimary | The main menu title |
 | `CUI_TextStyle_Title` | Cinzel Bold, spacing 80, shadow | 30 | TextPrimary | Screen and tree titles |
 | `CUI_TextStyle_Heading` | Cinzel Bold, spacing 40, shadow | 22 | TextPrimary | Section titles |
 | `CUI_TextStyle_Subheading` | Cinzel Regular, spacing 30, shadow | 18 | TextPrimary | Selected item names, tab labels |
@@ -140,6 +141,7 @@ material's colour shows.
 | `MI_UI_Panel_Default` | Panel | Screen panels: grain, vignette, inner bevel |
 | `MI_UI_Panel_Inset` | Panel | Sub-panels, list rows |
 | `MI_UI_Panel_Tooltip` | Panel | Tooltips |
+| `MI_UI_Backdrop_Shade` | Panel | Frontend backdrop over the main menu art: background fill at 74 %, strong vignette |
 | `MI_UI_Divider_Accent` | Panel | Thin divider lines |
 | `MI_UI_Frame_Cell` | Panel | Inventory grid cells |
 | `MI_UI_Frame_Slot`, `_SlotHovered`, `_SlotSelected`, `_SlotFocused` | Panel | Equipment and action slots per state |
@@ -263,20 +265,29 @@ Rules:
   Enter, B and A, Circle and Cross). Only a hint without an action, such as
   "Shift Compare", uses a cap texture directly; size its brush to the
   texture's aspect ratio at the wanted height.
-- **Button glyphs:** a CommonUI button shows the default click action
-  while hovered, which is Enter with a keyboard. Menu buttons show it only on
-  a gamepad: button bases with an `InputActionWidget`
-  (`CUI_MainMenuButtonBase`, `CUI_ApplyButtonBase`, `CUI_PlayButtonBase`)
-  set `bHideInputActionWithKeyboard`. Action bar buttons
-  (`CUI_ActionButtonBase`, "Esc Back") keep their keys on every device.
+- **Button glyphs:** menu buttons show no click glyph. The button bases with
+  an `InputActionWidget` (`CUI_MainMenuButtonBase`, `CUI_ApplyButtonBase`,
+  `CUI_PlayButtonBase`) turn off `bShouldUseFallbackDefaultInputAction`.
+  - A menu screen turns on `bIsSelectActionDisplayedInActionBar`
+    (`URpgActivatableWidget`) instead. Its action bar then shows the click
+    action as "Select" while a gamepad is active; mouse and keyboard never
+    show it. The hint only displays: the focused button still receives the
+    press.
+  - A button shows a glyph only for its own triggering action, such as Quit's
+    Back on the main menu, and only on a gamepad while
+    `bHideInputActionWithKeyboard` is on. `CUI_MainMenuButtonBase` also lists
+    its triggering action in the action bar; turn `bDisplayInActionBar` off
+    when the action has no display name.
+  - Action bar buttons (`CUI_ActionButtonBase`, "Esc Back") keep their keys on
+    every device.
 - **Glyph size:** to show a glyph at a set height, put the
   `CommonActionWidget` in a `ScaleBox` (`ScaleToFitY`) inside a `SizeBox`
   with only a height override. The width then follows each glyph's aspect
   ratio: a key cap, a round face button and a wide stick glyph keep their
   shape. A box with a fixed width and height stretches every glyph to that
   box; it suits only slots that always show square glyphs.
-  - Heights: 24 units in buttons, action bars ("Esc Back") and HUD key
-    hints; 32 units for the tab bar's previous and next glyphs.
+  - Heights: 28 units in buttons, 24 in action bars ("Esc Back") and HUD
+    key hints, 32 for the tab bar's previous and next glyphs.
   - A glyph that appears on focus or hover (a button's click glyph on a
     gamepad) must fit inside the button's minimum height, or the button
     grows and the buttons below it jump. A `SizeBox` whose overrides are
@@ -334,8 +345,9 @@ styles for newly placed widgets.
 
 - Use `CommonTextBlock` with a text style; do not type fonts or colours into a
   text block.
-- Use the shared brushes or styles for panels, slots and buttons. Do not use
-  KnightsQuest or the `fantasy_gui_4` frames in new work.
+- Use the shared brushes or styles for panels, slots and buttons, and only
+  Cinzel and Roboto (UI-07 removed KnightsQuest and Hamletornot). Do not use
+  the `fantasy_gui_4` frames in new work.
 - Character values (level, experience, health, stamina, armour, load) come from
   `URpgCharacterStatsViewModel`. Add it with the Resolver creation type, which
   hands every widget the local player's shared instance; bind its text and
@@ -450,6 +462,30 @@ styles for newly placed widgets.
   (`MI_UI_Divider_Accent`) separates leaving actions from the rest. A
   confirmation dialog states its question in the subheading style above
   Accept and Cancel, with Cancel focused.
+- **Main menu:** the title (`CUI_TextStyle_Display`) and the
+  `T_UI_Control_Divider` ornament sit above the menu panel, left of centre
+  over the menu art. The title is a placeholder until the game has a name.
+- **Frontend pages** (play, load, new game, server list, credits, and the
+  settings and dialogs opened from the main menu) show the main menu art
+  behind them, darkened by `MI_UI_Backdrop_Shade`. `CUI_Background` switches
+  to it while the owning player's HUD is the frontend HUD (`ARpgFrontendHUD`);
+  in game it keeps the blur over the world. Page titles are the title style
+  centred over the divider ornament, or a settings category heading on form
+  pages.
+- **Choice cards** (`CUI_PlayButtonBase`) frame their picture with
+  `T_UI_Frame_PanelWide` at 55 % opacity, full on hover or focus. A dark
+  caption plate at the bottom holds the heading, a gold rule and one body
+  line.
+- **Save list** (`CUI_SaveBrowser`):
+  - Rows use the settings row look (`CUI_SaveGameSlotStyle`: inset plate, gold
+    row frame on hover and selection), with the world name in the strong body
+    style and the save date in local time as a caption.
+  - The selected save's details sit in a framed menu panel on the right, with
+    the load button at the bottom; both panels share their bottom edge.
+  - Rows select on focus, so a gamepad previews a save while moving through
+    the list. A button group keeps one row selected.
+- **Text fields** (the world name) sit in a settings row: a dark rounded field
+  with an ash outline that turns gold on hover and focus, in body text.
 - **Empty states** (a tab whose system does not exist yet) fill the page
   panel and centre a 128-unit navigation icon at 55 % opacity, a title, the
   `T_UI_Control_Divider` ornament and one line of muted body text.

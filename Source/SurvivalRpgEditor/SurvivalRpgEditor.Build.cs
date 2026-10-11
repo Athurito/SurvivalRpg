@@ -26,6 +26,7 @@ public class SurvivalRpgEditor : ModuleRules
 			"Chooser",
 			"CQTest",
 			"CommonGame",
+			"CommonInput",
 			"CommonUI",
 			"EngineSettings",
 			"EnhancedInput",

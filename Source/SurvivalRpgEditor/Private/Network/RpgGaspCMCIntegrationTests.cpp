@@ -219,7 +219,6 @@ namespace RpgGaspCMCIntegrationTests
 
 	struct FState : FBasePIENetworkComponentState
 	{
-		ARpgCombatNetworkFloorFixture* Floor = nullptr;
 		FVector StartLocation = FVector::ZeroVector;
 		double StartTime = -1.0;
 		TWeakObjectPtr<UAnimMontage> Montage;
@@ -261,6 +260,18 @@ namespace RpgGaspCMCIntegrationTests
 	{
 		return Character && Character->GetCharacterMovement()->IsMovingOnGround()
 			&& PresentationEnumIs(Character, TEXT("MovementMode_"), TEXT("NewEnumerator4"));
+	}
+	/** Every logged-in player's pawn is ready and standing on the floor in this world. */
+	bool AllPlayersGrounded(UWorld* World)
+	{
+		const AGameStateBase* GameState = World ? World->GetGameState() : nullptr;
+		if (!GameState || GameState->PlayerArray.IsEmpty()) return false;
+		for (const APlayerState* PlayerState : GameState->PlayerArray)
+		{
+			const ARpgCharacter* Character = PlayerState ? PlayerState->GetPawn<ARpgCharacter>() : nullptr;
+			if (!Ready(World, Character) || !Grounded(Character)) return false;
+		}
+		return true;
 	}
 	ARpgPlayerState* FindPlayerState(UWorld* World, int32 PlayerId)
 	{
@@ -315,6 +326,7 @@ NETWORK_TEST_CLASS(GaspCMCExperiencePIE, "SurvivalRpg.GASP.CMC")
 	using FState = RpgGaspCMCIntegrationTests::FState;
 	// Destruction is reversed: network cleanup finishes while save isolation is still installed.
 	RpgGaspCMCIntegrationTests::FScopedSaveIsolation Isolation;
+	FRpgScopedNetworkTestGround Ground;
 	RpgGaspCMCIntegrationTests::FScopedMovementInput MovementInput;
 	FPIENetworkComponent<FState> Network{TestRunner, TestCommandBuilder, bInitializing};
 	FPrimaryAssetId OriginalExperience;
@@ -336,10 +348,12 @@ NETWORK_TEST_CLASS(GaspCMCExperiencePIE, "SurvivalRpg.GASP.CMC")
 		ASSERT_THAT(IsNotNull(GameModeClass));
 		if (!GameModeClass) return;
 		Isolation.Start();
+		Ground.Start();
 		OriginalExperience = GetDefault<URpgDeveloperSettings>()->ExperienceOverride;
 		GetMutableDefault<URpgDeveloperSettings>()->ExperienceOverride = ExperienceId();
 		bConfigured = true;
 		// CQTest creates its own temporary map. The authored CMC demonstration map is tested separately.
+		// Its floor and player starts exist before the first pawn spawns.
 		FNetworkComponentBuilder<FState>().WithClients(1).AsListenServer()
 			.WithGameInstanceClass(FSoftClassPath(TEXT("/Game/SurvivalRpg/Core/Game/BP_Rpg_GameInstance.BP_Rpg_GameInstance_C")))
 			.WithGameMode(GameModeClass).Build(Network);
@@ -356,7 +370,8 @@ NETWORK_TEST_CLASS(GaspCMCExperiencePIE, "SurvivalRpg.GASP.CMC")
 		if (!bConfigured) return;
 		Network.ThenServer(TEXT("Server persistence was isolated before InitGame"), [this](FState& State)
 			{ ASSERT_THAT(IsTrue(Isolation.IsIsolated(State.World))); })
-			.SpawnAndReplicate<ARpgCombatNetworkFloorFixture, &FState::Floor>(Timeout())
+			.UntilServer(TEXT("Listen server has every pawn grounded on the floor that preceded it"), [](FState& State)
+				{ return AllPlayersGrounded(State.World); }, Timeout())
 			.UntilClient(TEXT("Remote owner receives the CMC Experience and grounded RPG pawn"), 0, [](FState& State)
 				{ return Ready(State.World, LocalCharacter(State.World)) && Grounded(LocalCharacter(State.World)); }, Timeout())
 			.ThenClient(TEXT("Capture autonomous identity and start ordinary CMC input"), 0, [this](FState& State)

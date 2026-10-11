@@ -3,6 +3,13 @@
 
 #include "RpgActivatableWidget.h"
 
+#include "CommonInputSettings.h"
+#include "CommonInputSubsystem.h"
+#include "CommonInputTypeEnum.h"
+#include "ICommonInputModule.h"
+#include "InputMappingContext.h"
+#include "UObject/UObjectIterator.h"
+
 #if WITH_EDITOR
 #include "Editor/WidgetCompilerLog.h"
 #endif
@@ -11,6 +18,112 @@
 
 URpgActivatableWidget::URpgActivatableWidget(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
+	SelectActionDisplayName = LOCTEXT("SelectActionDisplayName", "Select");
+}
+
+FBindUIActionArgs URpgActivatableWidget::MakeSelectActionBindArgs(const FText& DisplayName, const FSimpleDelegate& OnExecuteAction)
+{
+	const UCommonInputSettings& InputSettings = ICommonInputModule::GetSettings();
+	const UInputAction* EnhancedClickAction =
+		UCommonInputSettings::IsEnhancedInputSupportEnabled() ? InputSettings.GetEnhancedInputClickAction() : nullptr;
+
+	FBindUIActionArgs BindArgs = EnhancedClickAction
+		? FBindUIActionArgs(EnhancedClickAction, OnExecuteAction)
+		: FBindUIActionArgs(InputSettings.GetDefaultClickAction(), OnExecuteAction);
+	BindArgs.bConsumeInput = false;
+	BindArgs.bDisplayInActionBar = false;
+	BindArgs.OverrideDisplayName = DisplayName;
+	return BindArgs;
+}
+
+bool URpgActivatableWidget::ShouldDisplaySelectActionFor(ECommonInputType InputType)
+{
+	return InputType == ECommonInputType::Gamepad;
+}
+
+bool URpgActivatableWidget::IsMappingContextUsedByOtherActiveScreen(
+	const UCommonActivatableWidget& Leaving, const UInputMappingContext* Mapping)
+{
+	if (!Mapping)
+	{
+		return false;
+	}
+
+	// InputMapping is protected on UCommonActivatableWidget, so other screens are read through reflection.
+	static const FObjectProperty* InputMappingProperty =
+		FindFProperty<FObjectProperty>(UCommonActivatableWidget::StaticClass(), TEXT("InputMapping"));
+	if (!InputMappingProperty)
+	{
+		return false;
+	}
+
+	const ULocalPlayer* LeavingPlayer = Leaving.GetOwningLocalPlayer();
+	for (TObjectIterator<UCommonActivatableWidget> It(RF_ClassDefaultObject | RF_ArchetypeObject); It; ++It)
+	{
+		const UCommonActivatableWidget* Screen = *It;
+		if (Screen != &Leaving && Screen->IsActivated() && Screen->GetOwningLocalPlayer() == LeavingPlayer
+			&& InputMappingProperty->GetObjectPropertyValue_InContainer(Screen) == Mapping)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+void URpgActivatableWidget::DeactivateMappingContext()
+{
+	// Keep a shared context, such as the generic UI actions, while a screen below still uses it; the last one removes it.
+	if (IsMappingContextUsedByOtherActiveScreen(*this, InputMapping))
+	{
+		return;
+	}
+	Super::DeactivateMappingContext();
+}
+
+void URpgActivatableWidget::NativeConstruct()
+{
+	Super::NativeConstruct();
+
+	if (!bIsSelectActionDisplayedInActionBar || SelectActionHandle.IsValid())
+	{
+		return;
+	}
+
+	// The click itself stays with Slate's accept on the focused button; this binding only feeds the action bar.
+	SelectActionHandle = RegisterUIActionBinding(
+		MakeSelectActionBindArgs(SelectActionDisplayName, FSimpleDelegate::CreateWeakLambda(this, [] {})));
+
+	if (UCommonInputSubsystem* InputSubsystem = UCommonInputSubsystem::Get(GetOwningLocalPlayer()))
+	{
+		InputMethodChangedHandle =
+			InputSubsystem->OnInputMethodChangedNative.AddUObject(this, &URpgActivatableWidget::HandleInputMethodChanged);
+		HandleInputMethodChanged(InputSubsystem->GetCurrentInputType());
+	}
+}
+
+void URpgActivatableWidget::NativeDestruct()
+{
+	if (InputMethodChangedHandle.IsValid())
+	{
+		if (UCommonInputSubsystem* InputSubsystem = UCommonInputSubsystem::Get(GetOwningLocalPlayer()))
+		{
+			InputSubsystem->OnInputMethodChangedNative.Remove(InputMethodChangedHandle);
+		}
+		InputMethodChangedHandle.Reset();
+	}
+
+	Super::NativeDestruct();
+
+	if (SelectActionHandle.IsValid())
+	{
+		SelectActionHandle.Unregister();
+	}
+}
+
+void URpgActivatableWidget::HandleInputMethodChanged(ECommonInputType InputType)
+{
+	// Changing the flag refreshes every bound action bar on its own.
+	SelectActionHandle.SetDisplayInActionBar(ShouldDisplaySelectActionFor(InputType));
 }
 
 TOptional<FUIInputConfig> URpgActivatableWidget::GetDesiredInputConfig() const

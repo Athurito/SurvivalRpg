@@ -11,13 +11,13 @@ diese Datei **ersetzen, nicht ergänzen**. Das frühere fortlaufende Protokoll b
 | Feld | Wert |
 | --- | --- |
 | Stand | 11.10.2026 |
-| Aktive Aufgabe, Status, zuständiger Chat | Keine in Arbeit. `GASP-08` (Manny-Skelett-Pilot) ist **Bereit**, noch keinem Chat zugeordnet. |
-| Branch, Worktree, Basis / PR | – |
-| Offene Abnahmepunkte bis Merge | – |
-| Akzeptierter Runtime-Stand | `master` mit [PR #161](https://github.com/Athurito/SurvivalRpg/pull/161), Merge `849dc7aa`, geprüfter Head `78074034`; enthält GASP-06 (#160) und alle früheren GASP-Schritte. Seitdem keine Änderung an GASP-Locomotion, AnimBPs oder Traversal; andere Features änderten nur GASP-InputConfigs/-Actions und nicht-lokomotorische Character-Komponenten. |
-| Dateibesitz / Sperren | Keine eingetragen. |
-| Editor / PIE / Builds | Beim letzten GASP-Abschluss am 28.09.2026 lief kein UnrealEditor-Prozess. Vor eigener Editor-/MCP-Nutzung andere Checkouts und Sitzungen prüfen. |
-| Plugin-Overrides | Git-ignoriert und checkout-lokal. In jedem Worktree vor Build oder Branchwechsel gemäß [README](../Build/Patches/NetworkPrediction/README.md) prüfen. |
+| Aktive Aufgabe, Status, zuständiger Chat | Keine in Arbeit. `GASP-08` (Manny-Skelett-Pilot) ist **Bereit**, noch keinem Chat zugeordnet. Zuletzt `GASP-STAB-03` Testboden vor den Pawns in CQTest-Netzwerktests, **gemergt**. |
+| Branch, Worktree, Basis / PR | Kein aktiver Branch. Zuletzt `claude/gasp-stab-03-test-floor-race` / [#223](https://github.com/Athurito/SurvivalRpg/pull/223), gemergt als `426c3fa3`; davor `GASP-ENG-01` / [#221](https://github.com/Athurito/SurvivalRpg/pull/221) als `e13ab82b`. |
+| Offene Abnahmepunkte | Keine. Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
+| Akzeptierter Runtime-Stand | `master` `426c3fa3`; enthält alle GASP-Schritte bis GASP-07 (#161), GASP-ENG-01 (#221) und GASP-STAB-03 (#223, nur Testcode). Spätere Merges betreffen andere Systeme. |
+| Dateibesitz / Sperren | Keine. Eine separate Claude-Sitzung untersucht den zeitabhängigen Remote-Melee-Test aus den offenen Befunden. |
+| Editor / PIE / Builds | Installiert ist UE 5.8.3 (CL 58210709), `master` pinnt 5.8.3. Branches ohne GASP-ENG-01 bauen erst nach Übernahme von `master`. PIE-Netzwerktests nur in einem Prozess gleichzeitig laufen lassen. Vor eigener Editor-/MCP-Nutzung andere Checkouts und Sitzungen prüfen. |
+| Plugin-Overrides | Git-ignoriert und checkout-lokal. In jedem Worktree vor Build oder Branchwechsel gemäß [README](../Build/Patches/NetworkPrediction/README.md) prüfen; Engine-Wechsel nach dem Abschnitt „Engine updates“. |
 | Lokale Belege | `Saved/...` existiert nur im erzeugenden Checkout; versioniert sind Zusammenfassungen in Berichten und Manifesten unter `docs/assets`. |
 
 ## Nächster Handgriff
@@ -25,17 +25,37 @@ diese Datei **ersetzen, nicht ergänzen**. Das frühere fortlaufende Protokoll b
 `GASP-08` gemäß [Pilotbericht](gasp-manny-skeleton-pilot.md) mit Phase A beginnen:
 beide `SK_Mannequin`-Assets vergleichen, Ziel-Skelett festlegen und die
 Einstellungen des offiziellen `RTG_UEFN_to_UE5_Mannequin` auslesen. Vorher hier
-Status **In Arbeit**, Branch und Dateibesitz eintragen.
+Status **In Arbeit**, Branch und Dateibesitz eintragen und die Overrides für
+UE 5.8.3 gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates)
+neu stagen.
 
 ## Offene Befunde
 
-- CMC-Review 11.10.2026 (ohne Paket): Der Pawn folgt per
+- CMC-Review 11.10.2026 (UE 5.8.2, ohne Paket): Der Pawn folgt per
   `bUseControllerRotationYaw` der Kamera, der AnimBP bekommt aber
   „OrientToMovement“ gemeldet. Der CMC fährt Relaxed-Tempi (375/585 cm/s) auf
   Neutral-Animationen (gemessen 500/350/300 bzw. 700 cm/s). Anfahren und
   Bremsen sind deutlich direkter als im Original (gemessen 0,24 s bzw.
   0,125 s/18,5 cm gegenüber ca. 0,6 s bzw. 0,25 s/62 cm). Bewegung bleibt
   lastunabhängig ([Spielvision](game-vision.md)).
+- `GASP-ENG-01`: UE 5.8.3 ändert den Mover-Rollback für Bewegungsmodifikatoren;
+  nach einem Rollback laufen `OnStart`/`OnEnd` jetzt, beim Mover-Ducken also die
+  Kapselanpassung des `FStanceModifier`. Kein Projekttest prüft Ducken während
+  eines erzwungenen Rollbacks. [Bericht](gasp-engine-5-8-3.md)
+- `CombatRemoteMeleePIE.RemoteClientAttackWindowDamageAndCancellation`
+  verfehlt zeitabhängig bei einem zufälligen der 21 Angriffe das Ziel
+  (Basis 2 von 4, mit `GASP-STAB-03` 2 von 5 bestanden). Der Boden ist nicht
+  die Ursache; vermutlich der feste, inhaltskalibrierte Kontakt-Offset des
+  Tests. Außerhalb von GASP; eine separate Sitzung bearbeitet ihn.
+  [Bericht](gasp-test-floor-race.md)
+- Der VAL-03-Vault-Fall verfehlte unter 5.8.3 seine Überlappungsbedingung in
+  3 von 6 isolierten Läufen (siehe Pending-Replay-Fall unten).
+- `BlockLocomotionPIE.MoverFixedRollbackPreservesHeldBlockAndReplaysBlockedHistoryAcrossRelease`
+  bestand unter 5.8.3 nur 1 von 3 isolierten Läufen. Bei Frameversatz 22
+  landet die Wiederherstellung genau auf dem verfolgten Frame, an dem der Block
+  schon gelöst ist; bei Versatz 24 einen Frame davor, und der Test besteht.
+  Testaufbau zeitabhängig; kein 5.8.2-Vergleich mehr möglich. [Bericht](gasp-engine-5-8-3.md)
+
 - `GASP-VAL-02`: Cooked/packaged und WAN bzw. gezielt emulierte
   Netzbedingungen nie geprüft (verschiedene Render-FPS, Delay/Jitter/Loss,
   Late Join, Traversal, Korrekturen, Respawn). Lokale uncooked Ergebnisse

@@ -26,9 +26,9 @@ internal static class RpgNetworkPredictionPatch
 {
 	internal static void RequirePrepared(string ProjectDirectory, ReadOnlyBuildVersion EngineVersion)
 	{
-		if (EngineVersion.MajorVersion != 5 || EngineVersion.MinorVersion != 8 || EngineVersion.PatchVersion != 2)
+		if (EngineVersion.MajorVersion != 5 || EngineVersion.MinorVersion != 8 || EngineVersion.PatchVersion != 3)
 		{
-			throw new BuildException("Review and update the pinned NetworkPrediction correction before changing from UE 5.8.2.");
+			throw new BuildException("Review and update the pinned NetworkPrediction correction before changing from UE 5.8.3.");
 		}
 		if (String.IsNullOrEmpty(ProjectDirectory))
 		{
@@ -65,7 +65,7 @@ internal static class RpgNetworkPredictionPatch
 		catch (Exception Error)
 		{
 			throw new BuildException("NetworkPrediction patch is not prepared: " + Error.Message +
-				" Run python Build/Patches/NetworkPrediction/prepare.py stage --engine <UE_5.8.2>/Engine from the project root. " +
+				" Run python Build/Patches/NetworkPrediction/prepare.py stage --engine <UE_5.8.3>/Engine from the project root. " +
 				"For an existing override, run prepare.py verify and follow Build/Patches/NetworkPrediction/README.md.");
 		}
 	}

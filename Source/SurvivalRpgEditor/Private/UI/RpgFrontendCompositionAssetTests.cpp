@@ -6,7 +6,6 @@
 #include "SurvivalRpg/UI/RpgFrontendWidgets.h"
 #include "SurvivalRpg/UI/RpgMainMenuNavigationLibrary.h"
 #include "SurvivalRpg/UI/RpgUIScreenBlueprintLibrary.h"
-#include "SurvivalRpg/UI/RpgUIScreenPayload.h"
 #include "SurvivalRpg/UI/RpgUIScreenRegistry.h"
 #include "SurvivalRpg/UI/RpgUIScreenSubsystem.h"
 
@@ -263,24 +262,10 @@ namespace RpgFrontendCompositionAssetTests
 		},
 		{
 			LoadingMenuClassPath,
-			TEXT("Button_PlaySolo"),
-			TEXT("DescriptionText"),
-			PlayMenuTableId,
-			TEXT("Txt_PlaySolo")
-		},
-		{
-			LoadingMenuClassPath,
 			TEXT("Button_Host"),
 			TEXT("HeaderText"),
 			PlayMenuTableId,
 			TEXT("Btn_PlayMenu_Host")
-		},
-		{
-			LoadingMenuClassPath,
-			TEXT("Button_Host"),
-			TEXT("DescriptionText"),
-			PlayMenuTableId,
-			TEXT("Txt_Host")
 		},
 		{
 			LoadingListClassPath,
@@ -756,6 +741,13 @@ namespace RpgFrontendCompositionAssetTests
 					TabIds.Contains(TabId));
 				TabIds.Add(TabId);
 
+				// CommonUI leaves a page out of focus routing when its wrapper does not support activation focus,
+				// so a gamepad would never focus the page's first setting.
+				const UCommonActivatableWidget* Page = Cast<UCommonActivatableWidget>(Widget);
+				Test.TestTrue(
+					*FString::Printf(TEXT("%s passes activation focus to its page"), *PageLabel),
+					Page && Page->SupportsActivationFocus());
+
 				const FText TabLabel =
 					TabLabelProperty->GetPropertyValue_InContainer(Widget);
 				Test.TestFalse(
@@ -827,15 +819,7 @@ namespace RpgFrontendCompositionAssetTests
 			"CUI_PlayMenu.CUI_PlayMenu"),
 		TEXT(
 			"/Game/SurvivalRpg/UI/Menus/LoadingMenu/"
-			"CUI_LoadingMenu.CUI_LoadingMenu"),
-		TEXT(
-			"/Game/SurvivalRpg/UI/Menus/LoadingMenu/"
-			"Multiplayer/CUI_MultiplayerLoading."
-			"CUI_MultiplayerLoading"),
-		TEXT(
-			"/Game/SurvivalRpg/UI/Menus/LoadingMenu/"
-			"Singleplayer/CUI_SinglePlayerLoading."
-			"CUI_SinglePlayerLoading")
+			"CUI_LoadingMenu.CUI_LoadingMenu")
 	};
 
 	constexpr const TCHAR* LegacyPackageNames[] = {
@@ -855,7 +839,6 @@ namespace RpgFrontendCompositionAssetTests
 		const TCHAR* ScreenTag;
 		const TCHAR* WidgetPackage;
 		bool bModal = false;
-		bool bPayloadReceiver = false;
 	};
 
 	const FPromotedScreenExpectation PromotedScreens[] = {
@@ -867,8 +850,6 @@ namespace RpgFrontendCompositionAssetTests
 		{TEXT("UI.Screen.ServerBrowser"), TEXT("/Game/SurvivalRpg/UI/PlayMenu/Sessions/CUI_ServerBrowser")},
 		{TEXT("UI.Screen.LoadGame.SinglePlayer"), TEXT("/Game/SurvivalRpg/UI/Menus/LoadingMenu/Singleplayer/CUI_SinglePlayerLoading")},
 		{TEXT("UI.Screen.LoadGame.Multiplayer"), TEXT("/Game/SurvivalRpg/UI/Menus/LoadingMenu/Multiplayer/CUI_MultiplayerLoading")},
-		{TEXT("UI.Screen.LoadGame.SinglePlayer.Settings"), TEXT("/Game/SurvivalRpg/UI/Menus/LoadingMenu/Singleplayer/CUI_SinglePlayerLoadingSettings"), false, true},
-		{TEXT("UI.Screen.LoadGame.Multiplayer.Settings"), TEXT("/Game/SurvivalRpg/UI/Menus/LoadingMenu/Multiplayer/CUI_MultiplayerLoadingSettings"), false, true},
 		{TEXT("UI.Screen.ExitDesktop"), TEXT("/Game/SurvivalRpg/UI/Popup/CUI_ExitDesktop"), true},
 		{TEXT("UI.Screen.BackToMainMenu"), TEXT("/Game/SurvivalRpg/UI/Popup/CUI_BackToMainMenu"), true}
 	};
@@ -1181,11 +1162,6 @@ bool FRpgFrontendCommonUICompositionAssetTest::RunTest(
 		{
 			TestTrue(*FString::Printf(TEXT("%s is compiled"), Expected.ScreenTag),
 				ScreenBlueprint->Status == BS_UpToDate || ScreenBlueprint->Status == BS_UpToDateWithWarnings);
-		}
-		if (Expected.bPayloadReceiver)
-		{
-			TestTrue(*FString::Printf(TEXT("%s accepts the selected-save payload"), Expected.ScreenTag),
-				ScreenClass->ImplementsInterface(URpgUIScreenPayloadReceiver::StaticClass()));
 		}
 		FrontendScreenClasses.AddUnique(ScreenClass);
 	}

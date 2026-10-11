@@ -9,7 +9,7 @@ description: Applies SurvivalRpg's Lyra-derived Unreal architecture (Experiences
 
 ## Inspect the project first
 
-The project targets Unreal Engine 5.8 (`SurvivalRpg.uproject`; the GASP roadmap records 5.8.2). Prefer 5.8 APIs and patterns, and verify version-specific claims against the inspected files.
+The project targets Unreal Engine 5.8 (`SurvivalRpg.uproject`; the GASP roadmap records 5.8.3, pinned for the NetworkPrediction patch). Prefer 5.8 APIs and patterns, and verify version-specific claims against the inspected files.
 
 When context is incomplete, inspect in this order:
 

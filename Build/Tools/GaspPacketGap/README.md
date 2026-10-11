@@ -5,7 +5,8 @@ host traverses the authored one-metre Vault with existing Enhanced Input actions
 A client can drop incoming packets for 350 ms during the traversal. No asset,
 transform, velocity, movement mode, simulation clock or montage speed is set.
 
-Requires Windows, Python 3.11+, licensed UE 5.8.2 and a matching, built
+Requires Windows, Python 3.11+, the licensed UE version pinned in
+`Build/Patches/NetworkPrediction/manifest.json` and a matching, built
 `SurvivalRpgEditor` checkout. Prepare and verify the local plugin overrides using
 [the patch instructions](../../Patches/NetworkPrediction/README.md) before building.
 Coordinate with the checkout's editor/build owner; run one probe at a time on a

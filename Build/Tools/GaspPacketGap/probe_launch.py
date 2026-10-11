@@ -55,7 +55,7 @@ def provenance(editor):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('label')
-    parser.add_argument('--engine', type=Path, required=True, help='Licensed UE 5.8.2 Engine directory')
+    parser.add_argument('--engine', type=Path, required=True, help='Licensed Engine directory of the pinned UE version')
     parser.add_argument('--output', type=Path, default=ROOT / 'Saved/GaspPacketGap',
                         help='Evidence parent directory inside this checkout Saved directory')
     parser.add_argument('--host-fps', type=int, default=60)

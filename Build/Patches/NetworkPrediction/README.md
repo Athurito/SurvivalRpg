@@ -1,8 +1,10 @@
-# UE 5.8.2 Fixed interpolation recovery
+# Fixed interpolation recovery (pinned UE 5.8.3)
 
 This is a reproducible source patch for the engine NetworkPrediction plugin.
 It does not modify the installed Engine and does not redistribute complete Epic
-plugin sources. A licensed, exact UE 5.8.2 installation supplies those files.
+plugin sources. A licensed installation of exactly the UE version in
+`manifest.json` (`engine_version`, now 5.8.3) supplies those files.
+`Source/SurvivalRpg.Target.cs` pins the same version for every build.
 
 ## Prepare before building
 
@@ -102,3 +104,29 @@ directory, and then deletes only those four generated copies. Rebuild against
 the original Engine afterward. The installed plugin has remained untouched.
 On a branch requiring the patch, use the repository's build guard as intended;
 rollback the patch change as a whole before resuming unpatched builds.
+
+## Engine updates
+
+An engine update stops the build at the version pin. Do not regenerate the
+manifest wholesale:
+
+1. Close the Editor and run `prepare.py remove` while the old manifest is still
+   checked out. `remove` verifies against the current manifest, so it refuses
+   once the manifest names the new version.
+2. Compare the new engine's four plugin trees with the manifest baselines,
+   using `prepare.files()` so the file sets match what staging copies. Review
+   every added, removed or changed file upstream, and check that the patched
+   file and its exact patch context are unchanged.
+3. Update only the reviewed baseline hashes and `engine_version`, the pin in
+   `Source/SurvivalRpg.Target.cs` and the installer self-test, then run
+   `check`, `stage`, `verify`, the normal build and the tests under
+   "Verification and rollback".
+
+A checkout that already pulled the new manifest with old overrides in place:
+restore the previous `manifest.json` from Git temporarily, run `remove`, return
+to the current manifest and stage again.
+
+UE 5.8.3 (GASP-ENG-01, [report](../../../docs/gasp-engine-5-8-3.md)): of 553
+tracked files only `Mover/Private/MovementModeStateMachine.cpp` changed. It is
+an upstream rollback fix for movement modifiers. NetworkPrediction, including
+the patched file, ChaosMover and MoverExamples are identical to 5.8.2.

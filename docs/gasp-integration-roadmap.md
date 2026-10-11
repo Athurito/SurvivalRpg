@@ -17,8 +17,9 @@ frühere Fassung mit Schnellstart-Verlauf und Aufgabenverträgen liegt in der
 offiziellen GASP-Retargeter auf das UE5-Manny-Skelett gebracht werden kann,
 statt UEFN als verstecktes Gameplay-Mesh mit Runtime-Retargeting zu behalten.
 Auftrag, Umfang und Abnahme stehen im [Pilotbericht](gasp-manny-skeleton-pilot.md).
-`GASP-01` und `GASP-03` bis `GASP-07` sind gemergt; offen bleiben `GASP-VAL-01`,
-`GASP-VAL-02` und die [offenen Befunde](gasp-integration-handoff.md#offene-befunde).
+`GASP-01`, `GASP-03` bis `GASP-07` und das Engine-Update `GASP-ENG-01` sind
+gemergt; offen bleiben `GASP-VAL-01`, `GASP-VAL-02` und die
+[offenen Befunde](gasp-integration-handoff.md#offene-befunde).
 
 ## Bereits vorhanden
 
@@ -30,7 +31,7 @@ Auftrag, Umfang und Abnahme stehen im [Pilotbericht](gasp-manny-skeleton-pilot.m
 | Runtime-Retargeting | Optionales Profil; UEFN bleibt Gameplay-Mesh und sichtbarer Standard; noch kein fest ausgewählter neuer Hauptcharacter | [Retargeting](gasp-runtime-retargeting.md), [Mover-Anbindung](gasp-mover-gameplay.md) |
 | Mover-Grundlage | Eigene `RpgGaspMoverExperience`, Bewegung inklusive Sprint-Eingabe, Equipment/GAS, Tod/Respawn und optionales Retargeting | [Foundation](gasp-mover-foundation.md), [Gameplay](gasp-mover-gameplay.md), [Lifecycle](gasp-mover-lifecycle.md) |
 | Mover-Traversal | Mantle, Vault und Grounded Hurdle | [Mover-Mantle](gasp-mover-mantle.md), [Mover-Vault](gasp-mover-vault.md), [Mover-Hurdle](gasp-mover-hurdle.md) |
-| Mover-Netzwerk | Fixed 50 Hz; versionierte UE-5.8.2-Interpolationserholung; entfernte Traversal-Animation folgt angezeigter Bewegung | [Fixed](gasp-mover-fixed-tick.md), [Recovery](gasp-mover-network-recovery.md), [Darstellung](gasp-mover-traversal-presentation.md) |
+| Mover-Netzwerk | Fixed 50 Hz; versionierte UE-5.8.3-Interpolationserholung; entfernte Traversal-Animation folgt angezeigter Bewegung | [Fixed](gasp-mover-fixed-tick.md), [Recovery](gasp-mover-network-recovery.md), [Darstellung](gasp-mover-traversal-presentation.md) |
 | Mover-Ragdoll | Begrenzter Pilot mit eigener Experience/PawnData, stationärem lebendem Ragdoll/Getup und verankerter Capsule | [Source-Audit](gasp-mover-ragdoll-source-audit.md), [Pilot](gasp-mover-ragdoll-pilot.md) |
 
 „Drei Varianten“ meint **CMC, Mover und Mover-Ragdoll**. Bestehende Baseline-
@@ -45,6 +46,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-02` | Gezielte Stabilisierung, Register unten | **Teilweise abgeschlossen** | #145–#150 | Registerzeilen |
 | `GASP-STAB-01` | Block-Cleanup nach entferntem DefenseSet | **Gemergt** | [#145](https://github.com/Athurito/SurvivalRpg/pull/145) | [Block-Cleanup](gasp-block-cleanup.md) |
 | `GASP-STAB-02` | Falling bei belegtem Respawn | **Gemergt** | [#146](https://github.com/Athurito/SurvivalRpg/pull/146) | [Respawn-Falling](gasp-respawn-falling.md) |
+| `GASP-STAB-03` | Testboden vor den Pawns in CQTest-Netzwerktests | **Gemergt** | [#223](https://github.com/Athurito/SurvivalRpg/pull/223) | [Testboden](gasp-test-floor-race.md) |
 | `GASP-NET-01` | Rollback während aktivem Mantle | **Gemergt** | [#147](https://github.com/Athurito/SurvivalRpg/pull/147) | [Mantle-Rollback](gasp-active-mantle-rollback.md) |
 | `GASP-NET-02` | Terminaler Mantle-Grund bei Reconciliation | **Gemergt** | [#148](https://github.com/Athurito/SurvivalRpg/pull/148) | [Reconciliation](gasp-terminal-reconciliation.md) |
 | `GASP-NET-03` | Rekonstruktion nach Paketpause | **Gemergt**; Grenze bewertet, Werkzeug validiert, Runtime-Grenze bleibt | [#149](https://github.com/Athurito/SurvivalRpg/pull/149) | [Paketpause](gasp-packet-gap-recovery.md) |
@@ -56,6 +58,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-05` | Importbereinigung: Audit und Entfernung | **Gemergt** | [#156](https://github.com/Athurito/SurvivalRpg/pull/156), [#158](https://github.com/Athurito/SurvivalRpg/pull/158) | [Audit](gasp-import-cleanup-audit.md), [Entfernung](gasp-original-import-removal.md) |
 | `GASP-06` | Erweiterbare Block-Locomotion | **Gemergt** | [#160](https://github.com/Athurito/SurvivalRpg/pull/160) | [Block-Locomotion](gasp-block-locomotion.md) |
 | `GASP-07` | CMC-Sprint mit GAS-Ausdauer | **Gemergt** | [#161](https://github.com/Athurito/SurvivalRpg/pull/161) | [CMC-Sprint](gasp-cmc-sprint.md) |
+| `GASP-ENG-01` | Engine-Update auf UE 5.8.3: NetworkPrediction-/Mover-Overrides und Build-Pin | **Gemergt** | [#221](https://github.com/Athurito/SurvivalRpg/pull/221) | [UE 5.8.3](gasp-engine-5-8-3.md) |
 | `GASP-08` | Pilot: GASP-Locomotion offline auf UE5-Manny-Skelett | **Bereit** | – | [Manny-Pilot](gasp-manny-skeleton-pilot.md) |
 
 Statuswerte: **Geplant**, **Bereit**, **In Arbeit**, **Validierung**,
@@ -114,7 +117,8 @@ manuelle Sichtprüfungen werden dadurch nicht als automatisch erledigt behauptet
 
 ### Unreal-Umgebung und bestehende Grenzen
 
-- Verwendeter Stand: **UE 5.8.2**, Fixed 50 Hz / 20 ms. Render-FPS und
+- Verwendeter Stand: **UE 5.8.3** (seit `GASP-ENG-01`; ältere Berichte nennen
+  ihre damalige Version 5.8.2), Fixed 50 Hz / 20 ms. Render-FPS und
   Simulationsrate sind verschieden. Keine globale FPS-Kappung, langsamere
   Montage oder Rückkehr zu Independent als Ersatz für eine Ursachenanalyse.
 - Der versionierte [NetworkPrediction-Patch](../Build/Patches/NetworkPrediction/README.md)
