@@ -1,7 +1,9 @@
 # GASP-ENG-01: Engine update to UE 5.8.3
 
-Status: **PR open**. Branch `claude/gasp-eng-01-ue-5-8-3`, based on `master`
-`f563bd08`.
+Status: **Merged.** [PR #221](https://github.com/Athurito/SurvivalRpg/pull/221)
+from branch `claude/gasp-eng-01-ue-5-8-3` (based on `master` `f563bd08`) was
+merged on 2026-10-11 at 14:26:58 UTC as `e13ab82b`; final reviewed head
+`2e15e87e`. This status update ran no new builds or tests.
 
 ## Goal
 

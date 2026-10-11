@@ -11,20 +11,19 @@ diese Datei **ersetzen, nicht ergänzen**. Das frühere fortlaufende Protokoll b
 | Feld | Wert |
 | --- | --- |
 | Stand | 11.10.2026 |
-| Aktive Aufgabe, Status, zuständiger Chat | `GASP-STAB-03` Testboden vor den Pawns in CQTest-Netzwerktests, **PR offen**; Claude-Chat. Basis `GASP-ENG-01` (Engine-Update auf UE 5.8.3), **PR offen**; Claude-Chat der UI-07-Sitzung. |
-| Branch, Worktree, Basis / PR | `GASP-STAB-03`: `claude/gasp-stab-03-test-floor-race`, Worktree `musing-ishizaka-7bac20`, Basis `claude/gasp-eng-01-ue-5-8-3` `2e15e87e` / [#223](https://github.com/Athurito/SurvivalRpg/pull/223). `GASP-ENG-01`: `claude/gasp-eng-01-ue-5-8-3`, Worktree `survival-rpg-harvesting-review-66df3a`, Basis `master` `f563bd08` / [#221](https://github.com/Athurito/SurvivalRpg/pull/221) |
-| Offene Abnahmepunkte bis Merge | Nutzerfreigabe zum Merge, zuerst `GASP-ENG-01`, danach `GASP-STAB-03` auf `master` umstellen und mergen. Nach dem ENG-01-Merge muss jeder Checkout seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
-| Akzeptierter Runtime-Stand | `master` `f563bd08`; enthält alle GASP-Schritte bis GASP-07 (#161). Spätere Merges betreffen andere Systeme. |
-| Dateibesitz / Sperren | `GASP-ENG-01`: `Build/Patches/NetworkPrediction/**`, `Source/SurvivalRpg.Target.cs`. `GASP-STAB-03`: `RpgCombatNetworkTestTypes.*`, `RpgGaspCMCIntegrationTests.cpp`, `RpgRuntimeRetargetTests.cpp`, `RpgMantleIntegrationTests.cpp` und `RpgCombatPIENetworkTests.cpp` unter `Source/SurvivalRpgEditor/Private/Network`. Jeweils bis zum Merge. |
-| Editor / PIE / Builds | Installiert ist UE 5.8.3 (CL 58210709). Ohne GASP-ENG-01 bricht jeder Build am 5.8.2-Pin ab. PIE-Netzwerktests nur in einem Prozess gleichzeitig laufen lassen. Vor eigener Editor-/MCP-Nutzung andere Checkouts und Sitzungen prüfen. |
+| Aktive Aufgabe, Status, zuständiger Chat | `GASP-STAB-03` Testboden vor den Pawns in CQTest-Netzwerktests, **PR offen**; Claude-Chat. Zuletzt gemergt: `GASP-ENG-01` Engine-Update auf UE 5.8.3. |
+| Branch, Worktree, Basis / PR | `claude/gasp-stab-03-test-floor-race`, Worktree `musing-ishizaka-7bac20`, Basis `master` / [#223](https://github.com/Athurito/SurvivalRpg/pull/223). `GASP-ENG-01`: [#221](https://github.com/Athurito/SurvivalRpg/pull/221), gemergt als `e13ab82b`. |
+| Offene Abnahmepunkte | Merge von `GASP-STAB-03`. Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
+| Akzeptierter Runtime-Stand | `master` `e13ab82b`; enthält alle GASP-Schritte bis GASP-07 (#161) und GASP-ENG-01 (#221). Spätere Merges betreffen andere Systeme. |
+| Dateibesitz / Sperren | `GASP-STAB-03` bis zum Merge: `RpgCombatNetworkTestTypes.*`, `RpgGaspCMCIntegrationTests.cpp`, `RpgRuntimeRetargetTests.cpp`, `RpgMantleIntegrationTests.cpp` und `RpgCombatPIENetworkTests.cpp` unter `Source/SurvivalRpgEditor/Private/Network`. |
+| Editor / PIE / Builds | Installiert ist UE 5.8.3 (CL 58210709), `master` pinnt 5.8.3. Branches ohne GASP-ENG-01 bauen erst nach Übernahme von `master`. PIE-Netzwerktests nur in einem Prozess gleichzeitig laufen lassen. Vor eigener Editor-/MCP-Nutzung andere Checkouts und Sitzungen prüfen. |
 | Plugin-Overrides | Git-ignoriert und checkout-lokal. In jedem Worktree vor Build oder Branchwechsel gemäß [README](../Build/Patches/NetworkPrediction/README.md) prüfen; Engine-Wechsel nach dem Abschnitt „Engine updates“. |
 | Lokale Belege | `Saved/...` existiert nur im erzeugenden Checkout; versioniert sind Zusammenfassungen in Berichten und Manifesten unter `docs/assets`. |
 
 ## Nächster Handgriff
 
-Nach Nutzerfreigabe zuerst `GASP-ENG-01` (#221) mergen, dann den PR von
-`GASP-STAB-03` auf `master` umstellen und mergen; jeweils Roadmap-Status und
-diese Übergabe nachziehen. Danach ist kein Paket bereit: mit dem Nutzer das
+`GASP-STAB-03` (#223) nach Nutzerfreigabe mergen, danach Roadmap-Status und
+diese Übergabe nachziehen. Dann ist kein Paket bereit: mit dem Nutzer das
 nächste Paket festlegen, etwa `GASP-VAL-02` oder einen Punkt aus den offenen
 Befunden.
 

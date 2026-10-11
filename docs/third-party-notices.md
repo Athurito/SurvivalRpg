@@ -16,7 +16,10 @@ the content must include the licence text listed here.
   sold on its own. A shipped build must contain the copyright notice and
   licence text. The reserved name "Cinzel Decorative" belongs to the
   decorative family; the project uses the unmodified Cinzel files.
-- **Unclear licences:** `Content/SurvivalRpg/UI/Fonts/KnightsQuest` and
-  `Hamletornot` came with Fontspace-style file names and no licence file.
-  Their licence is unverified, so new work does not use them. UI-07 removes the
-  remaining references ([ui-roadmap.md](ui-roadmap.md)).
+- **Unclear licences:** the fonts KnightsQuest and Hamletornot came with
+  Fontspace-style file names and no licence file. UI-07 replaced their last
+  references with Cinzel and deleted both ([ui-roadmap.md](ui-roadmap.md)).
+- **Controller and key prompts:** UI-07 deleted the unused Xbox One, PS4 and
+  keyboard prompt textures under `UI/Menus/Shared/Platform`. The controller
+  drawings above and five keyboard placeholders for the graphics previews
+  remain there.
