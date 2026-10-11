@@ -26,7 +26,8 @@ Never let either sample project override a deliberate SurvivalRpg adaptation wit
 | Abilities, costs, cooldowns, blockers, combat tags | GAS/Combat | GASP for read-only animation gates | Snapshot tags for animation; never infer authoritative gameplay from a selected pose. |
 | Combat montages and attack windows | GAS/Combat | GASP and Lyra | Preserve slot, root-motion, notify, prediction, and cancellation semantics. |
 | Equipment and attachment | RPG equipment architecture | GASP for skeleton/socket compatibility | Equipment owns truth; animation only presents it. |
-| Load-aware gait, sprint, and heavy movement | Equipment/GAS and CharacterMovement | GASP for animation selection | Drive gameplay and visuals from one authoritative movement profile and reconstruct it for simulated proxies. |
+| Shared movement profile, gait, and sprint | CharacterMovement and GAS | GASP for animation selection | Drive gameplay and visuals from one load-independent movement profile and reconstruct gait and rotation mode for simulated proxies. |
+| Load-dependent dodge | GAS dodge ability and equipment loadout | GASP for montage presentation | The load tier selects only the dodge variant (roll, shorter roll, sidestep); general movement stays identical for every tier. |
 | Movement and network truth | Character movement/Lyra gameplay path | GASP for selection inputs | Replicate or reconstruct inputs needed by simulated proxies and late joiners. |
 | Mantle, vault, hurdle, and short climb | GAS and CharacterMovement | GASP for curated montages; Lyra for composition | Validate traversal on the server and keep the action project-owned. |
 | Sustained climb, ledge hang, and ladders | CharacterMovement custom mode | GAS/Lyra for activation; GASP for presentation | Keep continuous movement authority outside the AnimBP. |
@@ -44,7 +45,7 @@ Inspect these contracts against the current project-owned baseline and existing 
 - `DefaultSlot` remains available to GAS combat montages.
 - Curated sequences preserve their authored root-motion import settings while the AnimInstance extraction policy remains root motion from montages only.
 - Preserve the accepted Blueprint/Chooser selection baseline until an explicit task changes it. Project ownership does not require native selection or restoration of the old resolvers.
-- Equipment/GAS and the movement component (CMC or Mover) own load and traversal state; the AnimInstance receives only animation-safe snapshots.
+- Equipment/GAS and the movement component (CMC or Mover) own the load tier, gait, and traversal state; the load tier never changes general movement, and the AnimInstance receives only animation-safe snapshots.
 
 ## Cross-system decision rules
 
@@ -52,7 +53,7 @@ Inspect these contracts against the current project-owned baseline and existing 
 - If a change is presentation-only, prefer AnimBP, Chooser, profile, or DataAsset ownership unless measured performance, engine integration, thread safety, or durable deterministic testing justifies a focused native resolver.
 - If it affects PawnData, Experience activation, character class, movement replication, ASC access, montage lifecycle, death, or ragdoll, use `unreal-gasp-expert` with `unreal-lyra-expert`.
 - If it affects attacks, dodge, block, hit reactions, combat tags, montage notifies, equipment grants, or damage windows, add `survival-rpg-combat-foundation`.
-- If it affects load-aware movement, sprint, stamina, traversal abilities, or equipment-driven gait, use `unreal-gasp-expert` with `unreal-lyra-expert` and `survival-rpg-combat-foundation`.
+- If it affects the movement profile, sprint, stamina, traversal abilities, or the load-dependent dodge, use `unreal-gasp-expert` with `unreal-lyra-expert` and `survival-rpg-combat-foundation`.
 - If it widens Mover scope or proposes Locomotor, sample camera, additional Foley, or a wider movement fantasy, require an isolated product and dependency evaluation against the roadmap before implementation.
 
 ## Integration invariants
@@ -76,7 +77,7 @@ Inspect these contracts against the current project-owned baseline and existing 
 | Pose Search or AnimGraph | Asset contract tests, AnimBP compile, database/schema validation, locomotion play test |
 | Threading or procedural animation | Threading and focused runtime tests, no worker-thread gameplay queries, LOD/performance check |
 | Movement input or rotation mode | Authority/autonomous/simulated-proxy test, correction behavior, late join |
-| Equipment load or sprint profile | Threshold and gear-change tests, movement/animation agreement, simulated proxies, correction, late join |
+| Movement profile, sprint, or load-dependent dodge | Gait and sprint transitions, gear changes across load thresholds leaving movement unchanged, dodge variant per tier, movement/animation agreement, simulated proxies, correction, late join |
 | Curated mantle/vault/climb | Server obstacle validation, GAS cost/cancel, CMC/montage handoff, collision failure, correction, combat/death interruption, removable isolated pilot |
 | GAS montage or combat layer | Slot/root-motion/notifies, cancel/block behavior, attack windows, hit reactions |
 | Equipment, death, or ragdoll | Socket attachment, mesh ownership, death transition, corpse physics, late join where relevant |

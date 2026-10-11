@@ -37,7 +37,7 @@ Then inspect the code that actually exists, especially `Source/SurvivalRpg/Equip
 Current runtime model; verify details in code before relying on them:
 
 - Inventory graph locations (Gear and Carry grids) are the sole physical truth of what a character carries and wears.
-- `URpgEquipmentLoadoutComponent` (controller-owned) reconciles a read-only Gear projection, owns the active Main-/OffHand selection and remembered pairings, runs side-effect-free conflict preflights, derives the equipment load tier (`Equipment.Load.*`), and drives pawn equipment and GAS grants.
+- `URpgEquipmentLoadoutComponent` (controller-owned) reconciles a read-only Gear projection, owns the active Main-/OffHand selection and remembered pairings, runs side-effect-free conflict preflights, derives the equipment load tier (`Equipment.Load.*`), and drives pawn equipment and GAS grants. The load tier selects only the dodge variant (Light a full roll, Medium a shorter roll, Heavy a sidestep) and never changes general movement, so co-op players keep the same pace.
 - `URpgEquipmentManagerComponent` (pawn-owned, Lyra-rooted) holds the replicated applied equipment instances and their ability/effect grants. Each `URpgEquipmentInstance` keeps its source item instance as replicated instigator.
 - `URpgWeaponAbilityLoadoutComponent` only chooses which granted ability ids are bound to `InputTag.Weapon.Ability.1..3`; `FRpgAbilityBindingResolver` resolves those ids to exactly one granted spec on the server.
 
