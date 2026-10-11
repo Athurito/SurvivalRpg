@@ -11,11 +11,11 @@ diese Datei **ersetzen, nicht ergänzen**. Das frühere fortlaufende Protokoll b
 | Feld | Wert |
 | --- | --- |
 | Stand | 11.10.2026 |
-| Aktive Aufgabe, Status, zuständiger Chat | Keine in Arbeit. `GASP-08` (Manny-Skelett-Pilot) ist **Bereit**, noch keinem Chat zugeordnet. Zuletzt `GASP-STAB-03` Testboden vor den Pawns in CQTest-Netzwerktests, **gemergt**. |
-| Branch, Worktree, Basis / PR | Kein aktiver Branch. Zuletzt `claude/gasp-stab-03-test-floor-race` / [#223](https://github.com/Athurito/SurvivalRpg/pull/223), gemergt als `426c3fa3`; davor `GASP-ENG-01` / [#221](https://github.com/Athurito/SurvivalRpg/pull/221) als `e13ab82b`. |
+| Aktive Aufgabe, Status, zuständiger Chat | `GASP-08` Manny-Skelett-Pilot, **In Arbeit** (Claude-Sitzung ab 11.10.2026), Phase A. Zuletzt gemergt: `GASP-STAB-03`. |
+| Branch, Worktree, Basis / PR | `claude/gasp-08-manny-skeleton-pilot` im Worktree `.claude/worktrees/musing-ishizaka-7bac20`, Basis `master` `679a6340`; noch kein PR. |
 | Offene Abnahmepunkte | Keine. Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
 | Akzeptierter Runtime-Stand | `master` `426c3fa3`; enthält alle GASP-Schritte bis GASP-07 (#161), GASP-ENG-01 (#221) und GASP-STAB-03 (#223, nur Testcode). Spätere Merges betreffen andere Systeme. |
-| Dateibesitz / Sperren | Keine. Eine separate Claude-Sitzung untersucht den zeitabhängigen Remote-Melee-Test aus den offenen Befunden. |
+| Dateibesitz / Sperren | `GASP-08`: neuer Ordner `/Game/SurvivalRpg/Characters/GASP/Pilot/` (Clips, Schema-/Datenbank-Kopien, Pilot-AnimBP, Chooser, Pawn, PawnData, Experience, Karte) und `docs/gasp-manny-skeleton-pilot.md`. Bestehende GASP-Assets werden nur gelesen. Eine separate Claude-Sitzung untersucht den zeitabhängigen Remote-Melee-Test aus den offenen Befunden. |
 | Editor / PIE / Builds | Installiert ist UE 5.8.3 (CL 58210709), `master` pinnt 5.8.3. Branches ohne GASP-ENG-01 bauen erst nach Übernahme von `master`. PIE-Netzwerktests nur in einem Prozess gleichzeitig laufen lassen. Vor eigener Editor-/MCP-Nutzung andere Checkouts und Sitzungen prüfen. |
 | Plugin-Overrides | Git-ignoriert und checkout-lokal. In jedem Worktree vor Build oder Branchwechsel gemäß [README](../Build/Patches/NetworkPrediction/README.md) prüfen; Engine-Wechsel nach dem Abschnitt „Engine updates“. |
 | Lokale Belege | `Saved/...` existiert nur im erzeugenden Checkout; versioniert sind Zusammenfassungen in Berichten und Manifesten unter `docs/assets`. |
