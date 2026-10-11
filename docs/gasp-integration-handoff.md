@@ -11,7 +11,7 @@ diese Datei **ersetzen, nicht ergänzen**. Das frühere fortlaufende Protokoll b
 | Feld | Wert |
 | --- | --- |
 | Stand | 11.10.2026 |
-| Aktive Aufgabe, Status, zuständiger Chat | Keine. Zuletzt `GASP-STAB-03` Testboden vor den Pawns in CQTest-Netzwerktests, **gemergt**. |
+| Aktive Aufgabe, Status, zuständiger Chat | Keine in Arbeit. `GASP-08` (Manny-Skelett-Pilot) ist **Bereit**, noch keinem Chat zugeordnet. Zuletzt `GASP-STAB-03` Testboden vor den Pawns in CQTest-Netzwerktests, **gemergt**. |
 | Branch, Worktree, Basis / PR | Kein aktiver Branch. Zuletzt `claude/gasp-stab-03-test-floor-race` / [#223](https://github.com/Athurito/SurvivalRpg/pull/223), gemergt als `426c3fa3`; davor `GASP-ENG-01` / [#221](https://github.com/Athurito/SurvivalRpg/pull/221) als `e13ab82b`. |
 | Offene Abnahmepunkte | Keine. Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
 | Akzeptierter Runtime-Stand | `master` `426c3fa3`; enthält alle GASP-Schritte bis GASP-07 (#161), GASP-ENG-01 (#221) und GASP-STAB-03 (#223, nur Testcode). Spätere Merges betreffen andere Systeme. |
@@ -22,11 +22,22 @@ diese Datei **ersetzen, nicht ergänzen**. Das frühere fortlaufende Protokoll b
 
 ## Nächster Handgriff
 
-Kein Paket ist bereit: mit dem Nutzer das nächste Paket festlegen, etwa
-`GASP-VAL-02` oder einen Punkt aus den offenen Befunden.
+`GASP-08` gemäß [Pilotbericht](gasp-manny-skeleton-pilot.md) mit Phase A beginnen:
+beide `SK_Mannequin`-Assets vergleichen, Ziel-Skelett festlegen und die
+Einstellungen des offiziellen `RTG_UEFN_to_UE5_Mannequin` auslesen. Vorher hier
+Status **In Arbeit**, Branch und Dateibesitz eintragen und die Overrides für
+UE 5.8.3 gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates)
+neu stagen.
 
 ## Offene Befunde
 
+- CMC-Review 11.10.2026 (UE 5.8.2, ohne Paket): Der Pawn folgt per
+  `bUseControllerRotationYaw` der Kamera, der AnimBP bekommt aber
+  „OrientToMovement“ gemeldet. Der CMC fährt Relaxed-Tempi (375/585 cm/s) auf
+  Neutral-Animationen (gemessen 500/350/300 bzw. 700 cm/s). Anfahren und
+  Bremsen sind deutlich direkter als im Original (gemessen 0,24 s bzw.
+  0,125 s/18,5 cm gegenüber ca. 0,6 s bzw. 0,25 s/62 cm). Bewegung bleibt
+  lastunabhängig ([Spielvision](game-vision.md)).
 - `GASP-ENG-01`: UE 5.8.3 ändert den Mover-Rollback für Bewegungsmodifikatoren;
   nach einem Rollback laufen `OnStart`/`OnEnd` jetzt, beim Mover-Ducken also die
   Kapselanpassung des `FStanceModifier`. Kein Projekttest prüft Ducken während
