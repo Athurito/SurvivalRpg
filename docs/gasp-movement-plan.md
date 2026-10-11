@@ -68,6 +68,8 @@ Its recorded limits carry into GASP-14 and GASP-15:
 
 ### GASP-09: Rotation modes and combat stance
 
+**Ready**; the [task report](gasp-rotation-modes.md) refines this outline against the code.
+
 - **Goal:** two explicit modes, reported correctly to the AnimBP.
   - **Free movement:** hands holstered, out of combat. The character turns toward its movement.
   - **Combat stance:** a weapon in hand, blocking, lock-on, or aiming. The character faces the camera and strafes, as in New World.

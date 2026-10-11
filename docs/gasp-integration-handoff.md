@@ -11,20 +11,21 @@ diese Datei **ersetzen, nicht ergänzen**. Das frühere fortlaufende Protokoll b
 | Feld | Wert |
 | --- | --- |
 | Stand | 11.10.2026 |
-| Aktive Aufgabe, Status, zuständiger Chat | Keine. Zuletzt `GASP-08` Manny-Skelett-Pilot, **gemergt** mit Exit-Entscheidung **Pass** des Nutzers. |
-| Branch, Worktree, Basis / PR | Kein aktiver Branch. Zuletzt `claude/gasp-08-manny-skeleton-pilot` / [#228](https://github.com/Athurito/SurvivalRpg/pull/228), gemergt als `031f338b`. |
-| Offene Abnahmepunkte | Keine. Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
+| Aktive Aufgabe, Status, zuständiger Chat | `GASP-09` Rotationsmodi und Kampfhaltung, **Bereit**, noch kein umsetzender Chat. Zuletzt gemergt: `GASP-08` Manny-Skelett-Pilot mit Exit-Entscheidung **Pass** des Nutzers. |
+| Branch, Worktree, Basis / PR | Noch kein Umsetzungsbranch; vorgeschlagen `<agent>/gasp-09-rotation-modes`. Zuletzt `claude/gasp-08-manny-skeleton-pilot` / [#228](https://github.com/Athurito/SurvivalRpg/pull/228), gemergt als `031f338b`. |
+| Offene Abnahmepunkte | `GASP-09`: drei Entscheidungen vor Phase B (siehe [Bericht](gasp-rotation-modes.md#decisions-to-settle-at-the-start)). Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
 | Akzeptierter Runtime-Stand | `master` `031f338b`; enthält alle GASP-Schritte bis GASP-08 (#228), GASP-ENG-01 (#221), GASP-STAB-03 (#223, nur Testcode) und den [Bewegungsplan](gasp-movement-plan.md) (#229, nur Doku). Die Produktion nutzt weiter UEFN; der Manny-Pilot liegt isoliert unter `/Game/SurvivalRpg/Characters/GASP/Pilot/`. |
-| Dateibesitz / Sperren | Keine GASP-Sperren. Das Lyra-`SK_Mannequin` trägt seit `GASP-08` die Blend-Profile `FastFeet+Root_Weight` und `FastHead_Weight`, die der Manny-AnimBP braucht; nicht entfernen. Eine separate Claude-Sitzung untersucht den zeitabhängigen Remote-Melee-Test aus den offenen Befunden. |
+| Dateibesitz / Sperren | `GASP-09` ab Start: `RpgCharacter.*`, `RpgCharacterMovementComponent.*` mit Tests, `BP_RpgGasp_CMC` und die Rotationswerte in `BP_Rpg_Character`; `GASP-10` bis `GASP-12` warten auf den Merge. Das Lyra-`SK_Mannequin` trägt seit `GASP-08` die Blend-Profile `FastFeet+Root_Weight` und `FastHead_Weight`, die der Manny-AnimBP braucht; nicht entfernen. Eine separate Claude-Sitzung untersucht den zeitabhängigen Remote-Melee-Test aus den offenen Befunden. |
 | Editor / PIE / Builds | Installiert ist UE 5.8.3 (CL 58210709), `master` pinnt 5.8.3. Branches ohne GASP-ENG-01 bauen erst nach Übernahme von `master`. PIE-Netzwerktests nur in einem Prozess gleichzeitig laufen lassen. Vor eigener Editor-/MCP-Nutzung andere Checkouts und Sitzungen prüfen. |
 | Plugin-Overrides | Git-ignoriert und checkout-lokal. In jedem Worktree vor Build oder Branchwechsel gemäß [README](../Build/Patches/NetworkPrediction/README.md) prüfen; Engine-Wechsel nach dem Abschnitt „Engine updates“. |
 | Lokale Belege | `Saved/...` existiert nur im erzeugenden Checkout; versioniert sind Zusammenfassungen in Berichten und Manifesten unter `docs/assets`. GASP-08-Rohdaten liegen in `Saved/Gasp08` und `Saved/Profiling/CSV` des Worktrees `musing-ishizaka-7bac20`. |
 
 ## Nächster Handgriff
 
-Kein Paket ist **Bereit**: Der Nutzer wählt das nächste aus dem
-[Bewegungsplan](gasp-movement-plan.md) und markiert es als **Bereit**. `GASP-09` kann sofort starten; der
-vollständige Manny-Bake `GASP-14` wartet auf die Animationsset-Wahl in `GASP-10`.
+`GASP-09` gemäß [Bericht](gasp-rotation-modes.md) starten: zuerst die drei
+Entscheidungen mit dem Nutzer klären, dann die Blueprint-Verdrahtung von
+`RotationMode`/`WantsToStrafe` im Editor prüfen und die Review-Messung als
+Ausgangswert unter 5.8.3 wiederholen. Der vollständige Manny-Bake `GASP-14` wartet auf die Animationsset-Wahl in `GASP-10`.
 
 ## Offene Befunde
 
@@ -35,7 +36,7 @@ vollständige Manny-Bake `GASP-14` wartet auf die Animationsset-Wahl in `GASP-10
   und Datenbankauswahl weichen von der Produktion ab; Multiplayer und Gameplay
   auf einem Manny-Mesh sind ungeprüft. [Bericht](gasp-manny-skeleton-pilot.md#limits)
 
-- CMC-Review 11.10.2026 (UE 5.8.2, ohne Paket): Der Pawn folgt per
+- CMC-Review 11.10.2026 (UE 5.8.2; Pakete `GASP-09` bis `GASP-13` im [Bewegungsplan](gasp-movement-plan.md)): Der Pawn folgt per
   `bUseControllerRotationYaw` der Kamera, der AnimBP bekommt aber
   „OrientToMovement“ gemeldet. Der CMC fährt Relaxed-Tempi (375/585 cm/s) auf
   Neutral-Animationen (gemessen 500/350/300 bzw. 700 cm/s). Anfahren und
