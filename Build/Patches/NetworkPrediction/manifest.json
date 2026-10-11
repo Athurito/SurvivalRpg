@@ -1,11 +1,11 @@
 {
-  "engine_version": "5.8.2",
+  "engine_version": "5.8.3",
   "source_root": "Engine/Plugins/Runtime/NetworkPrediction",
   "patched": {
     "Source/NetworkPrediction/Private/NetworkPredictionWorldManager.cpp": "460bc6a430757b36437b02752408188d4c31fc2721a95100474068735925c5b4"
   },
   "overlay": {
-    "Source/NetworkPrediction/Private/NetworkPredictionFixedInterpolationRecovery.h": "736aeb9fe195e441eae079a2ea4013e75043ab3ec0d1b11b511eac7b59d90a17",
+    "Source/NetworkPrediction/Private/NetworkPredictionFixedInterpolationRecovery.h": "5f52d0b799e842d93a61435f4e551281ca6cbad8a8b6b58a334b2ab81e8df9db",
     "Source/NetworkPrediction/Private/Tests/NetworkPredictionFixedInterpolationRecoveryTests.cpp": "ef5ce9997e6b55ca8dc7771cb856f5eed20190f0b24ae02087fa7773b8b51213"
   },
   "plugins": {
@@ -147,7 +147,7 @@
         "Source/Mover/Private/MoveLibrary/RollbackBlackboardWrappers.cpp": "ff9929030df91c7c938c106b22322b24477be2b0530a0d1547a0316a489d3cc7",
         "Source/Mover/Private/MoveLibrary/WaterMovementUtils.cpp": "d30363e919bad96a2cb561742ea32f29de9eea49f48db124108bf97bbef08e50",
         "Source/Mover/Private/MovementMode.cpp": "298aa3e41fa00c10f9c50918d2953d79baaadcc48e56342777a6d7ae609779e6",
-        "Source/Mover/Private/MovementModeStateMachine.cpp": "54780bce267e65ad75e8d91b6045bf410ada403586ab62abebc42e577b2a52f8",
+        "Source/Mover/Private/MovementModeStateMachine.cpp": "c3bbf1c87a615b3fe8ee117cfc12d8a0f42c0bcfe957ce8815189ba3dc510d5e",
         "Source/Mover/Private/MovementModeTransition.cpp": "c8f50c547a0c0a2498dff968ca7d3ef70ac36b957c90a050e785d329b2c7137d",
         "Source/Mover/Private/MovementModifier.cpp": "895b57cdaa177d974a9be1adddbd489feb16eb8200de5b0d4dd64f91a2364e6e",
         "Source/Mover/Private/MoverComponent.cpp": "f5f8ee53e4d1640d203da9b4c7e55d8b365fbfc0c382346610a32a512301fe15",

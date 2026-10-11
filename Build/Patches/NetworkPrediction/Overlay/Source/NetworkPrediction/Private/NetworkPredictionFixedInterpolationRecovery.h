@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "NetworkPredictionTickState.h"
 
-// Project-maintained UE 5.8.2 patch. These helpers own only the presentation clock.
+// Project-maintained patch for the UE version pinned in manifest.json. These helpers own only the presentation clock.
 // Simulation, input, rollback and cue histories retain the engine's ownership.
 namespace UE::NetworkPrediction::FixedInterpolationRecovery
 {
