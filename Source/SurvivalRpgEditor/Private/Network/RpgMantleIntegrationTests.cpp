@@ -609,7 +609,6 @@ namespace RpgMantleIntegrationTests
 
 	struct FState : FBasePIENetworkComponentState
 	{
-		ARpgCombatNetworkFloorFixture* Floor = nullptr;
 		TWeakObjectPtr<ARpgCharacter> PawnBeforeDeath;
 		TWeakObjectPtr<URpgAbilitySystemComponent> PersistentASC;
 		TWeakObjectPtr<AActor> LandingBlocker;
@@ -680,6 +679,7 @@ NETWORK_TEST_CLASS(GaspMantleExperiencePIE, "SurvivalRpg.GASP.Mantle")
 {
 	using FState = RpgMantleIntegrationTests::FState;
 	RpgMantleIntegrationTests::FScopedSaveIsolation Isolation;
+	FRpgScopedNetworkTestGround Ground;
 	RpgMantleIntegrationTests::FScopedObservations Observations;
 	RpgMantleIntegrationTests::FScopedLatency Latency;
 	FPIENetworkComponent<FState> Network{TestRunner, TestCommandBuilder, bInitializing};
@@ -703,6 +703,7 @@ NETWORK_TEST_CLASS(GaspMantleExperiencePIE, "SurvivalRpg.GASP.Mantle")
 		ASSERT_THAT(IsNotNull(AbilityDefinition()));
 		if (!GameModeClass || !AbilityDefinition()) return;
 		Isolation.Start();
+		Ground.Start();
 		OriginalExperience = GetDefault<URpgDeveloperSettings>()->ExperienceOverride;
 		GetMutableDefault<URpgDeveloperSettings>()->ExperienceOverride = ExperienceId();
 		bConfigured = true;
@@ -723,7 +724,6 @@ NETWORK_TEST_CLASS(GaspMantleExperiencePIE, "SurvivalRpg.GASP.Mantle")
 		if (!bConfigured) return;
 		Network.ThenServer(TEXT("Save isolation precedes InitGame"), [this](FState& State)
 			{ ASSERT_THAT(IsTrue(Isolation.IsIsolated(State.World))); })
-			.SpawnAndReplicate<ARpgCombatNetworkFloorFixture, &FState::Floor>(Timeout())
 			.UntilClient(TEXT("Owner receives the mantle Experience and startup grant"), 0, [](FState& State)
 				{ return Ready(State.World, LocalCharacter(State.World)) && Grounded(LocalCharacter(State.World)) && MantleSpec(LocalCharacter(State.World)); }, Timeout())
 			.ThenClient(TEXT("Capture the real autonomous pawn identity"), 0, [this](FState& State)

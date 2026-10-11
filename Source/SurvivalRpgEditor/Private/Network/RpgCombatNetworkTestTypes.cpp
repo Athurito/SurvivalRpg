@@ -3,6 +3,9 @@
 #include "Components/BoxComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SceneComponent.h"
+#include "Engine/World.h"
+#include "GameFramework/GameModeBase.h"
+#include "GameFramework/PlayerStart.h"
 #include "GameplayEffect.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgDefenseSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
@@ -16,6 +19,12 @@ namespace
 {
 	constexpr uint8 HostileTeamId = 2;
 	constexpr float FixtureMaxHealth = 100000.0f;
+
+	// Host, owning client, late joiner and one free start for a respawn, in lanes along Y.
+	constexpr int32 GroundPlayerStartCount = 4;
+	constexpr double GroundLaneSpacing = 500.0;
+	// Capsule bottoms start clear of the floor top at z=0, so every pawn lands after a short drop.
+	constexpr double GroundPlayerStartHeight = 120.0;
 }
 
 ARpgCombatNetworkFloorFixture::ARpgCombatNetworkFloorFixture(
@@ -44,6 +53,38 @@ ARpgMoverRagdollFloorFixture::ARpgMoverRagdollFloorFixture(const FObjectInitiali
 	: Super(ObjectInitializer)
 {
 	Collision->SetCollisionObjectType(ECC_WorldStatic);
+}
+
+FRpgScopedNetworkTestGround::~FRpgScopedNetworkTestGround()
+{
+	FGameModeEvents::OnGameModeInitializedEvent().Remove(Handle);
+}
+
+void FRpgScopedNetworkTestGround::Start()
+{
+	FGameModeEvents::OnGameModeInitializedEvent().Remove(Handle);
+	Handle = FGameModeEvents::OnGameModeInitializedEvent().AddRaw(this, &FRpgScopedNetworkTestGround::OnGameModeInitialized);
+}
+
+void FRpgScopedNetworkTestGround::OnGameModeInitialized(AGameModeBase* GameMode)
+{
+	UWorld* World = GameMode ? GameMode->GetWorld() : nullptr;
+	if (!World || World->WorldType != EWorldType::PIE)
+	{
+		return;
+	}
+
+	// The broadcast runs inside InitGame, before any player logs in. These are ordinary replicated
+	// collision and spawn points; no pawn is relocated.
+	FActorSpawnParameters Spawn;
+	Spawn.ObjectFlags |= RF_Transient;
+	Spawn.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	World->SpawnActor<ARpgCombatNetworkFloorFixture>(FVector::ZeroVector, FRotator::ZeroRotator, Spawn);
+	for (int32 Index = 0; Index < GroundPlayerStartCount; ++Index)
+	{
+		const double LaneY = (Index - 0.5 * (GroundPlayerStartCount - 1)) * GroundLaneSpacing;
+		World->SpawnActor<APlayerStart>(FVector(0.0, LaneY, GroundPlayerStartHeight), FRotator::ZeroRotator, Spawn);
+	}
 }
 
 ARpgCombatNetworkTargetFixture::ARpgCombatNetworkTargetFixture(

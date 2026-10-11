@@ -6,6 +6,7 @@
 
 #include "RpgCombatNetworkTestTypes.generated.h"
 
+class AGameModeBase;
 class UBoxComponent;
 class UCapsuleComponent;
 class USceneComponent;
@@ -43,6 +44,27 @@ class ARpgMoverRagdollFloorFixture final : public ARpgCombatNetworkFloorFixture
 
 public:
 	explicit ARpgMoverRagdollFloorFixture(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+};
+
+/**
+ * Spawns the floor fixture and spaced player starts while a PIE GameMode initializes, before any pawn exists.
+ *
+ * The CQTest network map is empty. A floor spawned in a later test step races the pawns, which start falling
+ * at once and can already be below its top when it appears. Start it in BEFORE_EACH, before the network
+ * component builds the session, and keep it alive through network teardown.
+ */
+class FRpgScopedNetworkTestGround final
+{
+public:
+	~FRpgScopedNetworkTestGround();
+
+	/** Installs the InitGame hook for every authoritative PIE world created while this object lives. */
+	void Start();
+
+private:
+	void OnGameModeInitialized(AGameModeBase* GameMode);
+
+	FDelegateHandle Handle;
 };
 
 /**
