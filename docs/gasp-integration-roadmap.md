@@ -13,9 +13,10 @@ frühere Fassung mit Schnellstart-Verlauf und Aufgabenverträgen liegt in der
 
 ## Nächster bereiter Schritt
 
-Kein Arbeitspaket ist als **Bereit** eingetragen. `GASP-01` und `GASP-03` bis
-`GASP-07` sind gemergt. Offen sind die Registerpunkte `GASP-VAL-01` und
-`GASP-VAL-02` sowie die [offenen Befunde](gasp-integration-handoff.md#offene-befunde).
+Kein Arbeitspaket ist als **Bereit** eingetragen. `GASP-01`, `GASP-03` bis
+`GASP-07` und das Engine-Update `GASP-ENG-01` sind gemergt. Offen sind die
+Registerpunkte `GASP-VAL-01` und `GASP-VAL-02` sowie die
+[offenen Befunde](gasp-integration-handoff.md#offene-befunde).
 Das nächste Paket legt der Nutzer fest; es wird hier und in der Statustabelle
 als **Bereit** eingetragen, bevor die Umsetzung beginnt.
 
@@ -55,7 +56,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-05` | Importbereinigung: Audit und Entfernung | **Gemergt** | [#156](https://github.com/Athurito/SurvivalRpg/pull/156), [#158](https://github.com/Athurito/SurvivalRpg/pull/158) | [Audit](gasp-import-cleanup-audit.md), [Entfernung](gasp-original-import-removal.md) |
 | `GASP-06` | Erweiterbare Block-Locomotion | **Gemergt** | [#160](https://github.com/Athurito/SurvivalRpg/pull/160) | [Block-Locomotion](gasp-block-locomotion.md) |
 | `GASP-07` | CMC-Sprint mit GAS-Ausdauer | **Gemergt** | [#161](https://github.com/Athurito/SurvivalRpg/pull/161) | [CMC-Sprint](gasp-cmc-sprint.md) |
-| `GASP-ENG-01` | Engine-Update auf UE 5.8.3: NetworkPrediction-/Mover-Overrides und Build-Pin | **PR offen** | [#221](https://github.com/Athurito/SurvivalRpg/pull/221) | [UE 5.8.3](gasp-engine-5-8-3.md) |
+| `GASP-ENG-01` | Engine-Update auf UE 5.8.3: NetworkPrediction-/Mover-Overrides und Build-Pin | **Gemergt** | [#221](https://github.com/Athurito/SurvivalRpg/pull/221) | [UE 5.8.3](gasp-engine-5-8-3.md) |
 
 Statuswerte: **Geplant**, **Bereit**, **In Arbeit**, **Validierung**,
 **PR offen**, **Gemergt**, **Blockiert**, **Zurückgestellt**.
