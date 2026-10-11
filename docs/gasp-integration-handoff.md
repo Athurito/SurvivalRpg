@@ -12,7 +12,7 @@ diese Datei **ersetzen, nicht ergänzen**. Das frühere fortlaufende Protokoll b
 | --- | --- |
 | Stand | 11.10.2026 |
 | Aktive Aufgabe, Status, zuständiger Chat | `GASP-ENG-01` Engine-Update auf UE 5.8.3, **PR offen**; Claude-Chat der UI-07-Sitzung. |
-| Branch, Worktree, Basis / PR | `claude/gasp-eng-01-ue-5-8-3`, Worktree `survival-rpg-harvesting-review-66df3a`, Basis `master` `f563bd08` / PR_ENG |
+| Branch, Worktree, Basis / PR | `claude/gasp-eng-01-ue-5-8-3`, Worktree `survival-rpg-harvesting-review-66df3a`, Basis `master` `f563bd08` / [#221](https://github.com/Athurito/SurvivalRpg/pull/221) |
 | Offene Abnahmepunkte bis Merge | Nutzerfreigabe zum Merge. Danach muss jeder Checkout seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
 | Akzeptierter Runtime-Stand | `master` `f563bd08`; enthält alle GASP-Schritte bis GASP-07 (#161). Spätere Merges betreffen andere Systeme. |
 | Dateibesitz / Sperren | `Build/Patches/NetworkPrediction/**`, `Source/SurvivalRpg.Target.cs` bis zum Merge von GASP-ENG-01. |
