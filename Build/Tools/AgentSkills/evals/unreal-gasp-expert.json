@@ -30,9 +30,9 @@
     "query": "Mit schwerer Rüstung soll der Charakter sichtbar träger laufen. Spiel dafür einfach die Laufanimationen langsamer ab.",
     "expected_behavior": [
       "Rejects slower animation playback as the mechanism for heavy movement.",
-      "Drives load-aware movement from the authoritative `Equipment.Load.*` tier through one data-driven movement profile.",
-      "Keeps equipment, GAS, and the movement component authoritative and passes the load to animation as a game-thread snapshot.",
-      "Makes the movement profile available to simulated proxies and late joiners, such as through replicated state.",
+      "States that equipment load must not change general movement such as speed, acceleration, rotation, jump, sprint, or traversal, so co-op players keep the same pace, and asks the user before planning a load-based movement penalty.",
+      "Offers pace-neutral alternatives: a heavier shared base tuning for every character, or load-dependent presentation such as the dodge variant or armor Foley.",
+      "Keeps equipment, GAS, and the movement component authoritative and passes animation state to the AnimBP as a game-thread snapshot.",
       "Reads the GASP handoff and roadmap before planning the change."
     ]
   },

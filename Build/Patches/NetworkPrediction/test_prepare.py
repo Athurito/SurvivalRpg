@@ -25,7 +25,7 @@ class PrepareTests(unittest.TestCase):
         shutil.copy2(Path(__file__).with_name("prepare.py"), self.patch / "prepare.py")
         self.engine = self.root / "Engine"
         (self.engine / "Build").mkdir(parents=True)
-        (self.engine / "Build/Build.version").write_text(json.dumps({"MajorVersion": 5, "MinorVersion": 8, "PatchVersion": 2}))
+        (self.engine / "Build/Build.version").write_text(json.dumps({"MajorVersion": 5, "MinorVersion": 8, "PatchVersion": 3}))
         self.cpp = "Source/NetworkPrediction/Private/NetworkPredictionWorldManager.cpp"
         original, patched = b"alpha\nbeta\ngamma\n", b"alpha\ncorrected\ngamma\n"
         patch = (f"--- a/{self.cpp}\n+++ b/{self.cpp}\n@@ -1,3 +1,3 @@\n alpha\n-beta\n+corrected\n gamma\n").encode()
@@ -34,7 +34,7 @@ class PrepareTests(unittest.TestCase):
         overlay = self.patch / "Overlay" / overlay_name
         overlay.parent.mkdir(parents=True)
         overlay.write_bytes(b"synthetic helper\n")
-        self.manifest = {"patched": {self.cpp: sha(patched)}, "overlay": {overlay_name: sha(overlay.read_bytes())},
+        self.manifest = {"engine_version": "5.8.3", "patched": {self.cpp: sha(patched)}, "overlay": {overlay_name: sha(overlay.read_bytes())},
                          "patch_sha256": sha(patch), "plugins": {}}
         for name in ("NetworkPrediction", "Mover", "ChaosMover", "MoverExamples"):
             # The last copied file deliberately differs from the patch target.
@@ -60,6 +60,13 @@ class PrepareTests(unittest.TestCase):
         self.assertEqual((self.repo / "Plugins/NetworkPrediction" / self.cpp).read_bytes(), b"alpha\ncorrected\ngamma\n")
         self.assertEqual(self.run_prepare("verify").returncode, 0)
         self.assertEqual(self.run_prepare("stage").returncode, 0, "Staging must be idempotent")
+
+    def test_other_engine_version_is_refused_before_copying(self):
+        (self.engine / "Build/Build.version").write_text(json.dumps({"MajorVersion": 5, "MinorVersion": 8, "PatchVersion": 2}))
+        result = self.run_prepare("stage")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires exactly UE 5.8.3", result.stderr)
+        self.assertFalse((self.repo / "Plugins").exists())
 
     def test_complete_verified_pristine_copies_resume_without_deletion(self):
         self.copy_pristine_baselines()

@@ -407,6 +407,16 @@ Kernmechaniken:
 
 Combat soll über GAS/Abilities/Effects/Tags datengetrieben und modular umgesetzt werden.
 
+### Ausrüstungslast und Bewegung
+
+Die allgemeine Bewegung ist für jede Ausrüstungslast gleich: Lauf- und Sprinttempo, Beschleunigung, Drehung, Sprung, Sprint-Ausdauerkosten und Traversal unterscheiden sich nicht. So bleiben Koop-Gruppen zusammen, und schwere Rüstung wird nicht durch langsameres Laufen bestraft. Das schwere, geerdete Bewegungsgefühl ist ein gemeinsames Grundtuning für alle Charaktere.
+
+Die Laststufe (Leicht, Mittel oder Schwer, aus dem Gewicht der getragenen Ausrüstung) bestimmt nur die Ausweichaktion, ähnlich wie in New World:
+
+- Leicht: volle Ausweichrolle
+- Mittel: kürzere Rolle
+- Schwer: Seitenschritt
+
 ---
 
 ## 10.2 Waffen und Equipment
