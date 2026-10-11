@@ -75,6 +75,29 @@ Statuswerte: **Geplant**, **Bereit**, **In Arbeit**, **Validierung**,
 - Merge-Hash, finaler Head, Prüfzahlen und Fehlversuche stehen im Bericht und
   im PR, nicht in dieser Tabelle.
 
+## Geplante Pakete
+
+Geplante, noch nicht bereite Pakete aus dem [Bewegungsplan](gasp-movement-plan.md).
+Befunde, Abhängigkeiten und Reihenfolge stehen dort. Ein Paket wechselt erst
+mit **Bereit** in die Statustabelle oben.
+
+- `GASP-09` kann parallel zu `GASP-08` laufen.
+- `GASP-10` bis `GASP-13` folgen nacheinander, weil sie denselben Pawn, Blueprint
+  und dieselbe Movement-Komponente ändern.
+- `GASP-14`/`GASP-15` gibt es nur bei bestandenem `GASP-08`.
+- Die Animationsset-Wahl aus `GASP-10` legt fest, welche Datenbanken `GASP-14` backt.
+
+| ID | Arbeitspaket | Status | Plan |
+| --- | --- | --- | --- |
+| `GASP-09` | Rotationsmodi: freie Bewegung und Kampfhaltung (Strafe), Sprint-Richtungs-Gate | **Geplant** | [Plan](gasp-movement-plan.md#gasp-09-rotation-modes-and-combat-stance) |
+| `GASP-10` | Animationsset und Tempo-Parität (Relaxed empfohlen), Ducktempo | **Geplant** | [Plan](gasp-movement-plan.md#gasp-10-animation-set-and-speed-parity) |
+| `GASP-11` | Gemeinsames Bewegungsprofil (Trägheit, Drehung, Luft), lastunabhängig | **Geplant** | [Plan](gasp-movement-plan.md#gasp-11-shared-movement-profile) |
+| `GASP-12` | Walk-Gait und Analog-Schwelle | **Geplant** | [Plan](gasp-movement-plan.md#gasp-12-walk-gait-and-analog-input) |
+| `GASP-13` | Darstellung: Offset Root Bone, Steering, Foley, Kamera | **Geplant** | [Plan](gasp-movement-plan.md#gasp-13-presentation-polish) |
+| `GASP-14` | Vollständiger CMC-Bake auf Manny (nur nach bestandenem `GASP-08`) | **Geplant** | [Plan](gasp-movement-plan.md#gasp-14-full-cmc-bake-to-manny-only-if-gasp-08-passes) |
+| `GASP-15` | Manny als Gameplay-Mesh (nur nach bestandenem `GASP-08`) | **Geplant** | [Plan](gasp-movement-plan.md#gasp-15-manny-gameplay-mesh-only-if-gasp-08-passes) |
+| `GASP-16` | Charakter- und Rüstungspilot (Asset-Auswahl durch den Nutzer) | **Geplant** | [Plan](gasp-movement-plan.md#gasp-16-character-and-armor-pilot) |
+
 ## Arbeitsregeln über mehrere Chats
 
 **Dauerhafte Nutzerfreigabe vom 26.09.2026:** Schritte, die sich nicht sinnvoll
