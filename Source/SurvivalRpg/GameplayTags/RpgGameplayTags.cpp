@@ -38,6 +38,10 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_StaminaDelta, "Data.StaminaDelta", "Authority-authored signed stamina change in resource units.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_UI_Inventory, "InputTag.UI.Inventory", "Open the owning player's inventory screen.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_UI_Skills, "InputTag.UI.Skills", "Open the owning player's game menu on its skills tab.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_UI_Map, "InputTag.UI.Map", "Open the owning player's game menu on its map tab.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_UI_Journal, "InputTag.UI.Journal", "Open the owning player's game menu on its journal tab.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_UI_Character, "InputTag.UI.Character", "Open the owning player's game menu on its character tab.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_UI_Menu, "InputTag.UI.Menu", "Open the owning player's pause menu.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_UI_QuickAccessRadial_Hold, "InputTag.UI.QuickAccessRadial.Hold", "Hold to open the owning player's quick-access radial.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_UI_QuickAccessRadial_Select, "InputTag.UI.QuickAccessRadial.Select", "Select a quick-access radial segment with the right stick.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_UI_QuickAccessRadial_Cancel, "InputTag.UI.QuickAccessRadial.Cancel", "Close the quick-access radial without activating a slot.");
@@ -181,9 +185,12 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Crafting, "UI.Screen.Crafting", "Crafting screen opened through the project UI screen registry.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_BaseTerminal, "UI.Screen.BaseTerminal", "Base terminal screen opened through the project UI screen registry.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Respawn, "UI.Screen.Respawn", "Blocking respawn screen opened while the owning player is waiting to respawn.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Pause, "UI.Screen.Pause", "Pause screen opened through the project UI screen registry.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Pause, "UI.Screen.Pause", "Pause menu opened through the project UI screen registry; the game keeps running.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_Settings, "UI.Screen.Settings", "Settings screen opened through the project UI screen registry.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_GameMenu, "UI.Screen.GameMenu", "Tabbed in-game menu with map, journal, character and skills, opened through the project UI screen registry.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_GameMenu_Map, "UI.Screen.GameMenu.Map", "Map tab of the game menu; sent as payload screen tag to open the menu on that tab.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_GameMenu_Journal, "UI.Screen.GameMenu.Journal", "Journal tab of the game menu; sent as payload screen tag to open the menu on that tab.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_GameMenu_Character, "UI.Screen.GameMenu.Character", "Character tab of the game menu; sent as payload screen tag to open the menu on that tab.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_Screen_GameMenu_Skills, "UI.Screen.GameMenu.Skills", "Skills tab of the game menu; sent as payload screen tag to open the menu on that tab.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_HUD_Slot_ActionBar, "UI.HUD.Slot.ActionBar", "UIExtension slot for the persistent general action bar HUD widget.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(UI_HUD_Slot_QuickAccessRadial, "UI.HUD.Slot.QuickAccessRadial", "Fullscreen UIExtension slot for the persistent quick-access radial presenter.");

@@ -60,7 +60,8 @@ void URpgPlayerGameplayInputRouterComponent::HandleGameplayInputPressed(FGamepla
 		return;
 	}
 
-	if (InputTag == RpgGameplayTags::InputTag_UI_Skills)
+	const FGameplayTag GameMenuTab = GetGameMenuTabForInputTag(InputTag);
+	if (GameMenuTab.IsValid())
 	{
 		if (!RpgPC->IsLocalController())
 		{
@@ -70,11 +71,26 @@ void URpgPlayerGameplayInputRouterComponent::HandleGameplayInputPressed(FGamepla
 		CancelQuickAccessRadial();
 		// The game menu selects the tab named by the payload's screen tag.
 		URpgUIScreenPayload* Payload = NewObject<URpgUIScreenPayload>(RpgPC);
-		Payload->ScreenTag = RpgGameplayTags::UI_Screen_GameMenu_Skills;
+		Payload->ScreenTag = GameMenuTab;
 		URpgUIScreenBlueprintLibrary::OpenUIScreen(
 			RpgPC,
 			RpgGameplayTags::UI_Screen_GameMenu,
 			Payload);
+		return;
+	}
+
+	if (InputTag == RpgGameplayTags::InputTag_UI_Menu)
+	{
+		if (!RpgPC->IsLocalController())
+		{
+			return;
+		}
+
+		CancelQuickAccessRadial();
+		URpgUIScreenBlueprintLibrary::OpenUIScreen(
+			RpgPC,
+			RpgGameplayTags::UI_Screen_Pause,
+			nullptr);
 		return;
 	}
 
@@ -311,6 +327,28 @@ void URpgPlayerGameplayInputRouterComponent::SetQuickAccessLookSuppressed(bool b
 		RpgPC->SetIgnoreLookInput(false);
 	}
 	bOwnsQuickAccessLookSuppression = false;
+}
+
+FGameplayTag URpgPlayerGameplayInputRouterComponent::GetGameMenuTabForInputTag(FGameplayTag InputTag)
+{
+	if (InputTag == RpgGameplayTags::InputTag_UI_Map)
+	{
+		return RpgGameplayTags::UI_Screen_GameMenu_Map;
+	}
+	if (InputTag == RpgGameplayTags::InputTag_UI_Journal)
+	{
+		return RpgGameplayTags::UI_Screen_GameMenu_Journal;
+	}
+	if (InputTag == RpgGameplayTags::InputTag_UI_Character)
+	{
+		return RpgGameplayTags::UI_Screen_GameMenu_Character;
+	}
+	if (InputTag == RpgGameplayTags::InputTag_UI_Skills)
+	{
+		return RpgGameplayTags::UI_Screen_GameMenu_Skills;
+	}
+
+	return FGameplayTag();
 }
 
 int32 URpgPlayerGameplayInputRouterComponent::GetActionBarSlotIndexFromInputTag(FGameplayTag InputTag)
