@@ -11,6 +11,7 @@
 
 enum class ECommonInputType : uint8;
 struct FUIInputConfig;
+class UInputMappingContext;
 class UWidgetTree;
 
 UENUM(BlueprintType)
@@ -44,6 +45,13 @@ public:
 	/** Whether the select hint belongs in the action bar for an input type. Only gamepads show it. */
 	static bool ShouldDisplaySelectActionFor(ECommonInputType InputType);
 
+	/**
+	 * Whether an activated screen other than Leaving, owned by the same local player, still applies Mapping as its
+	 * input mapping context. CommonUI removes a screen's context outright on deactivation, so stacked screens that
+	 * share one context would otherwise strip it from the screens still open below.
+	 */
+	static bool IsMappingContextUsedByOtherActiveScreen(const UCommonActivatableWidget& Leaving, const UInputMappingContext* Mapping);
+
 #if WITH_EDITOR
 	virtual void ValidateCompiledWidgetTree(const UWidgetTree& BlueprintWidgetTree, class IWidgetCompilerLog& CompileLog) const override;
 #endif
@@ -51,6 +59,7 @@ public:
 protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual void DeactivateMappingContext() override;
 
 	UPROPERTY(EditDefaultsOnly, Category = Input)
 	ERpgWidgetInputMode InputConfig = ERpgWidgetInputMode::Default;
