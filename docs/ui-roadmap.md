@@ -1006,6 +1006,10 @@ use the panels, frames and text styles of the earlier parts.
   handler, which hid the menu and left a black screen. Only the root screens
   (main menu, pause menu, game menu) apply the context now, and the main menu
   no longer handles back itself.
+  - Follow-up guard: a `URpgActivatableWidget` that closes keeps its mapping
+    context while another activated screen of the same local player still
+    applies it. The last screen using a context removes it. A sub-page that
+    applies the shared context again no longer strips it from the main menu.
 - **Credits:** Cinzel headings; "Enviroment" is now "Environment".
 - **Server list:** rows in the settings row style.
 - **Fonts:** the last KnightsQuest references (two `fantasy_gui_4` tooltip
@@ -1055,10 +1059,12 @@ use the panels, frames and text styles of the earlier parts.
   tables; the editor scripting API cannot add string table entries.
 - **Gamepad:** the A press on cards and rows was checked with synthetic Slate
   key presses; a pass with a real controller is still owed.
-- **Shared input mapping:** CommonUI still removes a screen's mapping context
-  outright on deactivation. Two root screens with the same context must not
-  be open at once; a native guard in `URpgActivatableWidget` is drafted but
-  waits for the project to build on the installed UE 5.8.3.
+- **Shared input mapping:** the guard covers screens derived from
+  `URpgActivatableWidget`, which includes the three screens that apply
+  `IMC_UI_GenericActions`. A screen derived directly from
+  `UCommonActivatableWidget`, such as the inventory context menu, the split
+  dialog or a CommonGame dialog, still removes its context outright; none of
+  them applies one today.
 - **Leftover:** `Content/Crafting/UI/CUI_CraftJobEntry`, an unreferenced
   asset outside `SurvivalRpg`, still names an old KnightsQuest path that no
   longer exists.
