@@ -7,6 +7,8 @@
 #include "CommonInputSubsystem.h"
 #include "CommonInputTypeEnum.h"
 #include "ICommonInputModule.h"
+#include "InputMappingContext.h"
+#include "UObject/UObjectIterator.h"
 
 #if WITH_EDITOR
 #include "Editor/WidgetCompilerLog.h"
@@ -37,6 +39,45 @@ FBindUIActionArgs URpgActivatableWidget::MakeSelectActionBindArgs(const FText& D
 bool URpgActivatableWidget::ShouldDisplaySelectActionFor(ECommonInputType InputType)
 {
 	return InputType == ECommonInputType::Gamepad;
+}
+
+bool URpgActivatableWidget::IsMappingContextUsedByOtherActiveScreen(
+	const UCommonActivatableWidget& Leaving, const UInputMappingContext* Mapping)
+{
+	if (!Mapping)
+	{
+		return false;
+	}
+
+	// InputMapping is protected on UCommonActivatableWidget, so other screens are read through reflection.
+	static const FObjectProperty* InputMappingProperty =
+		FindFProperty<FObjectProperty>(UCommonActivatableWidget::StaticClass(), TEXT("InputMapping"));
+	if (!InputMappingProperty)
+	{
+		return false;
+	}
+
+	const ULocalPlayer* LeavingPlayer = Leaving.GetOwningLocalPlayer();
+	for (TObjectIterator<UCommonActivatableWidget> It(RF_ClassDefaultObject | RF_ArchetypeObject); It; ++It)
+	{
+		const UCommonActivatableWidget* Screen = *It;
+		if (Screen != &Leaving && Screen->IsActivated() && Screen->GetOwningLocalPlayer() == LeavingPlayer
+			&& InputMappingProperty->GetObjectPropertyValue_InContainer(Screen) == Mapping)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+void URpgActivatableWidget::DeactivateMappingContext()
+{
+	// Keep a shared context, such as the generic UI actions, while a screen below still uses it; the last one removes it.
+	if (IsMappingContextUsedByOtherActiveScreen(*this, InputMapping))
+	{
+		return;
+	}
+	Super::DeactivateMappingContext();
 }
 
 void URpgActivatableWidget::NativeConstruct()
