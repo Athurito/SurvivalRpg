@@ -35,6 +35,11 @@ In scope, in this order:
    - Choose the pilot target skeleton. Prefer the Lyra copy shared with the AI placeholders and the Sword & Shield pack. If the hierarchies match, record whether compatible-skeleton settings or a re-pointed IK rig serves both.
    - Read back the official retargeter's settings (root, pelvis, chains, IK goals, retarget poses) and use them unchanged. Any deviation goes into a pilot copy with a recorded reason.
    - Identify the Manny mirror data table required by the copied Pose Search schema; GASP mirrors with `MDT_UEFN_Mannequin`.
+   - Inventory gameplay montages by skeleton. As of 2026-10-11:
+     - the sword attack (`AM_BasicSword_Attack01`), the pickaxe harvest swing, skinning, death, and hit-reaction montages reference the Lyra `SK_Mannequin`;
+     - the block montages reference UEFN.
+     - No skeleton declares a compatible skeleton.
+     - Record how the Manny-skeleton montages resolve on the UEFN pawn today, and what a Manny gameplay mesh would change for them.
 2. **Phase B – offline bake of the pilot set.** Batch-retarget exactly the 144 sequences referenced by these eight CMC Dense databases:
    - `PSD_Dense_Stand_Idles`
    - `PSD_Dense_Stand_TurnInPlace`
@@ -67,6 +72,20 @@ Out of scope:
 | Baked clips, schema and database copies, pilot AnimBP and chooser, pilot PawnData, Experience, and map | Designer content, authored through the Unreal MCP workflow |
 | Native code | None expected. Editor-only tooling only for a confirmed MCP capability gap |
 | Verification | Asset contract readback and measurements; no C++ tests for visual leaves |
+
+## Coordination with open issues
+
+Checked on 2026-10-11 against all open issues and pull requests.
+
+| Item | Overlap | Rule while `GASP-08` is open |
+| --- | --- | --- |
+| [#124](https://github.com/Athurito/SurvivalRpg/issues/124) load-dependent dodge | Its roll and sidestep sources (`07_Roll`, `06_Dodge`) are Lyra-Manny clips. Retargeting them to UEFN now would be throwaway work if the pilot passes. | Skeleton-independent parts may proceed: grant, input, cost, blockers, tier snapshot contract, tests, and a placeholder montage. Author the final tier montages after the exit decision. Medium is a shorter roll ([game vision](game-vision.md)). |
+| [#46](https://github.com/Athurito/SurvivalRpg/issues/46) footstep surface variants | Foley notifies on the GASP clips are copied by the bake. | Put surface selection in the Foley notify Blueprint or the audio bank, which survives a bake. Do not edit notifies on individual source clips until the exit decision. |
+| [#26](https://github.com/Athurito/SurvivalRpg/issues/26) harvesting loop | New cast and harvest montages. | Author them on the Lyra `SK_Mannequin`, like the existing harvest swing. Do not retarget them to UEFN before the exit decision. |
+| [#31](https://github.com/Athurito/SurvivalRpg/issues/31) revive and bleedout validation | Validation runs on the current pawns. | No conflict. Keep its test sessions off the pilot map and pilot Experience. |
+| [#169](https://github.com/Athurito/SurvivalRpg/issues/169) skill evaluations | None at runtime. | No conflict. |
+
+Issues #25, #58, #84, #86, #87, #88 and open PR #219 (UI, runes, architecture tracking) do not touch animation, skeletons, or GASP assets.
 
 ## Acceptance criteria
 
