@@ -1,6 +1,6 @@
 # GASP-09 – Rotation modes and combat stance
 
-Status: **PR open** ([#232](https://github.com/Athurito/SurvivalRpg/pull/232), draft; implemented 2026-10-11 on `claude/gasp-09-rotation-modes`, first commit `353a0f8a`). The user accepted the check on 2026-10-12 after the backpedal fix and asked for the merge; the automated checks pass apart from one known Mover timing case. The package outline is in the [movement plan](gasp-movement-plan.md#gasp-09-rotation-modes-and-combat-stance). Results, failed attempts, and limits are under [Results](#results).
+Status: **Merged** ([#232](https://github.com/Athurito/SurvivalRpg/pull/232) as `e5e84cd4` on 2026-10-12, final head `577c78e9`; implemented on `claude/gasp-09-rotation-modes`). The user accepted the check on 2026-10-12 after the backpedal fix and asked for the merge; the automated checks pass apart from one known Mover timing case. The package outline is in the [movement plan](gasp-movement-plan.md#gasp-09-rotation-modes-and-combat-stance). Results, failed attempts, and limits are under [Results](#results).
 
 ## Goal
 

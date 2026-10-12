@@ -13,12 +13,10 @@ frühere Fassung mit Schnellstart-Verlauf und Aufgabenverträgen liegt in der
 
 ## Nächster bereiter Schritt
 
-Kein Schritt ist **Bereit**. **`GASP-09` Rotationsmodi und Kampfhaltung** ist als
-[#232](https://github.com/Athurito/SurvivalRpg/pull/232) offen; die automatischen Prüfungen bestehen, die Sichtprüfung
-des Nutzers steht aus ([Bericht](gasp-rotation-modes.md)). Danach folgt
-`GASP-10`; der vollständige Manny-Bake `GASP-14` wartet auf dessen
-Animationsset-Wahl.
-`GASP-01`, `GASP-03` bis `GASP-08` und das Engine-Update `GASP-ENG-01` sind
+Kein Schritt ist **Bereit**. Als Nächstes steht `GASP-10` (Animationsset und
+Tempo-Parität) an; der Nutzer markiert es als **Bereit**. Der vollständige
+Manny-Bake `GASP-14` wartet auf dessen Animationsset-Wahl.
+`GASP-01`, `GASP-03` bis `GASP-09` und das Engine-Update `GASP-ENG-01` sind
 gemergt; offen bleiben `GASP-VAL-01`, `GASP-VAL-02` und die
 [offenen Befunde](gasp-integration-handoff.md#offene-befunde).
 
@@ -62,7 +60,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-07` | CMC-Sprint mit GAS-Ausdauer | **Gemergt** | [#161](https://github.com/Athurito/SurvivalRpg/pull/161) | [CMC-Sprint](gasp-cmc-sprint.md) |
 | `GASP-ENG-01` | Engine-Update auf UE 5.8.3: NetworkPrediction-/Mover-Overrides und Build-Pin | **Gemergt** | [#221](https://github.com/Athurito/SurvivalRpg/pull/221) | [UE 5.8.3](gasp-engine-5-8-3.md) |
 | `GASP-08` | Pilot: GASP-Locomotion offline auf UE5-Manny-Skelett | **Gemergt**; Exit-Entscheidung **Pass** (Nutzer) | [#228](https://github.com/Athurito/SurvivalRpg/pull/228) | [Manny-Pilot](gasp-manny-skeleton-pilot.md) |
-| `GASP-09` | Rotationsmodi: freie Bewegung und Kampfhaltung (Strafe), Sprint-Richtungs-Gate | **PR offen**: Sichtprüfung durch den Nutzer ausstehend | [#232](https://github.com/Athurito/SurvivalRpg/pull/232) | [Rotationsmodi](gasp-rotation-modes.md) |
+| `GASP-09` | Rotationsmodi: freie Bewegung und Kampfhaltung (Strafe), Sprint-Richtungs-Gate | **Gemergt**; Sichtprüfung durch den Nutzer | [#232](https://github.com/Athurito/SurvivalRpg/pull/232) | [Rotationsmodi](gasp-rotation-modes.md) |
 
 Statuswerte: **Geplant**, **Bereit**, **In Arbeit**, **Validierung**,
 **PR offen**, **Gemergt**, **Blockiert**, **Zurückgestellt**.

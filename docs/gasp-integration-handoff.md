@@ -10,22 +10,21 @@ diese Datei **ersetzen, nicht ergänzen**. Das frühere fortlaufende Protokoll b
 
 | Feld | Wert |
 | --- | --- |
-| Stand | 11.10.2026 |
-| Aktive Aufgabe, Status, zuständiger Chat | `GASP-09` Rotationsmodi und Kampfhaltung, **PR offen** (Draft); umgesetzt und automatisch geprüft, Sichtprüfung des Nutzers ausstehend. Zuletzt gemergt: `GASP-08` Manny-Skelett-Pilot mit Exit-Entscheidung **Pass** des Nutzers. |
-| Branch, Worktree, Basis / PR | `claude/gasp-09-rotation-modes` im Worktree `.claude/worktrees/musing-ishizaka-7bac20`, Basis `master` `85e37b1d`; [#232](https://github.com/Athurito/SurvivalRpg/pull/232). |
-| Offene Abnahmepunkte | `GASP-09`: Sichtprüfung gemäß [Repro](gasp-rotation-modes.md#repro), besonders Aim Offset, Strafe-Animationen und Angriffe mit Kameradrehung. Die drei Entscheidungen hat der Nutzer am 11.10.2026 getroffen ([Bericht](gasp-rotation-modes.md#decisions)). Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
-| Akzeptierter Runtime-Stand | `master` `031f338b`; enthält alle GASP-Schritte bis GASP-08 (#228), GASP-ENG-01 (#221), GASP-STAB-03 (#223, nur Testcode) und den [Bewegungsplan](gasp-movement-plan.md) (#229, nur Doku). Die Produktion nutzt weiter UEFN; der Manny-Pilot liegt isoliert unter `/Game/SurvivalRpg/Characters/GASP/Pilot/`. |
-| Dateibesitz / Sperren | `GASP-09` bis zum Merge: `RpgCharacter.cpp`, `RpgCharacterMovementComponent.*` mit `RpgCmcRotationModeTests.cpp`, die Facing-Lease in `RpgAbilitySystemComponent.*` und `RpgGameplayAbility.*`, die Aufrufer in Waffenangriff, Ernte und Dodge, `HasEquipmentInHands` im Equipment-Manager, `BP_RpgGasp_CMC` und der neue Testfall in `RpgGaspCMCIntegrationTests.cpp`; `GASP-10` bis `GASP-12` warten auf den Merge. Das Lyra-`SK_Mannequin` trägt seit `GASP-08` die Blend-Profile `FastFeet+Root_Weight` und `FastHead_Weight`, die der Manny-AnimBP braucht; nicht entfernen. Eine separate Claude-Sitzung untersucht den zeitabhängigen Remote-Melee-Test aus den offenen Befunden. |
+| Stand | 12.10.2026 |
+| Aktive Aufgabe, Status, zuständiger Chat | Keine. Zuletzt `GASP-09` Rotationsmodi und Kampfhaltung, **gemergt** nach Sichtprüfung des Nutzers. |
+| Branch, Worktree, Basis / PR | Kein aktiver Branch. Zuletzt `claude/gasp-09-rotation-modes` / [#232](https://github.com/Athurito/SurvivalRpg/pull/232), gemergt als `e5e84cd4`. |
+| Offene Abnahmepunkte | Keine. Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
+| Akzeptierter Runtime-Stand | `master` `e5e84cd4`; enthält alle GASP-Schritte bis GASP-09 (#232), GASP-ENG-01 (#221), GASP-STAB-03 (#223, nur Testcode) und den [Bewegungsplan](gasp-movement-plan.md) (#229, nur Doku). Der CMC-Pawn nutzt Rotationsmodi (freie Bewegung und Kampfhaltung); `Lvl_RpgGaspCMC` steht in der GASP-Präsentation. Die Produktion nutzt weiter UEFN; der Manny-Pilot liegt isoliert unter `/Game/SurvivalRpg/Characters/GASP/Pilot/`. |
+| Dateibesitz / Sperren | Keine GASP-Sperren. Das Lyra-`SK_Mannequin` trägt seit `GASP-08` die Blend-Profile `FastFeet+Root_Weight` und `FastHead_Weight`, die der Manny-AnimBP braucht; nicht entfernen. Eine separate Claude-Sitzung untersucht den zeitabhängigen Remote-Melee-Test aus den offenen Befunden. |
 | Editor / PIE / Builds | Installiert ist UE 5.8.3 (CL 58210709), `master` pinnt 5.8.3. Branches ohne GASP-ENG-01 bauen erst nach Übernahme von `master`. PIE-Netzwerktests nur in einem Prozess gleichzeitig laufen lassen. Vor eigener Editor-/MCP-Nutzung andere Checkouts und Sitzungen prüfen. |
 | Plugin-Overrides | Git-ignoriert und checkout-lokal. In jedem Worktree vor Build oder Branchwechsel gemäß [README](../Build/Patches/NetworkPrediction/README.md) prüfen; Engine-Wechsel nach dem Abschnitt „Engine updates“. |
 | Lokale Belege | `Saved/...` existiert nur im erzeugenden Checkout; versioniert sind Zusammenfassungen in Berichten und Manifesten unter `docs/assets`. GASP-08-Rohdaten liegen in `Saved/Gasp08` und `Saved/Profiling/CSV`, GASP-09-Rohdaten in `Saved/Gasp09` und `Saved/ToolRuns` des Worktrees `musing-ishizaka-7bac20`. |
 
 ## Nächster Handgriff
 
-Der Nutzer prüft `GASP-09` gemäß [Repro](gasp-rotation-modes.md#repro). Bei
-Abnahme: [#232](https://github.com/Athurito/SurvivalRpg/pull/232) mergen und als **Gemergt** führen, danach `GASP-10`
-definieren. Bei Befunden: im selben PR nachbessern. Der vollständige Manny-Bake
-`GASP-14` wartet auf die Animationsset-Wahl in `GASP-10`.
+Kein Paket ist **Bereit**. Als Nächstes `GASP-10` (Animationsset und
+Tempo-Parität) mit dem Nutzer definieren und als **Bereit** markieren. Der
+vollständige Manny-Bake `GASP-14` wartet auf dessen Animationsset-Wahl.
 
 ## Offene Befunde
 
@@ -36,10 +35,9 @@ definieren. Bei Befunden: im selben PR nachbessern. Der vollständige Manny-Bake
   und Datenbankauswahl weichen von der Produktion ab; Multiplayer und Gameplay
   auf einem Manny-Mesh sind ungeprüft. [Bericht](gasp-manny-skeleton-pilot.md#limits)
 
-- `GASP-09` (PR #232, nicht gemergt): Aim Offset und Strafe-Animationen sind nur über die AnimBP-Eingaben geprüft. Ausrüstungswechsel sind nicht vorhergesagt; seitliches oder Rückwärts-Sprinten beim Ziehen kann eine Korrektur auslösen. [Bericht](gasp-rotation-modes.md#limits)
-- CMC-Review 11.10.2026 (UE 5.8.2; Pakete `GASP-09` bis `GASP-13` im [Bewegungsplan](gasp-movement-plan.md)): Der Pawn folgt per
-  `bUseControllerRotationYaw` der Kamera, der AnimBP bekommt aber
-  „OrientToMovement“ gemeldet. Der CMC fährt Relaxed-Tempi (375/585 cm/s) auf
+- `GASP-09` (gemergt): Das Aussehen des Aim Offsets und Angriffe mit Kameradrehung hat der Nutzer nicht gezielt beurteilt. Ausrüstungswechsel sind nicht vorhergesagt; seitliches oder Rückwärts-Sprinten beim Ziehen kann eine Korrektur auslösen. Ein Hurdle-Lauf stürzte einmal in der Engine ab (`FSceneViewport::Destroy` auf dem Render-Thread), der Wiederholungslauf bestand. [Bericht](gasp-rotation-modes.md#limits)
+- CMC-Review 11.10.2026 (UE 5.8.2; Pakete `GASP-09` bis `GASP-13` im [Bewegungsplan](gasp-movement-plan.md)): Der
+  Rotationskonflikt ist mit `GASP-09` behoben. Offen: Der CMC fährt Relaxed-Tempi (375/585 cm/s) auf
   Neutral-Animationen (gemessen 500/350/300 bzw. 700 cm/s). Anfahren und
   Bremsen sind deutlich direkter als im Original (gemessen 0,24 s bzw.
   0,125 s/18,5 cm gegenüber ca. 0,6 s bzw. 0,25 s/62 cm). Bewegung bleibt
