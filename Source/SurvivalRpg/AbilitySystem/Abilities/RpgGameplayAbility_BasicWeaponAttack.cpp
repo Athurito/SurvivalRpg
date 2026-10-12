@@ -411,6 +411,8 @@ void URpgGameplayAbility_BasicWeaponAttack::ActivateAbility(
 	}
 
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
+	// Aim is chosen at the start: the windup may still steer toward the camera, the swing and recovery hold it.
+	BeginFacingCommitment(WindupSteeringRate);
 	LogAttackLifecycleLazy(
 		ActorInfo->IsNetAuthority()
 			? TEXT("ActivationAccepted.Server")
@@ -1142,6 +1144,8 @@ void URpgGameplayAbility_BasicWeaponAttack::BuildInterpolatedTracePointPairs(
 
 void URpgGameplayAbility_BasicWeaponAttack::OpenAttackWindow()
 {
+	// Owner (notify) and authority (schedule) each hold their own facing from the swing until the attack ends.
+	HoldFacingCommitment();
 	if (bAttackWindowOpen)
 	{
 		return;

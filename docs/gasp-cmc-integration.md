@@ -118,9 +118,10 @@ following mapping, paths are relative to `/Game/SurvivalRpg/Characters/GASP/`:
 | `Shared/Characters/UEFN_Mannequin/Animations/MotionMatchingData/CHT_PoseSearchDatabases_Sparse` | `CMC/RPG/Choosers/CHT_PoseSearchDatabases_Sparse` |
 | `Shared/Characters/UEFN_Mannequin/Animations/MotionMatchingData/CHT_PoseSearchDatabases_ExtremeSparse` | `CMC/RPG/Choosers/CHT_PoseSearchDatabases_ExtremeSparse` |
 
-The new map uses Engine cube geometry, a 60-by-40-metre running area, 20/40-cm
-ground steps and three start points. It contains no imported Mover or traversal
-sample actors. Its WorldSettings select the new Experience and test GameMode.
+Since `GASP-09` the map uses the approved GASP presentation of
+`Lvl_RpgGaspMantle` without its traversal obstacles: the original LevelBlock
+floor, LevelVisuals lighting, boundary walls, 20/40-cm ground steps and three
+start points. It contains no Mover or traversal actors. Its WorldSettings select the new Experience and test GameMode.
 That GameMode disables disk persistence and uses `SurvivalRpg_GaspCMCTest`,
 `SurvivalRpg_GaspCMCTest_Backup`, `SurvivalRpg_GaspCMCTest_Recovery`, user index
 `0`, and offline profile `GaspCMCTest`.

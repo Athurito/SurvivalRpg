@@ -36,6 +36,7 @@
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Development/RpgDeveloperSettings.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
 #include "SurvivalRpg/Equipment/RpgWeaponInstance.h"
 
@@ -97,6 +98,27 @@ namespace RpgGaspCMCIntegrationTests
 		return !Presented.ContainsNaN() && Presented.Equals(Actual, 100.0);
 	}
 
+	/** Reads a bool nested in any presentation sub-struct, such as the player input state's strafe request. */
+	bool PresentationNestedBoolIs(const ARpgCharacter* Character, const TCHAR* Prefix, bool bExpected)
+	{
+		const UAnimInstance* Animation = Character ? Character->GetMesh()->GetAnimInstance() : nullptr;
+		const FStructProperty* Properties = Animation
+			? FindFProperty<FStructProperty>(Animation->GetClass(), TEXT("CharacterProperties")) : nullptr;
+		if (!Properties) return false;
+		const void* Data = Properties->ContainerPtrToValuePtr<void>(Animation);
+		for (TFieldIterator<FStructProperty> Inner(Properties->Struct); Inner; ++Inner)
+		{
+			for (TFieldIterator<FBoolProperty> Field(Inner->Struct); Field; ++Field)
+			{
+				if (Field->GetName().StartsWith(Prefix))
+				{
+					return Field->GetPropertyValue_InContainer(Inner->ContainerPtrToValuePtr<void>(Data)) == bExpected;
+				}
+			}
+		}
+		return false;
+	}
+
 	bool HasMotionMatchingSelection(const ARpgCharacter* Character)
 	{
 		const UAnimInstance* Animation = Character ? Character->GetMesh()->GetAnimInstance() : nullptr;
@@ -132,6 +154,8 @@ bool FRpgGaspCMCCompositionTest::RunTest(const FString& Parameters)
 		PawnData->InputConfig && PawnData->DefaultCameraMode && PawnData->InventoryLayoutDefinition);
 	const ARpgCharacter* Pawn = PawnClass->GetDefaultObject<ARpgCharacter>();
 	TestTrue(TEXT("The pawn retains the RPG CMC implementation"), Pawn->GetCharacterMovement()->IsA<URpgCharacterMovementComponent>());
+	const URpgCharacterMovementComponent* Movement = Cast<URpgCharacterMovementComponent>(Pawn->GetCharacterMovement());
+	TestTrue(TEXT("CharacterMovement owns yaw through the GASP rotation modes"), Movement && Movement->bUseRotationModes);
 	USkeletalMeshComponent* Mesh = Pawn->GetMesh();
 	TestTrue(TEXT("UEFN is the gameplay, equipment and montage mesh"),
 		Mesh->GetSkeletalMeshAsset() && Mesh->GetSkeletalMeshAsset()->GetPathName() == MeshPath);
@@ -319,6 +343,50 @@ namespace RpgGaspCMCIntegrationTests
 		return nullptr;
 	}
 	FTimespan Timeout() { return FTimespan::FromSeconds(90.0); }
+
+	// Camera yaw the owner keeps while moving along +X, so stance facing and movement facing differ.
+	constexpr double StanceCameraYaw = 90.0;
+	bool IsCombatStance(const ARpgCharacter* Character)
+	{
+		const URpgCharacterMovementComponent* Movement = Character
+			? Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement()) : nullptr;
+		return Movement && Movement->IsInCombatStance();
+	}
+	bool FacesYaw(const ARpgCharacter* Character, double Yaw)
+	{
+		return Character && FMath::Abs(FMath::FindDeltaAngleDegrees(Character->GetActorRotation().Yaw, Yaw)) <= 1.0;
+	}
+	/** Mode, AnimBP rotation mode, AnimBP strafe request and facing agree in this world. */
+	bool PresentsStance(const ARpgCharacter* Character, bool bStance)
+	{
+		return Character && IsCombatStance(Character) == bStance
+			&& PresentationEnumIs(Character, TEXT("RotationMode_"), bStance ? TEXT("NewEnumerator1") : TEXT("NewEnumerator0"))
+			&& PresentationNestedBoolIs(Character, TEXT("WantsToStrafe_"), bStance)
+			&& Character->GetVelocity().Size2D() > 150.0
+			&& FacesYaw(Character, bStance ? StanceCameraYaw : Character->GetVelocity().Rotation().Yaw);
+	}
+	void MarkStancePhase(const TCHAR* Phase)
+	{
+		// Bounds correction counting in the log (p.NetShowCorrections 1) without a test-only movement hook.
+		UE_LOG(LogTemp, Display, TEXT("RpgGaspStancePhase %s"), Phase);
+	}
+	/** Holsters through the authoritative loadout and clears any directly applied hand equipment. */
+	void HolsterHands(ARpgCharacter* Character)
+	{
+		if (!Character) return;
+		if (AController* Controller = Character->GetController())
+		{
+			if (URpgEquipmentLoadoutComponent* Loadout = Controller->FindComponentByClass<URpgEquipmentLoadoutComponent>())
+			{
+				Loadout->ClearActiveHands();
+			}
+		}
+		if (URpgEquipmentManagerComponent* Equipment = Character->GetEquipmentManagerComponent())
+		{
+			Equipment->UnequipItemInSlot(ERpgEquipmentSlot::MainHand);
+			Equipment->UnequipItemInSlot(ERpgEquipmentSlot::OffHand);
+		}
+	}
 }
 
 NETWORK_TEST_CLASS(GaspCMCExperiencePIE, "SurvivalRpg.GASP.CMC")
@@ -560,6 +628,69 @@ NETWORK_TEST_CLASS(GaspCMCExperiencePIE, "SurvivalRpg.GASP.CMC")
 			.ThenClient(TEXT("Release the respawned pawn's movement input"), 0, [this](FState&) { MovementInput.Stop(); })
 			.ThenServer(TEXT("Persistence remains disabled through test completion"), [this](FState& State)
 				{ ASSERT_THAT(IsTrue(Isolation.IsIsolated(State.World))); });
+	}
+
+	TEST_METHOD(CombatStanceReachesOwnerServerAndLateJoin)
+	{
+		using namespace RpgGaspCMCIntegrationTests;
+		if (!bConfigured) return;
+		Network.UntilServer(TEXT("Listen server has every pawn grounded on the floor that preceded it"), [](FState& State)
+				{ return AllPlayersGrounded(State.World); }, Timeout())
+			.UntilClient(TEXT("Remote owner receives the CMC Experience and grounded RPG pawn"), 0, [](FState& State)
+				{ return Ready(State.World, LocalCharacter(State.World)) && Grounded(LocalCharacter(State.World)); }, Timeout())
+			.ThenClient(TEXT("Capture the owner"), 0, [this](FState& State)
+				{ SubjectId = LocalCharacter(State.World)->GetPlayerState()->GetPlayerId(); })
+			.ThenServer(TEXT("Holster any spawn loadout through the authoritative equipment components"), [this](FState& State)
+				{ HolsterHands(FindCharacter(State.World, SubjectId)); })
+			.ThenClient(TEXT("Look along a fixed camera yaw and move along +X with ordinary input"), 0, [this](FState& State)
+			{
+				ARpgCharacter* Character = LocalCharacter(State.World);
+				ASSERT_THAT(IsTrue(Character->GetLocalRole() == ROLE_AutonomousProxy));
+				Character->GetController()->SetControlRotation(FRotator(0.0, StanceCameraYaw, 0.0));
+				MovementInput.Start(Character);
+				MarkStancePhase(TEXT("FreeMoving"));
+			})
+			.UntilClient(TEXT("Owner moves freely, facing its movement and reporting orient-to-movement"), 0, [](FState& State)
+				{ return PresentsStance(LocalCharacter(State.World), false); }, Timeout())
+			.UntilServer(TEXT("Listen server presents the same free movement"), [this](FState& State)
+				{ return PresentsStance(FindCharacter(State.World, SubjectId), false); }, Timeout())
+			.ThenServer(TEXT("Draw a sword through the authoritative RPG equipment component while moving"), [this](FState& State)
+			{
+				ARpgCharacter* Character = FindCharacter(State.World, SubjectId);
+				UClass* Sword = LoadClass<URpgEquipmentDefinition>(nullptr, TEXT("/GF_Combat_Core/Equipment/Weapons/ED_BasicSword.ED_BasicSword_C"));
+				ASSERT_THAT(IsNotNull(Sword));
+				URpgEquipmentManagerComponent* Equipment = Character ? Character->GetEquipmentManagerComponent() : nullptr;
+				ASSERT_THAT(IsNotNull(Equipment));
+				if (!Sword || !Equipment) return;
+				MarkStancePhase(TEXT("DrawWhileMoving"));
+				ASSERT_THAT(IsNotNull(Equipment->EquipItemInSlot(Sword, ERpgEquipmentSlot::MainHand)));
+			})
+			.UntilClient(TEXT("Owner enters the combat stance, faces its camera and requests strafing"), 0, [](FState& State)
+				{ return PresentsStance(LocalCharacter(State.World), true); }, Timeout())
+			.UntilServer(TEXT("Listen server presents the owner's stance and camera facing"), [this](FState& State)
+				{ return PresentsStance(FindCharacter(State.World, SubjectId), true); }, Timeout())
+			.ThenServer(TEXT("Mark the late join"), [](FState&) { MarkStancePhase(TEXT("LateJoin")); })
+			.ThenClientJoins()
+			.UntilClient(TEXT("Late join reconstructs the stance of a pawn that already holds a weapon"), 1, [this](FState& State)
+			{
+				ARpgCharacter* Character = FindCharacter(State.World, SubjectId);
+				return Isolation.IsIsolated(State.World) && Ready(State.World, Character)
+					&& Character->GetLocalRole() == ROLE_SimulatedProxy && PresentsStance(Character, true);
+			}, Timeout())
+			.ThenServer(TEXT("Holster while moving"), [this](FState& State)
+			{
+				MarkStancePhase(TEXT("HolsterWhileMoving"));
+				HolsterHands(FindCharacter(State.World, SubjectId));
+			})
+			.UntilClient(TEXT("Owner returns to free movement"), 0, [](FState& State)
+				{ return PresentsStance(LocalCharacter(State.World), false); }, Timeout())
+			.UntilClient(TEXT("Late-joined observer returns to free movement"), 1, [this](FState& State)
+				{ return PresentsStance(FindCharacter(State.World, SubjectId), false); }, Timeout())
+			.ThenClient(TEXT("Release movement input"), 0, [this](FState&)
+			{
+				MovementInput.Stop();
+				MarkStancePhase(TEXT("Done"));
+			});
 	}
 };
 

@@ -158,6 +158,13 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	bool bRouteAttackDefinitionFromInputTag = false;
 
+	/**
+	 * Designer yaw rate in deg/s at which a character with rotation modes may still turn toward the camera while the
+	 * attack winds up. From the attack window start until the attack ends, its facing is held. Zero holds from activation.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Facing", meta = (ClampMin = "0.0", UIMax = "720.0", Units = "DegreesPerSecond"))
+	float WindupSteeringRate = 360.0f;
+
 	UPROPERTY(Transient)
 	TObjectPtr<URpgWeaponInstance> ActiveWeaponInstance;
 

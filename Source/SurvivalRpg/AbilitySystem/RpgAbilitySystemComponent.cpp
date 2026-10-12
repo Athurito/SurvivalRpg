@@ -55,6 +55,7 @@ void URpgAbilitySystemComponent::EndPlay(const EEndPlayReason::Type EndPlayReaso
 {
 	ResetSprintMovement();
 	ResetBlockMovement();
+	ResetFacingCommitment();
 	ResetSimulatedMoverTraversalPresentation();
 	if (AActor* Avatar = GetAvatarActor())
 	{
@@ -91,6 +92,7 @@ void URpgAbilitySystemComponent::InitAbilityActorInfo(AActor* InOwnerActor, AAct
 	{
 		ResetSprintMovement();
 		ResetBlockMovement();
+		ResetFacingCommitment();
 		InputSuppressedUntilReleaseSpecHandles.Reset();
 	}
 	if (ActorInfo->AvatarActor.IsValid() && ActorInfo->AvatarActor.Get() != InAvatarActor)
@@ -177,6 +179,7 @@ void URpgAbilitySystemComponent::ClearActorInfo()
 	InputSuppressedUntilReleaseSpecHandles.Reset();
 	ResetSprintMovement();
 	ResetBlockMovement();
+	ResetFacingCommitment();
 	ResetSimulatedMoverTraversalPresentation();
 	InitializedAnimInstance.Reset();
 	if (AActor* Avatar = GetAvatarActor())
@@ -342,6 +345,60 @@ void URpgAbilitySystemComponent::ResetSprintMovement()
 			Movement->RefreshSprintState();
 		}
 	}
+}
+
+uint32 URpgAbilitySystemComponent::BeginFacingCommitment(UGameplayAbility* Ability, float SteeringRate)
+{
+	AActor* Avatar = GetAvatarActor();
+	if (!IsValid(Avatar) || Avatar->GetLocalRole() < ROLE_AutonomousProxy || !IsValid(Ability) || !Ability->IsActive()
+		|| Ability->GetAbilitySystemComponentFromActorInfo() != this || Ability->GetAvatarActorFromActorInfo() != Avatar
+		|| !Ability->GetCurrentAbilitySpecHandle().IsValid() || !FMath::IsFinite(SteeringRate))
+	{
+		return 0;
+	}
+	// The newest activation owns the facing; an attack chained before the previous one ended replaces it.
+	FacingCommitmentAbility = Ability;
+	FacingCommitmentAvatar = Avatar;
+	FacingCommitmentActivationKey = Ability->GetCurrentActivationInfo().GetActivationPredictionKey();
+	FacingCommitmentSteeringRate = FMath::Max(SteeringRate, 0.f);
+	if (++LastFacingCommitmentLease == 0) { ++LastFacingCommitmentLease; }
+	FacingCommitmentLease = LastFacingCommitmentLease;
+	return FacingCommitmentLease;
+}
+
+void URpgAbilitySystemComponent::HoldFacingCommitment(UGameplayAbility* Ability, uint32 Lease)
+{
+	if (Lease && Lease == FacingCommitmentLease && FacingCommitmentAbility.Get() == Ability) { FacingCommitmentSteeringRate = 0.f; }
+}
+
+void URpgAbilitySystemComponent::EndFacingCommitment(UGameplayAbility* Ability, uint32 Lease)
+{
+	if (Lease && Lease == FacingCommitmentLease && FacingCommitmentAbility.Get() == Ability) { ResetFacingCommitment(); }
+}
+
+bool URpgAbilitySystemComponent::GetFacingCommitment(float& OutSteeringRate) const
+{
+	OutSteeringRate = 0.f;
+	const AActor* Avatar = GetAvatarActor();
+	const UGameplayAbility* Ability = FacingCommitmentAbility.Get();
+	if (!IsValid(Avatar) || Avatar->GetLocalRole() < ROLE_AutonomousProxy || !FacingCommitmentLease
+		|| FacingCommitmentAvatar.Get() != Avatar || !Ability || !Ability->IsActive()
+		|| Ability->GetAbilitySystemComponentFromActorInfo() != this || Ability->GetAvatarActorFromActorInfo() != Avatar
+		|| Ability->GetCurrentActivationInfo().GetActivationPredictionKey() != FacingCommitmentActivationKey)
+	{
+		return false;
+	}
+	OutSteeringRate = FacingCommitmentSteeringRate;
+	return true;
+}
+
+void URpgAbilitySystemComponent::ResetFacingCommitment()
+{
+	FacingCommitmentLease = 0;
+	FacingCommitmentSteeringRate = 0.f;
+	FacingCommitmentAbility.Reset();
+	FacingCommitmentAvatar.Reset();
+	FacingCommitmentActivationKey = FPredictionKey{};
 }
 
 bool URpgAbilitySystemComponent::IsSimulatedMoverTraversalMontage(const UAnimMontage* Montage) const

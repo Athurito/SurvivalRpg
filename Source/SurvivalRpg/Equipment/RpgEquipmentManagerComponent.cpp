@@ -331,6 +331,16 @@ URpgEquipmentInstance* URpgEquipmentManagerComponent::GetEquipmentInstanceInSlot
 	return nullptr;
 }
 
+bool URpgEquipmentManagerComponent::HasEquipmentInHands() const
+{
+	// A two-handed item is applied in MainHand and only occupies OffHand, so the two applied slots cover every hand item.
+	return EquipmentList.Entries.ContainsByPredicate([](const FRpgAppliedEquipmentEntry& Entry)
+	{
+		return Entry.Instance != nullptr
+			&& (Entry.EquippedSlot == ERpgEquipmentSlot::MainHand || Entry.EquippedSlot == ERpgEquipmentSlot::OffHand);
+	});
+}
+
 bool URpgEquipmentManagerComponent::IsEquipmentSlotBlocked(ERpgEquipmentSlot Slot) const
 {
 	if (Slot == ERpgEquipmentSlot::None)

@@ -1,6 +1,6 @@
 # GASP-09 – Rotation modes and combat stance
 
-Status: **Ready** (defined 2026-10-11). The package outline is in the [movement plan](gasp-movement-plan.md#gasp-09-rotation-modes-and-combat-stance). This report refines it against the current code and is the task report for the implementation PR.
+Status: **PR open** ([#232](https://github.com/Athurito/SurvivalRpg/pull/232), draft; implemented 2026-10-11 on `claude/gasp-09-rotation-modes`, first commit `353a0f8a`). The user accepted the check on 2026-10-12 after the backpedal fix and asked for the merge; the automated checks pass apart from one known Mover timing case. The package outline is in the [movement plan](gasp-movement-plan.md#gasp-09-rotation-modes-and-combat-stance). Results, failed attempts, and limits are under [Results](#results).
 
 ## Goal
 
@@ -22,29 +22,43 @@ The [2026-10-11 review](gasp-movement-plan.md#findings-from-the-2026-10-11-revie
 
 GASP-10 to GASP-13 tune speeds, movement, gait, and presentation on top of the rotation mode, so this package comes first.
 
-## Current state (checked 2026-10-11 on `master` `338f0120`)
+## Starting state (checked 2026-10-11 on `master` `338f0120`)
 
 | Area | Finding |
 | --- | --- |
-| Native rotation defaults | `ARpgCharacter` sets `bUseControllerRotationYaw = true`; its movement component sets `bOrientRotationToMovement = false`, `bUseControllerDesiredRotation = false`, and 720°/s (`Source/SurvivalRpg/Core/Character/RpgCharacter.cpp`). The review recorded that `BP_Rpg_Character` overrides orient-to-movement to `true` at 500°/s. That Blueprint value was not re-read for this definition because the editor was not running. |
-| Existing rotation leases | `URpgCharacterMovementComponent::PhysicsRotation` and `ARpgCharacter::FaceRotation` already hand rotation to two prediction-safe owners. Mantle stops all rotation. Block faces the saved control yaw per move, including saved-move replay (`IsBlockControllingRotation`, `ComputeOrientToMovementRotation`). New rotation logic extends this pattern instead of adding a parallel writer. |
-| Sprint | Sprint is decided per move in `URpgCharacterMovementComponent::CanSprintForMove` with GAS stamina ([CMC sprint](gasp-cmc-sprint.md)). A direction gate belongs in this per-move check so that client prediction, replay, and server agree. |
-| Equipment state for the stance | `URpgEquipmentLoadoutComponent` owns the active hand selection, but it is controller-owned and replicates only to the owning client. The pawn-owned `URpgEquipmentManagerComponent` replicates its `EquipmentList` to everyone, and each `URpgEquipmentInstance` replicates `EquippedSlot`. Only that pawn projection reaches simulated proxies and late joiners. |
-| Lock-on and aiming | Neither exists in the code. GASP-09 implements only "weapon in hand" and "blocking" and leaves an extension point for later triggers. |
-| Other users of `ARpgCharacter` | `ARpgAICharacter` inherits the rotation defaults and turns through controller focus. The Mover pawn sets its own rotation. Neither may change. |
-| Classification tags | `Weapon.Type.Melee` and `Weapon.Type.Ranged` exist, and so do the hand slot tags `Equipment.Slot.MainHand`, `OffHand`, and `BothHands`. |
+| Rotation defaults | `ARpgCharacter` sets `bUseControllerRotationYaw = true`; its movement component sets `bOrientRotationToMovement = false`, `bUseControllerDesiredRotation = false`, and 720°/s (`Source/SurvivalRpg/Core/Character/RpgCharacter.cpp`). Read in the editor: `BP_Rpg_Character` overrides orient-to-movement to `true` at 500°/s and allows physics rotation during root motion; `BP_RpgGasp_CMC` inherits both. |
+| AnimBP inputs | `BP_RpgGasp_CMC::Get_PropertiesForAnimation` derived both `RotationMode` and `WantsToStrafe` from `bOrientRotationToMovement`, which is always `true` on this pawn. The AnimBP therefore never saw the strafe mode. |
+| Existing rotation leases | `URpgCharacterMovementComponent::PhysicsRotation` and `ARpgCharacter::FaceRotation` hand rotation to two prediction-safe owners. Mantle, vault, and hurdle (one ability) stop all rotation. Block faces the saved control yaw per move, including saved-move replay. |
+| Sprint | Sprint is decided per move in `URpgCharacterMovementComponent::CanSprintForMove` with GAS stamina ([CMC sprint](gasp-cmc-sprint.md)). |
+| Equipment state | `URpgEquipmentLoadoutComponent` owns the active hand selection, but it is controller-owned and replicates only to the owning client. The pawn-owned `URpgEquipmentManagerComponent` replicates its `EquipmentList` with `EquippedSlot` to everyone, including simulated proxies and late joiners. |
+| Spawn loadout | On `Lvl_RpgGaspCMC` and `Lvl_RpgGaspMantle` the player spawns with sword and shield active in both hands. |
+| Lock-on and aiming | Neither exists in the code. |
+| Other users of `ARpgCharacter` | `ARpgAICharacter` and its Blueprints inherit the rotation defaults and turn through controller focus. The Mover pawn sets its own rotation. |
+| Attack montages | `AM_BasicSword_Attack01` and the combo attack use root motion; the pickaxe harvest swing does not. Attacks and harvesting run through the native `URpgGameplayAbility_BasicWeaponAttack` and `URpgGameplayAbility_Harvest`; the dodge resolves its profile in native code and sequences its montage in Blueprint. |
+
+## Decisions
+
+The user settled these on 2026-10-11 before implementation.
+
+1. **Stance trigger:** any equipment in the hands, weapons and harvesting tools alike, because tools aim their area effect too.
+2. **Attack facing:** like action games with committed attacks (Elden Ring, Monster Hunter):
+   - the attack starts in the camera direction;
+   - during the windup it may still steer toward the camera at a limited rate;
+   - from the hit window until the recovery ends, the facing is held and camera turns no longer rotate the character;
+   - every combo hit re-aims at its start;
+   - area-effect tools aim at the start too.
+3. **Turn into the stance:** instant, as in GASP; Offset Root Bone smooths the visible turn. The attack commitment from decision 2 keeps instant turning from spinning attacks.
 
 ## Scope
 
-- **Stance resolution.** Derive the stance from replicated, pawn-side state that owner, server, and simulated proxies share: an applied hand equipment instance (see decision 1) or an active block. Keep the resolver small and value-only so that lock-on or aiming can be added later without a new state machine.
-- **Rotation policy.** Free movement orients to movement without camera yaw; combat stance faces the control yaw.
-  - Make it prediction-safe in `URpgCharacterMovementComponent`, next to the block and mantle leases.
-  - Ground and air rotation rates are designer-tuned values. Start from the original GASP behavior: instant on the ground and 200°/s in the air. GASP-11 later moves them into the shared movement profile.
-  - Scope it to the GASP CMC pawn through an opt-in setting, so AI and the baseline pawn keep their behavior.
-- **AnimBP inputs.** Report `RotationMode` and `WantsToStrafe` from the resolved stance in `BP_RpgGasp_CMC`. This activates the strafe path and the aim offset in combat stance. The values come from replicated state, so proxies and late joiners see the same mode.
-- **Sprint direction gate.** In combat stance, sprint only within a designer-tuned angle of the facing (original: 50°). Free-movement sprint is unchanged.
-- **Attack facing.** Implement the outcome of decision 2.
-- **Cleanup.** Collapse the native and Blueprint rotation defaults the conflict depends on. Other movement values stay for GASP-11.
+- **Stance resolution:** equipment applied in the main or off hand, or an active block, from replicated pawn state.
+- **Rotation policy:** an opt-in on the movement component.
+  - Free movement orients to the movement input, combat stance faces the control yaw.
+  - Prediction-safe, next to the block and mantle leases.
+  - Ground and air rates are designer-tuned: GASP values, instant on the ground and 200°/s in the air. GASP-11 moves them into the shared movement profile.
+- **AnimBP inputs:** `RotationMode` and `WantsToStrafe` follow the resolved stance.
+- **Sprint direction gate:** in combat stance, sprint only within a designer-tuned angle of the camera yaw. GASP uses 50°.
+- **Facing commitment:** a generic ability lease implements decision 2 for weapon attacks and harvesting swings. The dodge uses it to keep its roll direction.
 
 ## Out of scope
 
@@ -53,45 +67,16 @@ GASP-10 to GASP-13 tune speeds, movement, gait, and presentation on top of the r
 - Lock-on, aiming, and new combat abilities.
 - Any load dependence: load still only selects the dodge ([game vision](game-vision.md)).
 
-## Decisions to settle at the start
-
-The implementing chat settles these with the user before Phase B and records the answers here.
-
-1. **Which hand items trigger the stance.**
-   - Recommended: applied hand equipment that carries a `Weapon.Type.*` tag.
-   - Alternative: any hand equipment, including harvesting tools. Check first how tools are tagged.
-2. **Attack facing during a montage.** Today a camera turn rotates the character during an attack, because `FaceRotation` is suppressed only for mantle and block (derived from code, not measured).
-   - Recommended: an attack commits to the camera facing at activation and ignores camera turns until its recovery, through the existing lease pattern. This keeps positioning readable.
-   - Alternative: keep today's behavior and record it as a known limit.
-3. **Turn into the stance.** Instant like the original, or a short designer-tuned turn rate for a heavier feel. The final value belongs to GASP-11.
-
 ## Ownership
 
 | Responsibility | Location | Reason |
 | --- | --- | --- |
-| Stance resolution from replicated equipment and block state | C++, value-only helper used by the character and movement component | Feeds per-move prediction and simulated-proxy inputs; needs the same result on every machine |
-| Rotation policy, sprint direction gate, attack facing lease | C++ in `URpgCharacterMovementComponent` and `ARpgCharacter` | Movement authority, saved-move replay, and server correction |
-| Opt-in switch, rotation rates, sprint angle | Designer-tuned defaults on `BP_RpgGasp_CMC` or its movement component | Tuning, not mechanism |
-| `RotationMode` and `WantsToStrafe` to the AnimBP | `BP_RpgGasp_CMC` and the existing AnimBP inputs, read on the game thread | Presentation wiring; the AnimBP only reads a snapshot |
-
-File ownership while the package runs:
-- `Source/SurvivalRpg/Core/Character/RpgCharacter.*`
-- `Source/SurvivalRpg/Core/Character/RpgCharacterMovementComponent.*` and its tests
-- `BP_RpgGasp_CMC`, and `BP_Rpg_Character` only for the conflicting rotation defaults
-- new or extended tests under `Source/SurvivalRpgEditor/Private/Network`
-- this report
-
-GASP-10 to GASP-12 touch the same files and start only after this package merges.
-
-## Phases
-
-1. **A – baseline.**
-   - Settle the three decisions with the user.
-   - Read in the editor how `BP_Rpg_Character` and `BP_RpgGasp_CMC` set rotation and feed `RotationMode` and `WantsToStrafe` to the AnimBP.
-   - Repeat the review's facing and sprint measurement on UE 5.8.3 as the baseline.
-2. **B – native seam.** Add the stance resolver, the opt-in rotation policy, the sprint direction gate, and the attack facing lease, with tests for replay, correction, and proxies.
-3. **C – Blueprint wiring.** Enable the policy on `BP_RpgGasp_CMC`, report the mode to the AnimBP, and remove the conflicting rotation defaults.
-4. **D – validation.** Run the automation, the PIE probe, and the network checks, then the user check.
+| Hand equipment read model | `URpgEquipmentManagerComponent::HasEquipmentInHands` | Replicated pawn state that owner, server, proxies, and late joiners share |
+| Stance, rotation policy, sprint gate, saved-move history | `URpgCharacterMovementComponent`, `ARpgCharacter::FaceRotation` | Movement authority, saved-move replay, and server correction |
+| Facing commitment lease | `URpgAbilitySystemComponent`, helpers on `URpgGameplayAbility` | Activation-scoped lifecycle like the block and sprint leases; Blueprint abilities can call the helpers |
+| Commitment timing | `URpgGameplayAbility_BasicWeaponAttack` (windup steering rate, hold at the attack window), `URpgGameplayAbility_Harvest` (hold for the swing), `URpgGameplayAbility_Dodge` (hold for the roll) | Each ability already owns its window or swing timing |
+| Opt-in, rates, sprint angle, windup steering rate | `BP_RpgGasp_CMC` movement defaults and the attack ability's class defaults | Designer tuning |
+| `RotationMode` and `WantsToStrafe` | `BP_RpgGasp_CMC::Get_PropertiesForAnimation` reads `IsInCombatStance` | Presentation wiring on the game thread; the AnimBP only reads the snapshot |
 
 ## Acceptance criteria
 
@@ -107,25 +92,130 @@ GASP-10 to GASP-12 touch the same files and start only after this package merges
 | Unchanged | AI characters, the Mover variants, and every equipment load tier move as before. |
 | Attack facing | Behaves as decision 2 records. |
 
-## Verification
+## Implementation
 
-- `python Build/Tools/Unreal/ue.py build`.
-- Focused automation through `ue.py test`, including:
-  - `SurvivalRpg.GASP.CMC` (including `SurvivalRpg.GASP.CMC.Sprint`);
-  - `SurvivalRpg.Combat.Block` and `SurvivalRpg.Combat.BlockLocomotion`;
-  - `SurvivalRpg.GASP.Mantle`, `SurvivalRpg.GASP.Vault`, and `SurvivalRpg.GASP.Hurdle`;
-  - `SurvivalRpg.GASP.Mover`, as a regression for the untouched variant;
-  - new tests for stance resolution, the sprint gate, and proxy and late-join mode.
-- A PIE probe that repeats the review's facing measurement at 30, 60, and 120 FPS.
-- A user check on `Lvl_RpgGaspCMC`: run free, draw a weapon, strafe, backpedal, try a backward sprint, block, and attack while turning the camera.
+- **Movement** (`URpgCharacterMovementComponent`):
+  - `bUseRotationModes` opts a character in. With it, movement is the only yaw writer: `ARpgCharacter::FaceRotation` no longer applies controller yaw, and `PhysicsRotation` runs one policy:
+    1. A held facing commitment does not rotate.
+    2. A steering commitment turns toward the camera at its rate.
+    3. The combat stance faces the camera at `GroundRotationRate` (≤ 0 instant) or `AirRotationRate`.
+    4. Free movement orients to the input at the same rates.
+  - Mantle keeps its lease. Characters without the opt-in keep their authored flags.
+  - Saved moves record hand equipment, the facing commitment, and the control rotation, so corrections replay the original policy. The server samples its own state, as for block and sprint; only the existing sprint request bit crosses the wire.
+  - `CanSprintForMove` rejects sprint in the combat stance when the input is more than `CombatStanceSprintAngle` (50°) from the move's camera yaw.
+  - `IsInCombatStance()` is the BlueprintPure read model for the AnimBP. On simulated proxies it reads the replicated equipment list and the replicated blocking tag.
+  - The stock `bOrientRotationToMovement` and `bUseControllerDesiredRotation` flags mirror the mode on every role, before each tick and each move, as GASP sets them per tick. The Pose Search trajectory predictor reads them, and so do moving bases and the correction fallback. The flags are presentation only; `PhysicsRotation` still applies the policy above.
+- **Facing commitment:** `URpgAbilitySystemComponent::Begin/Hold/EndFacingCommitment` is an activation-scoped lease.
+  - It is validated by ability, avatar, and prediction key like the block lease. A newer activation replaces it, and stale cleanup cannot release a newer one. It resets with the block lease on avatar change and teardown.
+  - `URpgGameplayAbility` wraps it in BlueprintCallable helpers and ends it in `EndAbility`.
+  - Basic weapon attacks steer at `WindupSteeringRate` (360°/s) and hold from `OpenAttackWindow`, which runs on the owner from the notify and on authority from its schedule.
+  - Harvest swings hold from montage start until the montage ends, so a stride stays free.
+  - The dodge holds from profile resolution until its end.
+- **Equipment:** `URpgEquipmentManagerComponent::HasEquipmentInHands()` reports applied main- or off-hand equipment.
+- **Blueprint:**
+  - `BP_RpgGasp_CMC` enables `bUseRotationModes`. Its children, the mantle character and the GASP-08 pilot pawns, inherit it.
+  - `Get_PropertiesForAnimation` reports `WantsToStrafe = IsInCombatStance` and `RotationMode = Strafe` in the stance (the existing select, fed by `NOT IsInCombatStance`).
+  - The unused `bOrientRotationToMovement` getter was removed. Other movement values are unchanged.
+  - At the user's request, `Lvl_RpgGaspCMC` now uses the approved GASP presentation: a copy of `Lvl_RpgGaspMantle` without its traversal obstacles. It keeps the three start points, boundary walls and ground steps, `RpgGaspCMCExperience`, and `BP_Rpg_GaspCMCTestGameMode`.
+- **Tests:**
+  - `SurvivalRpg.Movement.CMC.RotationModes`: four native tests on a real CMC floor with GAS leases and real equipment. They cover free movement, stance and its replay, facing commitment steer/hold/replace/cancel/replay, and the stance sprint directions.
+  - `SurvivalRpg.GASP.CMC.GaspCMCExperiencePIE.CombatStanceReachesOwnerServerAndLateJoin`: a listen server with a late-joining second client.
+  - `SurvivalRpg.GASP.CMC.AssetComposition` now requires the opt-in on the CMC pawn.
 
-## Repro (after implementation)
+## Verification and evidence
 
-1. Start PIE on `Lvl_RpgGaspCMC` with the CMC Experience.
-2. Without a weapon, run in circles: the character turns toward its movement.
-3. Draw a weapon. Move sideways and backward: the character keeps facing the camera and strafes. Hold sprint while moving backward: no sprint.
-4. Holster the weapon: free movement resumes.
+Raw evidence is in `Saved/Gasp09` and `Saved/ToolRuns` of the producing checkout and is not versioned.
 
 ## Results
 
-Not started.
+All results are from this branch on UE 5.8.3.
+
+### Acceptance status
+
+| Area | Result |
+| --- | --- |
+| Free movement | **Met.** PIE probe on `Lvl_RpgGaspCMC` after holstering: facing against velocity is 0.0° median and maximum in all four directions at 30, 60, and ~110 FPS (the 120 cap reached 108–113 FPS in the editor). The PIE network test sees `OrientToMovement` and `WantsToStrafe = false` on owner, listen server, and late joiner. |
+| Combat stance | **Met after the user-check fix.** Same probe with the spawn sword and shield: facing against the camera is 0.0° median and maximum at all three rates. Strafing runs 90° and backpedaling 180° off the facing. The PIE network test sees the strafe mode and `WantsToStrafe = true` on owner, server, and late joiner. Selected clips in the stance, recorded in PIE after the fix: backward `Run_Start_B`/`Run_Loop_B`, right `Run_Start_RL`/`Run_Loop_RL`, left `Run_Start_LL`/`Run_Loop_LL`, forward `Run_Start_F`/`Run_Loop_F`. The AnimBP's `Enable_AO` requires `RotationMode = Strafe`, so the aim offset is active in the stance; its look was not judged visually. |
+| Switching | **Met.** The PIE network test draws and holsters the sword on the server while the owner runs. With `p.NetShowCorrections 1`, no correction occurred in the free, draw, late-join, and holster phases. |
+| Sprint | **Met.** Native test: free movement sprints backward; the stance does not sprint backward or sideways, but does at 45° and forward; turning the camera away ends the sprint at once. PIE probe: stance backward plus sprint input stays at 375 cm/s with no effective sprint; forward reaches 585 cm/s. The sprint PIE tests pass. Corrections in them, rotation modes off/on: 24/22, 30/30, 4/0, 4/4. |
+| Block | **Met.** Block lifecycle, prediction, and all 16 block-locomotion PIE tests pass, including camera facing with late join; block is part of the stance. |
+| Traversal | **Met.** Mantle, vault, and hurdle PIE tests pass on CMC (31/31); mantle keeps its rotation lease. |
+| Network | **Met for owner, listen server, and late join.** The native replay tests show the recorded stance and commitment survive corrections. A PIE run with forced corrections was not made. |
+| Unchanged | **Met in tests.** Characters without the opt-in keep controller yaw (native test). Equipment and load tests, the remote melee and harvest network tests with AI targets, and the Mover suites pass, apart from one known Mover timing case (see [PIE regression](#pie-regression)). |
+| Attack facing | **Met at the native seam.** The lease steers at the leased rate, holds, is replaced by a chained activation, survives stale cleanup, ends on cancellation, and replays from history. A live attack with camera turns is part of the user check. |
+
+### Automation
+
+- `python Build/Tools/Unreal/ue.py build`: passed after each change, 0 errors and 0 warnings.
+- `SurvivalRpg.Movement.CMC.RotationModes`: 4/4 passed.
+  - A mutation check confirmed the tests detect real regressions: with the sprint gate and the stance target removed, 3 of the 4 failed.
+- `SurvivalRpg.GASP.CMC`: 9/9 passed, including the new PIE test, AssetComposition, and the sprint PIE tests.
+- Native and asset regression: 113/113 passed. Filters:
+  - `SurvivalRpg.Movement`, `SurvivalRpg.Equipment`, `SurvivalRpg.Harvesting`, `SurvivalRpg.AbilitySystem`;
+  - `SurvivalRpg.Combat.Block.Lifecycle`, `SurvivalRpg.Combat.Block.Prediction`, `SurvivalRpg.Combat.Dodge`;
+  - `SurvivalRpg.Combat.AbilityContent`, `SurvivalRpg.Combat.WeaponAttackAssetContract`, `SurvivalRpg.Combat.BlockLocomotion.Validation`;
+  - `SurvivalRpg.GASP.CMC.AssetComposition`, `SurvivalRpg.GASP.Mantle.AssetComposition`.
+
+### PIE regression
+
+Run one suite at a time with rendering:
+
+| Filter | Result |
+| --- | --- |
+| `SurvivalRpg.Combat.BlockLocomotion` | 16/16 passed, CMC and Mover |
+| `SurvivalRpg.GASP.Mantle` | 12/12 passed |
+| `SurvivalRpg.GASP.Vault` | 8/8 passed |
+| `SurvivalRpg.GASP.Hurdle` | 11/11 passed |
+| `SurvivalRpg.GASP.RuntimeRetarget` | 2/2 passed |
+| `SurvivalRpg.GASP.VariantComparison` | 3/3 passed |
+| `SurvivalRpg.Network` (remote melee, loot harvest, storage, skill tree) | 19/19 passed |
+| `SurvivalRpg.GASP.Mover` | 66/67 passed |
+
+The Mover failure is `Vault.GaspMoverVaultPIE.EquipmentMontageReplacesPendingVaultWithoutDelayedResurrection`, failing on "Equipment replacement overlapped the observer's old active NP traversal". Run alone three more times, it passed once.
+- This is the known timing case from the [handoff](gasp-integration-handoff.md#offene-befunde): 3 of 6 isolated runs missed the same overlap condition on 5.8.3 before this change.
+- The Mover pawn has no `URpgCharacterMovementComponent` and reads neither the rotation modes nor the facing lease.
+
+### User check findings
+
+- **2026-10-12, backward run looked over the shoulder.** In the stance, Motion Matching selected `M_Neutral_Run_Reface_Start_F_R_180` (a run start that turns around) for backward input, and forward-facing starts for sideways input. The engine's Pose Search trajectory predictor reads `bOrientRotationToMovement` directly (`PoseSearchTrajectoryLibrary.cpp`). The first implementation changed it only inside `PhysicsRotation`, so the predicted trajectory still turned toward the movement. Fixed by mirroring the flags (see [Implementation](#implementation)); the stance then selected the backpedal and strafe clips listed above.
+- **Test map.** The user asked for the CMC test map in the GASP presentation; done as described above.
+- **Acceptance.** After the fix the user confirmed the backpedal ("rückwärts passt jetzt") and asked for the merge. Earlier in the same check they found the rest fine. The aim offset's look and attacks with camera turns were not judged explicitly.
+
+### Regression after the fix
+
+Run on `7d9b2869` on 2026-10-12, one suite at a time, while an interactive editor was open:
+
+| Filter | Result |
+| --- | --- |
+| Native and asset filters from [Automation](#automation) | 113/113 passed |
+| `SurvivalRpg.GASP.CMC`, with `p.NetShowCorrections 1` | 9/9 passed |
+| `SurvivalRpg.Combat.BlockLocomotion` | 16/16 passed |
+| `SurvivalRpg.GASP.Mantle` | 12/12 passed |
+| `SurvivalRpg.GASP.Vault` | 8/8 passed |
+| `SurvivalRpg.GASP.Hurdle` | First run: the editor crashed after 6 passed tests. Rerun: 11/11 passed. |
+| `SurvivalRpg.Network` | 19/19 passed |
+
+The Hurdle crash was an engine assertion, `IsInGameThread()` in `FSceneViewport::Destroy`. It was reached from `FSlateRHIRenderer::DrawWindow_RenderThread` while a PIE window was torn down, and the callstack has no project frame. The Mover suites were not rerun after the fix: the Mover pawn reads neither the rotation modes nor the mirrored flags.
+
+### Failed attempts
+
+- The first PIE probe toggled `bUseRotationModes` at runtime for a baseline. Python refuses to edit an `EditDefaultsOnly` property on instances, and the `set` console command did not change it either. The baseline numbers above therefore come from the review, and the correction comparison used a temporary local C++ patch that forced the flag off. The patch was reverted before any commit.
+- The same probe ran into a wall after repeated runs in one direction; the final probe alternates directions.
+- Reading graphs and component defaults over MCP marked `BP_RpgGasp_CMC` dirty without content changes. A forced editor kill then left restore data, which was set aside as `Saved/Autosaves/PackageRestoreData.gasp09-discarded.json`. The asset was saved only after the intended edits.
+
+### Limits
+
+- **Aim offset:** active by the AnimBP's own rule; its look was not judged visually.
+- **Equip latency:** equipment changes are server-authoritative and not predicted. The owner switches modes one replication delay after the server. Sprinting sideways or backward while a weapon is drawn can therefore cause a correction at the switch.
+- **Dodge:** the roll keeps the facing it starts with. Directional dodges belong to [#124](https://github.com/Athurito/SurvivalRpg/issues/124).
+- **Root-motion attacks:** steering during the windup adds to the montage's root-motion rotation. That is intended, but not tuned.
+- **Mover timing case:** `EquipmentMontageReplacesPendingVaultWithoutDelayedResurrection` still fails intermittently, as before this change.
+- **Not measured:** the review's 5.8.2 numbers were not re-measured on 5.8.3 with the old behavior, only the correction counts. Cooked builds and real network conditions are untested (see `GASP-VAL-02`).
+
+## Repro
+
+1. Start PIE on `Lvl_RpgGaspCMC`, now in the GASP presentation, without an Experience override. The player spawns with sword and shield drawn, so in the combat stance.
+2. Move sideways and backward: the character keeps facing the camera and strafes. Hold sprint while moving backward: no sprint. Sprint forward works.
+3. Attack and turn the camera during the swing: the character still corrects during the windup, then holds the swing's direction until the recovery ends.
+4. Press the sword's action bar slot again to holster. Run in circles: the character turns toward its movement, and the camera no longer turns it.
+5. Draw the sword again with the same slot: the combat stance resumes.

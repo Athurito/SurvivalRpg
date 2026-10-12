@@ -50,6 +50,8 @@ bool URpgGameplayAbility_Dodge::ResolveDodgeProfileForActivation()
 	{
 		ResolvedDodgeProfile = ResolveDodgeProfile(*CurrentActorInfo);
 		bHasResolvedDodgeProfile = true;
+		// The roll keeps the facing it started with; rotation modes would otherwise steer its root motion.
+		BeginFacingCommitment(0.0f);
 	}
 	return true;
 }

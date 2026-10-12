@@ -68,7 +68,7 @@ Its recorded limits carry into GASP-14 and GASP-15:
 
 ### GASP-09: Rotation modes and combat stance
 
-**Ready**; the [task report](gasp-rotation-modes.md) refines this outline against the code.
+**PR open** as [#232](https://github.com/Athurito/SurvivalRpg/pull/232), awaiting the user's visual check; see the [task report](gasp-rotation-modes.md). The user decided that every hand item, tools included, triggers the stance; attacks steer during the windup and hold from the hit window; the stance turns instantly.
 
 - **Goal:** two explicit modes, reported correctly to the AnimBP.
   - **Free movement:** hands holstered, out of combat. The character turns toward its movement.

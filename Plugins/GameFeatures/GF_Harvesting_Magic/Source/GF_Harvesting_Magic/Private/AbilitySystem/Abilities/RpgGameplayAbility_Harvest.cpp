@@ -185,6 +185,8 @@ void URpgGameplayAbility_Harvest::HandleAimInputReleased(const float TimeHeld)
 
 void URpgGameplayAbility_Harvest::HandleMontageCompleted()
 {
+	// The swing's facing ends with it; a stride lets the harvester move freely.
+	EndFacingCommitment();
 	// A stride outlasts its montage; the server ends the activation when the stride is over.
 	if (!HasStride())
 	{
@@ -194,6 +196,7 @@ void URpgGameplayAbility_Harvest::HandleMontageCompleted()
 
 void URpgGameplayAbility_Harvest::HandleMontageInterrupted()
 {
+	EndFacingCommitment();
 	if (!HasStride())
 	{
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
@@ -256,6 +259,11 @@ void URpgGameplayAbility_Harvest::BeginHarvestExecution()
 	MontageTask->OnInterrupted.AddDynamic(this, &ThisClass::HandleMontageInterrupted);
 	MontageTask->OnCancelled.AddDynamic(this, &ThisClass::HandleMontageInterrupted);
 	MontageTask->ReadyForActivation();
+	// The aim was captured above; the swing holds the facing that chose it.
+	if (IsActive())
+	{
+		BeginFacingCommitment(0.0f);
+	}
 
 	// The commit time comes from authored montage data instead of server-side notify delivery.
 	if (bAuthority && IsActive())

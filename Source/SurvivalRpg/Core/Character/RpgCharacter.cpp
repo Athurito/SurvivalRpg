@@ -81,8 +81,9 @@ ARpgCharacter::ARpgCharacter(const FObjectInitializer& ObjectInitializer) :
 void ARpgCharacter::FaceRotation(FRotator NewControlRotation, float DeltaTime)
 {
 	const URpgCharacterMovementComponent* RpgMoveComp = CastChecked<URpgCharacterMovementComponent>(GetCharacterMovement());
-	// CMC physics is the single camera-facing block writer, including saved-move replay.
-	if (!RpgMoveComp->IsMantleControllingRotation() && !RpgMoveComp->IsBlockControllingRotation())
+	// CMC physics is the single camera-facing block writer, including saved-move replay. With rotation modes it
+	// owns every yaw change, so controller yaw never fights the free-movement or combat-stance facing.
+	if (!RpgMoveComp->bUseRotationModes && !RpgMoveComp->IsMantleControllingRotation() && !RpgMoveComp->IsBlockControllingRotation())
 	{
 		Super::FaceRotation(NewControlRotation, DeltaTime);
 	}

@@ -8,6 +8,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 namespace RpgCmcSprintTests { class FFixture; }
+namespace RpgCmcRotationModeTests { class FFixture; }
 #endif
 
 /**
@@ -70,6 +71,41 @@ public:
 	/** Retires the presentation state when GAS authorization ends, including when movement has stopped ticking. Does not alter saved moves. */
 	void RefreshSprintState();
 
+	/**
+	 * Designer opt-in for the GASP rotation modes; disabled characters keep their authored rotation flags.
+	 * When enabled, movement owns yaw and ignores the pawn's controller-yaw and the orient/desired-rotation flags:
+	 * free movement turns toward the movement input, and the combat stance (equipment in hands or an active block)
+	 * faces the camera. An ability's facing commitment and mantle override both.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Rotation")
+	bool bUseRotationModes = false;
+
+	/** Designer yaw rate in deg/s on the ground for both rotation modes. Zero or less turns at once, as GASP does. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Rotation", meta = (EditCondition = "bUseRotationModes", Units = "DegreesPerSecond"))
+	float GroundRotationRate = 0.f;
+
+	/** Designer yaw rate in deg/s while falling. Zero or less turns at once; GASP uses 200. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Rotation", meta = (EditCondition = "bUseRotationModes", Units = "DegreesPerSecond"))
+	float AirRotationRate = 200.f;
+
+	/**
+	 * Designer limit in degrees between movement input and the camera yaw within which the combat stance may sprint.
+	 * Larger angles, such as backward sprinting, keep the run speed and cost no stamina. GASP uses 50.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Rotation", meta = (EditCondition = "bUseRotationModes", ClampMin = "0.0", ClampMax = "180.0", Units = "Degrees"))
+	float CombatStanceSprintAngle = 50.f;
+
+	/**
+	 * Presentation read model for the AnimBP, false without rotation modes: true while the combat stance faces the
+	 * camera. Owners and authority read their effective move state; simulated proxies derive it from the replicated
+	 * equipment list and blocking tag, so late joiners see the same stance.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Rotation")
+	bool IsInCombatStance() const;
+
+	/** Mirrors the rotation mode into the stock rotation flags before movement, on every role. */
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+
 	/** Captures activation-scoped block policy in local saved moves; authority resolves its own GAS lease. */
 	virtual FNetworkPredictionData_Client* GetPredictionData_Client() const override;
 	virtual void PerformMovement(float DeltaTime) override;
@@ -119,8 +155,23 @@ private:
 	friend class FRpgBlockRepeatedSavedMoveYawTest;
 	friend class FRpgSprintSavedMoveTest;
 	friend class RpgCmcSprintTests::FFixture;
+	friend class RpgCmcRotationModeTests::FFixture;
 #endif
 	bool SampleBlockMovement(float& OutSpeedLimit) const;
+	bool SampleEquipmentInHands() const;
+	bool SampleFacingCommitment(float& OutSteeringRate) const;
+	/** Effective combat stance of the current move: saved history during replay, otherwise today's sample. */
+	bool IsCombatStanceForMove() const;
+	/** Effective ability facing commitment of the current move; OutSteeringRate is zero while the facing is held. */
+	bool GetFacingCommitmentForMove(float& OutSteeringRate) const;
+	/** Control rotation of the current move: the recorded original during replay, otherwise the live controller value. */
+	FRotator GetControlRotationForMove() const;
+	bool IsSprintDirectionAllowedForMove() const;
+	/**
+	 * Presentation mirror of the mode in the stock flags, as GASP sets them per tick: the Pose Search trajectory
+	 * predictor, moving bases and correction fallbacks read them. PhysicsRotation still applies the policy itself.
+	 */
+	void RefreshRotationModeFlags();
 	bool SampleSprintMovement(float& OutSprintSpeed) const;
 	bool CanSprintForMove(float& OutSprintSpeed) const;
 	void SetIsSprinting(bool bNewSprinting);
@@ -138,8 +189,13 @@ private:
 	// Immutable local saved-move values are applied only during replay; they are never client authority on the server.
 	bool bBlockMovementForMove = false;
 	float BlockMovementSpeedLimitForMove = 0.f;
-	FRotator BlockControlRotationForMove = FRotator::ZeroRotator;
+	FRotator ControlRotationForMove = FRotator::ZeroRotator;
 	bool bInBlockMovementScope = false;
+	bool bEquipmentInHandsForMove = false;
+	bool bFacingCommittedForMove = false;
+	float FacingSteeringRateForMove = 0.f;
+	// Set only around Super::PhysicsRotation so ComputeOrientToMovementRotation targets the camera instead of the input.
+	bool bFaceControlRotationInPhysics = false;
 
 	UFUNCTION()
 	void OnRep_MantleCollisionComponent();
