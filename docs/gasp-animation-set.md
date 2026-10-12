@@ -1,6 +1,6 @@
 # GASP-10 – Animation set and speed parity
 
-Status: **PR open** ([#235](https://github.com/Athurito/SurvivalRpg/pull/235), draft; implemented 2026-10-12 on `claude/gasp-10-animation-set`, first commit `dfaf3f30`). The automated checks pass; the user's visual check is open. The package outline is in the [movement plan](gasp-movement-plan.md#gasp-10-animation-set-and-speed-parity). This report refines it against the current assets and code and is the task report for the implementation PR.
+Status: **PR open** ([#235](https://github.com/Athurito/SurvivalRpg/pull/235), draft; implemented 2026-10-12 on `claude/gasp-10-animation-set`, first commit `dfaf3f30`). The user checked it on 2026-10-12 ("sieht gut aus") and asked for the merge; the automated checks pass. The package outline is in the [movement plan](gasp-movement-plan.md#gasp-10-animation-set-and-speed-parity). This report refines it against the current assets and code and is the task report for the implementation PR.
 
 ## Goal
 
@@ -177,7 +177,7 @@ Read in the editor on 2026-10-12; the [manifest](assets/gasp-10-animation-set.js
 | Area | Result |
 | --- | --- |
 | Speed band | **Met.** Run 375 against 375 in all four directions (1.00), sprint 585 against 585 (1.00), crouch 200 against 225 / 200 / 180 (0.89 / 1.00 / 1.11). `SpeedParity` checks this. |
-| Foot sliding | **Met in the probe; visual check open.** At 30, 60, and ~113 FPS (the 120 cap) every loop played at 1.00 of its authored speed, and crouch forward at 0.89. Starts, stops, turns, and pivots now come from the Relaxed databases. Every frame had a selection. |
+| Foot sliding | **Met in the probe and accepted by the user.** At 30, 60, and ~113 FPS (the 120 cap) every loop played at 1.00 of its authored speed, and crouch forward at 0.89. Starts, stops, turns, and pivots now come from the Relaxed databases. Every frame had a selection. |
 | Combat stance | **Met.** Forward, backward, right, and left selected `Run_Start`/`Run_Loop` F, B, RL, and LL; diagonals selected LL or RL with orientation warping. Sprint selected the Relaxed sprint start and loop. The rotation-mode tests pass. |
 | Network | **Met.** `SurvivalRpg.GASP.CMC` passes 10/10 with the stricter selection check: owner, listen server, and late-joined simulated proxy select databases from the CMC chooser. With `p.NetShowCorrections 1` the stance test logs 0 corrections and the four sprint tests 22, 24, 4, and 4, the range of `GASP-09`. Motion Matching stays cosmetic; no movement value except crouch speed changed. |
 | Traversal | **Automation met.** Mantle 12/12, Vault 8/8, Hurdle 11/11. The return to locomotion through the Relaxed `FromTraversal` databases is part of the user check. |
@@ -220,7 +220,7 @@ A mutation check of the stricter check pointed it at the wrong chooser: the owne
 
 ## Limits
 
-- **Visual check open:** leans, diagonal strafing, starts and stops, crouch, and the return from traversal have not been judged by eye yet.
+- **User check:** on 2026-10-12 the user found the result good ("sieht gut aus") and asked for the merge. The reply did not itemize leans, diagonal strafing, crouch, or the return from traversal.
 - **Diagonals** use the LL and RL clips with orientation warping. The databases also contain LR and RR offset loops, which neither this chooser nor the Mover sample's selects.
 - **Free movement** keeps the CMC rule that the direction is F in `OrientToMovement`. Directional pivots and spins (B, LL, RL) are therefore used only in the combat stance; the Mover also uses them in free movement.
 - **Crouch** plays the Neutral crouch clips, as the Relaxed set does.
