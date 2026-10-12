@@ -103,6 +103,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rpg|Rotation")
 	bool IsInCombatStance() const;
 
+	/** Mirrors the rotation mode into the stock rotation flags before movement, on every role. */
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+
 	/** Captures activation-scoped block policy in local saved moves; authority resolves its own GAS lease. */
 	virtual FNetworkPredictionData_Client* GetPredictionData_Client() const override;
 	virtual void PerformMovement(float DeltaTime) override;
@@ -164,6 +167,11 @@ private:
 	/** Control rotation of the current move: the recorded original during replay, otherwise the live controller value. */
 	FRotator GetControlRotationForMove() const;
 	bool IsSprintDirectionAllowedForMove() const;
+	/**
+	 * Presentation mirror of the mode in the stock flags, as GASP sets them per tick: the Pose Search trajectory
+	 * predictor, moving bases and correction fallbacks read them. PhysicsRotation still applies the policy itself.
+	 */
+	void RefreshRotationModeFlags();
 	bool SampleSprintMovement(float& OutSprintSpeed) const;
 	bool CanSprintForMove(float& OutSprintSpeed) const;
 	void SetIsSprinting(bool bNewSprinting);

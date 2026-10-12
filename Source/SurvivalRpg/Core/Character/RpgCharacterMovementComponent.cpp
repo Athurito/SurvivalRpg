@@ -192,6 +192,23 @@ bool URpgCharacterMovementComponent::IsSprintDirectionAllowedForMove() const
 	return Delta <= FMath::Clamp(CombatStanceSprintAngle, 0.f, 180.f);
 }
 
+void URpgCharacterMovementComponent::RefreshRotationModeFlags()
+{
+	if (!bUseRotationModes) { return; }
+	// Without these, the trajectory predicts an orient-to-movement turn while the stance strafes, and Motion
+	// Matching selects reface starts instead of strafe and backpedal clips.
+	const bool bCombatStance = IsInCombatStance();
+	bOrientRotationToMovement = !bCombatStance;
+	bUseControllerDesiredRotation = bCombatStance;
+}
+
+void URpgCharacterMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	// Simulated proxies and idle frames refresh here; moves refresh again from their own recorded stance.
+	RefreshRotationModeFlags();
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+}
+
 bool URpgCharacterMovementComponent::IsInCombatStance() const
 {
 	// Simulated proxies sample the replicated equipment list and, through the block read model, the replicated blocking tag.
@@ -265,6 +282,7 @@ void URpgCharacterMovementComponent::PerformMovement(float DeltaTime)
 	}
 	TGuardValue<bool> BlockScope(bInBlockMovementScope, true);
 	bRootMotionOwnedSprintMove = false;
+	RefreshRotationModeFlags();
 	Super::PerformMovement(DeltaTime);
 }
 

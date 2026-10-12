@@ -187,6 +187,8 @@ bool FRpgRotationModeFreeMovementTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Facing follows a new input direction, not the camera"), IsNearYaw(F.GetYaw(), 180.0));
 	F.MoveSteps(4, FVector::ZeroVector);
 	TestTrue(TEXT("Without input the last facing is kept"), IsNearYaw(F.GetYaw(), 180.0));
+	TestTrue(TEXT("Free movement mirrors orient-to-movement for the trajectory predictor"),
+		F.Movement->bOrientRotationToMovement && !F.Movement->bUseControllerDesiredRotation);
 
 	F.Movement->bUseRotationModes = false;
 	F.Character->FaceRotation(F.Controller->GetControlRotation(), StepSeconds);
@@ -212,6 +214,8 @@ bool FRpgRotationModeCombatStanceTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("The stance faces the camera while strafing"), IsNearYaw(F.GetYaw(), 90.0));
 	F.MoveSteps(2, FVector::ZeroVector);
 	TestTrue(TEXT("The stance keeps facing the camera while standing"), IsNearYaw(F.GetYaw(), 90.0));
+	TestTrue(TEXT("The stance mirrors controller-desired rotation for the trajectory predictor"),
+		!F.Movement->bOrientRotationToMovement && F.Movement->bUseControllerDesiredRotation);
 
 	F.SetCameraYaw(45.0);
 	const FSavedMovePtr Saved = F.RecordMove(FVector(-1.0, 0.0, 0.0));

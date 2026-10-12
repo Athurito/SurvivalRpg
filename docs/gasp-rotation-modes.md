@@ -104,6 +104,7 @@ The user settled these on 2026-10-11 before implementation.
   - Saved moves record hand equipment, the facing commitment, and the control rotation, so corrections replay the original policy. The server samples its own state, as for block and sprint; only the existing sprint request bit crosses the wire.
   - `CanSprintForMove` rejects sprint in the combat stance when the input is more than `CombatStanceSprintAngle` (50°) from the move's camera yaw.
   - `IsInCombatStance()` is the BlueprintPure read model for the AnimBP. On simulated proxies it reads the replicated equipment list and the replicated blocking tag.
+  - The stock `bOrientRotationToMovement` and `bUseControllerDesiredRotation` flags mirror the mode on every role, before each tick and each move, as GASP sets them per tick. The Pose Search trajectory predictor reads them, and so do moving bases and the correction fallback. The flags are presentation only; `PhysicsRotation` still applies the policy above.
 - **Facing commitment:** `URpgAbilitySystemComponent::Begin/Hold/EndFacingCommitment` is an activation-scoped lease.
   - It is validated by ability, avatar, and prediction key like the block lease. A newer activation replaces it, and stale cleanup cannot release a newer one. It resets with the block lease on avatar change and teardown.
   - `URpgGameplayAbility` wraps it in BlueprintCallable helpers and ends it in `EndAbility`.
@@ -115,6 +116,7 @@ The user settled these on 2026-10-11 before implementation.
   - `BP_RpgGasp_CMC` enables `bUseRotationModes`. Its children, the mantle character and the GASP-08 pilot pawns, inherit it.
   - `Get_PropertiesForAnimation` reports `WantsToStrafe = IsInCombatStance` and `RotationMode = Strafe` in the stance (the existing select, fed by `NOT IsInCombatStance`).
   - The unused `bOrientRotationToMovement` getter was removed. Other movement values are unchanged.
+  - At the user's request, `Lvl_RpgGaspCMC` now uses the approved GASP presentation: a copy of `Lvl_RpgGaspMantle` without its traversal obstacles. It keeps the three start points, boundary walls and ground steps, `RpgGaspCMCExperience`, and `BP_Rpg_GaspCMCTestGameMode`.
 - **Tests:**
   - `SurvivalRpg.Movement.CMC.RotationModes`: four native tests on a real CMC floor with GAS leases and real equipment. They cover free movement, stance and its replay, facing commitment steer/hold/replace/cancel/replay, and the stance sprint directions.
   - `SurvivalRpg.GASP.CMC.GaspCMCExperiencePIE.CombatStanceReachesOwnerServerAndLateJoin`: a listen server with a late-joining second client.
@@ -133,7 +135,7 @@ All results are from this branch on UE 5.8.3.
 | Area | Result |
 | --- | --- |
 | Free movement | **Met.** PIE probe on `Lvl_RpgGaspCMC` after holstering: facing against velocity is 0.0° median and maximum in all four directions at 30, 60, and ~110 FPS (the 120 cap reached 108–113 FPS in the editor). The PIE network test sees `OrientToMovement` and `WantsToStrafe = false` on owner, listen server, and late joiner. |
-| Combat stance | **Met, except the aim offset, which was not measured.** Same probe with the spawn sword and shield: facing against the camera is 0.0° median and maximum at all three rates. Strafing runs 90° and backpedaling 180° off the facing. The PIE network test sees the strafe mode and `WantsToStrafe = true` on owner, server, and late joiner. The aim offset's activation and the selected strafe animations were not inspected; they are part of the user check. |
+| Combat stance | **Met after the user-check fix.** Same probe with the spawn sword and shield: facing against the camera is 0.0° median and maximum at all three rates. Strafing runs 90° and backpedaling 180° off the facing. The PIE network test sees the strafe mode and `WantsToStrafe = true` on owner, server, and late joiner. Selected clips in the stance, recorded in PIE after the fix: backward `Run_Start_B`/`Run_Loop_B`, right `Run_Start_RL`/`Run_Loop_RL`, left `Run_Start_LL`/`Run_Loop_LL`, forward `Run_Start_F`/`Run_Loop_F`. The AnimBP's `Enable_AO` requires `RotationMode = Strafe`, so the aim offset is active in the stance; its look was not judged visually. |
 | Switching | **Met.** The PIE network test draws and holsters the sword on the server while the owner runs. With `p.NetShowCorrections 1`, no correction occurred in the free, draw, late-join, and holster phases. |
 | Sprint | **Met.** Native test: free movement sprints backward; the stance does not sprint backward or sideways, but does at 45° and forward; turning the camera away ends the sprint at once. PIE probe: stance backward plus sprint input stays at 375 cm/s with no effective sprint; forward reaches 585 cm/s. The sprint PIE tests pass. Corrections in them, rotation modes off/on: 24/22, 30/30, 4/0, 4/4. |
 | Block | **Met.** Block lifecycle, prediction, and all 16 block-locomotion PIE tests pass, including camera facing with late join; block is part of the stance. |
@@ -173,6 +175,11 @@ The Mover failure is `Vault.GaspMoverVaultPIE.EquipmentMontageReplacesPendingVau
 - This is the known timing case from the [handoff](gasp-integration-handoff.md#offene-befunde): 3 of 6 isolated runs missed the same overlap condition on 5.8.3 before this change.
 - The Mover pawn has no `URpgCharacterMovementComponent` and reads neither the rotation modes nor the facing lease.
 
+### User check findings
+
+- **2026-10-12, backward run looked over the shoulder.** In the stance, Motion Matching selected `M_Neutral_Run_Reface_Start_F_R_180` (a run start that turns around) for backward input, and forward-facing starts for sideways input. The engine's Pose Search trajectory predictor reads `bOrientRotationToMovement` directly (`PoseSearchTrajectoryLibrary.cpp`). The first implementation changed it only inside `PhysicsRotation`, so the predicted trajectory still turned toward the movement. Fixed by mirroring the flags (see [Implementation](#implementation)); the stance then selected the backpedal and strafe clips listed above.
+- **Test map.** The user asked for the CMC test map in the GASP presentation; done as described above.
+
 ### Failed attempts
 
 - The first PIE probe toggled `bUseRotationModes` at runtime for a baseline. Python refuses to edit an `EditDefaultsOnly` property on instances, and the `set` console command did not change it either. The baseline numbers above therefore come from the review, and the correction comparison used a temporary local C++ patch that forced the flag off. The patch was reverted before any commit.
@@ -181,7 +188,7 @@ The Mover failure is `Vault.GaspMoverVaultPIE.EquipmentMontageReplacesPendingVau
 
 ### Limits
 
-- **Aim offset and strafe animations:** not inspected beyond the AnimBP inputs.
+- **Aim offset:** active by the AnimBP's own rule; its look was not judged visually.
 - **Equip latency:** equipment changes are server-authoritative and not predicted. The owner switches modes one replication delay after the server. Sprinting sideways or backward while a weapon is drawn can therefore cause a correction at the switch.
 - **Dodge:** the roll keeps the facing it starts with. Directional dodges belong to [#124](https://github.com/Athurito/SurvivalRpg/issues/124).
 - **Root-motion attacks:** steering during the windup adds to the montage's root-motion rotation. That is intended, but not tuned.
@@ -190,7 +197,7 @@ The Mover failure is `Vault.GaspMoverVaultPIE.EquipmentMontageReplacesPendingVau
 
 ## Repro
 
-1. Start PIE on `Lvl_RpgGaspCMC` without an Experience override. The player spawns with sword and shield drawn, so in the combat stance.
+1. Start PIE on `Lvl_RpgGaspCMC`, now in the GASP presentation, without an Experience override. The player spawns with sword and shield drawn, so in the combat stance.
 2. Move sideways and backward: the character keeps facing the camera and strafes. Hold sprint while moving backward: no sprint. Sprint forward works.
 3. Attack and turn the camera during the swing: the character still corrects during the windup, then holds the swing's direction until the recovery ends.
 4. Press the sword's action bar slot again to holster. Run in circles: the character turns toward its movement, and the camera no longer turns it.
