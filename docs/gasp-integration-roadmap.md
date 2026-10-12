@@ -1,6 +1,6 @@
 # GASP-Integration: Roadmap
 
-Stand: **11.10.2026**. Zentraler Arbeitsplan für die GASP-/Lyra-Integration:
+Stand: **12.10.2026**. Zentraler Arbeitsplan für die GASP-/Lyra-Integration:
 Bewegung und ihre RPG-Anbindung, keine Gesamtplanung für Combat, Crafting oder
 Portale (dafür gilt die [Spielvision](game-vision.md)).
 
@@ -13,9 +13,11 @@ frühere Fassung mit Schnellstart-Verlauf und Aufgabenverträgen liegt in der
 
 ## Nächster bereiter Schritt
 
-Kein Schritt ist **Bereit**. Als Nächstes steht `GASP-10` (Animationsset und
-Tempo-Parität) an; der Nutzer markiert es als **Bereit**. Der vollständige
-Manny-Bake `GASP-14` wartet auf dessen Animationsset-Wahl.
+**`GASP-10` Animationsset und Tempo-Parität** ist **Bereit**
+([Bericht](gasp-animation-set.md)). Vor Phase B klärt der umsetzende Chat zwei
+Entscheidungen mit dem Nutzer: das Animationsset (Relaxed empfohlen) und die
+Traversal-Montagen. Der vollständige Manny-Bake `GASP-14` wartet auf diese
+Animationsset-Wahl.
 `GASP-01`, `GASP-03` bis `GASP-09` und das Engine-Update `GASP-ENG-01` sind
 gemergt; offen bleiben `GASP-VAL-01`, `GASP-VAL-02` und die
 [offenen Befunde](gasp-integration-handoff.md#offene-befunde).
@@ -61,6 +63,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-ENG-01` | Engine-Update auf UE 5.8.3: NetworkPrediction-/Mover-Overrides und Build-Pin | **Gemergt** | [#221](https://github.com/Athurito/SurvivalRpg/pull/221) | [UE 5.8.3](gasp-engine-5-8-3.md) |
 | `GASP-08` | Pilot: GASP-Locomotion offline auf UE5-Manny-Skelett | **Gemergt**; Exit-Entscheidung **Pass** (Nutzer) | [#228](https://github.com/Athurito/SurvivalRpg/pull/228) | [Manny-Pilot](gasp-manny-skeleton-pilot.md) |
 | `GASP-09` | Rotationsmodi: freie Bewegung und Kampfhaltung (Strafe), Sprint-Richtungs-Gate | **Gemergt**; Sichtprüfung durch den Nutzer | [#232](https://github.com/Athurito/SurvivalRpg/pull/232) | [Rotationsmodi](gasp-rotation-modes.md) |
+| `GASP-10` | Animationsset und Tempo-Parität (Relaxed empfohlen), Ducktempo | **Bereit** | – | [Animationsset](gasp-animation-set.md) |
 
 Statuswerte: **Geplant**, **Bereit**, **In Arbeit**, **Validierung**,
 **PR offen**, **Gemergt**, **Blockiert**, **Zurückgestellt**.
@@ -82,14 +85,13 @@ Geplante, noch nicht bereite Pakete aus dem [Bewegungsplan](gasp-movement-plan.m
 Befunde, Abhängigkeiten und Reihenfolge stehen dort. Ein Paket wechselt erst
 mit **Bereit** in die Statustabelle oben.
 
-- `GASP-10` bis `GASP-13` folgen nacheinander, weil sie denselben Pawn, Blueprint
+- `GASP-11` bis `GASP-13` folgen nach `GASP-10` nacheinander, weil sie denselben Pawn, Blueprint
   und dieselbe Movement-Komponente ändern.
 - `GASP-14`/`GASP-15` setzen den bestandenen `GASP-08` fort.
 - Die Animationsset-Wahl aus `GASP-10` legt fest, welche Datenbanken `GASP-14` backt.
 
 | ID | Arbeitspaket | Status | Plan |
 | --- | --- | --- | --- |
-| `GASP-10` | Animationsset und Tempo-Parität (Relaxed empfohlen), Ducktempo | **Geplant** | [Plan](gasp-movement-plan.md#gasp-10-animation-set-and-speed-parity) |
 | `GASP-11` | Gemeinsames Bewegungsprofil (Trägheit, Drehung, Luft), lastunabhängig | **Geplant** | [Plan](gasp-movement-plan.md#gasp-11-shared-movement-profile) |
 | `GASP-12` | Walk-Gait und Analog-Schwelle | **Geplant** | [Plan](gasp-movement-plan.md#gasp-12-walk-gait-and-analog-input) |
 | `GASP-13` | Darstellung: Offset Root Bone, Steering, Foley, Kamera | **Geplant** | [Plan](gasp-movement-plan.md#gasp-13-presentation-polish) |

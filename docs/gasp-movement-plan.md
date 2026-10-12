@@ -89,6 +89,8 @@ Its recorded limits carry into GASP-14 and GASP-15:
 
 ### GASP-10: Animation set and speed parity
 
+**Ready**; the [task report](gasp-animation-set.md) refines this outline against the assets. Switching the CMC to Relaxed needs more than a chooser swap: the Relaxed chooser reads recent-state inputs that only the Mover AnimBP computes today.
+
 - **Goal:** make every target speed fit the animation set actually played.
 - **Scope:** choose one of two options.
   - **Relaxed set (recommended):** switch the CMC chooser to the Relaxed databases the Mover already uses. Run 375, sprint 585, and walk 165 cm/s then match exactly.
