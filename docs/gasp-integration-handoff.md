@@ -11,20 +11,22 @@ diese Datei **ersetzen, nicht ergänzen**. Das frühere fortlaufende Protokoll b
 | Feld | Wert |
 | --- | --- |
 | Stand | 12.10.2026 |
-| Aktive Aufgabe, Status, zuständiger Chat | Keine. Zuletzt `GASP-09` Rotationsmodi und Kampfhaltung, **gemergt** nach Sichtprüfung des Nutzers. |
-| Branch, Worktree, Basis / PR | Kein aktiver Branch. Zuletzt `claude/gasp-09-rotation-modes` / [#232](https://github.com/Athurito/SurvivalRpg/pull/232), gemergt als `e5e84cd4`. |
-| Offene Abnahmepunkte | Keine. Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
+| Aktive Aufgabe, Status, zuständiger Chat | `GASP-10` Animationsset und Tempo-Parität, **Bereit**, noch kein umsetzender Chat. Zuletzt gemergt: `GASP-09` Rotationsmodi und Kampfhaltung nach Sichtprüfung des Nutzers. |
+| Branch, Worktree, Basis / PR | Noch kein Umsetzungsbranch; vorgeschlagen `<agent>/gasp-10-animation-set`. Zuletzt `claude/gasp-09-rotation-modes` / [#232](https://github.com/Athurito/SurvivalRpg/pull/232), gemergt als `e5e84cd4`. |
+| Offene Abnahmepunkte | `GASP-10`: zwei Entscheidungen vor Phase B (siehe [Bericht](gasp-animation-set.md#decisions-to-settle-at-the-start)). Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
 | Akzeptierter Runtime-Stand | `master` `e5e84cd4`; enthält alle GASP-Schritte bis GASP-09 (#232), GASP-ENG-01 (#221), GASP-STAB-03 (#223, nur Testcode) und den [Bewegungsplan](gasp-movement-plan.md) (#229, nur Doku). Der CMC-Pawn nutzt Rotationsmodi (freie Bewegung und Kampfhaltung); `Lvl_RpgGaspCMC` steht in der GASP-Präsentation. Die Produktion nutzt weiter UEFN; der Manny-Pilot liegt isoliert unter `/Game/SurvivalRpg/Characters/GASP/Pilot/`. |
-| Dateibesitz / Sperren | Keine GASP-Sperren. Das Lyra-`SK_Mannequin` trägt seit `GASP-08` die Blend-Profile `FastFeet+Root_Weight` und `FastHead_Weight`, die der Manny-AnimBP braucht; nicht entfernen. Eine separate Claude-Sitzung untersucht den zeitabhängigen Remote-Melee-Test aus den offenen Befunden. |
+| Dateibesitz / Sperren | `GASP-10` ab Start: `ABP_RpgGasp_CMC`, die Chooser unter `CMC/RPG/Choosers`, die Tempowerte in `BP_RpgGasp_CMC` und `BP_Rpg_Character`, die CMC-Integrationstests und nur im Neutral-Pfad `RpgCharacterMovementComponent.*`; `GASP-11` bis `GASP-13` warten auf den Merge. Die geteilten Relaxed- und Dense-Datenbanken bleiben unverändert, weil der Mover sie nutzt. Das Lyra-`SK_Mannequin` trägt seit `GASP-08` die Blend-Profile `FastFeet+Root_Weight` und `FastHead_Weight`, die der Manny-AnimBP braucht; nicht entfernen. Eine separate Claude-Sitzung untersucht den zeitabhängigen Remote-Melee-Test aus den offenen Befunden. |
 | Editor / PIE / Builds | Installiert ist UE 5.8.3 (CL 58210709), `master` pinnt 5.8.3. Branches ohne GASP-ENG-01 bauen erst nach Übernahme von `master`. PIE-Netzwerktests nur in einem Prozess gleichzeitig laufen lassen. Vor eigener Editor-/MCP-Nutzung andere Checkouts und Sitzungen prüfen. |
 | Plugin-Overrides | Git-ignoriert und checkout-lokal. In jedem Worktree vor Build oder Branchwechsel gemäß [README](../Build/Patches/NetworkPrediction/README.md) prüfen; Engine-Wechsel nach dem Abschnitt „Engine updates“. |
 | Lokale Belege | `Saved/...` existiert nur im erzeugenden Checkout; versioniert sind Zusammenfassungen in Berichten und Manifesten unter `docs/assets`. GASP-08-Rohdaten liegen in `Saved/Gasp08` und `Saved/Profiling/CSV`, GASP-09-Rohdaten in `Saved/Gasp09` und `Saved/ToolRuns` des Worktrees `musing-ishizaka-7bac20`. |
 
 ## Nächster Handgriff
 
-Kein Paket ist **Bereit**. Als Nächstes `GASP-10` (Animationsset und
-Tempo-Parität) mit dem Nutzer definieren und als **Bereit** markieren. Der
-vollständige Manny-Bake `GASP-14` wartet auf dessen Animationsset-Wahl.
+`GASP-10` gemäß [Bericht](gasp-animation-set.md) starten: zuerst die zwei
+Entscheidungen mit dem Nutzer klären, dann im Editor Chooser-Verdrahtung und
+Besitzer der Tempowerte prüfen und die Loop-Tempi des gewählten Sets als
+Ausgangswert unter 5.8.3 messen. Der vollständige Manny-Bake `GASP-14` wartet
+auf diese Animationsset-Wahl.
 
 ## Offene Befunde
 
