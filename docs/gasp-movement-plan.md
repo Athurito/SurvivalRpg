@@ -68,7 +68,7 @@ Its recorded limits carry into GASP-14 and GASP-15:
 
 ### GASP-09: Rotation modes and combat stance
 
-**PR open** as [#232](https://github.com/Athurito/SurvivalRpg/pull/232), awaiting the user's visual check; see the [task report](gasp-rotation-modes.md). The user decided that every hand item, tools included, triggers the stance; attacks steer during the windup and hold from the hit window; the stance turns instantly.
+**Merged** in [#232](https://github.com/Athurito/SurvivalRpg/pull/232) after the user's check; see the [task report](gasp-rotation-modes.md). The user decided that every hand item, tools included, triggers the stance; attacks steer during the windup and hold from the hit window; the stance turns instantly.
 
 - **Goal:** two explicit modes, reported correctly to the AnimBP.
   - **Free movement:** hands holstered, out of combat. The character turns toward its movement.
@@ -179,7 +179,7 @@ Its recorded limits carry into GASP-14 and GASP-15:
 
 ## Order and parallelism
 
-1. **GASP-08** is merged; **GASP-09** can start at any time.
+1. **GASP-08** and **GASP-09** are merged.
 2. **GASP-10 → GASP-11 → GASP-12 → GASP-13** run one after another; they share the pawn, its Blueprint, and the movement component.
 3. After a GASP-08 pass: **GASP-14 → GASP-15**, then **GASP-16**, then the final dodge montages for #124.
 4. If GASP-08 fails: GASP-14 and GASP-15 are dropped. GASP-16 then targets the runtime follower path, and the dodge montages are retargeted to UEFN like the block set.
