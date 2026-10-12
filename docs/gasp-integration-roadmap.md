@@ -14,9 +14,10 @@ frühere Fassung mit Schnellstart-Verlauf und Aufgabenverträgen liegt in der
 ## Nächster bereiter Schritt
 
 Kein Schritt ist **Bereit**. **`GASP-10` Animationsset und Tempo-Parität** ist
-**In Arbeit** ([Bericht](gasp-animation-set.md)): Der Nutzer hat das
-Relaxed-Set gewählt; die Traversal-Montagen bleiben Neutral. Der vollständige
-Manny-Bake `GASP-14` backt damit die Relaxed-Datenbanken.
+als [#235](https://github.com/Athurito/SurvivalRpg/pull/235) offen: Der CMC spielt das vom Nutzer gewählte Relaxed-Set; die
+automatischen Prüfungen bestehen, die Sichtprüfung des Nutzers steht aus
+([Bericht](gasp-animation-set.md)). Der vollständige Manny-Bake `GASP-14` backt
+die Relaxed-Datenbanken.
 `GASP-01`, `GASP-03` bis `GASP-09` und das Engine-Update `GASP-ENG-01` sind
 gemergt; offen bleiben `GASP-VAL-01`, `GASP-VAL-02` und die
 [offenen Befunde](gasp-integration-handoff.md#offene-befunde).
@@ -62,7 +63,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-ENG-01` | Engine-Update auf UE 5.8.3: NetworkPrediction-/Mover-Overrides und Build-Pin | **Gemergt** | [#221](https://github.com/Athurito/SurvivalRpg/pull/221) | [UE 5.8.3](gasp-engine-5-8-3.md) |
 | `GASP-08` | Pilot: GASP-Locomotion offline auf UE5-Manny-Skelett | **Gemergt**; Exit-Entscheidung **Pass** (Nutzer) | [#228](https://github.com/Athurito/SurvivalRpg/pull/228) | [Manny-Pilot](gasp-manny-skeleton-pilot.md) |
 | `GASP-09` | Rotationsmodi: freie Bewegung und Kampfhaltung (Strafe), Sprint-Richtungs-Gate | **Gemergt**; Sichtprüfung durch den Nutzer | [#232](https://github.com/Athurito/SurvivalRpg/pull/232) | [Rotationsmodi](gasp-rotation-modes.md) |
-| `GASP-10` | Animationsset und Tempo-Parität (Relaxed), Ducktempo | **In Arbeit** | – | [Animationsset](gasp-animation-set.md) |
+| `GASP-10` | Animationsset und Tempo-Parität (Relaxed), Ducktempo | **PR offen**: Sichtprüfung durch den Nutzer ausstehend | [#235](https://github.com/Athurito/SurvivalRpg/pull/235) | [Animationsset](gasp-animation-set.md) |
 
 Statuswerte: **Geplant**, **Bereit**, **In Arbeit**, **Validierung**,
 **PR offen**, **Gemergt**, **Blockiert**, **Zurückgestellt**.
