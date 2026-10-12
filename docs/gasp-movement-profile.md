@@ -1,6 +1,6 @@
 # GASP-11 – Shared movement profile
 
-Status: **Ready** (defined 2026-10-12). The package outline is in the [movement plan](gasp-movement-plan.md#gasp-11-shared-movement-profile). This report refines it against the current code and assets and is the task report for the implementation PR.
+Status: **In progress** on `claude/gasp-11-movement-profile` (defined 2026-10-12 in [#237](https://github.com/Athurito/SurvivalRpg/pull/237), started the same day). The package outline is in the [movement plan](gasp-movement-plan.md#gasp-11-shared-movement-profile). This report refines it against the current code and assets and is the task report for the implementation PR.
 
 ## Goal
 
@@ -62,7 +62,7 @@ The values are class defaults read in the running editor. The GASP column is the
 
 ### Start values
 
-From the plan, Relaxed set assumed. Rows marked with a decision follow its outcome.
+From the plan, Relaxed set assumed, with both decisions applied.
 
 | Value | `BP_RpgGasp_CMC` today | Start |
 | --- | --- | --- |
@@ -71,10 +71,10 @@ From the plan, Relaxed set assumed. Rows marked with a decision follow its outco
 | Braking without / with input | 2000 / 2000 | 1300 / 500 |
 | Braking friction | separate 6 × 1 | factor 0 |
 | Ground friction | 8 | 4, tapering to 3 while sprinting |
-| Free-movement turn: ground / sprint | instant / instant | decision 2 |
+| Free-movement turn: ground / sprint | instant / instant | instant / instant (decision 2) |
 | Air turn rate | 200°/s | 150°/s |
 | Air control / falling deceleration | 0.35 / 1500 | 0.15 / 0 |
-| Jump Z | 500 | decision 1 |
+| Jump Z | 500 | 450 (decision 1) |
 
 Predicted on flat ground at these values:
 
@@ -98,7 +98,7 @@ Predicted on flat ground at these values:
 
 ## Decisions to settle at the start
 
-The implementing chat settles these with the user before Phase B and records the answers here.
+The user settled both on 2026-10-12 ("1 empfohlen, 2 empfohlen"): jump Z is **450 cm/s**, and free movement keeps turning **instantly on the ground**.
 
 1. **Jump height.**
    - Recommended: **450 cm/s**, an apex of about 1.03 m instead of 1.28 m today and in GASP. The jump feels calmer and more grounded; mantle and vault cover higher obstacles.

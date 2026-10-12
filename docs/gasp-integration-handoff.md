@@ -11,10 +11,10 @@ diese Datei **ersetzen, nicht ergänzen**. Das frühere fortlaufende Protokoll b
 | Feld | Wert |
 | --- | --- |
 | Stand | 12.10.2026 |
-| Aktive Aufgabe, Status, zuständiger Chat | `GASP-11` Gemeinsames Bewegungsprofil, **Bereit**, noch kein umsetzender Chat. Zuletzt gemergt: `GASP-10` Animationsset und Tempo-Parität nach Sichtprüfung des Nutzers. |
-| Branch, Worktree, Basis / PR | Noch kein Umsetzungsbranch; vorgeschlagen `<agent>/gasp-11-movement-profile`. Zuletzt `claude/gasp-10-animation-set` / [#235](https://github.com/Athurito/SurvivalRpg/pull/235), gemergt als `daaab0e2`. |
-| Offene Abnahmepunkte | `GASP-11`: zwei Entscheidungen vor Phase B (siehe [Bericht](gasp-movement-profile.md#decisions-to-settle-at-the-start)). Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
-| Akzeptierter Runtime-Stand | `master` `1282e872`; enthält alle GASP-Schritte bis GASP-10 (#235, Status #236), GASP-ENG-01 (#221), GASP-STAB-03 (#223, nur Testcode) und den [Bewegungsplan](gasp-movement-plan.md) (#229, nur Doku). Der CMC-Pawn nutzt Rotationsmodi (freie Bewegung und Kampfhaltung) und spielt das Relaxed-Set mit passenden Tempi (Laufen 375, Sprint 585, Ducken 200 cm/s); `Lvl_RpgGaspCMC` steht in der GASP-Präsentation. Die Produktion nutzt weiter UEFN; der Manny-Pilot liegt isoliert unter `/Game/SurvivalRpg/Characters/GASP/Pilot/`. |
+| Aktive Aufgabe, Status, zuständiger Chat | `GASP-11` Gemeinsames Bewegungsprofil, **In Arbeit** (Claude, Worktree `musing-ishizaka-7bac20`). Zuletzt gemergt: `GASP-10` Animationsset und Tempo-Parität nach Sichtprüfung des Nutzers. |
+| Branch, Worktree, Basis / PR | `claude/gasp-11-movement-profile`, Basis `master` `628b1400`; noch kein PR. Zuletzt `claude/gasp-10-animation-set` / [#235](https://github.com/Athurito/SurvivalRpg/pull/235), gemergt als `daaab0e2`. |
+| Offene Abnahmepunkte | `GASP-11`: Umsetzung, Prüfung und Sichtprüfung stehen aus; die Entscheidungen sind getroffen (Sprung-Z 450, sofortiges Drehen am Boden). Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
+| Akzeptierter Runtime-Stand | `master` `628b1400`; enthält alle GASP-Schritte bis GASP-10 (#235, Status #236), die GASP-11-Definition (#237), GASP-ENG-01 (#221), GASP-STAB-03 (#223, nur Testcode) und den [Bewegungsplan](gasp-movement-plan.md) (#229, nur Doku). Der CMC-Pawn nutzt Rotationsmodi (freie Bewegung und Kampfhaltung) und spielt das Relaxed-Set mit passenden Tempi (Laufen 375, Sprint 585, Ducken 200 cm/s); `Lvl_RpgGaspCMC` steht in der GASP-Präsentation. Die Produktion nutzt weiter UEFN; der Manny-Pilot liegt isoliert unter `/Game/SurvivalRpg/Characters/GASP/Pilot/`. |
 | Dateibesitz / Sperren | `GASP-11` ab Start: `RpgCharacterMovementComponent.*`, das neue `RpgMovementProfile.*` und sein Asset, die Sprinttempo-Quelle in `RpgAbilityTask_Sprint.*`, die Bewegungswerte in `BP_RpgGasp_CMC`, die CMC-Bewegungs- und Integrationstests und nur bei endlichen Drehraten die Trajektorien-Einstellungen in `ABP_RpgGasp_CMC`; `GASP-12` und `GASP-13` warten auf den Merge. Die geteilten Relaxed- und Dense-Datenbanken nutzen CMC und Mover gemeinsam; CMC-spezifische Änderungen brauchen eigene Kopien. Das Lyra-`SK_Mannequin` trägt seit `GASP-08` die Blend-Profile `FastFeet+Root_Weight` und `FastHead_Weight`, die der Manny-AnimBP braucht; nicht entfernen. Eine separate Claude-Sitzung untersucht den zeitabhängigen Remote-Melee-Test aus den offenen Befunden. |
 | Editor / PIE / Builds | Installiert ist UE 5.8.3 (CL 58210709), `master` pinnt 5.8.3. Branches ohne GASP-ENG-01 bauen erst nach Übernahme von `master`. PIE-Netzwerktests nur in einem Prozess gleichzeitig laufen lassen. Vor eigener Editor-/MCP-Nutzung andere Checkouts und Sitzungen prüfen. |
 | Plugin-Overrides | Git-ignoriert und checkout-lokal. In jedem Worktree vor Build oder Branchwechsel gemäß [README](../Build/Patches/NetworkPrediction/README.md) prüfen; Engine-Wechsel nach dem Abschnitt „Engine updates“. |
@@ -22,9 +22,9 @@ diese Datei **ersetzen, nicht ergänzen**. Das frühere fortlaufende Protokoll b
 
 ## Nächster Handgriff
 
-`GASP-11` gemäß [Bericht](gasp-movement-profile.md) starten: zuerst die zwei
-Entscheidungen mit dem Nutzer klären, dann Anfahren, Bremsen, Sprint-Ende,
-Drehen und Sprung unter 5.8.3 als Ausgangswert messen. Der vollständige
+`GASP-11` Phase A gemäß [Bericht](gasp-movement-profile.md): Anfahren, Bremsen,
+Sprint-Ende, Drehen und Sprung unter 5.8.3 als Ausgangswert messen, danach
+Schema und Overrides umsetzen. Der vollständige
 Manny-Bake `GASP-14` backt die Relaxed-Datenbanken.
 
 ## Offene Befunde
