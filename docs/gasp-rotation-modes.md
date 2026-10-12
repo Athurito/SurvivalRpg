@@ -1,6 +1,6 @@
 # GASP-09 – Rotation modes and combat stance
 
-Status: **PR open** ([#232](https://github.com/Athurito/SurvivalRpg/pull/232), draft; implemented 2026-10-11 on `claude/gasp-09-rotation-modes`, first commit `353a0f8a`). The automated checks pass apart from one known Mover timing case; the user's visual check is open. The package outline is in the [movement plan](gasp-movement-plan.md#gasp-09-rotation-modes-and-combat-stance). Results, failed attempts, and limits are under [Results](#results).
+Status: **PR open** ([#232](https://github.com/Athurito/SurvivalRpg/pull/232), draft; implemented 2026-10-11 on `claude/gasp-09-rotation-modes`, first commit `353a0f8a`). The user accepted the check on 2026-10-12 after the backpedal fix and asked for the merge; the automated checks pass apart from one known Mover timing case. The package outline is in the [movement plan](gasp-movement-plan.md#gasp-09-rotation-modes-and-combat-stance). Results, failed attempts, and limits are under [Results](#results).
 
 ## Goal
 
@@ -179,6 +179,23 @@ The Mover failure is `Vault.GaspMoverVaultPIE.EquipmentMontageReplacesPendingVau
 
 - **2026-10-12, backward run looked over the shoulder.** In the stance, Motion Matching selected `M_Neutral_Run_Reface_Start_F_R_180` (a run start that turns around) for backward input, and forward-facing starts for sideways input. The engine's Pose Search trajectory predictor reads `bOrientRotationToMovement` directly (`PoseSearchTrajectoryLibrary.cpp`). The first implementation changed it only inside `PhysicsRotation`, so the predicted trajectory still turned toward the movement. Fixed by mirroring the flags (see [Implementation](#implementation)); the stance then selected the backpedal and strafe clips listed above.
 - **Test map.** The user asked for the CMC test map in the GASP presentation; done as described above.
+- **Acceptance.** After the fix the user confirmed the backpedal ("rückwärts passt jetzt") and asked for the merge. Earlier in the same check they found the rest fine. The aim offset's look and attacks with camera turns were not judged explicitly.
+
+### Regression after the fix
+
+Run on `7d9b2869` on 2026-10-12, one suite at a time, while an interactive editor was open:
+
+| Filter | Result |
+| --- | --- |
+| Native and asset filters from [Automation](#automation) | 113/113 passed |
+| `SurvivalRpg.GASP.CMC`, with `p.NetShowCorrections 1` | 9/9 passed |
+| `SurvivalRpg.Combat.BlockLocomotion` | 16/16 passed |
+| `SurvivalRpg.GASP.Mantle` | 12/12 passed |
+| `SurvivalRpg.GASP.Vault` | 8/8 passed |
+| `SurvivalRpg.GASP.Hurdle` | First run: the editor crashed after 6 passed tests. Rerun: 11/11 passed. |
+| `SurvivalRpg.Network` | 19/19 passed |
+
+The Hurdle crash was an engine assertion, `IsInGameThread()` in `FSceneViewport::Destroy`. It was reached from `FSlateRHIRenderer::DrawWindow_RenderThread` while a PIE window was torn down, and the callstack has no project frame. The Mover suites were not rerun after the fix: the Mover pawn reads neither the rotation modes nor the mirrored flags.
 
 ### Failed attempts
 
