@@ -1,6 +1,6 @@
 # GASP-10 – Animation set and speed parity
 
-Status: **Ready** (defined 2026-10-12). The package outline is in the [movement plan](gasp-movement-plan.md#gasp-10-animation-set-and-speed-parity). This report refines it against the current assets and code and is the task report for the implementation PR.
+Status: **PR open** ([#235](https://github.com/Athurito/SurvivalRpg/pull/235), draft; implemented 2026-10-12 on `claude/gasp-10-animation-set`, first commit `dfaf3f30`). The user checked it on 2026-10-12 ("sieht gut aus") and asked for the merge; the automated checks pass. The package outline is in the [movement plan](gasp-movement-plan.md#gasp-10-animation-set-and-speed-parity). This report refines it against the current assets and code and is the task report for the implementation PR.
 
 ## Goal
 
@@ -61,9 +61,9 @@ The editor was not running, so asset findings come from the package name tables,
 - The Manny bake (`GASP-14`).
 - Any load dependence: load still only selects the dodge ([game vision](game-vision.md)).
 
-## Decisions to settle at the start
+## Decisions
 
-The implementing chat settles these with the user before Phase B and records the answers here.
+The user settled both decisions on 2026-10-12 with "merge, Relaxed, so lassen": the **Relaxed** set, and the traversal montages **stay** Neutral. The options as they were put to the user:
 
 1. **Animation set.**
    - Recommended: **Relaxed.**
@@ -142,6 +142,88 @@ File ownership while the package runs:
 4. Crouch and walk in every direction.
 5. Mantle, vault, and hurdle, then keep running.
 
+## Phase A findings
+
+Read in the editor on 2026-10-12; the [manifest](assets/gasp-10-animation-set.json) holds the measured values.
+
+| Area | Finding |
+| --- | --- |
+| Speed owners | `BP_RpgGasp_CMC` sets `MaxWalkSpeed` 375. `MaxWalkSpeedCrouched` 300 was inherited from `BP_Rpg_Character`. `SprintSpeed` 585 is the native default. |
+| Database selection | Confirmed as in the table above: `Update_MotionMatching` evaluated `CHT_PoseSearchDatabases` with the AnimBP as context, and its `MMDatabaseLOD` column picked Dense, Sparse, or ExtremeSparse. |
+| Movement direction on the CMC | `Update_MovementDirection` compares the trajectory's future velocity with the `OrientationIntent` snapshot. It returns F in `OrientToMovement` or while sprinting, applies thresholds with hysteresis, and resolves left and right through `MovementDirectionBias`; the default `LeftFootForward` gives LL and RL. `Update_Logic` called it only with `UseExperimentalStateMachine`, so in normal play the direction stayed F. Only the experimental state machine read it. |
+| Movement direction on the Mover | The Mover pawn computes the direction in `Get_MovementDirectionAndOffset` with the same thresholds and returns F, B, LL, or RL, the four values the Relaxed chooser has rows for. The Mover AnimBP debounces it into `MovementDirection_Recent` through its `UpdateStateValues` macro with a 0.1 s limit. |
+| Loop root speeds | Relaxed: run 375 and walk 165 cm/s in every direction (F, B, LL, LR, RL, RR), sprint 585. Neutral Dense: run 500 F, 350 sideways, 300 B; sprint 700. |
+| Crouch | The Relaxed crouch databases contain the Neutral crouch loops: 225 F, 200 sideways, 180 B. One crouch speed fits all three only between 191 and 207 cm/s. |
+| Baseline play rate | PIE probe at 60 FPS, capsule speed over the selected loop's root speed: forward 0.75, backward 1.25, sideways 1.07, crouch 1.33. |
+
+## Implementation
+
+- **Chooser.** `CMC/RPG/Choosers/CHT_RpgGasp_CMC_PoseSearchDatabases` is a copy of the Mover chooser. Its context class is remapped to `ABP_RpgGasp_CMC`. It references the shared Relaxed databases read-only; no database changed.
+- **AnimBP** (`ABP_RpgGasp_CMC`):
+  - `Update_MotionMatching` evaluates the new chooser.
+  - `Update_Logic` runs `Update_MovementDirection` on every update, then tracks the recent direction like the Mover's `UpdateStateValues`. A direction change resets `MovementDirection_Time`. After 0.1 s in one direction, `MovementDirection_Recent` takes the value. `Update_TargetRotation` stays behind `UseExperimentalStateMachine`.
+  - New variables `MovementDirection_Recent` and `MovementDirection_Time`, category States.
+  - The logic is inline in the existing thread-safe `Update_Logic`, because Python cannot mark a new Blueprint function thread safe.
+  - The `MovementDirectionBias` default stays `LeftFootForward`, which already yields the LL and RL values the chooser expects.
+- **Speeds.** `BP_RpgGasp_CMC` sets `MaxWalkSpeedCrouched` to 200 cm/s. Run 375 and sprint 585 already match. The walk target for `GASP-12` is 165 cm/s.
+- **Cleanup.** The four Neutral CMC choosers `CHT_PoseSearchDatabases`, `_Dense`, `_Sparse`, and `_ExtremeSparse` under `CMC/RPG/Choosers` had no referencer left and were removed. The shared Dense databases and choosers stay, because the GASP sample copies and the Manny pilot use them.
+- **Tests.**
+  - New `SurvivalRpg.GASP.CMC.SpeedParity`: run, sprint, and crouch speeds of `BP_RpgGasp_CMC` must lie within 0.85–1.15 of nine reference loops, run and crouch in four directions and sprint forward. Each loop must be reachable through the CMC chooser's databases.
+  - The CMC PIE tests' Motion Matching check now also requires the selected database to come from the CMC chooser. It runs on owner, listen server, and late-joined simulated proxy.
+- No runtime C++ changed.
+
 ## Results
 
-Not started.
+| Area | Result |
+| --- | --- |
+| Speed band | **Met.** Run 375 against 375 in all four directions (1.00), sprint 585 against 585 (1.00), crouch 200 against 225 / 200 / 180 (0.89 / 1.00 / 1.11). `SpeedParity` checks this. |
+| Foot sliding | **Met in the probe and accepted by the user.** At 30, 60, and ~113 FPS (the 120 cap) every loop played at 1.00 of its authored speed, and crouch forward at 0.89. Starts, stops, turns, and pivots now come from the Relaxed databases. Every frame had a selection. |
+| Combat stance | **Met.** Forward, backward, right, and left selected `Run_Start`/`Run_Loop` F, B, RL, and LL; diagonals selected LL or RL with orientation warping. Sprint selected the Relaxed sprint start and loop. The rotation-mode tests pass. |
+| Network | **Met.** `SurvivalRpg.GASP.CMC` passes 10/10 with the stricter selection check: owner, listen server, and late-joined simulated proxy select databases from the CMC chooser. With `p.NetShowCorrections 1` the stance test logs 0 corrections and the four sprint tests 22, 24, 4, and 4, the range of `GASP-09`. Motion Matching stays cosmetic; no movement value except crouch speed changed. |
+| Traversal | **Automation met.** Mantle 12/12, Vault 8/8, Hurdle 11/11. The return to locomotion through the Relaxed `FromTraversal` databases is part of the user check. |
+| Block | **Met.** `SurvivalRpg.Combat.BlockLocomotion` 16/16. |
+| Unchanged | **Met.** `SurvivalRpg.GASP.Mover` 67/67 (the known Vault timing case passed this time), `RuntimeRetarget` 2/2, `VariantComparison` 3/3. Git shows no change under `Shared`, `Mover`, or `Pilot`, so the shared databases are byte-identical. AI characters use other AnimBPs. The Manny pilot inherits the crouch speed; see the deviations. |
+| Performance | **Measured: about +0.23 ms worker time per character.** CSV profile of the probe route at 60 FPS, two runs of 3,660 frames per variant. The baseline switched the old Neutral chooser back in memory, without saving. Game-thread animation, median: 0.32 / 0.32 ms Neutral against 0.31 / 0.32 ms Relaxed. Animation worker time (parallel evaluation, total), median: 0.60 / 0.60 ms against 0.83 / 0.83 ms; p95 0.74 against 1.04–1.07 ms. |
+
+### Automation
+
+- `python Build/Tools/Unreal/ue.py build`: passed, 0 errors and 0 warnings.
+- `SurvivalRpg.GASP.CMC.SpeedParity` passed. A mutation check confirmed it detects regressions: with a Neutral run loop and 1.5× the crouch speed, it failed on 6 checks with the measured speeds (500, 225, 180, 200).
+- Regression, one suite at a time:
+
+| Filter | Result |
+| --- | --- |
+| Native and asset filters of [GASP-09](gasp-rotation-modes.md#automation) plus `SpeedParity` | 114/114 passed |
+| `SurvivalRpg.GASP.CMC`, with `p.NetShowCorrections 1` | 10/10 passed |
+| `SurvivalRpg.Combat.BlockLocomotion` | 16/16 passed |
+| `SurvivalRpg.GASP.Mantle` | 12/12 passed |
+| `SurvivalRpg.GASP.Vault` | 8/8 passed |
+| `SurvivalRpg.GASP.Hurdle` | 11/11 passed |
+| `SurvivalRpg.GASP.RuntimeRetarget` | 2/2 passed |
+| `SurvivalRpg.GASP.VariantComparison` | 3/3 passed |
+| `SurvivalRpg.Network` | 19/19 passed |
+| `SurvivalRpg.GASP.Mover` | 67/67 passed |
+| `SurvivalRpg.GASP.CMC` after the stricter selection check | 10/10 passed |
+
+A mutation check of the stricter check pointed it at the wrong chooser: the owner step "Owner accelerates and its animation snapshot tracks real movement" timed out, as intended.
+
+### Deviations from the definition
+
+- **Lean additives.** The Mover builds its Relaxed leans in a separate animation layer with three blendspaces and its own update logic. Porting that is AnimGraph presentation work and moves to `GASP-13`. The CMC keeps the Neutral `BS1D_Additive_Lean_Run` on the Relaxed poses; the user check judges it.
+- **Removed choosers.** The definition did not name the removal of the four unused Neutral CMC choosers; see Implementation.
+- **Manny pilot.** `BP_RpgGasp08_CMC_Manny` derives from `BP_RpgGasp_CMC` and inherits the new crouch speed, as it already inherited run and sprint. Its own databases are unchanged.
+
+### Failed attempts
+
+- **Graph DSL.** Rewriting `Update_Logic` through `write_graph_dsl` failed: the parser splits node type IDs at the parentheses in the category `State Machine (Experimental)`. The graph stayed unchanged; node-level edits through the Blueprint toolset replaced it.
+- **Direction bias.** The first edit set `MovementDirectionBias` to `RightFootForward`, assuming it selects LL and RL. It selects LR and RR, which the chooser has no rows for, so sideways movement had no selection in the probe. The default was restored.
+
+## Limits
+
+- **User check:** on 2026-10-12 the user found the result good ("sieht gut aus") and asked for the merge. The reply did not itemize leans, diagonal strafing, crouch, or the return from traversal.
+- **Diagonals** use the LL and RL clips with orientation warping. The databases also contain LR and RR offset loops, which neither this chooser nor the Mover sample's selects.
+- **Free movement** keeps the CMC rule that the direction is F in `OrientToMovement`. Directional pivots and spins (B, LL, RL) are therefore used only in the combat stance; the Mover also uses them in free movement.
+- **Crouch** plays the Neutral crouch clips, as the Relaxed set does.
+- **No database LOD:** the `MMDatabaseLOD` switch no longer applies to the CMC. The Relaxed set costs about 0.23 ms more animation worker time per character; this matters if GASP pawns are later used for large groups.
+- **Experimental state machine:** it is off by default and now receives the movement direction on every update; it remains untested.
+- No walk gait until `GASP-12`; traversal montages stay Neutral (decision 2).

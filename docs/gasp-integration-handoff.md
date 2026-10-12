@@ -11,22 +11,21 @@ diese Datei **ersetzen, nicht ergänzen**. Das frühere fortlaufende Protokoll b
 | Feld | Wert |
 | --- | --- |
 | Stand | 12.10.2026 |
-| Aktive Aufgabe, Status, zuständiger Chat | `GASP-10` Animationsset und Tempo-Parität, **Bereit**, noch kein umsetzender Chat. Zuletzt gemergt: `GASP-09` Rotationsmodi und Kampfhaltung nach Sichtprüfung des Nutzers. |
-| Branch, Worktree, Basis / PR | Noch kein Umsetzungsbranch; vorgeschlagen `<agent>/gasp-10-animation-set`. Zuletzt `claude/gasp-09-rotation-modes` / [#232](https://github.com/Athurito/SurvivalRpg/pull/232), gemergt als `e5e84cd4`. |
-| Offene Abnahmepunkte | `GASP-10`: zwei Entscheidungen vor Phase B (siehe [Bericht](gasp-animation-set.md#decisions-to-settle-at-the-start)). Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
+| Aktive Aufgabe, Status, zuständiger Chat | `GASP-10` Animationsset und Tempo-Parität, **PR offen** (Draft, Claude, Worktree `musing-ishizaka-7bac20`); umgesetzt und automatisch geprüft, Sichtprüfung des Nutzers ausstehend. Zuletzt gemergt: `GASP-09` Rotationsmodi und Kampfhaltung nach Sichtprüfung des Nutzers. |
+| Branch, Worktree, Basis / PR | `claude/gasp-10-animation-set` im Worktree `.claude/worktrees/musing-ishizaka-7bac20`, Basis `master` `3320408c`; [#235](https://github.com/Athurito/SurvivalRpg/pull/235). Zuletzt `claude/gasp-09-rotation-modes` / [#232](https://github.com/Athurito/SurvivalRpg/pull/232), gemergt als `e5e84cd4`. |
+| Offene Abnahmepunkte | `GASP-10`: Der Nutzer hat am 12.10.2026 Relaxed gewählt und die Traversal-Montagen belassen ([Bericht](gasp-animation-set.md#decisions)); Der Nutzer hat die Sichtprüfung am 12.10.2026 abgenommen („sieht gut aus“) und den Merge angefordert. Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
 | Akzeptierter Runtime-Stand | `master` `e5e84cd4`; enthält alle GASP-Schritte bis GASP-09 (#232), GASP-ENG-01 (#221), GASP-STAB-03 (#223, nur Testcode) und den [Bewegungsplan](gasp-movement-plan.md) (#229, nur Doku). Der CMC-Pawn nutzt Rotationsmodi (freie Bewegung und Kampfhaltung); `Lvl_RpgGaspCMC` steht in der GASP-Präsentation. Die Produktion nutzt weiter UEFN; der Manny-Pilot liegt isoliert unter `/Game/SurvivalRpg/Characters/GASP/Pilot/`. |
-| Dateibesitz / Sperren | `GASP-10` ab Start: `ABP_RpgGasp_CMC`, die Chooser unter `CMC/RPG/Choosers`, die Tempowerte in `BP_RpgGasp_CMC` und `BP_Rpg_Character`, die CMC-Integrationstests und nur im Neutral-Pfad `RpgCharacterMovementComponent.*`; `GASP-11` bis `GASP-13` warten auf den Merge. Die geteilten Relaxed- und Dense-Datenbanken bleiben unverändert, weil der Mover sie nutzt. Das Lyra-`SK_Mannequin` trägt seit `GASP-08` die Blend-Profile `FastFeet+Root_Weight` und `FastHead_Weight`, die der Manny-AnimBP braucht; nicht entfernen. Eine separate Claude-Sitzung untersucht den zeitabhängigen Remote-Melee-Test aus den offenen Befunden. |
+| Dateibesitz / Sperren | `GASP-10` bis zum Merge: `ABP_RpgGasp_CMC`, die Chooser unter `CMC/RPG/Choosers`, die Tempowerte in `BP_RpgGasp_CMC`, `RpgGaspCMCIntegrationTests.cpp` und `RpgGaspCMCSpeedParityTests.cpp`; `GASP-11` bis `GASP-13` warten auf den Merge. Die geteilten Relaxed- und Dense-Datenbanken bleiben unverändert, weil der Mover sie nutzt. Das Lyra-`SK_Mannequin` trägt seit `GASP-08` die Blend-Profile `FastFeet+Root_Weight` und `FastHead_Weight`, die der Manny-AnimBP braucht; nicht entfernen. Eine separate Claude-Sitzung untersucht den zeitabhängigen Remote-Melee-Test aus den offenen Befunden. |
 | Editor / PIE / Builds | Installiert ist UE 5.8.3 (CL 58210709), `master` pinnt 5.8.3. Branches ohne GASP-ENG-01 bauen erst nach Übernahme von `master`. PIE-Netzwerktests nur in einem Prozess gleichzeitig laufen lassen. Vor eigener Editor-/MCP-Nutzung andere Checkouts und Sitzungen prüfen. |
 | Plugin-Overrides | Git-ignoriert und checkout-lokal. In jedem Worktree vor Build oder Branchwechsel gemäß [README](../Build/Patches/NetworkPrediction/README.md) prüfen; Engine-Wechsel nach dem Abschnitt „Engine updates“. |
-| Lokale Belege | `Saved/...` existiert nur im erzeugenden Checkout; versioniert sind Zusammenfassungen in Berichten und Manifesten unter `docs/assets`. GASP-08-Rohdaten liegen in `Saved/Gasp08` und `Saved/Profiling/CSV`, GASP-09-Rohdaten in `Saved/Gasp09` und `Saved/ToolRuns` des Worktrees `musing-ishizaka-7bac20`. |
+| Lokale Belege | `Saved/...` existiert nur im erzeugenden Checkout; versioniert sind Zusammenfassungen in Berichten und Manifesten unter `docs/assets`. GASP-08-Rohdaten liegen in `Saved/Gasp08` und `Saved/Profiling/CSV`, GASP-09-Rohdaten in `Saved/Gasp09`, GASP-10-Rohdaten in `Saved/Gasp10`, beide mit `Saved/ToolRuns` des Worktrees `musing-ishizaka-7bac20`. |
 
 ## Nächster Handgriff
 
-`GASP-10` gemäß [Bericht](gasp-animation-set.md) starten: zuerst die zwei
-Entscheidungen mit dem Nutzer klären, dann im Editor Chooser-Verdrahtung und
-Besitzer der Tempowerte prüfen und die Loop-Tempi des gewählten Sets als
-Ausgangswert unter 5.8.3 messen. Der vollständige Manny-Bake `GASP-14` wartet
-auf diese Animationsset-Wahl.
+Der Nutzer prüft `GASP-10` gemäß [Repro](gasp-animation-set.md#repro-after-implementation).
+Bei Abnahme: [#235](https://github.com/Athurito/SurvivalRpg/pull/235) mergen und als **Gemergt** führen, danach `GASP-11`
+definieren. Bei Befunden: im selben PR nachbessern. Der vollständige Manny-Bake
+`GASP-14` backt die Relaxed-Datenbanken.
 
 ## Offene Befunde
 
@@ -38,9 +37,9 @@ auf diese Animationsset-Wahl.
   auf einem Manny-Mesh sind ungeprüft. [Bericht](gasp-manny-skeleton-pilot.md#limits)
 
 - `GASP-09` (gemergt): Das Aussehen des Aim Offsets und Angriffe mit Kameradrehung hat der Nutzer nicht gezielt beurteilt. Ausrüstungswechsel sind nicht vorhergesagt; seitliches oder Rückwärts-Sprinten beim Ziehen kann eine Korrektur auslösen. Ein Hurdle-Lauf stürzte einmal in der Engine ab (`FSceneViewport::Destroy` auf dem Render-Thread), der Wiederholungslauf bestand. [Bericht](gasp-rotation-modes.md#limits)
+- `GASP-10` (PR #235, nicht gemergt): Die Leans bleiben Neutral, bis `GASP-13` den Relaxed-Lean-Layer des Movers übernimmt. Diagonalen nutzen die LL-/RL-Clips mit Orientation Warping. In freier Bewegung bleibt die Richtung vorwärts, richtungsabhängige Pivots gibt es nur in der Kampfhaltung. Das Relaxed-Set kostet etwa 0,23 ms mehr Animations-Worker-Zeit pro Figur und hat keine Datenbank-LOD. [Bericht](gasp-animation-set.md#limits)
 - CMC-Review 11.10.2026 (UE 5.8.2; Pakete `GASP-09` bis `GASP-13` im [Bewegungsplan](gasp-movement-plan.md)): Der
-  Rotationskonflikt ist mit `GASP-09` behoben. Offen: Der CMC fährt Relaxed-Tempi (375/585 cm/s) auf
-  Neutral-Animationen (gemessen 500/350/300 bzw. 700 cm/s). Anfahren und
+  Rotationskonflikt ist mit `GASP-09` behoben, die Tempo-Parität mit `GASP-10` ([#235](https://github.com/Athurito/SurvivalRpg/pull/235), nicht gemergt). Offen: Anfahren und
   Bremsen sind deutlich direkter als im Original (gemessen 0,24 s bzw.
   0,125 s/18,5 cm gegenüber ca. 0,6 s bzw. 0,25 s/62 cm). Bewegung bleibt
   lastunabhängig ([Spielvision](game-vision.md)).

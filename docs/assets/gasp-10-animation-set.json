@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "task": "GASP-10",
+  "engine_version": "5.8.3",
+  "base_commit": "3320408c24a14034fc55895bfba6593ce2abe5b0",
+  "decisions": {
+    "animation_set": "Relaxed",
+    "traversal_montages": "unchanged (Neutral)",
+    "decided_by": "user",
+    "date": "2026-10-12"
+  },
+  "assets": {
+    "added": [
+      {
+        "path": "/Game/SurvivalRpg/Characters/GASP/CMC/RPG/Choosers/CHT_RpgGasp_CMC_PoseSearchDatabases",
+        "copied_from": "/Game/SurvivalRpg/Characters/GASP/Mover/RPG/Choosers/CHT_RpgGasp_Mover_PoseSearchDatabases",
+        "context_class_remap": {
+          "/Game/SurvivalRpg/Characters/GASP/Mover/RPG/ABP_RpgGasp_Mover.ABP_RpgGasp_Mover_C": "/Game/SurvivalRpg/Characters/GASP/CMC/RPG/ABP_RpgGasp_CMC.ABP_RpgGasp_CMC_C"
+        }
+      }
+    ],
+    "changed": [
+      {
+        "path": "/Game/SurvivalRpg/Characters/GASP/CMC/RPG/ABP_RpgGasp_CMC",
+        "changes": [
+          "Update_MotionMatching evaluates CHT_RpgGasp_CMC_PoseSearchDatabases instead of CMC/RPG/Choosers/CHT_PoseSearchDatabases",
+          "Update_Logic runs Update_MovementDirection every update, then tracks MovementDirection_Recent after 0.1 s in one direction; Update_TargetRotation stays behind UseExperimentalStateMachine",
+          "new variables MovementDirection_Recent (E_MovementDirection) and MovementDirection_Time (double), category States"
+        ]
+      },
+      {
+        "path": "/Game/SurvivalRpg/Characters/GASP/CMC/RPG/BP_RpgGasp_CMC",
+        "changes": [
+          "CharacterMovement MaxWalkSpeedCrouched 300 -> 200 (was inherited from BP_Rpg_Character)"
+        ]
+      }
+    ],
+    "removed": [
+      "/Game/SurvivalRpg/Characters/GASP/CMC/RPG/Choosers/CHT_PoseSearchDatabases",
+      "/Game/SurvivalRpg/Characters/GASP/CMC/RPG/Choosers/CHT_PoseSearchDatabases_Dense",
+      "/Game/SurvivalRpg/Characters/GASP/CMC/RPG/Choosers/CHT_PoseSearchDatabases_Sparse",
+      "/Game/SurvivalRpg/Characters/GASP/CMC/RPG/Choosers/CHT_PoseSearchDatabases_ExtremeSparse"
+    ],
+    "unchanged_shared": [
+      "Shared Relaxed and Dense Pose Search databases",
+      "Mover choosers and AnimBP",
+      "Pilot copies under Characters/GASP/Pilot"
+    ]
+  },
+  "speeds_cm_per_s": {
+    "run": 375,
+    "sprint": 585,
+    "crouch": 200,
+    "walk_target_for_GASP_12": 165
+  },
+  "loop_root_speeds_cm_per_s": {
+    "relaxed_run": {
+      "M_Relaxed_Run_Loop_F": 375.0,
+      "M_Relaxed_Run_Loop_B": 375.0,
+      "M_Relaxed_Run_Loop_LL": 375.0,
+      "M_Relaxed_Run_Loop_RL": 375.0
+    },
+    "relaxed_walk": {
+      "M_Relaxed_Walk_Loop_F": 165.0,
+      "M_Relaxed_Walk_Loop_B": 165.0,
+      "M_Relaxed_Walk_Loop_LL": 165.0,
+      "M_Relaxed_Walk_Loop_RL": 165.0
+    },
+    "relaxed_sprint": {
+      "M_Relaxed_Sprint_Loop_F": 585.0
+    },
+    "relaxed_crouch_databases_use_neutral_loops": {
+      "M_Neutral_Crouch_Loop_B": 180.0,
+      "M_Neutral_Crouch_Loop_F": 225.0,
+      "M_Neutral_Crouch_Loop_LL": 200.0,
+      "M_Neutral_Crouch_Loop_LR": 200.0,
+      "M_Neutral_Crouch_Loop_RL": 200.0,
+      "M_Neutral_Crouch_Loop_RR": 200.0
+    },
+    "neutral_dense_run": {
+      "M_Neutral_Run_Loop_B": 300.0,
+      "M_Neutral_Run_Loop_F": 500.0,
+      "M_Neutral_Run_Loop_LL": 350.0,
+      "M_Neutral_Run_Loop_RL": 350.0
+    },
+    "neutral_dense_sprint": {
+      "M_Neutral_Sprint_Loop_F": 700.0
+    }
+  }
+}

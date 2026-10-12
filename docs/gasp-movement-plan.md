@@ -89,7 +89,7 @@ Its recorded limits carry into GASP-14 and GASP-15:
 
 ### GASP-10: Animation set and speed parity
 
-**Ready**; the [task report](gasp-animation-set.md) refines this outline against the assets. Switching the CMC to Relaxed needs more than a chooser swap: the Relaxed chooser reads recent-state inputs that only the Mover AnimBP computes today.
+**PR open** as [#235](https://github.com/Athurito/SurvivalRpg/pull/235), awaiting the user's visual check; see the [task report](gasp-animation-set.md). The user chose the Relaxed set and kept the Neutral traversal montages. The CMC now plays the Relaxed databases at matching speeds; crouch drops to 200 cm/s.
 
 - **Goal:** make every target speed fit the animation set actually played.
 - **Scope:** choose one of two options.
