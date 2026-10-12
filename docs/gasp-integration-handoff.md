@@ -11,20 +11,21 @@ diese Datei **ersetzen, nicht ergänzen**. Das frühere fortlaufende Protokoll b
 | Feld | Wert |
 | --- | --- |
 | Stand | 12.10.2026 |
-| Aktive Aufgabe, Status, zuständiger Chat | `GASP-11` Gemeinsames Bewegungsprofil, **In Arbeit** (Claude, Worktree `musing-ishizaka-7bac20`). Zuletzt gemergt: `GASP-10` Animationsset und Tempo-Parität nach Sichtprüfung des Nutzers. |
-| Branch, Worktree, Basis / PR | `claude/gasp-11-movement-profile`, Basis `master` `628b1400`; noch kein PR. Zuletzt `claude/gasp-10-animation-set` / [#235](https://github.com/Athurito/SurvivalRpg/pull/235), gemergt als `daaab0e2`. |
-| Offene Abnahmepunkte | `GASP-11`: Umsetzung, Prüfung und Sichtprüfung stehen aus; die Entscheidungen sind getroffen (Sprung-Z 450, sofortiges Drehen am Boden). Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
+| Aktive Aufgabe, Status, zuständiger Chat | `GASP-11` Gemeinsames Bewegungsprofil, **PR offen** (Draft, Claude, Worktree `musing-ishizaka-7bac20`); umgesetzt und automatisch geprüft, Sichtprüfung des Nutzers ausstehend. Zuletzt gemergt: `GASP-10` Animationsset und Tempo-Parität nach Sichtprüfung des Nutzers. |
+| Branch, Worktree, Basis / PR | `claude/gasp-11-movement-profile`, Basis `master` `628b1400`; [#238](https://github.com/Athurito/SurvivalRpg/pull/238). Zuletzt `claude/gasp-10-animation-set` / [#235](https://github.com/Athurito/SurvivalRpg/pull/235), gemergt als `daaab0e2`. |
+| Offene Abnahmepunkte | `GASP-11`: Sichtprüfung und Feinabstimmung nach Gefühl gemäß [Repro](gasp-movement-profile.md#repro-after-implementation), besonders Anfahren, Bremsen, Sprint-Ende, Sprung und Blocken aus dem Lauf. Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
 | Akzeptierter Runtime-Stand | `master` `628b1400`; enthält alle GASP-Schritte bis GASP-10 (#235, Status #236), die GASP-11-Definition (#237), GASP-ENG-01 (#221), GASP-STAB-03 (#223, nur Testcode) und den [Bewegungsplan](gasp-movement-plan.md) (#229, nur Doku). Der CMC-Pawn nutzt Rotationsmodi (freie Bewegung und Kampfhaltung) und spielt das Relaxed-Set mit passenden Tempi (Laufen 375, Sprint 585, Ducken 200 cm/s); `Lvl_RpgGaspCMC` steht in der GASP-Präsentation. Die Produktion nutzt weiter UEFN; der Manny-Pilot liegt isoliert unter `/Game/SurvivalRpg/Characters/GASP/Pilot/`. |
 | Dateibesitz / Sperren | `GASP-11` ab Start: `RpgCharacterMovementComponent.*`, das neue `RpgMovementProfile.*` und sein Asset, die Sprinttempo-Quelle in `RpgAbilityTask_Sprint.*`, die Bewegungswerte in `BP_RpgGasp_CMC`, die CMC-Bewegungs- und Integrationstests und nur bei endlichen Drehraten die Trajektorien-Einstellungen in `ABP_RpgGasp_CMC`; `GASP-12` und `GASP-13` warten auf den Merge. Die geteilten Relaxed- und Dense-Datenbanken nutzen CMC und Mover gemeinsam; CMC-spezifische Änderungen brauchen eigene Kopien. Das Lyra-`SK_Mannequin` trägt seit `GASP-08` die Blend-Profile `FastFeet+Root_Weight` und `FastHead_Weight`, die der Manny-AnimBP braucht; nicht entfernen. Eine separate Claude-Sitzung untersucht den zeitabhängigen Remote-Melee-Test aus den offenen Befunden. |
 | Editor / PIE / Builds | Installiert ist UE 5.8.3 (CL 58210709), `master` pinnt 5.8.3. Branches ohne GASP-ENG-01 bauen erst nach Übernahme von `master`. PIE-Netzwerktests nur in einem Prozess gleichzeitig laufen lassen. Vor eigener Editor-/MCP-Nutzung andere Checkouts und Sitzungen prüfen. |
 | Plugin-Overrides | Git-ignoriert und checkout-lokal. In jedem Worktree vor Build oder Branchwechsel gemäß [README](../Build/Patches/NetworkPrediction/README.md) prüfen; Engine-Wechsel nach dem Abschnitt „Engine updates“. |
-| Lokale Belege | `Saved/...` existiert nur im erzeugenden Checkout; versioniert sind Zusammenfassungen in Berichten und Manifesten unter `docs/assets`. GASP-08-Rohdaten liegen in `Saved/Gasp08` und `Saved/Profiling/CSV`, GASP-09-Rohdaten in `Saved/Gasp09`, GASP-10-Rohdaten in `Saved/Gasp10`, beide mit `Saved/ToolRuns` des Worktrees `musing-ishizaka-7bac20`. |
+| Lokale Belege | `Saved/...` existiert nur im erzeugenden Checkout; versioniert sind Zusammenfassungen in Berichten und Manifesten unter `docs/assets`. GASP-08-Rohdaten liegen in `Saved/Gasp08` und `Saved/Profiling/CSV`, GASP-09-Rohdaten in `Saved/Gasp09`, GASP-10-Rohdaten in `Saved/Gasp10`, GASP-11-Rohdaten in `Saved/Gasp11`, alle mit `Saved/ToolRuns` des Worktrees `musing-ishizaka-7bac20`. |
 
 ## Nächster Handgriff
 
-`GASP-11` Phase A gemäß [Bericht](gasp-movement-profile.md): Anfahren, Bremsen,
-Sprint-Ende, Drehen und Sprung unter 5.8.3 als Ausgangswert messen, danach
-Schema und Overrides umsetzen. Der vollständige
+Der Nutzer prüft `GASP-11` gemäß [Repro](gasp-movement-profile.md#repro-after-implementation)
+und stimmt die Werte in `DA_RpgGasp_MovementProfile` bei Bedarf nach Gefühl ab.
+Bei Abnahme: [#238](https://github.com/Athurito/SurvivalRpg/pull/238) mergen und als **Gemergt** führen, danach `GASP-12`
+definieren. Bei Befunden: im selben PR nachbessern. Der vollständige
 Manny-Bake `GASP-14` backt die Relaxed-Datenbanken.
 
 ## Offene Befunde
@@ -38,10 +39,15 @@ Manny-Bake `GASP-14` backt die Relaxed-Datenbanken.
 
 - `GASP-09` (gemergt): Das Aussehen des Aim Offsets und Angriffe mit Kameradrehung hat der Nutzer nicht gezielt beurteilt. Ausrüstungswechsel sind nicht vorhergesagt; seitliches oder Rückwärts-Sprinten beim Ziehen kann eine Korrektur auslösen. Ein Hurdle-Lauf stürzte einmal in der Engine ab (`FSceneViewport::Destroy` auf dem Render-Thread), der Wiederholungslauf bestand. [Bericht](gasp-rotation-modes.md#limits)
 - `GASP-10` (gemergt): Die Sichtprüfung des Nutzers war pauschal („sieht gut aus“). Die Leans bleiben Neutral, bis `GASP-13` den Relaxed-Lean-Layer des Movers übernimmt. Diagonalen nutzen die LL-/RL-Clips mit Orientation Warping. In freier Bewegung bleibt die Richtung vorwärts, richtungsabhängige Pivots gibt es nur in der Kampfhaltung. Das Relaxed-Set kostet etwa 0,23 ms mehr Animations-Worker-Zeit pro Figur und hat keine Datenbank-LOD. [Bericht](gasp-animation-set.md#limits)
+- `GASP-11` ([#238](https://github.com/Athurito/SurvivalRpg/pull/238), nicht gemergt): Die Sichtprüfung des Nutzers steht aus.
+  Blocken aus dem Lauf bremst jetzt mit 500 cm/s² (etwa 0,44 s) statt fast
+  sofort. Die Last ist nur am Tag-Seam geprüft, nicht mit echten schweren
+  Gegenständen in PIE. Die Pose-Search-Trajektorie sagt beim Sprintanlauf mit der
+  Laufbeschleunigung und Lauf-Reibung voraus. [Bericht](gasp-movement-profile.md#limits)
 - CMC-Review 11.10.2026 (UE 5.8.2; Pakete `GASP-09` bis `GASP-13` im [Bewegungsplan](gasp-movement-plan.md)): Der
-  Rotationskonflikt ist mit `GASP-09` behoben, die Tempo-Parität mit `GASP-10`. Offen bis `GASP-11`: Anfahren und
-  Bremsen sind deutlich direkter als im Original (gemessen 0,24 s bzw.
-  0,125 s/18,5 cm gegenüber ca. 0,6 s bzw. 0,25 s/62 cm). Bewegung bleibt
+  Rotationskonflikt ist mit `GASP-09` behoben, die Tempo-Parität mit `GASP-10`. Anfahren und
+  Bremsen ([#238](https://github.com/Athurito/SurvivalRpg/pull/238), nicht gemergt): mit Profil 0,48 s bis Lauftempo und 0,29 s/51 cm
+  Stopp bei 60 FPS, vorher 0,25 s und 0,12 s/16,5 cm. Bewegung bleibt
   lastunabhängig ([Spielvision](game-vision.md)).
 - `GASP-ENG-01`: UE 5.8.3 ändert den Mover-Rollback für Bewegungsmodifikatoren;
   nach einem Rollback laufen `OnStart`/`OnEnd` jetzt, beim Mover-Ducken also die
@@ -53,6 +59,10 @@ Manny-Bake `GASP-14` backt die Relaxed-Datenbanken.
   die Ursache; vermutlich der feste, inhaltskalibrierte Kontakt-Offset des
   Tests. Außerhalb von GASP; eine separate Sitzung bearbeitet ihn.
   [Bericht](gasp-test-floor-race.md)
+- `GaspMoverHurdlePIE.MaximumDepthHurdleLandsBeyondRearEdge` lief in der
+  gemeinsamen `GASP-11`-Regression einmal in das 60-s-Zeitlimit und bestand
+  einzeln; der Mover nutzt die geänderte CMC-Komponente nicht. Zeitabhängigkeit
+  offen.
 - Der VAL-03-Vault-Fall verfehlte unter 5.8.3 seine Überlappungsbedingung in
   3 von 6 isolierten Läufen (siehe Pending-Replay-Fall unten).
 - `BlockLocomotionPIE.MoverFixedRollbackPreservesHeldBlockAndReplaysBlockedHistoryAcrossRelease`

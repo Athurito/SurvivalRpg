@@ -1,6 +1,6 @@
 # GASP-11 – Shared movement profile
 
-Status: **In progress** on `claude/gasp-11-movement-profile` (defined 2026-10-12 in [#237](https://github.com/Athurito/SurvivalRpg/pull/237), started the same day). The package outline is in the [movement plan](gasp-movement-plan.md#gasp-11-shared-movement-profile). This report refines it against the current code and assets and is the task report for the implementation PR.
+Status: **PR open** ([#238](https://github.com/Athurito/SurvivalRpg/pull/238), draft; implemented 2026-10-12 on `claude/gasp-11-movement-profile`, first commit `5acabc99`; defined in [#237](https://github.com/Athurito/SurvivalRpg/pull/237)). The automated checks pass; the user's check and tuning by feel are open. The package outline is in the [movement plan](gasp-movement-plan.md#gasp-11-shared-movement-profile). This report refines it against the current code and assets and is the task report for the implementation PR.
 
 ## Goal
 
@@ -189,4 +189,106 @@ File ownership while the package runs:
 
 ## Results
 
-Not started.
+Implemented on 2026-10-12 on `claude/gasp-11-movement-profile`.
+
+### Implementation
+
+- **Schema.** `URpgMovementProfile` (`Source/SurvivalRpg/Core/Character/RpgMovementProfile.*`) holds the values from the scope, with units, ranges, `ValidateConfiguration`, and `IsDataValid`. Its class defaults are the start values with both decisions applied.
+- **Movement component.**
+  - `MovementProfile` is a designer reference on `URpgCharacterMovementComponent`.
+  - `InitializeComponent` copies the static values into the stock fields on every role: run and crouch speed, acceleration, braking, friction factor, run friction, air control, falling braking, and jump Z.
+  - `CalcVelocity` tapers acceleration and friction from the move's own horizontal speed. It scales the input acceleration only inside the engine call, as the engine itself does for falling input, so `GetMaxAcceleration`, the analog strength, and the network encoding stay unchanged.
+  - The sprint input gate divides that scale back out. A mutation check without it fails: the sprint gate closes above run speed and the character never reaches sprint speed.
+  - `GetMaxBrakingDeceleration` returns the no-input braking, or the gentler braking while input is held above the current maximum.
+  - `PhysicsRotation` reads the ground, sprint, and air rates from the profile; the combat stance turns at once on the ground.
+  - `SprintSpeed`, `GroundRotationRate`, and `AirRotationRate` left the component. `GetSprintSpeed()` reads the profile, and `RpgAbilityTask_Sprint` copies it into the GAS lease as before.
+  - Without a profile, the component keeps the stock values. GAS sprint and rotation modes then read the profile class defaults.
+- **Assets.**
+  - `DA_RpgGasp_MovementProfile` is new, under `/Game/SurvivalRpg/Characters/GASP/CMC/RPG/`.
+  - `BP_RpgGasp_CMC` references it, and its `MaxWalkSpeed` and `MaxWalkSpeedCrouched` overrides are gone.
+  - The mantle pawn and the three `GASP-08` pilot pawns inherit the profile. The [manifest](assets/gasp-11-movement-profile.json) lists the assets and values.
+- **Tests.**
+  - New native tests `SurvivalRpg.Movement.CMC.Profile.*` cover static values and validation, and start, stop, sprint, and sprint release at 30, 60, and 120 FPS against the analytic values. They also cover turn rates and the jump apex, load tiers, and saved-move replay of the taper.
+  - The sprint and rotation-mode fixtures use a transient profile that reproduces their former physics.
+  - `SpeedParity` and the sprint asset test now read the speeds from the pawn's profile. `SpeedParity` also requires every pawn derived from `BP_RpgGasp_CMC` to use the same profile.
+
+### PIE probe
+
+Free movement on `Lvl_RpgGaspCMC`, owner in standalone PIE. Each value is for 30 / 60 / 120 FPS.
+
+| Motion | Before (stock values) | With the profile | Profile prediction |
+| --- | --- | --- | --- |
+| Start to 95 % run speed | 0.267 / 0.250 / 0.242 s | 0.500 / 0.483 / 0.475 s | 0.475 s |
+| Stop from run | 0.133 s, 13.8 cm / 0.117 s, 16.5 cm / 0.125 s, 18.6 cm | 0.300 s, 48.0 cm / 0.283 s, 50.9 cm / 0.284 s, 52.5 cm | 0.288 s, 54.1 cm |
+| Run to 95 % sprint speed | 0.133 / 0.133 / 0.125 s | 0.333 / 0.333 / 0.325 s | 0.323 s |
+| Rest to 95 % sprint speed | 0.400 / 0.383 / 0.375 s | 0.833 / 0.833 / 0.825 s | 0.82 s |
+| Sprint release to run speed, input held | 0.067 / 0.050 / 0.042 s | 0.433 / 0.417 / 0.417 s | 0.420 s |
+| Stop from sprint | 0.167 s, 29.9 / 34.4 / 37.8 cm | 0.467 s, 122.1 cm / 0.450 s, 126.8 cm / 0.450 s, 129.2 cm | 0.450 s, 131.6 cm |
+| Reverse to 95 % run speed backward | 0.333 s | 0.667 / 0.667 / 0.675 s | – |
+| Run to crouch speed | 0.067 / 0.050 / 0.050 s | 0.367 / 0.350 / 0.350 s | 0.350 s |
+| Jump apex | 127.5 cm | 103.3 cm | 103.3 cm |
+
+- Every time lies within one frame of the prediction. Stop distances lie within one frame of travel and are frame-rate dependent, because the CMC moves each step with the velocity after braking: 11 % short at 30 FPS, 3 % at 120 FPS.
+- Before, the stop distance varied from 13.8 to 18.6 cm with the frame rate; the constant-rate braking now varies less in relative terms.
+- Free movement still turns within one frame. Every frame has a Motion Matching selection.
+- Starts select `Run_Start`, stops `Run_Stop`, and the sprint release `Transition_Sprint_to_Run`. The stop from sprint stays in `Sprint_Stop_F`, where the stock values switched to `Run_Stop_F` after 0.08 s.
+
+### Automation
+
+Every suite ran on its own through `ue.py test`; the runs are listed in order.
+
+| Filter | Result |
+| --- | --- |
+| Native and asset filters: `SurvivalRpg.Movement`, `Equipment`, `Harvesting`, `AbilitySystem`, the combat contracts, and the CMC and mantle asset tests | 119/119 passed (114 before plus the 5 new profile tests) |
+| `SurvivalRpg.GASP.CMC`, first run | 7/10. Three sprint PIE tests sample speed 0.5 s after starting to sprint from rest. With the profile all roles still accelerate then (358–388 cm/s) and reach 585 cm/s later. |
+| `SurvivalRpg.Combat.BlockLocomotion` | 16/16 passed |
+| `SurvivalRpg.GASP.Mantle` / `Vault` / `Hurdle` | 12/12, 8/8, 11/11 passed |
+| `SurvivalRpg.GASP.RuntimeRetarget` / `VariantComparison` | 2/2, 3/3 passed |
+| `SurvivalRpg.Network` | 19/19 passed |
+| `SurvivalRpg.GASP.Mover` | 65/67. `Vault...EquipmentMontageReplacesPendingVault...` missed its overlap condition, the known VAL-03 timing case. `Hurdle...MaximumDepthHurdleLandsBeyondRearEdge` timed out after 60 s. Both passed when rerun alone. The Mover pawn does not use the changed component, and no Mover asset changed. |
+| `SurvivalRpg.Movement.CMC.Profile`, after the test fixes | 5/5 passed |
+| `SurvivalRpg.GASP.CMC` with `p.NetShowCorrections 1`, after the test fixes | 10/10 passed |
+| `SurvivalRpg.GASP.CMC` with `p.NetForceClientAdjustmentPercent 0.1` | 10/10 passed |
+
+- **Sprint test fix.** The sprint PIE test now settles each observation window for the slowest speed change the pawn's profile allows plus 0.25 s, at least the former 0.5 s, instead of a fixed 0.5 s.
+- **Corrections.** These are counted per test from `Error for` lines, as in `GASP-10`. With `p.NetShowCorrections 1`:
+  - the stance test logs 0;
+  - the four sprint tests log 20, 20, 0, and 0, against 22, 24, 4, and 4 in `GASP-10`.
+- **Forced corrections.**
+  - The median position error of the forced client adjustments is 0.000 cm in every test, so owner and server compute the same movement.
+  - The largest errors come from the test that delays authority on purpose (17.5 cm) and from the unpredicted equipment change known from `GASP-09` (5.5 cm).
+- **Mutation check.** Without the scale division in the sprint input gate, `StartStopAndSprintMatchPrediction` fails: the run to sprint speed times out at 3 s instead of 0.33 s.
+
+### Acceptance
+
+| Area | Result |
+| --- | --- |
+| One source | **Met.** `SpeedParity` requires a valid profile on `BP_RpgGasp_CMC` and the same profile on all four derived pawns. The baseline pawn and AI keep their values; no profile is assigned to them. |
+| Start and stop | **Met with a changed distance tolerance.** All times lie within one frame of the prediction at 30, 60, and 120 FPS, in the native tests and in PIE. Distances lie within one frame of travel; see the deviations. |
+| Turning | **Met.** Free movement turns within one frame, and the combat stance turns at once even with a finite ground rate. The rotation-mode tests pass. |
+| Air and jump | **Met.** The apex is 103.3 cm at every frame rate, against 103.3 cm predicted. The air turn rate is 150°/s, checked natively. |
+| Speed band | **Met.** `SpeedParity` reads 375 / 585 / 200 cm/s from the profile. |
+| Network | **Met.** Saved-move replay reproduces the taper exactly. The CMC PIE suite passes with real and forced corrections; correction counts did not rise. |
+| Load | **Met for the seam.** The tier reaches the pawn only as an `Equipment.Load.*` ASC tag. Each tier tag, set while idle or while moving, leaves every value and the final position and velocity identical. No PIE run with real heavy items. |
+| Animation | **Met in the probe; the user check is open.** Every frame has a selection; starts, stops, and the sprint release select their clips. |
+| Regression | **Met**, apart from the two Mover timing cases above. |
+
+### Deviations
+
+- **Distance tolerance.** The criterion asked for 5 % of the predicted distance. The CMC moves each step with the velocity after braking, so the discrete stop is up to half a frame of travel short: 11 % at 30 FPS, 6 % at 60, and 3 % at 120. The tests and this report use one frame of travel instead.
+- **Acceleration taper.** The taper scales the input acceleration inside `CalcVelocity` instead of lowering `GetMaxAcceleration`. A speed-dependent maximum would change the analog strength, the server's clamp of the received acceleration, and the sprint input gate whenever velocity differs between the input and the check. The Pose Search trajectory therefore still predicts with the run acceleration during sprint build-up.
+- **Friction field.** `GroundFriction` holds the run value of 4. The trajectory reads it directly, so it predicts with 4 while the move uses up to 3 near sprint speed.
+- **Moved properties.** `SprintSpeed`, `GroundRotationRate`, and `AirRotationRate` left the component, which changes the fixtures of the sprint and rotation-mode tests: they now use a transient profile that reproduces their former physics.
+
+### Failed attempts
+
+- The first probe route ran into the level wall at x ≈ 2965 during the second sprint, which zeroed the stop from sprint. The route now runs back and forth.
+- The first `GASP.CMC` run failed three sprint PIE tests on their fixed 0.5 s settle delay; see the automation table.
+
+### Limits
+
+- **User check and tuning:** the user has not yet judged the feel. The start values may change by feel; the tests derive their predictions from the profile.
+- **Blocking while running:** raising the shield now slows from run to block speed at 500 cm/s² (about 0.44 s) instead of almost at once. The block tests pass; the feel is part of the user check.
+- **Load:** checked at the tag seam, not with real heavy items in PIE.
+- **Air control:** the native test checks the air turn rate and the jump apex, not the lateral air control value. The probe drifted 58 cm sideways in the air, against 253–259 cm before.
+- **Mover regression:** two Mover PIE cases failed once in the shared run and passed alone. The Vault case is the known VAL-03 case; the Hurdle timeout is new and is recorded in the handoff's open findings.

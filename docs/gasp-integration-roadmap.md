@@ -14,10 +14,10 @@ frühere Fassung mit Schnellstart-Verlauf und Aufgabenverträgen liegt in der
 ## Nächster bereiter Schritt
 
 Kein Schritt ist **Bereit**. **`GASP-11` Gemeinsames Bewegungsprofil** ist
-**In Arbeit** ([Bericht](gasp-movement-profile.md)): Der Nutzer hat Sprung-Z
-450 cm/s und sofortiges Drehen am Boden in freier Bewegung gewählt. Der
-vollständige Manny-Bake `GASP-14` backt die mit `GASP-10` gewählten
-Relaxed-Datenbanken.
+als PR offen ([Bericht](gasp-movement-profile.md)): Der CMC-Pawn bewegt sich
+nach einem gemeinsamen Profil; die automatischen Prüfungen bestehen, die
+Sichtprüfung und Feinabstimmung durch den Nutzer stehen aus. Der vollständige
+Manny-Bake `GASP-14` backt die mit `GASP-10` gewählten Relaxed-Datenbanken.
 `GASP-01`, `GASP-03` bis `GASP-10` und das Engine-Update `GASP-ENG-01` sind
 gemergt; offen bleiben `GASP-VAL-01`, `GASP-VAL-02` und die
 [offenen Befunde](gasp-integration-handoff.md#offene-befunde).
@@ -64,7 +64,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-08` | Pilot: GASP-Locomotion offline auf UE5-Manny-Skelett | **Gemergt**; Exit-Entscheidung **Pass** (Nutzer) | [#228](https://github.com/Athurito/SurvivalRpg/pull/228) | [Manny-Pilot](gasp-manny-skeleton-pilot.md) |
 | `GASP-09` | Rotationsmodi: freie Bewegung und Kampfhaltung (Strafe), Sprint-Richtungs-Gate | **Gemergt**; Sichtprüfung durch den Nutzer | [#232](https://github.com/Athurito/SurvivalRpg/pull/232) | [Rotationsmodi](gasp-rotation-modes.md) |
 | `GASP-10` | Animationsset und Tempo-Parität (Relaxed), Ducktempo | **Gemergt**; Sichtprüfung durch den Nutzer | [#235](https://github.com/Athurito/SurvivalRpg/pull/235) | [Animationsset](gasp-animation-set.md) |
-| `GASP-11` | Gemeinsames Bewegungsprofil (Trägheit, Drehung, Luft), lastunabhängig | **In Arbeit** | – | [Bewegungsprofil](gasp-movement-profile.md) |
+| `GASP-11` | Gemeinsames Bewegungsprofil (Trägheit, Drehung, Luft), lastunabhängig | **PR offen**: Sichtprüfung durch den Nutzer ausstehend | [#238](https://github.com/Athurito/SurvivalRpg/pull/238) | [Bewegungsprofil](gasp-movement-profile.md) |
 
 Statuswerte: **Geplant**, **Bereit**, **In Arbeit**, **Validierung**,
 **PR offen**, **Gemergt**, **Blockiert**, **Zurückgestellt**.
