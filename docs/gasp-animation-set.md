@@ -1,6 +1,6 @@
 # GASP-10 – Animation set and speed parity
 
-Status: **PR open** ([#235](https://github.com/Athurito/SurvivalRpg/pull/235), draft; implemented 2026-10-12 on `claude/gasp-10-animation-set`, first commit `dfaf3f30`). The user checked it on 2026-10-12 ("sieht gut aus") and asked for the merge; the automated checks pass. The package outline is in the [movement plan](gasp-movement-plan.md#gasp-10-animation-set-and-speed-parity). This report refines it against the current assets and code and is the task report for the implementation PR.
+Status: **Merged** ([#235](https://github.com/Athurito/SurvivalRpg/pull/235) as `daaab0e2` on 2026-10-12, final head `29f8a2f5`; implemented on `claude/gasp-10-animation-set`, first commit `dfaf3f30`). The user checked it on 2026-10-12 ("sieht gut aus") and asked for the merge; the automated checks pass. The package outline is in the [movement plan](gasp-movement-plan.md#gasp-10-animation-set-and-speed-parity). This report refines it against the current assets and code and is the task report for the implementation PR.
 
 ## Goal
 
