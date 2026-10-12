@@ -105,6 +105,8 @@ Its recorded limits carry into GASP-14 and GASP-15:
 
 ### GASP-11: Shared movement profile
 
+**Ready**; the [task report](gasp-movement-profile.md) refines this outline against the code. The combat stance keeps turning instantly (GASP-09 decision 3). The user settles jump height and free-movement turning before implementation; the report recommends 450 cm/s and instant turning on the ground.
+
 - **Goal:** one designer-tuned movement profile asset for every character, applied through prediction-safe CMC overrides.
 - **Profile contents:** speed per gait and direction, acceleration (tapering during sprint build-up), braking with and without input, friction, rotation rates for ground, sprint, and air, air control, and jump. The C++ and Blueprint defaults collapse into this single source.
 - **Starting values** (to tune by feel, Relaxed set assumed):
