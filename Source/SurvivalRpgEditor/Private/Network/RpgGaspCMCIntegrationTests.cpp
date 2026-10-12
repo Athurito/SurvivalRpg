@@ -7,6 +7,7 @@
 #include "Network/RpgCombatNetworkTestTypes.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
+#include "AssetRegistry/AssetRegistryModule.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/NetDriver.h"
@@ -48,6 +49,7 @@ namespace RpgGaspCMCIntegrationTests
 	constexpr TCHAR AnimClassPath[] = TEXT("/Game/SurvivalRpg/Characters/GASP/CMC/RPG/ABP_RpgGasp_CMC.ABP_RpgGasp_CMC_C");
 	constexpr TCHAR GameModePath[] = TEXT("/Game/SurvivalRpg/Maps/Test/GaspCMC/BP_Rpg_GaspCMCTestGameMode.BP_Rpg_GaspCMCTestGameMode_C");
 	constexpr TCHAR MeshPath[] = TEXT("/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Meshes/SKM_UEFN_Mannequin.SKM_UEFN_Mannequin");
+	constexpr TCHAR DatabaseChooserPackage[] = TEXT("/Game/SurvivalRpg/Characters/GASP/CMC/RPG/Choosers/CHT_RpgGasp_CMC_PoseSearchDatabases");
 
 	FPrimaryAssetId ExperienceId()
 	{
@@ -119,12 +121,20 @@ namespace RpgGaspCMCIntegrationTests
 		return false;
 	}
 
+	/** True when Motion Matching selected a database that the CMC database chooser can return, on any network role. */
 	bool HasMotionMatchingSelection(const ARpgCharacter* Character)
 	{
 		const UAnimInstance* Animation = Character ? Character->GetMesh()->GetAnimInstance() : nullptr;
 		const FObjectPropertyBase* Selection = Animation
 			? FindFProperty<FObjectPropertyBase>(Animation->GetClass(), TEXT("CurrentSelectedDatabase")) : nullptr;
-		return Selection && IsValid(Selection->GetObjectPropertyValue_InContainer(Animation));
+		const UObject* Database = Selection ? Selection->GetObjectPropertyValue_InContainer(Animation) : nullptr;
+		if (!IsValid(Database))
+		{
+			return false;
+		}
+		TArray<FName> ChooserDatabases;
+		FAssetRegistryModule::GetRegistry().GetDependencies(DatabaseChooserPackage, ChooserDatabases);
+		return ChooserDatabases.Contains(Database->GetPackage()->GetFName());
 	}
 }
 

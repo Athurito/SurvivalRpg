@@ -101,22 +101,22 @@ and character only. The concrete package paths are:
 | Test GameMode | `/Game/SurvivalRpg/Maps/Test/GaspCMC/BP_Rpg_GaspCMCTestGameMode` |
 
 The working `Choosers` folder beside the AnimBP contains
-`CHT_CMCCharacterAnimations`, `CHT_PoseSearchDatabases`, and its `Dense`,
-`Sparse` and `ExtremeSparse` variants. Their class contexts target the working
-AnimBP. A stale Evaluate Chooser context pin exposed by a cold load was repaired
-in the working AnimBP and that copy compiled successfully.
+`CHT_CMCCharacterAnimations` and, since `GASP-10`,
+`CHT_RpgGasp_CMC_PoseSearchDatabases`: a copy of the Mover's Relaxed database
+chooser whose class context targets the working AnimBP. `GASP-10` removed the
+earlier `CHT_PoseSearchDatabases` copy and its `Dense`, `Sparse` and
+`ExtremeSparse` variants ([animation set](gasp-animation-set.md)). A stale
+Evaluate Chooser context pin exposed by a cold load was repaired in the working
+AnimBP and that copy compiled successfully.
 
-All six animation working copies originate in the merged foundation. In the
+The AnimBP and `CHT_CMCCharacterAnimations` originate in the merged foundation; the database chooser is a copy of the Mover project chooser. In the
 following mapping, paths are relative to `/Game/SurvivalRpg/Characters/GASP/`:
 
 | Foundation source | Integration copy |
 | --- | --- |
 | `CMC/Blueprints/SandboxCharacter_CMC_ABP` | `CMC/RPG/ABP_RpgGasp_CMC` |
 | `CMC/Characters/UEFN_Mannequin/Animations/ExperimentalStateMachineData/CHT_CMCCharacterAnimations` | `CMC/RPG/Choosers/CHT_CMCCharacterAnimations` |
-| `Shared/Characters/UEFN_Mannequin/Animations/MotionMatchingData/CHT_PoseSearchDatabases` | `CMC/RPG/Choosers/CHT_PoseSearchDatabases` |
-| `Shared/Characters/UEFN_Mannequin/Animations/MotionMatchingData/CHT_PoseSearchDatabases_Dense` | `CMC/RPG/Choosers/CHT_PoseSearchDatabases_Dense` |
-| `Shared/Characters/UEFN_Mannequin/Animations/MotionMatchingData/CHT_PoseSearchDatabases_Sparse` | `CMC/RPG/Choosers/CHT_PoseSearchDatabases_Sparse` |
-| `Shared/Characters/UEFN_Mannequin/Animations/MotionMatchingData/CHT_PoseSearchDatabases_ExtremeSparse` | `CMC/RPG/Choosers/CHT_PoseSearchDatabases_ExtremeSparse` |
+| `Mover/RPG/Choosers/CHT_RpgGasp_Mover_PoseSearchDatabases` (since `GASP-10`) | `CMC/RPG/Choosers/CHT_RpgGasp_CMC_PoseSearchDatabases` |
 
 Since `GASP-09` the map uses the approved GASP presentation of
 `Lvl_RpgGaspMantle` without its traversal obstacles: the original LevelBlock
