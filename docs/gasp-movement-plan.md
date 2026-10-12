@@ -89,7 +89,7 @@ Its recorded limits carry into GASP-14 and GASP-15:
 
 ### GASP-10: Animation set and speed parity
 
-**PR open** as [#235](https://github.com/Athurito/SurvivalRpg/pull/235), awaiting the user's visual check; see the [task report](gasp-animation-set.md). The user chose the Relaxed set and kept the Neutral traversal montages. The CMC now plays the Relaxed databases at matching speeds; crouch drops to 200 cm/s.
+**Merged** in [#235](https://github.com/Athurito/SurvivalRpg/pull/235) after the user's check; see the [task report](gasp-animation-set.md). The user chose the Relaxed set and kept the Neutral traversal montages. The CMC now plays the Relaxed databases at matching speeds; crouch drops to 200 cm/s.
 
 - **Goal:** make every target speed fit the animation set actually played.
 - **Scope:** choose one of two options.
@@ -181,8 +181,8 @@ Its recorded limits carry into GASP-14 and GASP-15:
 
 ## Order and parallelism
 
-1. **GASP-08** and **GASP-09** are merged.
-2. **GASP-10 → GASP-11 → GASP-12 → GASP-13** run one after another; they share the pawn, its Blueprint, and the movement component.
+1. **GASP-08**, **GASP-09**, and **GASP-10** are merged.
+2. **GASP-11 → GASP-12 → GASP-13** run one after another; they share the pawn, its Blueprint, and the movement component.
 3. After a GASP-08 pass: **GASP-14 → GASP-15**, then **GASP-16**, then the final dodge montages for #124.
 4. If GASP-08 fails: GASP-14 and GASP-15 are dropped. GASP-16 then targets the runtime follower path, and the dodge montages are retargeted to UEFN like the block set.
 
