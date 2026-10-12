@@ -27,7 +27,7 @@ public:
 	FRpgSprintStopped OnStopped;
 
 	/**
-	 * Holds the CMC's authored SprintSpeed until task/ability end. Idle and block suspend effective sprint and cost.
+	 * Holds the movement profile's SprintSpeed until task/ability end. Idle and block suspend effective sprint and cost.
 	 * The designer effect must be Instant with one additive Stamina modifier using StaminaDeltaTag as SetByCaller.
 	 * StaminaPerSecond is units per second of actual sprint movement; MinimumStaminaToStart is an activation threshold.
 	 * Movement is locally predicted; resource changes are authority-only. Exhaustion or an ability end while input remains

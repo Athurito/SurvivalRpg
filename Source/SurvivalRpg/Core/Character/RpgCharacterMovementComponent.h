@@ -6,9 +6,12 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "RpgCharacterMovementComponent.generated.h"
 
+class URpgMovementProfile;
+
 #if WITH_DEV_AUTOMATION_TESTS
 namespace RpgCmcSprintTests { class FFixture; }
 namespace RpgCmcRotationModeTests { class FFixture; }
+namespace RpgMovementProfileTests { class FFixture; }
 #endif
 
 /**
@@ -52,13 +55,22 @@ public:
 	/** Game-thread presentation snapshot: effective saved policy inside movement/replay, otherwise the current valid GAS lease. */
 	bool GetBlockMovementForMove(float& OutSpeedLimit) const;
 
+	/**
+	 * Designer-assigned shared movement profile: speeds, acceleration, braking, friction, turn rates, air control, and jump.
+	 * Static class data, identical on owner, server, simulated proxies, and late joiners, so it is never replicated.
+	 * Without a profile the component keeps its stock movement values, and GAS sprint and rotation modes read the
+	 * profile class defaults. Equipment load never changes it.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Movement")
+	TObjectPtr<const URpgMovementProfile> MovementProfile;
+
 	/** Designer opt-in for GAS-authorized sprint. Existing characters keep their ordinary MaxWalkSpeed when disabled. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Sprint")
 	bool bEnableGASSprint = false;
 
-	/** Designer sprint speed in cm/s, copied into each GAS activation; MaxWalkSpeed remains the normal running speed. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Sprint", meta = (ClampMin = "0.0", Units = "cm/s"))
-	float SprintSpeed = 585.f;
+	/** Sprint speed in cm/s from the movement profile, copied into each GAS activation; MaxWalkSpeed stays the running speed. */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Sprint")
+	float GetSprintSpeed() const;
 
 	/** Minimum normalized movement input (0..1) for effective sprint and stamina cost. Partial input retains the held GAS lease. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Sprint", meta = (ClampMin = "0.0", ClampMax = "1.0"))
@@ -75,18 +87,11 @@ public:
 	 * Designer opt-in for the GASP rotation modes; disabled characters keep their authored rotation flags.
 	 * When enabled, movement owns yaw and ignores the pawn's controller-yaw and the orient/desired-rotation flags:
 	 * free movement turns toward the movement input, and the combat stance (equipment in hands or an active block)
-	 * faces the camera. An ability's facing commitment and mantle override both.
+	 * faces the camera. An ability's facing commitment and mantle override both. The movement profile sets the turn
+	 * rates; the combat stance turns at once on the ground.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Rotation")
 	bool bUseRotationModes = false;
-
-	/** Designer yaw rate in deg/s on the ground for both rotation modes. Zero or less turns at once, as GASP does. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Rotation", meta = (EditCondition = "bUseRotationModes", Units = "DegreesPerSecond"))
-	float GroundRotationRate = 0.f;
-
-	/** Designer yaw rate in deg/s while falling. Zero or less turns at once; GASP uses 200. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Rotation", meta = (EditCondition = "bUseRotationModes", Units = "DegreesPerSecond"))
-	float AirRotationRate = 200.f;
 
 	/**
 	 * Designer limit in degrees between movement input and the camera yaw within which the combat stance may sprint.
@@ -134,6 +139,13 @@ public:
 	virtual FRotator GetDeltaRotation(float DeltaTime) const override;
 	virtual float GetMaxSpeed() const override;
 	//~End of UMovementComponent interface
+
+	/** Copies the movement profile's static values into the stock fields on every role before play. */
+	virtual void InitializeComponent() override;
+	/** With a profile on the ground: braking without input, or the gentler braking while input is held above the maximum speed. */
+	virtual float GetMaxBrakingDeceleration() const override;
+	/** With a profile on the ground: tapers acceleration and friction from run toward sprint speed, from the move's own velocity. */
+	virtual void CalcVelocity(float DeltaTime, float Friction, bool bFluid, float BrakingDeceleration) override;
 protected:
 	/** Captures root-motion ownership before the engine consumes/clears its parameters at the end of physics. */
 	virtual void UpdateVelocityBeforeMovement(float DeltaSeconds) override;
@@ -156,7 +168,12 @@ private:
 	friend class FRpgSprintSavedMoveTest;
 	friend class RpgCmcSprintTests::FFixture;
 	friend class RpgCmcRotationModeTests::FFixture;
+	friend class RpgMovementProfileTests::FFixture;
 #endif
+	/** The assigned profile, or the profile class defaults for GAS sprint and rotation modes without one. */
+	const URpgMovementProfile& GetProfileOrDefault() const;
+	/** Copies the assigned profile's static values into the stock fields the engine reads directly; no-op without one. */
+	void ApplyMovementProfile();
 	bool SampleBlockMovement(float& OutSpeedLimit) const;
 	bool SampleEquipmentInHands() const;
 	bool SampleFacingCommitment(float& OutSteeringRate) const;
@@ -196,6 +213,9 @@ private:
 	float FacingSteeringRateForMove = 0.f;
 	// Set only around Super::PhysicsRotation so ComputeOrientToMovementRotation targets the camera instead of the input.
 	bool bFaceControlRotationInPhysics = false;
+	// Set only around Super::CalcVelocity, which sees the profile's tapered acceleration. The sprint input gate divides
+	// it back out, so analog strength never depends on speed.
+	float CalcVelocityAccelerationScale = 1.f;
 
 	UFUNCTION()
 	void OnRep_MantleCollisionComponent();

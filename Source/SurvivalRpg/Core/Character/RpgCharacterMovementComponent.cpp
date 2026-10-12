@@ -13,6 +13,7 @@
 #include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
 #include "RpgCharacter.h"
 #include "RpgHealthComponent.h"
+#include "RpgMovementProfile.h"
 
 /** Authorization, speeds, stance and facing remain local history; only the sprint request bit crosses the movement wire. */
 class FSavedMove_RpgCharacter : public FSavedMove_Character
@@ -105,6 +106,64 @@ URpgCharacterMovementComponent::URpgCharacterMovementComponent(const FObjectInit
 {
 	// Character owns movement replication; this component adds simulated-proxy collision and effective-gait read models.
 	SetIsReplicatedByDefault(true);
+}
+
+const URpgMovementProfile& URpgCharacterMovementComponent::GetProfileOrDefault() const
+{
+	return MovementProfile ? *MovementProfile : *GetDefault<URpgMovementProfile>();
+}
+
+float URpgCharacterMovementComponent::GetSprintSpeed() const
+{
+	return GetProfileOrDefault().SprintSpeed;
+}
+
+void URpgCharacterMovementComponent::InitializeComponent()
+{
+	Super::InitializeComponent();
+	ApplyMovementProfile();
+}
+
+void URpgCharacterMovementComponent::ApplyMovementProfile()
+{
+	// Static values only; values that depend on the move come from the overrides below, never from per-tick writes.
+	if (!MovementProfile) { return; }
+	MaxWalkSpeed = MovementProfile->RunSpeed;
+	MaxWalkSpeedCrouched = MovementProfile->CrouchSpeed;
+	MaxAcceleration = MovementProfile->Acceleration;
+	BrakingDecelerationWalking = MovementProfile->BrakingDeceleration;
+	bUseSeparateBrakingFriction = false;
+	BrakingFrictionFactor = MovementProfile->BrakingFrictionFactor;
+	// The Pose Search trajectory reads this field directly; it holds the run value, the sprint taper applies per move.
+	GroundFriction = MovementProfile->GroundFriction;
+	AirControl = MovementProfile->AirControl;
+	BrakingDecelerationFalling = MovementProfile->FallingBrakingDeceleration;
+	JumpZVelocity = MovementProfile->JumpZVelocity;
+}
+
+float URpgCharacterMovementComponent::GetMaxBrakingDeceleration() const
+{
+	if (MovementProfile && IsMovingOnGround())
+	{
+		return Acceleration.IsZero() ? MovementProfile->BrakingDeceleration : MovementProfile->BrakingDecelerationWithInput;
+	}
+	return Super::GetMaxBrakingDeceleration();
+}
+
+void URpgCharacterMovementComponent::CalcVelocity(float DeltaTime, float Friction, bool bFluid, float BrakingDeceleration)
+{
+	if (!MovementProfile || bFluid || !IsMovingOnGround() || MovementProfile->Acceleration <= 0.f)
+	{
+		Super::CalcVelocity(DeltaTime, Friction, bFluid, BrakingDeceleration);
+		return;
+	}
+	// Only the move's own velocity selects the taper, so the owner, saved-move replay and the server agree. Scaling
+	// the input here, as the engine scales falling input, keeps GetMaxAcceleration and the analog strength unchanged.
+	const float Speed = static_cast<float>(Velocity.Size2D());
+	const float Scale = MovementProfile->GetAccelerationAtSpeed(Speed) / MovementProfile->Acceleration;
+	TGuardValue<FVector> AccelerationScope(Acceleration, Acceleration * Scale);
+	TGuardValue<float> ScaleScope(CalcVelocityAccelerationScale, Scale);
+	Super::CalcVelocity(DeltaTime, MovementProfile->GetGroundFrictionAtSpeed(Speed), bFluid, BrakingDeceleration);
 }
 
 bool URpgCharacterMovementComponent::CanAttemptJump() const
@@ -234,10 +293,10 @@ bool URpgCharacterMovementComponent::CanSprintForMove(float& OutSprintSpeed) con
 		|| IsMantleControllingRotation() || HasAnimRootMotion() || CurrentRootMotion.HasActiveRootMotionSources()) { return false; }
 	const float MaximumAcceleration = GetMaxAcceleration();
 	if (!FMath::IsFinite(MinimumSprintInput) || MinimumSprintInput < 0.f || MinimumSprintInput > 1.f
-		|| !FMath::IsFinite(MaximumAcceleration) || MaximumAcceleration <= 0.f) { return false; }
+		|| !FMath::IsFinite(MaximumAcceleration) || MaximumAcceleration <= 0.f || CalcVelocityAccelerationScale <= 0.f) { return false; }
 	// MoveAutonomous restores the original constrained acceleration before replay, while the server
 	// constrains the received acceleration itself. Never derive analog strength from today's input device.
-	const float InputStrength = static_cast<float>(Acceleration.Size2D() / MaximumAcceleration);
+	const float InputStrength = static_cast<float>(Acceleration.Size2D() / (MaximumAcceleration * CalcVelocityAccelerationScale));
 	if (!FMath::IsFinite(InputStrength) || InputStrength < MinimumSprintInput) { return false; }
 	float BlockLimit = 0.f;
 	if (GetBlockMovementForMove(BlockLimit)) { return false; }
@@ -398,7 +457,13 @@ void URpgCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 		float SteeringRate = 0.f;
 		const bool bFacingCommitted = GetFacingCommitmentForMove(SteeringRate);
 		if (bFacingCommitted && SteeringRate <= 0.f) { return; }
-		const float YawRate = bFacingCommitted ? SteeringRate : (IsFalling() ? AirRotationRate : GroundRotationRate);
+		const bool bCombatStance = IsCombatStanceForMove();
+		const URpgMovementProfile& Profile = GetProfileOrDefault();
+		float YawRate = 0.f; // The combat stance turns at once on the ground.
+		float SprintSpeedForRotation = 0.f;
+		if (bFacingCommitted) { YawRate = SteeringRate; }
+		else if (IsFalling()) { YawRate = Profile.AirRotationRate; }
+		else if (!bCombatStance) { YawRate = CanSprintForMove(SprintSpeedForRotation) ? Profile.SprintRotationRate : Profile.GroundRotationRate; }
 		const bool bSavedOrientToMovement = bOrientRotationToMovement;
 		const bool bSavedControllerDesired = bUseControllerDesiredRotation;
 		bOrientRotationToMovement = true;
@@ -406,7 +471,7 @@ void URpgCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 		{
 			// A negative engine rate turns at once; ComputeOrientToMovementRotation supplies the camera target.
 			TGuardValue<FRotator> RateScope(RotationRate, FRotator(0.f, FMath::IsFinite(YawRate) && YawRate > 0.f ? YawRate : -1.f, 0.f));
-			TGuardValue<bool> TargetScope(bFaceControlRotationInPhysics, bFacingCommitted || IsCombatStanceForMove());
+			TGuardValue<bool> TargetScope(bFaceControlRotationInPhysics, bFacingCommitted || bCombatStance);
 			Super::PhysicsRotation(DeltaTime);
 		}
 		bOrientRotationToMovement = bSavedOrientToMovement;

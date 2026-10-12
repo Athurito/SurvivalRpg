@@ -21,6 +21,7 @@
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgStaminaSet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterMovementComponent.h"
+#include "SurvivalRpg/Core/Character/RpgMovementProfile.h"
 #include "SurvivalRpg/Core/Character/RpgPawnData.h"
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/Core/Character/RpgPawnGameplayComponent.h"
@@ -97,7 +98,7 @@ namespace RpgCmcSprintNetworkTests
 			&& Player->GetPawnData<URpgPawnData>() == Extension->GetPawnData<URpgPawnData>()
 			&& ASC(Character) == Player->GetRpgAbilitySystemComponent() && ASC(Character)->GetAvatarActor() == Character
 			&& Movement(Character)->bEnableGASSprint && Movement(Character)->IsMovingOnGround()
-			&& FMath::IsNearlyEqual(Movement(Character)->MaxWalkSpeed, RunSpeed) && FMath::IsNearlyEqual(Movement(Character)->SprintSpeed, SprintSpeed)
+			&& FMath::IsNearlyEqual(Movement(Character)->MaxWalkSpeed, RunSpeed) && FMath::IsNearlyEqual(Movement(Character)->GetSprintSpeed(), SprintSpeed)
 			&& Stamina(Character) >= 0.f && (!Character->IsLocallyControlled() || Gameplay->IsReadyToBindInputs());
 	}
 
@@ -180,6 +181,7 @@ namespace RpgCmcSprintNetworkTests
 		double Elapsed = 0., FirstTime = 0., LastTime = 0.;
 		float MinimumSpeed = TNumericLimits<float>::Max(), MaximumSpeed = 0.f;
 		float FirstStamina = 0.f, LastStamina = 0.f, MinimumStamina = TNumericLimits<float>::Max();
+		double SettleSeconds = .5;
 		bool bInvalid = false;
 	};
 	struct FPeer
@@ -229,7 +231,18 @@ namespace RpgCmcSprintNetworkTests
 		void Begin(bool bSprint, bool bBlock, float InSpeed)
 		{
 			bExpectedSprint = bSprint; bExpectedBlock = bBlock; ExpectedSpeed = InSpeed; bSampling = true;
-			for (auto& Pair : Peers) Pair.Value.Window = FWindow{};
+			for (auto& Pair : Peers)
+			{
+				Pair.Value.Window = FWindow{};
+				// Settle for at least the slowest speed change the pawn's movement profile allows, plus a margin.
+				const URpgCharacterMovementComponent* Move = Pair.Value.Character.IsValid() ? Movement(Pair.Value.Character.Get()) : nullptr;
+				if (const URpgMovementProfile* Profile = Move ? Move->MovementProfile.Get() : nullptr)
+				{
+					const float SlowestRate = FMath::Min3(Profile->Acceleration, Profile->SprintAcceleration, Profile->BrakingDecelerationWithInput);
+					const float Change = FMath::Abs(InSpeed - static_cast<float>(Move->Velocity.Size2D()));
+					Pair.Value.Window.SettleSeconds = FMath::Max(.5, static_cast<double>(Change / FMath::Max(SlowestRate, 1.f)) + .25);
+				}
+			}
 		}
 		bool Complete(int32 Count) const
 		{
@@ -280,7 +293,7 @@ namespace RpgCmcSprintNetworkTests
 			Peer->PreviousStamina = CurrentStamina;
 			if (!bSampling) return;
 			FWindow& Window = Peer->Window; Window.Elapsed += DeltaSeconds;
-			if (Window.Elapsed < .5 || (Window.Samples >= 8 && Window.LastTime - Window.FirstTime >= .65)) return;
+			if (Window.Elapsed < Window.SettleSeconds || (Window.Samples >= 8 && Window.LastTime - Window.FirstTime >= .65)) return;
 			const float CurrentSpeed = Movement(Character)->Velocity.Size2D();
 			if (Window.Samples++ == 0) { Window.FirstTime = Now; Window.FirstStamina = CurrentStamina; }
 			Window.LastTime = Now; Window.LastStamina = CurrentStamina;

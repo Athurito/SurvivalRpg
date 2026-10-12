@@ -12,6 +12,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Misc/AutomationTest.h"
 #include "RpgCharacter.h"
+#include "RpgMovementProfileAutomationTestTypes.h"
 #include "RpgPawnData.h"
 #include "RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
@@ -90,9 +91,8 @@ namespace RpgCmcRotationModeTests
 			Movement = CastChecked<URpgCharacterMovementComponent>(Character->GetCharacterMovement());
 			Movement->SetComponentTickEnabled(false); // Only explicit MoveAutonomous calls advance movement.
 			Movement->bUseRotationModes = true;
-			Movement->GroundRotationRate = 0.f;
 			Movement->MaxWalkSpeed = RunSpeed;
-			Movement->SprintSpeed = SprintSpeed;
+			Movement->MovementProfile = RpgMovementProfileTestTypes::MakeStockEquivalentProfile(*Movement, RunSpeed, SprintSpeed);
 			Movement->bEnableGASSprint = true;
 			Movement->SetMovementMode(MOVE_Walking);
 			ASC = NewObject<URpgAbilitySystemComponent>(Character, NAME_None, RF_Transient);

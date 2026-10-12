@@ -1,0 +1,80 @@
+{
+  "task": "GASP-11",
+  "date": "2026-10-12",
+  "engine": "5.8.3",
+  "decisions": {
+    "source": "user, 2026-10-12",
+    "jump_z_cm_per_s": 450,
+    "free_movement_ground_turn": "instant"
+  },
+  "assets_added": [
+    {
+      "path": "/Game/SurvivalRpg/Characters/GASP/CMC/RPG/DA_RpgGasp_MovementProfile",
+      "class": "/Script/SurvivalRpg.RpgMovementProfile",
+      "values": "class defaults (the GASP-11 start values below)"
+    }
+  ],
+  "assets_changed": [
+    {
+      "path": "/Game/SurvivalRpg/Characters/GASP/CMC/RPG/BP_RpgGasp_CMC",
+      "change": "CharacterMovement.MovementProfile = DA_RpgGasp_MovementProfile; the MaxWalkSpeed (375) and MaxWalkSpeedCrouched (200) overrides removed, so the profile is their only source",
+      "inherited_by": [
+        "/Game/SurvivalRpg/Characters/GASP/CMC/RPG/Traversal/BP_RpgGasp_MantleCharacter",
+        "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Pawns/BP_RpgGasp08_CMC_Manny",
+        "/Game/SurvivalRpg/Characters/GASP/Pilot/Manny/Pawns/BP_RpgGasp08_CMC_UefnFollower",
+        "/Game/SurvivalRpg/Characters/GASP/Pilot/UefnControl/Pawns/BP_RpgGasp08_CMC_UefnControl"
+      ]
+    }
+  ],
+  "unchanged": [
+    "/Game/SurvivalRpg/Core/Character/BP_Rpg_Character (baseline pawn)",
+    "/Game/SurvivalRpg/Enemies/BP_BaseEnemy (AI, native defaults)",
+    "Mover pawns and all Pose Search databases"
+  ],
+  "profile_values": {
+    "run_speed": 375,
+    "sprint_speed": 585,
+    "crouch_speed": 200,
+    "acceleration": 750,
+    "sprint_acceleration": 350,
+    "braking_deceleration": 1300,
+    "braking_deceleration_with_input": 500,
+    "braking_friction_factor": 0,
+    "ground_friction": 4,
+    "sprint_ground_friction": 3,
+    "ground_rotation_rate": 0,
+    "sprint_rotation_rate": 0,
+    "air_rotation_rate": 150,
+    "air_control": 0.15,
+    "falling_braking_deceleration": 0,
+    "jump_z_velocity": 450
+  },
+  "pie_probe_free_movement": {
+    "map": "Lvl_RpgGaspCMC",
+    "units": "seconds, cm",
+    "columns": ["30 FPS", "60 FPS", "120 FPS"],
+    "baseline": {
+      "start_to_95_run": [0.267, 0.25, 0.242],
+      "stop_from_run": [[0.133, 13.8], [0.117, 16.5], [0.125, 18.6]],
+      "rest_to_95_sprint": [0.4, 0.383, 0.375],
+      "run_to_95_sprint": [0.133, 0.133, 0.125],
+      "sprint_release_to_run": [0.067, 0.05, 0.042],
+      "stop_from_sprint": [[0.167, 29.9], [0.167, 34.4], [0.167, 37.8]],
+      "reverse_to_95_run": [0.333, 0.333, 0.333],
+      "jump_apex": [127.5, 127.5, 127.5],
+      "crouch_from_run": [0.067, 0.05, 0.05]
+    },
+    "profile": {
+      "start_to_95_run": [0.5, 0.483, 0.475],
+      "stop_from_run": [[0.3, 48.0], [0.283, 50.9], [0.284, 52.5]],
+      "rest_to_95_sprint": [0.833, 0.833, 0.825],
+      "run_to_95_sprint": [0.333, 0.333, 0.325],
+      "sprint_release_to_run": [0.433, 0.417, 0.417],
+      "stop_from_sprint": [[0.467, 122.1], [0.45, 126.8], [0.45, 129.2]],
+      "reverse_to_95_run": [0.667, 0.667, 0.675],
+      "jump_apex": [103.3, 103.3, 103.3],
+      "crouch_from_run": [0.367, 0.35, 0.35]
+    },
+    "frames_without_motion_matching_selection": 0
+  }
+}
