@@ -34,6 +34,23 @@ bool URpgAnimInstanceTestInstance::CanRunParallelWork() const
 	return bUseRpgTimingGuard ? Super::CanRunParallelWork() : UAnimInstance::CanRunParallelWork();
 }
 
+void URpgAnimInstanceTestInstance::PreUpdateAnimation(float DeltaSeconds)
+{
+	if (bUseRpgTimingGuard)
+	{
+		Super::PreUpdateAnimation(DeltaSeconds);
+	}
+	else
+	{
+		UAnimInstance::PreUpdateAnimation(DeltaSeconds);
+	}
+}
+
+FTransform URpgAnimInstanceTestInstance::GetCachedComponentTransform()
+{
+	return GetProxyOnGameThread<FAnimInstanceProxy>().GetComponentTransform();
+}
+
 FAnimInstanceProxy* URpgAnimInstanceTestInstance::CreateAnimInstanceProxy()
 {
 	return new FRpgTimingTestAnimInstanceProxy(this);

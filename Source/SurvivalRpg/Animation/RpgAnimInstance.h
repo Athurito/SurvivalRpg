@@ -37,9 +37,6 @@ public:
 	virtual void NativeInitializeAnimation() override;
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
 
-	/** Moves the mesh with its capsule before a listen server caches the pose's component transform for a remote autonomous move. */
-	virtual void PreUpdateAnimation(float DeltaSeconds) override;
-
 	/** Evaluates a designer-selected table against this instance on the game thread. Selection rules and output tuning remain in the table; only already-loaded animation assets are returned. */
 	UFUNCTION(BlueprintCallable, Category = "Animation|Selection")
 	UAnimationAsset* EvaluateAnimationChooser(UChooserTable* Chooser);
@@ -77,6 +74,9 @@ public:
 	float BlockMovementSpeedLimit = 0.f;
 
 protected:
+
+	/** Moves the mesh with its capsule before a listen server caches the pose's component transform for a remote autonomous move. */
+	virtual void PreUpdateAnimation(float DeltaSeconds) override;
 
 	/**
 	 * Optional designer-owned asset checks. Editor validation calls this on an uninitialized transient copy,
