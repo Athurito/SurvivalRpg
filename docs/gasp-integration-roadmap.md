@@ -13,9 +13,12 @@ frühere Fassung mit Schnellstart-Verlauf und Aufgabenverträgen liegt in der
 
 ## Nächster bereiter Schritt
 
-Kein Schritt ist **Bereit**. Als Nächstes steht `GASP-STAB-04` (Zittern von
-Client-Figuren in der Host-Ansicht) an, danach `GASP-13`; der Nutzer markiert
-sie als **Bereit**. Der vollständige Manny-Bake `GASP-14` backt die mit `GASP-10`
+**`GASP-STAB-04` Zittern von Client-Figuren in der Host-Ansicht** ist
+**Bereit** ([Bericht](gasp-host-view-turn-jitter.md)). Phase A misst ohne Codeänderung die Ursache
+(Offset Root Bone bei pro Bewegung getickten Client-Figuren); vor dem Bau fragt
+der umsetzende Chat den Nutzer nur, wenn der Host dadurch anders sähe als die
+anderen Clients oder die Lösung mehr als 0,1 ms pro Figur kostet. Danach folgt
+`GASP-13`. Der vollständige Manny-Bake `GASP-14` backt die mit `GASP-10`
 gewählten Relaxed-Datenbanken.
 `GASP-01`, `GASP-03` bis `GASP-12` und das Engine-Update `GASP-ENG-01` sind
 gemergt; offen bleiben `GASP-VAL-01`, `GASP-VAL-02` und die
@@ -48,6 +51,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-STAB-01` | Block-Cleanup nach entferntem DefenseSet | **Gemergt** | [#145](https://github.com/Athurito/SurvivalRpg/pull/145) | [Block-Cleanup](gasp-block-cleanup.md) |
 | `GASP-STAB-02` | Falling bei belegtem Respawn | **Gemergt** | [#146](https://github.com/Athurito/SurvivalRpg/pull/146) | [Respawn-Falling](gasp-respawn-falling.md) |
 | `GASP-STAB-03` | Testboden vor den Pawns in CQTest-Netzwerktests | **Gemergt** | [#223](https://github.com/Athurito/SurvivalRpg/pull/223) | [Testboden](gasp-test-floor-race.md) |
+| `GASP-STAB-04` | Listen-Server: Client-Figur zittert in der Host-Ansicht beim Drehen im Stand (Offset Root Bone) | **Bereit** | – | [Host-Ansicht](gasp-host-view-turn-jitter.md) |
 | `GASP-NET-01` | Rollback während aktivem Mantle | **Gemergt** | [#147](https://github.com/Athurito/SurvivalRpg/pull/147) | [Mantle-Rollback](gasp-active-mantle-rollback.md) |
 | `GASP-NET-02` | Terminaler Mantle-Grund bei Reconciliation | **Gemergt** | [#148](https://github.com/Athurito/SurvivalRpg/pull/148) | [Reconciliation](gasp-terminal-reconciliation.md) |
 | `GASP-NET-03` | Rekonstruktion nach Paketpause | **Gemergt**; Grenze bewertet, Werkzeug validiert, Runtime-Grenze bleibt | [#149](https://github.com/Athurito/SurvivalRpg/pull/149) | [Paketpause](gasp-packet-gap-recovery.md) |
@@ -86,14 +90,13 @@ Geplante, noch nicht bereite Pakete aus dem [Bewegungsplan](gasp-movement-plan.m
 Befunde, Abhängigkeiten und Reihenfolge stehen dort. Ein Paket wechselt erst
 mit **Bereit** in die Statustabelle oben.
 
-- `GASP-STAB-04` kommt nach Wahl des Nutzers vor `GASP-13`; beide berühren die
-  Darstellung des CMC-Pawns.
+- `GASP-13` folgt nach `GASP-STAB-04`; beide betreffen den Offset-Root-Bone-Pfad
+  des CMC-AnimBPs.
 - `GASP-14`/`GASP-15` setzen den bestandenen `GASP-08` fort.
 - Die Animationsset-Wahl aus `GASP-10` legt fest, welche Datenbanken `GASP-14` backt.
 
 | ID | Arbeitspaket | Status | Plan |
 | --- | --- | --- | --- |
-| `GASP-STAB-04` | Listen-Server: Client-Figur zittert in der Host-Ansicht beim Drehen im Stand (Offset Root Bone) | **Geplant** | [Offene Befunde](gasp-integration-handoff.md#offene-befunde) |
 | `GASP-13` | Darstellung: Offset Root Bone, Steering, Foley, Kamera | **Geplant** | [Plan](gasp-movement-plan.md#gasp-13-presentation-polish) |
 | `GASP-14` | Vollständiger CMC-Bake auf Manny (nur nach bestandenem `GASP-08`) | **Geplant** | [Plan](gasp-movement-plan.md#gasp-14-full-cmc-bake-to-manny-only-if-gasp-08-passes) |
 | `GASP-15` | Manny als Gameplay-Mesh (nur nach bestandenem `GASP-08`) | **Geplant** | [Plan](gasp-movement-plan.md#gasp-15-manny-gameplay-mesh-only-if-gasp-08-passes) |
