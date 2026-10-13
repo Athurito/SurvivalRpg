@@ -50,6 +50,15 @@ Relaxed-Datenbanken.
   Run an den AnimBP. In der gemeinsamen Regression stürzte Mantle einmal in der Engine
   ab (`FSceneViewport::Destroy`), und zwei Mover-Fälle (Ragdoll-Getup, Vault-Late-Join)
   scheiterten einmal; alle bestanden einzeln. [Bericht](gasp-walk-gait.md#limits)
+- Listen-Server-Ansicht (gefunden in der `GASP-12`-Sichtprüfung, schon auf `master`
+  `d0bddda7`): Dreht ein Client in der Kampfhaltung im Stand nur die Kamera, zittert
+  seine Figur in der Ansicht des Hosts. Gemessen kehrt das Becken bei 45 bis 180 °/s
+  in 10 bis 65 von etwa 170 Frames die Richtung um; beim Besitzer und auf anderen
+  Clients 0 bis 2 Mal. Ohne Offset Root Bone (`a.animnode.offsetrootbone.enable 0`)
+  verschwindet es; das Glätten des Listen-Servers ist nicht die Ursache. Vermutlich
+  passt der Knoten nicht dazu, dass der Server die Animation von Client-Figuren pro
+  empfangener Bewegung tickt (`bOnlyAllowAutonomousTickPose`). Offen.
+  [Bericht](gasp-walk-gait.md#limits)
 - CMC-Review 11.10.2026 (UE 5.8.2; Pakete `GASP-09` bis `GASP-13` im [Bewegungsplan](gasp-movement-plan.md)): Der
   Rotationskonflikt ist mit `GASP-09` behoben, die Tempo-Parität mit `GASP-10`. Anfahren und
   Bremsen mit `GASP-11`: mit Profil 0,48 s bis Lauftempo und 0,29 s/51 cm

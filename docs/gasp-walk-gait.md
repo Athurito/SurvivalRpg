@@ -339,7 +339,12 @@ Every suite ran on its own through `ue.py test`; the runs are listed in order.
 
 ### Limits
 
-- **User check:** not yet done.
+- **User check:** started on 2026-10-13, not yet accepted.
+- **Listen-server view (found in the user check; already on `master` `d0bddda7`):**
+  - When a client in the combat stance only turns the camera while standing, the host sees that client's character jitter.
+  - A three-player probe measured the pelvis reversing direction in 10 to 65 of about 170 frames at 45 to 180°/s on the server, against 0 to 2 on the owner and on the other client. `master` without this package shows the same pattern.
+  - With Offset Root Bone disabled (`a.animnode.offsetrootbone.enable 0`) the reversals disappear; disabling listen-server smoothing does not help.
+  - The likely cause is the node's interaction with the server ticking a remote client's animation per received move (`bOnlyAllowAutonomousTickPose`). Not fixed in this package.
 - **Network conditions:** the multiplayer probe and PIE tests ran locally without latency, jitter, or loss; that stays with `GASP-VAL-02`.
 - **Hardware:** stick input came from simulated `Gamepad_LeftY` values through the real mapping and dead zone, not from a physical gamepad. Real stick noise near 0.7 is covered only by the 0.05 band.
 - **Crouch:** a crouching pawn reports Run to the AnimBP even with the toggle on; the crouch databases ignore the gait.
