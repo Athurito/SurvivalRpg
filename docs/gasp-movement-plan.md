@@ -132,7 +132,7 @@ Its recorded limits carry into GASP-14 and GASP-15:
 
 ### GASP-12: Walk gait and analog input
 
-**PR open** in [#241](https://github.com/Athurito/SurvivalRpg/pull/241); see the [task report](gasp-walk-gait.md). The user chose Caps Lock for the walk toggle, with crouch staying on Ctrl, and walking below the 0.7 stick threshold. The pawn walks at 165 cm/s on the Relaxed walk databases; every gait moves at a fixed speed, and simulated proxies receive the gait.
+**Merged** in [#241](https://github.com/Athurito/SurvivalRpg/pull/241) after the user's check; see the [task report](gasp-walk-gait.md). The user chose Caps Lock for the walk toggle, with crouch staying on Ctrl, and walking below the 0.7 stick threshold. The pawn walks at 165 cm/s on the Relaxed walk databases; every gait moves at a fixed speed, and simulated proxies receive the gait.
 
 - **Goal:**
   - a walk toggle and an analog walk/run threshold, as in the original `GetDesiredGait`;
@@ -185,8 +185,8 @@ Its recorded limits carry into GASP-14 and GASP-15:
 
 ## Order and parallelism
 
-1. **GASP-08** to **GASP-11** are merged.
-2. **GASP-12 → GASP-13** run one after another; they share the pawn, its Blueprint, and the movement component.
+1. **GASP-08** to **GASP-12** are merged.
+2. **GASP-STAB-04**, the host-view jitter found in the GASP-12 check, comes first at the user's choice; then **GASP-13**. Both touch the CMC pawn's presentation.
 3. After a GASP-08 pass: **GASP-14 → GASP-15**, then **GASP-16**, then the final dodge montages for #124.
 4. If GASP-08 fails: GASP-14 and GASP-15 are dropped. GASP-16 then targets the runtime follower path, and the dodge montages are retargeted to UEFN like the block set.
 
