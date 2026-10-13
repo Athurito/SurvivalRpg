@@ -42,29 +42,118 @@
     "setup": "listen-server PIE with one player, free movement, 30 / 60 / 120 FPS; strength is the input after the 0.2 radial dead zone",
     "note": "identical steady values at all three frame rates",
     "baseline": {
-      "strength": [0.3, 0.5, 0.65, 0.75, 1.0],
-      "speed_cm_per_s": [112.5, 187.5, 243.8, 281.2, 375.0],
-      "gait": ["Run", "Run", "Run", "Run", "Run"],
-      "play_rate_on_run_loops": [0.30, 0.50, 0.65, 0.75, 1.00],
+      "strength": [
+        0.3,
+        0.5,
+        0.65,
+        0.75,
+        1.0
+      ],
+      "speed_cm_per_s": [
+        112.5,
+        187.5,
+        243.8,
+        281.2,
+        375.0
+      ],
+      "gait": [
+        "Run",
+        "Run",
+        "Run",
+        "Run",
+        "Run"
+      ],
+      "play_rate_on_run_loops": [
+        0.3,
+        0.5,
+        0.65,
+        0.75,
+        1.0
+      ],
       "strength_0_5_with_sprint_held": "Run at 187.5 cm/s"
     },
     "walk_gait": {
-      "strength": [0.3, 0.5, 0.65, 0.75, 1.0],
-      "speed_cm_per_s": [165.0, 165.0, 165.0, 375.0, 375.0],
-      "gait": ["Walk", "Walk", "Walk", "Run", "Run"],
-      "play_rate": [1.00, 1.00, 1.00, 1.00, 1.00],
-      "databases": ["Relaxed walk", "Relaxed walk", "Relaxed walk", "Relaxed run", "Relaxed run"],
+      "strength": [
+        0.3,
+        0.5,
+        0.65,
+        0.75,
+        1.0
+      ],
+      "speed_cm_per_s": [
+        165.0,
+        165.0,
+        165.0,
+        375.0,
+        375.0
+      ],
+      "gait": [
+        "Walk",
+        "Walk",
+        "Walk",
+        "Run",
+        "Run"
+      ],
+      "play_rate": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "databases": [
+        "Relaxed walk",
+        "Relaxed walk",
+        "Relaxed walk",
+        "Relaxed run",
+        "Relaxed run"
+      ],
       "strength_0_5_with_sprint_held": "Walk at 165 cm/s, no sprint",
       "full_input_with_sprint_held": "Sprint at 585 cm/s"
     },
     "timings_s": {
-      "columns": ["30 FPS", "60 FPS", "120 FPS", "prediction"],
-      "toggle_start_to_95_walk": [0.233, 0.217, 0.217, 0.209],
-      "stick_start_to_95_walk": [0.233, 0.217, 0.217, 0.209],
-      "stop_from_walk_s": [0.133, 0.133, 0.120, 0.127],
-      "stop_from_walk_cm": [10.6, 10.5, 10.4, 10.5],
-      "walk_to_95_run_toggle_off": [0.267, 0.267, 0.261, 0.255],
-      "run_to_walk_input_held": [0.433, 0.433, 0.422, 0.420]
+      "columns": [
+        "30 FPS",
+        "60 FPS",
+        "120 FPS",
+        "prediction"
+      ],
+      "toggle_start_to_95_walk": [
+        0.233,
+        0.217,
+        0.217,
+        0.209
+      ],
+      "stick_start_to_95_walk": [
+        0.233,
+        0.217,
+        0.217,
+        0.209
+      ],
+      "stop_from_walk_s": [
+        0.133,
+        0.133,
+        0.12,
+        0.127
+      ],
+      "stop_from_walk_cm": [
+        10.6,
+        10.5,
+        10.4,
+        10.5
+      ],
+      "walk_to_95_run_toggle_off": [
+        0.267,
+        0.267,
+        0.261,
+        0.255
+      ],
+      "run_to_walk_input_held": [
+        0.433,
+        0.433,
+        0.422,
+        0.42
+      ]
     },
     "selections": {
       "toggle_walk_start": "Walk_Start / Walk_Reface_Start",
@@ -78,22 +167,122 @@
   "pie_probe_multiplayer": {
     "setup": "listen-server PIE, 3 players, 60 FPS, no latency; client A drives in the combat stance, recorded as owner, on the server, and as a simulated proxy on client B",
     "baseline_sprint": {
-      "speed_cm_per_s": {"owner": 585, "server": 585, "proxy": 585},
-      "get_max_speed": {"owner": 585, "server": 585, "proxy": 375},
-      "trajectory_future_speed": {"owner": 585, "server": 585, "proxy": 375}
+      "speed_cm_per_s": {
+        "owner": 585,
+        "server": 585,
+        "proxy": 585
+      },
+      "get_max_speed": {
+        "owner": 585,
+        "server": 585,
+        "proxy": 375
+      },
+      "trajectory_future_speed": {
+        "owner": 585,
+        "server": 585,
+        "proxy": 375
+      }
     },
     "walk_gait": {
-      "columns": ["owner A", "server", "proxy on B"],
-      "stick_0_5_to_95_walk_s": [0.217, 0.234, 0.234],
-      "toggle_to_95_walk_backward_s": [0.217, 0.233, 0.252],
-      "toggle_off_to_95_run_s": [0.257, 0.273, 0.273],
-      "run_to_95_sprint_s": [0.321, 0.337, 0.337],
-      "gait_switch_after_input_s": [0.017, 0.033, 0.033],
-      "sprint_get_max_speed_and_trajectory": [585, 585, 585],
+      "columns": [
+        "owner A",
+        "server",
+        "proxy on B"
+      ],
+      "stick_0_5_to_95_walk_s": [
+        0.217,
+        0.234,
+        0.234
+      ],
+      "toggle_to_95_walk_backward_s": [
+        0.217,
+        0.233,
+        0.252
+      ],
+      "toggle_off_to_95_run_s": [
+        0.257,
+        0.273,
+        0.273
+      ],
+      "run_to_95_sprint_s": [
+        0.321,
+        0.337,
+        0.337
+      ],
+      "gait_switch_after_input_s": [
+        0.017,
+        0.033,
+        0.033
+      ],
+      "sprint_get_max_speed_and_trajectory": [
+        585,
+        585,
+        585
+      ],
       "ticks_with_roles_on_different_gaits": "6 of 1391 (one frame at each of three switches)"
     },
-    "proxy_to_owner_cm": {"median": 0.0, "p95": 0.4, "max": 1.2},
-    "server_to_owner_cm": {"median": 2.8, "p95": 9.8, "max": 11.5},
+    "proxy_to_owner_cm": {
+      "median": 0.0,
+      "p95": 0.4,
+      "max": 1.2
+    },
+    "server_to_owner_cm": {
+      "median": 2.8,
+      "p95": 9.8,
+      "max": 11.5
+    },
     "frames_without_motion_matching_selection": 0
+  },
+  "user_check": {
+    "date": "2026-10-13",
+    "result": "accepted (\"sonst passt alles, merge\")",
+    "finding": "host view: a client turning the camera in place in the combat stance jitters; already on master d0bddda7; caused by Offset Root Bone on server-ticked remote characters; the user chose a separate package",
+    "turn_probe_pelvis_reversals_per_about_170_frames": {
+      "rates_deg_per_s": [
+        90,
+        180,
+        45
+      ],
+      "branch_server": [
+        43,
+        59,
+        11
+      ],
+      "branch_owner": [
+        0,
+        0,
+        0
+      ],
+      "branch_proxy": [
+        2,
+        1,
+        0
+      ],
+      "master_server": [
+        15,
+        41,
+        10
+      ],
+      "master_owner": [
+        0,
+        1,
+        0
+      ],
+      "master_proxy": [
+        1,
+        1,
+        0
+      ],
+      "branch_server_without_offset_root_bone": [
+        0,
+        0,
+        0
+      ],
+      "branch_server_without_listen_server_smoothing": [
+        32,
+        65,
+        4
+      ]
+    }
   }
 }

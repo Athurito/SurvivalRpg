@@ -1,6 +1,6 @@
 # GASP-12 – Walk gait and analog input
 
-Status: **PR open** in [#241](https://github.com/Athurito/SurvivalRpg/pull/241) on `claude/gasp-12-walk-gait` (defined 2026-10-13 in [#240](https://github.com/Athurito/SurvivalRpg/pull/240), implemented the same day). The user check is pending. The package outline is in the [movement plan](gasp-movement-plan.md#gasp-12-walk-gait-and-analog-input). This report refines it against the current code and assets and is the task report for the implementation PR.
+Status: **PR open** in [#241](https://github.com/Athurito/SurvivalRpg/pull/241) on `claude/gasp-12-walk-gait` (defined 2026-10-13 in [#240](https://github.com/Athurito/SurvivalRpg/pull/240), implemented the same day). The user accepted it on 2026-10-13. The package outline is in the [movement plan](gasp-movement-plan.md#gasp-12-walk-gait-and-analog-input). This report refines it against the current code and assets and is the task report for the implementation PR.
 
 ## Goal
 
@@ -339,12 +339,12 @@ Every suite ran on its own through `ue.py test`; the runs are listed in order.
 
 ### Limits
 
-- **User check:** started on 2026-10-13, not yet accepted.
+- **User check:** on 2026-10-13 the user found everything else fine ("sonst passt alles") and asked for the merge. The reply did not itemize single motions. The user chose to fix the jitter below in a separate package.
 - **Listen-server view (found in the user check; already on `master` `d0bddda7`):**
   - When a client in the combat stance only turns the camera while standing, the host sees that client's character jitter.
   - A three-player probe measured the pelvis reversing direction in 10 to 65 of about 170 frames at 45 to 180°/s on the server, against 0 to 2 on the owner and on the other client. `master` without this package shows the same pattern.
   - With Offset Root Bone disabled (`a.animnode.offsetrootbone.enable 0`) the reversals disappear; disabling listen-server smoothing does not help.
-  - The likely cause is the node's interaction with the server ticking a remote client's animation per received move (`bOnlyAllowAutonomousTickPose`). Not fixed in this package.
+  - The likely cause is the node's interaction with the server ticking a remote client's animation per received move (`bOnlyAllowAutonomousTickPose`). Not fixed in this package; the user chose a separate package for it.
 - **Network conditions:** the multiplayer probe and PIE tests ran locally without latency, jitter, or loss; that stays with `GASP-VAL-02`.
 - **Hardware:** stick input came from simulated `Gamepad_LeftY` values through the real mapping and dead zone, not from a physical gamepad. Real stick noise near 0.7 is covered only by the 0.05 band.
 - **Crouch:** a crouching pawn reports Run to the AnimBP even with the toggle on; the crouch databases ignore the gait.
