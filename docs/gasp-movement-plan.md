@@ -105,7 +105,7 @@ Its recorded limits carry into GASP-14 and GASP-15:
 
 ### GASP-11: Shared movement profile
 
-**PR open** as [#238](https://github.com/Athurito/SurvivalRpg/pull/238), awaiting the user's check; see the [task report](gasp-movement-profile.md). The user chose a jump Z of 450 cm/s and instant free-movement turning on the ground; the combat stance keeps turning instantly (GASP-09 decision 3). The CMC pawn now takes its movement from `DA_RpgGasp_MovementProfile`: about 0.48 s to run speed and a 0.29 s / 51 cm stop at 60 FPS.
+**Merged** in [#238](https://github.com/Athurito/SurvivalRpg/pull/238) after the user's check; see the [task report](gasp-movement-profile.md). The user chose a jump Z of 450 cm/s and instant free-movement turning on the ground; the combat stance keeps turning instantly (GASP-09 decision 3). The CMC pawn now takes its movement from `DA_RpgGasp_MovementProfile`: about 0.48 s to run speed and a 0.29 s / 51 cm stop at 60 FPS.
 
 - **Goal:** one designer-tuned movement profile asset for every character, applied through prediction-safe CMC overrides.
 - **Profile contents:** speed per gait and direction, acceleration (tapering during sprint build-up), braking with and without input, friction, rotation rates for ground, sprint, and air, air control, and jump. The C++ and Blueprint defaults collapse into this single source.
@@ -183,8 +183,8 @@ Its recorded limits carry into GASP-14 and GASP-15:
 
 ## Order and parallelism
 
-1. **GASP-08**, **GASP-09**, and **GASP-10** are merged.
-2. **GASP-11 → GASP-12 → GASP-13** run one after another; they share the pawn, its Blueprint, and the movement component.
+1. **GASP-08** to **GASP-11** are merged.
+2. **GASP-12 → GASP-13** run one after another; they share the pawn, its Blueprint, and the movement component.
 3. After a GASP-08 pass: **GASP-14 → GASP-15**, then **GASP-16**, then the final dodge montages for #124.
 4. If GASP-08 fails: GASP-14 and GASP-15 are dropped. GASP-16 then targets the runtime follower path, and the dodge montages are retargeted to UEFN like the block set.
 

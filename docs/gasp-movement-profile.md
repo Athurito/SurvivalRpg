@@ -1,6 +1,6 @@
 # GASP-11 – Shared movement profile
 
-Status: **PR open** ([#238](https://github.com/Athurito/SurvivalRpg/pull/238), draft; implemented 2026-10-12 on `claude/gasp-11-movement-profile`, first commit `5acabc99`; defined in [#237](https://github.com/Athurito/SurvivalRpg/pull/237)). The user checked it on 2026-10-13 ("schaut schon gut aus … passt alles") and asked that multiplayer always be checked too; the automated checks and a multiplayer probe pass. The package outline is in the [movement plan](gasp-movement-plan.md#gasp-11-shared-movement-profile). This report refines it against the current code and assets and is the task report for the implementation PR.
+Status: **Merged** ([#238](https://github.com/Athurito/SurvivalRpg/pull/238) as `9d608e39` on 2026-10-13, final head `553da88f`; implemented 2026-10-12 on `claude/gasp-11-movement-profile`, first commit `5acabc99`; defined in [#237](https://github.com/Athurito/SurvivalRpg/pull/237)). The user checked it on 2026-10-13 ("schaut schon gut aus … passt alles") and asked that multiplayer always be checked too; the automated checks and a multiplayer probe pass. The package outline is in the [movement plan](gasp-movement-plan.md#gasp-11-shared-movement-profile). This report refines it against the current code and assets and is the task report for the implementation PR.
 
 ## Goal
 

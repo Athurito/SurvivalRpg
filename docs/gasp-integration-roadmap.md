@@ -13,12 +13,10 @@ frühere Fassung mit Schnellstart-Verlauf und Aufgabenverträgen liegt in der
 
 ## Nächster bereiter Schritt
 
-Kein Schritt ist **Bereit**. **`GASP-11` Gemeinsames Bewegungsprofil** ist
-als PR offen ([Bericht](gasp-movement-profile.md)): Der CMC-Pawn bewegt sich
-nach einem gemeinsamen Profil; die automatischen Prüfungen und eine
-Mehrspieler-Messung bestehen, der Nutzer hat es abgenommen. Der vollständige
+Kein Schritt ist **Bereit**. Als Nächstes steht `GASP-12` (Walk-Gait und
+Analog-Schwelle) an; der Nutzer markiert es als **Bereit**. Der vollständige
 Manny-Bake `GASP-14` backt die mit `GASP-10` gewählten Relaxed-Datenbanken.
-`GASP-01`, `GASP-03` bis `GASP-10` und das Engine-Update `GASP-ENG-01` sind
+`GASP-01`, `GASP-03` bis `GASP-11` und das Engine-Update `GASP-ENG-01` sind
 gemergt; offen bleiben `GASP-VAL-01`, `GASP-VAL-02` und die
 [offenen Befunde](gasp-integration-handoff.md#offene-befunde).
 
@@ -64,7 +62,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-08` | Pilot: GASP-Locomotion offline auf UE5-Manny-Skelett | **Gemergt**; Exit-Entscheidung **Pass** (Nutzer) | [#228](https://github.com/Athurito/SurvivalRpg/pull/228) | [Manny-Pilot](gasp-manny-skeleton-pilot.md) |
 | `GASP-09` | Rotationsmodi: freie Bewegung und Kampfhaltung (Strafe), Sprint-Richtungs-Gate | **Gemergt**; Sichtprüfung durch den Nutzer | [#232](https://github.com/Athurito/SurvivalRpg/pull/232) | [Rotationsmodi](gasp-rotation-modes.md) |
 | `GASP-10` | Animationsset und Tempo-Parität (Relaxed), Ducktempo | **Gemergt**; Sichtprüfung durch den Nutzer | [#235](https://github.com/Athurito/SurvivalRpg/pull/235) | [Animationsset](gasp-animation-set.md) |
-| `GASP-11` | Gemeinsames Bewegungsprofil (Trägheit, Drehung, Luft), lastunabhängig | **PR offen**: vom Nutzer abgenommen, Merge ausstehend | [#238](https://github.com/Athurito/SurvivalRpg/pull/238) | [Bewegungsprofil](gasp-movement-profile.md) |
+| `GASP-11` | Gemeinsames Bewegungsprofil (Trägheit, Drehung, Luft), lastunabhängig | **Gemergt**; Sichtprüfung durch den Nutzer | [#238](https://github.com/Athurito/SurvivalRpg/pull/238) | [Bewegungsprofil](gasp-movement-profile.md) |
 
 Statuswerte: **Geplant**, **Bereit**, **In Arbeit**, **Validierung**,
 **PR offen**, **Gemergt**, **Blockiert**, **Zurückgestellt**.
@@ -86,7 +84,7 @@ Geplante, noch nicht bereite Pakete aus dem [Bewegungsplan](gasp-movement-plan.m
 Befunde, Abhängigkeiten und Reihenfolge stehen dort. Ein Paket wechselt erst
 mit **Bereit** in die Statustabelle oben.
 
-- `GASP-12` und `GASP-13` folgen nach `GASP-11` nacheinander, weil sie denselben Pawn, Blueprint
+- `GASP-12` und `GASP-13` folgen nacheinander, weil sie denselben Pawn, Blueprint
   und dieselbe Movement-Komponente ändern.
 - `GASP-14`/`GASP-15` setzen den bestandenen `GASP-08` fort.
 - Die Animationsset-Wahl aus `GASP-10` legt fest, welche Datenbanken `GASP-14` backt.
