@@ -13,12 +13,11 @@ frühere Fassung mit Schnellstart-Verlauf und Aufgabenverträgen liegt in der
 
 ## Nächster bereiter Schritt
 
-Kein Schritt ist **Bereit**. **`GASP-12` Walk-Gait und Analog-Schwelle** hat
-**PR offen** ([#241](https://github.com/Athurito/SurvivalRpg/pull/241), [Bericht](gasp-walk-gait.md)); die Sichtprüfung des Nutzers
-steht aus. Gewählt sind die Feststelltaste als Walk-Umschalter (Ducken bleibt
-auf Strg) und Gehen unter der Stick-Schwelle. Der vollständige Manny-Bake `GASP-14` backt die mit `GASP-10`
+Kein Schritt ist **Bereit**. Als Nächstes steht `GASP-STAB-04` (Zittern von
+Client-Figuren in der Host-Ansicht) an, danach `GASP-13`; der Nutzer markiert
+sie als **Bereit**. Der vollständige Manny-Bake `GASP-14` backt die mit `GASP-10`
 gewählten Relaxed-Datenbanken.
-`GASP-01`, `GASP-03` bis `GASP-11` und das Engine-Update `GASP-ENG-01` sind
+`GASP-01`, `GASP-03` bis `GASP-12` und das Engine-Update `GASP-ENG-01` sind
 gemergt; offen bleiben `GASP-VAL-01`, `GASP-VAL-02` und die
 [offenen Befunde](gasp-integration-handoff.md#offene-befunde).
 
@@ -65,7 +64,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-09` | Rotationsmodi: freie Bewegung und Kampfhaltung (Strafe), Sprint-Richtungs-Gate | **Gemergt**; Sichtprüfung durch den Nutzer | [#232](https://github.com/Athurito/SurvivalRpg/pull/232) | [Rotationsmodi](gasp-rotation-modes.md) |
 | `GASP-10` | Animationsset und Tempo-Parität (Relaxed), Ducktempo | **Gemergt**; Sichtprüfung durch den Nutzer | [#235](https://github.com/Athurito/SurvivalRpg/pull/235) | [Animationsset](gasp-animation-set.md) |
 | `GASP-11` | Gemeinsames Bewegungsprofil (Trägheit, Drehung, Luft), lastunabhängig | **Gemergt**; Sichtprüfung durch den Nutzer | [#238](https://github.com/Athurito/SurvivalRpg/pull/238) | [Bewegungsprofil](gasp-movement-profile.md) |
-| `GASP-12` | Walk-Gait und Analog-Schwelle | **PR offen** | [#241](https://github.com/Athurito/SurvivalRpg/pull/241) | [Walk-Gait](gasp-walk-gait.md) |
+| `GASP-12` | Walk-Gait und Analog-Schwelle | **Gemergt**; Sichtprüfung durch den Nutzer | [#241](https://github.com/Athurito/SurvivalRpg/pull/241) | [Walk-Gait](gasp-walk-gait.md) |
 
 Statuswerte: **Geplant**, **Bereit**, **In Arbeit**, **Validierung**,
 **PR offen**, **Gemergt**, **Blockiert**, **Zurückgestellt**.
@@ -87,13 +86,14 @@ Geplante, noch nicht bereite Pakete aus dem [Bewegungsplan](gasp-movement-plan.m
 Befunde, Abhängigkeiten und Reihenfolge stehen dort. Ein Paket wechselt erst
 mit **Bereit** in die Statustabelle oben.
 
-- `GASP-13` folgt nach `GASP-12`, weil beide denselben Pawn, Blueprint
-  und dieselbe Movement-Komponente ändern.
+- `GASP-STAB-04` kommt nach Wahl des Nutzers vor `GASP-13`; beide berühren die
+  Darstellung des CMC-Pawns.
 - `GASP-14`/`GASP-15` setzen den bestandenen `GASP-08` fort.
 - Die Animationsset-Wahl aus `GASP-10` legt fest, welche Datenbanken `GASP-14` backt.
 
 | ID | Arbeitspaket | Status | Plan |
 | --- | --- | --- | --- |
+| `GASP-STAB-04` | Listen-Server: Client-Figur zittert in der Host-Ansicht beim Drehen im Stand (Offset Root Bone) | **Geplant** | [Offene Befunde](gasp-integration-handoff.md#offene-befunde) |
 | `GASP-13` | Darstellung: Offset Root Bone, Steering, Foley, Kamera | **Geplant** | [Plan](gasp-movement-plan.md#gasp-13-presentation-polish) |
 | `GASP-14` | Vollständiger CMC-Bake auf Manny (nur nach bestandenem `GASP-08`) | **Geplant** | [Plan](gasp-movement-plan.md#gasp-14-full-cmc-bake-to-manny-only-if-gasp-08-passes) |
 | `GASP-15` | Manny als Gameplay-Mesh (nur nach bestandenem `GASP-08`) | **Geplant** | [Plan](gasp-movement-plan.md#gasp-15-manny-gameplay-mesh-only-if-gasp-08-passes) |
