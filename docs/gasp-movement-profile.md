@@ -1,6 +1,6 @@
 # GASP-11 – Shared movement profile
 
-Status: **PR open** ([#238](https://github.com/Athurito/SurvivalRpg/pull/238), draft; implemented 2026-10-12 on `claude/gasp-11-movement-profile`, first commit `5acabc99`; defined in [#237](https://github.com/Athurito/SurvivalRpg/pull/237)). The automated checks pass; the user's check and tuning by feel are open. The package outline is in the [movement plan](gasp-movement-plan.md#gasp-11-shared-movement-profile). This report refines it against the current code and assets and is the task report for the implementation PR.
+Status: **PR open** ([#238](https://github.com/Athurito/SurvivalRpg/pull/238), draft; implemented 2026-10-12 on `claude/gasp-11-movement-profile`, first commit `5acabc99`; defined in [#237](https://github.com/Athurito/SurvivalRpg/pull/237)). The user checked it on 2026-10-13 ("schaut schon gut aus … passt alles") and asked that multiplayer always be checked too; the automated checks and a multiplayer probe pass. The package outline is in the [movement plan](gasp-movement-plan.md#gasp-11-shared-movement-profile). This report refines it against the current code and assets and is the task report for the implementation PR.
 
 ## Goal
 
@@ -186,6 +186,7 @@ File ownership while the package runs:
 5. Draw the weapon, then strafe and stop.
 6. Equip heavy items until the load tier changes. Movement stays the same.
 7. On `Lvl_RpgGaspMantle`, mantle, vault, and hurdle, then keep running.
+8. Repeat steps 2 to 4 in PIE with two or three players and watch the other player's character: it starts, stops, sprints, and jumps with the same timing.
 
 ## Results
 
@@ -233,6 +234,24 @@ Free movement on `Lvl_RpgGaspCMC`, owner in standalone PIE. Each value is for 30
 - Free movement still turns within one frame. Every frame has a Motion Matching selection.
 - Starts select `Run_Start`, stops `Run_Stop`, and the sprint release `Transition_Sprint_to_Run`. The stop from sprint stays in `Sprint_Stop_F`, where the stock values switched to `Run_Stop_F` after 0.08 s.
 
+### Multiplayer probe
+
+Added on 2026-10-13 after the user's reminder. It ran as a listen-server PIE with three players at 60 FPS on `Lvl_RpgGaspCMC`, without network latency. Client A ran the route. A's pawn was recorded at the same time as the autonomous owner on A, as the authority on the server, and as a simulated proxy on client B.
+
+| Motion | Owner (A) | Server | Proxy (B) |
+| --- | --- | --- | --- |
+| Start to 95 % run speed | 0.477 s | 0.494 s | 0.494 s |
+| Stop from run | 0.293 s, 50.9 cm | 0.310 s | 0.310 s, 50.9 cm |
+| Run to 95 % sprint speed | 0.332 s | 0.351 s | 0.351 s |
+| Sprint release to run speed | 0.425 s | 0.441 s | 0.458 s |
+| Jump apex | 103.3 cm | 103.3 cm | 103.6 cm |
+
+- **Owner:** its values match the standalone probe.
+- **Server and proxy:** they show the same motion about one frame later.
+- **Position gaps:** the proxy stayed within 0.0 cm of the owner at the median, 0.4 cm at p95, and 1.3 cm at most. The server stayed within 1.5 cm at the median and 13.2 cm at most, during fast phases.
+- **Animation:** every role had a Motion Matching selection in every frame. The proxy selected `Run_Start`, `Run_Stop`, and `Transition_Sprint_to_Run` like the owner.
+- **Holster:** it did not take effect on client A, so A ran in the combat stance. The backward sprint stayed blocked by the `GASP-09` stance gate, as intended.
+
 ### Automation
 
 Every suite ran on its own through `ue.py test`; the runs are listed in order.
@@ -270,7 +289,7 @@ Every suite ran on its own through `ue.py test`; the runs are listed in order.
 | Speed band | **Met.** `SpeedParity` reads 375 / 585 / 200 cm/s from the profile. |
 | Network | **Met.** Saved-move replay reproduces the taper exactly. The CMC PIE suite passes with real and forced corrections; correction counts did not rise. |
 | Load | **Met for the seam.** The tier reaches the pawn only as an `Equipment.Load.*` ASC tag. Each tier tag, set while idle or while moving, leaves every value and the final position and velocity identical. No PIE run with real heavy items. |
-| Animation | **Met in the probe; the user check is open.** Every frame has a selection; starts, stops, and the sprint release select their clips. |
+| Animation | **Met.** Every frame has a selection on owner, server, and proxy; starts, stops, and the sprint release select their clips. The user accepted the result on 2026-10-13. |
 | Regression | **Met**, apart from the two Mover timing cases above. |
 
 ### Deviations
@@ -287,7 +306,8 @@ Every suite ran on its own through `ue.py test`; the runs are listed in order.
 
 ### Limits
 
-- **User check and tuning:** the user has not yet judged the feel. The start values may change by feel; the tests derive their predictions from the profile.
+- **User check:** on 2026-10-13 the user found the result good and did not itemize single motions. Later tuning by feel changes only the asset; the tests derive their predictions from the profile.
+- **Network conditions:** the multiplayer probe ran locally without latency, jitter, or loss; that stays with `GASP-VAL-02`.
 - **Blocking while running:** raising the shield now slows from run to block speed at 500 cm/s² (about 0.44 s) instead of almost at once. The block tests pass; the feel is part of the user check.
 - **Load:** checked at the tag seam, not with real heavy items in PIE.
 - **Air control:** the native test checks the air turn rate and the jump apex, not the lateral air control value. The probe drifted 58 cm sideways in the air, against 253–259 cm before.

@@ -11,9 +11,9 @@ diese Datei **ersetzen, nicht ergänzen**. Das frühere fortlaufende Protokoll b
 | Feld | Wert |
 | --- | --- |
 | Stand | 12.10.2026 |
-| Aktive Aufgabe, Status, zuständiger Chat | `GASP-11` Gemeinsames Bewegungsprofil, **PR offen** (Draft, Claude, Worktree `musing-ishizaka-7bac20`); umgesetzt und automatisch geprüft, Sichtprüfung des Nutzers ausstehend. Zuletzt gemergt: `GASP-10` Animationsset und Tempo-Parität nach Sichtprüfung des Nutzers. |
+| Aktive Aufgabe, Status, zuständiger Chat | `GASP-11` Gemeinsames Bewegungsprofil, **PR offen** (Draft, Claude, Worktree `musing-ishizaka-7bac20`); umgesetzt, geprüft und vom Nutzer am 13.10.2026 abgenommen; Merge ausstehend. Zuletzt gemergt: `GASP-10` Animationsset und Tempo-Parität nach Sichtprüfung des Nutzers. |
 | Branch, Worktree, Basis / PR | `claude/gasp-11-movement-profile`, Basis `master` `628b1400`; [#238](https://github.com/Athurito/SurvivalRpg/pull/238). Zuletzt `claude/gasp-10-animation-set` / [#235](https://github.com/Athurito/SurvivalRpg/pull/235), gemergt als `daaab0e2`. |
-| Offene Abnahmepunkte | `GASP-11`: Sichtprüfung und Feinabstimmung nach Gefühl gemäß [Repro](gasp-movement-profile.md#repro-after-implementation), besonders Anfahren, Bremsen, Sprint-Ende, Sprung und Blocken aus dem Lauf. Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
+| Offene Abnahmepunkte | `GASP-11`: Merge von [#238](https://github.com/Athurito/SurvivalRpg/pull/238) auf Nutzerwunsch. Künftig jede Gameplay- und Bewegungsänderung auch im Mehrspieler prüfen (Nutzerwunsch 13.10.2026). Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
 | Akzeptierter Runtime-Stand | `master` `628b1400`; enthält alle GASP-Schritte bis GASP-10 (#235, Status #236), die GASP-11-Definition (#237), GASP-ENG-01 (#221), GASP-STAB-03 (#223, nur Testcode) und den [Bewegungsplan](gasp-movement-plan.md) (#229, nur Doku). Der CMC-Pawn nutzt Rotationsmodi (freie Bewegung und Kampfhaltung) und spielt das Relaxed-Set mit passenden Tempi (Laufen 375, Sprint 585, Ducken 200 cm/s); `Lvl_RpgGaspCMC` steht in der GASP-Präsentation. Die Produktion nutzt weiter UEFN; der Manny-Pilot liegt isoliert unter `/Game/SurvivalRpg/Characters/GASP/Pilot/`. |
 | Dateibesitz / Sperren | `GASP-11` ab Start: `RpgCharacterMovementComponent.*`, das neue `RpgMovementProfile.*` und sein Asset, die Sprinttempo-Quelle in `RpgAbilityTask_Sprint.*`, die Bewegungswerte in `BP_RpgGasp_CMC`, die CMC-Bewegungs- und Integrationstests und nur bei endlichen Drehraten die Trajektorien-Einstellungen in `ABP_RpgGasp_CMC`; `GASP-12` und `GASP-13` warten auf den Merge. Die geteilten Relaxed- und Dense-Datenbanken nutzen CMC und Mover gemeinsam; CMC-spezifische Änderungen brauchen eigene Kopien. Das Lyra-`SK_Mannequin` trägt seit `GASP-08` die Blend-Profile `FastFeet+Root_Weight` und `FastHead_Weight`, die der Manny-AnimBP braucht; nicht entfernen. Eine separate Claude-Sitzung untersucht den zeitabhängigen Remote-Melee-Test aus den offenen Befunden. |
 | Editor / PIE / Builds | Installiert ist UE 5.8.3 (CL 58210709), `master` pinnt 5.8.3. Branches ohne GASP-ENG-01 bauen erst nach Übernahme von `master`. PIE-Netzwerktests nur in einem Prozess gleichzeitig laufen lassen. Vor eigener Editor-/MCP-Nutzung andere Checkouts und Sitzungen prüfen. |
@@ -22,10 +22,9 @@ diese Datei **ersetzen, nicht ergänzen**. Das frühere fortlaufende Protokoll b
 
 ## Nächster Handgriff
 
-Der Nutzer prüft `GASP-11` gemäß [Repro](gasp-movement-profile.md#repro-after-implementation)
-und stimmt die Werte in `DA_RpgGasp_MovementProfile` bei Bedarf nach Gefühl ab.
-Bei Abnahme: [#238](https://github.com/Athurito/SurvivalRpg/pull/238) mergen und als **Gemergt** führen, danach `GASP-12`
-definieren. Bei Befunden: im selben PR nachbessern. Der vollständige
+`GASP-11` ist abgenommen. Auf Nutzerwunsch [#238](https://github.com/Athurito/SurvivalRpg/pull/238) mergen und als
+**Gemergt** führen, danach `GASP-12` (Walk-Gait und Analog-Schwelle) definieren.
+Jede Prüfung schließt Mehrspieler ein. Der vollständige
 Manny-Bake `GASP-14` backt die Relaxed-Datenbanken.
 
 ## Offene Befunde
@@ -39,8 +38,8 @@ Manny-Bake `GASP-14` backt die Relaxed-Datenbanken.
 
 - `GASP-09` (gemergt): Das Aussehen des Aim Offsets und Angriffe mit Kameradrehung hat der Nutzer nicht gezielt beurteilt. Ausrüstungswechsel sind nicht vorhergesagt; seitliches oder Rückwärts-Sprinten beim Ziehen kann eine Korrektur auslösen. Ein Hurdle-Lauf stürzte einmal in der Engine ab (`FSceneViewport::Destroy` auf dem Render-Thread), der Wiederholungslauf bestand. [Bericht](gasp-rotation-modes.md#limits)
 - `GASP-10` (gemergt): Die Sichtprüfung des Nutzers war pauschal („sieht gut aus“). Die Leans bleiben Neutral, bis `GASP-13` den Relaxed-Lean-Layer des Movers übernimmt. Diagonalen nutzen die LL-/RL-Clips mit Orientation Warping. In freier Bewegung bleibt die Richtung vorwärts, richtungsabhängige Pivots gibt es nur in der Kampfhaltung. Das Relaxed-Set kostet etwa 0,23 ms mehr Animations-Worker-Zeit pro Figur und hat keine Datenbank-LOD. [Bericht](gasp-animation-set.md#limits)
-- `GASP-11` ([#238](https://github.com/Athurito/SurvivalRpg/pull/238), nicht gemergt): Die Sichtprüfung des Nutzers steht aus.
-  Blocken aus dem Lauf bremst jetzt mit 500 cm/s² (etwa 0,44 s) statt fast
+- `GASP-11` ([#238](https://github.com/Athurito/SurvivalRpg/pull/238), nicht gemergt): Vom Nutzer pauschal abgenommen.
+  Die Mehrspieler-Messung lief lokal ohne Latenz (`GASP-VAL-02`). Blocken aus dem Lauf bremst jetzt mit 500 cm/s² (etwa 0,44 s) statt fast
   sofort. Die Last ist nur am Tag-Seam geprüft, nicht mit echten schweren
   Gegenständen in PIE. Die Pose-Search-Trajektorie sagt beim Sprintanlauf mit der
   Laufbeschleunigung und Lauf-Reibung voraus. [Bericht](gasp-movement-profile.md#limits)
