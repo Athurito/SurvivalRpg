@@ -37,6 +37,9 @@ public:
 	virtual void NativeInitializeAnimation() override;
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
 
+	/** Moves the mesh with its capsule before a listen server caches the pose's component transform for a remote autonomous move. */
+	virtual void PreUpdateAnimation(float DeltaSeconds) override;
+
 	/** Evaluates a designer-selected table against this instance on the game thread. Selection rules and output tuning remain in the table; only already-loaded animation assets are returned. */
 	UFUNCTION(BlueprintCallable, Category = "Animation|Selection")
 	UAnimationAsset* EvaluateAnimationChooser(UChooserTable* Chooser);
@@ -94,4 +97,7 @@ protected:
 private:
 	/** Refreshes only value inputs on the game thread, including reinitialization of an existing linked instance. */
 	void CaptureBlockAnimationState();
+
+	/** True while CharacterMovement on a listen server ticks this pose for a move received from the remote owner. */
+	bool IsRemoteAutonomousPoseTick() const;
 };
