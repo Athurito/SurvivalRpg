@@ -6,6 +6,7 @@
 #include "Misc/PackageName.h"
 #include "SurvivalRpg/Core/Character/RpgCharacter.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterMovementComponent.h"
+#include "SurvivalRpg/Core/Character/RpgMovementProfile.h"
 
 namespace RpgGaspCMCSpeedParityTests
 {
@@ -40,13 +41,13 @@ namespace RpgGaspCMCSpeedParityTests
 		{EGaitSpeed::Crouch, TEXT("Crouch/M_Neutral_Crouch_Loop_RL")},
 	};
 
-	double TargetSpeed(const URpgCharacterMovementComponent& Movement, EGaitSpeed Gait)
+	double TargetSpeed(const URpgMovementProfile& Profile, EGaitSpeed Gait)
 	{
 		switch (Gait)
 		{
-		case EGaitSpeed::Sprint: return Movement.SprintSpeed;
-		case EGaitSpeed::Crouch: return Movement.MaxWalkSpeedCrouched;
-		default: return Movement.MaxWalkSpeed;
+		case EGaitSpeed::Sprint: return Profile.SprintSpeed;
+		case EGaitSpeed::Crouch: return Profile.CrouchSpeed;
+		default: return Profile.RunSpeed;
 		}
 	}
 
@@ -90,8 +91,27 @@ bool FRpgGaspCMCSpeedParityTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
+	const URpgMovementProfile* Profile = Movement->MovementProfile;
+	FText ProfileError;
+	if (!TestNotNull(TEXT("CMC pawn takes its movement from a shared profile"), Profile)
+		|| !TestTrue(FString::Printf(TEXT("Shared movement profile validates: %s"), *ProfileError.ToString()), Profile->ValidateConfiguration(ProfileError)))
+	{
+		return false;
+	}
 
 	const IAssetRegistry& Registry = FAssetRegistryModule::GetRegistry();
+	// Every pawn derived from the CMC pawn (traversal and pilot variants) moves with the same profile.
+	TSet<FTopLevelAssetPath> DerivedClasses;
+	Registry.GetDerivedClassNames({FTopLevelAssetPath(PawnClass)}, {}, DerivedClasses);
+	TestTrue(TEXT("The CMC pawn has derived variants to check"), DerivedClasses.Num() > 1);
+	for (const FTopLevelAssetPath& DerivedPath : DerivedClasses)
+	{
+		const UClass* Derived = LoadClass<ARpgCharacter>(nullptr, *DerivedPath.ToString());
+		const URpgCharacterMovementComponent* DerivedMovement = Derived
+			? Cast<URpgCharacterMovementComponent>(Derived->GetDefaultObject<ARpgCharacter>()->GetCharacterMovement()) : nullptr;
+		TestTrue(FString::Printf(TEXT("%s inherits the shared movement profile"), *DerivedPath.ToString()),
+			DerivedMovement && DerivedMovement->MovementProfile == Profile);
+	}
 	TArray<FName> AnimDependencies;
 	Registry.GetDependencies(AnimBlueprintPackage, AnimDependencies);
 	TestTrue(TEXT("CMC AnimBP selects its Motion Matching databases through the CMC chooser"),
@@ -108,7 +128,7 @@ bool FRpgGaspCMCSpeedParityTest::RunTest(const FString& Parameters)
 		}
 		TestTrue(FString::Printf(TEXT("CMC chooser can select %s"), *Name), IsSelectableBy(Registry, DatabaseChooserPackage, FName(*Package)));
 		const double Authored = RootSpeed(*Sequence);
-		const double Target = TargetSpeed(*Movement, Loop.Gait);
+		const double Target = TargetSpeed(*Profile, Loop.Gait);
 		const double PlayRate = Authored > UE_SMALL_NUMBER ? Target / Authored : 0.0;
 		TestTrue(FString::Printf(TEXT("%s: %.0f cm/s against %.0f cm/s authored is a %.2fx play rate inside %.2f-%.2f"),
 			*Name, Target, Authored, PlayRate, MinPlayRate, MaxPlayRate), PlayRate >= MinPlayRate && PlayRate <= MaxPlayRate);

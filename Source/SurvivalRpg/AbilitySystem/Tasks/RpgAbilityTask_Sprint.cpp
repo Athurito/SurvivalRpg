@@ -47,7 +47,7 @@ void URpgAbilityTask_Sprint::Activate()
 	if (!ActorInfo || !ASC || !Character || !Movement || !Movement->bEnableGASSprint
 		|| (!ActorInfo->IsNetAuthority() && !ActorInfo->IsLocallyControlled())
 		|| !FMath::IsFinite(DrainRate) || DrainRate < 0.f || !FMath::IsFinite(StartThreshold) || StartThreshold < 0.f
-		|| !FMath::IsFinite(Movement->SprintSpeed) || Movement->SprintSpeed <= 0.f
+		|| !FMath::IsFinite(Movement->GetSprintSpeed()) || Movement->GetSprintSpeed() <= 0.f
 		|| !RpgSprintTask::IsStaminaEffect(ChangeEffect.GetDefaultObject(), DeltaTag))
 	{
 		StopSprint(false);
@@ -65,7 +65,7 @@ void URpgAbilityTask_Sprint::Activate()
 	if (!FMath::IsFinite(Stamina)) { StopSprint(false); return; }
 	if (Stamina <= 0.f || Stamina < StartThreshold) { StopSprint(true); return; }
 
-	MovementLease = ASC->BeginSprintMovement(Ability, Movement->SprintSpeed);
+	MovementLease = ASC->BeginSprintMovement(Ability, Movement->GetSprintSpeed());
 	if (!MovementLease) { StopSprint(false); return; }
 	StaminaChangedHandle = ASC->GetGameplayAttributeValueChangeDelegate(URpgStaminaSet::GetStaminaAttribute())
 		.AddUObject(this, &ThisClass::HandleStaminaChanged);

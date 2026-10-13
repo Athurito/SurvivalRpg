@@ -15,6 +15,7 @@
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
 #include "SurvivalRpg/Core/Character/RpgCharacter.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterMovementComponent.h"
+#include "SurvivalRpg/Core/Character/RpgMovementProfile.h"
 #include "SurvivalRpg/Core/Character/RpgPawnData.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Input/RpgInputConfig.h"
@@ -209,9 +210,10 @@ bool FRpgCmcSprintInputCompositionTest::RunTest(const FString& Parameters)
 		const URpgCharacterMovementComponent* Movement = Pawn ? Cast<URpgCharacterMovementComponent>(Pawn->GetCharacterMovement()) : nullptr;
 		if (!TestNotNull(TEXT("CMC variants retain their native RPG movement component"), Movement)) continue;
 		TestTrue(TEXT("CMC variants opt into GAS sprint"), Movement->bEnableGASSprint);
-		TestTrue(TEXT("Authored sprint is finite and faster than ordinary movement"),
-			FMath::IsFinite(Movement->MaxWalkSpeed) && Movement->MaxWalkSpeed > 0.f
-			&& FMath::IsFinite(Movement->SprintSpeed) && Movement->SprintSpeed > Movement->MaxWalkSpeed);
+		const URpgMovementProfile* Profile = Movement->MovementProfile;
+		FText ProfileError;
+		TestTrue(TEXT("CMC variants take a finite sprint speed above run speed from a valid shared profile"),
+			Profile && Profile->ValidateConfiguration(ProfileError) && Movement->GetSprintSpeed() > Profile->RunSpeed);
 	}
 	// This is a saved-package contract, not a claim about key mappings, live movement or network receipt.
 	// Those are exercised by the rendered PIE tests through ordinary Enhanced Input.

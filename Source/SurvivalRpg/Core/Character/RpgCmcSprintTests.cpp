@@ -13,6 +13,7 @@
 #include "GameplayEffect.h"
 #include "Misc/AutomationTest.h"
 #include "RpgCharacter.h"
+#include "RpgMovementProfileAutomationTestTypes.h"
 #include "RpgPawnData.h"
 #include "RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
@@ -87,7 +88,8 @@ namespace RpgCmcSprintTests
 			Movement = CastChecked<URpgCharacterMovementComponent>(Character->GetCharacterMovement());
 			Movement->SetComponentTickEnabled(false); // Only explicit real MoveAutonomous calls advance movement.
 			Movement->MaxWalkSpeed = RunSpeed;
-			Movement->SprintSpeed = SprintSpeed;
+			Profile = RpgMovementProfileTestTypes::MakeStockEquivalentProfile(*Movement, RunSpeed, SprintSpeed);
+			Movement->MovementProfile = Profile;
 			Movement->bEnableGASSprint = true;
 			Movement->SetMovementMode(MOVE_Walking);
 			ASC = NewObject<URpgAbilitySystemComponent>(Character, NAME_None, RF_Transient);
@@ -138,6 +140,7 @@ namespace RpgCmcSprintTests
 		ARpgCharacter* Character = nullptr;
 		APlayerController* Controller = nullptr;
 		URpgCharacterMovementComponent* Movement = nullptr;
+		URpgMovementProfile* Profile = nullptr;
 		URpgAbilitySystemComponent* ASC = nullptr;
 		URpgPawnExtensionComponent* Extension = nullptr;
 		URpgStaminaSet* Stamina = nullptr;
@@ -159,8 +162,8 @@ bool FRpgSprintLeaseLifecycleTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Invalid speed never authorizes movement"), F.ASC->BeginSprintMovement(F.Ability, -1.f), 0u);
 	const uint32 First = F.ASC->BeginSprintMovement(F.Ability, SprintSpeed);
 	if (!TestTrue(TEXT("Active ability receives a lease"), First != 0)) return false;
-	F.Movement->SprintSpeed += 77.f;
-	TestEqual(TEXT("Repeated acquire is idempotent"), F.ASC->BeginSprintMovement(F.Ability, F.Movement->SprintSpeed), First);
+	F.Profile->SprintSpeed += 77.f;
+	TestEqual(TEXT("Repeated acquire is idempotent"), F.ASC->BeginSprintMovement(F.Ability, F.Profile->SprintSpeed), First);
 	TestEqual(TEXT("A running activation retains its original speed"), F.ASC->GetSprintMovementSpeed(), SprintSpeed);
 	const FGameplayAbilitySpecHandle OtherHandle = F.Grant();
 	TestTrue(TEXT("Second genuine GAS activation exists"), F.ASC->TryActivateAbility(OtherHandle));
@@ -173,7 +176,7 @@ bool FRpgSprintLeaseLifecycleTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Cancelled speed is cleared"), F.ASC->GetSprintMovementSpeed(), 0.f);
 	TestTrue(TEXT("The same spec can start a new activation"), F.ASC->TryActivateAbility(F.Handle));
 	F.Ability = F.ASC->FindAbilitySpecFromHandle(F.Handle)->GetPrimaryInstance();
-	const uint32 Second = F.ASC->BeginSprintMovement(F.Ability, F.Movement->SprintSpeed);
+	const uint32 Second = F.ASC->BeginSprintMovement(F.Ability, F.Profile->SprintSpeed);
 	TestTrue(TEXT("New activation gets a distinct nonzero token"), Second && Second != First);
 	F.ASC->EndSprintMovement(F.Ability, First);
 	TestTrue(TEXT("Delayed old cleanup cannot release the new activation"), F.ASC->IsSprintMovementActive());
@@ -248,7 +251,7 @@ bool FRpgSprintSavedMoveTest::RunTest(const FString& Parameters)
 	Move->PostUpdate(F.Character, FSavedMove_Character::PostUpdate_Record);
 	TestTrue(TEXT("Saved movement transmits only sprint desire"), (Move->GetCompressedFlags() & SprintRequest) != 0);
 	F.ASC->EndSprintMovement(F.Ability, Lease);
-	F.Movement->SprintSpeed = SprintSpeed + 123.f;
+	F.Profile->SprintSpeed = SprintSpeed + 123.f;
 	const FSavedMovePtr Released = Prediction->AllocateNewMove();
 	Released->Clear();
 	Released->SetMoveFor(F.Character, StepSeconds, Accel, *Prediction);
