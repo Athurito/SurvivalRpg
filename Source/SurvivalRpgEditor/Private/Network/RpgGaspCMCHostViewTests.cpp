@@ -250,15 +250,29 @@ NETWORK_TEST_CLASS(GaspCMCHostViewPIE, "SurvivalRpg.GASP.CMC.HostView")
 
 	/**
 	 * A listen server ticks a remote client's pose per received move inside the move's deferred capsule update.
-	 * Offset Root Bone must still hold the root as steadily in the host's view as on the owner and a second client.
+	 * Offset Root Bone must still hold the root as steadily in the host's view as on the owner and on another
+	 * client, for a client present from the start and for a late joiner.
 	 */
 	TEST_METHOD(RemoteStanceTurnInPlaceStaysSteadyOnTheHost)
 	{
 		using namespace RpgGaspCMCHostViewTests;
 		if (!bConfigured) return;
-		Network.UntilClient(TEXT("Owner stands armed in the combat stance"), 0, [](FState& State)
+		QueueSubject(0, 1);
+		QueueTurnWindow(90., TEXT("first client"));
+		QueueTurnWindow(180., TEXT("first client"));
+		Network.ThenServer(TEXT("Stop turning the first client"), [this](FState&) { Turn.Stop(); })
+			.ThenClientJoins();
+		QueueSubject(2, 0);
+		QueueTurnWindow(90., TEXT("late joiner"));
+	}
+
+	/** Captures the owning client's pawn and the views of it on the listen server and on the observing client. */
+	void QueueSubject(int32 OwnerClient, int32 ObserverClient)
+	{
+		using namespace RpgGaspCMCHostViewTests;
+		Network.UntilClient(TEXT("Owner stands armed in the combat stance"), OwnerClient, [](FState& State)
 				{ return ReadyInStance(State.World, LocalCharacter(State.World)); }, Timeout())
-			.ThenClient(TEXT("Capture the owner and its camera turn driver"), 0, [this](FState& State)
+			.ThenClient(TEXT("Capture the owner and its camera turn driver"), OwnerClient, [this](FState& State)
 			{
 				ARpgCharacter* Character = LocalCharacter(State.World);
 				ASSERT_THAT(IsTrue(Isolation.IsIsolated(State.World) && Character->GetLocalRole() == ROLE_AutonomousProxy));
@@ -274,40 +288,43 @@ NETWORK_TEST_CLASS(GaspCMCHostViewPIE, "SurvivalRpg.GASP.CMC.HostView")
 			}, Timeout())
 			.ThenServer(TEXT("Record the host view"), [this](FState& State)
 				{ ASSERT_THAT(IsTrue(Isolation.IsIsolated(State.World))); Turn.AddRole(TEXT("server"), State.World); })
-			.UntilClient(TEXT("Second client sees the pawn as a simulated proxy in the stance"), 1, [this](FState& State)
+			.UntilClient(TEXT("Observer sees the pawn as a simulated proxy in the stance"), ObserverClient, [this](FState& State)
 			{
 				const ARpgCharacter* Character = FindCharacter(State.World, SubjectId);
 				return ReadyInStance(State.World, Character) && Character->GetLocalRole() == ROLE_SimulatedProxy;
 			}, Timeout())
-			.ThenClient(TEXT("Record the proxy view"), 1, [this](FState& State) { Turn.AddRole(TEXT("proxy"), State.World); });
-		for (const double Rate : {90., 180.})
-		{
-			Network.ThenServer(TEXT("Turn the owner's camera in place"), [this, Rate](FState&) { Turn.Begin(Rate); })
-				.UntilServer(TEXT("Every role recorded the turn"), [this](FState&) { return Turn.Complete(); }, Timeout())
-				.ThenServer(TEXT("Compare the host's root yaw with the owner and the proxy"), [this, Rate](FState&)
+			.ThenClient(TEXT("Record the proxy view"), ObserverClient, [this](FState& State) { Turn.AddRole(TEXT("proxy"), State.World); });
+	}
+
+	void QueueTurnWindow(double Rate, const TCHAR* Subject)
+	{
+		using namespace RpgGaspCMCHostViewTests;
+		const FString Label(Subject);
+		Network.ThenServer(TEXT("Turn the owner's camera in place"), [this, Rate](FState&) { Turn.Begin(Rate); })
+			.UntilServer(TEXT("Every role recorded the turn"), [this](FState&) { return Turn.Complete(); }, Timeout())
+			.ThenServer(TEXT("Compare the host's root yaw with the owner and the proxy"), [this, Rate, Label](FState&)
+			{
+				Turn.Hold();
+				const TMap<FString, FRoleSamples>& Samples = Turn.GetSamples();
+				for (const auto& Pair : Samples)
 				{
-					Turn.Hold();
-					const TMap<FString, FRoleSamples>& Samples = Turn.GetSamples();
-					for (const auto& Pair : Samples)
-					{
-						UE_LOG(LogTemp, Display, TEXT("RpgGaspCMCHostView rate=%.0f role=%s samples=%d duration=%.3f actorTurn=%.1f rootFlips=%d rootRoughness=%.3f leftStance=%d"),
-							Rate, *Pair.Key, Pair.Value.RootYaw.Num(), Pair.Value.Duration(), Pair.Value.ActorTurn(),
-							Pair.Value.Flips(), Pair.Value.Roughness(), Pair.Value.bLeftStance);
-						TestRunner->TestFalse(FString::Printf(TEXT("%s stays standing in the stance at %.0f deg/s"), *Pair.Key, Rate), Pair.Value.bLeftStance);
-					}
-					const FRoleSamples* Server = Samples.Find(TEXT("server"));
-					const FRoleSamples* Proxy = Samples.Find(TEXT("proxy"));
-					ASSERT_THAT(IsTrue(Server && Proxy));
-					if (!Server || !Proxy) return;
-					// The capsule follows the camera; prove the host actually saw the pawn turn before judging its root.
-					TestRunner->TestTrue(FString::Printf(TEXT("Host sees the capsule turn at %.0f deg/s (%.1f deg)"), Rate, Server->ActorTurn()),
-						Server->ActorTurn() >= .6 * Rate * Server->Duration());
-					TestRunner->TestTrue(FString::Printf(TEXT("Host root changes direction no more than the proxy at %.0f deg/s (%d vs %d)"), Rate, Server->Flips(), Proxy->Flips()),
-						Server->Flips() <= Proxy->Flips() + 2);
-					TestRunner->TestTrue(FString::Printf(TEXT("Host root is as steady as the proxy at %.0f deg/s (%.3f vs %.3f deg/frame)"), Rate, Server->Roughness(), Proxy->Roughness()),
-						Server->Roughness() <= Proxy->Roughness() + .05);
-				});
-		}
+					UE_LOG(LogTemp, Display, TEXT("RpgGaspCMCHostView subject=%s rate=%.0f role=%s samples=%d duration=%.3f actorTurn=%.1f rootFlips=%d rootRoughness=%.3f leftStance=%d"),
+						*Label, Rate, *Pair.Key, Pair.Value.RootYaw.Num(), Pair.Value.Duration(), Pair.Value.ActorTurn(),
+						Pair.Value.Flips(), Pair.Value.Roughness(), Pair.Value.bLeftStance);
+					TestRunner->TestFalse(FString::Printf(TEXT("%s %s stays standing in the stance at %.0f deg/s"), *Label, *Pair.Key, Rate), Pair.Value.bLeftStance);
+				}
+				const FRoleSamples* Server = Samples.Find(TEXT("server"));
+				const FRoleSamples* Proxy = Samples.Find(TEXT("proxy"));
+				ASSERT_THAT(IsTrue(Server && Proxy));
+				if (!Server || !Proxy) return;
+				// The capsule follows the camera; prove the host actually saw the pawn turn before judging its root.
+				TestRunner->TestTrue(FString::Printf(TEXT("Host sees the %s's capsule turn at %.0f deg/s (%.1f deg)"), *Label, Rate, Server->ActorTurn()),
+					Server->ActorTurn() >= .6 * Rate * Server->Duration());
+				TestRunner->TestTrue(FString::Printf(TEXT("Host root of the %s changes direction no more than the proxy at %.0f deg/s (%d vs %d)"), *Label, Rate, Server->Flips(), Proxy->Flips()),
+					Server->Flips() <= Proxy->Flips() + 2);
+				TestRunner->TestTrue(FString::Printf(TEXT("Host root of the %s is as steady as the proxy at %.0f deg/s (%.3f vs %.3f deg/frame)"), *Label, Rate, Server->Roughness(), Proxy->Roughness()),
+					Server->Roughness() <= Proxy->Roughness() + .05);
+			});
 	}
 };
 #endif // ENABLE_PIE_NETWORK_TEST

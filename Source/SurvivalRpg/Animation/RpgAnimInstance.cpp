@@ -7,6 +7,7 @@
 #include "ChooserFunctionLibrary.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
@@ -71,6 +72,7 @@ void URpgAnimInstance::PreUpdateAnimation(float DeltaSeconds)
 {
 	if (IsRemoteAutonomousPoseTick())
 	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(URpgAnimInstance::MoveMeshWithCapsule);
 		// The server ticks this pose inside the move's deferred capsule update, so the mesh still
 		// holds the transform from before the move. The proxy caches it here for evaluation, and
 		// Offset Root Bone would hold the root one move behind the rendered mesh. The engine
