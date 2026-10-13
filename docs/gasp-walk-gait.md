@@ -1,6 +1,6 @@
 # GASP-12 – Walk gait and analog input
 
-Status: **In progress** on `claude/gasp-12-walk-gait` (defined 2026-10-13 in [#240](https://github.com/Athurito/SurvivalRpg/pull/240), started the same day). The package outline is in the [movement plan](gasp-movement-plan.md#gasp-12-walk-gait-and-analog-input). This report refines it against the current code and assets and is the task report for the implementation PR.
+Status: **PR open** in [#241](https://github.com/Athurito/SurvivalRpg/pull/241) on `claude/gasp-12-walk-gait` (defined 2026-10-13 in [#240](https://github.com/Athurito/SurvivalRpg/pull/240), implemented the same day). The user check is pending. The package outline is in the [movement plan](gasp-movement-plan.md#gasp-12-walk-gait-and-analog-input). This report refines it against the current code and assets and is the task report for the implementation PR.
 
 ## Goal
 

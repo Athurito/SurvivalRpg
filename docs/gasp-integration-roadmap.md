@@ -13,10 +13,10 @@ frühere Fassung mit Schnellstart-Verlauf und Aufgabenverträgen liegt in der
 
 ## Nächster bereiter Schritt
 
-Kein Schritt ist **Bereit**. **`GASP-12` Walk-Gait und Analog-Schwelle** ist
-**In Arbeit** ([Bericht](gasp-walk-gait.md)): Der Nutzer hat die Feststelltaste
-als Walk-Umschalter (Ducken bleibt auf Strg) und Gehen unter der Stick-Schwelle
-gewählt. Der vollständige Manny-Bake `GASP-14` backt die mit `GASP-10`
+Kein Schritt ist **Bereit**. **`GASP-12` Walk-Gait und Analog-Schwelle** hat
+**PR offen** ([#241](https://github.com/Athurito/SurvivalRpg/pull/241), [Bericht](gasp-walk-gait.md)); die Sichtprüfung des Nutzers
+steht aus. Gewählt sind die Feststelltaste als Walk-Umschalter (Ducken bleibt
+auf Strg) und Gehen unter der Stick-Schwelle. Der vollständige Manny-Bake `GASP-14` backt die mit `GASP-10`
 gewählten Relaxed-Datenbanken.
 `GASP-01`, `GASP-03` bis `GASP-11` und das Engine-Update `GASP-ENG-01` sind
 gemergt; offen bleiben `GASP-VAL-01`, `GASP-VAL-02` und die
@@ -65,7 +65,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-09` | Rotationsmodi: freie Bewegung und Kampfhaltung (Strafe), Sprint-Richtungs-Gate | **Gemergt**; Sichtprüfung durch den Nutzer | [#232](https://github.com/Athurito/SurvivalRpg/pull/232) | [Rotationsmodi](gasp-rotation-modes.md) |
 | `GASP-10` | Animationsset und Tempo-Parität (Relaxed), Ducktempo | **Gemergt**; Sichtprüfung durch den Nutzer | [#235](https://github.com/Athurito/SurvivalRpg/pull/235) | [Animationsset](gasp-animation-set.md) |
 | `GASP-11` | Gemeinsames Bewegungsprofil (Trägheit, Drehung, Luft), lastunabhängig | **Gemergt**; Sichtprüfung durch den Nutzer | [#238](https://github.com/Athurito/SurvivalRpg/pull/238) | [Bewegungsprofil](gasp-movement-profile.md) |
-| `GASP-12` | Walk-Gait und Analog-Schwelle | **In Arbeit** | – | [Walk-Gait](gasp-walk-gait.md) |
+| `GASP-12` | Walk-Gait und Analog-Schwelle | **PR offen** | [#241](https://github.com/Athurito/SurvivalRpg/pull/241) | [Walk-Gait](gasp-walk-gait.md) |
 
 Statuswerte: **Geplant**, **Bereit**, **In Arbeit**, **Validierung**,
 **PR offen**, **Gemergt**, **Blockiert**, **Zurückgestellt**.
