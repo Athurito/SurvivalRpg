@@ -132,6 +132,8 @@ Its recorded limits carry into GASP-14 and GASP-15:
 
 ### GASP-12: Walk gait and analog input
 
+**Ready**; the [task report](gasp-walk-gait.md) refines this outline against the code. The CMC chooser already selects the Relaxed walk databases for Walk, and walking uses the 165 cm/s of their loops. The user settles the keyboard key for the walk toggle and whether a partly pushed stick walks before implementation; the report recommends Caps Lock, with crouch staying on Ctrl, and walking below the 0.7 stick threshold.
+
 - **Goal:**
   - a walk toggle and an analog walk/run threshold, as in the original `GetDesiredGait`;
   - the gait (Walk / Run / Sprint) reported to the AnimBP and to simulated proxies.
