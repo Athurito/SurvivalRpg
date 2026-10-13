@@ -1,10 +1,10 @@
 # GASP-12 – Walk gait and analog input
 
-Status: **Ready** (defined 2026-10-13). The package outline is in the [movement plan](gasp-movement-plan.md#gasp-12-walk-gait-and-analog-input). This report refines it against the current code and assets and is the task report for the implementation PR.
+Status: **In progress** on `claude/gasp-12-walk-gait` (defined 2026-10-13 in [#240](https://github.com/Athurito/SurvivalRpg/pull/240), started the same day). The package outline is in the [movement plan](gasp-movement-plan.md#gasp-12-walk-gait-and-analog-input). This report refines it against the current code and assets and is the task report for the implementation PR.
 
 ## Goal
 
-The CMC GASP pawn gets a third gait, Walk, at the speed of the Relaxed walk loops. A toggle selects it, and so does a lightly pushed stick if decision 2 allows. The movement component owns one effective gait (Walk, Run, or Sprint). Movement, the AnimBP, and simulated proxies all read it.
+The CMC GASP pawn gets a third gait, Walk, at the speed of the Relaxed walk loops. A toggle selects it, and so does a lightly pushed stick (decision 2). The movement component owns one effective gait (Walk, Run, or Sprint). Movement, the AnimBP, and simulated proxies all read it.
 
 ## Why
 
@@ -46,7 +46,7 @@ Read from the hash-verified export of `SandboxCharacter_CMC` (2026-09-28):
 
 - **Effective gait.** `URpgCharacterMovementComponent` resolves one gait per move:
   - Sprint wherever the sprint gate allows it today.
-  - Otherwise Walk while the walk wish is set, or, if decision 2 allows it, while the stick is below the threshold.
+  - Otherwise Walk while the walk wish is set or the stick is below the threshold (decision 2).
   - Otherwise Run.
 - **Prediction.**
   - The walk wish is a toggle that the owner sends in a compressed flag, like the sprint wish; saved moves and replay keep it. Walking needs no authorization or cost, so the server accepts the flag.
@@ -60,8 +60,8 @@ Read from the hash-verified export of `SandboxCharacter_CMC` (2026-09-28):
   - One replicated effective gait replaces `bIsSprinting` for simulated proxies, so late joiners receive it with the initial state.
   - On simulated proxies, `GetMaxSpeed` returns the replicated gait's speed, so their trajectory predicts walking and sprinting at the right speed.
 - **Input.**
-  - A native `InputTag.Walk` and a toggle handler in `URpgPawnGameplayComponent`, next to crouch. If the toggle lands on Ctrl, the menu suppression moves with it.
-  - A CMC input action on the key from decision 1 and the gamepad's right shoulder, mapped in `IMC_RpgGasp_CMC` and listed in `DA_InputConfig_GaspCMC`.
+  - A native `InputTag.Walk` and a toggle handler in `URpgPawnGameplayComponent`, next to crouch.
+  - A CMC input action on Caps Lock (decision 1) and the gamepad's right shoulder, mapped in `IMC_RpgGasp_CMC` and listed in `DA_InputConfig_GaspCMC`.
   - The toggle persists through sprint, crouch, block, and traversal; holding sprint overrides it. A new pawn starts running.
 - **Blueprint.** `Get_PropertiesForAnimation` maps the component's gait onto `E_Gait` and reports `WantsToWalk`. The AnimBP and the chooser need no change.
 - **Tests.**
@@ -104,7 +104,7 @@ Predicted on flat ground with the `GASP-11` profile:
 
 ## Decisions to settle at the start
 
-The implementing chat settles these with the user before Phase B and records the answers here.
+The user settled both on 2026-10-13 ("beide empfohlen"): the walk toggle is on **Caps Lock** with crouch staying on Ctrl, and a stick **below the threshold walks**.
 
 1. **Keyboard key for the walk toggle.**
    - Recommended: **Caps Lock**, with crouch staying on Ctrl.
@@ -134,7 +134,6 @@ The implementing chat settles these with the user before Phase B and records the
 
 File ownership while the package runs:
 - `RpgCharacterMovementComponent.*`, `RpgMovementProfile.*`, `RpgPawnGameplayComponent.*`, and the gameplay tag declaration;
-- the crouch suppression in `RpgPlayerController.*` and `IMC_Movement`, only if decision 1 picks Ctrl;
 - `BP_RpgGasp_CMC`, `DA_RpgGasp_MovementProfile`, `DA_InputConfig_GaspCMC`, `IMC_RpgGasp_CMC`, and the new walk input action;
 - the CMC movement and profile tests, `RpgGaspCMCSpeedParityTests.cpp`, the CMC PIE tests, and the CMC vault and hurdle tests;
 - this report.
@@ -158,7 +157,7 @@ File ownership while the package runs:
 
 | Area | Criterion |
 | --- | --- |
-| Gait selection | The toggle selects Walk, and so does a stick below the threshold if decision 2 allows it. Holding sprint overrides Walk, and releasing it returns to Walk while the toggle is on. Crouch and block keep their speeds. |
+| Gait selection | The toggle selects Walk, and so does a stick below the threshold. Holding sprint overrides Walk, and releasing it returns to Walk while the toggle is on. Crouch and block keep their speeds. |
 | Speed band | Walking plays the Relaxed walk loops within 0.85–1.15 in F, B, LL, and RL. `SpeedParity` checks walk next to run, sprint, and crouch. In steady movement, no stick position plays a loop outside the band. |
 | Transitions | Walk start, stop, walk to run, and run to walk match the predictions within one frame at 30, 60, and 120 FPS. Every frame has a Motion Matching selection, and walk starts and stops select walk clips. A stick held at the threshold does not switch back and forth between the gaits. |
 | Network | Owner, listen server, simulated proxy, and late joiner show the same gait, at most about a frame apart, as in the `GASP-11` multiplayer probe. Saved-move replay and forced corrections keep the walk wish, and the server derives the stick gait from the received acceleration. With `p.NetShowCorrections 1`, corrections do not rise above the `GASP-11` baseline. A walking proxy's trajectory predicts walking speed. |
@@ -182,8 +181,8 @@ File ownership while the package runs:
 ## Repro (after implementation)
 
 1. Start PIE on `Lvl_RpgGaspCMC` and holster the weapon by pressing its action-bar slot again.
-2. Press the walk key from decision 1, or the gamepad's right shoulder, and move: the character walks. Press it again: it runs.
-3. On a gamepad, push the stick slightly, then fully: walk, then run (decision 2).
+2. Press Caps Lock, or the gamepad's right shoulder, and move: the character walks. Press it again: it runs.
+3. On a gamepad, push the stick slightly, then fully: walk, then run.
 4. While walking, hold sprint: the character sprints. Release sprint: it walks again.
 5. Draw the weapon and walk in every direction.
 6. On `Lvl_RpgGaspMantle`, walk into the mantle, vault, and hurdle obstacles.
