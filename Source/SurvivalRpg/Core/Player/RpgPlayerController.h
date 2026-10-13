@@ -114,6 +114,9 @@ public:
 	/** Owning-client check that prevents menu input and a held Ctrl quick-transfer from leaking into gameplay crouch. */
 	bool ShouldSuppressCrouchInput() const;
 
+	/** Owning-client check: true while CommonUI routes input to a menu, so gameplay toggles must ignore key presses. */
+	bool IsMenuInputActive() const;
+
 protected:
 	
 	UFUNCTION(Server, Reliable)

@@ -10,6 +10,7 @@
 #include "InputActionValue.h"
 #include "InputMappingContext.h"
 #include "RpgCharacter.h"
+#include "RpgCharacterMovementComponent.h"
 #include "RpgPawnData.h"
 #include "RpgPawnExtensionComponent.h"
 #include "Components/GameFrameworkComponentManager.h"
@@ -302,6 +303,7 @@ void URpgPawnGameplayComponent::InitializePlayerInput(UInputComponent* PlayerInp
 					RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_Look_Mouse, ETriggerEvent::Triggered, this, &ThisClass::Input_LookMouse, /*bLogIfNotFound=*/ false);
 					RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_Look_Stick, ETriggerEvent::Triggered, this, &ThisClass::Input_LookStick, /*bLogIfNotFound=*/ false);
 					RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_Crouch, ETriggerEvent::Triggered, this, &ThisClass::Input_Crouch, /*bLogIfNotFound=*/ false);
+					RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_Walk, ETriggerEvent::Triggered, this, &ThisClass::Input_Walk, /*bLogIfNotFound=*/ false);
 					RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_AutoRun, ETriggerEvent::Triggered, this, &ThisClass::Input_AutoRun, /*bLogIfNotFound=*/ false);
 					RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_Jump, ETriggerEvent::Started, this, &ThisClass::Input_Jump, /*bLogIfNotFound=*/ false);
 					RpgIC->BindNativeAction(InputConfig, RpgGameplayTags::InputTag_Jump, ETriggerEvent::Triggered, this, &ThisClass::Input_JumpHeld, /*bLogIfNotFound=*/ false);
@@ -506,6 +508,24 @@ void URpgPawnGameplayComponent::Input_Crouch(const FInputActionValue& InputActio
 
 		Character->ToggleCrouch();
 	}
+}
+
+void URpgPawnGameplayComponent::Input_Walk(const FInputActionValue& InputActionValue)
+{
+	ARpgCharacter* Character = GetPawn<ARpgCharacter>();
+	URpgCharacterMovementComponent* Movement = Character
+		? Cast<URpgCharacterMovementComponent>(Character->GetCharacterMovement())
+		: nullptr;
+	if (!Movement)
+	{
+		return;
+	}
+	if (const ARpgPlayerController* PlayerController = Cast<ARpgPlayerController>(Character->GetController());
+		PlayerController && PlayerController->IsMenuInputActive())
+	{
+		return;
+	}
+	Movement->ToggleWalk();
 }
 
 void URpgPawnGameplayComponent::Input_AutoRun(const FInputActionValue& InputActionValue)

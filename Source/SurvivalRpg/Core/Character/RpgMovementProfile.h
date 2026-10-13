@@ -16,6 +16,13 @@ class SURVIVALRPG_API URpgMovementProfile : public UDataAsset
 	GENERATED_BODY()
 
 public:
+	/**
+	 * Walking speed in cm/s, the same in every direction, for the walk toggle and stick input below the run threshold.
+	 * Keep it within 0.85-1.15 of the walk loops' root speed and below RunSpeed.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Speed", meta = (ClampMin = "1.0", Units = "cm/s"))
+	float WalkSpeed = 165.f;
+
 	/** Running speed in cm/s, the same in every direction. Keep it within 0.85-1.15 of the run loops' root speed. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Speed", meta = (ClampMin = "1.0", Units = "cm/s"))
 	float RunSpeed = 375.f;
@@ -92,7 +99,7 @@ public:
 	/** Ground friction at a horizontal speed, tapering from GroundFriction to SprintGroundFriction. */
 	float GetGroundFrictionAtSpeed(float Speed) const;
 
-	/** True when every value is finite and in range and SprintSpeed exceeds RunSpeed. */
+	/** True when every value is finite and in range, WalkSpeed lies below RunSpeed, and SprintSpeed exceeds RunSpeed. */
 	bool ValidateConfiguration(FText& OutError) const;
 
 #if WITH_EDITOR

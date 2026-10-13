@@ -23,7 +23,7 @@ float URpgMovementProfile::GetGroundFrictionAtSpeed(float Speed) const
 
 bool URpgMovementProfile::ValidateConfiguration(FText& OutError) const
 {
-	const float Values[] = { RunSpeed, SprintSpeed, CrouchSpeed, Acceleration, SprintAcceleration, BrakingDeceleration,
+	const float Values[] = { WalkSpeed, RunSpeed, SprintSpeed, CrouchSpeed, Acceleration, SprintAcceleration, BrakingDeceleration,
 		BrakingDecelerationWithInput, BrakingFrictionFactor, GroundFriction, SprintGroundFriction, GroundRotationRate,
 		SprintRotationRate, AirRotationRate, AirControl, FallingBrakingDeceleration, JumpZVelocity };
 	for (const float Value : Values)
@@ -34,9 +34,9 @@ bool URpgMovementProfile::ValidateConfiguration(FText& OutError) const
 			return false;
 		}
 	}
-	if (RunSpeed <= 0.f || CrouchSpeed <= 0.f || SprintSpeed <= RunSpeed)
+	if (WalkSpeed <= 0.f || RunSpeed <= WalkSpeed || CrouchSpeed <= 0.f || SprintSpeed <= RunSpeed)
 	{
-		OutError = NSLOCTEXT("RpgMovementProfile", "Speeds", "Run and crouch speeds must be positive, and sprint speed must exceed run speed.");
+		OutError = NSLOCTEXT("RpgMovementProfile", "Speeds", "Walk and crouch speeds must be positive, run speed must exceed walk speed, and sprint speed must exceed run speed.");
 		return false;
 	}
 	if (Acceleration <= 0.f || SprintAcceleration <= 0.f || JumpZVelocity <= 0.f)

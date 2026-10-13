@@ -416,19 +416,25 @@ bool ARpgPlayerController::GetIsAutoRunning() const
 	return false;
 }
 
+bool ARpgPlayerController::IsMenuInputActive() const
+{
+	if (!IsLocalController())
+	{
+		return false;
+	}
+	const ULocalPlayer* LocalPlayer = GetLocalPlayer();
+	const UCommonUIActionRouterBase* CommonUiInputRouter = LocalPlayer
+		? LocalPlayer->GetSubsystem<UCommonUIActionRouterBase>()
+		: nullptr;
+	return CommonUiInputRouter &&
+		CommonUiInputRouter->GetActiveInputMode(ECommonInputMode::Game) == ECommonInputMode::Menu;
+}
+
 bool ARpgPlayerController::ShouldSuppressCrouchInput() const
 {
-	if (IsLocalController())
+	if (IsMenuInputActive())
 	{
-		const ULocalPlayer* LocalPlayer = GetLocalPlayer();
-		const UCommonUIActionRouterBase* CommonUiInputRouter = LocalPlayer
-			? LocalPlayer->GetSubsystem<UCommonUIActionRouterBase>()
-			: nullptr;
-		if (CommonUiInputRouter &&
-			CommonUiInputRouter->GetActiveInputMode(ECommonInputMode::Game) == ECommonInputMode::Menu)
-		{
-			return true;
-		}
+		return true;
 	}
 
 	return bSuppressCrouchInputUntilControlRelease && IsControlModifierDown();

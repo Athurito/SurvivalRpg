@@ -236,6 +236,9 @@ NETWORK_TEST_CLASS(GaspHurdleAuthoredMapPIE, "SurvivalRpg.GASP.Hurdle")
 	bool bResumedStandingInput = false;
 	bool bWalking = false;
 	bool bWalkInputActive = false;
+	/** Caps Lock walks the approach with W still held; the press is released on the next owner tick. */
+	bool bWalkToggle = false;
+	bool bReleaseWalkToggle = false;
 	bool bHost = false;
 	bool bBlockExitOnServer = false;
 	bool bCancelOnServer = false;
@@ -270,6 +273,7 @@ NETWORK_TEST_CLASS(GaspHurdleAuthoredMapPIE, "SurvivalRpg.GASP.Hurdle")
 
 	TEST_METHOD(StandingHurdleFinishesSupportedBeyondThinBarrier) { Queue(true, false, 0.0f, 0); }
 	TEST_METHOD(WalkingHurdleUsesMappedAnalogInputAndBackFloor) { Queue(false, false, 0.0f, 0, false, false, true); }
+	TEST_METHOD(WalkToggleHurdleUsesTheWalkingEntryAndBackFloor) { Queue(false, false, 0.0f, 0, false, false, true, false, false, true); }
 	TEST_METHOD(RunningHurdleKeepsMomentumAcrossGroundedHandoff) { Queue(false, false, 0.0f, 0); }
 	TEST_METHOD(PositiveAngledHurdleAlignsWithoutTurningTheView) { Queue(false, false, 35.0f, 0); }
 	TEST_METHOD(NegativeAngledHurdleAlignsWithoutTurningTheView) { Queue(false, false, -35.0f, 0); }
@@ -281,9 +285,10 @@ NETWORK_TEST_CLASS(GaspHurdleAuthoredMapPIE, "SurvivalRpg.GASP.Hurdle")
 	TEST_METHOD(SupportDisabledDuringHurdleCancelsAndReleasesState) { Queue(false, false, 0.0f, 0, false, false, false, false, true); }
 
 	void Queue(bool bInStanding, bool bInHost, float InYaw, int32 InLane, bool bInBlockExit = false, bool bInCancel = false,
-		bool bInWalking = false, bool bInResumeStandingInput = false, bool bInDisableSupport = false)
+		bool bInWalking = false, bool bInResumeStandingInput = false, bool bInDisableSupport = false, bool bInWalkToggle = false)
 	{
 		if (!bConfigured) return;
+		bWalkToggle = bInWalkToggle;
 		bStanding = bInStanding;
 		bResumeStandingInput = bInResumeStandingInput;
 		bWalking = bInWalking;
@@ -560,7 +565,8 @@ NETWORK_TEST_CLASS(GaspHurdleAuthoredMapPIE, "SurvivalRpg.GASP.Hurdle")
 		Observe(Character, OwnerRecord);
 		APlayerController* Controller = Cast<APlayerController>(Character->GetController());
 		if (!Controller) return;
-		if (bWalkInputActive && !bMovementReleased) WalkAxis(0.5f);
+		if (bReleaseWalkToggle) { Key(EKeys::CapsLock, false); bReleaseWalkToggle = false; }
+		if (bWalkInputActive && !bWalkToggle && !bMovementReleased) WalkAxis(0.5f);
 		if (bSetFinalHeading)
 		{
 			MaximumViewError = FMath::Max(MaximumViewError,
@@ -608,9 +614,9 @@ NETWORK_TEST_CLASS(GaspHurdleAuthoredMapPIE, "SurvivalRpg.GASP.Hurdle")
 		const float FeetZ = static_cast<float>(Position.Z - Character->GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
 		if (bWalking && !bWalkInputActive && Distance < 600.0f)
 		{
-			Key(EKeys::W, false);
 			bWalkInputActive = true;
-			WalkAxis(0.5f);
+			if (bWalkToggle) { Key(EKeys::CapsLock, true); bReleaseWalkToggle = true; }
+			else { Key(EKeys::W, false); WalkAxis(0.5f); }
 		}
 		if (!bSetFinalHeading)
 		{
