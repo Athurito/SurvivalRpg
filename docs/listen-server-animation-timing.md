@@ -32,11 +32,30 @@ them for RPG characters.
 Keep `a.ParallelAnimUpdate` enabled. This fix does not change NetworkPrediction
 or Mover settings and does not restore the archived native GASP locomotion port.
 
+## Component transform of a remote move
+
+CharacterMovement processes a received move inside a deferred
+`FScopedCapsuleMovementUpdate`. The capsule turns and moves at once, but its
+child mesh follows only when the scope ends, after the move has ticked the
+pose. The animation proxy therefore cached the mesh transform from before the
+move. Graph nodes that compare the rendered mesh with that transform, such as
+Offset Root Bone, put the root one move behind the mesh. The engine re-caches
+the transform before evaluation only while root motion plays.
+
+In the same listen-server scope, `URpgAnimInstance::PreUpdateAnimation` moves
+the mesh with its capsule before the engine caches the transform
+(`GASP-STAB-04`, [report](gasp-host-view-turn-jitter.md)). Listen-server
+rotation smoothing moves the mesh again after the cache, so pawns whose
+AnimBP already smooths turns with Offset Root Bone set
+`ListenServerNetworkSimulatedSmoothRotationTime` to 0 (`BP_RpgGasp_CMC`).
+
 ## Verification
 
 `SurvivalRpg.Animation.ListenServer` covers actual engine graph dispatch with
 multiple deltas in one frame, the ordinary deferred path, the role/net-mode/pose
-scope, and the player's native animation-base contract. The timing fixture uses
+scope, the transform cached inside a deferred move, and the player's native
+animation-base contract. `SurvivalRpg.GASP.CMC.HostView` compares the host's view
+of a remote stance turn with a second client in PIE. The timing fixture uses
 an empty transient world and never starts a GameMode, Experience, or save
 lifecycle.
 
