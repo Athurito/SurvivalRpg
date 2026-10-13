@@ -1139,6 +1139,9 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 	bool bStopAtContact = false;
 	bool bHoldBeforeReach = false;
 	bool bHoldMovementThroughHandoff = false;
+	/** Caps Lock walks the approach; the press is released on the next owner tick. */
+	bool bWalkToggle = false;
+	bool bReleaseWalkToggle = false;
 	bool bReleasedJump = false;
 	bool bReleasedMovement = false;
 	bool bReportedWait = false;
@@ -1174,11 +1177,13 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 	TEST_METHOD(PositiveAngledApproachAlignsBodyWithoutTurningView) { QueueApproach(-130.0f, false, false, false, true, 35.0f); }
 	TEST_METHOD(NegativeAngledApproachAlignsBodyWithoutTurningView) { QueueApproach(130.0f, false, false, false, true, -35.0f); }
 	TEST_METHOD(ListenServerAngledApproachAlignsBodyWithoutTurningView) { QueueApproach(-130.0f, false, false, true, true, 35.0f); }
+	TEST_METHOD(WalkToggleApproachMantlesFromTheWalkingBand) { QueueApproach(0.0f, false, false, false, false, 0.0f, true); }
 
 	void QueueApproach(float InLateralOffset, bool bInStopAtContact, bool bInHoldBeforeReach, bool bInUseHost = false,
-		bool bInHoldMovementThroughHandoff = false, float InAngledApproachYaw = 0.0f)
+		bool bInHoldMovementThroughHandoff = false, float InAngledApproachYaw = 0.0f, bool bInWalkToggle = false)
 	{
 		if (!bConfigured) return;
+		bWalkToggle = bInWalkToggle;
 		LateralOffset = InLateralOffset;
 		bStopAtContact = bInStopAtContact;
 		bHoldBeforeReach = bInHoldBeforeReach;
@@ -1243,6 +1248,7 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 				}
 				bDriving = true;
 				TickHandle = FWorldDelegates::OnWorldTickEnd.AddRaw(this, &GaspMantleAuthoredMapPIE::OnTick);
+				if (bWalkToggle) { Key(EKeys::CapsLock, true); bReleaseWalkToggle = true; }
 				Key(EKeys::W, true);
 			})
 			.Until(TEXT("Mapped Space starts advancing local and authoritative traversal root motion"), [this]()
@@ -1270,6 +1276,8 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 				ASSERT_THAT(IsTrue(MaximumApproachSpeed > 100.0f));
 				ASSERT_THAT(IsTrue(bPressedSpace));
 				if (!bStopAtContact) ASSERT_THAT(IsTrue(SpacePressSpeed > 100.0f));
+				// The walk toggle approaches in the walking band of the authored traversal rows.
+				if (bWalkToggle) ASSERT_THAT(IsTrue(MaximumApproachSpeed < 250.0f && SpacePressSpeed < 250.0f));
 				if (bStopAtContact) ASSERT_THAT(IsTrue(ContactStart >= 0.0));
 				if (bHoldBeforeReach) ASSERT_THAT(IsTrue(bSawFallbackJump));
 				if (LateralOffset != 0.0f && AngledApproachYaw == 0.0f) ASSERT_THAT(IsTrue(FMath::Abs(SpacePressLateralOffset) > 80.0f));
@@ -1362,6 +1370,7 @@ NETWORK_TEST_CLASS(GaspMantleAuthoredMapPIE, "SurvivalRpg.GASP.Mantle")
 		if (World != InputWorld()) return;
 		ARpgCharacter* Character = Owner();
 		if (!Character) return;
+		if (bReleaseWalkToggle) { Key(EKeys::CapsLock, false); bReleaseWalkToggle = false; }
 		Observe(Character, true);
 		ObserveContinuation(Character, OwnerHandoff);
 		ObserveFacing(Character, OwnerFacing);

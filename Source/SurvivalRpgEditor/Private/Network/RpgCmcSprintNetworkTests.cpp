@@ -37,7 +37,7 @@
 #if ENABLE_PIE_NETWORK_TEST
 namespace RpgCmcSprintNetworkTests
 {
-	constexpr float RunSpeed = 375.f, SprintSpeed = 585.f, DrainRate = 15.f;
+	constexpr float WalkSpeed = 165.f, RunSpeed = 375.f, SprintSpeed = 585.f, DrainRate = 15.f;
 	FPrimaryAssetId ExperienceId() { return FPrimaryAssetId(URpgExperienceDefinition::StaticClass()->GetFName(), TEXT("RpgGaspMantleExperience")); }
 	FTimespan Timeout() { return FTimespan::FromSeconds(35.0); }
 	bool ActiveWorld(const UWorld* World)
@@ -158,6 +158,13 @@ namespace RpgCmcSprintNetworkTests
 			return true;
 		}
 		ACharacter* Character() const { return Controller.IsValid() ? Cast<ACharacter>(Controller->GetPawn()) : nullptr; }
+		/** Holds the mapped left stick forward at a raw deflection; Enhanced Input applies its dead zone. Zero releases it. */
+		void Stick(float Value)
+		{
+			StickValue = Value;
+			if (!StickHandle.IsValid()) StickHandle = FWorldDelegates::OnWorldTickStart.AddRaw(this, &FScopedInput::TickStick);
+			SendStick();
+		}
 		void Key(FKey KeyName, bool bPressed)
 		{
 			if (Controller.IsValid() && Controller->IsInputKeyDown(KeyName) != bPressed)
@@ -166,13 +173,25 @@ namespace RpgCmcSprintNetworkTests
 		void Stop()
 		{
 			if (!bStarted) { Controller.Reset(); return; }
-			for (FKey KeyName : { EKeys::W, EKeys::LeftShift, EKeys::RightMouseButton }) Key(KeyName, false);
+			for (FKey KeyName : { EKeys::W, EKeys::LeftShift, EKeys::RightMouseButton, EKeys::CapsLock }) Key(KeyName, false);
+			if (StickHandle.IsValid()) { StickValue = 0.f; SendStick(); FWorldDelegates::OnWorldTickStart.Remove(StickHandle); StickHandle.Reset(); }
 			if (Controller.IsValid()) { Controller->SetIgnoreLookInput(false); Controller->SetInputMode(FInputModeGameOnly()); }
 			GetMutableDefault<UInputSettings>()->bShouldFlushPressedKeysOnViewportFocusLost = bOldFlush;
 			bStarted = false; Controller.Reset();
 		}
 	private:
+		void SendStick()
+		{
+			if (Controller.IsValid())
+				Controller->InputKey(FInputKeyEventArgs::CreateSimulated(EKeys::Gamepad_LeftY, IE_Axis, StickValue, 1));
+		}
+		void TickStick(UWorld* World, ELevelTick, float)
+		{
+			if (StickValue != 0.f && Controller.IsValid() && Controller->GetWorld() == World) SendStick();
+		}
 		TWeakObjectPtr<APlayerController> Controller;
+		FDelegateHandle StickHandle;
+		float StickValue = 0.f;
 		bool bStarted = false, bOldFlush = true;
 	};
 	struct FWindow
@@ -228,9 +247,10 @@ namespace RpgCmcSprintNetworkTests
 			}
 			return true;
 		}
-		void Begin(bool bSprint, bool bBlock, float InSpeed)
+		void Begin(bool bSprint, bool bBlock, float InSpeed, TOptional<ERpgMovementGait> InGait = {})
 		{
 			bExpectedSprint = bSprint; bExpectedBlock = bBlock; ExpectedSpeed = InSpeed; bSampling = true;
+			ExpectedGait = InGait.Get(bSprint ? ERpgMovementGait::Sprint : ERpgMovementGait::Run);
 			for (auto& Pair : Peers)
 			{
 				Pair.Value.Window = FWindow{};
@@ -301,6 +321,7 @@ namespace RpgCmcSprintNetworkTests
 			Window.MinimumSpeed = FMath::Min(Window.MinimumSpeed, CurrentSpeed); Window.MaximumSpeed = FMath::Max(Window.MaximumSpeed, CurrentSpeed);
 			Window.bInvalid |= !FMath::IsFinite(CurrentStamina) || !Movement(Character)->IsMovingOnGround()
 				|| Movement(Character)->IsSprinting() != bExpectedSprint || Blocking(Character) != bExpectedBlock
+				|| Movement(Character)->GetGait() != ExpectedGait
 				|| !FMath::IsNearlyEqual(CurrentSpeed, ExpectedSpeed, ExpectedSpeed > 0.f ? 15.f : 2.f);
 			if (Character->GetLocalRole() != ROLE_SimulatedProxy && bExpectedSprint)
 				Window.bInvalid |= !SprintSpec(Character) || !SprintSpec(Character)->IsActive() || !ASC(Character)->IsSprintMovementActive();
@@ -308,6 +329,7 @@ namespace RpgCmcSprintNetworkTests
 		TMap<TWeakObjectPtr<UWorld>, FPeer> Peers;
 		FDelegateHandle Handle;
 		bool bSampling = false, bExpectedSprint = false, bExpectedBlock = false;
+		ERpgMovementGait ExpectedGait = ERpgMovementGait::Run;
 		float ExpectedSpeed = 0.f;
 	};
 
@@ -478,6 +500,7 @@ NETWORK_TEST_CLASS(CmcSprintPIE, "SurvivalRpg.GASP.CMC.Sprint")
 	TEST_METHOD(LateJoinReceivesEffectiveSprintWithoutOwningTheAbility) { Queue(1); }
 	TEST_METHOD(AuthoritativeCorrectionReplaysAuthorizedSprintHistory) { Queue(2); }
 	TEST_METHOD(ExhaustionAndDelayedAuthorityEndConsumeTheHoldUntilRelease) { Queue(3); }
+	TEST_METHOD(WalkToggleAndWeakStickWalkOnEveryRoleAndLateJoin) { Queue(4); }
 
 	void Queue(int32 Scenario)
 	{
@@ -489,7 +512,7 @@ NETWORK_TEST_CLASS(CmcSprintPIE, "SurvivalRpg.GASP.CMC.Sprint")
 		Isolation.Start(); PreviousExperience = GetDefault<URpgDeveloperSettings>()->ExperienceOverride;
 		GetMutableDefault<URpgDeveloperSettings>()->ExperienceOverride = ExperienceId(); bConfigured = true;
 		Network = MakeUnique<FPIENetworkComponent<FState>>(TestRunner, TestCommandBuilder, bInitializing);
-		FNetworkComponentBuilder<FState>().WithClients(Scenario == 1 ? 1 : 2).AsListenServer()
+		FNetworkComponentBuilder<FState>().WithClients(Scenario == 1 || Scenario == 4 ? 1 : 2).AsListenServer()
 			.WithGameInstanceClass(FSoftClassPath(TEXT("/Game/SurvivalRpg/Core/Game/BP_Rpg_GameInstance.BP_Rpg_GameInstance_C"))).WithGameMode(Mode).Build(*Network);
 		Network->UntilClient(TEXT("Owner has the actual CMC Sprint Experience, GAS grant and input"), 0, [](FState& State)
 			{ return Ready(State.World, LocalPawn(State.World)) && SprintSpec(LocalPawn(State.World)); }, Timeout())
@@ -523,6 +546,7 @@ NETWORK_TEST_CLASS(CmcSprintPIE, "SurvivalRpg.GASP.CMC.Sprint")
 				TestRunner->TestTrue(FString::Printf(TEXT("Authority receives the authored regen rate 12 (actual %.4f)"), StaminaSet->GetStaminaRegen()),
 					FMath::IsNearlyEqual(StaminaSet->GetStaminaRegen(), 12.f));
 			});
+		if (Scenario == 4) { QueueGait(); return; }
 		if (Scenario != 1) QueueObserver(false);
 		if (Scenario == 0) { QueueResources(); return; }
 		if (Scenario == 3) { QueueExhaustion(); return; }
@@ -543,28 +567,30 @@ NETWORK_TEST_CLASS(CmcSprintPIE, "SurvivalRpg.GASP.CMC.Sprint")
 		}
 		QueueRelease();
 	}
-	void QueueObserver(bool bLate)
+	void QueueObserver(bool bLate, ERpgMovementGait LateGait = ERpgMovementGait::Sprint)
 	{
 		using namespace RpgCmcSprintNetworkTests;
-		Network->UntilClient(TEXT("Observer receives the selected subject and replicated effective sprint"), 1, [this, bLate](FState& State)
+		Network->UntilClient(TEXT("Observer receives the selected subject and replicated effective gait"), 1, [this, bLate, LateGait](FState& State)
 			{
 				ACharacter* Character = Pawn(State.World, SubjectId);
-				return Ready(State.World, Character) && Character->GetLocalRole() == ROLE_SimulatedProxy && (!bLate || Movement(Character)->IsSprinting());
+				return Ready(State.World, Character) && Character->GetLocalRole() == ROLE_SimulatedProxy && (!bLate || Movement(Character)->GetGait() == LateGait);
 			}, Timeout())
-			.ThenClient(TEXT("Register the real simulated proxy without pressing its keys"), 1, [this, bLate](FState& State)
+			.ThenClient(TEXT("Register the real simulated proxy without pressing its keys"), 1, [this, bLate, LateGait](FState& State)
 			{
 				ACharacter* Character = Pawn(State.World, SubjectId);
 				ASSERT_THAT(IsTrue(Isolation.IsIsolated(State.World) && Observations.Add(Character)));
 				ASSERT_THAT(IsFalse(ASC(Character)->IsSprintMovementActive()));
-				if (bLate) ASSERT_THAT(IsTrue(Movement(Character)->IsSprinting()));
+				if (bLate) ASSERT_THAT(IsTrue(Movement(Character)->GetGait() == LateGait));
+				if (bLate) ASSERT_THAT(IsTrue(Movement(Character)->IsSprinting() == (LateGait == ERpgMovementGait::Sprint)));
 			});
 	}
-	void QueueWindow(const TCHAR* Label, bool bSprint, bool bBlock, float Speed, int32 Count, bool bDrain)
+	void QueueWindow(const TCHAR* Label, bool bSprint, bool bBlock, float Speed, int32 Count, bool bDrain,
+		TOptional<ERpgMovementGait> Gait = {})
 	{
 		using namespace RpgCmcSprintNetworkTests;
 		const FString Stage(Label);
-		Network->ThenServer(TEXT("Start a bounded settled observation window"), [this, bSprint, bBlock, Speed](FState&)
-			{ Observations.Begin(bSprint, bBlock, Speed); })
+		Network->ThenServer(TEXT("Start a bounded settled observation window"), [this, bSprint, bBlock, Speed, Gait](FState&)
+			{ Observations.Begin(bSprint, bBlock, Speed, Gait); })
 			.UntilServer(TEXT("All roles retain enough actual movement and resource samples"), [this, Count](FState&) { return Observations.Complete(Count); }, Timeout())
 			.ThenServer(TEXT("Check real movement, replicated gait and authority-only resource change"), [this, Stage, bDrain](FState&)
 			{
@@ -629,6 +655,33 @@ NETWORK_TEST_CLASS(CmcSprintPIE, "SurvivalRpg.GASP.CMC.Sprint")
 				for (const auto& Pair : Observations.GetPeers())
 					ASSERT_THAT(IsTrue(FMath::Abs(Stamina(Pair.Value.Character.Get()) - Stamina(Authority->Character.Get())) < 4.f));
 			});
+	}
+	void QueueGait()
+	{
+		using namespace RpgCmcSprintNetworkTests;
+		const ERpgMovementGait Walk = ERpgMovementGait::Walk;
+		Network->ThenClient(TEXT("Toggle walking with the mapped Caps Lock and hold W"), 0, [this](FState&)
+			{ Input.Key(EKeys::CapsLock, true); Input.Key(EKeys::W, true); })
+			.ThenClient(TEXT("Release Caps Lock; the toggle stays on"), 0, [this](FState&) { Input.Key(EKeys::CapsLock, false); });
+		QueueWindow(TEXT("WalkToggle"), false, false, WalkSpeed, 2, false, Walk);
+		Network->ThenClientJoins(); QueueObserver(true, Walk);
+		QueueWindow(TEXT("LateJoinWalkToggle"), false, false, WalkSpeed, 3, false, Walk);
+		Network->ThenClient(TEXT("Hold Shift: sprint overrides the walk toggle"), 0, [this](FState&) { Input.Key(EKeys::LeftShift, true); });
+		QueueWindow(TEXT("SprintOverridesWalkToggle"), true, false, SprintSpeed, 3, true);
+		Network->ThenClient(TEXT("Release Shift: the toggle walks again"), 0, [this](FState&) { Input.Key(EKeys::LeftShift, false); });
+		QueueWindow(TEXT("WalkAfterSprint"), false, false, WalkSpeed, 3, false, Walk);
+		Network->ThenClient(TEXT("Toggle walking off with Caps Lock"), 0, [this](FState&) { Input.Key(EKeys::CapsLock, true); })
+			.ThenClient(TEXT("Release Caps Lock"), 0, [this](FState&) { Input.Key(EKeys::CapsLock, false); });
+		QueueWindow(TEXT("ToggleOffRuns"), false, false, RunSpeed, 3, false);
+		Network->ThenClient(TEXT("Swap W for a half-pushed mapped left stick"), 0, [this](FState&) { Input.Key(EKeys::W, false); Input.Stick(.6f); });
+		QueueWindow(TEXT("WeakStickWalks"), false, false, WalkSpeed, 3, false, Walk);
+		Network->ThenClient(TEXT("Hold Shift with the weak stick"), 0, [this](FState&) { Input.Key(EKeys::LeftShift, true); });
+		QueueWindow(TEXT("WeakStickCannotSprint"), false, false, WalkSpeed, 3, false, Walk);
+		Network->ThenClient(TEXT("Push the stick fully with Shift still held"), 0, [this](FState&) { Input.Stick(1.f); });
+		QueueWindow(TEXT("FullStickSprints"), true, false, SprintSpeed, 3, true);
+		Network->ThenClient(TEXT("Release Shift with the stick fully pushed"), 0, [this](FState&) { Input.Key(EKeys::LeftShift, false); });
+		QueueWindow(TEXT("FullStickRuns"), false, false, RunSpeed, 3, false);
+		Network->ThenClient(TEXT("Release the stick"), 0, [this](FState&) { Input.Stick(0.f); });
 	}
 	void QueueRelease()
 	{

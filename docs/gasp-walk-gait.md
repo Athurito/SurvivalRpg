@@ -1,10 +1,10 @@
 # GASP-12 – Walk gait and analog input
 
-Status: **Ready** (defined 2026-10-13). The package outline is in the [movement plan](gasp-movement-plan.md#gasp-12-walk-gait-and-analog-input). This report refines it against the current code and assets and is the task report for the implementation PR.
+Status: **PR open** in [#241](https://github.com/Athurito/SurvivalRpg/pull/241) on `claude/gasp-12-walk-gait` (defined 2026-10-13 in [#240](https://github.com/Athurito/SurvivalRpg/pull/240), implemented the same day). The user accepted it on 2026-10-13. The package outline is in the [movement plan](gasp-movement-plan.md#gasp-12-walk-gait-and-analog-input). This report refines it against the current code and assets and is the task report for the implementation PR.
 
 ## Goal
 
-The CMC GASP pawn gets a third gait, Walk, at the speed of the Relaxed walk loops. A toggle selects it, and so does a lightly pushed stick if decision 2 allows. The movement component owns one effective gait (Walk, Run, or Sprint). Movement, the AnimBP, and simulated proxies all read it.
+The CMC GASP pawn gets a third gait, Walk, at the speed of the Relaxed walk loops. A toggle selects it, and so does a lightly pushed stick (decision 2). The movement component owns one effective gait (Walk, Run, or Sprint). Movement, the AnimBP, and simulated proxies all read it.
 
 ## Why
 
@@ -46,7 +46,7 @@ Read from the hash-verified export of `SandboxCharacter_CMC` (2026-09-28):
 
 - **Effective gait.** `URpgCharacterMovementComponent` resolves one gait per move:
   - Sprint wherever the sprint gate allows it today.
-  - Otherwise Walk while the walk wish is set, or, if decision 2 allows it, while the stick is below the threshold.
+  - Otherwise Walk while the walk wish is set or the stick is below the threshold (decision 2).
   - Otherwise Run.
 - **Prediction.**
   - The walk wish is a toggle that the owner sends in a compressed flag, like the sprint wish; saved moves and replay keep it. Walking needs no authorization or cost, so the server accepts the flag.
@@ -60,8 +60,8 @@ Read from the hash-verified export of `SandboxCharacter_CMC` (2026-09-28):
   - One replicated effective gait replaces `bIsSprinting` for simulated proxies, so late joiners receive it with the initial state.
   - On simulated proxies, `GetMaxSpeed` returns the replicated gait's speed, so their trajectory predicts walking and sprinting at the right speed.
 - **Input.**
-  - A native `InputTag.Walk` and a toggle handler in `URpgPawnGameplayComponent`, next to crouch. If the toggle lands on Ctrl, the menu suppression moves with it.
-  - A CMC input action on the key from decision 1 and the gamepad's right shoulder, mapped in `IMC_RpgGasp_CMC` and listed in `DA_InputConfig_GaspCMC`.
+  - A native `InputTag.Walk` and a toggle handler in `URpgPawnGameplayComponent`, next to crouch.
+  - A CMC input action on Caps Lock (decision 1) and the gamepad's right shoulder, mapped in `IMC_RpgGasp_CMC` and listed in `DA_InputConfig_GaspCMC`.
   - The toggle persists through sprint, crouch, block, and traversal; holding sprint overrides it. A new pawn starts running.
 - **Blueprint.** `Get_PropertiesForAnimation` maps the component's gait onto `E_Gait` and reports `WantsToWalk`. The AnimBP and the chooser need no change.
 - **Tests.**
@@ -104,7 +104,7 @@ Predicted on flat ground with the `GASP-11` profile:
 
 ## Decisions to settle at the start
 
-The implementing chat settles these with the user before Phase B and records the answers here.
+The user settled both on 2026-10-13 ("beide empfohlen"): the walk toggle is on **Caps Lock** with crouch staying on Ctrl, and a stick **below the threshold walks**.
 
 1. **Keyboard key for the walk toggle.**
    - Recommended: **Caps Lock**, with crouch staying on Ctrl.
@@ -134,7 +134,6 @@ The implementing chat settles these with the user before Phase B and records the
 
 File ownership while the package runs:
 - `RpgCharacterMovementComponent.*`, `RpgMovementProfile.*`, `RpgPawnGameplayComponent.*`, and the gameplay tag declaration;
-- the crouch suppression in `RpgPlayerController.*` and `IMC_Movement`, only if decision 1 picks Ctrl;
 - `BP_RpgGasp_CMC`, `DA_RpgGasp_MovementProfile`, `DA_InputConfig_GaspCMC`, `IMC_RpgGasp_CMC`, and the new walk input action;
 - the CMC movement and profile tests, `RpgGaspCMCSpeedParityTests.cpp`, the CMC PIE tests, and the CMC vault and hurdle tests;
 - this report.
@@ -158,7 +157,7 @@ File ownership while the package runs:
 
 | Area | Criterion |
 | --- | --- |
-| Gait selection | The toggle selects Walk, and so does a stick below the threshold if decision 2 allows it. Holding sprint overrides Walk, and releasing it returns to Walk while the toggle is on. Crouch and block keep their speeds. |
+| Gait selection | The toggle selects Walk, and so does a stick below the threshold. Holding sprint overrides Walk, and releasing it returns to Walk while the toggle is on. Crouch and block keep their speeds. |
 | Speed band | Walking plays the Relaxed walk loops within 0.85–1.15 in F, B, LL, and RL. `SpeedParity` checks walk next to run, sprint, and crouch. In steady movement, no stick position plays a loop outside the band. |
 | Transitions | Walk start, stop, walk to run, and run to walk match the predictions within one frame at 30, 60, and 120 FPS. Every frame has a Motion Matching selection, and walk starts and stops select walk clips. A stick held at the threshold does not switch back and forth between the gaits. |
 | Network | Owner, listen server, simulated proxy, and late joiner show the same gait, at most about a frame apart, as in the `GASP-11` multiplayer probe. Saved-move replay and forced corrections keep the walk wish, and the server derives the stick gait from the received acceleration. With `p.NetShowCorrections 1`, corrections do not rise above the `GASP-11` baseline. A walking proxy's trajectory predicts walking speed. |
@@ -182,8 +181,8 @@ File ownership while the package runs:
 ## Repro (after implementation)
 
 1. Start PIE on `Lvl_RpgGaspCMC` and holster the weapon by pressing its action-bar slot again.
-2. Press the walk key from decision 1, or the gamepad's right shoulder, and move: the character walks. Press it again: it runs.
-3. On a gamepad, push the stick slightly, then fully: walk, then run (decision 2).
+2. Press Caps Lock, or the gamepad's right shoulder, and move: the character walks. Press it again: it runs.
+3. On a gamepad, push the stick slightly, then fully: walk, then run.
 4. While walking, hold sprint: the character sprints. Release sprint: it walks again.
 5. Draw the weapon and walk in every direction.
 6. On `Lvl_RpgGaspMantle`, walk into the mantle, vault, and hurdle obstacles.
@@ -191,4 +190,163 @@ File ownership while the package runs:
 
 ## Results
 
-Not started.
+Implemented on 2026-10-13 on `claude/gasp-12-walk-gait`.
+
+### Baseline (Phase A)
+
+Measured on `master` `d0bddda7` with UE 5.8.3 before any change. The [manifest](assets/gasp-12-walk-gait.json) holds every value.
+
+- **Partial stick.** At input strengths of 0.3, 0.5, 0.65, 0.75, and 1.0 after the dead zone, the pawn ran at 112.5, 187.5, 243.8, 281.2, and 375 cm/s, always in the Run gait and on Run clips. The run loops therefore played at 0.30 to 0.75 of their authored speed. The values were the same at 30, 60, and 120 FPS. With sprint held, a half-pushed stick kept running at 187.5 cm/s.
+- **Proxy trajectory.** In a listen-server PIE with three players, a sprinting simulated proxy moved at 585 cm/s. Its `GetMaxSpeed` and its trajectory's future speed were 375 cm/s, while owner and server predicted 585. This confirms the finding from reading the code.
+- **Sprint state readers.** `IsSprinting` is read by the sprint stamina task, the AnimBP mapping, and the tests. `RefreshSprintState` is called when the GAS lease ends.
+- **Corrections.** The runtime code had not changed since `GASP-11` (only documentation was merged), so the `GASP-11` counts serve as the baseline: 0 for the stance test, and 20, 20, 0, and 0 for the four sprint tests.
+
+### Implementation
+
+- **Movement component** (`URpgCharacterMovementComponent`):
+  - `ERpgMovementGait` (Walk, Run, Sprint) is the effective gait of a move. A replicated `Gait` replaces `bIsSprinting` for simulated proxies and late joiners. `GetGait()` is the AnimBP's read model, and `IsSprinting()` stays.
+  - `ToggleWalk()` flips the owner's walk wish. `ControlledCharacterMove` reads the stick's strength on the owner: below `MinimumSprintInput` (0.7) the stick walks, and a running stick falls back to walking only below 0.65 (`WalkInputHysteresis`). Released input keeps the last choice, so stops keep their gait.
+  - With a profile, `ScaleInputAcceleration` normalizes every input to full acceleration, as GASP's fixed-speed stick modes do. Each gait therefore moves at its own fixed speed.
+  - Saved moves carry the walk toggle in `FLAG_Custom_1` and the stick's walk choice in `FLAG_Custom_2`. Replay restores both, the server reads both from the received move, and moves with different choices never combine.
+  - `GetMaxSpeed` returns the sprint speed, else the profile's `WalkSpeed` while the move walks, else the run or crouch speed; the block cap still applies. Walking applies on the ground and while falling, never crouched. A weak stick cannot sprint; the walk toggle yields to sprint.
+  - On simulated proxies, `GetMaxSpeed` returns the speed of the replicated gait, so the Pose Search trajectory predicts walking and sprinting correctly.
+- **Profile.** `URpgMovementProfile::WalkSpeed` is 165 cm/s and must lie below `RunSpeed`. `DA_RpgGasp_MovementProfile` keeps the class default, so the asset did not change.
+- **Input.**
+  - The native tag `InputTag.Walk` is bound in `URpgPawnGameplayComponent::Input_Walk`, which toggles walking and ignores the press while a menu owns input.
+  - `ARpgPlayerController::IsMenuInputActive` now holds the CommonUI menu check that crouch already used.
+  - `IMC_RpgGasp_CMC` maps the shared `IA_Walk` to Caps Lock and the gamepad's right shoulder, and `DA_InputConfig_GaspCMC` binds it to `InputTag.Walk`. Crouch stays on Ctrl.
+- **Blueprint.** `BP_RpgGasp_CMC.Get_PropertiesForAnimation` reports `Gait` as Sprint while sprinting, otherwise Walk when `GetGait()` is Walk, otherwise Run, and `WantsToWalk` from `IsWalkToggled()`. The AnimBP and its chooser did not change; the chooser already selects the Relaxed walk databases for Walk.
+- **Tests.**
+  - Five native tests `SurvivalRpg.Movement.CMC.Gait.*` cover:
+    - toggle and stick timings at 30, 60, and 120 FPS against the profile;
+    - hysteresis, sprint, crouch, and block priority;
+    - saved moves and replay;
+    - the server's reading of received flags;
+    - the proxy's speed per replicated gait.
+  - The profile test also rejects a walk speed at or above run speed.
+  - `SpeedParity` adds the walk loops F, B, LL, and RL.
+  - The CMC sprint PIE test checks the effective gait in every observation window and adds `WalkToggleAndWeakStickWalkOnEveryRoleAndLateJoin`. It drives the real Caps Lock and the mapped left stick through a late join, a sprint override, the toggle off, a weak stick with sprint held, and a full stick.
+  - The mantle, vault, and hurdle PIE tests each add a walk-toggle approach.
+  - `URpgEditorPlaytestTools::SetPIEInputAxis` sends analog stick values to a PIE controller for probes.
+
+### PIE probe
+
+Free movement on `Lvl_RpgGaspCMC`, one player, after the change. Strength is the input after the 0.2 dead zone.
+
+| Stick strength | 0.3 | 0.5 | 0.65 | 0.75 | 1.0 |
+| --- | --- | --- | --- | --- | --- |
+| Before: speed, gait | 112.5, Run | 187.5, Run | 243.8, Run | 281.2, Run | 375, Run |
+| Before: play rate on the run loops | 0.30 | 0.50 | 0.65 | 0.75 | 1.00 |
+| After: speed, gait | 165, Walk | 165, Walk | 165, Walk | 375, Run | 375, Run |
+| After: play rate | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
+
+- Steady values are identical at 30, 60, and 120 FPS. Walking selects the Relaxed walk databases.
+- With sprint held, a half-pushed stick walks at 165 cm/s instead of running at 187.5. A full stick sprints at 585.
+
+| Motion | 30 / 60 / 120 FPS | Prediction |
+| --- | --- | --- |
+| Toggle: start to 95 % walk speed | 0.233 / 0.217 / 0.217 s | 0.209 s |
+| Weak stick: start to 95 % walk speed | 0.233 / 0.217 / 0.217 s | 0.209 s |
+| Stop from walk | 0.133 s, 10.6 cm / 0.133 s, 10.5 cm / 0.120 s, 10.4 cm | 0.127 s, 10.5 cm |
+| Toggle off: walk to 95 % run speed | 0.267 / 0.267 / 0.261 s | 0.255 s |
+| Toggle on while running: run to walk speed | 0.433 / 0.433 / 0.422 s | 0.420 s |
+
+- Every time lies within one frame of the prediction, and every distance within a few millimetres.
+- Every frame has a Motion Matching selection.
+- Walk starts select `Walk_Start` or `Walk_Reface_Start` and stops `Walk_Stop`. Switching from run to walk, and back to the toggled walk after sprinting, selects `Transition_Run_to_Walk`. Turning the toggle off while walking selects `Run_Start`.
+
+### Multiplayer probe
+
+Listen-server PIE with three players at 60 FPS, without latency. Client A walked in the combat stance; A's pawn was recorded as the owner on A, as the authority on the server, and as a simulated proxy on client B.
+
+| Motion | Owner (A) | Server | Proxy (B) |
+| --- | --- | --- | --- |
+| Half-pushed stick: start to 95 % walk speed | 0.217 s | 0.234 s | 0.234 s |
+| Toggle: start to 95 % walk speed, backward | 0.217 s | 0.233 s | 0.252 s |
+| Toggle off: to 95 % run speed | 0.257 s | 0.273 s | 0.273 s |
+| Run to 95 % sprint speed | 0.321 s | 0.337 s | 0.337 s |
+| Gait switch after the input | 0.017 s | 0.033 s | 0.033 s |
+| `GetMaxSpeed` and trajectory future speed while sprinting | 585 | 585 | 585 (before: 375) |
+
+- All roles walk at 165 cm/s with the same walk clips. Roles disagreed on the gait in 6 of 1391 ticks: one frame at each of three switches.
+- The proxy stayed within 0.0 cm of the owner at the median, 0.4 cm at p95, and 1.2 cm at most. The server stayed within 2.8 cm at the median and 11.5 cm at most.
+- Every frame on every role has a Motion Matching selection.
+
+### Automation
+
+Every suite ran on its own through `ue.py test`; the runs are listed in order.
+
+| Filter | Result |
+| --- | --- |
+| `SurvivalRpg.Movement` with `--null-rhi`, during development | 24 run, 23 passed. The server test ran an unpossessed pawn, whose walking physics the CMC skips without a controller. With `bRunPhysicsWithNoController` set in the test, `SurvivalRpg.Movement.CMC` passed 21/21. |
+| `SurvivalRpg.GASP.CMC` with `p.NetShowCorrections 1` | 11/11 passed (10 before plus the new gait scenario, which includes `SpeedParity`) |
+| `SurvivalRpg.GASP.CMC` with `p.NetForceClientAdjustmentPercent 0.1` | 11/11 passed |
+| Native and asset filters: `SurvivalRpg.Movement`, `Equipment`, `Harvesting`, `AbilitySystem`, the combat contracts, the CMC, sprint, and mantle asset tests, `SurvivalRpg.Input`, and `SurvivalRpg.UI.Input` | 135/135 passed |
+| `SurvivalRpg.Combat.BlockLocomotion` | 16/16 passed |
+| `SurvivalRpg.GASP.Mantle` | Crashed in the shared run during the cleanup of the existing `NegativeAngledApproachAlignsBodyWithoutTurningView`: an engine assertion in `FSceneViewport::Destroy` on the render thread, as once in `GASP-09`. Rerun alone: 13/13 passed, including the new walk-toggle approach. |
+| `SurvivalRpg.GASP.Vault` | 9/9 passed, including the new walk-toggle approach |
+| `SurvivalRpg.GASP.Hurdle` | 12/12 passed, including the new walk-toggle approach |
+| `SurvivalRpg.GASP.RuntimeRetarget` / `VariantComparison` | 2/2, 3/3 passed |
+| `SurvivalRpg.Network` | 19/19 passed |
+| `SurvivalRpg.GASP.Mover` | 65/67. `Ragdoll...CancelledGetupCannotCompleteTheNextRagdollEpisode` failed on unexpected ragdoll bone-data warnings, and `Vault...LateJoinReconstructsTheCurrentVaultState` on a late-join condition. Both passed when rerun alone. The Mover pawn does not use the changed component, and no Mover asset changed. |
+
+- **Mutation checks.** One build disabled the input normalization, the hysteresis band, and the proxy gait speed at once. `SurvivalRpg.Movement.CMC.Gait` then failed in exactly the three matching tests:
+  - the weak stick did not reach walking speed within 3 s instead of 0.21 s;
+  - a running stick inside the band walked;
+  - the proxy predicted 375 instead of 165 and 585 cm/s.
+
+  With the code restored, 5/5 passed.
+- **Corrections.** Counted per test from `Error for` lines with `p.NetShowCorrections 1`, as in `GASP-11`:
+  - the two `GaspCMCExperiencePIE` tests log 0;
+  - the four sprint tests log 22, 16, 0, and 0, against 20, 20, 0, and 0 in `GASP-11`;
+  - the new gait scenario logs 4.
+- **Gait scenario.** Every observation window matched on owner, server, and proxy: walk 165, sprint 585, and run 375 cm/s, with the expected gait and no stamina use outside sprint. The proxy joined late while the toggle was on and received Walk.
+
+### Acceptance
+
+| Area | Result |
+| --- | --- |
+| Gait selection | **Met.** The toggle and a stick below the threshold walk; sprint overrides the toggle, and releasing it walks again; crouch and block keep their speeds. Native tests and the PIE scenario check it with real keys and the mapped stick. |
+| Speed band | **Met.** Walking plays the walk loops at 1.00; `SpeedParity` checks walk F, B, LL, and RL next to run, sprint, and crouch. With fixed gait speeds, every stick position plays its gait's loop at the authored speed. |
+| Transitions | **Met.** Walk start, stop, walk to run, and run to walk lie within one frame of the prediction at 30, 60, and 120 FPS, natively and in PIE. Every frame has a selection, and walk starts and stops select walk clips. A stick between 0.65 and 0.7 keeps its gait; see the native hysteresis test. |
+| Network | **Met.** Owner, server, proxy, and late joiner agree within about a frame. Replay, the server's flag reading, and forced corrections keep the walk wish. Correction counts stayed in the `GASP-10`/`GASP-11` range. Walking and sprinting proxies predict their trajectory with their gait's speed. |
+| Traversal | **Met in automation.** Mantle, vault, and hurdle pass from a walk-toggle approach in the walking band, checked on owner, server, and proxy. Vault and hurdle also pass from a half-pushed stick, which now approaches at 165 cm/s. The return to walking after landing is part of the user check. |
+| Load | **Met by construction.** Walk speed and gait selection read no load state; the `GASP-11` load test still passes. |
+| Regression | **Met.** Every suite passes. The Mantle crash and the two Mover failures of the shared run passed when rerun alone. |
+
+### Deviations
+
+- **Stick strength on the server.** The definition derived the stick's walk choice on the server from the received acceleration.
+  - Instead, the owner normalizes the input and sends its walk choice in a second flag (`FLAG_Custom_2`), as GASP normalizes the stick in its fixed-speed modes.
+  - Otherwise the replicated acceleration and the Pose Search trajectory would keep the partial strength on every role. The trajectory would then predict a slower start than the fixed-speed movement performs.
+  - Walking is never an advantage, so the server can accept the choice.
+- **Hysteresis.** Phase A was to decide whether a band is needed. A stick at the threshold would otherwise flip between two target speeds every frame. So the owner-side choice uses a 0.05 band, `WalkInputHysteresis`.
+- **Input action.** The CMC reuses the shared GASP `IA_Walk` (Boolean, Pressed trigger) that the Mover maps to Ctrl, instead of a new CMC action. Only `IMC_RpgGasp_CMC` maps it, so the keys do not collide.
+- **Player controller.** `ARpgPlayerController` gained `IsMenuInputActive`, the existing CommonUI check that crouch used, so that the walk toggle ignores presses while a menu owns input. The definition did not list this file.
+- **Mantle test.** The definition named vault and hurdle; the mantle PIE test also gained a walk-toggle approach.
+- **Editor tool.** `URpgEditorPlaytestTools::SetPIEInputAxis` is new, for analog input in PIE probes.
+
+### Failed attempts
+
+- **Probe route.** The first stick probe ran every stick step forward and stopped at the level wall during the sprint step. The route now alternates direction.
+- **PIE player count.** The first baseline ran with three PIE players, because the editor setting was set that way, so the 120 FPS run reached only about 60 FPS. The single-player probes were repeated with one player; the setting was restored to three players afterwards.
+- **Multiplayer probe.** The first multiplayer baseline sprinted backward in the combat stance. The stance refuses that, as `GASP-09` requires, so the route now sprints forward.
+- **Blueprint graph.**
+  - Rewriting `Get_PropertiesForAnimation` through `write_graph_dsl` failed: the DSL read back from the graph does not round-trip (`GetVelocity` on the component). The graph was unchanged.
+  - A select node indexed by `ERpgMovementGait` kept only two option pins, because the node edit does not rebuild the node, and the Blueprint failed to compile.
+  - The final graph uses an enum equality with a bool select instead.
+- **Native server test.** The first version unpossessed the pawn; the CMC skips walking physics without a controller, so the test failed until it enabled `bRunPhysicsWithNoController`.
+
+### Limits
+
+- **User check:** on 2026-10-13 the user found everything else fine ("sonst passt alles") and asked for the merge. The reply did not itemize single motions. The user chose to fix the jitter below in a separate package.
+- **Listen-server view (found in the user check; already on `master` `d0bddda7`):**
+  - When a client in the combat stance only turns the camera while standing, the host sees that client's character jitter.
+  - A three-player probe measured the pelvis reversing direction in 10 to 65 of about 170 frames at 45 to 180°/s on the server, against 0 to 2 on the owner and on the other client. `master` without this package shows the same pattern.
+  - With Offset Root Bone disabled (`a.animnode.offsetrootbone.enable 0`) the reversals disappear; disabling listen-server smoothing does not help.
+  - The likely cause is the node's interaction with the server ticking a remote client's animation per received move (`bOnlyAllowAutonomousTickPose`). Not fixed in this package; the user chose a separate package for it.
+- **Network conditions:** the multiplayer probe and PIE tests ran locally without latency, jitter, or loss; that stays with `GASP-VAL-02`.
+- **Hardware:** stick input came from simulated `Gamepad_LeftY` values through the real mapping and dead zone, not from a physical gamepad. Real stick noise near 0.7 is covered only by the 0.05 band.
+- **Crouch:** a crouching pawn reports Run to the AnimBP even with the toggle on; the crouch databases ignore the gait.
+- **Presentation:** the CMC keeps the Neutral run lean on walking poses; the Relaxed walk leans stay with `GASP-13`.
+- **Shared regression run:** the Mantle suite crashed once in the engine (`FSceneViewport::Destroy` on the render thread), and two Mover cases failed once; all passed when rerun alone.

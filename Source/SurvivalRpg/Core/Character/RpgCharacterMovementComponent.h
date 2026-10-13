@@ -8,6 +8,18 @@
 
 class URpgMovementProfile;
 
+/** Effective movement gait: the speed tier of a move, read by movement, the AnimBP, and simulated proxies. */
+UENUM(BlueprintType)
+enum class ERpgMovementGait : uint8
+{
+	/** The movement profile's walk speed: the walk toggle, or stick input below MinimumSprintInput. */
+	Walk,
+	/** The ordinary running speed. */
+	Run,
+	/** The GAS-authorized sprint speed. */
+	Sprint
+};
+
 #if WITH_DEV_AUTOMATION_TESTS
 namespace RpgCmcSprintTests { class FFixture; }
 namespace RpgCmcRotationModeTests { class FFixture; }
@@ -72,13 +84,42 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rpg|Sprint")
 	float GetSprintSpeed() const;
 
-	/** Minimum normalized movement input (0..1) for effective sprint and stamina cost. Partial input retains the held GAS lease. */
+	/**
+	 * Minimum normalized movement input (0..1) for running and for effective sprint and stamina cost. With a movement
+	 * profile, weaker stick input walks at the profile's walk speed instead; partial input retains the held GAS lease.
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Sprint", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float MinimumSprintInput = 0.7f;
+
+	/**
+	 * Designer band (0..0.5) below MinimumSprintInput before stick input falls back from running to walking, so a stick
+	 * held at the threshold does not switch gaits every frame. Owner-side input interpretation, sent with each move.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Gait", meta = (ClampMin = "0.0", ClampMax = "0.5"))
+	float WalkInputHysteresis = 0.05f;
 
 	/** Effective last performed gait, available before OnCharacterMovementUpdated; simulated proxies receive authority state. */
 	UFUNCTION(BlueprintPure, Category = "Rpg|Sprint")
 	bool IsSprinting() const;
+
+	/**
+	 * Owner input: toggles walking. With a movement profile the character then walks unless it sprints or crouches. The
+	 * wish travels with each saved move to the server; it is local input state, never replicated to other clients.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Gait")
+	void ToggleWalk();
+
+	/** Owner input state of the walk toggle; simulated proxies always report false and read GetGait instead. */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Gait")
+	bool IsWalkToggled() const { return bWalkToggled; }
+
+	/**
+	 * Presentation read model for the AnimBP: the gait of the last performed move. Owners and authority read their own
+	 * moves; simulated proxies and late joiners receive the authority's value. Without a movement profile only Run and
+	 * Sprint occur. While the stick is released the last walk or run choice stays, so stops keep their gait.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Gait")
+	ERpgMovementGait GetGait() const;
 
 	/** Retires the presentation state when GAS authorization ends, including when movement has stopped ticking. Does not alter saved moves. */
 	void RefreshSprintState();
@@ -147,6 +188,10 @@ public:
 	/** With a profile on the ground: tapers acceleration and friction from run toward sprint speed, from the move's own velocity. */
 	virtual void CalcVelocity(float DeltaTime, float Friction, bool bFluid, float BrakingDeceleration) override;
 protected:
+	/** Reads the owner's stick strength into the walk/run choice before the input is normalized and sent with the move. */
+	virtual void ControlledCharacterMove(const FVector& InputVector, float DeltaSeconds) override;
+	/** With a profile: full acceleration for any input, so each gait moves at its own fixed speed. */
+	virtual FVector ScaleInputAcceleration(const FVector& InputAcceleration) const override;
 	/** Captures root-motion ownership before the engine consumes/clears its parameters at the end of physics. */
 	virtual void UpdateVelocityBeforeMovement(float DeltaSeconds) override;
 	/** Publishes the completed sprint state before the Character movement delegate used by authority stamina tasks. */
@@ -191,7 +236,16 @@ private:
 	void RefreshRotationModeFlags();
 	bool SampleSprintMovement(float& OutSprintSpeed) const;
 	bool CanSprintForMove(float& OutSprintSpeed) const;
-	void SetIsSprinting(bool bNewSprinting);
+	/** Analog strength (0..1) of the move's own acceleration; the profile's taper is divided back out. */
+	float GetInputStrengthForMove() const;
+	/** Stick input of the current move is below the run threshold: saved history during movement, otherwise live state. */
+	bool IsStickWalkForMove() const;
+	/** The current move walks: a profile, walking or falling, not crouched, and the walk toggle or a weak stick. */
+	bool CanWalkForMove() const;
+	/** Speed of the replicated gait on a simulated proxy, or zero where the stock speed applies. */
+	float GetSimulatedProxyGaitSpeed() const;
+	ERpgMovementGait GetNonSprintGait() const;
+	void SetGait(ERpgMovementGait NewGait);
 
 	// Only desire is compressed. Authorization/speed are immutable local replay history or a fresh server GAS sample.
 	bool bWantsSprint = false;
@@ -199,9 +253,16 @@ private:
 	float SprintSpeedForMove = 0.f;
 	bool bRootMotionOwnedSprintMove = false;
 
+	// Owner input state. The toggle and the stick's walk/run choice travel per move as compressed flags.
+	bool bWalkToggled = false;
+	bool bStickWalk = false;
+	// The current move's wishes: the live owner input, a received move on the server, or saved history during replay.
+	bool bWantsWalkForMove = false;
+	bool bStickWalkForMove = false;
+
 	/** Authority's effective gait for remote animation and late join. Owners predict from their own saved moves. */
 	UPROPERTY(Transient, Replicated)
-	bool bIsSprinting = false;
+	ERpgMovementGait Gait = ERpgMovementGait::Run;
 
 	// Immutable local saved-move values are applied only during replay; they are never client authority on the server.
 	bool bBlockMovementForMove = false;

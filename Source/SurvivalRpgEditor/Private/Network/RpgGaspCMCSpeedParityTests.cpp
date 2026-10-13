@@ -19,7 +19,7 @@ namespace RpgGaspCMCSpeedParityTests
 	constexpr double MinPlayRate = 0.85;
 	constexpr double MaxPlayRate = 1.15;
 
-	enum class EGaitSpeed : uint8 { Run, Sprint, Crouch };
+	enum class EGaitSpeed : uint8 { Walk, Run, Sprint, Crouch };
 
 	struct FReferenceLoop
 	{
@@ -30,6 +30,10 @@ namespace RpgGaspCMCSpeedParityTests
 	/** The main loop per direction that the CMC database chooser selects for each gait; crouch reuses the shared Neutral loops. */
 	const FReferenceLoop ReferenceLoops[] =
 	{
+		{EGaitSpeed::Walk, TEXT("Walk/M_Relaxed_Walk_Loop_F")},
+		{EGaitSpeed::Walk, TEXT("Walk/M_Relaxed_Walk_Loop_B")},
+		{EGaitSpeed::Walk, TEXT("Walk/M_Relaxed_Walk_Loop_LL")},
+		{EGaitSpeed::Walk, TEXT("Walk/M_Relaxed_Walk_Loop_RL")},
 		{EGaitSpeed::Run, TEXT("Run/M_Relaxed_Run_Loop_F")},
 		{EGaitSpeed::Run, TEXT("Run/M_Relaxed_Run_Loop_B")},
 		{EGaitSpeed::Run, TEXT("Run/M_Relaxed_Run_Loop_LL")},
@@ -45,6 +49,7 @@ namespace RpgGaspCMCSpeedParityTests
 	{
 		switch (Gait)
 		{
+		case EGaitSpeed::Walk: return Profile.WalkSpeed;
 		case EGaitSpeed::Sprint: return Profile.SprintSpeed;
 		case EGaitSpeed::Crouch: return Profile.CrouchSpeed;
 		default: return Profile.RunSpeed;

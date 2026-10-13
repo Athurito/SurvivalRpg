@@ -26,6 +26,8 @@
 namespace RpgMovementProfileTests
 {
 	constexpr uint8 SprintRequest = FSavedMove_Character::FLAG_Custom_0;
+	constexpr uint8 WalkToggle = FSavedMove_Character::FLAG_Custom_1;
+	constexpr uint8 StickWalk = FSavedMove_Character::FLAG_Custom_2;
 	const float FrameSteps[] = { 1.f / 30.f, 1.f / 60.f, 1.f / 120.f };
 
 	/** Elapsed time and horizontal travel of one measured motion. */
@@ -115,6 +117,32 @@ namespace RpgMovementProfileTests
 			Movement->MoveAutonomous(TimeStamp, StepSeconds, Flags, Direction.GetSafeNormal2D() * Movement->GetMaxAcceleration());
 		}
 		float Speed() const { return static_cast<float>(Movement->Velocity.Size2D()); }
+		/** Runs the owner's real input path: stick interpretation and normalization, then an authority move. */
+		void Control(const FVector& Input)
+		{
+			TimeStamp += StepSeconds;
+			Movement->ControlledCharacterMove(Input, StepSeconds);
+		}
+		void Hold(const FVector& Input, int32 Steps)
+		{
+			for (int32 Index = 0; Index < Steps; ++Index) Control(Input);
+		}
+		/** Controls until Done holds, at most MaxSeconds, and reports time and horizontal travel. */
+		template <typename TDone>
+		FMotion ControlUntil(const FVector& Input, TDone Done, float MaxSeconds = 3.f)
+		{
+			FMotion Motion;
+			const FVector Start = Character->GetActorLocation();
+			while (Motion.Seconds < MaxSeconds && !(Motion.bReached = Done()))
+			{
+				Control(Input);
+				Motion.Seconds += StepSeconds;
+			}
+			Motion.Distance = static_cast<float>(FVector::Dist2D(Start, Character->GetActorLocation()));
+			return Motion;
+		}
+		void SetStickWalk(bool bWalk) { Movement->bStickWalk = bWalk; }
+		void SetReplicatedGait(ERpgMovementGait InGait) { Movement->Gait = InGait; }
 		/** Moves until Done holds, at most MaxSeconds, and reports time and horizontal travel. */
 		template <typename TDone>
 		FMotion MoveUntil(const FVector& Direction, uint8 Flags, TDone Done, float MaxSeconds = 3.f)
@@ -217,6 +245,9 @@ bool FRpgMovementProfileStaticValuesTest::RunTest(const FString& Parameters)
 	Invalid->SprintSpeed = Invalid->RunSpeed;
 	TestFalse(TEXT("Sprint speed must exceed run speed"), Invalid->ValidateConfiguration(Error));
 	Invalid->SprintSpeed = 585.f;
+	Invalid->WalkSpeed = Invalid->RunSpeed;
+	TestFalse(TEXT("Run speed must exceed walk speed"), Invalid->ValidateConfiguration(Error));
+	Invalid->WalkSpeed = 165.f;
 	Invalid->AirControl = 1.5f;
 	TestFalse(TEXT("Air control above 1 is rejected"), Invalid->ValidateConfiguration(Error));
 
@@ -407,6 +438,240 @@ bool FRpgMovementProfileReplayTest::RunTest(const FString& Parameters)
 	for (const FSavedMovePtr& Saved : Moves) { F.ReplayMove(Saved); }
 	TestTrue(TEXT("Replay reproduces the tapered velocity"), F.Movement->Velocity.Equals(RecordedVelocity, .01));
 	TestTrue(TEXT("Replay reproduces the location"), F.Character->GetActorLocation().Equals(RecordedLocation, .01));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgMovementGaitToggleTest,
+	"SurvivalRpg.Movement.CMC.Gait.ToggleAndStickWalkAtFixedSpeedsAndMatchPrediction",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FRpgMovementGaitToggleTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgMovementProfileTests;
+	for (const float Step : FrameSteps)
+	{
+		FFixture F(Step);
+		if (!F.Initialize(*this)) return false;
+		const URpgMovementProfile& P = *F.Profile;
+		const FString Fps = FString::Printf(TEXT("%.0f FPS: "), 1.f / Step);
+		const FVector Forward(1.0, 0.0, 0.0);
+
+		TestEqual(Fps + TEXT("A new pawn runs"), F.Movement->GetGait(), ERpgMovementGait::Run);
+		F.Movement->ToggleWalk();
+		TestTrue(Fps + TEXT("The toggle is owner input state"), F.Movement->IsWalkToggled());
+		TestMotion(*this, Fps + TEXT("Toggle: start to 95 % walk speed"),
+			F.ControlUntil(Forward, [&F, &P] { return F.Speed() >= .95f * P.WalkSpeed; }), .95f * P.WalkSpeed / P.Acceleration, Step);
+		F.ControlUntil(Forward, [&F, &P] { return F.Speed() >= P.WalkSpeed - .01f; });
+		TestTrue(Fps + TEXT("The toggle walks at the profile's walk speed"), F.Movement->GetGait() == ERpgMovementGait::Walk
+			&& FMath::IsNearlyEqual(F.Movement->GetMaxSpeed(), P.WalkSpeed) && FMath::IsNearlyEqual(F.Speed(), P.WalkSpeed, .1f));
+		TestMotion(*this, Fps + TEXT("Stop from walk"),
+			F.ControlUntil(FVector::ZeroVector, [&F] { return F.Speed() < 1.f; }), P.WalkSpeed / P.BrakingDeceleration, Step,
+			FMath::Square(P.WalkSpeed) / (2.f * P.BrakingDeceleration), P.WalkSpeed);
+		TestEqual(Fps + TEXT("A stop keeps the walk gait"), F.Movement->GetGait(), ERpgMovementGait::Walk);
+
+		F.ControlUntil(Forward, [&F, &P] { return F.Speed() >= P.WalkSpeed - .01f; });
+		F.Movement->ToggleWalk();
+		TestMotion(*this, Fps + TEXT("Toggle off: walk to 95 % run speed"),
+			F.ControlUntil(Forward, [&F, &P] { return F.Speed() >= .95f * P.RunSpeed; }), (.95f * P.RunSpeed - P.WalkSpeed) / P.Acceleration, Step);
+		F.ControlUntil(Forward, [&F, &P] { return F.Speed() >= P.RunSpeed - .01f; });
+		TestEqual(Fps + TEXT("Without the toggle full input runs"), F.Movement->GetGait(), ERpgMovementGait::Run);
+		F.Movement->ToggleWalk();
+		TestMotion(*this, Fps + TEXT("Toggle on while running: run to walk speed with input held"),
+			F.ControlUntil(Forward, [&F, &P] { return F.Speed() <= P.WalkSpeed + .01f; }),
+			(P.RunSpeed - P.WalkSpeed) / P.BrakingDecelerationWithInput, Step);
+		TestTrue(Fps + TEXT("Braking with input stops at walk speed"), FMath::IsNearlyEqual(F.Speed(), P.WalkSpeed, 1.f));
+		F.Movement->ToggleWalk();
+		F.ControlUntil(FVector::ZeroVector, [&F] { return F.Speed() < 1.f; });
+
+		// Each gait moves at its own fixed speed: a weak stick walks with full acceleration, never a slow run.
+		const FVector Weak = Forward * .4;
+		TestMotion(*this, Fps + TEXT("Weak stick: start to 95 % walk speed at full acceleration"),
+			F.ControlUntil(Weak, [&F, &P] { return F.Speed() >= .95f * P.WalkSpeed; }), .95f * P.WalkSpeed / P.Acceleration, Step);
+		F.ControlUntil(Weak, [&F, &P] { return F.Speed() >= P.WalkSpeed - .01f; });
+		TestTrue(Fps + TEXT("A weak stick walks at the full walk speed"), F.Movement->GetGait() == ERpgMovementGait::Walk
+			&& FMath::IsNearlyEqual(F.Speed(), P.WalkSpeed, .1f));
+		TestTrue(Fps + TEXT("The weak stick's acceleration is normalized for movement, server and trajectory"),
+			FMath::IsNearlyEqual(F.Movement->GetCurrentAcceleration().Size2D(), F.Movement->GetMaxAcceleration(), .01)
+			&& FMath::IsNearlyEqual(F.Movement->GetAnalogInputModifier(), 1.f));
+		TestMotion(*this, Fps + TEXT("Full stick: walk to 95 % run speed"),
+			F.ControlUntil(Forward, [&F, &P] { return F.Speed() >= .95f * P.RunSpeed; }), (.95f * P.RunSpeed - P.WalkSpeed) / P.Acceleration, Step);
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgMovementGaitPriorityTest,
+	"SurvivalRpg.Movement.CMC.Gait.StickHysteresisSprintCrouchAndBlockPriority",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FRpgMovementGaitPriorityTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgMovementProfileTests;
+	FFixture F(FrameSteps[1]);
+	if (!F.Initialize(*this)) return false;
+	const URpgMovementProfile& P = *F.Profile;
+	const FVector Forward(1.0, 0.0, 0.0);
+	const float Threshold = F.Movement->MinimumSprintInput;
+	const float Band = F.Movement->WalkInputHysteresis;
+	if (!TestTrue(TEXT("The authored threshold leaves room for the band"), Threshold > Band + .05f && Band > .01f)) return false;
+	auto Gait = [&F] { return F.Movement->GetGait(); };
+
+	F.Hold(Forward * .5, 10);
+	TestEqual(TEXT("A weak stick walks"), Gait(), ERpgMovementGait::Walk);
+	F.Hold(Forward * (Threshold - Band * .5f), 10);
+	TestEqual(TEXT("Inside the band a walking stick keeps walking"), Gait(), ERpgMovementGait::Walk);
+	F.Hold(Forward * (Threshold + .02f), 10);
+	TestEqual(TEXT("From the threshold the stick runs"), Gait(), ERpgMovementGait::Run);
+	F.Hold(Forward * (Threshold - Band * .5f), 10);
+	TestEqual(TEXT("Inside the band a running stick keeps running"), Gait(), ERpgMovementGait::Run);
+	F.Hold(Forward * (Threshold - Band - .02f), 10);
+	TestEqual(TEXT("Below the band the stick walks again"), Gait(), ERpgMovementGait::Walk);
+	F.Hold(FVector::ZeroVector, 30);
+	TestEqual(TEXT("Released input keeps the walk choice"), Gait(), ERpgMovementGait::Walk);
+	F.Hold(Forward, 10);
+	F.Hold(FVector::ZeroVector, 30);
+	TestEqual(TEXT("Released input keeps the run choice"), Gait(), ERpgMovementGait::Run);
+
+	if (!TestTrue(TEXT("Sprint lease starts"), F.BeginSprint())) return false;
+	F.Hold(Forward * .5, 40);
+	TestTrue(TEXT("A weak stick keeps walking while sprint is held"), Gait() == ERpgMovementGait::Walk && !F.Movement->IsSprinting()
+		&& FMath::IsNearlyEqual(F.Speed(), P.WalkSpeed, 1.f));
+	F.Hold(Forward, 90);
+	TestTrue(TEXT("Full input sprints"), Gait() == ERpgMovementGait::Sprint && F.Movement->IsSprinting());
+	F.Movement->ToggleWalk();
+	F.Hold(Forward, 5);
+	TestTrue(TEXT("Holding sprint overrides the walk toggle"), Gait() == ERpgMovementGait::Sprint && F.Speed() > P.RunSpeed);
+	F.EndSprint();
+	TestEqual(TEXT("Ending the lease reports the toggled walk without another move"), Gait(), ERpgMovementGait::Walk);
+	F.Hold(Forward, 90);
+	TestTrue(TEXT("Releasing sprint returns to the toggled walk"), Gait() == ERpgMovementGait::Walk
+		&& FMath::IsNearlyEqual(F.Speed(), P.WalkSpeed, 1.f));
+
+	F.Movement->bWantsToCrouch = true;
+	F.Hold(Forward, 60);
+	TestTrue(TEXT("Crouch keeps its own speed and ignores the walk toggle"), F.Movement->IsCrouching()
+		&& FMath::IsNearlyEqual(F.Movement->GetMaxSpeed(), P.CrouchSpeed) && FMath::IsNearlyEqual(F.Speed(), P.CrouchSpeed, 1.f));
+	F.Movement->bWantsToCrouch = false;
+	F.Hold(Forward, 60);
+	TestTrue(TEXT("Standing up walks again"), !F.Movement->IsCrouching() && Gait() == ERpgMovementGait::Walk
+		&& FMath::IsNearlyEqual(F.Speed(), P.WalkSpeed, 1.f));
+
+	constexpr float BlockCap = 120.f;
+	const uint32 BlockLease = F.ASC->BeginBlockMovement(F.Ability, BlockCap);
+	F.Hold(Forward, 60);
+	TestTrue(TEXT("A block cap below the walk speed still applies"), FMath::IsNearlyEqual(F.Speed(), BlockCap, 1.f));
+	F.ASC->EndBlockMovement(F.Ability, BlockLease);
+	F.Movement->ToggleWalk();
+	F.Hold(Forward, 90);
+	TestTrue(TEXT("Turning the toggle off runs again"), Gait() == ERpgMovementGait::Run && FMath::IsNearlyEqual(F.Speed(), P.RunSpeed, 1.f));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgMovementGaitSavedMoveTest,
+	"SurvivalRpg.Movement.CMC.Gait.SavedMovesCarryWalkToggleAndStickChoice",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FRpgMovementGaitSavedMoveTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgMovementProfileTests;
+	FFixture F(FrameSteps[1]);
+	if (!F.Initialize(*this)) return false;
+	const URpgMovementProfile& P = *F.Profile;
+	const FVector Forward(1.0, 0.0, 0.0);
+	F.Movement->ToggleWalk();
+	F.ControlUntil(Forward, [&F, &P] { return F.Speed() >= P.WalkSpeed - .01f; });
+	F.SetStickWalk(true);
+
+	const FVector StartLocation = F.Character->GetActorLocation();
+	const FVector StartVelocity = F.Movement->Velocity;
+	TArray<FSavedMovePtr> Moves;
+	for (int32 Index = 0; Index < 12; ++Index) { Moves.Add(F.RecordMove(Forward)); }
+	const FVector RecordedLocation = F.Character->GetActorLocation();
+	const uint8 Flags = Moves[0]->GetCompressedFlags();
+	TestTrue(TEXT("The saved move sends the walk toggle"), (Flags & WalkToggle) != 0);
+	TestTrue(TEXT("The saved move sends the stick's walk choice"), (Flags & StickWalk) != 0);
+	TestFalse(TEXT("Walking sends no sprint request"), (Flags & SprintRequest) != 0);
+
+	// Today's input runs: only the recorded wishes may decide the replayed speed.
+	F.Movement->ToggleWalk();
+	F.SetStickWalk(false);
+	FNetworkPredictionData_Client_Character* Prediction = static_cast<FNetworkPredictionData_Client_Character*>(F.Movement->GetPredictionData_Client());
+	const FSavedMovePtr Running = Prediction->AllocateNewMove();
+	Running->Clear();
+	Running->SetMoveFor(F.Character, F.StepSeconds, Forward * F.Movement->GetMaxAcceleration(), *Prediction);
+	TestFalse(TEXT("A running move never combines with a walking one"), Moves.Last()->CanCombineWith(Running, F.Character, 1.f));
+	TestEqual(TEXT("A running move sends neither walk flag"), static_cast<uint8>(Running->GetCompressedFlags() & (WalkToggle | StickWalk)), static_cast<uint8>(0));
+
+	F.Character->SetActorLocation(StartLocation);
+	F.Movement->Velocity = StartVelocity;
+	for (const FSavedMovePtr& Saved : Moves) { F.ReplayMove(Saved); }
+	TestTrue(TEXT("Replay walks as recorded"), F.Character->GetActorLocation().Equals(RecordedLocation, .01)
+		&& FMath::IsNearlyEqual(F.Speed(), P.WalkSpeed, .1f));
+	TestEqual(TEXT("After replay, speed queries follow today's input"), F.Movement->GetMaxSpeed(), P.RunSpeed);
+	Moves[0]->Clear();
+	TestEqual(TEXT("Reused saved-move storage clears both walk flags"), static_cast<uint8>(Moves[0]->GetCompressedFlags() & (WalkToggle | StickWalk)), static_cast<uint8>(0));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgMovementGaitServerTest,
+	"SurvivalRpg.Movement.CMC.Gait.ServerTakesWalkWishesFromReceivedMoves",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FRpgMovementGaitServerTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgMovementProfileTests;
+	FFixture F(FrameSteps[1]);
+	if (!F.Initialize(*this)) return false;
+	const URpgMovementProfile& P = *F.Profile;
+	const FVector Forward(1.0, 0.0, 0.0);
+	// A remote autonomous pawn on the server: its moves arrive through MoveAutonomous with the client's flags. A standalone
+	// world treats every controller as local, so the pawn runs controller-less physics instead.
+	F.Controller->UnPossess();
+	F.Movement->bRunPhysicsWithNoController = true;
+	F.Character->SetAutonomousProxy(true);
+	if (!TestTrue(TEXT("The pawn is a remote autonomous proxy on the authority"), F.Character->HasAuthority()
+		&& !F.Character->IsLocallyControlled() && F.Character->GetRemoteRole() == ROLE_AutonomousProxy)) return false;
+	F.Movement->ToggleWalk(); // Server-side input state must never apply to a remote pawn.
+
+	F.MoveUntil(Forward, 0, [&F, &P] { return F.Speed() >= P.RunSpeed - .01f; });
+	TestEqual(TEXT("Moves without walk flags run"), F.Movement->GetGait(), ERpgMovementGait::Run);
+	F.MoveUntil(Forward, WalkToggle, [&F, &P] { return F.Speed() <= P.WalkSpeed + .01f; });
+	TestTrue(TEXT("The received walk toggle walks"), F.Movement->GetGait() == ERpgMovementGait::Walk
+		&& FMath::IsNearlyEqual(F.Movement->GetMaxSpeed(), P.WalkSpeed));
+	F.MoveUntil(Forward, 0, [&F, &P] { return F.Speed() >= P.RunSpeed - .01f; });
+	F.MoveUntil(Forward, StickWalk, [&F, &P] { return F.Speed() <= P.WalkSpeed + .01f; });
+	TestEqual(TEXT("The received stick choice walks"), F.Movement->GetGait(), ERpgMovementGait::Walk);
+
+	if (!TestTrue(TEXT("Sprint lease starts"), F.BeginSprint())) return false;
+	for (int32 Index = 0; Index < 30; ++Index) F.Move(Forward, SprintRequest | StickWalk);
+	TestTrue(TEXT("A weak stick cannot sprint on the server"), !F.Movement->IsSprinting() && F.Speed() <= P.WalkSpeed + .01f);
+	for (int32 Index = 0; Index < 60; ++Index) F.Move(Forward, SprintRequest | WalkToggle);
+	TestTrue(TEXT("The sprint request overrides a received walk toggle"), F.Movement->IsSprinting() && F.Speed() > P.RunSpeed);
+	F.EndSprint();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgMovementGaitProxyTest,
+	"SurvivalRpg.Movement.CMC.Gait.SimulatedProxySpeedFollowsReplicatedGait",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FRpgMovementGaitProxyTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgMovementProfileTests;
+	FFixture F(FrameSteps[1]);
+	if (!F.Initialize(*this)) return false;
+	const URpgMovementProfile& P = *F.Profile;
+	// The Pose Search trajectory predicts with GetMaxSpeed on proxies too; they only know the replicated gait.
+	F.Character->SetRole(ROLE_SimulatedProxy);
+	const TPair<ERpgMovementGait, float> Cases[] = {
+		{ ERpgMovementGait::Walk, P.WalkSpeed }, { ERpgMovementGait::Run, P.RunSpeed }, { ERpgMovementGait::Sprint, P.SprintSpeed } };
+	for (const TPair<ERpgMovementGait, float>& Case : Cases)
+	{
+		F.SetReplicatedGait(Case.Key);
+		const FString Name = StaticEnum<ERpgMovementGait>()->GetNameStringByValue(static_cast<int64>(Case.Key));
+		TestEqual(Name + TEXT(": the proxy reports the replicated gait"), F.Movement->GetGait(), Case.Key);
+		TestEqual(Name + TEXT(": the proxy predicts with that gait's speed"), F.Movement->GetMaxSpeed(), Case.Value);
+		TestEqual(Name + TEXT(": the sprint read model agrees"), F.Movement->IsSprinting(), Case.Key == ERpgMovementGait::Sprint);
+	}
+	F.Movement->ToggleWalk();
+	F.SetReplicatedGait(ERpgMovementGait::Run);
+	TestEqual(TEXT("A proxy never applies local walk input"), F.Movement->GetMaxSpeed(), P.RunSpeed);
+	F.SetReplicatedGait(ERpgMovementGait::Run);
+	F.Character->SetRole(ROLE_Authority);
 	return true;
 }
 
