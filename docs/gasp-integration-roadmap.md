@@ -14,7 +14,7 @@ frühere Fassung mit Schnellstart-Verlauf und Aufgabenverträgen liegt in der
 ## Nächster bereiter Schritt
 
 **`GASP-STAB-04` Zittern von Client-Figuren in der Host-Ansicht** ist
-**Bereit** ([Bericht](gasp-host-view-turn-jitter.md)). Phase A misst ohne Codeänderung die Ursache
+**In Arbeit** ([Bericht](gasp-host-view-turn-jitter.md)). Phase A misst ohne Codeänderung die Ursache
 (Offset Root Bone bei pro Bewegung getickten Client-Figuren); vor dem Bau fragt
 der umsetzende Chat den Nutzer nur, wenn der Host dadurch anders sähe als die
 anderen Clients oder die Lösung mehr als 0,1 ms pro Figur kostet. Danach folgt
@@ -51,7 +51,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-STAB-01` | Block-Cleanup nach entferntem DefenseSet | **Gemergt** | [#145](https://github.com/Athurito/SurvivalRpg/pull/145) | [Block-Cleanup](gasp-block-cleanup.md) |
 | `GASP-STAB-02` | Falling bei belegtem Respawn | **Gemergt** | [#146](https://github.com/Athurito/SurvivalRpg/pull/146) | [Respawn-Falling](gasp-respawn-falling.md) |
 | `GASP-STAB-03` | Testboden vor den Pawns in CQTest-Netzwerktests | **Gemergt** | [#223](https://github.com/Athurito/SurvivalRpg/pull/223) | [Testboden](gasp-test-floor-race.md) |
-| `GASP-STAB-04` | Listen-Server: Client-Figur zittert in der Host-Ansicht beim Drehen im Stand (Offset Root Bone) | **Bereit** | – | [Host-Ansicht](gasp-host-view-turn-jitter.md) |
+| `GASP-STAB-04` | Listen-Server: Client-Figur zittert in der Host-Ansicht beim Drehen im Stand (Offset Root Bone) | **In Arbeit** | – | [Host-Ansicht](gasp-host-view-turn-jitter.md) |
 | `GASP-NET-01` | Rollback während aktivem Mantle | **Gemergt** | [#147](https://github.com/Athurito/SurvivalRpg/pull/147) | [Mantle-Rollback](gasp-active-mantle-rollback.md) |
 | `GASP-NET-02` | Terminaler Mantle-Grund bei Reconciliation | **Gemergt** | [#148](https://github.com/Athurito/SurvivalRpg/pull/148) | [Reconciliation](gasp-terminal-reconciliation.md) |
 | `GASP-NET-03` | Rekonstruktion nach Paketpause | **Gemergt**; Grenze bewertet, Werkzeug validiert, Runtime-Grenze bleibt | [#149](https://github.com/Athurito/SurvivalRpg/pull/149) | [Paketpause](gasp-packet-gap-recovery.md) |
