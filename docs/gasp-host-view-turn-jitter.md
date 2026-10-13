@@ -1,6 +1,6 @@
 # GASP-STAB-04 – Host-view jitter of remote characters turning in place
 
-Status: **In progress** on `claude/gasp-stab-04-host-view-jitter` (defined 2026-10-13 in [#243](https://github.com/Athurito/SurvivalRpg/pull/243), started the same day). The user found the jitter in the [GASP-12 check](gasp-walk-gait.md#limits) and chose a separate package before `GASP-13`. This report defines the package and is the task report for the implementation PR.
+Status: **PR open** in [#244](https://github.com/Athurito/SurvivalRpg/pull/244) on `claude/gasp-stab-04-host-view-jitter` (defined 2026-10-13 in [#243](https://github.com/Athurito/SurvivalRpg/pull/243), implemented the same day); the user check is pending. The user found the jitter in the [GASP-12 check](gasp-walk-gait.md#limits) and chose a separate package before `GASP-13`. This report defines the package and is the task report for the implementation PR.
 
 ## Goal
 
