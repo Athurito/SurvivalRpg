@@ -186,7 +186,7 @@ Its recorded limits carry into GASP-14 and GASP-15:
 ## Order and parallelism
 
 1. **GASP-08** to **GASP-12** are merged.
-2. **GASP-STAB-04**, the host-view jitter found in the GASP-12 check, comes first at the user's choice and has a **PR open** ([#244](https://github.com/Athurito/SurvivalRpg/pull/244), [task report](gasp-host-view-turn-jitter.md)); then **GASP-13**. Both concern the CMC AnimBP's Offset Root Bone path.
+2. **GASP-STAB-04**, the host-view jitter found in the GASP-12 check, came first at the user's choice and is **merged** in [#244](https://github.com/Athurito/SurvivalRpg/pull/244) after the user's check ([task report](gasp-host-view-turn-jitter.md)); **GASP-13** is next. Both concern the CMC AnimBP's Offset Root Bone path.
 3. After a GASP-08 pass: **GASP-14 → GASP-15**, then **GASP-16**, then the final dodge montages for #124.
 4. If GASP-08 fails: GASP-14 and GASP-15 are dropped. GASP-16 then targets the runtime follower path, and the dodge montages are retargeted to UEFN like the block set.
 
