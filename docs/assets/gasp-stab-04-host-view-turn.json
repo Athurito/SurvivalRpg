@@ -1230,5 +1230,9 @@
     ],
     "rerun_after_trace_scope_and_late_join": "SurvivalRpg.Animation.ListenServer and SurvivalRpg.GASP.CMC.HostView 5/5"
   },
-  "user_check": "pending"
+  "user_check": {
+    "date": "2026-10-14",
+    "result": "accepted (\"passt, merge #244\")",
+    "open": "standing combat-stance turn (feet and hips do not follow the camera) not addressed separately; stays open for GASP-13 or its own package"
+  }
 }

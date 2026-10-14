@@ -1,6 +1,6 @@
 # GASP-STAB-04 – Host-view jitter of remote characters turning in place
 
-Status: **PR open** in [#244](https://github.com/Athurito/SurvivalRpg/pull/244) on `claude/gasp-stab-04-host-view-jitter` (defined 2026-10-13 in [#243](https://github.com/Athurito/SurvivalRpg/pull/243), implemented the same day); the user check is pending. The user found the jitter in the [GASP-12 check](gasp-walk-gait.md#limits) and chose a separate package before `GASP-13`. This report defines the package and is the task report for the implementation PR.
+Status: **PR open** in [#244](https://github.com/Athurito/SurvivalRpg/pull/244) on `claude/gasp-stab-04-host-view-jitter` (defined 2026-10-13 in [#243](https://github.com/Athurito/SurvivalRpg/pull/243), implemented the same day). The user accepted it on 2026-10-14. The user found the jitter in the [GASP-12 check](gasp-walk-gait.md#limits) and chose a separate package before `GASP-13`. This report defines the package and is the task report for the implementation PR.
 
 ## Goal
 
@@ -254,7 +254,7 @@ With both parts, the turn probe gave:
   - **CMC pawn, block held, 120 FPS:** 0 direction changes, but the root steps at the 60 Hz move rate (roughness 1.1 to 4.5 against 0.1 to 0.3 on the owner).
   - **Same, rotation smoothing temporarily restored:** the block turn jittered again (15 to 20 direction changes at 60 FPS, 64 to 78 at 120 FPS). Turning rotation smoothing off therefore does not make blocking turns worse.
 - **Original GASP:** not run. The reference project enables neither Python nor MCP, and a scripted listen-server probe there would need plugin changes in an external checkout. The mechanism lives in engine CMC and animation code that every CMC character shares.
-- **User check:** pending.
+- **User check:** on 2026-10-14 the user ran the [Repro](#repro-after-implementation) and accepted the fix ("passt, merge #244").
 
 ### Deviations from the definition
 
@@ -272,7 +272,7 @@ With both parts, the turn probe gave:
 
 ### Limits
 
-- **User check:** pending; see [Repro](#repro-after-implementation).
+- **User check:** accepted on 2026-10-14 ("passt, merge #244"). The reply did not address the standing stance turn below separately.
 - **Late join:** the PIE test checks a late joiner's turn. The Python probe ran without one.
 - **60 Hz steps:**
   - A host above 60 FPS still shows remote characters' poses and root translation in 60 Hz steps. The server ticks those poses only when moves arrive, and clients send at most every 0.0166 s by default.
@@ -281,7 +281,7 @@ With both parts, the turn probe gave:
 - **Standing stance turns:** on every role, a standing combat-stance character does not turn its feet or hips with the camera, even over 540° of turning.
   - Motion Matching keeps the idle loop.
   - Offset Root Bone in Accumulate mode, without a maximum rotation error, holds the root in the world.
-  - This predates the package and is not host-specific. It belongs to `GASP-13` or its own package after a user check.
+  - This predates the package and is not host-specific. It stays open for `GASP-13` or its own package.
 - **Dedicated servers:** they keep the engine behavior; their remote poses stay one move behind their capsule. Nothing renders there, but server-side bone or socket queries on remote characters see the old transform.
 - **Other bases:** the native fix applies only to animation bases derived from `URpgAnimInstance`. The GASP sample copy `SandboxCharacter_CMC` keeps the engine behavior.
 - **Network conditions:** single-process PIE without latency, with the same frame rate in every world. Different client and host frame rates, latency and loss stay with `GASP-VAL-02`.
