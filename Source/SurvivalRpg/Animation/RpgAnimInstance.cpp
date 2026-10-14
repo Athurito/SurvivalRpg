@@ -7,6 +7,7 @@
 #include "ChooserFunctionLibrary.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
@@ -43,6 +44,18 @@ bool URpgAnimInstance::IsAnimationCompatible(const UAnimationAsset* Animation) c
 	return Animation && TargetSkeleton && Animation->GetSkeleton() == TargetSkeleton;
 }
 
+bool URpgAnimInstance::IsRemoteAutonomousPoseTick() const
+{
+	const ARpgCharacter* Character = Cast<ARpgCharacter>(TryGetPawnOwner());
+	const USkeletalMeshComponent* MeshComponent = GetSkelMeshComponent();
+	const UWorld* World = GetWorld();
+	return World && World->GetNetMode() == NM_ListenServer &&
+		Character && Character->GetLocalRole() == ROLE_Authority &&
+		Character->GetRemoteRole() == ROLE_AutonomousProxy &&
+		MeshComponent && MeshComponent->bOnlyAllowAutonomousTickPose &&
+		MeshComponent->bIsAutonomousTickPose;
+}
+
 bool URpgAnimInstance::CanRunParallelWork() const
 {
 	if (!Super::CanRunParallelWork())
@@ -50,19 +63,23 @@ bool URpgAnimInstance::CanRunParallelWork() const
 		return false;
 	}
 
-	const ARpgCharacter* Character = Cast<ARpgCharacter>(TryGetPawnOwner());
-	const USkeletalMeshComponent* MeshComponent = GetSkelMeshComponent();
-	const UWorld* World = GetWorld();
-	const bool bIsRemoteAutonomousPoseTick =
-		World && World->GetNetMode() == NM_ListenServer &&
-		Character && Character->GetLocalRole() == ROLE_Authority &&
-		Character->GetRemoteRole() == ROLE_AutonomousProxy &&
-		MeshComponent && MeshComponent->bOnlyAllowAutonomousTickPose &&
-		MeshComponent->bIsAutonomousTickPose;
-
 	// Several client moves can tick the pose within one server frame. A deferred graph
 	// update retains only the last move's delta; consume each move before it is overwritten.
-	return !bIsRemoteAutonomousPoseTick;
+	return !IsRemoteAutonomousPoseTick();
+}
+
+void URpgAnimInstance::PreUpdateAnimation(float DeltaSeconds)
+{
+	if (IsRemoteAutonomousPoseTick())
+	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(URpgAnimInstance::MoveMeshWithCapsule);
+		// The server ticks this pose inside the move's deferred capsule update, so the mesh still
+		// holds the transform from before the move. The proxy caches it here for evaluation, and
+		// Offset Root Bone would hold the root one move behind the rendered mesh. The engine
+		// re-caches the transform before evaluation only while root motion plays.
+		GetSkelMeshComponent()->UpdateComponentToWorld();
+	}
+	Super::PreUpdateAnimation(DeltaSeconds);
 }
 
 void URpgAnimInstance::InitializeWithAbilitySystem(UAbilitySystemComponent* ASC)

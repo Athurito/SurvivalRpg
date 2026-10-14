@@ -75,6 +75,9 @@ public:
 
 protected:
 
+	/** Moves the mesh with its capsule before a listen server caches the pose's component transform for a remote autonomous move. */
+	virtual void PreUpdateAnimation(float DeltaSeconds) override;
+
 	/**
 	 * Optional designer-owned asset checks. Editor validation calls this on an uninitialized transient copy,
 	 * never the asset CDO or a live pawn. Report each missing selection or incompatible asset in OutErrors;
@@ -94,4 +97,7 @@ protected:
 private:
 	/** Refreshes only value inputs on the game thread, including reinitialization of an existing linked instance. */
 	void CaptureBlockAnimationState();
+
+	/** True while CharacterMovement on a listen server ticks this pose for a move received from the remote owner. */
+	bool IsRemoteAutonomousPoseTick() const;
 };

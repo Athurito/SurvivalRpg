@@ -25,7 +25,7 @@ class URpgAnimInstanceTestInstance final : public URpgAnimInstance
 	GENERATED_BODY()
 
 public:
-	/** Disables only the RPG guard for an engine-baseline control using the identical proxy. */
+	/** Disables only the RPG listen-server guards for an engine-baseline control using the identical proxy. */
 	bool bUseRpgTimingGuard = true;
 
 	virtual bool CanRunParallelWork() const override;
@@ -36,7 +36,11 @@ public:
 	/** Sum, in seconds, of the deltas actually delivered to the animation graph. */
 	float GetGraphElapsedSeconds();
 
+	/** Component transform the proxy cached in its last pre-update, which graph evaluation uses. */
+	FTransform GetCachedComponentTransform();
+
 protected:
+	virtual void PreUpdateAnimation(float DeltaSeconds) override;
 	virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override;
 	virtual void DestroyAnimInstanceProxy(FAnimInstanceProxy* InProxy) override;
 };

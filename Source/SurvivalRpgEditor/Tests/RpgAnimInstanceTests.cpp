@@ -4,8 +4,10 @@
 
 #include "RpgAnimInstanceTestTypes.h"
 
+#include "Components/SceneComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/Engine.h"
+#include "Engine/ScopedMovementUpdate.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "HAL/IConsoleManager.h"
@@ -254,6 +256,80 @@ bool FRpgRemoteAutonomousAnimationScopeTest::RunTest(const FString& Parameters)
 		Fixture.World->SetPlayInEditorInitialNetMode(NetMode);
 		TestTrue(FString::Printf(TEXT("Net mode %d retains parallel work"), static_cast<int32>(NetMode)),
 			Fixture.Instance->CanRunParallelWork());
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgRemoteAutonomousPoseTransformTest,
+	"SurvivalRpg.Animation.ListenServer.CachesMeshTransformAfterDeferredMove",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgRemoteAutonomousPoseTransformTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgAnimInstanceTests;
+
+	// CharacterMovement ticks a remote move's pose inside the move's deferred capsule update, as
+	// ServerMove_PerformMovement does. Returns the mesh transform after the move and the transform
+	// the proxy cached for graph evaluation.
+	struct FMoveResult
+	{
+		FTransform BeforeMove, AfterMove, Cached;
+		bool bMeshDeferred = false;
+	};
+	auto TickDeferredMove = [](FScopedAnimationWorld& Fixture, double Yaw)
+	{
+		FMoveResult Result;
+		USceneComponent* Capsule = Fixture.Character->GetRootComponent();
+		Result.BeforeMove = Fixture.Mesh->GetComponentTransform();
+		{
+			FScopedMovementUpdate DeferredMove(Capsule, EScopedUpdate::DeferredUpdates);
+			Capsule->SetWorldLocationAndRotation(Capsule->GetComponentLocation() + FVector(12.0, 5.0, 0.0), FRotator(0.0, Yaw, 0.0));
+			Result.AfterMove = Fixture.Mesh->GetRelativeTransform() * Capsule->GetComponentTransform();
+			Result.bMeshDeferred = Fixture.Mesh->GetComponentTransform().Equals(Result.BeforeMove, KINDA_SMALL_NUMBER);
+			Fixture.Instance->UpdateAnimation(1.f / 60.f, true);
+			Fixture.FlushPendingGraphUpdate();
+			Result.Cached = Fixture.Instance->GetCachedComponentTransform();
+		}
+		return Result;
+	};
+
+	// The identical native proxy with the engine policy caches the mesh from before the move.
+	{
+		FScopedAnimationWorld EngineControl;
+		if (!TestNotNull(TEXT("Engine baseline control exists"), EngineControl.Instance.Get()))
+		{
+			return false;
+		}
+		EngineControl.Instance->bUseRpgTimingGuard = false;
+		const FMoveResult Control = TickDeferredMove(EngineControl, 30.0);
+		TestTrue(TEXT("The deferred update leaves the mesh behind its capsule during the pose tick"), Control.bMeshDeferred);
+		TestTrue(TEXT("Engine baseline caches the mesh from before the move"), Control.Cached.Equals(Control.BeforeMove, KINDA_SMALL_NUMBER));
+		TestTrue(TEXT("The engine moves the mesh once the deferred update ends"),
+			EngineControl.Mesh->GetComponentTransform().Equals(Control.AfterMove, KINDA_SMALL_NUMBER));
+	}
+
+	FScopedAnimationWorld Fixture;
+	if (!TestNotNull(TEXT("Transient native anim instance exists"), Fixture.Instance.Get()))
+	{
+		return false;
+	}
+	const FMoveResult Guarded = TickDeferredMove(Fixture, 30.0);
+	TestTrue(TEXT("Guarded pose tick also runs inside the deferred update"), Guarded.bMeshDeferred);
+	TestTrue(TEXT("Remote autonomous pose caches the mesh transform the move ends with"), Guarded.Cached.Equals(Guarded.AfterMove, KINDA_SMALL_NUMBER));
+	TestTrue(TEXT("The mesh stays where the deferred update would have put it"),
+		Fixture.Mesh->GetComponentTransform().Equals(Guarded.AfterMove, KINDA_SMALL_NUMBER));
+
+	// Outside the movement-owned listen-server pose tick the engine behavior is unchanged.
+	Fixture.Mesh->bIsAutonomousTickPose = false;
+	const FMoveResult Ordinary = TickDeferredMove(Fixture, 60.0);
+	TestTrue(TEXT("An ordinary pose update keeps the engine's cached transform"), Ordinary.Cached.Equals(Ordinary.BeforeMove, KINDA_SMALL_NUMBER));
+	Fixture.Mesh->bIsAutonomousTickPose = true;
+	for (const ENetMode NetMode : {NM_Client, NM_DedicatedServer, NM_Standalone})
+	{
+		Fixture.World->SetPlayInEditorInitialNetMode(NetMode);
+		const FMoveResult Other = TickDeferredMove(Fixture, 90.0 + 30.0 * static_cast<int32>(NetMode));
+		TestTrue(FString::Printf(TEXT("Net mode %d keeps the engine's cached transform"), static_cast<int32>(NetMode)),
+			Other.Cached.Equals(Other.BeforeMove, KINDA_SMALL_NUMBER));
 	}
 	return true;
 }

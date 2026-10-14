@@ -1,0 +1,1238 @@
+{
+  "task": "GASP-STAB-04",
+  "date": "2026-10-13",
+  "engine": "5.8.3",
+  "cause": {
+    "deferred_transform": "UCharacterMovementComponent::ServerMove_PerformMovement wraps PlayerController::UpdateRotation and MoveAutonomous in FScopedCapsuleMovementUpdate (deferred). The capsule turns at once; its child mesh follows only when the scope ends. MoveAutonomous ticks the pose inside the scope (TickCharacterPose), so UAnimInstance::PreUpdateAnimation caches the mesh transform from before the move in the anim proxy. FAnimInstanceProxy::PreEvaluateAnimation re-caches it only while root motion plays. Offset Root Bone evaluates against the cached transform and holds the root one move behind the rendered mesh.",
+    "evidence_deferred_transform": "smoothing off: per frame, server root yaw step = capsule yaw step of this frame minus that of the previous frame (to three decimals); the AnimBP CharacterTransform (actor) was current at the same time",
+    "rotation_smoothing": "listen-server smoothing (SmoothCorrection after the pose tick, exponential, rotation time 0.033 s) moves the rendered mesh after the transform was cached; with Offset Root Bone the root follows that offset. At 120 FPS the client sends moves every second frame, which makes a sawtooth. At 30 FPS a 33 ms frame exceeds 0.033 s and the rotation snaps.",
+    "not_the_cause": "several pose updates per evaluation: at 60 FPS the server applied one move per frame in 163 of 164 frames and still jittered"
+  },
+  "fix": {
+    "native": "URpgAnimInstance::PreUpdateAnimation calls GetSkelMeshComponent()->UpdateComponentToWorld() before Super while IsRemoteAutonomousPoseTick (listen server, authority, remote autonomous owner, bOnlyAllowAutonomousTickPose and bIsAutonomousTickPose), the scope already used by CanRunParallelWork",
+    "asset": {
+      "path": "/Game/SurvivalRpg/Characters/GASP/CMC/RPG/BP_RpgGasp_CMC",
+      "change": "CharacterMovement ListenServerNetworkSimulatedSmoothRotationTime 0.033 -> 0; ListenServerNetworkSimulatedSmoothLocationTime stays 0.04",
+      "inherited_by": [
+        "BP_RpgGasp_MantleCharacter",
+        "BP_RpgGasp08_CMC_Manny",
+        "BP_RpgGasp08_CMC_UefnFollower",
+        "BP_RpgGasp08_CMC_UefnControl"
+      ],
+      "unchanged": "ARpgCharacter class default (0.033) for pawns without Offset Root Bone"
+    }
+  },
+  "probe": {
+    "map": "Lvl_RpgGaspCMC",
+    "setup": "single-process listen-server PIE with three players at t.MaxFPS 30/60/120 for all worlds, no latency; client A stands armed in the combat stance and its control rotation turns at 45, 90, 180 and -90 deg/s for 3 s each; A is recorded after every frame as owner, on the server and as a proxy on client B",
+    "metrics": "root bone world yaw; direction changes = consecutive frame steps of opposite sign, both above 0.05 deg; roughness = mean change of the per-frame step; the first 10 frames of each window are skipped",
+    "turn": [
+      {
+        "run": "t30_def",
+        "code": "master",
+        "fps": 30,
+        "condition": "engine default smoothing",
+        "turn_deg_per_s": {
+          "45": {
+            "frames": 80,
+            "server_root_direction_changes": 0,
+            "server_root_roughness_deg_per_frame": 0.038,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "90": {
+            "frames": 80,
+            "server_root_direction_changes": 14,
+            "server_root_roughness_deg_per_frame": 0.094,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "180": {
+            "frames": 80,
+            "server_root_direction_changes": 16,
+            "server_root_roughness_deg_per_frame": 0.107,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "-90": {
+            "frames": 80,
+            "server_root_direction_changes": 7,
+            "server_root_roughness_deg_per_frame": 0.06,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          }
+        }
+      },
+      {
+        "run": "t60_b",
+        "code": "master",
+        "fps": 60,
+        "condition": "engine default smoothing",
+        "turn_deg_per_s": {
+          "45": {
+            "frames": 170,
+            "server_root_direction_changes": 15,
+            "server_root_roughness_deg_per_frame": 0.053,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "90": {
+            "frames": 169,
+            "server_root_direction_changes": 49,
+            "server_root_roughness_deg_per_frame": 0.127,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "180": {
+            "frames": 169,
+            "server_root_direction_changes": 90,
+            "server_root_roughness_deg_per_frame": 0.289,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "-90": {
+            "frames": 170,
+            "server_root_direction_changes": 21,
+            "server_root_roughness_deg_per_frame": 0.063,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          }
+        }
+      },
+      {
+        "run": "t120_b",
+        "code": "master",
+        "fps": 120,
+        "condition": "engine default smoothing",
+        "turn_deg_per_s": {
+          "45": {
+            "frames": 193,
+            "server_root_direction_changes": 190,
+            "server_root_roughness_deg_per_frame": 1.077,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "90": {
+            "frames": 193,
+            "server_root_direction_changes": 188,
+            "server_root_roughness_deg_per_frame": 2.134,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "180": {
+            "frames": 193,
+            "server_root_direction_changes": 186,
+            "server_root_roughness_deg_per_frame": 4.206,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "-90": {
+            "frames": 194,
+            "server_root_direction_changes": 191,
+            "server_root_roughness_deg_per_frame": 2.167,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          }
+        }
+      },
+      {
+        "run": "t60_noorb",
+        "code": "master",
+        "fps": 60,
+        "condition": "control: a.animnode.offsetrootbone.enable 0",
+        "turn_deg_per_s": {
+          "45": {
+            "frames": 170,
+            "server_root_direction_changes": 0,
+            "server_root_roughness_deg_per_frame": 0.021,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "90": {
+            "frames": 170,
+            "server_root_direction_changes": 0,
+            "server_root_roughness_deg_per_frame": 0.046,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "180": {
+            "frames": 170,
+            "server_root_direction_changes": 0,
+            "server_root_roughness_deg_per_frame": 0.057,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "-90": {
+            "frames": 170,
+            "server_root_direction_changes": 0,
+            "server_root_roughness_deg_per_frame": 0.038,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          }
+        }
+      },
+      {
+        "run": "t60_nosmooth_b",
+        "code": "master",
+        "fps": 60,
+        "condition": "control: p.NetEnableListenServerSmoothing 0",
+        "turn_deg_per_s": {
+          "45": {
+            "frames": 159,
+            "server_root_direction_changes": 37,
+            "server_root_roughness_deg_per_frame": 0.116,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "90": {
+            "frames": 159,
+            "server_root_direction_changes": 75,
+            "server_root_roughness_deg_per_frame": 0.273,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "180": {
+            "frames": 161,
+            "server_root_direction_changes": 103,
+            "server_root_roughness_deg_per_frame": 0.571,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "-90": {
+            "frames": 161,
+            "server_root_direction_changes": 83,
+            "server_root_roughness_deg_per_frame": 0.298,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          }
+        }
+      },
+      {
+        "run": "t120_nosmooth",
+        "code": "master",
+        "fps": 120,
+        "condition": "control: p.NetEnableListenServerSmoothing 0",
+        "turn_deg_per_s": {
+          "45": {
+            "frames": 185,
+            "server_root_direction_changes": 5,
+            "server_root_roughness_deg_per_frame": 0.074,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "90": {
+            "frames": 189,
+            "server_root_direction_changes": 3,
+            "server_root_roughness_deg_per_frame": 0.136,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "180": {
+            "frames": 185,
+            "server_root_direction_changes": 7,
+            "server_root_roughness_deg_per_frame": 0.281,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "-90": {
+            "frames": 187,
+            "server_root_direction_changes": 3,
+            "server_root_roughness_deg_per_frame": 0.138,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          }
+        }
+      },
+      {
+        "run": "t60_nosmooth_nopae",
+        "code": "master",
+        "fps": 60,
+        "condition": "control: smoothing off and a.ParallelAnimEvaluation 0",
+        "turn_deg_per_s": {
+          "45": {
+            "frames": 138,
+            "server_root_direction_changes": 28,
+            "server_root_roughness_deg_per_frame": 0.087,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "90": {
+            "frames": 134,
+            "server_root_direction_changes": 58,
+            "server_root_roughness_deg_per_frame": 0.236,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "180": {
+            "frames": 134,
+            "server_root_direction_changes": 73,
+            "server_root_roughness_deg_per_frame": 0.491,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "-90": {
+            "frames": 138,
+            "server_root_direction_changes": 70,
+            "server_root_roughness_deg_per_frame": 0.244,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          }
+        }
+      },
+      {
+        "run": "t60_rot0",
+        "code": "master",
+        "fps": 60,
+        "condition": "control: listen-server rotation smoothing time 0 (temporary class default)",
+        "turn_deg_per_s": {
+          "45": {
+            "frames": 167,
+            "server_root_direction_changes": 46,
+            "server_root_roughness_deg_per_frame": 0.113,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "90": {
+            "frames": 169,
+            "server_root_direction_changes": 94,
+            "server_root_roughness_deg_per_frame": 0.274,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "180": {
+            "frames": 169,
+            "server_root_direction_changes": 100,
+            "server_root_roughness_deg_per_frame": 0.476,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "-90": {
+            "frames": 169,
+            "server_root_direction_changes": 79,
+            "server_root_roughness_deg_per_frame": 0.23,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          }
+        }
+      },
+      {
+        "run": "t120_rot0",
+        "code": "master",
+        "fps": 120,
+        "condition": "control: listen-server rotation smoothing time 0 (temporary class default)",
+        "turn_deg_per_s": {
+          "45": {
+            "frames": 186,
+            "server_root_direction_changes": 8,
+            "server_root_roughness_deg_per_frame": 0.256,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "90": {
+            "frames": 188,
+            "server_root_direction_changes": 5,
+            "server_root_roughness_deg_per_frame": 0.352,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "180": {
+            "frames": 184,
+            "server_root_direction_changes": 10,
+            "server_root_roughness_deg_per_frame": 1.276,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "-90": {
+            "frames": 184,
+            "server_root_direction_changes": 9,
+            "server_root_roughness_deg_per_frame": 0.504,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          }
+        }
+      },
+      {
+        "run": "t60_fix",
+        "code": "native fix only",
+        "fps": 60,
+        "condition": "engine default smoothing",
+        "turn_deg_per_s": {
+          "45": {
+            "frames": 167,
+            "server_root_direction_changes": 49,
+            "server_root_roughness_deg_per_frame": 0.142,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "90": {
+            "frames": 167,
+            "server_root_direction_changes": 84,
+            "server_root_roughness_deg_per_frame": 0.279,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "180": {
+            "frames": 169,
+            "server_root_direction_changes": 79,
+            "server_root_roughness_deg_per_frame": 0.353,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "-90": {
+            "frames": 166,
+            "server_root_direction_changes": 69,
+            "server_root_roughness_deg_per_frame": 0.25,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          }
+        }
+      },
+      {
+        "run": "t120_fix",
+        "code": "native fix only",
+        "fps": 120,
+        "condition": "engine default smoothing",
+        "turn_deg_per_s": {
+          "45": {
+            "frames": 185,
+            "server_root_direction_changes": 175,
+            "server_root_roughness_deg_per_frame": 1.029,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "90": {
+            "frames": 188,
+            "server_root_direction_changes": 184,
+            "server_root_roughness_deg_per_frame": 2.143,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "180": {
+            "frames": 186,
+            "server_root_direction_changes": 175,
+            "server_root_roughness_deg_per_frame": 4.276,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "-90": {
+            "frames": 187,
+            "server_root_direction_changes": 175,
+            "server_root_roughness_deg_per_frame": 1.998,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          }
+        }
+      },
+      {
+        "run": "t30_final",
+        "code": "fix (native + saved asset)",
+        "fps": 30,
+        "condition": "rotation smoothing 0, location smoothing 0.04 s",
+        "turn_deg_per_s": {
+          "45": {
+            "frames": 80,
+            "server_root_direction_changes": 0,
+            "server_root_roughness_deg_per_frame": 0.0,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "90": {
+            "frames": 80,
+            "server_root_direction_changes": 0,
+            "server_root_roughness_deg_per_frame": 0.0,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "180": {
+            "frames": 80,
+            "server_root_direction_changes": 0,
+            "server_root_roughness_deg_per_frame": 0.0,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "-90": {
+            "frames": 80,
+            "server_root_direction_changes": 0,
+            "server_root_roughness_deg_per_frame": 0.0,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          }
+        }
+      },
+      {
+        "run": "t60_final",
+        "code": "fix (native + saved asset)",
+        "fps": 60,
+        "condition": "rotation smoothing 0, location smoothing 0.04 s",
+        "turn_deg_per_s": {
+          "45": {
+            "frames": 169,
+            "server_root_direction_changes": 0,
+            "server_root_roughness_deg_per_frame": 0.0,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "90": {
+            "frames": 165,
+            "server_root_direction_changes": 0,
+            "server_root_roughness_deg_per_frame": 0.0,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "180": {
+            "frames": 166,
+            "server_root_direction_changes": 0,
+            "server_root_roughness_deg_per_frame": 0.0,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "-90": {
+            "frames": 166,
+            "server_root_direction_changes": 0,
+            "server_root_roughness_deg_per_frame": 0.0,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          }
+        }
+      },
+      {
+        "run": "t120_final",
+        "code": "fix (native + saved asset)",
+        "fps": 120,
+        "condition": "rotation smoothing 0, location smoothing 0.04 s",
+        "turn_deg_per_s": {
+          "45": {
+            "frames": 177,
+            "server_root_direction_changes": 0,
+            "server_root_roughness_deg_per_frame": 0.0,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "90": {
+            "frames": 177,
+            "server_root_direction_changes": 0,
+            "server_root_roughness_deg_per_frame": 0.0,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "180": {
+            "frames": 175,
+            "server_root_direction_changes": 0,
+            "server_root_roughness_deg_per_frame": 0.0,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          },
+          "-90": {
+            "frames": 177,
+            "server_root_direction_changes": 0,
+            "server_root_roughness_deg_per_frame": 0.0,
+            "owner_root_direction_changes": 0,
+            "proxy_root_direction_changes": 0
+          }
+        }
+      }
+    ],
+    "moving": {
+      "setup": "same session; stance run with the camera turning at 90 deg/s, stops, forward and side starts; then holstered: free-movement curve and start",
+      "runs": [
+        {
+          "run": "m60_def",
+          "code": "master",
+          "fps": 60,
+          "steps": {
+            "stance_run_turn": {
+              "server": {
+                "root_yaw_direction_changes": 4,
+                "root_yaw_roughness_deg_per_frame": 0.133,
+                "root_translation_roughness_cm_per_frame2": 0.235
+              },
+              "owner": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.028,
+                "root_translation_roughness_cm_per_frame2": 0.239
+              }
+            },
+            "free_curve": {
+              "server": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.103,
+                "root_translation_roughness_cm_per_frame2": 0.218
+              },
+              "owner": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.026,
+                "root_translation_roughness_cm_per_frame2": 0.219
+              }
+            },
+            "start1": {
+              "server": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.0,
+                "root_translation_roughness_cm_per_frame2": 0.138
+              },
+              "owner": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.001,
+                "root_translation_roughness_cm_per_frame2": 0.133
+              }
+            },
+            "stop1": {
+              "server": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.05,
+                "root_translation_roughness_cm_per_frame2": 0.063
+              },
+              "owner": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.047,
+                "root_translation_roughness_cm_per_frame2": 0.049
+              }
+            },
+            "free_start": {
+              "server": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.001,
+                "root_translation_roughness_cm_per_frame2": 0.15
+              },
+              "owner": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.001,
+                "root_translation_roughness_cm_per_frame2": 0.142
+              }
+            }
+          }
+        },
+        {
+          "run": "m60_final",
+          "code": "fix (native + saved asset)",
+          "fps": 60,
+          "steps": {
+            "stance_run_turn": {
+              "server": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.098,
+                "root_translation_roughness_cm_per_frame2": 0.502
+              },
+              "owner": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.098,
+                "root_translation_roughness_cm_per_frame2": 0.511
+              }
+            },
+            "free_curve": {
+              "server": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.093,
+                "root_translation_roughness_cm_per_frame2": 0.486
+              },
+              "owner": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.093,
+                "root_translation_roughness_cm_per_frame2": 0.489
+              }
+            },
+            "start1": {
+              "server": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.001,
+                "root_translation_roughness_cm_per_frame2": 0.477
+              },
+              "owner": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.001,
+                "root_translation_roughness_cm_per_frame2": 0.501
+              }
+            },
+            "stop1": {
+              "server": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.046,
+                "root_translation_roughness_cm_per_frame2": 0.061
+              },
+              "owner": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.046,
+                "root_translation_roughness_cm_per_frame2": 0.05
+              }
+            },
+            "free_start": {
+              "server": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.001,
+                "root_translation_roughness_cm_per_frame2": 0.403
+              },
+              "owner": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.001,
+                "root_translation_roughness_cm_per_frame2": 0.411
+              }
+            }
+          }
+        },
+        {
+          "run": "m120_def",
+          "code": "master",
+          "fps": 120,
+          "steps": {
+            "stance_run_turn": {
+              "server": {
+                "root_yaw_direction_changes": 55,
+                "root_yaw_roughness_deg_per_frame": 2.044,
+                "root_translation_roughness_cm_per_frame2": 1.2
+              },
+              "owner": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.258,
+                "root_translation_roughness_cm_per_frame2": 1.205
+              }
+            },
+            "free_curve": {
+              "server": {
+                "root_yaw_direction_changes": 59,
+                "root_yaw_roughness_deg_per_frame": 2.136,
+                "root_translation_roughness_cm_per_frame2": 1.406
+              },
+              "owner": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.24,
+                "root_translation_roughness_cm_per_frame2": 1.11
+              }
+            },
+            "start1": {
+              "server": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.049,
+                "root_translation_roughness_cm_per_frame2": 1.303
+              },
+              "owner": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.001,
+                "root_translation_roughness_cm_per_frame2": 0.809
+              }
+            },
+            "stop1": {
+              "server": {
+                "root_yaw_direction_changes": 2,
+                "root_yaw_roughness_deg_per_frame": 0.01,
+                "root_translation_roughness_cm_per_frame2": 0.113
+              },
+              "owner": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.111,
+                "root_translation_roughness_cm_per_frame2": 0.083
+              }
+            },
+            "free_start": {
+              "server": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.001,
+                "root_translation_roughness_cm_per_frame2": 1.135
+              },
+              "owner": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.001,
+                "root_translation_roughness_cm_per_frame2": 1.129
+              }
+            }
+          }
+        },
+        {
+          "run": "m120_fix_rot0",
+          "code": "native fix + rotation smoothing 0 (temporary class default)",
+          "fps": 120,
+          "steps": {
+            "stance_run_turn": {
+              "server": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.117,
+                "root_translation_roughness_cm_per_frame2": 1.498
+              },
+              "owner": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.267,
+                "root_translation_roughness_cm_per_frame2": 1.235
+              }
+            },
+            "free_curve": {
+              "server": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.09,
+                "root_translation_roughness_cm_per_frame2": 1.319
+              },
+              "owner": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.264,
+                "root_translation_roughness_cm_per_frame2": 1.216
+              }
+            },
+            "start1": {
+              "server": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.066,
+                "root_translation_roughness_cm_per_frame2": 1.278
+              },
+              "owner": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.001,
+                "root_translation_roughness_cm_per_frame2": 1.015
+              }
+            },
+            "stop1": {
+              "server": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.0,
+                "root_translation_roughness_cm_per_frame2": 0.098
+              },
+              "owner": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.087,
+                "root_translation_roughness_cm_per_frame2": 0.067
+              }
+            },
+            "free_start": {
+              "server": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.014,
+                "root_translation_roughness_cm_per_frame2": 1.086
+              },
+              "owner": {
+                "root_yaw_direction_changes": 0,
+                "root_yaw_roughness_deg_per_frame": 0.001,
+                "root_translation_roughness_cm_per_frame2": 1.097
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "controls_after_fix": {
+    "metric": "[root direction changes, root roughness deg/frame] per role and turn rate",
+    "mover_block_turn_60fps": {
+      "note": "Lvl_RpgGaspMover, BP_RpgGasp_Mover, block held so the pawn faces the camera; the Mover pawn is an AModularPawn and never takes the RPG guard",
+      "turn_deg_per_s": {
+        "45": {
+          "server": [
+            0,
+            0.052
+          ],
+          "owner": [
+            0,
+            0.055
+          ],
+          "proxy": [
+            0,
+            0.049
+          ]
+        },
+        "90": {
+          "server": [
+            0,
+            0.114
+          ],
+          "owner": [
+            0,
+            0.113
+          ],
+          "proxy": [
+            0,
+            0.118
+          ]
+        },
+        "180": {
+          "server": [
+            0,
+            0.288
+          ],
+          "owner": [
+            0,
+            0.295
+          ],
+          "proxy": [
+            0,
+            0.279
+          ]
+        },
+        "-90": {
+          "server": [
+            0,
+            0.133
+          ],
+          "owner": [
+            0,
+            0.138
+          ],
+          "proxy": [
+            0,
+            0.13
+          ]
+        }
+      }
+    },
+    "cmc_block_turn_60fps": {
+      "note": "fix (native + saved asset)",
+      "turn_deg_per_s": {
+        "45": {
+          "server": [
+            0,
+            0.033
+          ],
+          "owner": [
+            0,
+            0.033
+          ],
+          "proxy": [
+            0,
+            0.031
+          ]
+        },
+        "90": {
+          "server": [
+            0,
+            0.081
+          ],
+          "owner": [
+            0,
+            0.082
+          ],
+          "proxy": [
+            0,
+            0.08
+          ]
+        },
+        "180": {
+          "server": [
+            0,
+            0.169
+          ],
+          "owner": [
+            0,
+            0.17
+          ],
+          "proxy": [
+            0,
+            0.167
+          ]
+        },
+        "-90": {
+          "server": [
+            0,
+            0.075
+          ],
+          "owner": [
+            0,
+            0.076
+          ],
+          "proxy": [
+            0,
+            0.074
+          ]
+        }
+      }
+    },
+    "cmc_block_turn_120fps": {
+      "note": "fix (native + saved asset); no direction changes, but the root steps at the 60 Hz move rate",
+      "turn_deg_per_s": {
+        "45": {
+          "server": [
+            0,
+            1.141
+          ],
+          "owner": [
+            0,
+            0.112
+          ],
+          "proxy": [
+            0,
+            0.103
+          ]
+        },
+        "90": {
+          "server": [
+            0,
+            2.162
+          ],
+          "owner": [
+            0,
+            0.118
+          ],
+          "proxy": [
+            0,
+            0.121
+          ]
+        },
+        "180": {
+          "server": [
+            0,
+            4.508
+          ],
+          "owner": [
+            0,
+            0.323
+          ],
+          "proxy": [
+            0,
+            0.294
+          ]
+        },
+        "-90": {
+          "server": [
+            0,
+            2.089
+          ],
+          "owner": [
+            0,
+            0.159
+          ],
+          "proxy": [
+            0,
+            0.156
+          ]
+        }
+      }
+    },
+    "cmc_block_turn_60fps_rotation_smoothing_0033": {
+      "note": "native fix with rotation smoothing temporarily restored to 0.033 (not saved)",
+      "turn_deg_per_s": {
+        "45": {
+          "server": [
+            15,
+            0.101
+          ],
+          "owner": [
+            0,
+            0.034
+          ],
+          "proxy": [
+            0,
+            0.035
+          ]
+        },
+        "90": {
+          "server": [
+            18,
+            0.214
+          ],
+          "owner": [
+            0,
+            0.08
+          ],
+          "proxy": [
+            0,
+            0.078
+          ]
+        },
+        "180": {
+          "server": [
+            20,
+            0.385
+          ],
+          "owner": [
+            0,
+            0.168
+          ],
+          "proxy": [
+            0,
+            0.167
+          ]
+        },
+        "-90": {
+          "server": [
+            18,
+            0.188
+          ],
+          "owner": [
+            0,
+            0.079
+          ],
+          "proxy": [
+            0,
+            0.075
+          ]
+        }
+      }
+    },
+    "cmc_block_turn_120fps_rotation_smoothing_0033": {
+      "note": "native fix with rotation smoothing temporarily restored to 0.033 (not saved)",
+      "turn_deg_per_s": {
+        "45": {
+          "server": [
+            64,
+            0.974
+          ],
+          "owner": [
+            1,
+            0.119
+          ],
+          "proxy": [
+            0,
+            0.116
+          ]
+        },
+        "90": {
+          "server": [
+            65,
+            1.607
+          ],
+          "owner": [
+            0,
+            0.235
+          ],
+          "proxy": [
+            0,
+            0.233
+          ]
+        },
+        "180": {
+          "server": [
+            65,
+            3.213
+          ],
+          "owner": [
+            0,
+            0.484
+          ],
+          "proxy": [
+            0,
+            0.467
+          ]
+        },
+        "-90": {
+          "server": [
+            78,
+            1.755
+          ],
+          "owner": [
+            0,
+            0.186
+          ],
+          "proxy": [
+            0,
+            0.191
+          ]
+        }
+      }
+    },
+    "reference_gasp": "not run: the reference project enables neither Python nor MCP, and a scripted listen-server probe there would need plugin changes in an external checkout"
+  },
+  "cost": {
+    "method": "Trace.File cpu during a three-player 60 FPS turn probe with two remote clients; UnrealInsights -NoUI TimingInsights.ExportTimerStatistics -threads=GameThread",
+    "timer": "URpgAnimInstance::MoveMeshWithCapsule",
+    "calls": 4700,
+    "mean_ms": 0.009,
+    "median_ms": 0.003,
+    "max_ms": 0.234,
+    "per_remote_character_per_frame_ms_at_60fps": "about 0.009 (about one received move per frame)",
+    "budget_ms": 0.1
+  },
+  "tests": {
+    "new": [
+      "SurvivalRpg.Animation.ListenServer.CachesMeshTransformAfterDeferredMove",
+      "SurvivalRpg.GASP.CMC.HostView.GaspCMCHostViewPIE.RemoteStanceTurnInPlaceStaysSteadyOnTheHost"
+    ],
+    "host_view_results_root_direction_changes_and_roughness": {
+      "first_client_90": {
+        "server": [
+          0,
+          0.0
+        ],
+        "owner": [
+          0,
+          0.0
+        ],
+        "proxy": [
+          0,
+          0.0
+        ]
+      },
+      "first_client_180": {
+        "server": [
+          0,
+          0.0
+        ],
+        "owner": [
+          0,
+          0.0
+        ],
+        "proxy": [
+          0,
+          0.0
+        ]
+      },
+      "late_joiner_90": {
+        "server": [
+          0,
+          0.0
+        ],
+        "owner": [
+          0,
+          0.0
+        ],
+        "proxy": [
+          0,
+          0.0
+        ]
+      }
+    },
+    "mutations": {
+      "native_fix_removed": "both new tests failed; host 14 direction changes vs proxy 0, roughness 0.112 vs 0.000",
+      "asset_rotation_smoothing_0033": "PIE test failed; host 90 vs proxy 0, roughness 2.077 vs 0.000",
+      "reverted": true
+    }
+  },
+  "regression": {
+    "binaries": "fix commit 20aef8e6 with the tests of b97a8d67; the later trace scope and late-join stage were rerun separately",
+    "suites": [
+      [
+        "native (--null-rhi: Movement, Equipment, Harvesting, AbilitySystem, Block lifecycle/prediction, Dodge, ability and weapon contracts, BlockLocomotion validation, CMC asset/speed/sprint contracts, Mantle asset composition, Input, UI.Input)",
+        "135/135"
+      ],
+      [
+        "SurvivalRpg.Animation",
+        "4/4"
+      ],
+      [
+        "SurvivalRpg.GASP.CMC",
+        "12/12"
+      ],
+      [
+        "SurvivalRpg.Combat.BlockLocomotion",
+        "15/16; MoverFixedRollbackPreservesHeldBlockAndReplaysBlockedHistoryAcrossRelease timed out (known time-dependent Mover case); alone 1 of 2 passed"
+      ],
+      [
+        "SurvivalRpg.GASP.Mantle",
+        "13/13"
+      ],
+      [
+        "SurvivalRpg.GASP.Vault",
+        "9/9"
+      ],
+      [
+        "SurvivalRpg.GASP.Hurdle",
+        "12/12"
+      ],
+      [
+        "SurvivalRpg.GASP.RuntimeRetarget",
+        "2/2"
+      ],
+      [
+        "SurvivalRpg.GASP.VariantComparison",
+        "3/3"
+      ],
+      [
+        "SurvivalRpg.Network",
+        "19/19"
+      ],
+      [
+        "SurvivalRpg.GASP.Mover",
+        "67/67"
+      ]
+    ],
+    "rerun_after_trace_scope_and_late_join": "SurvivalRpg.Animation.ListenServer and SurvivalRpg.GASP.CMC.HostView 5/5"
+  },
+  "user_check": {
+    "date": "2026-10-14",
+    "result": "accepted (\"passt, merge #244\")",
+    "open": "standing combat-stance turn (feet and hips do not follow the camera) not addressed separately; stays open for GASP-13 or its own package"
+  }
+}
