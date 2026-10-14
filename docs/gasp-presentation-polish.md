@@ -1,6 +1,6 @@
 # GASP-13 – Presentation polish and standing turn in place
 
-Status: **Ready** (defined 2026-10-14). The package outline is in the [movement plan](gasp-movement-plan.md#gasp-13-presentation-polish). On 2026-10-14 the user added the standing turn in place in the combat stance, found in [GASP-STAB-04](gasp-host-view-turn-jitter.md#limits), and moved armor Foley out of this package. This report refines the outline against the current code and assets and is the task report for the implementation PR.
+Status: **In progress** on `claude/gasp-13-presentation-polish` (defined 2026-10-14 in [#246](https://github.com/Athurito/SurvivalRpg/pull/246), started the same day). The package outline is in the [movement plan](gasp-movement-plan.md#gasp-13-presentation-polish). On 2026-10-14 the user added the standing turn in place in the combat stance, found in [GASP-STAB-04](gasp-host-view-turn-jitter.md#limits), and moved armor Foley out of this package. This report refines the outline against the current code and assets and is the task report for the implementation PR.
 
 ## Goal
 

@@ -13,7 +13,7 @@ frühere Fassung mit Schnellstart-Verlauf und Aufgabenverträgen liegt in der
 
 ## Nächster bereiter Schritt
 
-**`GASP-13` Darstellung und Drehen im Stand** ist **Bereit**
+**`GASP-13` Darstellung und Drehen im Stand** ist **In Arbeit**
 ([Bericht](gasp-presentation-polish.md)). Zuerst dreht eine stehende Figur in der Kampfhaltung
 ihre Füße per Turn-in-Place mit der Kamera mit, danach folgen Offset Root Bone,
 Motion Matching, Steering, Spins und Kamera; Rüstungs-Foley gehört nach Wahl des
@@ -68,7 +68,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-10` | Animationsset und Tempo-Parität (Relaxed), Ducktempo | **Gemergt**; Sichtprüfung durch den Nutzer | [#235](https://github.com/Athurito/SurvivalRpg/pull/235) | [Animationsset](gasp-animation-set.md) |
 | `GASP-11` | Gemeinsames Bewegungsprofil (Trägheit, Drehung, Luft), lastunabhängig | **Gemergt**; Sichtprüfung durch den Nutzer | [#238](https://github.com/Athurito/SurvivalRpg/pull/238) | [Bewegungsprofil](gasp-movement-profile.md) |
 | `GASP-12` | Walk-Gait und Analog-Schwelle | **Gemergt**; Sichtprüfung durch den Nutzer | [#241](https://github.com/Athurito/SurvivalRpg/pull/241) | [Walk-Gait](gasp-walk-gait.md) |
-| `GASP-13` | Darstellung: Drehen im Stand (Kampfhaltung), Offset Root Bone, Steering, Spins, Kamera | **Bereit** | – | [Darstellung](gasp-presentation-polish.md) |
+| `GASP-13` | Darstellung: Drehen im Stand (Kampfhaltung), Offset Root Bone, Steering, Spins, Kamera | **In Arbeit** | – | [Darstellung](gasp-presentation-polish.md) |
 
 Statuswerte: **Geplant**, **Bereit**, **In Arbeit**, **Validierung**,
 **PR offen**, **Gemergt**, **Blockiert**, **Zurückgestellt**.
