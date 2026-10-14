@@ -1,0 +1,769 @@
+{
+  "task": "GASP-13",
+  "date": "2026-10-14",
+  "engine": "UE 5.8.3",
+  "probe": {
+    "setup": "listen-server PIE, 3 players, 60 FPS, no latency, Lvl_RpgGaspCMC; client A acts, recorded as owner, on the server and as a proxy on client B",
+    "turn_before": {
+      "owner": {
+        "hold45": {
+          "root_lag_end_deg": 135.6,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        },
+        "hold90": {
+          "root_lag_end_deg": 46.2,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        },
+        "hold180": {
+          "root_lag_end_deg": 133.6,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        },
+        "flick90": {
+          "root_lag_end_deg": 43.6,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        },
+        "flick180": {
+          "root_lag_end_deg": 136.4,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        },
+        "flickm90": {
+          "root_lag_end_deg": 46.4,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        },
+        "chold": {
+          "root_lag_end_deg": 43.4,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        },
+        "cflick180": {
+          "root_lag_end_deg": 136.6,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        }
+      },
+      "server": {
+        "hold45": {
+          "root_lag_end_deg": 135.6,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        },
+        "hold90": {
+          "root_lag_end_deg": 46.2,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        },
+        "hold180": {
+          "root_lag_end_deg": 133.6,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        },
+        "flick90": {
+          "root_lag_end_deg": 43.6,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        },
+        "flick180": {
+          "root_lag_end_deg": 136.4,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        },
+        "flickm90": {
+          "root_lag_end_deg": 46.4,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        },
+        "chold": {
+          "root_lag_end_deg": 43.4,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        },
+        "cflick180": {
+          "root_lag_end_deg": 136.6,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        }
+      },
+      "proxy": {
+        "hold45": {
+          "root_lag_end_deg": 135.6,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        },
+        "hold90": {
+          "root_lag_end_deg": 46.2,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        },
+        "hold180": {
+          "root_lag_end_deg": 133.6,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        },
+        "flick90": {
+          "root_lag_end_deg": 43.6,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        },
+        "flick180": {
+          "root_lag_end_deg": 136.4,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        },
+        "flickm90": {
+          "root_lag_end_deg": 46.4,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        },
+        "chold": {
+          "root_lag_end_deg": 43.4,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        },
+        "cflick180": {
+          "root_lag_end_deg": 136.6,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        }
+      }
+    },
+    "turn_after": {
+      "owner": {
+        "hold45": {
+          "root_lag_end_deg": 47.2,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        },
+        "hold90": {
+          "root_lag_end_deg": 45.8,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        },
+        "hold180": {
+          "root_lag_end_deg": 36.2,
+          "root_turn_deg": 3.8,
+          "turn_clips": [
+            "Stand_Turn_180_R"
+          ]
+        },
+        "flick90": {
+          "root_lag_end_deg": 0.0,
+          "root_turn_deg": 126.2,
+          "turn_clips": [
+            "Stand_Turn_135_R",
+            "Stand_Turn_180_L"
+          ]
+        },
+        "flick180": {
+          "root_lag_end_deg": 0.0,
+          "root_turn_deg": -180.0,
+          "turn_clips": [
+            "Stand_Turn_135_L",
+            "Stand_Turn_180_L"
+          ]
+        },
+        "flickm90": {
+          "root_lag_end_deg": 0.0,
+          "root_turn_deg": -90.0,
+          "turn_clips": [
+            "Stand_Turn_090_L",
+            "Stand_Turn_180_L"
+          ]
+        },
+        "chold": {
+          "root_lag_end_deg": 0.1,
+          "root_turn_deg": 52.9,
+          "turn_clips": [
+            "Crouch_Idle_Turn_045_R",
+            "Crouch_Idle_Turn_135_R"
+          ]
+        },
+        "cflick180": {
+          "root_lag_end_deg": 0.1,
+          "root_turn_deg": -179.8,
+          "turn_clips": [
+            "Crouch_Idle_Turn_045_L",
+            "Crouch_Idle_Turn_090_L",
+            "Crouch_Idle_Turn_180_L"
+          ]
+        }
+      },
+      "server": {
+        "hold45": {
+          "root_lag_end_deg": 47.2,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        },
+        "hold90": {
+          "root_lag_end_deg": 45.8,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        },
+        "hold180": {
+          "root_lag_end_deg": 44.9,
+          "root_turn_deg": 9.4,
+          "turn_clips": [
+            "Stand_Turn_180_R"
+          ]
+        },
+        "flick90": {
+          "root_lag_end_deg": 0.1,
+          "root_turn_deg": 134.9,
+          "turn_clips": [
+            "Stand_Turn_135_R",
+            "Stand_Turn_180_L"
+          ]
+        },
+        "flick180": {
+          "root_lag_end_deg": 0.0,
+          "root_turn_deg": -179.9,
+          "turn_clips": [
+            "Stand_Turn_135_L",
+            "Stand_Turn_180_L"
+          ]
+        },
+        "flickm90": {
+          "root_lag_end_deg": 0.0,
+          "root_turn_deg": -90.0,
+          "turn_clips": [
+            "Stand_Turn_090_L",
+            "Stand_Turn_180_L"
+          ]
+        },
+        "chold": {
+          "root_lag_end_deg": 0.1,
+          "root_turn_deg": 53.5,
+          "turn_clips": [
+            "Crouch_Idle_Turn_045_R",
+            "Crouch_Idle_Turn_135_R"
+          ]
+        },
+        "cflick180": {
+          "root_lag_end_deg": 0.1,
+          "root_turn_deg": -179.8,
+          "turn_clips": [
+            "Crouch_Idle_Turn_045_L",
+            "Crouch_Idle_Turn_090_L",
+            "Crouch_Idle_Turn_180_L"
+          ]
+        }
+      },
+      "proxy": {
+        "hold45": {
+          "root_lag_end_deg": 47.3,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        },
+        "hold90": {
+          "root_lag_end_deg": 49.7,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        },
+        "hold180": {
+          "root_lag_end_deg": 49.1,
+          "root_turn_deg": 0.0,
+          "turn_clips": []
+        },
+        "flick90": {
+          "root_lag_end_deg": 0.0,
+          "root_turn_deg": 139.0,
+          "turn_clips": [
+            "Stand_Turn_135_R",
+            "Stand_Turn_180_R"
+          ]
+        },
+        "flick180": {
+          "root_lag_end_deg": 0.1,
+          "root_turn_deg": -179.8,
+          "turn_clips": [
+            "Stand_Turn_045_R",
+            "Stand_Turn_090_L",
+            "Stand_Turn_135_L",
+            "Stand_Turn_180_L"
+          ]
+        },
+        "flickm90": {
+          "root_lag_end_deg": 21.1,
+          "root_turn_deg": -69.1,
+          "turn_clips": [
+            "Stand_Turn_090_L",
+            "Stand_Turn_135_L"
+          ]
+        },
+        "chold": {
+          "root_lag_end_deg": 48.0,
+          "root_turn_deg": -7.8,
+          "turn_clips": [
+            "Crouch_Idle_Turn_045_R",
+            "Crouch_Idle_Turn_090_L"
+          ]
+        },
+        "cflick180": {
+          "root_lag_end_deg": 41.0,
+          "root_turn_deg": 91.0,
+          "turn_clips": [
+            "Crouch_Idle_Turn_045_R",
+            "Crouch_Idle_Turn_135_L",
+            "Crouch_Idle_Turn_180_L",
+            "Crouch_Idle_Turn_180_R"
+          ]
+        }
+      }
+    },
+    "route_before_phase_b": {
+      "owner": {
+        "spin_entries": 0,
+        "spin_frames": 0,
+        "changes_per_s": 0.64,
+        "slide_mean": 32.0,
+        "slide_p95": 194.2,
+        "root_off_mean": 12.9
+      },
+      "server": {
+        "spin_entries": 0,
+        "spin_frames": 0,
+        "changes_per_s": 0.64,
+        "slide_mean": 33.0,
+        "slide_p95": 203.4,
+        "root_off_mean": 12.9
+      },
+      "proxy": {
+        "spin_entries": 0,
+        "spin_frames": 0,
+        "changes_per_s": 0.67,
+        "slide_mean": 34.1,
+        "slide_p95": 197.2,
+        "root_off_mean": 13.6
+      }
+    },
+    "route_after_phase_b": {
+      "owner": {
+        "spin_entries": 0,
+        "spin_frames": 0,
+        "changes_per_s": 0.68,
+        "slide_mean": 31.3,
+        "slide_p95": 180.5,
+        "root_off_mean": 12.8
+      },
+      "server": {
+        "spin_entries": 0,
+        "spin_frames": 0,
+        "changes_per_s": 0.64,
+        "slide_mean": 31.8,
+        "slide_p95": 189.4,
+        "root_off_mean": 12.8
+      },
+      "proxy": {
+        "spin_entries": 0,
+        "spin_frames": 0,
+        "changes_per_s": 0.68,
+        "slide_mean": 32.9,
+        "slide_p95": 192.6,
+        "root_off_mean": 13.6
+      }
+    },
+    "route_final": {
+      "owner": {
+        "spin_entries": 0,
+        "spin_frames": 0,
+        "changes_per_s": 0.68,
+        "slide_mean": 32.4,
+        "slide_p95": 186.9,
+        "root_off_mean": 12.9
+      },
+      "server": {
+        "spin_entries": 0,
+        "spin_frames": 0,
+        "changes_per_s": 0.68,
+        "slide_mean": 32.4,
+        "slide_p95": 202.2,
+        "root_off_mean": 12.9
+      },
+      "proxy": {
+        "spin_entries": 0,
+        "spin_frames": 0,
+        "changes_per_s": 0.68,
+        "slide_mean": 33.6,
+        "slide_p95": 200.7,
+        "root_off_mean": 13.6
+      }
+    },
+    "spin_route_phase_b": {
+      "owner": {
+        "spin_entries": 3,
+        "spin_frames": 237,
+        "changes_per_s": 0.63,
+        "slide_mean": 31.9,
+        "slide_p95": 177.6,
+        "root_off_mean": 13.3
+      },
+      "server": {
+        "spin_entries": 3,
+        "spin_frames": 237,
+        "changes_per_s": 0.63,
+        "slide_mean": 31.0,
+        "slide_p95": 181.6,
+        "root_off_mean": 13.3
+      },
+      "proxy": {
+        "spin_entries": 7,
+        "spin_frames": 237,
+        "changes_per_s": 0.82,
+        "slide_mean": 29.1,
+        "slide_p95": 156.4,
+        "root_off_mean": 17.1
+      }
+    },
+    "spin_route_final": {
+      "owner": {
+        "spin_entries": 3,
+        "spin_frames": 254,
+        "changes_per_s": 0.63,
+        "slide_mean": 32.6,
+        "slide_p95": 188.9,
+        "root_off_mean": 13.3
+      },
+      "server": {
+        "spin_entries": 3,
+        "spin_frames": 254,
+        "changes_per_s": 0.63,
+        "slide_mean": 31.3,
+        "slide_p95": 178.1,
+        "root_off_mean": 13.3
+      },
+      "proxy": {
+        "spin_entries": 7,
+        "spin_frames": 255,
+        "changes_per_s": 0.92,
+        "slide_mean": 27.7,
+        "slide_p95": 152.9,
+        "root_off_mean": 17.5
+      }
+    },
+    "spin_route_final_repeat": {
+      "owner": {
+        "spin_entries": 3,
+        "spin_frames": 257,
+        "changes_per_s": 0.63,
+        "slide_mean": 32.6,
+        "slide_p95": 188.4,
+        "root_off_mean": 13.4
+      },
+      "server": {
+        "spin_entries": 3,
+        "spin_frames": 257,
+        "changes_per_s": 0.63,
+        "slide_mean": 31.7,
+        "slide_p95": 178.5,
+        "root_off_mean": 13.4
+      },
+      "proxy": {
+        "spin_entries": 7,
+        "spin_frames": 256,
+        "changes_per_s": 0.82,
+        "slide_mean": 30.1,
+        "slide_p95": 160.2,
+        "root_off_mean": 16.9
+      }
+    },
+    "tuning_trials": {
+      "steering_0_5": {
+        "run_snap_without_spin": {
+          "owner": {
+            "changes_per_s": 0.83,
+            "spin_entries": 0,
+            "spin_frames": 0,
+            "root_off_mean": 106.2,
+            "root_off_max": 179.7,
+            "slide_mean": 138.9,
+            "slide_p95": 836.2
+          },
+          "server": {
+            "changes_per_s": 0.83,
+            "spin_entries": 0,
+            "spin_frames": 0,
+            "root_off_mean": 105.5,
+            "root_off_max": 179.7,
+            "slide_mean": 136.1,
+            "slide_p95": 804.1
+          },
+          "proxy": {
+            "changes_per_s": 0.83,
+            "spin_entries": 0,
+            "spin_frames": 0,
+            "root_off_mean": 108.9,
+            "root_off_max": 179.9,
+            "slide_mean": 156.4,
+            "slide_p95": 822.7
+          }
+        },
+        "baseline_steering_0_4": {
+          "owner": {
+            "changes_per_s": 0.83,
+            "spin_entries": 0,
+            "spin_frames": 0,
+            "root_off_mean": 90.3,
+            "root_off_max": 179.6,
+            "slide_mean": 75.1,
+            "slide_p95": 254.4
+          },
+          "server": {
+            "changes_per_s": 0.83,
+            "spin_entries": 0,
+            "spin_frames": 0,
+            "root_off_mean": 89.9,
+            "root_off_max": 179.6,
+            "slide_mean": 75.9,
+            "slide_p95": 271.5
+          },
+          "proxy": {
+            "changes_per_s": 0.83,
+            "spin_entries": 0,
+            "spin_frames": 0,
+            "root_off_mean": 94.2,
+            "root_off_max": 179.9,
+            "slide_mean": 66.3,
+            "slide_p95": 192.4
+          }
+        }
+      },
+      "spin_speed_300": {
+        "walk_snap_1": {
+          "owner": {
+            "changes_per_s": 0.62,
+            "spin_entries": 0,
+            "spin_frames": 0,
+            "root_off_mean": 75.9,
+            "root_off_max": 179.4,
+            "slide_mean": 149.8,
+            "slide_p95": 546.5
+          },
+          "server": {
+            "changes_per_s": 0.62,
+            "spin_entries": 0,
+            "spin_frames": 0,
+            "root_off_mean": 75.8,
+            "root_off_max": 179.4,
+            "slide_mean": 148.8,
+            "slide_p95": 534.3
+          },
+          "proxy": {
+            "changes_per_s": 0.62,
+            "spin_entries": 0,
+            "spin_frames": 0,
+            "root_off_mean": 79.5,
+            "root_off_max": 179.5,
+            "slide_mean": 137.7,
+            "slide_p95": 497.2
+          }
+        },
+        "walk_snap_2": {
+          "owner": {
+            "changes_per_s": 0.62,
+            "spin_entries": 0,
+            "spin_frames": 0,
+            "root_off_mean": 76.9,
+            "root_off_max": 179.1,
+            "slide_mean": 168.1,
+            "slide_p95": 633.0
+          },
+          "server": {
+            "changes_per_s": 0.62,
+            "spin_entries": 0,
+            "spin_frames": 0,
+            "root_off_mean": 76.8,
+            "root_off_max": 179.1,
+            "slide_mean": 163.8,
+            "slide_p95": 582.1
+          },
+          "proxy": {
+            "changes_per_s": 0.62,
+            "spin_entries": 0,
+            "spin_frames": 0,
+            "root_off_mean": 80.5,
+            "root_off_max": 179.2,
+            "slide_mean": 182.7,
+            "slide_p95": 621.9
+          }
+        },
+        "baseline_150_walk_snap_1": {
+          "owner": {
+            "changes_per_s": 0.63,
+            "spin_entries": 1,
+            "spin_frames": 88,
+            "root_off_mean": 27.8,
+            "root_off_max": 179.3,
+            "slide_mean": 92.7,
+            "slide_p95": 338.3
+          },
+          "server": {
+            "changes_per_s": 0.63,
+            "spin_entries": 1,
+            "spin_frames": 87,
+            "root_off_mean": 27.9,
+            "root_off_max": 179.3,
+            "slide_mean": 91.3,
+            "slide_p95": 337.1
+          },
+          "proxy": {
+            "changes_per_s": 1.88,
+            "spin_entries": 3,
+            "spin_frames": 87,
+            "root_off_mean": 42.7,
+            "root_off_max": 179.5,
+            "slide_mean": 59.9,
+            "slide_p95": 281.6
+          }
+        },
+        "baseline_150_walk_snap_2": {
+          "owner": {
+            "changes_per_s": 0.62,
+            "spin_entries": 1,
+            "spin_frames": 92,
+            "root_off_mean": 28.4,
+            "root_off_max": 179.2,
+            "slide_mean": 85.2,
+            "slide_p95": 314.7
+          },
+          "server": {
+            "changes_per_s": 0.62,
+            "spin_entries": 1,
+            "spin_frames": 91,
+            "root_off_mean": 28.4,
+            "root_off_max": 179.2,
+            "slide_mean": 84.5,
+            "slide_p95": 307.5
+          },
+          "proxy": {
+            "changes_per_s": 1.24,
+            "spin_entries": 2,
+            "spin_frames": 91,
+            "root_off_mean": 46.9,
+            "root_off_max": 180.0,
+            "slide_mean": 70.9,
+            "slide_p95": 294.9
+          }
+        }
+      }
+    }
+  },
+  "decisions": {
+    "2026-10-14": [
+      "standing turn in place in the combat stance belongs to GASP-13 and comes first",
+      "armor Foley leaves GASP-13 for GASP-16 or its own audio package"
+    ]
+  },
+  "cause": {
+    "gate": "ShouldTurnInPlace (unchanged GASP function) offers the turn-in-place database only while WantsToAim or in the frame after a stop; BP_RpgGasp_CMC reports the stance as WantsToStrafe and WantsToAim as constant false",
+    "cost": "with the gate open, DoNotInterrupt kept the continuing idle pose; the Relaxed turn database has base cost bias 0 (Dense: -0.2 against +0.1 on idles), so the idle loop won",
+    "crouch": "the CMC chooser's crouch-idle table offered the crouch idles together with the crouch turns",
+    "rejected_hypothesis": "GASP-10 chooser swap; the shared Dense chooser gates its turn row the same way, and the 2026-09-27 turn clips came from the reverted GASP-06 condition change"
+  },
+  "fix": {
+    "ABP_RpgGasp_CMC.ShouldTurnInPlace": "also true in the strafe rotation mode",
+    "ABP_RpgGasp_CMC.Get_MMInterruptMode": "InterruptOnDatabaseChange while ShouldTurnInPlace, standing still, and the current database is not tagged TurnInPlace",
+    "CHT_RpgGasp_CMC_PoseSearchDatabases.Crouch Idle": "row 0 (crouch idles) requires ShouldTurnInPlace false",
+    "ABP_RpgGasp_CMC.MotionMatching.PoseReselectHistory": "0.3 -> 0.4",
+    "DA_PawnData_GaspCMC.DefaultCameraMode": "CM_ThirdPerson -> CM_RpgGasp_Traversal (PositionDampingFactor 20 rad/s)",
+    "unchanged_after_measurement": {
+      "Steering.ProceduralTargetTime": "0.4 (0.5 slid more on a run snap)",
+      "ShouldSpinTransition speed gate": "150 cm/s (300 removed walk spins but walk snaps slid more)",
+      "OffsetRootBone.RotationHalfLife": "0.1 (used only in Release/Interpolate; the CMC uses Accumulate except during DefaultSlot montages)"
+    }
+  },
+  "controls": {
+    "mover": "the Mover pawn does not turn its capsule with the camera while standing; no control",
+    "original_gasp": "not run; project copy SandboxCharacter_CMC/_ABP compared: identical ShouldTurnInPlace and Offset Root Bone settings, WantsToAim only from aim input"
+  },
+  "proxy_turn_selection": {
+    "clip_switches_per_3s_turn_owner_server_proxy": {
+      "45_deg_per_s": [
+        2,
+        2,
+        24
+      ],
+      "90_deg_per_s": [
+        10,
+        10,
+        71
+      ],
+      "180_deg_per_s": [
+        28,
+        22,
+        95
+      ],
+      "crouched_90_deg_per_s": [
+        16,
+        15,
+        91
+      ]
+    },
+    "cause": "PoseSearchGenerateTrajectory predicts the facing from GetViewRotation; on a proxy that is the actor yaw, updated about every second frame at 60 FPS"
+  },
+  "camera": {
+    "distance_to_pawn_cm": {
+      "rest": 295.7,
+      "max_while_starting": 332.5
+    },
+    "frame_rates": [
+      30,
+      60,
+      120
+    ]
+  },
+  "tests": {
+    "new": "SurvivalRpg.GASP.CMC.HostView.GaspCMCHostViewPIE.StandingStanceTurnFollowsTheCameraOnEveryRole",
+    "root_lag_after_snaps_deg": {
+      "range": [
+        0.0,
+        26.8
+      ],
+      "limit": 60
+    },
+    "mutation": "AnimBP and chooser from before a9e4f9ba: 180.0 deg on every role, test fails",
+    "stab04_host_view": "passes; server flips 0, roughness 0.19-0.53 against proxy 0.83-1.59 deg/frame"
+  },
+  "regression": {
+    "native": "138/138",
+    "animation": "4/4",
+    "gasp_cmc": "13/13",
+    "block_locomotion": "16/16",
+    "mantle": "13/13",
+    "vault": "9/9",
+    "hurdle": "12/12",
+    "runtime_retarget": "2/2",
+    "variant_comparison": "3/3",
+    "network": "19/19",
+    "mover": "66/67, known GASP-VAL-03 fixture EquipmentMontageReplacesPendingVaultWithoutDelayedResurrection; isolated reruns 1 fail, 1 pass"
+  },
+  "cost": {
+    "setup": "CSV profile of the turn probe, 3 PIE worlds, 9 animated characters, 60 FPS, 2 runs per variant",
+    "game_thread_animation_median_ms": {
+      "master": [
+        1.574,
+        1.598
+      ],
+      "final": [
+        1.617,
+        1.53
+      ]
+    },
+    "worker_total_median_ms": {
+      "master": [
+        5.873,
+        5.843
+      ],
+      "final": [
+        5.999,
+        5.935
+      ]
+    },
+    "per_character_worker_ms": "about +0.01"
+  },
+  "user_check": "pending"
+}

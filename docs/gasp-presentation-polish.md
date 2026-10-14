@@ -128,3 +128,129 @@ Not owned: the shared Relaxed and Dense databases and normalization sets, the Mo
 4. Run and stop: the camera trails slightly behind the character. Turning the camera has no lag.
 5. Turn with block held: unchanged.
 6. Mantle on `Lvl_RpgGaspMantle`: the camera handoff still looks as approved.
+
+## Results
+
+Commits on `claude/gasp-13-presentation-polish`: `33d04741` (start), `a9e4f9ba` (turn in place), `c89bdfe7` (tuning), `6941f26c` (test), `014480b7` (narrower interrupt), and the commits listed in the PR. Raw probe data are in `Saved/Gasp13` of the worktree `musing-ishizaka-7bac20`; the [manifest](assets/gasp-13-presentation-polish.json) holds the summaries.
+
+### Probe
+
+- Listen-server PIE with three players on `Lvl_RpgGaspCMC` at 60 FPS without latency. Client A acts; the probe records A as owner, on the listen server and as a simulated proxy on client B.
+- **Turn:** standing armed in the stance, the camera turns at 45, 90 and 180 °/s for 3 s each with 1.5 s holds, then snaps by 90°, 180° and −90°, then the same crouched.
+- **Route:** starts, stops, W↔S and A↔D reversals and a curve in the stance, then the same holstered in free movement.
+- **Spin route:** running and walking in the stance, the camera snaps by 180° while the pawn keeps its world direction, which asks for a spin transition.
+- Metrics:
+  - the root's yaw against the capsule, with the hip line between the thigh sockets as a check;
+  - the selected clip and database (`CurrentSelectedAnim`, `CurrentSelectedDatabase`) and `ShouldTurnInPlace`;
+  - planted-foot slide: the horizontal speed of a foot while it stays within 3 cm of its lowest height in a step;
+  - the camera's horizontal distance to the pawn.
+- A repeat of the same configuration gave the same slide within 0.5 cm/s, so the differences below are not run-to-run noise.
+
+### Phase A – baseline and cause
+
+- **Standing turn:** on every role, `ShouldTurnInPlace` was false on all frames, Motion Matching stayed on `M_Relaxed_Stand_Idle_Loop` (crouched on the crouch idle), and the root turned 0° over 540° of camera turn; it lagged the capsule by up to 179°. The hip line followed the root.
+- **Cause 1, the gate:** `ShouldTurnInPlace` is the GASP function unchanged. It offers the turn-in-place database only while `WantsToAim` is set or in the frame after a stop. `BP_RpgGasp_CMC` reports the combat stance as `WantsToStrafe` (`GASP-09`) and `WantsToAim` as a constant `false`. The project copy of the original `SandboxCharacter_CMC` sets `WantsToAim` only from its aim input; its strafing without aiming gates turning the same way, so the original shows the same behavior there. The stops on the route did play `Stand_Turn_090_R` and `_045_R`, so the turn database itself works.
+- **Hypothesis rejected:** the shared Dense chooser that the CMC used before `GASP-10` gates its turn row on `ShouldTurnInPlace` as well. The turn clips recorded on 2026-09-27 came from the reverted `GASP-06` attempt, which allowed turning while the upper-body slot played.
+- **Mover control:** the Mover pawn does not turn its capsule with the camera while standing (root and capsule both stayed), so it is no control for this turn.
+- **Original GASP control:** not run in the reference project; the project copy's graphs were compared instead.
+
+### Phase B – standing turn in place
+
+- **Gate:** `ShouldTurnInPlace` in `ABP_RpgGasp_CMC` also accepts the strafe rotation mode, the combat stance. `WantsToAim` stays false, so direction thresholds that read it do not change.
+- **Cause 2, found with the gate open:** `ShouldTurnInPlace` was true on 110 to 157 frames per turn, but Motion Matching still kept the idle loop. Standing still, `Get_MMInterruptMode` returns `DoNotInterrupt`, so the continuing idle pose stays a candidate. The Dense turn database beats it with a base cost bias of −0.2 against +0.1 on the idles; the Relaxed one has 0 on both, so the idle loop won.
+- **Interrupt:** `Get_MMInterruptMode` now also returns `InterruptOnDatabaseChange` while `ShouldTurnInPlace` holds standing still and the current database is not tagged `TurnInPlace`. Motion Matching then drops the idle pose once, when the chooser switches to the turn database, and never interrupts a playing turn clip.
+- **Crouch:** the CMC chooser's crouch-idle table offered the crouch idles together with the crouch turns. Its idle row now requires `ShouldTurnInPlace` to be false, as the stand-idle row already did.
+- Shared databases, the Mover and its chooser are unchanged.
+
+Standing turn after both changes (root lag behind the capsule in degrees at the end of each hold; owner / server / proxy):
+
+| Step | Before | After |
+| --- | --- | --- |
+| 45 °/s for 3 s, then 1.5 s hold | 136 / 136 / 136 | 47 / 47 / 47 |
+| 90 °/s | 46 / 46 / 46 | 46 / 46 / 50 |
+| 180 °/s | 134 / 134 / 134 | 36 / 45 / 49 |
+| Snap 90° | 44 / 44 / 44 | 0 / 0 / 0 |
+| Snap 180° | 136 / 136 / 136 | 0 / 0 / 0 |
+| Snap −90° | 46 / 46 / 46 | 0 / 0 / 21 |
+| Crouched, 90 °/s then hold | 43 / 43 / 43 | 0 / 0 / 48 |
+| Crouched, snap 180° | 137 / 137 / 137 | 0 / 0 / 41 |
+
+- During continuous turns the root follows in 45° to 180° turn clips; the capsule stays up to about 50° ahead, then a clip starts. After holds the root stays up to 49.7° behind, below GASP's 50° trigger; the aim offset covers that angle.
+- Each role selects its own clips, so a proxy may settle on a different step than the owner.
+- **Proxy selection:** a simulated proxy switches between turn clips far more often than the owner. Clip switches per 3-s turn (owner / server / proxy): 2 / 2 / 24 at 45 °/s, 10 / 10 / 71 at 90 °/s, 28 / 22 / 95 at 180 °/s, crouched 16 / 15 / 91.
+  - Cause: the engine's trajectory generator predicts the facing from `GetViewRotation()`. On a proxy that is the actor yaw, which a 60-FPS client receives about every second frame, so the predicted turn rate alternates between zero and double. Motion Matching picks a different turn clip almost every frame and drops it for the idle when the offset dips below 50°.
+  - The listen server sees the remote client like the owner does, because it ticks the pose per received move. Clients that watch another player, including the host's character, see the proxy selection.
+  - Narrowing the interrupt to idle poses (`014480b7`) did not change the switch counts, so the interrupt is not the cause. A fix would smooth the proxy's view yaw for the trajectory, a native change the definition leaves to the user.
+- **Moving unchanged:** on the route, before and after Phase B, owner slide 32.0 / 31.3 cm/s (p95 194 / 181), mean root lag 12.9° / 12.8°, the same clips, and no spins.
+
+### Phase C – tuning
+
+Each value was measured against the state without it on the spin route (owner; server and proxy agree). The steering and spin trials ran with `PoseReselectHistory` 0.4; the spin trial also with steering 0.5, against a run with steering 0.5 and the original spin gate.
+
+| Change | Result | Kept |
+| --- | --- | --- |
+| `PoseReselectHistory` 0.3 → 0.4 | Spin route slide 32.6 against 31.9 cm/s (p95 189 / 178), 0.63 clip changes per second in both, the same spins | Yes |
+| Steering `ProceduralTargetTime` 0.4 → 0.5 | The run snap that plays a pivot and a backward loop slid 139 instead of 75 cm/s (p95 836 / 254), with 106° instead of 90° mean root lag | No, 0.4 |
+| Spins only from 300 cm/s instead of 150 | No walk spins, but the walk snaps then play `Walk_Loop_B` and slide 150 and 168 instead of 93 and 85 cm/s (p95 546 and 633 against 338 and 315) | No |
+| Offset Root Bone rotation half-life 0.1 → 0.15–0.2 | Not applied: the engine damps rotation with it only in Release and Interpolate modes. The CMC uses Accumulate and switches to Release only while a `DefaultSlot` montage plays, so the value would only slow how attacks and other montages align the body. | No, 0.1 |
+| Camera: `DA_PawnData_GaspCMC` uses `CM_RpgGasp_Traversal` (20 rad/s) | The camera trails starts by up to 37 cm (295.7 → 332.5 cm to the pawn) and settles after stops, identically at 30, 60 and 120 FPS; view rotation stays immediate | Yes |
+
+- The spin transitions are the only clips that cover a 180° facing change while the pawn keeps moving. The CMC therefore keeps them; the shared spin databases stay unchanged.
+- The rejected values are outside the definition's ranges and need the user's check.
+
+### Phase D – tests
+
+- New `SurvivalRpg.GASP.CMC.HostView…StandingStanceTurnFollowsTheCameraOnEveryRole`: listen server with two clients and a late joiner. The owner's camera snaps by 180° and −90°, then by 180° after a third client joined. After 2.5 s the root must be within 60° of the capsule on the owner, the server, the proxy and the late joiner. Measured lags: 0.0 to 26.8°.
+- **Mutation:** with the AnimBP and chooser from before `a9e4f9ba`, the test fails with 180.0° on every role.
+- The `GASP-STAB-04` host-view test still passes: server root flips 0, roughness 0.19 to 0.53 against 0.83 to 1.59 °/frame on the proxy.
+
+### Phase D – validation
+
+- **Build:** `ue.py build` passed (0 errors, 0 warnings) after the test change; the other changes are assets.
+- **Regression** on the final assets, each suite on its own through `ue.py test`:
+
+  | Suite | Result |
+  | --- | --- |
+  | Native (movement, equipment, harvesting, abilities, block, dodge, combat content, CMC and mantle assets, speed parity, sprint, input, UI input, camera) | 138 / 138 |
+  | `SurvivalRpg.Animation` | 4 / 4 |
+  | `SurvivalRpg.GASP.CMC` (with both host-view tests) | 13 / 13 |
+  | `SurvivalRpg.Combat.BlockLocomotion` | 16 / 16 |
+  | `SurvivalRpg.GASP.Mantle` | 13 / 13 |
+  | `SurvivalRpg.GASP.Vault` | 9 / 9 |
+  | `SurvivalRpg.GASP.Hurdle` | 12 / 12 |
+  | `SurvivalRpg.GASP.RuntimeRetarget` | 2 / 2 |
+  | `SurvivalRpg.GASP.VariantComparison` | 3 / 3 |
+  | `SurvivalRpg.Network` | 19 / 19 |
+  | `SurvivalRpg.GASP.Mover` | 66 / 67 |
+
+  The Mover failure is the known timing-sensitive fixture `GaspMoverVaultPIE.EquipmentMontageReplacesPendingVaultWithoutDelayedResurrection` (`GASP-VAL-03`, [5.8.3 report](gasp-engine-5-8-3.md)) with its usual precondition message; of two isolated reruns, one failed and one passed. This package changes no Mover asset.
+- **Cost:** CSV profile of the turn probe (three PIE worlds, nine animated characters, 60 FPS), two runs per variant with the `master` assets and the final assets. Game-thread animation median 1.57 / 1.60 ms before and 1.62 / 1.53 ms after, unchanged within run-to-run spread. Animation worker time (parallel evaluation, total) median 5.87 / 5.84 ms before and 6.00 / 5.94 ms after: about +0.1 ms for nine characters, roughly 0.01 ms per character. A first pair of runs measured the baseline pawn because the map had not finished loading; it is set aside in `Saved/Gasp13/invalid`.
+- **Multiplayer:** the probe recorded owner, listen server and proxy for the turn, route and spin route; the new PIE test adds a late joiner.
+
+### Deviations from the definition
+
+- The cause differs from the definition's hypothesis; see [Phase A](#phase-a--baseline-and-cause).
+- Phase B needed a second content change, the interrupt mode, and a crouch-chooser row; both are in the owned files.
+- Three planned tuning values were measured and not applied; see [Phase C](#phase-c--tuning).
+- The original GASP ran neither scripted nor by hand; the project copy's graphs were compared.
+- The Mover pawn is no control for the standing turn.
+- The definition missed the Relaxed lean port that `GASP-10` moved to `GASP-13`; it is not done, see [Limits](#limits).
+
+### Failed attempts
+
+- The first interrupt edit created a call node bound to the sample AnimBP's `ShouldTurnInPlace` and broke the AnimBP's compile until the node was rebound; nothing was saved in that state.
+- The first spin route ran into a wall and did not measure the walk snaps; the route now runs out and back.
+- The first cost runs started PIE before the CMC map had loaded and measured the baseline pawn; they were discarded and repeated.
+
+### Limits
+
+- **User check:** pending; see [Repro](#repro-after-implementation).
+- **Proxy turn selection:** clients that watch another player see that player's standing turn pick a new turn clip almost every frame (see [Phase B](#phase-b--standing-turn-in-place)). The root still follows; how visible the switching is needs the user's look. A fix would smooth the proxy's view yaw for the trajectory, a native change; it needs the user's decision and its own package.
+- **Residual angle:** after a continuous turn the root stays up to about 50° behind the capsule, GASP's trigger angle; the aim offset covers it. The definition's 45° holds only after snaps.
+- **Tuning outside the ranges:** the Offset Root Bone rotation half-life (0.1), the Steering target time (0.4) and the spin gate stay unchanged for the measured reasons in [Phase C](#phase-c--tuning). The user's check decides whether they stay.
+- **Relaxed leans:** `GASP-10` moved porting the Mover's Relaxed lean layer to `GASP-13`. The definition missed it, so this package does not include it; the CMC keeps the Neutral run lean.
+- **Camera asset:** `CM_RpgGasp_Traversal` also serves both Mover PawnData. A CMC-only camera value needs a CMC-owned child mode.
+- **Foot-slide metric:** the planted-foot measure uses foot height only and counts some swing frames near the floor. It compares runs of the same route; it is not an absolute slide value.
+- **Original GASP:** compared through the project copy's graphs only, not run.
+- **Network conditions:** single-process PIE without latency, jitter or loss; those stay with `GASP-VAL-02`. Proxy selection may change with real update rates.
+- **Mover:** unchanged and not checked for a standing turn, because its capsule does not turn with the camera while standing.
