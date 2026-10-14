@@ -13,11 +13,10 @@ frühere Fassung mit Schnellstart-Verlauf und Aufgabenverträgen liegt in der
 
 ## Nächster bereiter Schritt
 
-**`GASP-STAB-04` Zittern von Client-Figuren in der Host-Ansicht** hat
-**PR offen** ([#244](https://github.com/Athurito/SurvivalRpg/pull/244), [Bericht](gasp-host-view-turn-jitter.md)); die Sichtprüfung des Nutzers steht aus.
-Danach folgt `GASP-13`. Der vollständige Manny-Bake `GASP-14` backt die mit `GASP-10`
+Kein Schritt ist **Bereit**. Als Nächstes steht `GASP-13` (Darstellung) an;
+der Nutzer markiert es als **Bereit**. Der vollständige Manny-Bake `GASP-14` backt die mit `GASP-10`
 gewählten Relaxed-Datenbanken.
-`GASP-01`, `GASP-03` bis `GASP-12` und das Engine-Update `GASP-ENG-01` sind
+`GASP-01`, `GASP-03` bis `GASP-12`, `GASP-STAB-04` und das Engine-Update `GASP-ENG-01` sind
 gemergt; offen bleiben `GASP-VAL-01`, `GASP-VAL-02` und die
 [offenen Befunde](gasp-integration-handoff.md#offene-befunde).
 
@@ -48,7 +47,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-STAB-01` | Block-Cleanup nach entferntem DefenseSet | **Gemergt** | [#145](https://github.com/Athurito/SurvivalRpg/pull/145) | [Block-Cleanup](gasp-block-cleanup.md) |
 | `GASP-STAB-02` | Falling bei belegtem Respawn | **Gemergt** | [#146](https://github.com/Athurito/SurvivalRpg/pull/146) | [Respawn-Falling](gasp-respawn-falling.md) |
 | `GASP-STAB-03` | Testboden vor den Pawns in CQTest-Netzwerktests | **Gemergt** | [#223](https://github.com/Athurito/SurvivalRpg/pull/223) | [Testboden](gasp-test-floor-race.md) |
-| `GASP-STAB-04` | Listen-Server: Client-Figur zittert in der Host-Ansicht beim Drehen im Stand (Offset Root Bone) | **PR offen** | [#244](https://github.com/Athurito/SurvivalRpg/pull/244) | [Host-Ansicht](gasp-host-view-turn-jitter.md) |
+| `GASP-STAB-04` | Listen-Server: Client-Figur zittert in der Host-Ansicht beim Drehen im Stand (Offset Root Bone) | **Gemergt**; Sichtprüfung durch den Nutzer | [#244](https://github.com/Athurito/SurvivalRpg/pull/244) | [Host-Ansicht](gasp-host-view-turn-jitter.md) |
 | `GASP-NET-01` | Rollback während aktivem Mantle | **Gemergt** | [#147](https://github.com/Athurito/SurvivalRpg/pull/147) | [Mantle-Rollback](gasp-active-mantle-rollback.md) |
 | `GASP-NET-02` | Terminaler Mantle-Grund bei Reconciliation | **Gemergt** | [#148](https://github.com/Athurito/SurvivalRpg/pull/148) | [Reconciliation](gasp-terminal-reconciliation.md) |
 | `GASP-NET-03` | Rekonstruktion nach Paketpause | **Gemergt**; Grenze bewertet, Werkzeug validiert, Runtime-Grenze bleibt | [#149](https://github.com/Athurito/SurvivalRpg/pull/149) | [Paketpause](gasp-packet-gap-recovery.md) |
@@ -87,8 +86,8 @@ Geplante, noch nicht bereite Pakete aus dem [Bewegungsplan](gasp-movement-plan.m
 Befunde, Abhängigkeiten und Reihenfolge stehen dort. Ein Paket wechselt erst
 mit **Bereit** in die Statustabelle oben.
 
-- `GASP-13` folgt nach `GASP-STAB-04`; beide betreffen den Offset-Root-Bone-Pfad
-  des CMC-AnimBPs.
+- `GASP-13` baut auf dem gemergten `GASP-STAB-04` auf; beide betreffen den
+  Offset-Root-Bone-Pfad des CMC-AnimBPs.
 - `GASP-14`/`GASP-15` setzen den bestandenen `GASP-08` fort.
 - Die Animationsset-Wahl aus `GASP-10` legt fest, welche Datenbanken `GASP-14` backt.
 
