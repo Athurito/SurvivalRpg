@@ -204,6 +204,65 @@ namespace RpgGaspCMCHostViewTests
 		double Rate = 0., Yaw = 0.;
 	};
 
+	/** Yaw of the root bone relative to the capsule in one role's view, in degrees. */
+	double RootOffset(const ARpgCharacter* Character)
+	{
+		return FRotator::NormalizeAxis(Character->GetMesh()->GetSocketRotation(TEXT("root")).Yaw - Character->GetActorRotation().Yaw);
+	}
+
+	/**
+	 * Snaps the owner's camera by a fixed angle, the way a quick mouse flick does, and compares each role's root
+	 * offset to the capsule before the flick and after the pawn had time to step around.
+	 */
+	class FFlickTurn final
+	{
+	public:
+		~FFlickTurn() { Stop(); }
+		bool Start(ARpgCharacter* Owner, int32 InSubjectId)
+		{
+			Controller = Owner ? Cast<APlayerController>(Owner->GetController()) : nullptr;
+			if (!Controller.IsValid() || !Controller->IsLocalController()) return false;
+			SubjectId = InSubjectId;
+			Controller->SetIgnoreLookInput(true);
+			return true;
+		}
+		void AddRole(const FString& Role, UWorld* World) { Worlds.Add(Role, World); }
+		int32 GetSubjectId() const { return SubjectId; }
+		/** Records every role's resting offset and capsule yaw, then snaps the camera. */
+		bool Flick(double Angle)
+		{
+			if (!Controller.IsValid()) return false;
+			RestOffset.Reset(); RestYaw.Reset();
+			for (const auto& Pair : Worlds)
+			{
+				const ARpgCharacter* Character = FindCharacter(Pair.Value.Get(), SubjectId);
+				if (!Character) return false;
+				RestOffset.Add(Pair.Key, RootOffset(Character));
+				RestYaw.Add(Pair.Key, Character->GetActorRotation().Yaw);
+			}
+			const FRotator Rotation = Controller->GetControlRotation();
+			Controller->SetControlRotation(FRotator(-10., FRotator::NormalizeAxis(Rotation.Yaw + Angle), 0.));
+			FlickTime = FPlatformTime::Seconds();
+			return true;
+		}
+		bool Settled() const { return FPlatformTime::Seconds() - FlickTime >= FlickSettleSeconds; }
+		const TMap<FString, TWeakObjectPtr<UWorld>>& GetWorlds() const { return Worlds; }
+		double GetRestOffset(const FString& Role) const { return RestOffset.FindRef(Role); }
+		double GetRestYaw(const FString& Role) const { return RestYaw.FindRef(Role); }
+		void Stop()
+		{
+			if (Controller.IsValid()) Controller->SetIgnoreLookInput(false);
+			Controller.Reset(); Worlds.Reset(); RestOffset.Reset(); RestYaw.Reset();
+		}
+		static constexpr double FlickSettleSeconds = 2.5;
+	private:
+		TWeakObjectPtr<APlayerController> Controller;
+		TMap<FString, TWeakObjectPtr<UWorld>> Worlds;
+		TMap<FString, double> RestOffset, RestYaw;
+		int32 SubjectId = INDEX_NONE;
+		double FlickTime = 0.;
+	};
+
 	struct FState : FBasePIENetworkComponentState {};
 }
 
@@ -214,6 +273,7 @@ NETWORK_TEST_CLASS(GaspCMCHostViewPIE, "SurvivalRpg.GASP.CMC.HostView")
 	RpgGaspCMCHostViewTests::FScopedSaveIsolation Isolation;
 	FRpgScopedNetworkTestGround Ground;
 	RpgGaspCMCHostViewTests::FTurnInPlace Turn;
+	RpgGaspCMCHostViewTests::FFlickTurn Flick;
 	FPIENetworkComponent<FState> Network{TestRunner, TestCommandBuilder, bInitializing};
 	FPrimaryAssetId OriginalExperience;
 	bool bConfigured = false;
@@ -245,6 +305,7 @@ NETWORK_TEST_CLASS(GaspCMCHostViewPIE, "SurvivalRpg.GASP.CMC.HostView")
 	AFTER_EACH()
 	{
 		Turn.Stop();
+		Flick.Stop();
 		if (bConfigured) GetMutableDefault<URpgDeveloperSettings>()->ExperienceOverride = OriginalExperience;
 	}
 
@@ -264,6 +325,70 @@ NETWORK_TEST_CLASS(GaspCMCHostViewPIE, "SurvivalRpg.GASP.CMC.HostView")
 			.ThenClientJoins();
 		QueueSubject(2, 0);
 		QueueTurnWindow(90., TEXT("late joiner"));
+	}
+
+	/**
+	 * A standing pawn in the combat stance turns its capsule with the camera at once. Its feet must follow
+	 * through turn-in-place steps on the owner, the listen server, a proxy and a late joiner, instead of the root
+	 * staying where it stood.
+	 */
+	TEST_METHOD(StandingStanceTurnFollowsTheCameraOnEveryRole)
+	{
+		using namespace RpgGaspCMCHostViewTests;
+		if (!bConfigured) return;
+		Network.UntilClient(TEXT("Owner stands armed in the combat stance"), 0, [](FState& State)
+				{ return ReadyInStance(State.World, LocalCharacter(State.World)); }, Timeout())
+			.ThenClient(TEXT("Capture the owner and its camera"), 0, [this](FState& State)
+			{
+				ARpgCharacter* Character = LocalCharacter(State.World);
+				ASSERT_THAT(IsTrue(Isolation.IsIsolated(State.World) && Character->GetLocalRole() == ROLE_AutonomousProxy));
+				ASSERT_THAT(IsTrue(Flick.Start(Character, Character->GetPlayerState()->GetPlayerId())));
+				Flick.AddRole(TEXT("owner"), State.World);
+			})
+			.UntilServer(TEXT("Listen server holds the remote owner's pawn in the stance"), [this](FState& State)
+				{ return ReadyInStance(State.World, FindCharacter(State.World, Flick.GetSubjectId())); }, Timeout())
+			.ThenServer(TEXT("Record the host view"), [this](FState& State) { Flick.AddRole(TEXT("server"), State.World); })
+			.UntilClient(TEXT("Observer sees the pawn as a simulated proxy in the stance"), 1, [this](FState& State)
+			{
+				const ARpgCharacter* Character = FindCharacter(State.World, Flick.GetSubjectId());
+				return ReadyInStance(State.World, Character) && Character->GetLocalRole() == ROLE_SimulatedProxy;
+			}, Timeout())
+			.ThenClient(TEXT("Record the proxy view"), 1, [this](FState& State) { Flick.AddRole(TEXT("proxy"), State.World); });
+		QueueFlick(180.);
+		QueueFlick(-90.);
+		Network.ThenClientJoins()
+			.UntilClient(TEXT("Late joiner sees the pawn as a simulated proxy in the stance"), 2, [this](FState& State)
+			{
+				const ARpgCharacter* Character = FindCharacter(State.World, Flick.GetSubjectId());
+				return ReadyInStance(State.World, Character) && Character->GetLocalRole() == ROLE_SimulatedProxy;
+			}, Timeout())
+			.ThenClient(TEXT("Record the late joiner's view"), 2, [this](FState& State) { Flick.AddRole(TEXT("late joiner"), State.World); });
+		QueueFlick(180.);
+	}
+
+	void QueueFlick(double Angle)
+	{
+		using namespace RpgGaspCMCHostViewTests;
+		Network.ThenServer(TEXT("Snap the owner's camera while standing"), [this, Angle](FState&) { ASSERT_THAT(IsTrue(Flick.Flick(Angle))); })
+			.UntilServer(TEXT("Give the pawn time to step around"), [this](FState&) { return Flick.Settled(); }, Timeout())
+			.ThenServer(TEXT("Every role's root followed the capsule"), [this, Angle](FState&)
+			{
+				for (const auto& Pair : Flick.GetWorlds())
+				{
+					const ARpgCharacter* Character = FindCharacter(Pair.Value.Get(), Flick.GetSubjectId());
+					ASSERT_THAT(IsNotNull(Character));
+					if (!Character) return;
+					const double CapsuleTurn = FMath::FindDeltaAngleDegrees(Flick.GetRestYaw(Pair.Key), Character->GetActorRotation().Yaw);
+					const double Lag = FMath::Abs(FMath::FindDeltaAngleDegrees(Flick.GetRestOffset(Pair.Key), RootOffset(Character)));
+					UE_LOG(LogTemp, Display, TEXT("RpgGaspCMCStandingTurn flick=%.0f role=%s capsuleTurn=%.1f rootLag=%.1f"), Angle, *Pair.Key, CapsuleTurn, Lag);
+					TestRunner->TestTrue(FString::Printf(TEXT("%s sees the capsule turn %.0f deg (%.1f)"), *Pair.Key, Angle, CapsuleTurn),
+						FMath::Abs(FMath::FindDeltaAngleDegrees(CapsuleTurn, Angle)) < 10.);
+					TestRunner->TestFalse(FString::Printf(TEXT("%s keeps the pawn standing in the stance"), *Pair.Key),
+						!Movement(Character)->IsInCombatStance() || Character->GetVelocity().Size2D() > 5.0);
+					// Turn-in-place starts at 50 deg, as in GASP; the aim offset covers the rest.
+					TestRunner->TestTrue(FString::Printf(TEXT("%s root follows a %.0f deg flick (%.1f deg behind)"), *Pair.Key, Angle, Lag), Lag < 60.);
+				}
+			});
 	}
 
 	/** Captures the owning client's pawn and the views of it on the listen server and on the observing client. */
