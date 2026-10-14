@@ -11,22 +11,26 @@ diese Datei **ersetzen, nicht ergänzen**. Das frühere fortlaufende Protokoll b
 | Feld | Wert |
 | --- | --- |
 | Stand | 14.10.2026 |
-| Aktive Aufgabe, Status, zuständiger Chat | Keine. Zuletzt `GASP-STAB-04` Zittern von Client-Figuren in der Host-Ansicht, **gemergt** nach Sichtprüfung des Nutzers. |
-| Branch, Worktree, Basis / PR | Kein aktiver Branch. Zuletzt `claude/gasp-stab-04-host-view-jitter` / [#244](https://github.com/Athurito/SurvivalRpg/pull/244), gemergt als `681eeafa` (Definition [#243](https://github.com/Athurito/SurvivalRpg/pull/243)). Davor `claude/gasp-12-walk-gait` / [#241](https://github.com/Athurito/SurvivalRpg/pull/241), gemergt als `1c6a076c`. |
-| Offene Abnahmepunkte | Keine. Jede Gameplay- und Bewegungsänderung auch im Mehrspieler prüfen (Nutzerwunsch 13.10.2026): PIE-Netzwerktests, 2- bis 3-Spieler-Messung der entfernten Figur und ein Mehrspieler-Schritt im Playtest. Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
-| Akzeptierter Runtime-Stand | `master` `681eeafa`; enthält alle GASP-Schritte bis GASP-12 (#241, Status #242), GASP-STAB-04 (#244, Definition #243), GASP-ENG-01 (#221), GASP-STAB-03 (#223, nur Testcode) und den [Bewegungsplan](gasp-movement-plan.md) (#229, nur Doku). Der CMC-Pawn nutzt Rotationsmodi (freie Bewegung und Kampfhaltung) und spielt das Relaxed-Set mit passenden Tempi (Laufen 375, Sprint 585, Ducken 200 cm/s) und bewegt sich nach `DA_RpgGasp_MovementProfile` (Sprung-Z 450, etwa 0,48 s bis Lauftempo); Gehen mit 165 cm/s über Feststelltaste, rechte Schultertaste oder einen Stick unter 0,7; `Lvl_RpgGaspCMC` steht in der GASP-Präsentation. Ein Listen-Server-Host sieht Client-Figuren beim Drehen so ruhig wie die anderen Clients. Die Produktion nutzt weiter UEFN; der Manny-Pilot liegt isoliert unter `/Game/SurvivalRpg/Characters/GASP/Pilot/`. |
-| Dateibesitz / Sperren | Keine GASP-Sperren. Die geteilten Relaxed- und Dense-Datenbanken nutzen CMC und Mover gemeinsam; CMC-spezifische Änderungen brauchen eigene Kopien. Das Lyra-`SK_Mannequin` trägt seit `GASP-08` die Blend-Profile `FastFeet+Root_Weight` und `FastHead_Weight`, die der Manny-AnimBP braucht; nicht entfernen. Eine separate Claude-Sitzung untersucht den zeitabhängigen Remote-Melee-Test aus den offenen Befunden. |
+| Aktive Aufgabe, Status, zuständiger Chat | `GASP-13` Darstellung und Drehen im Stand, **Bereit**, noch kein umsetzender Chat. Zuletzt gemergt: `GASP-STAB-04` Zittern von Client-Figuren in der Host-Ansicht nach Sichtprüfung des Nutzers. |
+| Branch, Worktree, Basis / PR | Noch kein Umsetzungsbranch; vorgeschlagen `<agent>/gasp-13-presentation-polish`. Zuletzt `claude/gasp-stab-04-host-view-jitter` / [#244](https://github.com/Athurito/SurvivalRpg/pull/244), gemergt als `681eeafa` (Definition [#243](https://github.com/Athurito/SurvivalRpg/pull/243)). Davor `claude/gasp-12-walk-gait` / [#241](https://github.com/Athurito/SurvivalRpg/pull/241), gemergt als `1c6a076c`. |
+| Offene Abnahmepunkte | `GASP-13`: Die Endwerte des Tunings legt die Sichtprüfung des Nutzers fest; Rückfragen vor dem Bau nur in den Fällen aus dem [Bericht](gasp-presentation-polish.md#decisions). Jede Gameplay- und Bewegungsänderung auch im Mehrspieler prüfen (Nutzerwunsch 13.10.2026): PIE-Netzwerktests, 2- bis 3-Spieler-Messung der entfernten Figur und ein Mehrspieler-Schritt im Playtest. Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
+| Akzeptierter Runtime-Stand | `master` `0cb467e2`; enthält alle GASP-Schritte bis GASP-12 (#241, Status #242), GASP-STAB-04 (#244, Definition #243, Status #245), GASP-ENG-01 (#221), GASP-STAB-03 (#223, nur Testcode) und den [Bewegungsplan](gasp-movement-plan.md) (#229, nur Doku). Der CMC-Pawn nutzt Rotationsmodi (freie Bewegung und Kampfhaltung) und spielt das Relaxed-Set mit passenden Tempi (Laufen 375, Sprint 585, Ducken 200 cm/s) und bewegt sich nach `DA_RpgGasp_MovementProfile` (Sprung-Z 450, etwa 0,48 s bis Lauftempo); Gehen mit 165 cm/s über Feststelltaste, rechte Schultertaste oder einen Stick unter 0,7; `Lvl_RpgGaspCMC` steht in der GASP-Präsentation. Ein Listen-Server-Host sieht Client-Figuren beim Drehen so ruhig wie die anderen Clients. Die Produktion nutzt weiter UEFN; der Manny-Pilot liegt isoliert unter `/Game/SurvivalRpg/Characters/GASP/Pilot/`. |
+| Dateibesitz / Sperren | `GASP-13` ab Start: `ABP_RpgGasp_CMC`, die Chooser unter `CMC/RPG/Choosers` und nötige CMC-eigene Kopien unter `CMC/RPG`, das Kamerafeld von `DA_PawnData_GaspCMC` und `DA_PawnData_GaspMantle` mit einem neuen CMC-Kameramodus, `RpgAnimInstance.*` nur für einen fehlenden Snapshot-Eingang, ein neuer CMC-Turn-in-Place-PIE-Test und `RpgGaspCMCHostViewTests.cpp`. Nicht anfassen: geteilte Datenbanken, Mover-Assets, `CM_ThirdPerson`, `CM_RpgGasp_Traversal`, Bewegungswerte. Die geteilten Relaxed- und Dense-Datenbanken nutzen CMC und Mover gemeinsam; CMC-spezifische Änderungen brauchen eigene Kopien. Das Lyra-`SK_Mannequin` trägt seit `GASP-08` die Blend-Profile `FastFeet+Root_Weight` und `FastHead_Weight`, die der Manny-AnimBP braucht; nicht entfernen. Eine separate Claude-Sitzung untersucht den zeitabhängigen Remote-Melee-Test aus den offenen Befunden. |
 | Editor / PIE / Builds | Installiert ist UE 5.8.3 (CL 58210709), `master` pinnt 5.8.3. Branches ohne GASP-ENG-01 bauen erst nach Übernahme von `master`. PIE-Netzwerktests nur in einem Prozess gleichzeitig laufen lassen. Vor eigener Editor-/MCP-Nutzung andere Checkouts und Sitzungen prüfen. |
 | Plugin-Overrides | Git-ignoriert und checkout-lokal. In jedem Worktree vor Build oder Branchwechsel gemäß [README](../Build/Patches/NetworkPrediction/README.md) prüfen; Engine-Wechsel nach dem Abschnitt „Engine updates“. |
 | Lokale Belege | `Saved/...` existiert nur im erzeugenden Checkout; versioniert sind Zusammenfassungen in Berichten und Manifesten unter `docs/assets`. GASP-08-Rohdaten liegen in `Saved/Gasp08` und `Saved/Profiling/CSV`, GASP-09-Rohdaten in `Saved/Gasp09`, GASP-10-Rohdaten in `Saved/Gasp10`, GASP-11-Rohdaten in `Saved/Gasp11`, GASP-12-Rohdaten in `Saved/Gasp12`, GASP-STAB-04-Rohdaten in `Saved/GaspStab04`, alle mit `Saved/ToolRuns` des Worktrees `musing-ishizaka-7bac20`. |
 
 ## Nächster Handgriff
 
-Kein Paket ist **Bereit**. Als Nächstes `GASP-13` (Darstellung) mit dem Nutzer
-definieren und als **Bereit** markieren; dabei klären, ob die Drehung in der
-Kampfhaltung im Stand (siehe offene Befunde) dazugehört oder ein eigenes Paket
-wird. Jede Prüfung schließt Mehrspieler ein. Der vollständige Manny-Bake
-`GASP-14` backt die Relaxed-Datenbanken.
+`GASP-13` gemäß [Bericht](gasp-presentation-polish.md) starten: zuerst ohne Änderung die Drehung
+im Stand in der Kampfhaltung mit drei Spielern messen (45, 90 und 180 °/s,
+Sprünge um 90° und 180°, stehend und geduckt) und pro Rolle Chooser-Datenbanken,
+gewählten Clip, Trajektorie sowie Root- und Hüftdrehung gegen die Kapsel
+aufzeichnen; Kontrollen mit dem geteilten Dense-Chooser (nur im Speicher), dem
+Mover-Pawn und, falls lauffähig, dem Original-GASP. Dazu die Grundlinie der
+Tuning-Route. Danach Ursache und Lösung festlegen. Jede Prüfung schließt
+Mehrspieler ein. Der vollständige Manny-Bake `GASP-14` backt die
+Relaxed-Datenbanken.
 
 ## Offene Befunde
 
@@ -61,7 +65,7 @@ wird. Jede Prüfung schließt Mehrspieler ein. Der vollständige Manny-Bake
 - Kampfhaltung im Stand (gemessen in `GASP-STAB-04`, auf jeder Rolle, schon vorher so): Dreht
   der Spieler nur die Kamera, drehen Füße und Hüfte auch über 540° nicht mit; Motion Matching
   bleibt im Idle-Loop, und Offset Root Bone hält die Root im Modus Accumulate ohne
-  Maximalfehler. In der Abnahme von `GASP-STAB-04` nicht gesondert beantwortet; mit dem Nutzer für `GASP-13` oder ein eigenes Paket klären. [Bericht](gasp-host-view-turn-jitter.md#limits)
+  Maximalfehler. Vermutlich seit `GASP-10` (kopierter Mover-Chooser); vorher wählte der CMC Turn-Clips. Nach Wahl des Nutzers (14.10.2026) Teil von `GASP-13`, vor dem Tuning. [Bericht](gasp-presentation-polish.md)
 - CMC-Review 11.10.2026 (UE 5.8.2; Pakete `GASP-09` bis `GASP-13` im [Bewegungsplan](gasp-movement-plan.md)): Der
   Rotationskonflikt ist mit `GASP-09` behoben, die Tempo-Parität mit `GASP-10`. Anfahren und
   Bremsen mit `GASP-11`: mit Profil 0,48 s bis Lauftempo und 0,29 s/51 cm

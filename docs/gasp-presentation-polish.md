@@ -1,0 +1,130 @@
+# GASP-13 – Presentation polish and standing turn in place
+
+Status: **Ready** (defined 2026-10-14). The package outline is in the [movement plan](gasp-movement-plan.md#gasp-13-presentation-polish). On 2026-10-14 the user added the standing turn in place in the combat stance, found in [GASP-STAB-04](gasp-host-view-turn-jitter.md#limits), and moved armor Foley out of this package. This report refines the outline against the current code and assets and is the task report for the implementation PR.
+
+## Goal
+
+- A CMC character standing in the combat stance turns its feet and hips with the camera through turn-in-place steps, on every role.
+- Movement looks heavier and calmer: steadier pose selection, slower procedural corrections, fewer spin transitions, and a camera that trails the character slightly.
+- Nothing about gameplay movement changes: speeds, acceleration, braking, rotation rates, jump and the capsule's facing stay as `GASP-11` and `GASP-12` left them.
+
+## Why
+
+- A standing armed character keeps its feet planted while the camera, and with it the capsule, turns. After a half turn it faces away from where it aims, and co-op partners see the same.
+- The movement plan asks for heavy, grounded dark-fantasy movement. `GASP-09` to `GASP-12` set the gameplay side; the presentation still uses the sample's athletic tuning.
+
+## Current state (checked 2026-10-14 on `master` `0cb467e2`)
+
+Read from `ABP_RpgGasp_CMC` (text export from `GASP-STAB-04`; the AnimBP last changed in `GASP-10`), the assets in a headless editor run and the engine headers (UE 5.8.3).
+
+| Area | Finding |
+| --- | --- |
+| Standing stance turn | Measured in `GASP-STAB-04` on owner, listen server and proxy: Motion Matching kept `M_Relaxed_Stand_Idle_Loop` for whole turns of up to 540°. The root and the hip line stayed at the same world yaw, and the shoulders varied by about ±15°. In the stance the capsule follows the camera at once (`GASP-09`, `GASP-11`). |
+| Turn-in-place content | The Relaxed set has `M_Relaxed_Stand_Turn_045/090/135/180_L/R` and crouch turns of 90° and 180°, in `PSD_Relaxed_Stand_TurnInPlace` (schema `PSS_Relaxed_StandTurn`) and `PSD_Relaxed_Crouch_TurnInPlace`. The CMC chooser `CHT_RpgGasp_CMC_PoseSearchDatabases` references both. |
+| Likely cause (hypothesis) | The reverted `GASP-06` attempt recorded on 2026-09-27, on the Neutral set, that CMC Motion Matching selected `M_Neutral_Stand_Turn_090_R` and `_045_R` while turning ([historical report](gasp-block-foot-turn.md)). Since `GASP-10` the CMC evaluates a copy of the Mover's Relaxed chooser. The Mover drives locomotion through the experimental state machine (`LocomotionSetup = 1`), the CMC through Motion Matching (`LocomotionSetup = 0`). The turn rows of the copied chooser, or the inputs they read, may therefore never match on the CMC. Phase A confirms or rejects this. |
+| Offset Root Bone | `RotationMode` Accumulate, with the project's block exception in `Get_OffsetRootRotationMode`; `TranslationHalflife` 0.2, `RotationHalfLife` 0.1 (engine default 0.2), `MaxTranslationError` 30, no maximum rotation error. In Accumulate mode the root keeps its world yaw until an animation turns it. The plan proposes a rotation half-life of 0.15 to 0.2. |
+| Motion Matching node | `PoseReselectHistory` 0.3 (engine default), `BlendTime` 0.5 with the `FastFeet+Root_Weight` blend profile, play rate 0.85 to 1.15. The plan proposes a reselect history of 0.4 to 0.5. |
+| Steering | The Motion Matching blend stack has two Steering nodes: `ProceduralTargetTime` 0.4 (`AnimatedTargetTime` 2.0, off below 10 cm/s) and 1,000,000, which effectively disables the procedural correction. The state-machine blend stack (0.2 and 100,000) is not used by the CMC. The plan proposes 0.5 to 0.6. |
+| Spin transitions | Eight Relaxed spin databases (walk and run, directions F, B, LL and RL) with base cost bias 0 and continuing-pose bias −0.3. The CMC chooser, the Mover chooser, the sample chooser and `PSN_Relaxed_All` share them, so changing them changes the Mover. |
+| Camera | `DA_PawnData_GaspCMC` uses `CM_ThirdPerson` with `PositionDampingFactor` 0, which means no lag. The baseline, the default PawnData and the `GASP-08` pilots share that mode. `CM_RpgGasp_Traversal` (20 rad/s, the GASP free-camera value approved for mantle) serves the Mantle PawnData, which the Mantle and inventory-storage maps use, and both Mover PawnData. The CMC pawn therefore trails on `Lvl_RpgGaspMantle` but not on `Lvl_RpgGaspCMC`. The damping is the cosmetic critical spring in `URpgCameraMode_ThirdPerson` (tests `SurvivalRpg.Camera.PivotDamping`). |
+| Foley | The CMC pawn plays Foley through `GaspFoleyEvents` and `DA_RpgGaspCMCFoley` with sneaker, hand, body and combat sounds. The project has no armor sounds and no armor yet. |
+
+## Scope
+
+1. **Phase A – baseline and cause, without changes.**
+   - Standing stance turn:
+     - Repeat the `GASP-STAB-04` probe with three players: turns at 45, 90 and 180 °/s and single 90° and 180° flicks, standing and crouched, armed in the stance, at 60 FPS.
+     - Record on owner, server and proxy: the chooser's databases, the selected clip, the trajectory's future facing against the root, and the root and hip yaw against the capsule.
+     - Controls, in memory and unsaved: the CMC with the shared Dense chooser (the path before `GASP-10`), and the Mover pawn doing the same turn.
+     - Control by hand: the original GASP CMC character in the reference project, if it runs there.
+     - Write down the cause and the predicted fix before changing anything.
+   - Tuning baseline:
+     - A route in the stance and in free movement: starts, stops, 90° and 180° direction changes, strafe reversals (W↔S, A↔D) and curves.
+     - Record the root offset, spin-database selections, pose changes per second, a planted-foot slide metric and the camera pivot's lag, at 60 FPS, and at 30 and 120 FPS for the camera.
+2. **Phase B – standing turn in place.**
+   - The smallest change that lets Motion Matching select the turn clips in the stance, in the chooser rows, their inputs or the AnimBP's turn path.
+   - The capsule keeps turning at once; the aim offset covers the remaining angle, as in the original GASP.
+   - Native code only if Phase A shows a missing game-thread input in the `URpgAnimInstance` snapshot.
+3. **Phase C – tuning, one value at a time, each measured against the Phase A route.**
+   - Offset Root Bone rotation half-life (0.15 to 0.2).
+   - Motion Matching `PoseReselectHistory` (0.4 to 0.5).
+   - Steering `ProceduralTargetTime` on the active node (0.5 to 0.6).
+   - A cost bias against spin transitions that only the CMC sees, for example through CMC-owned database copies or chooser rows; the shared databases stay unchanged.
+   - Camera lag: both CMC PawnData get the damped camera. If the user wants a value other than the approved 20 rad/s, both move to a CMC-owned child camera mode, so the Mover keeps `CM_RpgGasp_Traversal`.
+4. **Phase D – tests and validation.**
+   - A listen-server PIE test with a late joiner for the stance turn in place.
+   - The Phase A probe and route repeated, the regression suites, a cost measurement and the user check.
+
+## Out of scope
+
+- Armor Foley: moves to `GASP-16` or its own audio package once armor and sounds exist (user choice 2026-10-14).
+- Gameplay movement values, the movement profile and the capsule's rotation in both modes.
+- New feel work on the Mover, the baseline pawn and the shared databases.
+- GASP's GameplayCameras runtime; the existing native damping seam stays.
+- The 60 Hz steps a host above 60 FPS shows on remote characters, and the stale transform on dedicated servers (`GASP-STAB-04` findings).
+- Latency, jitter and loss (`GASP-VAL-02`), and the Manny bake (`GASP-14`).
+
+## Decisions
+
+Made by the user on 2026-10-14:
+1. The standing turn in place in the combat stance belongs to this package and comes before the tuning.
+2. Armor Foley leaves this package.
+
+The implementing chat proposes tuning values inside the ranges above; the user's check sets the final values. It asks the user before building if:
+- the turn-in-place fix needs a change to shared databases, Mover assets or a native change beyond a `URpgAnimInstance` snapshot input;
+- the feet can follow only through behavior the original GASP lacks, for example a maximum rotation error instead of turn clips;
+- a tuning value would leave its range.
+
+## Ownership
+
+| Responsibility | Location | Reason |
+| --- | --- | --- |
+| Turn-in-place selection, Offset Root Bone, Motion Matching and Steering tuning | `ABP_RpgGasp_CMC`, CMC choosers | Designer-owned presentation; selection stays cosmetic |
+| Spin cost bias | CMC-owned chooser rows or database copies under `CMC/RPG` | The shared databases also serve the Mover |
+| Camera lag | Camera field of the CMC PawnData; a CMC-owned child of `CM_RpgGasp_Traversal` only if the value changes | Native damping seam exists; tuning is data |
+| Game-thread inputs for the AnimBP | `URpgAnimInstance`, only if Phase A finds a missing input | Thread-safe snapshot |
+| Tests | CMC PIE tests in `SurvivalRpgEditor/Private/Network` | Turn-in-place contract across roles, not tuning values |
+
+File ownership while the package runs:
+- `ABP_RpgGasp_CMC` and the choosers under `CMC/RPG/Choosers`, plus new CMC-owned copies under `CMC/RPG` that Phase B or C needs;
+- `DA_PawnData_GaspCMC`, `DA_PawnData_GaspMantle` (camera field only) and a new CMC camera mode;
+- `Source/SurvivalRpg/Animation/RpgAnimInstance.*` with its tests, only for a snapshot input from Phase A;
+- a new CMC turn-in-place PIE test and `RpgGaspCMCHostViewTests.cpp`;
+- this report and a manifest under `docs/assets`.
+
+Not owned: the shared Relaxed and Dense databases and normalization sets, the Mover assets, `CM_ThirdPerson`, `CM_RpgGasp_Traversal`, the movement values in `BP_RpgGasp_CMC` and `DA_RpgGasp_MovementProfile`, and the Foley assets.
+
+## Acceptance criteria
+
+| Area | Criterion |
+| --- | --- |
+| Standing turn | Standing armed in the stance and turning at 45, 90 and 180 °/s or in 90° and 180° flicks, Motion Matching selects `M_Relaxed_Stand_Turn_*` clips. Within 1.5 s after the camera stops, the root is within 45° of the capsule, the smallest turn clip, unless the Mover or the original GASP settles wider in the same probe. The same holds crouched with the crouch turns. |
+| Roles | Owner, listen server, proxy and late joiner show the turn steps. The `GASP-STAB-04` host-view test passes. |
+| Unchanged turns | Free movement standing still turns no body with the camera, and turning with block held keeps its root behavior. |
+| Tuning | Final values come from the user check, inside the ranges above unless the user approves. Planted-foot slide on the Phase A route is not worse than in Phase A. The CMC selects fewer spin databases on the direction-change route than in Phase A. |
+| Camera | The CMC camera trails moves and stops at 30, 60 and 120 FPS and resets after teleports and respawn; view rotation stays immediate. |
+| Gameplay unchanged | No movement value changes; `SurvivalRpg.GASP.CMC.SpeedParity` and the movement-profile tests pass. |
+| Mover unchanged | Shared databases, Mover choosers, the Mover AnimBP and `CM_RpgGasp_Traversal` are byte-identical; the Mover regression passes. |
+| Cost | Game-thread and worker animation time per character is measured before and after and reported. |
+
+## Verification
+
+- `python Build/Tools/Unreal/ue.py build` only after C++ changes.
+- Focused automation through `ue.py test`:
+  - `SurvivalRpg.GASP.CMC` with the new turn-in-place test, and `SurvivalRpg.Movement.CMC`;
+  - `SurvivalRpg.Animation.ListenServer` and `SurvivalRpg.Camera`;
+  - `SurvivalRpg.Combat.Block.Prediction` and `SurvivalRpg.Combat.BlockLocomotion`;
+  - `SurvivalRpg.GASP.Mantle`, `SurvivalRpg.GASP.Vault`, `SurvivalRpg.GASP.Hurdle` and `SurvivalRpg.Network`;
+  - `SurvivalRpg.GASP.Mover` and `SurvivalRpg.GASP.VariantComparison` as regressions.
+- AnimBP compile and asset validation; the reference closure has no dependency on the GASP sample checkout.
+- The Phase A probe and route repeated, with three players and a late joiner.
+- A user check on `Lvl_RpgGaspCMC` with two players, as host and as client, plus a mantle on `Lvl_RpgGaspMantle`.
+
+## Repro (after implementation)
+
+1. Set PIE to Play As Listen Server with two players and open `Lvl_RpgGaspCMC`. Both characters spawn armed in the combat stance.
+2. Stand still and turn the camera slowly, then quickly, about 90° and 180° both ways. The feet step around with the camera, and the upper body leads. Watch the same turn in the other window.
+3. Run, stop, start, reverse (W↔S, A↔D) and run curves, armed and holstered. The feet look heavier and calmer, with fewer spins and no sliding.
+4. Run and stop: the camera trails slightly behind the character. Turning the camera has no lag.
+5. Turn with block held: unchanged.
+6. Mantle on `Lvl_RpgGaspMantle`: the camera handoff still looks as approved.

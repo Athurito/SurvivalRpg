@@ -145,16 +145,18 @@ Its recorded limits carry into GASP-14 and GASP-15:
 
 ### GASP-13: Presentation polish
 
-- **Goal:** visual weight without gameplay change.
+**Ready**; see the [task report](gasp-presentation-polish.md). On 2026-10-14 the user added the standing turn in place in the combat stance, found in GASP-STAB-04, and moved armor Foley to GASP-16 or its own audio package.
+
+- **Goal:** visual weight without gameplay change; a standing character in the combat stance turns its feet with the camera.
 - **Scope:**
+  - Standing turn in place in the combat stance, first.
   - Offset Root Bone rotation half-life: 0.1 → 0.15–0.2.
   - Motion Matching `PoseReselectHistory`: 0.3 → 0.4–0.5.
   - Steering `ProceduralTargetTime`: 0.4 → 0.5–0.6.
   - Cost bias against spin transitions.
-  - Armor Foley layers, which may differ by load because they keep the pace.
   - Camera lag.
-- **Depends on:** GASP-11.
-- **Acceptance:** user visual and audio check. No movement value changes.
+- **Depends on:** GASP-11 and GASP-STAB-04.
+- **Acceptance:** user visual check. No movement value changes.
 
 ### GASP-14: Full CMC bake to Manny (only if GASP-08 passes)
 
@@ -177,6 +179,7 @@ Its recorded limits carry into GASP-14 and GASP-15:
 ### GASP-16: Character and armor pilot
 
 - **Goal:** prove a marketplace character on the chosen skeleton with one modular armor set driven by Leader Pose, including hiding body parts under armor.
+- **Armor Foley:** moved here from GASP-13 at the user's choice on 2026-10-14, unless it becomes its own audio package. Its layers may differ by load, because Foley keeps the pace and does not change movement.
 - **Depends on:** GASP-08 decision and a character asset the user selects. MetaHuman remains an option only if a character creator becomes a goal.
 
 ### Related combat work
@@ -186,7 +189,7 @@ Its recorded limits carry into GASP-14 and GASP-15:
 ## Order and parallelism
 
 1. **GASP-08** to **GASP-12** are merged.
-2. **GASP-STAB-04**, the host-view jitter found in the GASP-12 check, came first at the user's choice and is **merged** in [#244](https://github.com/Athurito/SurvivalRpg/pull/244) after the user's check ([task report](gasp-host-view-turn-jitter.md)); **GASP-13** is next. Both concern the CMC AnimBP's Offset Root Bone path.
+2. **GASP-STAB-04**, the host-view jitter found in the GASP-12 check, came first at the user's choice and is **merged** in [#244](https://github.com/Athurito/SurvivalRpg/pull/244) after the user's check ([task report](gasp-host-view-turn-jitter.md)); **GASP-13** is **Ready** ([task report](gasp-presentation-polish.md)). Both concern the CMC AnimBP's Offset Root Bone path.
 3. After a GASP-08 pass: **GASP-14 → GASP-15**, then **GASP-16**, then the final dodge montages for #124.
 4. If GASP-08 fails: GASP-14 and GASP-15 are dropped. GASP-16 then targets the runtime follower path, and the dodge montages are retargeted to UEFN like the block set.
 
