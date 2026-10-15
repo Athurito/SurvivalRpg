@@ -14,7 +14,8 @@ frühere Fassung mit Schnellstart-Verlauf und Aufgabenverträgen liegt in der
 ## Nächster bereiter Schritt
 
 **`GASP-13` Darstellung und Drehen im Stand** hat **PR offen** ([#247](https://github.com/Athurito/SurvivalRpg/pull/247),
-[Bericht](gasp-presentation-polish.md)); die Sichtprüfung des Nutzers steht aus. Eine stehende Figur in
+[Bericht](gasp-presentation-polish.md)); die erste Sichtprüfung fand das Drehen zu ruckartig, der Fix ist
+im PR, die zweite Sichtprüfung steht aus. Eine stehende Figur in
 der Kampfhaltung dreht jetzt per Turn-in-Place mit der Kamera mit; die Kamera
 läuft nach. Rüstungs-Foley gehört nach Wahl des Nutzers nicht mehr dazu. Der vollständige Manny-Bake `GASP-14` backt die mit `GASP-10`
 gewählten Relaxed-Datenbanken.

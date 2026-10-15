@@ -10,10 +10,10 @@ diese Datei **ersetzen, nicht ergänzen**. Das frühere fortlaufende Protokoll b
 
 | Feld | Wert |
 | --- | --- |
-| Stand | 14.10.2026 |
-| Aktive Aufgabe, Status, zuständiger Chat | `GASP-13` Darstellung und Drehen im Stand, **PR offen** (Claude, Worktree `musing-ishizaka-7bac20`); Sichtprüfung des Nutzers steht aus. Zuletzt gemergt: `GASP-STAB-04` Zittern von Client-Figuren in der Host-Ansicht nach Sichtprüfung des Nutzers. |
+| Stand | 15.10.2026 |
+| Aktive Aufgabe, Status, zuständiger Chat | `GASP-13` Darstellung und Drehen im Stand, **PR offen** (Claude, Worktree `musing-ishizaka-7bac20`); die erste Sichtprüfung (15.10.2026) fand das Drehen zu ruckartig, der Fix ist im PR, die zweite Sichtprüfung steht aus. Zuletzt gemergt: `GASP-STAB-04` Zittern von Client-Figuren in der Host-Ansicht nach Sichtprüfung des Nutzers. |
 | Branch, Worktree, Basis / PR | `claude/gasp-13-presentation-polish`, Basis `master` `6df33197` / [#247](https://github.com/Athurito/SurvivalRpg/pull/247). Definition [#246](https://github.com/Athurito/SurvivalRpg/pull/246). Zuletzt `claude/gasp-stab-04-host-view-jitter` / [#244](https://github.com/Athurito/SurvivalRpg/pull/244), gemergt als `681eeafa` (Definition [#243](https://github.com/Athurito/SurvivalRpg/pull/243)). Davor `claude/gasp-12-walk-gait` / [#241](https://github.com/Athurito/SurvivalRpg/pull/241), gemergt als `1c6a076c`. |
-| Offene Abnahmepunkte | `GASP-13`: Sichtprüfung des Nutzers als Host und als Client ([Playtest](gasp-presentation-polish.md#repro-after-implementation)), dabei Entscheidung über die nicht übernommenen Tuning-Werte, die Proxy-Clipwahl und die Relaxed-Leans aus `GASP-10` ([Grenzen](gasp-presentation-polish.md#limits)). Jede Gameplay- und Bewegungsänderung auch im Mehrspieler prüfen (Nutzerwunsch 13.10.2026): PIE-Netzwerktests, 2- bis 3-Spieler-Messung der entfernten Figur und ein Mehrspieler-Schritt im Playtest. Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
+| Offene Abnahmepunkte | `GASP-13`: zweite Sichtprüfung des Nutzers als Host und als Client ([Playtest](gasp-presentation-polish.md#repro-after-implementation)), dabei Entscheidung über den verbleibenden Schritt-Takt beim Drehen, die nicht übernommenen Tuning-Werte, die Proxy-Clipwahl und die Relaxed-Leans aus `GASP-10` ([Grenzen](gasp-presentation-polish.md#limits)). Jede Gameplay- und Bewegungsänderung auch im Mehrspieler prüfen (Nutzerwunsch 13.10.2026): PIE-Netzwerktests, 2- bis 3-Spieler-Messung der entfernten Figur und ein Mehrspieler-Schritt im Playtest. Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
 | Akzeptierter Runtime-Stand | `master` `6df33197`; enthält alle GASP-Schritte bis GASP-12 (#241, Status #242), GASP-STAB-04 (#244, Definition #243, Status #245), die GASP-13-Definition (#246), GASP-ENG-01 (#221), GASP-STAB-03 (#223, nur Testcode) und den [Bewegungsplan](gasp-movement-plan.md) (#229, nur Doku). Der CMC-Pawn nutzt Rotationsmodi (freie Bewegung und Kampfhaltung) und spielt das Relaxed-Set mit passenden Tempi (Laufen 375, Sprint 585, Ducken 200 cm/s) und bewegt sich nach `DA_RpgGasp_MovementProfile` (Sprung-Z 450, etwa 0,48 s bis Lauftempo); Gehen mit 165 cm/s über Feststelltaste, rechte Schultertaste oder einen Stick unter 0,7; `Lvl_RpgGaspCMC` steht in der GASP-Präsentation. Ein Listen-Server-Host sieht Client-Figuren beim Drehen so ruhig wie die anderen Clients. Die Produktion nutzt weiter UEFN; der Manny-Pilot liegt isoliert unter `/Game/SurvivalRpg/Characters/GASP/Pilot/`. |
 | Dateibesitz / Sperren | `GASP-13` (PR offen): `ABP_RpgGasp_CMC`, die Chooser unter `CMC/RPG/Choosers` und nötige CMC-eigene Kopien unter `CMC/RPG`, das Kamerafeld von `DA_PawnData_GaspCMC` und `DA_PawnData_GaspMantle` mit einem neuen CMC-Kameramodus, `RpgAnimInstance.*` nur für einen fehlenden Snapshot-Eingang, ein neuer CMC-Turn-in-Place-PIE-Test und `RpgGaspCMCHostViewTests.cpp`. Nicht anfassen: geteilte Datenbanken, Mover-Assets, `CM_ThirdPerson`, `CM_RpgGasp_Traversal`, Bewegungswerte. Die geteilten Relaxed- und Dense-Datenbanken nutzen CMC und Mover gemeinsam; CMC-spezifische Änderungen brauchen eigene Kopien. Das Lyra-`SK_Mannequin` trägt seit `GASP-08` die Blend-Profile `FastFeet+Root_Weight` und `FastHead_Weight`, die der Manny-AnimBP braucht; nicht entfernen. Eine separate Claude-Sitzung untersucht den zeitabhängigen Remote-Melee-Test aus den offenen Befunden. |
 | Editor / PIE / Builds | Installiert ist UE 5.8.3 (CL 58210709), `master` pinnt 5.8.3. Branches ohne GASP-ENG-01 bauen erst nach Übernahme von `master`. PIE-Netzwerktests nur in einem Prozess gleichzeitig laufen lassen. Vor eigener Editor-/MCP-Nutzung andere Checkouts und Sitzungen prüfen. |
@@ -22,8 +22,9 @@ diese Datei **ersetzen, nicht ergänzen**. Das frühere fortlaufende Protokoll b
 
 ## Nächster Handgriff
 
-Sichtprüfung des Nutzers für `GASP-13` gemäß [Playtest](gasp-presentation-polish.md#repro-after-implementation),
-als Host und als Client; dabei entscheiden, ob die nicht übernommenen Tuning-Werte
+Zweite Sichtprüfung des Nutzers für `GASP-13` gemäß [Playtest](gasp-presentation-polish.md#repro-after-implementation),
+als Host und als Client, nach dem Fix für ruckartiges Drehen; dabei entscheiden, ob der
+Schritt-Takt beim Drehen reicht oder der Oberkörper stärker mitdrehen soll, ob die nicht übernommenen Tuning-Werte
 so bleiben, ob die Clipwahl auf Proxies ein eigenes Paket braucht und wohin die
 Relaxed-Leans aus `GASP-10` gehen. Dann mergen. Jede Prüfung schließt
 Mehrspieler ein. Der vollständige Manny-Bake `GASP-14` backt die
@@ -62,7 +63,11 @@ Relaxed-Datenbanken.
 - `GASP-13` (PR offen): Eine stehende Figur in der Kampfhaltung dreht per Turn-in-Place mit
   der Kamera mit, auf Besitzer, Host, Proxy und Late Joiner. Ursache war das GASP-Gate (Drehen
   im Stand nur beim Zielen) und die fehlende Kostenpräferenz der Relaxed-Turn-Datenbank, nicht
-  `GASP-10`. Offen: Proxies wählen beim Drehen fast jeden Frame einen anderen Turn-Clip, weil
+  `GASP-10`. Nach der ersten Sichtprüfung (zu ruckartig) läuft ein begonnener Schritt weiter,
+  bis die Root auf ihrer Seite bis auf 10° heran ist; vorher brach Motion Matching ihn unter 50°
+  ab, und die Root stoppte beim Dauerdrehen vier- bis fünfmal pro Sekunde abrupt. Der
+  Schritt-Takt bleibt (Turn-Clips drehen 180° in 0,4 s, der Oberkörper folgt nur etwa 10°).
+  Offen: Proxies wählen beim Drehen fast jeden Frame einen anderen Turn-Clip, weil
   die Engine-Trajektorie die Blickrichtung aus der im Netzwerktakt springenden Actor-Rotation
   vorhersagt (Host-Ansicht unauffällig). Steering 0,5, die Offset-Root-Bone-Halbwertszeit und
   weniger Spins wurden gemessen und nicht übernommen. Die Relaxed-Leans aus `GASP-10` fehlen

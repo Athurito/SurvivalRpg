@@ -1,6 +1,6 @@
 # GASP-13 – Presentation polish and standing turn in place
 
-Status: **PR open** in [#247](https://github.com/Athurito/SurvivalRpg/pull/247) on `claude/gasp-13-presentation-polish` (defined 2026-10-14 in [#246](https://github.com/Athurito/SurvivalRpg/pull/246), implemented the same day); the user check is pending. The package outline is in the [movement plan](gasp-movement-plan.md#gasp-13-presentation-polish). On 2026-10-14 the user added the standing turn in place in the combat stance, found in [GASP-STAB-04](gasp-host-view-turn-jitter.md#limits), and moved armor Foley out of this package. This report refines the outline against the current code and assets and is the task report for the implementation PR.
+Status: **PR open** in [#247](https://github.com/Athurito/SurvivalRpg/pull/247) on `claude/gasp-13-presentation-polish` (defined 2026-10-14 in [#246](https://github.com/Athurito/SurvivalRpg/pull/246), implemented the same day). The first user check on 2026-10-15 found the standing turn too jerky; the fix is in [User check 1](#user-check-1-2026-10-15--turn-smoothness), and the second check is pending. The package outline is in the [movement plan](gasp-movement-plan.md#gasp-13-presentation-polish). On 2026-10-14 the user added the standing turn in place in the combat stance, found in [GASP-STAB-04](gasp-host-view-turn-jitter.md#limits), and moved armor Foley out of this package. This report refines the outline against the current code and assets and is the task report for the implementation PR.
 
 ## Goal
 
@@ -123,7 +123,7 @@ Not owned: the shared Relaxed and Dense databases and normalization sets, the Mo
 ## Repro (after implementation)
 
 1. Set PIE to Play As Listen Server with two players and open `Lvl_RpgGaspCMC`. Both characters spawn armed in the combat stance.
-2. Stand still and turn the camera slowly, then quickly, about 90° and 180° both ways. The feet step around with the camera, and the upper body leads. Watch the same turn in the other window.
+2. Stand still and turn the camera slowly, then quickly, about 90° and 180° both ways, and sweep it fast through a full turn. The feet step around with the camera, the head leads, and every step plays out; after a fast sweep the body ends facing about where the camera points. Watch the same turn in the other window.
 3. Run, stop, start, reverse (W↔S, A↔D) and run curves, armed and holstered. The feet look heavier and calmer, with fewer spins and no sliding.
 4. Run and stop: the camera trails slightly behind the character. Turning the camera has no lag.
 5. Turn with block held: unchanged.
@@ -227,10 +227,72 @@ Each value was measured against the state without it on the spin route (owner; s
 - **Cost:** CSV profile of the turn probe (three PIE worlds, nine animated characters, 60 FPS), two runs per variant with the `master` assets and the final assets. Game-thread animation median 1.57 / 1.60 ms before and 1.62 / 1.53 ms after, unchanged within run-to-run spread. Animation worker time (parallel evaluation, total) median 5.87 / 5.84 ms before and 6.00 / 5.94 ms after: about +0.1 ms for nine characters, roughly 0.01 ms per character. A first pair of runs measured the baseline pawn because the map had not finished loading; it is set aside in `Saved/Gasp13/invalid`.
 - **Multiplayer:** the probe recorded owner, listen server and proxy for the turn, route and spin route; the new PIE test adds a late joiner.
 
+### User check 1 (2026-10-15) – turn smoothness
+
+The user found the standing turn too jerky, and fast turns "skipped" the steps. The turn probe gained a fast mode (360 °/s for 2 s, a 720 °/s whip of 360°, −360 °/s for 1 s, then 30 and 120 °/s), and the analysis new metrics per role:
+- **dead stops:** the root turns faster than 150 °/s and is below 20 °/s within three frames;
+- **bursts:** the root starts turning above 100 °/s after being below 20 °/s;
+- **stall:** the share of frames in which the root stands still while trailing by more than 25°;
+- **lead:** how far the root runs ahead of the capsule in the turn direction.
+
+Findings on the committed state:
+- **Cause 3, aborted steps:** a turn clip starts at 50°. Once the root came within 50° of the capsule, `ShouldTurnInPlace` turned false and the chooser offered only the idle again. Motion Matching then swapped the turn clip for the idle loop although the clip still turned the root at about 350 °/s, so the root stopped dead within 50 ms. During continuous turns this repeated four to five times per second: 13 dead stops in 3 s at 180 °/s on the owner and the proxy.
+- **Stuck after fast turns:** an aborted step left the root up to 38° behind once the camera stopped, below the 50° trigger, so it stayed there: 33° after the 720 °/s whip and 38° after the −360 °/s turn on the owner.
+- **Clip speed:** the Relaxed turn clips turn fast by design. 90° clips do 90% of their rotation in 0.35 s, 180° clips in 0.4 s, peaking at 330 and 500 °/s. The rest of each clip, up to 2.17 s, settles the feet. The clips are unchanged.
+- **Upper body:** the aim offset is active in the stance and follows the full offset (44° at 45° behind), but `BS_Neutral_AO_Stand` turns the shoulder line only about 10° of it; most goes to neck and head. From behind, the body looks frozen until a step starts.
+
+Fix, in `ABP_RpgGasp_CMC` only:
+- A new variable `TurnInPlaceSide` (−1, 0 or +1, category States) holds the side of the root offset while a step runs. `Update_States`, which runs once per update on the worker thread, sets it from `ShouldTurnInPlace` and the sign of the offset, and to 0 otherwise.
+- `ShouldTurnInPlace` is now `(|offset| >= 50 OR offset × TurnInPlaceSide >= 10) AND` the unchanged aim, stop and strafe conditions. A started step keeps the turn database until the root is within 10° on the side it started from. A root that passed the capsule does not reopen the gate, which needs 50° again.
+
+Turn probe at 60 FPS, before / after (owner / server / proxy; after: two runs):
+
+| Measure | Before | After |
+| --- | --- | --- |
+| Dead stops in 3 s at 90 °/s | 5 / 5 / 8 | 3 / 3 / 3 and 4 / 4 / 4 |
+| Dead stops in 3 s at 180 °/s | 13 / 11 / 13 | 4 / 4 / 3 and 4 / 4 / 4 |
+| Bursts in 3 s at 180 °/s | 14 / 11 / 13 | 5 / 5 / 4 and 5 / 5 / 4 |
+| Mean root lag at 180 °/s | 42 / 38 / 58° | 25 / 25 / 31° and 24 / 24 / 27° |
+| Clip switches in 3 s at 180 °/s | 28 / 22 / 95 | 13 / 13 / 73 and 13 / 15 / 65 |
+| Root lag after the 720 °/s whip | 33 / 33 / 4° | 5 / 6 / 5° |
+| Root lag after −360 °/s for 1 s | 38 / 0 / 46° | 9 / 0 / 0° |
+| Mean root lag at 360 °/s | 46 / 46 / 67° | 26 / 26 / 53° |
+
+- Slow turns are unchanged: at 30 and 45 °/s the root still waits until 50°, then takes one step (stall 0.9 before and after).
+- The route probe is unchanged: owner slide 32.3 against 32.4 cm/s, 0.64 against 0.68 clip changes per second, no spins.
+- **Tests:** `RemoteStanceTurnInPlaceStaysSteadyOnTheHost` now also allows at most three dead stops per second on every role in each 1.5-s window at 90 and 180 °/s. `StandingStanceTurnFollowsTheCameraOnEveryRole` adds a 450° sweep at 720 °/s before the late join and a −450° sweep after it; then every role's root must be within 50° of the capsule. Measured with the fix: at most 2.0 dead stops per second in three runs, and 0 to 34° after the sweeps in four runs (the server trails most). With the AnimBP from before the fix, the steady-turn test failed in three of three runs: 4.64 dead stops per second on the proxy at 90 °/s, 3.30 on the owner at 180 °/s, and 3.31 on the proxy at 90 °/s.
+
+Regression after the fix, each suite on its own through `ue.py test` after `ue.py build` (0 errors, 0 warnings):
+
+| Suite | Result |
+| --- | --- |
+| Native (as above) | 138 / 138 |
+| `SurvivalRpg.Animation` | 4 / 4 |
+| `SurvivalRpg.GASP.CMC` (with both host-view tests) | 13 / 13 |
+| `SurvivalRpg.Combat.BlockLocomotion` | 15 / 16 |
+| `SurvivalRpg.GASP.Mantle` | 13 / 13 |
+| `SurvivalRpg.GASP.Vault` | 9 / 9 |
+| `SurvivalRpg.GASP.Hurdle` | 12 / 12 |
+| `SurvivalRpg.GASP.RuntimeRetarget` | 2 / 2 |
+| `SurvivalRpg.GASP.VariantComparison` | 3 / 3 |
+| `SurvivalRpg.Network` | 19 / 19 |
+| `SurvivalRpg.GASP.Mover` | 65 / 67 |
+
+- **BlockLocomotion:** `MoverFixedRollbackPreservesHeldBlockAndReplaysBlockedHistoryAcrossRelease` timed out waiting for the release-crossing replay. Alone it failed twice more and then passed three times in a row; with the AnimBP from before the fix it passed three of three runs in between. It runs the Mover pawn, and only CMC assets and the Manny pilot reference `ABP_RpgGasp_CMC`, so the failures are attributed to timing, not to this change.
+- **Mover:** the known `GASP-VAL-03` fixture `EquipmentMontageReplacesPendingVaultWithoutDelayedResurrection` failed with its usual precondition message, alone as well. `LateJoinReconstructsTheCurrentVaultState` failed in the suite and passed alone, as in `GASP-12`.
+
+Failed attempts and rejected values:
+- **Hysteresis without a side:** holding the gate at 10° while the current database carried the `TurnInPlace` tag. A turn clip that overshot the capsule reopened the gate on the other side, and at 90 °/s the root ran up to 41° ahead of the camera on owner and server (9 to 13% of frames more than 15° ahead, against 1% and at most 17° with the side).
+- **Release at 5° or 20°** instead of 10°: no clear gain; 20° left the owner 48° behind after the −360 °/s turn.
+- **Trigger at 35°** instead of 50°: smaller lag, but more dead stops at 180 °/s, and the threshold also applies to GASP's turn after a stop outside the stance. Not kept.
+- **Lead assertion in the test:** the owner's lead at 90 °/s reached 24° in one run, too close to the 27 to 41° of the rejected variant to separate them reliably. On the listen server the sampled capsule trails the pose of a remote pawn by about 50° in both variants, because the server poses it per received move. The test logs the lead but does not assert it.
+- Creating the `ShouldTurnInPlace` call and the `CharacterProperties` getter in `Update_States` bound them to the sample AnimBP again; both were replaced with nodes bound to `ABP_RpgGasp_CMC` (`declaring_class`) before compiling.
+
 ### Deviations from the definition
 
 - The cause differs from the definition's hypothesis; see [Phase A](#phase-a--baseline-and-cause).
 - Phase B needed a second content change, the interrupt mode, and a crouch-chooser row; both are in the owned files.
+- The first user check needed a third: a directional hold for the turn gate with a new AnimBP variable, also in `ABP_RpgGasp_CMC`.
 - Three planned tuning values were measured and not applied; see [Phase C](#phase-c--tuning).
 - The original GASP ran neither scripted nor by hand; the project copy's graphs were compared.
 - The Mover pawn is no control for the standing turn.
@@ -244,7 +306,9 @@ Each value was measured against the state without it on the spin route (owner; s
 
 ### Limits
 
-- **User check:** pending; see [Repro](#repro-after-implementation).
+- **User check:** the first check (2026-10-15) found the turn too jerky; the fix is in [User check 1](#user-check-1-2026-10-15--turn-smoothness). The second check is pending; see [Repro](#repro-after-implementation).
+- **Step cadence:** the turn clips stay fast (180° in 0.4 s), and turn in place stays a sequence of steps. A slow camera turn waits until 50°, then takes one step; a continuous turn steps about every 0.6 s. Smoother following needs a design choice: a stronger upper-body follow than `BS_Neutral_AO_Stand`, which turns the shoulders about 10° at 45°, or a smaller trigger angle in the stance only.
+- **After fast sweeps:** the root can meet the capsule while the camera still turns and then stay up to 50° behind, GASP's trigger; the PIE test measured up to 34° on the listen server.
 - **Proxy turn selection:** clients that watch another player see that player's standing turn pick a new turn clip almost every frame (see [Phase B](#phase-b--standing-turn-in-place)). The root still follows; how visible the switching is needs the user's look. A fix would smooth the proxy's view yaw for the trajectory, a native change; it needs the user's decision and its own package.
 - **Residual angle:** after a continuous turn the root stays up to about 50° behind the capsule, GASP's trigger angle; the aim offset covers it. The definition's 45° holds only after snaps.
 - **Tuning outside the ranges:** the Offset Root Bone rotation half-life (0.1), the Steering target time (0.4) and the spin gate stay unchanged for the measured reasons in [Phase C](#phase-c--tuning). The user's check decides whether they stay.
