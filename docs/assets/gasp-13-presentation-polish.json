@@ -1927,7 +1927,7 @@
     },
     "per_character_worker_ms": "about +0.01"
   },
-  "user_check": "third check pending",
+  "user_check": "fourth check pending",
   "user_check_1": {
     "date": "2026-10-15",
     "feedback": "standing turn too jerky; fast turns skip the steps",
@@ -2032,6 +2032,41 @@
       "mover": "65/67 (GASP-VAL-03 fixture; vault late join passed alone)",
       "note": "hurdle, retarget, variants and mover ran at 1080 deg/s; native, CMC, mantle, vault and network again at 1800 deg/s"
     },
-    "user_check_3": "pending"
+    "user_check_3": "see user_check_3"
+  },
+  "user_check_3": {
+    "date": "2026-10-16",
+    "feedback": "standing looks good; blocking triggers twice",
+    "cause": "block now turns the capsule at once; the block layer ALI_RpgBlockLocomotion (after Offset Root Bone) turns the visible body, while the base pose below also started turn-in-place clips; the base is not evaluated while the layer is fully in, so Offset Root Bone froze 46 (owner) to 59 (proxy) deg behind and stepped again on release, ending 10.6 deg off on every role",
+    "fix": {
+      "ShouldTurnInPlace": "false while bBlockLocomotionActive, in the update after it, and while IsSlotActive(DefaultSlot)",
+      "Update_States": "BlockLocomotionActive_ThisFrame and _LastFrame carry the previous update block state",
+      "Get_OffsetRootRotationMode": "Interpolate while the block layer is active; Release stays for DefaultSlot montages (Release while blocking jumped the root 120 deg in one frame)",
+      "Get_MMInterruptMode": "re-select in the update after the block ends"
+    },
+    "probes": {
+      "k1_before": "release step Stand_Turn_045_L, 10.6 deg off on owner/server/proxy",
+      "k7_k8_after": "no base turn under block, release 0.0 deg on every role; three proxy runs at -120 deg clean"
+    },
+    "test": {
+      "name": "StandingStanceKeepsFacingUntilItMovesOnEveryRole block step",
+      "with_fix": "3 runs, 0.0 deg on every role",
+      "mutation": "previous AnimBP: 2 of 2 failed, 10.5 to 10.8 deg on owner, server, proxy",
+      "earlier_run_without_interrupt": "proxy 23 deg"
+    },
+    "regression": {
+      "native": "139/139",
+      "animation": "4/4",
+      "gasp_cmc": "14/14",
+      "block_locomotion": "16/16",
+      "mantle": "13/13",
+      "vault": "9/9",
+      "hurdle": "12/12",
+      "runtime_retarget": "2/2",
+      "variant_comparison": "3/3",
+      "network": "19/19",
+      "mover": "not repeated (CMC AnimBP only)"
+    },
+    "user_check_4": "pending"
   }
 }

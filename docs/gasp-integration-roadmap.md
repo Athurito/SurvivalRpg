@@ -14,7 +14,7 @@ frühere Fassung mit Schnellstart-Verlauf und Aufgabenverträgen liegt in der
 ## Nächster bereiter Schritt
 
 **`GASP-13` Darstellung und Drehen im Stand** hat **PR offen** ([#247](https://github.com/Athurito/SurvivalRpg/pull/247),
-[Bericht](gasp-presentation-polish.md)); nach zwei Sichtprüfungen steht die dritte aus. Eine stehende Figur in
+[Bericht](gasp-presentation-polish.md)); nach drei Sichtprüfungen steht die vierte aus. Eine stehende Figur in
 der Kampfhaltung behält jetzt nach Wahl des Nutzers ihre Blickrichtung, bis sie läuft, blockt oder
 angreift; dann drehen die Füße per Turn-in-Place mit. Die Kamera läuft nach. Rüstungs-Foley gehört nach Wahl des Nutzers nicht mehr dazu. Der vollständige Manny-Bake `GASP-14` backt die mit `GASP-10`
 gewählten Relaxed-Datenbanken.
