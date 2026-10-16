@@ -1,0 +1,360 @@
+{
+  "task": "GASP-STAB-05",
+  "date": "2026-10-17",
+  "engine": "UE 5.8.3",
+  "branch": "claude/gasp-stab-05-block-release",
+  "base": "master cf40597f",
+  "decisions": {
+    "2026-10-16": [
+      "the block-release problem deferred from GASP-13 is the next package",
+      "the feet take real steps back from the block stance instead of a faster blend"
+    ]
+  },
+  "cause_on_master": {
+    "end_montage": "BP_WeaponInstance_BasicShield.BlockDefinition.BlockEndMontage = AM_Block_End_Seq (slot BlockUpperBody, 0.667 s, blend in/out 0.25 s); full body while standing because the layer's UpperBodyMaskAlpha is 0",
+    "stances_component_space_cm": {
+      "block_loop_feet": [
+        [
+          32,
+          38,
+          10
+        ],
+        [
+          -27,
+          -39,
+          9
+        ]
+      ],
+      "block_end_last_frame_feet": [
+        [
+          32,
+          38,
+          10
+        ],
+        [
+          -26,
+          -39,
+          9
+        ]
+      ],
+      "gasp_relaxed_idle_feet": [
+        [
+          15,
+          1,
+          9
+        ],
+        [
+          -15,
+          -9,
+          9
+        ]
+      ]
+    },
+    "phases": "layer fade (0.2 s) under the montage blend-in moves the feet ~15 cm and back; the montage blend-out then slides the feet ~40 cm and moves the hands ~45 cm into the GASP idle"
+  },
+  "assets": {
+    "added": {
+      "/GF_Combat_Core/Animations/BlockLocomotion/SwordShield/Exit/Idle_Combat_to_Idle_Seq_Retargeted": {
+        "lfs": "06227040a6f89115c542600b9de8e8eea98b6b402e97c811cef0956c33607534",
+        "source": "/GF_Combat_Core/Animations/Sword_and_Shield/Animations/Sequence2/01_Idle/Idle_Combat_to_Idle_Seq",
+        "length_s": 1.333,
+        "steps_s": {
+          "right_foot": [
+            0.07,
+            0.33
+          ],
+          "left_foot": [
+            0.43,
+            0.67
+          ]
+        },
+        "start_matches_block_loop_cm": 1,
+        "end_distance_to_gasp_idle_cm": {
+          "left_foot": 16,
+          "right_foot": 7
+        },
+        "normalization": {
+          "curve": "BlockRootYaw",
+          "yaw_range_deg": [
+            0.0,
+            0.0
+          ],
+          "force_root_lock": true,
+          "root_motion_root_lock": "AnimFirstFrame",
+          "enable_root_motion": false,
+          "loop": false,
+          "contact_markers": []
+        }
+      },
+      "/GF_Combat_Core/Animations/BlockLocomotion/SwordShield/Exit/IK_Source": {
+        "lfs": "937929f963699460e67b091a802e49e065e88b2e6d5b77f3902ed214657ed3f3",
+        "role": "source rig created by retarget_animation_batch"
+      },
+      "/GF_Combat_Core/Animations/BlockLocomotion/SwordShield/Exit/RTG_SourceToTarget": {
+        "lfs": "1412fb046937f4fb1bec9a593e0f7f6d507422c32fa18cbcf0da4558ed2941d4",
+        "role": "retargeter created by retarget_animation_batch"
+      }
+    },
+    "changed": {
+      "/Game/SurvivalRpg/Characters/GASP/Shared/RPG/Block/ABP_RpgBlockLocomotion": {
+        "lfs": {
+          "before": "f64122177fbed85d7763f972a79e79c266913124d15d1c866d7339cb60ae4453",
+          "after": "21df014eab82a554eec383d9f054459c856bfb9e06bbc2e01bff8b5508613464"
+        },
+        "variables": {
+          "ExitHolding": "bool, runtime",
+          "ExitUpperBodyAlpha": "float, runtime",
+          "ExitUpperBodyBlendTime": "float, tuning, default 0.3 s",
+          "ExitUpperBodyHoldRemaining": "float, runtime"
+        },
+        "functions": {
+          "UpdateBlockExit": "new; called from the update event before SetLayerAlpha",
+          "ValidateExitSelection": "new; called at the end of ValidateAnimationSet"
+        },
+        "event_graph": [
+          "SetLayerAlpha target is OR(block active, ExitHolding)",
+          "the release branch no longer calls EnterBlockPhase(0); UpdateBlockExit enters phase 5 or 0",
+          "TurnDebt keeps its value while ExitHolding (UpdateBlockExit adds the capsule yaw change) instead of decaying"
+        ],
+        "layer_graph": [
+          "SaveCachedPose BlockInput from the linked input pose; three UseCachedPose nodes feed TwoWayBlend_0.A, TwoWayBlend_2.B and the new blend",
+          "LayeredBoneBlend_1 (spine_01 depth 0, mesh-space rotation, weight ExitUpperBodyAlpha) between TwoWayBlend_0 and the BlockMovement cache"
+        ]
+      },
+      "/GF_Combat_Core/Animations/BlockLocomotion/SwordShield/CHT_BlockLocomotion": {
+        "lfs": {
+          "before": "aeb9d13e752da6f91cc22d3c0befb2da27fd3ffb4f0f0e57e510784c4b2f77a4",
+          "after": "0cfe31766e641109704dcd398ecbac050865bea81b882f403210cd6a9c8ed246"
+        },
+        "row_22": {
+          "Phase": [
+            5,
+            5
+          ],
+          "Direction": "any",
+          "TurnDebt": "any",
+          "result": "Exit/Idle_Combat_to_Idle_Seq_Retargeted",
+          "SelectedDuration": 0.7,
+          "SelectedSpeed": 157,
+          "SelectedTurnAngle": 0,
+          "StopFirstLeft": 0,
+          "StopNextRight": 0
+        },
+        "rows_0_to_21": "unchanged, compared against the export before the edit"
+      },
+      "/GF_Combat_Core/Equipment/Weapons/BP_WeaponInstance_BasicShield": {
+        "lfs": {
+          "before": "48387d0d93b858dd8c7c60b1e0375be0075ef56b62d0ba57041c5505454a1a33",
+          "after": "5043120c63f4501135b006cea4b7eff091e855af55d59b8af336699a9b47981f"
+        },
+        "BlockDefinition.BlockEndMontage": {
+          "before": "AM_Block_End_Seq",
+          "after": "None"
+        }
+      },
+      "/GF_Combat_Core/Animations/BlockLocomotion/ABP_Block_SwordShield": {
+        "lfs": {
+          "before": "dd2b562675425b3589ec45ee3db36658658ec79c470cb1fffd6a26ebaab3a8f2",
+          "after": "04e272d5f6dd90a0bb8c2b9442aecab4ef7ffccd3a1d4a13fd94e32a689f8e5f"
+        },
+        "change": "recompiled and saved after the parent changed; no value changes"
+      },
+      "/GF_Combat_Core/Animations/BlockLocomotion/ABP_Block_TestVariant": {
+        "lfs": {
+          "before": "a19acf6f487e0fa74907fd1cd600a8e604da8e267620160fe9d0ce07a89d75b9",
+          "after": "5dabcaa434f8ee912323e89b2404a5ff3b4b4dbbe254ebe6c95604b7a2b1fbf7"
+        },
+        "change": "recompiled and saved after the parent changed; no exit row, keeps the old release"
+      }
+    }
+  },
+  "retarget": {
+    "tool": "AnimationRetargetTools.retarget_animation_batch, then normalize_derived_sequence",
+    "source_mesh": "/Game/SurvivalRpg/Characters/Mannequins/Meshes/SKM_Manny_Simple",
+    "target_mesh": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Meshes/SKM_UEFN_Mannequin",
+    "target_rig": "/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Rigs/IK_UEFN_Mannequin",
+    "bone_map": {
+      "source_pelvis": "pelvis",
+      "target_pelvis": "pelvis",
+      "source_root": "root",
+      "target_root": "root"
+    },
+    "chain_aliases": {
+      "LeftToe": "LeftFoot",
+      "RightToe": "RightFoot"
+    },
+    "excluded_target_bones": [
+      "foot_l",
+      "foot_r",
+      "ball_l",
+      "ball_r"
+    ],
+    "same_as": "GASP-06 first pack (docs/assets/gasp-block-locomotion.json first_pack)"
+  },
+  "probe": {
+    "setup": "listen-server PIE, 3 players, Lvl_RpgGaspCMC and Lvl_RpgGaspMover, no latency; client A acts, recorded as owner, on the server and as a proxy on client B",
+    "planted_metric": "horizontal cm a foot moved within 1.5 cm of its height at the start or end of a 1.3 s window after release",
+    "cmc_planted_left_right_cm": {
+      "master_release_standing": [
+        71.4,
+        58.3
+      ],
+      "fix_release_standing": [
+        21.3,
+        11.4
+      ],
+      "master_release_after_120_deg_block_turn": [
+        71.9,
+        59.0
+      ],
+      "fix_release_after_120_deg_block_turn": [
+        21.9,
+        11.3
+      ],
+      "roles": "owner, server and proxy within 1 cm"
+    },
+    "mover_planted_left_right_cm": {
+      "baseline_release_standing": {
+        "owner": [
+          40.9,
+          47.7
+        ],
+        "server": [
+          40.9,
+          47.6
+        ],
+        "proxy": [
+          40.9,
+          47.5
+        ]
+      },
+      "fix_release_standing": {
+        "owner": [
+          20.6,
+          10.7
+        ],
+        "server": [
+          20.7,
+          10.7
+        ],
+        "proxy": [
+          20.7,
+          10.7
+        ]
+      },
+      "baseline_release_after_turn": {
+        "owner": [
+          74.7,
+          50.2
+        ],
+        "server": [
+          45.5,
+          21.3
+        ],
+        "proxy": [
+          53.2,
+          29.7
+        ]
+      },
+      "fix_release_after_turn": {
+        "owner": [
+          43.7,
+          34.6
+        ],
+        "server": [
+          25.7,
+          42.2
+        ],
+        "proxy": [
+          49.9,
+          46.3
+        ]
+      },
+      "baseline": "fix assets with the phase-5 row disabled and the end montage restored, in memory only"
+    },
+    "edge_cases_cmc": {
+      "repress_0_3_s_into_exit_max_right_hand_cm_per_frame": {
+        "owner": 7,
+        "server": 7,
+        "proxy": 6,
+        "press_from_idle": 9,
+        "without_upper_body_hold": 21
+      },
+      "walk_off_0_35_s_into_exit_max_upper_bone_cm_per_s": {
+        "owner": 314,
+        "server": 371,
+        "proxy": 311
+      },
+      "tap_0_12_s_max_upper_bone_cm_per_s": {
+        "owner": 478,
+        "server": 471,
+        "proxy": 498
+      }
+    }
+  },
+  "failed_attempts": {
+    "turn_abort_15_deg": {
+      "mover_after_turn_owner_cm": [
+        89.1,
+        64.2
+      ],
+      "with_turn_debt_too": [
+        77.6,
+        48.6
+      ],
+      "result": "removed"
+    },
+    "upper_body_hold_on_every_press": "a normal press long after an exit paused the hand for five frames; the hold now needs LayerAlpha > 0.01"
+  },
+  "tests": {
+    "changed": "SurvivalRpg.GASP.CMC.HostView.GaspCMCHostViewPIE.StandingStanceKeepsFacingUntilItMovesOnEveryRole",
+    "check": "planted travel per foot after the block release below 35 cm on every role",
+    "fix_cm": {
+      "owner": [
+        21.9,
+        11.2
+      ],
+      "server": [
+        19.8,
+        9.8
+      ],
+      "proxy": [
+        21.2,
+        11.3
+      ]
+    },
+    "master_assets_cm": {
+      "owner": [
+        69.2,
+        56.5
+      ],
+      "server": [
+        71.4,
+        58.4
+      ],
+      "proxy": [
+        72.2,
+        59.1
+      ],
+      "result": "failed on every role"
+    }
+  },
+  "findings": {
+    "mover_block_height": "on the Mover some block starts stand the block pose about 20 cm high (feet at 31 to 32 cm instead of 9 to 10), also on the baseline; walking off during the exit drops it in one or two frames; not analyzed"
+  },
+  "regression": {
+    "native": "139/139",
+    "animation": "4/4",
+    "gasp_cmc": "14/14",
+    "block_locomotion": "16/16",
+    "mantle": "13/13",
+    "vault": "9/9",
+    "mover": "65/67; MaximumDepthHurdleLandsBeyondRearEdge and LateJoinReconstructsTheCurrentVaultState timed out, both passed alone",
+    "hurdle": "12/12 (rerun)",
+    "runtime_retarget": "2/2 (rerun)",
+    "variant_comparison": "3/3 (rerun)",
+    "network": "19/19 (rerun)",
+    "first_run_disturbed": "hurdle 1/12, retarget 1/2, variants 1/3, network 15/19: MCP polling of port 8000 hit the test process and logged errors the tests counted"
+  },
+  "build": "ue.py build passed, 0 errors, 0 warnings"
+}

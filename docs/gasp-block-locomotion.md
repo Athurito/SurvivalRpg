@@ -84,6 +84,9 @@ Beide Hosts implementieren das Interface und reichen im ungebundenen Fallback `B
 | 2 | Loop | Ein zyklischer BlendSpace1D; dessen Direction-Parameter wird während der Bewegung aktualisiert |
 | 3 | Stop | Acht Richtungs-Stops |
 | 4 | Turn | Linke/rechte 90°-/180°-Sequences nach signiertem TurnDebt |
+| 5 | Exit (optional, seit `GASP-STAB-05`) | Schritte aus der Blockhaltung beim Loslassen im Stand; `SelectedDuration` ist die Haltezeit. Ohne Zeile bleibt das alte Loslassen |
+
+Phase 5 hält die Layer, bis `SelectedDuration` abgelaufen ist, Bewegung beginnt oder der Block unterbrochen wird; der Oberkörper nimmt währenddessen die Basis-Pose. Details im [Bericht](gasp-block-release.md).
 
 Die Loopauswahl wird nicht bei jedem Richtungswechsel als neue Clipinstanz gestartet. Die acht Loops liegen bei −180°, −135°, −90°, −45°, 0°, 45°, 90° und 135°; der Rückwärtsclip wird am +180°-Rand wiederholt. Winkelbehandlung, Tempometadaten und Kontaktmarker gehören zum jeweiligen Satz.
 

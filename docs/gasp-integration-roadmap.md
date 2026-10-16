@@ -13,12 +13,11 @@ frühere Fassung mit Schnellstart-Verlauf und Aufgabenverträgen liegt in der
 
 ## Nächster bereiter Schritt
 
-Kein Schritt ist **Bereit**; der Nutzer markiert das nächste Paket als **Bereit**.
-`GASP-13` ist gemergt ([Bericht](gasp-presentation-polish.md)): Eine stehende Figur in der Kampfhaltung behält
-nach Wahl des Nutzers ihre Blickrichtung, bis sie läuft, blockt oder angreift; die Kamera läuft
-nach. Ein Problem beim Loslassen von Block hat der Nutzer auf später verschoben (siehe
-[offene Befunde](gasp-integration-handoff.md#offene-befunde)). Der vollständige Manny-Bake `GASP-14` backt die mit `GASP-10`
-gewählten Relaxed-Datenbanken.
+**`GASP-STAB-05` Loslassen von Block im Stand** hat **PR offen** (PR_LINK,
+[Bericht](gasp-block-release.md)); die Sichtprüfung des Nutzers steht aus. Beim Loslassen im Stand macht
+die Figur jetzt zwei Schritte aus der Blockhaltung, statt den Schild zu senken und danach zu
+rutschen. Danach will der Nutzer mit der Roadmap weitermachen; der vollständige Manny-Bake
+`GASP-14` backt die mit `GASP-10` gewählten Relaxed-Datenbanken.
 `GASP-01`, `GASP-03` bis `GASP-13`, `GASP-STAB-04` und das Engine-Update `GASP-ENG-01` sind
 gemergt; offen bleiben `GASP-VAL-01`, `GASP-VAL-02` und die
 [offenen Befunde](gasp-integration-handoff.md#offene-befunde).
@@ -51,6 +50,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-STAB-02` | Falling bei belegtem Respawn | **Gemergt** | [#146](https://github.com/Athurito/SurvivalRpg/pull/146) | [Respawn-Falling](gasp-respawn-falling.md) |
 | `GASP-STAB-03` | Testboden vor den Pawns in CQTest-Netzwerktests | **Gemergt** | [#223](https://github.com/Athurito/SurvivalRpg/pull/223) | [Testboden](gasp-test-floor-race.md) |
 | `GASP-STAB-04` | Listen-Server: Client-Figur zittert in der Host-Ansicht beim Drehen im Stand (Offset Root Bone) | **Gemergt**; Sichtprüfung durch den Nutzer | [#244](https://github.com/Athurito/SurvivalRpg/pull/244) | [Host-Ansicht](gasp-host-view-turn-jitter.md) |
+| `GASP-STAB-05` | Loslassen von Block im Stand: Schritte statt Rutschen (Block-Layer, CMC und Mover) | **PR offen** | PR_LINK | [Loslassen](gasp-block-release.md) |
 | `GASP-NET-01` | Rollback während aktivem Mantle | **Gemergt** | [#147](https://github.com/Athurito/SurvivalRpg/pull/147) | [Mantle-Rollback](gasp-active-mantle-rollback.md) |
 | `GASP-NET-02` | Terminaler Mantle-Grund bei Reconciliation | **Gemergt** | [#148](https://github.com/Athurito/SurvivalRpg/pull/148) | [Reconciliation](gasp-terminal-reconciliation.md) |
 | `GASP-NET-03` | Rekonstruktion nach Paketpause | **Gemergt**; Grenze bewertet, Werkzeug validiert, Runtime-Grenze bleibt | [#149](https://github.com/Athurito/SurvivalRpg/pull/149) | [Paketpause](gasp-packet-gap-recovery.md) |
