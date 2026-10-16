@@ -13,12 +13,13 @@ frühere Fassung mit Schnellstart-Verlauf und Aufgabenverträgen liegt in der
 
 ## Nächster bereiter Schritt
 
-**`GASP-13` Darstellung und Drehen im Stand** hat **PR offen** ([#247](https://github.com/Athurito/SurvivalRpg/pull/247),
-[Bericht](gasp-presentation-polish.md)); nach drei Sichtprüfungen steht die vierte aus. Eine stehende Figur in
-der Kampfhaltung behält jetzt nach Wahl des Nutzers ihre Blickrichtung, bis sie läuft, blockt oder
-angreift; dann drehen die Füße per Turn-in-Place mit. Die Kamera läuft nach. Rüstungs-Foley gehört nach Wahl des Nutzers nicht mehr dazu. Der vollständige Manny-Bake `GASP-14` backt die mit `GASP-10`
+Kein Schritt ist **Bereit**; der Nutzer markiert das nächste Paket als **Bereit**.
+`GASP-13` ist gemergt ([Bericht](gasp-presentation-polish.md)): Eine stehende Figur in der Kampfhaltung behält
+nach Wahl des Nutzers ihre Blickrichtung, bis sie läuft, blockt oder angreift; die Kamera läuft
+nach. Ein Problem beim Loslassen von Block hat der Nutzer auf später verschoben (siehe
+[offene Befunde](gasp-integration-handoff.md#offene-befunde)). Der vollständige Manny-Bake `GASP-14` backt die mit `GASP-10`
 gewählten Relaxed-Datenbanken.
-`GASP-01`, `GASP-03` bis `GASP-12`, `GASP-STAB-04` und das Engine-Update `GASP-ENG-01` sind
+`GASP-01`, `GASP-03` bis `GASP-13`, `GASP-STAB-04` und das Engine-Update `GASP-ENG-01` sind
 gemergt; offen bleiben `GASP-VAL-01`, `GASP-VAL-02` und die
 [offenen Befunde](gasp-integration-handoff.md#offene-befunde).
 
@@ -67,7 +68,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-10` | Animationsset und Tempo-Parität (Relaxed), Ducktempo | **Gemergt**; Sichtprüfung durch den Nutzer | [#235](https://github.com/Athurito/SurvivalRpg/pull/235) | [Animationsset](gasp-animation-set.md) |
 | `GASP-11` | Gemeinsames Bewegungsprofil (Trägheit, Drehung, Luft), lastunabhängig | **Gemergt**; Sichtprüfung durch den Nutzer | [#238](https://github.com/Athurito/SurvivalRpg/pull/238) | [Bewegungsprofil](gasp-movement-profile.md) |
 | `GASP-12` | Walk-Gait und Analog-Schwelle | **Gemergt**; Sichtprüfung durch den Nutzer | [#241](https://github.com/Athurito/SurvivalRpg/pull/241) | [Walk-Gait](gasp-walk-gait.md) |
-| `GASP-13` | Darstellung: Drehen im Stand (Kampfhaltung), Offset Root Bone, Steering, Spins, Kamera | **PR offen** | [#247](https://github.com/Athurito/SurvivalRpg/pull/247) | [Darstellung](gasp-presentation-polish.md) |
+| `GASP-13` | Darstellung: Drehen im Stand (Kampfhaltung), Offset Root Bone, Steering, Spins, Kamera | **Gemergt**; Sichtprüfung durch den Nutzer, Problem beim Loslassen von Block auf später verschoben | [#247](https://github.com/Athurito/SurvivalRpg/pull/247) | [Darstellung](gasp-presentation-polish.md) |
 
 Statuswerte: **Geplant**, **Bereit**, **In Arbeit**, **Validierung**,
 **PR offen**, **Gemergt**, **Blockiert**, **Zurückgestellt**.
