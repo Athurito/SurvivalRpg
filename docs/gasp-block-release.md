@@ -1,6 +1,6 @@
 # GASP-STAB-05 – Releasing block while standing
 
-Status: **PR open** (PR_LINK on `claude/gasp-stab-05-block-release`, first commit `788db119`). The user found the problem in the fourth [GASP-13 check](gasp-presentation-polish.md#limits) and deferred it; on 2026-10-16 the user marked it as the next package and chose real steps over a faster blend. This report defines the package and is its task report.
+Status: **PR open** ([#249](https://github.com/Athurito/SurvivalRpg/pull/249) on `claude/gasp-stab-05-block-release`, first commit `788db119`). The user found the problem in the fourth [GASP-13 check](gasp-presentation-polish.md#limits) and deferred it; on 2026-10-16 the user marked it as the next package and chose real steps over a faster blend. This report defines the package and is its task report.
 
 ## Goal
 
