@@ -334,8 +334,8 @@ bool FRpgMovementProfileTurnAndJumpTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("Hand equipment enters the combat stance"), F.Character->GetEquipmentManagerComponent()->EquipItemInSlot(
 		URpgEquipmentAutomationTestSwordDefinition::StaticClass(), ERpgEquipmentSlot::MainHand));
 	F.Controller->SetControlRotation(FRotator(0.0, 135.0, 0.0));
-	F.Move(FVector::ZeroVector);
-	TestTrue(TEXT("The combat stance turns at once despite a finite ground rate"), F.Movement->IsInCombatStance()
+	F.Move(FVector(1.0, 0.0, 0.0));
+	TestTrue(TEXT("The moving combat stance turns at once despite a finite ground rate"), F.Movement->IsInCombatStance()
 		&& FMath::IsNearlyEqual(FMath::FindDeltaAngleDegrees(F.GetYaw(), 135.0), 0.0, .5));
 	F.Character->GetEquipmentManagerComponent()->UnequipItemInSlot(ERpgEquipmentSlot::MainHand);
 	F.Profile->GroundRotationRate = 0.f;

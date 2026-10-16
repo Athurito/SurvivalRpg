@@ -250,8 +250,18 @@ namespace RpgGaspCMCHostViewTests
 	}
 
 	/**
-	 * Snaps or sweeps the owner's camera by a fixed angle, the way a quick mouse flick or a fast mouse swipe does,
-	 * and compares each role's root offset to the capsule before the turn and after the pawn had time to step around.
+	 * Opts one role's copy of the pawn into the stance that faces the camera while standing (GASP-09), so a camera turn
+	 * alone turns the capsule and the turn-in-place steps can be measured the way blocking turns them.
+	 */
+	void FaceCameraWhileStanding(const ARpgCharacter* Character)
+	{
+		if (URpgCharacterMovementComponent* CharacterMovement = Movement(Character)) CharacterMovement->bCombatStanceFacesCameraWhileStanding = true;
+	}
+
+	/**
+	 * Snaps or sweeps the owner's camera by a fixed angle, the way a quick mouse flick or a fast mouse swipe does, or
+	 * walks the owner briefly along its camera, and compares each role's capsule yaw and root offset before and after
+	 * the pawn had time to step around.
 	 */
 	class FFlickTurn final
 	{
@@ -273,15 +283,7 @@ namespace RpgGaspCMCHostViewTests
 		 */
 		bool Flick(double Angle, double Rate = 0.)
 		{
-			if (!Controller.IsValid() || SweepRemaining != 0.) return false;
-			RestOffset.Reset(); RestYaw.Reset();
-			for (const auto& Pair : Worlds)
-			{
-				const ARpgCharacter* Character = FindCharacter(Pair.Value.Get(), SubjectId);
-				if (!Character) return false;
-				RestOffset.Add(Pair.Key, RootOffset(Character));
-				RestYaw.Add(Pair.Key, Character->GetActorRotation().Yaw);
-			}
+			if (!Controller.IsValid() || SweepRemaining != 0. || WalkRemaining > 0. || !RecordRest()) return false;
 			FlickTime = FPlatformTime::Seconds();
 			if (Rate <= 0.)
 			{
@@ -293,7 +295,17 @@ namespace RpgGaspCMCHostViewTests
 			TickStartHandle = FWorldDelegates::OnWorldTickStart.AddRaw(this, &FFlickTurn::Sweep);
 			return true;
 		}
-		bool Settled() const { return SweepRemaining == 0. && FPlatformTime::Seconds() - FlickTime >= FlickSettleSeconds; }
+		/** Records every role's resting offset and capsule yaw, then walks the owner along its camera for Seconds. */
+		bool Walk(double Seconds)
+		{
+			if (!Controller.IsValid() || SweepRemaining != 0. || WalkRemaining > 0. || !RecordRest()) return false;
+			FlickTime = FPlatformTime::Seconds();
+			WalkRemaining = Seconds;
+			TickStartHandle = FWorldDelegates::OnWorldTickStart.AddRaw(this, &FFlickTurn::Sweep);
+			return true;
+		}
+		bool Settled() const { return SweepRemaining == 0. && WalkRemaining <= 0. && FPlatformTime::Seconds() - FlickTime >= FlickSettleSeconds; }
+		double GetCameraYaw() const { return Controller.IsValid() ? Controller->GetControlRotation().Yaw : 0.; }
 		const TMap<FString, TWeakObjectPtr<UWorld>>& GetWorlds() const { return Worlds; }
 		double GetRestOffset(const FString& Role) const { return RestOffset.FindRef(Role); }
 		double GetRestYaw(const FString& Role) const { return RestYaw.FindRef(Role); }
@@ -302,10 +314,22 @@ namespace RpgGaspCMCHostViewTests
 			FWorldDelegates::OnWorldTickStart.Remove(TickStartHandle); TickStartHandle.Reset();
 			if (Controller.IsValid()) Controller->SetIgnoreLookInput(false);
 			Controller.Reset(); Worlds.Reset(); RestOffset.Reset(); RestYaw.Reset();
-			SweepRemaining = 0.;
+			SweepRemaining = WalkRemaining = 0.;
 		}
 		static constexpr double FlickSettleSeconds = 2.5;
 	private:
+		bool RecordRest()
+		{
+			RestOffset.Reset(); RestYaw.Reset();
+			for (const auto& Pair : Worlds)
+			{
+				const ARpgCharacter* Character = FindCharacter(Pair.Value.Get(), SubjectId);
+				if (!Character) return false;
+				RestOffset.Add(Pair.Key, RootOffset(Character));
+				RestYaw.Add(Pair.Key, Character->GetActorRotation().Yaw);
+			}
+			return true;
+		}
 		void Turn(double Angle)
 		{
 			const FRotator Rotation = Controller->GetControlRotation();
@@ -313,23 +337,37 @@ namespace RpgGaspCMCHostViewTests
 		}
 		void Sweep(UWorld* World, ELevelTick, float DeltaSeconds)
 		{
-			if (!Controller.IsValid() || Controller->GetWorld() != World || SweepRemaining == 0.) return;
+			if (!Controller.IsValid() || Controller->GetWorld() != World) return;
+			if (WalkRemaining > 0.)
+			{
+				// Ordinary movement input along the camera, as the forward key gives it.
+				if (APawn* Pawn = Controller->GetPawn()) Pawn->AddMovementInput(FRotator(0., Controller->GetControlRotation().Yaw, 0.).Vector());
+				WalkRemaining -= DeltaSeconds;
+				if (WalkRemaining <= 0.) Finish();
+				return;
+			}
+			if (SweepRemaining == 0.) return;
 			const double Step = FMath::Sign(SweepRemaining) * FMath::Min(FMath::Abs(SweepRemaining), SweepRate * DeltaSeconds);
 			Turn(Step);
 			SweepRemaining -= Step;
 			if (FMath::IsNearlyZero(SweepRemaining))
 			{
 				SweepRemaining = 0.;
-				FlickTime = FPlatformTime::Seconds();
-				FWorldDelegates::OnWorldTickStart.Remove(TickStartHandle); TickStartHandle.Reset();
+				Finish();
 			}
+		}
+		void Finish()
+		{
+			WalkRemaining = 0.;
+			FlickTime = FPlatformTime::Seconds();
+			FWorldDelegates::OnWorldTickStart.Remove(TickStartHandle); TickStartHandle.Reset();
 		}
 		TWeakObjectPtr<APlayerController> Controller;
 		TMap<FString, TWeakObjectPtr<UWorld>> Worlds;
 		TMap<FString, double> RestOffset, RestYaw;
 		FDelegateHandle TickStartHandle;
 		int32 SubjectId = INDEX_NONE;
-		double FlickTime = 0., SweepRemaining = 0., SweepRate = 0.;
+		double FlickTime = 0., SweepRemaining = 0., SweepRate = 0., WalkRemaining = 0.;
 	};
 
 	struct FState : FBasePIENetworkComponentState {};
@@ -382,7 +420,8 @@ NETWORK_TEST_CLASS(GaspCMCHostViewPIE, "SurvivalRpg.GASP.CMC.HostView")
 	 * A listen server ticks a remote client's pose per received move inside the move's deferred capsule update.
 	 * Offset Root Bone must still hold the root as steadily in the host's view as on the owner and on another
 	 * client, for a client present from the start and for a late joiner. On every role the turn-in-place steps
-	 * must play out without frequent dead stops.
+	 * must play out without frequent dead stops. The stance faces the camera while standing here, so the camera
+	 * turn alone drives the capsule, as blocking does by default.
 	 */
 	TEST_METHOD(RemoteStanceTurnInPlaceStaysSteadyOnTheHost)
 	{
@@ -398,44 +437,138 @@ NETWORK_TEST_CLASS(GaspCMCHostViewPIE, "SurvivalRpg.GASP.CMC.HostView")
 	}
 
 	/**
-	 * A standing pawn in the combat stance turns its capsule with the camera at once. Its feet must follow
-	 * through turn-in-place steps on the owner, the listen server, a proxy and a late joiner, instead of the root
-	 * staying where it stood. A fast camera sweep must finish its turn as well instead of stopping halfway.
+	 * By default a combat stance that stands still keeps its facing while the camera orbits, as in Souls-likes and
+	 * Valheim: no role may see the capsule or the root turn. A short walk then turns it toward the camera on the
+	 * owner, the listen server, a proxy and a late joiner.
 	 */
-	TEST_METHOD(StandingStanceTurnFollowsTheCameraOnEveryRole)
+	TEST_METHOD(StandingStanceKeepsFacingUntilItMovesOnEveryRole)
 	{
 		using namespace RpgGaspCMCHostViewTests;
 		if (!bConfigured) return;
+		QueueFlickRoles(false);
+		QueueHold(120.);
+		QueueWalk();
+		QueueLateJoinRole(false);
+		QueueHold(-150.);
+		QueueWalk();
+	}
+
+	/**
+	 * With the stance facing the camera while standing (GASP-09's behavior and a designer option), a camera turn alone
+	 * turns the capsule at once, as blocking does by default. The feet must follow through turn-in-place steps on the
+	 * owner, the listen server, a proxy and a late joiner, instead of the root staying where it stood. A fast camera
+	 * sweep must finish its turn as well instead of stopping halfway.
+	 */
+	TEST_METHOD(CameraFacingStanceTurnInPlaceFollowsOnEveryRole)
+	{
+		using namespace RpgGaspCMCHostViewTests;
+		if (!bConfigured) return;
+		QueueFlickRoles(true);
+		QueueFlick(180.);
+		QueueFlick(-90.);
+		QueueFlick(450., 720.);
+		QueueLateJoinRole(true);
+		QueueFlick(180.);
+		QueueFlick(-450., 720.);
+	}
+
+	/** Captures the owner, the listen server and an observing proxy; optionally opts each into the camera-facing standing stance. */
+	void QueueFlickRoles(bool bFaceCamera)
+	{
+		using namespace RpgGaspCMCHostViewTests;
 		Network.UntilClient(TEXT("Owner stands armed in the combat stance"), 0, [](FState& State)
 				{ return ReadyInStance(State.World, LocalCharacter(State.World)); }, Timeout())
-			.ThenClient(TEXT("Capture the owner and its camera"), 0, [this](FState& State)
+			.ThenClient(TEXT("Capture the owner and its camera"), 0, [this, bFaceCamera](FState& State)
 			{
 				ARpgCharacter* Character = LocalCharacter(State.World);
 				ASSERT_THAT(IsTrue(Isolation.IsIsolated(State.World) && Character->GetLocalRole() == ROLE_AutonomousProxy));
 				ASSERT_THAT(IsTrue(Flick.Start(Character, Character->GetPlayerState()->GetPlayerId())));
+				if (bFaceCamera) FaceCameraWhileStanding(Character);
 				Flick.AddRole(TEXT("owner"), State.World);
 			})
 			.UntilServer(TEXT("Listen server holds the remote owner's pawn in the stance"), [this](FState& State)
 				{ return ReadyInStance(State.World, FindCharacter(State.World, Flick.GetSubjectId())); }, Timeout())
-			.ThenServer(TEXT("Record the host view"), [this](FState& State) { Flick.AddRole(TEXT("server"), State.World); })
+			.ThenServer(TEXT("Record the host view"), [this, bFaceCamera](FState& State)
+			{
+				if (bFaceCamera) FaceCameraWhileStanding(FindCharacter(State.World, Flick.GetSubjectId()));
+				Flick.AddRole(TEXT("server"), State.World);
+			})
 			.UntilClient(TEXT("Observer sees the pawn as a simulated proxy in the stance"), 1, [this](FState& State)
 			{
 				const ARpgCharacter* Character = FindCharacter(State.World, Flick.GetSubjectId());
 				return ReadyInStance(State.World, Character) && Character->GetLocalRole() == ROLE_SimulatedProxy;
 			}, Timeout())
-			.ThenClient(TEXT("Record the proxy view"), 1, [this](FState& State) { Flick.AddRole(TEXT("proxy"), State.World); });
-		QueueFlick(180.);
-		QueueFlick(-90.);
-		QueueFlick(450., 720.);
+			.ThenClient(TEXT("Record the proxy view"), 1, [this, bFaceCamera](FState& State)
+			{
+				if (bFaceCamera) FaceCameraWhileStanding(FindCharacter(State.World, Flick.GetSubjectId()));
+				Flick.AddRole(TEXT("proxy"), State.World);
+			});
+	}
+
+	/** Lets a third client join and records its simulated proxy of the owner's pawn. */
+	void QueueLateJoinRole(bool bFaceCamera)
+	{
+		using namespace RpgGaspCMCHostViewTests;
 		Network.ThenClientJoins()
 			.UntilClient(TEXT("Late joiner sees the pawn as a simulated proxy in the stance"), 2, [this](FState& State)
 			{
 				const ARpgCharacter* Character = FindCharacter(State.World, Flick.GetSubjectId());
 				return ReadyInStance(State.World, Character) && Character->GetLocalRole() == ROLE_SimulatedProxy;
 			}, Timeout())
-			.ThenClient(TEXT("Record the late joiner's view"), 2, [this](FState& State) { Flick.AddRole(TEXT("late joiner"), State.World); });
-		QueueFlick(180.);
-		QueueFlick(-450., 720.);
+			.ThenClient(TEXT("Record the late joiner's view"), 2, [this, bFaceCamera](FState& State)
+			{
+				if (bFaceCamera) FaceCameraWhileStanding(FindCharacter(State.World, Flick.GetSubjectId()));
+				Flick.AddRole(TEXT("late joiner"), State.World);
+			});
+	}
+
+	/** Snaps the owner's camera while the pawn stands and checks that no role turns its capsule or root. */
+	void QueueHold(double Angle)
+	{
+		using namespace RpgGaspCMCHostViewTests;
+		Network.ThenServer(TEXT("Turn the owner's camera while it stands"), [this, Angle](FState&) { ASSERT_THAT(IsTrue(Flick.Flick(Angle))); })
+			.UntilServer(TEXT("Give the pawn time to react"), [this](FState&) { return Flick.Settled(); }, Timeout())
+			.ThenServer(TEXT("Every role keeps the standing facing"), [this, Angle](FState&)
+			{
+				for (const auto& Pair : Flick.GetWorlds())
+				{
+					const ARpgCharacter* Character = FindCharacter(Pair.Value.Get(), Flick.GetSubjectId());
+					ASSERT_THAT(IsNotNull(Character));
+					if (!Character) return;
+					const double CapsuleTurn = FMath::FindDeltaAngleDegrees(Flick.GetRestYaw(Pair.Key), Character->GetActorRotation().Yaw);
+					const double RootTurn = FMath::Abs(FMath::FindDeltaAngleDegrees(Flick.GetRestOffset(Pair.Key), RootOffset(Character)));
+					UE_LOG(LogTemp, Display, TEXT("RpgGaspCMCStandingHold flick=%.0f role=%s capsuleTurn=%.1f rootTurn=%.1f"), Angle, *Pair.Key, CapsuleTurn, RootTurn);
+					TestRunner->TestTrue(FString::Printf(TEXT("%s keeps the pawn standing in the stance"), *Pair.Key),
+						Movement(Character)->IsInCombatStance() && Character->GetVelocity().Size2D() <= 5.0);
+					TestRunner->TestTrue(FString::Printf(TEXT("%s keeps the capsule facing after a %.0f deg camera turn (%.1f)"), *Pair.Key, Angle, CapsuleTurn),
+						FMath::Abs(CapsuleTurn) < 1.);
+					TestRunner->TestTrue(FString::Printf(TEXT("%s keeps the root still (%.1f deg)"), *Pair.Key, RootTurn), RootTurn < 5.);
+				}
+			});
+	}
+
+	/** Walks the owner briefly along its camera and checks that every role then faces it with the feet caught up. */
+	void QueueWalk()
+	{
+		using namespace RpgGaspCMCHostViewTests;
+		Network.ThenServer(TEXT("Walk the owner briefly along its camera"), [this](FState&) { ASSERT_THAT(IsTrue(Flick.Walk(.4))); })
+			.UntilServer(TEXT("Give the pawn time to stop"), [this](FState&) { return Flick.Settled(); }, Timeout())
+			.ThenServer(TEXT("Every role faces the camera after moving"), [this](FState&)
+			{
+				for (const auto& Pair : Flick.GetWorlds())
+				{
+					const ARpgCharacter* Character = FindCharacter(Pair.Value.Get(), Flick.GetSubjectId());
+					ASSERT_THAT(IsNotNull(Character));
+					if (!Character) return;
+					const double Facing = FMath::FindDeltaAngleDegrees(Flick.GetCameraYaw(), Character->GetActorRotation().Yaw);
+					const double RootLag = FMath::Abs(FMath::FindDeltaAngleDegrees(Character->GetBaseRotationOffsetRotator().Yaw, RootOffset(Character)));
+					UE_LOG(LogTemp, Display, TEXT("RpgGaspCMCStandingHold walk role=%s capsuleToCamera=%.1f rootLag=%.1f"), *Pair.Key, Facing, RootLag);
+					TestRunner->TestTrue(FString::Printf(TEXT("%s keeps the pawn in the stance"), *Pair.Key), Movement(Character)->IsInCombatStance());
+					TestRunner->TestTrue(FString::Printf(TEXT("%s faces the camera after moving (%.1f deg off)"), *Pair.Key, Facing), FMath::Abs(Facing) < 5.);
+					// Turn-in-place starts at 50 deg, as in GASP; the start clips turn the feet with the capsule.
+					TestRunner->TestTrue(FString::Printf(TEXT("%s root follows the capsule (%.1f deg behind)"), *Pair.Key, RootLag), RootLag < 60.);
+				}
+			});
 	}
 
 	/** Snaps the owner's camera by Angle degrees, or sweeps it at Rate degrees per second, and checks every role once the pawn settled. */
@@ -478,6 +611,7 @@ NETWORK_TEST_CLASS(GaspCMCHostViewPIE, "SurvivalRpg.GASP.CMC.HostView")
 				ASSERT_THAT(IsTrue(Isolation.IsIsolated(State.World) && Character->GetLocalRole() == ROLE_AutonomousProxy));
 				SubjectId = Character->GetPlayerState()->GetPlayerId();
 				ASSERT_THAT(IsTrue(Turn.Start(Character, SubjectId)));
+				FaceCameraWhileStanding(Character);
 				Turn.AddRole(TEXT("owner"), State.World);
 			})
 			.UntilServer(TEXT("Listen server holds the remote owner's pawn in the stance"), [this](FState& State)
@@ -487,13 +621,21 @@ NETWORK_TEST_CLASS(GaspCMCHostViewPIE, "SurvivalRpg.GASP.CMC.HostView")
 					&& Character->HasAuthority() && Character->GetRemoteRole() == ROLE_AutonomousProxy;
 			}, Timeout())
 			.ThenServer(TEXT("Record the host view"), [this](FState& State)
-				{ ASSERT_THAT(IsTrue(Isolation.IsIsolated(State.World))); Turn.AddRole(TEXT("server"), State.World); })
+			{
+				ASSERT_THAT(IsTrue(Isolation.IsIsolated(State.World)));
+				FaceCameraWhileStanding(FindCharacter(State.World, SubjectId));
+				Turn.AddRole(TEXT("server"), State.World);
+			})
 			.UntilClient(TEXT("Observer sees the pawn as a simulated proxy in the stance"), ObserverClient, [this](FState& State)
 			{
 				const ARpgCharacter* Character = FindCharacter(State.World, SubjectId);
 				return ReadyInStance(State.World, Character) && Character->GetLocalRole() == ROLE_SimulatedProxy;
 			}, Timeout())
-			.ThenClient(TEXT("Record the proxy view"), ObserverClient, [this](FState& State) { Turn.AddRole(TEXT("proxy"), State.World); });
+			.ThenClient(TEXT("Record the proxy view"), ObserverClient, [this](FState& State)
+			{
+				FaceCameraWhileStanding(FindCharacter(State.World, SubjectId));
+				Turn.AddRole(TEXT("proxy"), State.World);
+			});
 	}
 
 	void QueueTurnWindow(double Rate, const TCHAR* Subject)

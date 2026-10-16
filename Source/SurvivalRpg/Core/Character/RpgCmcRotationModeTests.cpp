@@ -124,6 +124,16 @@ namespace RpgCmcRotationModeTests
 			for (int32 Index = 0; Index < Count; ++Index) Move(Direction, Flags);
 		}
 		void SetCameraYaw(double Yaw) { Controller->SetControlRotation(FRotator(0.0, Yaw, 0.0)); }
+		/** Releases input until the floor brakes the pawn to a stop; returns false if it never stops. */
+		bool StandStill()
+		{
+			for (int32 Step = 0; Step < 200; ++Step)
+			{
+				Move(FVector::ZeroVector);
+				if (Movement->Velocity.SizeSquared2D() < 1.f) return true;
+			}
+			return false;
+		}
 		double GetYaw() const { return Character->GetActorRotation().Yaw; }
 		URpgEquipmentInstance* EquipHands()
 		{
@@ -212,10 +222,10 @@ bool FRpgRotationModeCombatStanceTest::RunTest(const FString& Parameters)
 	F.SetCameraYaw(90.0);
 	F.MoveSteps(4, FVector(1.0, 0.0, 0.0));
 	TestTrue(TEXT("The stance faces the camera while strafing"), IsNearYaw(F.GetYaw(), 90.0));
-	F.MoveSteps(2, FVector::ZeroVector);
-	TestTrue(TEXT("The stance keeps facing the camera while standing"), IsNearYaw(F.GetYaw(), 90.0));
-	TestTrue(TEXT("The stance mirrors controller-desired rotation for the trajectory predictor"),
+	TestTrue(TEXT("The moving stance mirrors controller-desired rotation for the trajectory predictor"),
 		!F.Movement->bOrientRotationToMovement && F.Movement->bUseControllerDesiredRotation);
+	F.MoveSteps(2, FVector::ZeroVector);
+	TestTrue(TEXT("The stance keeps facing the camera while it brakes"), IsNearYaw(F.GetYaw(), 90.0));
 
 	F.SetCameraYaw(45.0);
 	const FSavedMovePtr Saved = F.RecordMove(FVector(-1.0, 0.0, 0.0));
@@ -247,16 +257,21 @@ bool FRpgRotationModeFacingCommitmentTest::RunTest(const FString& Parameters)
 	if (!TestNotNull(TEXT("Authority applies main-hand equipment"), F.EquipHands())) return false;
 	F.Move(FVector::ZeroVector);
 	TestEqual(TEXT("Invalid steering rates never create a lease"), F.ASC->BeginFacingCommitment(F.Ability, std::numeric_limits<float>::quiet_NaN()), 0u);
+	// An instant alignment isolates the leased steering rate in the moves after it.
+	F.Movement->CombatStanceAlignRate = 0.f;
 	const uint32 Lease = F.ASC->BeginFacingCommitment(F.Ability, 100.f);
 	if (!TestTrue(TEXT("The active ability receives a facing lease"), Lease != 0)) return false;
 	F.SetCameraYaw(90.0);
 	F.Move(FVector::ZeroVector);
-	TestTrue(TEXT("Steering turns toward the camera at the leased rate"), IsNearYaw(F.GetYaw(), 100.0 * StepSeconds, .05));
+	TestTrue(TEXT("A new steering commitment starts toward the camera at once"), IsNearYaw(F.GetYaw(), 90.0));
+	F.SetCameraYaw(180.0);
+	F.Move(FVector::ZeroVector);
+	TestTrue(TEXT("Steering then turns toward the camera at the leased rate"), IsNearYaw(F.GetYaw(), 90.0 + 100.0 * StepSeconds, .05));
 	const FSavedMovePtr Steering = F.RecordMove(FVector::ZeroVector);
-	TestTrue(TEXT("A recorded steering move advances at the same rate"), IsNearYaw(F.GetYaw(), 200.0 * StepSeconds, .05));
+	TestTrue(TEXT("A recorded steering move advances at the same rate"), IsNearYaw(F.GetYaw(), 90.0 + 200.0 * StepSeconds, .05));
 	F.ASC->HoldFacingCommitment(F.Ability, Lease);
 	F.MoveSteps(3, FVector(1.0, 0.0, 0.0));
-	TestTrue(TEXT("A held commitment keeps the facing while the camera differs"), IsNearYaw(F.GetYaw(), 200.0 * StepSeconds, .05));
+	TestTrue(TEXT("A held commitment keeps the facing while the camera differs"), IsNearYaw(F.GetYaw(), 90.0 + 200.0 * StepSeconds, .05));
 
 	const FGameplayAbilitySpecHandle OtherHandle = F.Grant();
 	TestTrue(TEXT("Second genuine GAS activation exists"), F.ASC->TryActivateAbility(OtherHandle));
@@ -270,13 +285,67 @@ bool FRpgRotationModeFacingCommitmentTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Delayed cleanup of the old activation keeps the new commitment"), F.ASC->GetFacingCommitment(Rate) && Rate == 0.f);
 	F.ASC->CancelAbilityHandle(OtherHandle);
 	TestFalse(TEXT("GAS cancellation retires the commitment"), F.ASC->GetFacingCommitment(Rate));
-	F.Move(FVector::ZeroVector);
-	TestTrue(TEXT("Without a commitment the stance faces the camera again"), IsNearYaw(F.GetYaw(), 90.0));
+	F.Move(FVector(1.0, 0.0, 0.0));
+	TestTrue(TEXT("Without a commitment the moving stance faces the camera again"), IsNearYaw(F.GetYaw(), 180.0));
 
 	F.SetCameraYaw(-60.0);
 	F.Character->SetActorRotation(FRotator(0.0, 5.0, 0.0));
 	F.ReplayMove(Steering);
 	TestTrue(TEXT("Replay steers toward the recorded camera at the recorded rate"), IsNearYaw(F.GetYaw(), 10.0, .05));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgRotationModeStandingStanceTest,
+	"SurvivalRpg.Movement.CMC.RotationModes.StandingStanceKeepsFacingUntilItMovesBlocksOrActs",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FRpgRotationModeStandingStanceTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCmcRotationModeTests;
+	FFixture F;
+	if (!F.Initialize(*this)) return false;
+	if (!TestNotNull(TEXT("Authority applies main-hand equipment"), F.EquipHands())) return false;
+	if (!TestTrue(TEXT("The pawn stands still"), F.StandStill())) return false;
+	F.SetCameraYaw(120.0);
+	F.MoveSteps(3, FVector::ZeroVector);
+	TestTrue(TEXT("A standing stance keeps its facing while the camera turns"), F.Movement->IsInCombatStance() && IsNearYaw(F.GetYaw(), 0.0));
+	TestTrue(TEXT("The standing stance tells the trajectory predictor it does not turn"),
+		F.Movement->bOrientRotationToMovement && !F.Movement->bUseControllerDesiredRotation);
+	F.Move(FVector(1.0, 0.0, 0.0));
+	TestTrue(TEXT("Moving turns the stance to the camera at once"), IsNearYaw(F.GetYaw(), 120.0));
+	if (!TestTrue(TEXT("The pawn stops again"), F.StandStill())) return false;
+	F.SetCameraYaw(-90.0);
+	F.MoveSteps(2, FVector::ZeroVector);
+	TestTrue(TEXT("After stopping the stance keeps its facing again"), IsNearYaw(F.GetYaw(), 120.0));
+
+	const uint32 BlockLease = F.ASC->BeginBlockMovement(F.Ability, RunSpeed * .5f);
+	if (!TestTrue(TEXT("A valid block lease exists"), BlockLease != 0)) return false;
+	F.Move(FVector::ZeroVector);
+	TestTrue(TEXT("Blocking while standing faces the camera at once"), IsNearYaw(F.GetYaw(), -90.0));
+	F.ASC->EndBlockMovement(F.Ability, BlockLease);
+	F.SetCameraYaw(30.0);
+	F.MoveSteps(2, FVector::ZeroVector);
+	TestTrue(TEXT("Releasing the block keeps the facing while standing"), IsNearYaw(F.GetYaw(), -90.0));
+
+	F.Movement->CombatStanceAlignRate = 600.f; // 30 deg per step
+	const uint32 Lease = F.ASC->BeginFacingCommitment(F.Ability, 100.f);
+	if (!TestTrue(TEXT("The active ability receives a facing lease"), Lease != 0)) return false;
+	const FSavedMovePtr Align = F.RecordMove(FVector::ZeroVector);
+	TestTrue(TEXT("A steering commitment turns the standing stance toward the camera at the align rate"), IsNearYaw(F.GetYaw(), -60.0, .05));
+	F.MoveSteps(3, FVector::ZeroVector);
+	TestTrue(TEXT("The alignment ends facing the camera"), IsNearYaw(F.GetYaw(), 30.0, .05));
+	F.SetCameraYaw(60.0);
+	F.Move(FVector::ZeroVector);
+	TestTrue(TEXT("The same commitment then steers at its own rate"), IsNearYaw(F.GetYaw(), 30.0 + 100.0 * StepSeconds, .05));
+	F.SetCameraYaw(-120.0);
+	F.Character->SetActorRotation(FRotator(0.0, -90.0, 0.0));
+	F.ReplayMove(Align);
+	TestTrue(TEXT("Replay repeats the recorded alignment toward the recorded camera"), IsNearYaw(F.GetYaw(), -60.0, .05));
+	F.ASC->EndFacingCommitment(F.Ability, Lease);
+
+	F.Movement->bCombatStanceFacesCameraWhileStanding = true;
+	F.SetCameraYaw(170.0);
+	F.Move(FVector::ZeroVector);
+	TestTrue(TEXT("With the designer option the standing stance faces the camera"), IsNearYaw(F.GetYaw(), 170.0));
 	return true;
 }
 

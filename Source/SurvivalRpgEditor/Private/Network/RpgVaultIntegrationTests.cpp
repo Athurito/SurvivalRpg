@@ -342,7 +342,8 @@ NETWORK_TEST_CLASS(GaspVaultAuthoredMapPIE, "SurvivalRpg.GASP.Vault")
 					return OwnerRecord.Ends > 0 && AuthorityRecord.Ends > 0
 						&& RpgVaultIntegrationTests::Clean(Owner()) && RpgVaultIntegrationTests::Clean(Authority())
 						&& RpgVaultIntegrationTests::Clean(Observer())
-						&& Owner()->GetCharacterMovement()->IsMovingOnGround() && Authority()->GetCharacterMovement()->IsMovingOnGround();
+						&& Owner()->GetCharacterMovement()->IsMovingOnGround() && Authority()->GetCharacterMovement()->IsMovingOnGround()
+						&& (!bCancelOnServer || bMovementReleased);
 				}
 				return Finished(OwnerRecord) && Finished(AuthorityRecord) && Finished(ProxyRecord);
 			}, FTimespan::FromSeconds(45.0))
@@ -522,8 +523,12 @@ NETWORK_TEST_CLASS(GaspVaultAuthoredMapPIE, "SurvivalRpg.GASP.Vault")
 				Key(EKeys::SpaceBar, false);
 				bSpaceReleased = true;
 			}
+			// A standing combat stance keeps its facing, so after a cancellation the owner walks on until the ordinary
+			// policy has turned it back to the camera.
+			const bool bCancelSettled = bCancelledOnServer && OwnerRecord.Ends > 0 && Character->GetCharacterMovement()->IsMovingOnGround()
+				&& FMath::Abs(FMath::FindDeltaAngleDegrees(Character->GetActorRotation().Yaw, static_cast<double>(ApproachYaw))) < 1.0;
 			if (!bMovementReleased && ((Finished(OwnerRecord) && Finished(AuthorityRecord) && Finished(ProxyRecord))
-				|| (bBlockExitOnServer && OwnerRecord.Ends > 0) || bCancelledOnServer))
+				|| (bBlockExitOnServer && OwnerRecord.Ends > 0) || bCancelSettled))
 			{
 				Key(EKeys::W, false);
 				if (bWalkInputActive) WalkAxis(0.0f);
