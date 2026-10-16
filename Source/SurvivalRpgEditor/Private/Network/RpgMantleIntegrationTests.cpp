@@ -913,11 +913,24 @@ NETWORK_TEST_CLASS(GaspMantleExperiencePIE, "SurvivalRpg.GASP.Mantle")
 					Controller->SetControlRotation(FRotator(0.0, 35.0, 0.0));
 				}
 			})
-			.UntilClient(TEXT("Normal pawn facing follows the view again after cancellation"), 0, [this](FState& State)
+			.UntilClient(TEXT("Normal pawn facing follows the view again once it steps after cancellation"), 0, [this](FState& State)
 			{
 				ARpgCharacter* Character = FindCharacter(State.World, SubjectId);
+				// A standing combat stance keeps its facing; a step along the view lets the ordinary policy turn it.
+				if (Character && HasCleanMantleState(Character)) Character->AddMovementInput(FRotator(0.0, 35.0, 0.0).Vector());
 				return Character && HasCleanMantleState(Character)
 					&& FMath::Abs(FMath::FindDeltaAngleDegrees(Character->GetActorRotation().Yaw, 35.0)) < 1.0;
+			}, Timeout())
+			.ThenClient(TEXT("Turn the view back to the entry heading"), 0, [](FState& State)
+			{
+				ARpgCharacter* Character = LocalCharacter(State.World);
+				if (AController* Controller = Character ? Character->GetController() : nullptr) Controller->SetControlRotation(FRotator::ZeroRotator);
+			})
+			.UntilClient(TEXT("A step faces the owner forward again, which a server teleport alone cannot do for a standing stance"), 0, [this](FState& State)
+			{
+				ARpgCharacter* Character = FindCharacter(State.World, SubjectId);
+				if (Character) Character->AddMovementInput(FVector::ForwardVector);
+				return Character && FMath::Abs(FRotator::NormalizeAxis(Character->GetActorRotation().Yaw)) < 1.0;
 			}, Timeout())
 			.ThenServer(TEXT("Prepare a mantle interrupted by final death"), [this](FState& State) { PositionAtEntry(State.World, SubjectId); })
 			.UntilClient(TEXT("Owner can restart after cancellation"), 0, [this](FState& State) { return ReadyAtEntry(State.World, SubjectId); }, Timeout())

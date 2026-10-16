@@ -92,6 +92,8 @@ public:
 	 * OutSteeringRate is the remaining steering yaw rate in deg/s, or zero while the facing is held.
 	 */
 	bool GetFacingCommitment(float& OutSteeringRate) const;
+	/** As above; OutLease identifies the current commitment on this side only, so movement can tell a new one apart. */
+	bool GetFacingCommitment(float& OutSteeringRate, uint32& OutLease) const;
 
 	
 	bool IsActivationGroupBlocked(ERpgAbilityActivationGroup Group) const;

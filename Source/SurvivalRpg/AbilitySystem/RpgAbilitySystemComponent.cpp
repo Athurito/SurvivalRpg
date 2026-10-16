@@ -378,7 +378,14 @@ void URpgAbilitySystemComponent::EndFacingCommitment(UGameplayAbility* Ability, 
 
 bool URpgAbilitySystemComponent::GetFacingCommitment(float& OutSteeringRate) const
 {
+	uint32 Lease = 0;
+	return GetFacingCommitment(OutSteeringRate, Lease);
+}
+
+bool URpgAbilitySystemComponent::GetFacingCommitment(float& OutSteeringRate, uint32& OutLease) const
+{
 	OutSteeringRate = 0.f;
+	OutLease = 0;
 	const AActor* Avatar = GetAvatarActor();
 	const UGameplayAbility* Ability = FacingCommitmentAbility.Get();
 	if (!IsValid(Avatar) || Avatar->GetLocalRole() < ROLE_AutonomousProxy || !FacingCommitmentLease
@@ -389,6 +396,7 @@ bool URpgAbilitySystemComponent::GetFacingCommitment(float& OutSteeringRate) con
 		return false;
 	}
 	OutSteeringRate = FacingCommitmentSteeringRate;
+	OutLease = FacingCommitmentLease;
 	return true;
 }
 

@@ -73,6 +73,7 @@ Its recorded limits carry into GASP-14 and GASP-15:
 - **Goal:** two explicit modes, reported correctly to the AnimBP.
   - **Free movement:** hands holstered, out of combat. The character turns toward its movement.
   - **Combat stance:** a weapon in hand, blocking, lock-on, or aiming. The character faces the camera and strafes, as in New World.
+    Standing still it keeps its facing while the camera orbits, as in Souls-likes and Valheim, until it moves, blocks or attacks (user choice 2026-10-16 in `GASP-13`).
 - **Scope:**
   - The trigger comes from existing equipment state: active hand versus holstered in `URpgEquipmentLoadoutComponent`.
   - Correct `RotationMode` and `WantsToStrafe` in `BP_RpgGasp_CMC`.
@@ -145,7 +146,7 @@ Its recorded limits carry into GASP-14 and GASP-15:
 
 ### GASP-13: Presentation polish
 
-**Ready**; see the [task report](gasp-presentation-polish.md). On 2026-10-14 the user added the standing turn in place in the combat stance, found in GASP-STAB-04, and moved armor Foley to GASP-16 or its own audio package.
+**PR open** in [#247](https://github.com/Athurito/SurvivalRpg/pull/247); see the [task report](gasp-presentation-polish.md). On 2026-10-14 the user added the standing turn in place in the combat stance, found in GASP-STAB-04, and moved armor Foley to GASP-16 or its own audio package.
 
 - **Goal:** visual weight without gameplay change; a standing character in the combat stance turns its feet with the camera.
 - **Scope:**
@@ -189,7 +190,7 @@ Its recorded limits carry into GASP-14 and GASP-15:
 ## Order and parallelism
 
 1. **GASP-08** to **GASP-12** are merged.
-2. **GASP-STAB-04**, the host-view jitter found in the GASP-12 check, came first at the user's choice and is **merged** in [#244](https://github.com/Athurito/SurvivalRpg/pull/244) after the user's check ([task report](gasp-host-view-turn-jitter.md)); **GASP-13** is **Ready** ([task report](gasp-presentation-polish.md)). Both concern the CMC AnimBP's Offset Root Bone path.
+2. **GASP-STAB-04**, the host-view jitter found in the GASP-12 check, came first at the user's choice and is **merged** in [#244](https://github.com/Athurito/SurvivalRpg/pull/244) after the user's check ([task report](gasp-host-view-turn-jitter.md)); **GASP-13** has a **PR open** ([#247](https://github.com/Athurito/SurvivalRpg/pull/247), [task report](gasp-presentation-polish.md)). Both concern the CMC AnimBP's Offset Root Bone path.
 3. After a GASP-08 pass: **GASP-14 → GASP-15**, then **GASP-16**, then the final dodge montages for #124.
 4. If GASP-08 fails: GASP-14 and GASP-15 are dropped. GASP-16 then targets the runtime follower path, and the dodge montages are retargeted to UEFN like the block set.
 

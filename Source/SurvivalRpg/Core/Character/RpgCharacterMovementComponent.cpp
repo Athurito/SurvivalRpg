@@ -34,6 +34,7 @@ public:
 		bEquipmentInHands = false;
 		bFacingCommitted = false;
 		FacingSteeringRate = 0.f;
+		bAlignFacing = false;
 		bWalkToggled = false;
 		bStickWalk = false;
 	}
@@ -65,8 +66,19 @@ public:
 		Movement->bEquipmentInHandsForMove = bEquipmentInHands;
 		Movement->bFacingCommittedForMove = bFacingCommitted;
 		Movement->FacingSteeringRateForMove = FacingSteeringRate;
+		Movement->bAlignFacingForMove = bAlignFacing;
 		Movement->bWantsWalkForMove = bWalkToggled;
 		Movement->bStickWalkForMove = bStickWalk;
+	}
+
+	virtual void PostUpdate(ACharacter* Character, EPostUpdateMode PostUpdateMode) override
+	{
+		Super::PostUpdate(Character, PostUpdateMode);
+		// Only the performed move knows whether it was still aligning to the camera; replay restores the recorded answer.
+		if (PostUpdateMode == PostUpdate_Record)
+		{
+			bAlignFacing = CastChecked<URpgCharacterMovementComponent>(Character->GetCharacterMovement())->bAlignFacingForMove;
+		}
 	}
 
 	virtual uint8 GetCompressedFlags() const override
@@ -81,7 +93,7 @@ public:
 		return bBlocking == Other->bBlocking && SpeedLimit == Other->SpeedLimit
 			&& bSprintAuthorized == Other->bSprintAuthorized && SprintSpeed == Other->SprintSpeed
 			&& bEquipmentInHands == Other->bEquipmentInHands && bFacingCommitted == Other->bFacingCommitted
-			&& FacingSteeringRate == Other->FacingSteeringRate && bWalkToggled == Other->bWalkToggled
+			&& FacingSteeringRate == Other->FacingSteeringRate && bAlignFacing == Other->bAlignFacing && bWalkToggled == Other->bWalkToggled
 			&& bStickWalk == Other->bStickWalk && Super::CanCombineWith(NewMove, Character, MaxDelta);
 	}
 
@@ -94,6 +106,7 @@ private:
 	bool bEquipmentInHands = false;
 	bool bFacingCommitted = false;
 	float FacingSteeringRate = 0.f;
+	bool bAlignFacing = false;
 	bool bWalkToggled = false;
 	bool bStickWalk = false;
 };
@@ -254,16 +267,34 @@ bool URpgCharacterMovementComponent::SampleEquipmentInHands() const
 
 bool URpgCharacterMovementComponent::SampleFacingCommitment(float& OutSteeringRate) const
 {
+	uint32 Lease = 0;
+	return SampleFacingCommitment(OutSteeringRate, Lease);
+}
+
+bool URpgCharacterMovementComponent::SampleFacingCommitment(float& OutSteeringRate, uint32& OutLease) const
+{
 	OutSteeringRate = 0.f;
+	OutLease = 0;
 	const URpgAbilitySystemComponent* AbilitySystem = Cast<URpgAbilitySystemComponent>(
 		UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(GetOwner()));
-	return AbilitySystem && AbilitySystem->GetAvatarActor() == GetOwner() && AbilitySystem->GetFacingCommitment(OutSteeringRate);
+	return AbilitySystem && AbilitySystem->GetAvatarActor() == GetOwner() && AbilitySystem->GetFacingCommitment(OutSteeringRate, OutLease);
 }
 
 bool URpgCharacterMovementComponent::IsCombatStanceForMove() const
 {
 	float BlockLimit = 0.f;
 	return (bInBlockMovementScope ? bEquipmentInHandsForMove : SampleEquipmentInHands()) || GetBlockMovementForMove(BlockLimit);
+}
+
+bool URpgCharacterMovementComponent::IsCombatStanceHoldingFacingForMove() const
+{
+	// As in Souls-likes and Valheim, the camera orbits a stance that stands still; moving, blocking or an ability turns it.
+	if (bCombatStanceFacesCameraWhileStanding || !IsMovingOnGround() || !IsCombatStanceForMove()) { return false; }
+	float BlockLimit = 0.f;
+	if (GetBlockMovementForMove(BlockLimit)) { return false; }
+	// Simulated proxies have no input acceleration; their replicated velocity alone tells standing apart.
+	constexpr float StandingSpeed = 5.f;
+	return Acceleration.SizeSquared2D() <= UE_SMALL_NUMBER && Velocity.SizeSquared2D() <= FMath::Square(StandingSpeed);
 }
 
 bool URpgCharacterMovementComponent::GetFacingCommitmentForMove(float& OutSteeringRate) const
@@ -298,9 +329,9 @@ void URpgCharacterMovementComponent::RefreshRotationModeFlags()
 	if (!bUseRotationModes) { return; }
 	// Without these, the trajectory predicts an orient-to-movement turn while the stance strafes, and Motion
 	// Matching selects reface starts instead of strafe and backpedal clips.
-	const bool bCombatStance = IsInCombatStance();
-	bOrientRotationToMovement = !bCombatStance;
-	bUseControllerDesiredRotation = bCombatStance;
+	const bool bFacesCamera = IsInCombatStance() && !IsCombatStanceHoldingFacingForMove();
+	bOrientRotationToMovement = !bFacesCamera;
+	bUseControllerDesiredRotation = bFacesCamera;
 }
 
 void URpgCharacterMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -426,7 +457,11 @@ void URpgCharacterMovementComponent::PerformMovement(float DeltaTime)
 		bBlockMovementForMove = SampleBlockMovement(BlockMovementSpeedLimitForMove);
 		bSprintAuthorizedForMove = SampleSprintMovement(SprintSpeedForMove);
 		bEquipmentInHandsForMove = SampleEquipmentInHands();
-		bFacingCommittedForMove = SampleFacingCommitment(FacingSteeringRateForMove);
+		bFacingCommittedForMove = SampleFacingCommitment(FacingSteeringRateForMove, FacingCommitmentLeaseForMove);
+		// A new steering commitment first turns to the camera at the align rate, so an attack begun while standing turned
+		// away still starts toward the camera; once it faces it, the leased rate steers. Replay restores the recorded flag.
+		bAlignFacingForMove = bFacingCommittedForMove && FacingSteeringRateForMove > 0.f
+			&& FacingCommitmentLeaseForMove != AlignedFacingCommitmentLease;
 		const bool bUsesRemoteRequest = CharacterOwner && CharacterOwner->HasAuthority()
 			&& !CharacterOwner->IsLocallyControlled() && CharacterOwner->GetRemoteRole() == ROLE_AutonomousProxy;
 		if (!bUsesRemoteRequest)
@@ -557,11 +592,13 @@ void URpgCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 		float SteeringRate = 0.f;
 		const bool bFacingCommitted = GetFacingCommitmentForMove(SteeringRate);
 		if (bFacingCommitted && SteeringRate <= 0.f) { return; }
+		if (!bFacingCommitted && IsCombatStanceHoldingFacingForMove()) { return; }
 		const bool bCombatStance = IsCombatStanceForMove();
 		const URpgMovementProfile& Profile = GetProfileOrDefault();
 		float YawRate = 0.f; // The combat stance turns at once on the ground.
 		float SprintSpeedForRotation = 0.f;
-		if (bFacingCommitted) { YawRate = SteeringRate; }
+		const bool bAligning = bFacingCommitted && bInBlockMovementScope && bAlignFacingForMove;
+		if (bFacingCommitted) { YawRate = bAligning ? CombatStanceAlignRate : SteeringRate; }
 		else if (IsFalling()) { YawRate = Profile.AirRotationRate; }
 		else if (!bCombatStance) { YawRate = CanSprintForMove(SprintSpeedForRotation) ? Profile.SprintRotationRate : Profile.GroundRotationRate; }
 		const bool bSavedOrientToMovement = bOrientRotationToMovement;
@@ -576,6 +613,13 @@ void URpgCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 		}
 		bOrientRotationToMovement = bSavedOrientToMovement;
 		bUseControllerDesiredRotation = bSavedControllerDesired;
+		// Only live moves end the alignment; a replay keeps the latch it found and follows its recorded flags.
+		constexpr float AlignedYawTolerance = .5f;
+		if (bAligning && !CharacterOwner->bClientUpdating && UpdatedComponent && FMath::Abs(FMath::FindDeltaAngleDegrees(
+			UpdatedComponent->GetComponentRotation().Yaw, GetControlRotationForMove().Yaw)) <= AlignedYawTolerance)
+		{
+			AlignedFacingCommitmentLease = FacingCommitmentLeaseForMove;
+		}
 		return;
 	}
 	if (IsBlockControllingRotation())

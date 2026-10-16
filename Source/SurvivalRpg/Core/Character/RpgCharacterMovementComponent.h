@@ -128,11 +128,32 @@ public:
 	 * Designer opt-in for the GASP rotation modes; disabled characters keep their authored rotation flags.
 	 * When enabled, movement owns yaw and ignores the pawn's controller-yaw and the orient/desired-rotation flags:
 	 * free movement turns toward the movement input, and the combat stance (equipment in hands or an active block)
-	 * faces the camera. An ability's facing commitment and mantle override both. The movement profile sets the turn
-	 * rates; the combat stance turns at once on the ground.
+	 * faces the camera; standing still it keeps its facing unless bCombatStanceFacesCameraWhileStanding is set. An
+	 * ability's facing commitment and mantle override both. The movement profile sets the turn rates; the combat
+	 * stance turns at once on the ground.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Rotation")
 	bool bUseRotationModes = false;
+
+	/**
+	 * Designer choice for the combat stance while the character stands still on the ground (no input, under 5 cm/s,
+	 * no block). False, as in Souls-likes and Valheim: the camera orbits and the facing stays until the character moves,
+	 * blocks or falls, or an ability's steering facing commitment starts, which first turns it toward the camera at
+	 * CombatStanceAlignRate. True: the stance faces the camera while standing too, as GASP-09 introduced it. Static per
+	 * character class; the owner, its replay and the server apply it from each move's own input, so they agree.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Rotation", meta = (EditCondition = "bUseRotationModes"))
+	bool bCombatStanceFacesCameraWhileStanding = false;
+
+	/**
+	 * Designer yaw rate in deg/s at which a new steering facing commitment, such as an attack's windup, first turns
+	 * the character toward the camera, until it faces it; the commitment's own steering rate applies afterwards.
+	 * Zero or less turns at once. The default turns half around in 0.1 s, inside the shortest sword windup (0.107 s
+	 * at play rate 1.5), so the swing still starts toward the camera while the body visibly turns instead of snapping.
+	 * Static per character class.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Rotation", meta = (EditCondition = "bUseRotationModes", ClampMin = "0.0"))
+	float CombatStanceAlignRate = 1800.f;
 
 	/**
 	 * Designer limit in degrees between movement input and the camera yaw within which the combat stance may sprint.
@@ -142,9 +163,9 @@ public:
 	float CombatStanceSprintAngle = 50.f;
 
 	/**
-	 * Presentation read model for the AnimBP, false without rotation modes: true while the combat stance faces the
-	 * camera. Owners and authority read their effective move state; simulated proxies derive it from the replicated
-	 * equipment list and blocking tag, so late joiners see the same stance.
+	 * Presentation read model for the AnimBP, false without rotation modes: true while the combat stance is active,
+	 * also while it stands still and keeps its facing. Owners and authority read their effective move state; simulated
+	 * proxies derive it from the replicated equipment list and blocking tag, so late joiners see the same stance.
 	 */
 	UFUNCTION(BlueprintPure, Category = "Rpg|Rotation")
 	bool IsInCombatStance() const;
@@ -222,8 +243,11 @@ private:
 	bool SampleBlockMovement(float& OutSpeedLimit) const;
 	bool SampleEquipmentInHands() const;
 	bool SampleFacingCommitment(float& OutSteeringRate) const;
+	bool SampleFacingCommitment(float& OutSteeringRate, uint32& OutLease) const;
 	/** Effective combat stance of the current move: saved history during replay, otherwise today's sample. */
 	bool IsCombatStanceForMove() const;
+	/** The current move's combat stance stands still without block and keeps its facing (bCombatStanceFacesCameraWhileStanding). */
+	bool IsCombatStanceHoldingFacingForMove() const;
 	/** Effective ability facing commitment of the current move; OutSteeringRate is zero while the facing is held. */
 	bool GetFacingCommitmentForMove(float& OutSteeringRate) const;
 	/** Control rotation of the current move: the recorded original during replay, otherwise the live controller value. */
@@ -272,6 +296,12 @@ private:
 	bool bEquipmentInHandsForMove = false;
 	bool bFacingCommittedForMove = false;
 	float FacingSteeringRateForMove = 0.f;
+	// True while a new steering facing commitment still turns toward the camera at CombatStanceAlignRate.
+	bool bAlignFacingForMove = false;
+	// Live lease of the current move's commitment and of the last one that reached the camera. Lease numbers are
+	// local to each side and never cross the wire; replay restores bAlignFacingForMove from its saved move instead.
+	uint32 FacingCommitmentLeaseForMove = 0;
+	uint32 AlignedFacingCommitmentLease = 0;
 	// Set only around Super::PhysicsRotation so ComputeOrientToMovementRotation targets the camera instead of the input.
 	bool bFaceControlRotationInPhysics = false;
 	// Set only around Super::CalcVelocity, which sees the profile's tapered acceleration. The sprint input gate divides
