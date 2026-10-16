@@ -73,6 +73,7 @@ Its recorded limits carry into GASP-14 and GASP-15:
 - **Goal:** two explicit modes, reported correctly to the AnimBP.
   - **Free movement:** hands holstered, out of combat. The character turns toward its movement.
   - **Combat stance:** a weapon in hand, blocking, lock-on, or aiming. The character faces the camera and strafes, as in New World.
+    Standing still it keeps its facing while the camera orbits, as in Souls-likes and Valheim, until it moves, blocks or attacks (user choice 2026-10-16 in `GASP-13`).
 - **Scope:**
   - The trigger comes from existing equipment state: active hand versus holstered in `URpgEquipmentLoadoutComponent`.
   - Correct `RotationMode` and `WantsToStrafe` in `BP_RpgGasp_CMC`.

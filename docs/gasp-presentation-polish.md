@@ -1,10 +1,10 @@
 # GASP-13 – Presentation polish and standing turn in place
 
-Status: **PR open** in [#247](https://github.com/Athurito/SurvivalRpg/pull/247) on `claude/gasp-13-presentation-polish` (defined 2026-10-14 in [#246](https://github.com/Athurito/SurvivalRpg/pull/246), implemented the same day). The first user check on 2026-10-15 found the standing turn too jerky; the fix is in [User check 1](#user-check-1-2026-10-15--turn-smoothness), and the second check is pending. The package outline is in the [movement plan](gasp-movement-plan.md#gasp-13-presentation-polish). On 2026-10-14 the user added the standing turn in place in the combat stance, found in [GASP-STAB-04](gasp-host-view-turn-jitter.md#limits), and moved armor Foley out of this package. This report refines the outline against the current code and assets and is the task report for the implementation PR.
+Status: **PR open** in [#247](https://github.com/Athurito/SurvivalRpg/pull/247) on `claude/gasp-13-presentation-polish` (defined 2026-10-14 in [#246](https://github.com/Athurito/SurvivalRpg/pull/246), implemented the same day). The first user check on 2026-10-15 found the standing turn too jerky; the fix is in [User check 1](#user-check-1-2026-10-15--turn-smoothness). The second check on 2026-10-16 still found it odd, and the user chose that a standing stance keeps its facing, as in Souls-likes and Valheim; see [User check 2](#user-check-2-2026-10-16--the-standing-stance-keeps-its-facing). The third check is pending. The package outline is in the [movement plan](gasp-movement-plan.md#gasp-13-presentation-polish). On 2026-10-14 the user added the standing turn in place in the combat stance, found in [GASP-STAB-04](gasp-host-view-turn-jitter.md#limits), and moved armor Foley out of this package. This report refines the outline against the current code and assets and is the task report for the implementation PR.
 
 ## Goal
 
-- A CMC character standing in the combat stance turns its feet and hips with the camera through turn-in-place steps, on every role.
+- A CMC character standing in the combat stance turns its feet and hips with the camera through turn-in-place steps, on every role. Since user check 2 the standing stance keeps its facing instead; the steps turn the feet when blocking, attacking or starting to move turns the capsule.
 - Movement looks heavier and calmer: steadier pose selection, slower procedural corrections, fewer spin transitions, and a camera that trails the character slightly.
 - Nothing about gameplay movement changes: speeds, acceleration, braking, rotation rates, jump and the capsule's facing stay as `GASP-11` and `GASP-12` left them.
 
@@ -70,6 +70,9 @@ Made by the user on 2026-10-14:
 1. The standing turn in place in the combat stance belongs to this package and comes before the tuning.
 2. Armor Foley leaves this package.
 
+Made by the user on 2026-10-16, after user check 2:
+3. A combat stance that stands still keeps its facing while the camera turns, as in Souls-likes and Valheim, and turns when it moves, blocks or attacks. The user chose this from options that named it a change to the `GASP-09` rotation rule with a native change, outside this definition.
+
 The implementing chat proposes tuning values inside the ranges above; the user's check sets the final values. It asks the user before building if:
 - the turn-in-place fix needs a change to shared databases, Mover assets or a native change beyond a `URpgAnimInstance` snapshot input;
 - the feet can follow only through behavior the original GASP lacks, for example a maximum rotation error instead of turn clips;
@@ -84,12 +87,14 @@ The implementing chat proposes tuning values inside the ranges above; the user's
 | Camera lag | Camera field of the CMC PawnData; a CMC-owned child of `CM_RpgGasp_Traversal` only if the value changes | Native damping seam exists; tuning is data |
 | Game-thread inputs for the AnimBP | `URpgAnimInstance`, only if Phase A finds a missing input | Thread-safe snapshot |
 | Tests | CMC PIE tests in `SurvivalRpgEditor/Private/Network` | Turn-in-place contract across roles, not tuning values |
+| Standing stance facing and attack alignment (user check 2) | `URpgCharacterMovementComponent`, lease number in `URpgAbilitySystemComponent` | Movement authority, saved-move replay and server agreement |
 
 File ownership while the package runs:
 - `ABP_RpgGasp_CMC` and the choosers under `CMC/RPG/Choosers`, plus new CMC-owned copies under `CMC/RPG` that Phase B or C needs;
 - `DA_PawnData_GaspCMC`, `DA_PawnData_GaspMantle` (camera field only) and a new CMC camera mode;
 - `Source/SurvivalRpg/Animation/RpgAnimInstance.*` with its tests, only for a snapshot input from Phase A;
 - a new CMC turn-in-place PIE test and `RpgGaspCMCHostViewTests.cpp`;
+- after user check 2: the stance rotation in `URpgCharacterMovementComponent`, the facing-commitment getter in `URpgAbilitySystemComponent`, their native tests, and the cancellation checks in the mantle and vault PIE tests;
 - this report and a manifest under `docs/assets`.
 
 Not owned: the shared Relaxed and Dense databases and normalization sets, the Mover assets, `CM_ThirdPerson`, `CM_RpgGasp_Traversal`, the movement values in `BP_RpgGasp_CMC` and `DA_RpgGasp_MovementProfile`, and the Foley assets.
@@ -123,11 +128,13 @@ Not owned: the shared Relaxed and Dense databases and normalization sets, the Mo
 ## Repro (after implementation)
 
 1. Set PIE to Play As Listen Server with two players and open `Lvl_RpgGaspCMC`. Both characters spawn armed in the combat stance.
-2. Stand still and turn the camera slowly, then quickly, about 90° and 180° both ways, and sweep it fast through a full turn. The feet step around with the camera, the head leads, and every step plays out; after a fast sweep the body ends facing about where the camera points. Watch the same turn in the other window.
-3. Run, stop, start, reverse (W↔S, A↔D) and run curves, armed and holstered. The feet look heavier and calmer, with fewer spins and no sliding.
-4. Run and stop: the camera trails slightly behind the character. Turning the camera has no lag.
-5. Turn with block held: unchanged.
-6. Mantle on `Lvl_RpgGaspMantle`: the camera handoff still looks as approved.
+2. Stand still and turn the camera around the character. The body keeps its facing; head and shoulders look along the camera up to about 115° and fade back beyond. Watch the same in the other window: the other player's body stays still too.
+3. Turn the camera away, then hold block: the body turns to the camera at once, the feet step around. Release block and turn the camera again: the body stays.
+4. Turn the camera away, then attack: the body turns quickly into the attack (180° in about 0.1 s) and the swing goes toward the camera.
+5. Turn the camera away, then tap a movement key: the character turns and steps off toward the camera direction.
+6. Run, stop, start, reverse (W↔S, A↔D) and run curves, armed and holstered. The feet look heavier and calmer, with fewer spins and no sliding. While moving armed, the character faces the camera and strafes as before.
+7. Run and stop: the camera trails slightly behind the character. Turning the camera has no lag.
+8. Mantle on `Lvl_RpgGaspMantle`: the camera handoff still looks as approved.
 
 ## Results
 
@@ -288,11 +295,69 @@ Failed attempts and rejected values:
 - **Lead assertion in the test:** the owner's lead at 90 °/s reached 24° in one run, too close to the 27 to 41° of the rejected variant to separate them reliably. On the listen server the sampled capsule trails the pose of a remote pawn by about 50° in both variants, because the server poses it per received move. The test logs the lead but does not assert it.
 - Creating the `ShouldTurnInPlace` call and the `CharacterProperties` getter in `Update_States` bound them to the sample AnimBP again; both were replaced with nodes bound to `ABP_RpgGasp_CMC` (`declaring_class`) before compiling.
 
+### User check 2 (2026-10-16) – the standing stance keeps its facing
+
+The user still found the standing turn odd and asked how other games handle it. The comparison given:
+- Dark Souls, Elden Ring and Monster Hunter do not turn a standing character with the camera; movement, lock-on or an attack turns it.
+- Valheim and Enshrouded do not turn it either; attacking, blocking or aiming turns it toward the camera.
+- New World turns the body with the camera at once and smoothly, with small shuffle steps.
+- Shooters, Lyra and GASP's aiming twist the upper body clearly toward the aim and let the legs catch up in steps.
+
+The CMC mixed New World's rule with GASP's shooter steps, whose aim offset turns the shoulders only about 10° at 45°. The user chose the Souls and Valheim behavior (decision 3).
+
+Change, native because it is movement authority with saved-move replay:
+- `URpgCharacterMovementComponent` keeps the stance's facing while it stands still on the ground: no input, under 5 cm/s and no block. Moving, blocking and falling still face the camera at once; free movement is unchanged.
+- The rotation flags that the Pose Search trajectory reads report no turn while the stance holds, so Motion Matching predicts none.
+- An ability's new steering facing commitment, such as an attack or harvesting windup, first turns the character toward the camera at `CombatStanceAlignRate` until it faces it, then steers at its own rate as in `GASP-09`. The saved move records whether it aligned, so replay repeats it; the latch uses the lease number, which `URpgAbilitySystemComponent::GetFacingCommitment` now also returns. A holding commitment, like the dodge, keeps its facing.
+- `bCombatStanceFacesCameraWhileStanding` (default false) restores the `GASP-09` stance per character class.
+- `ABP_RpgGasp_CMC` is unchanged: `OrientationIntent` comes from the actor rotation, so a holding stance starts no turn-in-place step. The aim offset reads `GetBaseAimRotation` and still turns head and shoulders toward the camera; `Enable_AO` fades it out beyond 115° while standing (GASP's value). Measured shoulder twist: 25° at 94°, 27° at 107°, then back to rest once the offset passes 115°.
+
+Probe `stand` (60 FPS, owner / server / proxy):
+
+| Step | Result |
+| --- | --- |
+| Camera turns 270° at 90 °/s while standing | Capsule and root unchanged on all roles; no turn clip |
+| Block held after the camera turned 89° away | Capsule turns at once; the root follows with `Stand_Turn_090_L` and `_045_L` to 0° behind |
+| Walk 0.6 s after a 120° camera snap | Capsule turns at once; `Run_Reface_Start_090_R` turns the root; 0° behind after the stop |
+| Attack after a 150° camera snap | At 1,800 °/s capsule and root turn in 0.08 s on every role (the proxy in network steps) and end at 0° |
+| Camera turns 360° at 180 °/s after the attack | Capsule and root unchanged again |
+
+- **Attack alignment, first attempt:** turning at once made the owner's and the server's root jump 150° in one frame, because the attack montage poses the root on the capsule; the proxy blended. At 1,080 °/s the turn took 0.15 s on owner and server and about 0.25 s on the proxy, without a jump.
+- **Align rate:** the sword attacks open their hit window, which holds the facing, 0.16 s after the start (0.107 s at play rate 1.5). 1,080 °/s would leave a 180° attack up to 65° short. The default is 1,800 °/s: 180° in 0.1 s.
+
+Tests:
+- New `SurvivalRpg.Movement.CMC.RotationModes.StandingStanceKeepsFacingUntilItMovesBlocksOrActs`: standing keeps the facing and reports no trajectory turn; moving, blocking and a steering commitment turn it; the commitment aligns at its rate, then steers; replay repeats the alignment; the designer option restores the old stance.
+- The existing rotation-mode and profile tests move or align where they assumed a standing stance that faces the camera.
+- New `SurvivalRpg.GASP.CMC.HostView…StandingStanceKeepsFacingUntilItMovesOnEveryRole`: camera snaps of 120° and −150° leave capsule and root at 0.0° on owner, server, proxy and late joiner; a 0.4-s walk then turns every role to within 0.5° of the camera with the root at most 7.8° behind.
+- The turn-in-place host-view tests set `bCombatStanceFacesCameraWhileStanding` on every role, so the camera alone drives the capsule as blocking does; they pass unchanged (renamed `CameraFacingStanceTurnInPlaceFollowsOnEveryRole`).
+
+Validation after the change, each suite on its own through `ue.py test` after `ue.py build` (0 errors, 0 warnings):
+
+| Suite | Result |
+| --- | --- |
+| Native (as above, with the new rotation-mode test) | 139 / 139 |
+| `SurvivalRpg.Animation` | 4 / 4 |
+| `SurvivalRpg.GASP.CMC` (three host-view tests) | 14 / 14 |
+| `SurvivalRpg.Combat.BlockLocomotion` | 16 / 16 |
+| `SurvivalRpg.GASP.Mantle` | 13 / 13 after the test change below |
+| `SurvivalRpg.GASP.Vault` | 9 / 9 after the test change below |
+| `SurvivalRpg.GASP.Hurdle` | 12 / 12 |
+| `SurvivalRpg.GASP.RuntimeRetarget` | 2 / 2 |
+| `SurvivalRpg.GASP.VariantComparison` | 3 / 3 |
+| `SurvivalRpg.Network` (with the remote melee and combat cases) | 19 / 19 |
+| `SurvivalRpg.GASP.Mover` | 65 / 67 |
+
+- Hurdle, RuntimeRetarget, VariantComparison and Mover ran with an align rate of 1,080 °/s; native, CMC, Mantle, Vault and Network ran again after the change to 1,800 °/s.
+- **Mover:** the known `GASP-VAL-03` fixture `EquipmentMontageReplacesPendingVaultWithoutDelayedResurrection` and `LateJoinReconstructsTheCurrentVaultState`; the latter passed alone. Neither runs the CMC pawn.
+- **Mantle and Vault tests:** both cancellation cases expected a standing armed pawn to face the camera again by itself. They now take a step along the view, which turns it through the ordinary policy, and the mantle case steps forward again before the fixture teleports the pawn to the entry. A server teleport with `ClientSetRotation` alone no longer turns a standing armed owner, because rotation-mode characters ignore `FaceRotation`; before, the stance hid that by facing the camera.
+- **Mutation:** with `bCombatStanceFacesCameraWhileStanding` defaulting to true, the new native test fails on the held facing and the trajectory flags, and the new host-view test fails with 120° of capsule turn on owner, server and proxy.
+
 ### Deviations from the definition
 
 - The cause differs from the definition's hypothesis; see [Phase A](#phase-a--baseline-and-cause).
 - Phase B needed a second content change, the interrupt mode, and a crouch-chooser row; both are in the owned files.
 - The first user check needed a third: a directional hold for the turn gate with a new AnimBP variable, also in `ABP_RpgGasp_CMC`.
+- The second user check changed the capsule's rotation in the combat stance, which the definition excluded, with a native change in `URpgCharacterMovementComponent` and `URpgAbilitySystemComponent` (decision 3).
 - Three planned tuning values were measured and not applied; see [Phase C](#phase-c--tuning).
 - The original GASP ran neither scripted nor by hand; the project copy's graphs were compared.
 - The Mover pawn is no control for the standing turn.
@@ -306,9 +371,13 @@ Failed attempts and rejected values:
 
 ### Limits
 
-- **User check:** the first check (2026-10-15) found the turn too jerky; the fix is in [User check 1](#user-check-1-2026-10-15--turn-smoothness). The second check is pending; see [Repro](#repro-after-implementation).
-- **Step cadence:** the turn clips stay fast (180° in 0.4 s), and turn in place stays a sequence of steps. A slow camera turn waits until 50°, then takes one step; a continuous turn steps about every 0.6 s. Smoother following needs a design choice: a stronger upper-body follow than `BS_Neutral_AO_Stand`, which turns the shoulders about 10° at 45°, or a smaller trigger angle in the stance only.
-- **After fast sweeps:** the root can meet the capsule while the camera still turns and then stay up to 50° behind, GASP's trigger; the PIE test measured up to 34° on the listen server.
+- **User check:** the first check (2026-10-15) found the turn too jerky ([User check 1](#user-check-1-2026-10-15--turn-smoothness)); the second (2026-10-16) led to the standing stance keeping its facing ([User check 2](#user-check-2-2026-10-16--the-standing-stance-keeps-its-facing)). The third check is pending; see [Repro](#repro-after-implementation).
+- **Step cadence:** turning while blocking, and with `bCombatStanceFacesCameraWhileStanding`, still steps with the fast Relaxed clips (180° in 0.4 s): a slow turn waits until 50°, a continuous turn steps about every 0.6 s.
+- **After fast sweeps:** with the capsule following the camera, the root can meet the capsule while the camera still turns and then stay up to 50° behind, GASP's trigger; the PIE test measured up to 34° on the listen server.
+- **Aim offset on proxies:** other clients see no head or shoulder turn toward a remote player's camera, because a proxy's base aim yaw is its actor yaw; the owner and the listen server see it. This predates `GASP-13`.
+- **Attack alignment:** at 1,800 °/s the shortest sword windup (0.107 s at play rate 1.5) covers 193°, so every angle finishes turning before the hit window holds the facing. A faster attack or a lower rate would cut large turns short.
+- **Block turn:** blocking turns the capsule, and with it the block direction, at once; the feet catch up over about half a second.
+- **Server teleports:** a server teleport with a rotation and `ClientSetRotation` does not turn a standing armed owner's capsule, which keeps its own facing until it moves, blocks or attacks; the server then holds the teleport facing. Respawn and travel spawn a new pawn and are not affected. Systems that teleport a living pawn with a facing, like future portals, need an explicit owner-side facing.
 - **Proxy turn selection:** clients that watch another player see that player's standing turn pick a new turn clip almost every frame (see [Phase B](#phase-b--standing-turn-in-place)). The root still follows; how visible the switching is needs the user's look. A fix would smooth the proxy's view yaw for the trajectory, a native change; it needs the user's decision and its own package.
 - **Residual angle:** after a continuous turn the root stays up to about 50° behind the capsule, GASP's trigger angle; the aim offset covers it. The definition's 45° holds only after snaps.
 - **Tuning outside the ranges:** the Offset Root Bone rotation half-life (0.1), the Steering target time (0.4) and the spin gate stay unchanged for the measured reasons in [Phase C](#phase-c--tuning). The user's check decides whether they stay.
