@@ -1927,7 +1927,7 @@
     },
     "per_character_worker_ms": "about +0.01"
   },
-  "user_check": "fourth check pending",
+  "user_check": "merge requested after user check 4; block release problem deferred",
   "user_check_1": {
     "date": "2026-10-15",
     "feedback": "standing turn too jerky; fast turns skip the steps",
@@ -2067,6 +2067,11 @@
       "network": "19/19",
       "mover": "not repeated (CMC AnimBP only)"
     },
-    "user_check_4": "pending"
+    "user_check_4": "see user_check_4"
+  },
+  "user_check_4": {
+    "date": "2026-10-16",
+    "result": "user asked for the merge",
+    "deferred": "a remaining problem when block is released; not analyzed"
   }
 }
