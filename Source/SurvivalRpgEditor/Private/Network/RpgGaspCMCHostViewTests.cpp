@@ -14,6 +14,7 @@
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
+#include "InputKeyEventArgs.h"
 #include "Misc/Guid.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
 #include "SurvivalRpg/Core/Character/RpgCharacter.h"
@@ -306,12 +307,19 @@ namespace RpgGaspCMCHostViewTests
 		}
 		bool Settled() const { return SweepRemaining == 0. && WalkRemaining <= 0. && FPlatformTime::Seconds() - FlickTime >= FlickSettleSeconds; }
 		double GetCameraYaw() const { return Controller.IsValid() ? Controller->GetControlRotation().Yaw : 0.; }
+		/** Holds or releases block through the ordinary right mouse button, as the player does. */
+		void Block(bool bHold)
+		{
+			bHoldingBlock = bHold;
+			if (Controller.IsValid()) Controller->InputKey(FInputKeyEventArgs::CreateSimulated(EKeys::RightMouseButton, bHold ? IE_Pressed : IE_Released, bHold ? 1.f : 0.f));
+		}
 		const TMap<FString, TWeakObjectPtr<UWorld>>& GetWorlds() const { return Worlds; }
 		double GetRestOffset(const FString& Role) const { return RestOffset.FindRef(Role); }
 		double GetRestYaw(const FString& Role) const { return RestYaw.FindRef(Role); }
 		void Stop()
 		{
 			FWorldDelegates::OnWorldTickStart.Remove(TickStartHandle); TickStartHandle.Reset();
+			if (bHoldingBlock) Block(false);
 			if (Controller.IsValid()) Controller->SetIgnoreLookInput(false);
 			Controller.Reset(); Worlds.Reset(); RestOffset.Reset(); RestYaw.Reset();
 			SweepRemaining = WalkRemaining = 0.;
@@ -368,6 +376,7 @@ namespace RpgGaspCMCHostViewTests
 		FDelegateHandle TickStartHandle;
 		int32 SubjectId = INDEX_NONE;
 		double FlickTime = 0., SweepRemaining = 0., SweepRate = 0., WalkRemaining = 0.;
+		bool bHoldingBlock = false;
 	};
 
 	struct FState : FBasePIENetworkComponentState {};
@@ -439,7 +448,8 @@ NETWORK_TEST_CLASS(GaspCMCHostViewPIE, "SurvivalRpg.GASP.CMC.HostView")
 	/**
 	 * By default a combat stance that stands still keeps its facing while the camera orbits, as in Souls-likes and
 	 * Valheim: no role may see the capsule or the root turn. A short walk then turns it toward the camera on the
-	 * owner, the listen server, a proxy and a late joiner.
+	 * owner, the listen server, a proxy and a late joiner. Blocking after a camera turn turns it once; the feet must
+	 * not take another step when the block ends.
 	 */
 	TEST_METHOD(StandingStanceKeepsFacingUntilItMovesOnEveryRole)
 	{
@@ -448,6 +458,7 @@ NETWORK_TEST_CLASS(GaspCMCHostViewPIE, "SurvivalRpg.GASP.CMC.HostView")
 		QueueFlickRoles(false);
 		QueueHold(120.);
 		QueueWalk();
+		QueueBlockAfterTurn(-120.);
 		QueueLateJoinRole(false);
 		QueueHold(-150.);
 		QueueWalk();
@@ -543,6 +554,37 @@ NETWORK_TEST_CLASS(GaspCMCHostViewPIE, "SurvivalRpg.GASP.CMC.HostView")
 					TestRunner->TestTrue(FString::Printf(TEXT("%s keeps the capsule facing after a %.0f deg camera turn (%.1f)"), *Pair.Key, Angle, CapsuleTurn),
 						FMath::Abs(CapsuleTurn) < 1.);
 					TestRunner->TestTrue(FString::Printf(TEXT("%s keeps the root still (%.1f deg)"), *Pair.Key, RootTurn), RootTurn < 5.);
+				}
+			});
+	}
+
+	/**
+	 * Turns the owner's camera while it stands, holds block, then releases it. The block layer turns the body once;
+	 * the base pose below it froze and must not take another step afterwards.
+	 */
+	void QueueBlockAfterTurn(double Angle)
+	{
+		using namespace RpgGaspCMCHostViewTests;
+		Network.ThenServer(TEXT("Turn the owner's camera, then hold block"), [this, Angle](FState&)
+			{ ASSERT_THAT(IsTrue(Flick.Flick(Angle))); Flick.Block(true); })
+			.UntilServer(TEXT("Hold block while the body turns to the camera"), [this](FState&) { return Flick.Settled(); }, Timeout())
+			.ThenServer(TEXT("Release block and record every role"), [this](FState&) { Flick.Block(false); ASSERT_THAT(IsTrue(Flick.Flick(0.))); })
+			.UntilServer(TEXT("Give the base pose time to resume"), [this](FState&) { return Flick.Settled(); }, Timeout())
+			.ThenServer(TEXT("Every role faces the camera and took no step after the block"), [this](FState&)
+			{
+				for (const auto& Pair : Flick.GetWorlds())
+				{
+					const ARpgCharacter* Character = FindCharacter(Pair.Value.Get(), Flick.GetSubjectId());
+					ASSERT_THAT(IsNotNull(Character));
+					if (!Character) return;
+					const double Facing = FMath::FindDeltaAngleDegrees(Flick.GetCameraYaw(), Character->GetActorRotation().Yaw);
+					const double RootLag = FMath::Abs(FMath::FindDeltaAngleDegrees(Character->GetBaseRotationOffsetRotator().Yaw, RootOffset(Character)));
+					const double TurnAfterRelease = FMath::Abs(FMath::FindDeltaAngleDegrees(Flick.GetRestOffset(Pair.Key), RootOffset(Character)));
+					UE_LOG(LogTemp, Display, TEXT("RpgGaspCMCStandingHold block role=%s capsuleToCamera=%.1f rootLag=%.1f turnAfterRelease=%.1f"),
+						*Pair.Key, Facing, RootLag, TurnAfterRelease);
+					TestRunner->TestTrue(FString::Printf(TEXT("%s faces the camera after blocking (%.1f deg off)"), *Pair.Key, Facing), FMath::Abs(Facing) < 5.);
+					TestRunner->TestTrue(FString::Printf(TEXT("%s root stands on the capsule after the block (%.1f deg)"), *Pair.Key, RootLag), RootLag < 5.);
+					TestRunner->TestTrue(FString::Printf(TEXT("%s takes no step after the block (%.1f deg)"), *Pair.Key, TurnAfterRelease), TurnAfterRelease < 5.);
 				}
 			});
 	}
