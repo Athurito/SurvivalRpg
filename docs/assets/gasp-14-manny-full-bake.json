@@ -281,7 +281,8 @@
    "SurvivalRpg.GASP.VariantComparison": "2/3 (RagdollVariantRunningVault...: proxy misses the post-vault fall; isolated 4/5)",
    "SurvivalRpg.Network": "19/19",
    "SurvivalRpg.GASP.Mover": "66/67 (Ragdoll CancelledGetup...: physics warnings, also on 2026-10-13; isolated 2/2)"
-  }
+  },
+  "user_check": "Accepted by the user on 2026-10-17 on the development map (\"sieht gut aus\"); multiplayer step not stated."
  },
  "evidence": "Raw files under Saved/Gasp14, Saved/Profiling/CSV and Saved/ToolRuns of the producing checkout; not versioned.",
  "pull_request": "https://github.com/Athurito/SurvivalRpg/pull/251",
