@@ -394,6 +394,9 @@ NETWORK_TEST_CLASS(GaspCMCHostViewPIE, "SurvivalRpg.GASP.CMC.HostView")
 	FPrimaryAssetId OriginalExperience;
 	bool bConfigured = false;
 	int32 SubjectId = INDEX_NONE;
+	/** Wall-clock time of the last simulated block press, for the at-once check of QueueBlockAfterTurn. */
+	double BlockPressTime = 0.;
+	static constexpr double BlockFacesAtOnceSeconds = 0.3;
 
 	BEFORE_EACH()
 	{
@@ -559,14 +562,30 @@ NETWORK_TEST_CLASS(GaspCMCHostViewPIE, "SurvivalRpg.GASP.CMC.HostView")
 	}
 
 	/**
-	 * Turns the owner's camera while it stands, holds block, then releases it. The block layer turns the body once;
-	 * the base pose below it froze and must not take another step afterwards.
+	 * Turns the owner's camera while it stands, holds block, then releases it. The block press turns the body to the
+	 * block direction at once on every role (GASP-STAB-06): a remote copy's mesh smoothing must not become a block turn
+	 * clip. The base pose below the layer froze and must not take another step afterwards.
 	 */
 	void QueueBlockAfterTurn(double Angle)
 	{
 		using namespace RpgGaspCMCHostViewTests;
 		Network.ThenServer(TEXT("Turn the owner's camera, then hold block"), [this, Angle](FState&)
-			{ ASSERT_THAT(IsTrue(Flick.Flick(Angle))); Flick.Block(true); })
+			{ ASSERT_THAT(IsTrue(Flick.Flick(Angle))); Flick.Block(true); BlockPressTime = FPlatformTime::Seconds(); })
+			.UntilServer(TEXT("Give every role a moment after the block press"), [this](FState&)
+			{ return FPlatformTime::Seconds() - BlockPressTime >= BlockFacesAtOnceSeconds; }, Timeout())
+			.ThenServer(TEXT("Every role's body faces the block direction at once"), [this](FState&)
+			{
+				for (const auto& Pair : Flick.GetWorlds())
+				{
+					const ARpgCharacter* Character = FindCharacter(Pair.Value.Get(), Flick.GetSubjectId());
+					ASSERT_THAT(IsNotNull(Character));
+					if (!Character) return;
+					const double RootLag = FMath::Abs(FMath::FindDeltaAngleDegrees(Character->GetBaseRotationOffsetRotator().Yaw, RootOffset(Character)));
+					UE_LOG(LogTemp, Display, TEXT("RpgGaspCMCStandingHold blockPress role=%s rootLag=%.1f after=%.2fs"), *Pair.Key, RootLag, BlockFacesAtOnceSeconds);
+					// A block turn clip keeps a remote root 60-80 deg behind for about a second; the at-once turn ends within 0.15 s.
+					TestRunner->TestTrue(FString::Printf(TEXT("%s body faces the block direction at once (%.1f deg behind)"), *Pair.Key, RootLag), RootLag < 15.);
+				}
+			})
 			.UntilServer(TEXT("Hold block while the body turns to the camera"), [this](FState&) { return Flick.Settled(); }, Timeout())
 			.ThenServer(TEXT("Release block and record every role"), [this](FState&) { Flick.Block(false); ASSERT_THAT(IsTrue(Flick.Flick(0.))); })
 			.UntilServer(TEXT("Give the base pose time to resume"), [this](FState&) { return Flick.Settled(); }, Timeout())
