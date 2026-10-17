@@ -161,7 +161,7 @@ Its recorded limits carry into GASP-14 and GASP-15:
 
 ### GASP-14: Full CMC bake to Manny (only if GASP-08 passes)
 
-**Ready** since 2026-10-17: the user chose `SKM_Manny_Simple` as the target mesh; see the [definition](gasp-manny-full-bake.md).
+**Merged** in [#251](https://github.com/Athurito/SurvivalRpg/pull/251) after the user's check on 2026-10-17; see the [task report](gasp-manny-full-bake.md). The user chose `SKM_Manny_Simple` as the target mesh. GASP's traversal `attach` bone is carried on Lyra's `interaction` bone, so `SK_Mannequin` keeps its bones and GUID.
 
 - **Goal:** bake the whole CMC closure the game uses onto the chosen Manny skeleton with the official retargeter, using the pilot's recorded retargeter settings.
 - **Scope:**
@@ -191,7 +191,7 @@ Its recorded limits carry into GASP-14 and GASP-15:
 
 ## Order and parallelism
 
-1. **GASP-08** to **GASP-12** are merged.
+1. **GASP-08** to **GASP-12** are merged, and so is **GASP-14** ([#251](https://github.com/Athurito/SurvivalRpg/pull/251)).
 2. **GASP-STAB-04**, the host-view jitter found in the GASP-12 check, came first at the user's choice and is **merged** in [#244](https://github.com/Athurito/SurvivalRpg/pull/244) after the user's check ([task report](gasp-host-view-turn-jitter.md)); **GASP-13** is **merged** in [#247](https://github.com/Athurito/SurvivalRpg/pull/247) ([task report](gasp-presentation-polish.md)). Both concern the CMC AnimBP's Offset Root Bone path.
 3. After a GASP-08 pass: **GASP-14 → GASP-15**, then **GASP-16**, then the final dodge montages for #124.
 4. If GASP-08 fails: GASP-14 and GASP-15 are dropped. GASP-16 then targets the runtime follower path, and the dodge montages are retargeted to UEFN like the block set.
