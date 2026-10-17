@@ -1,6 +1,6 @@
 # GASP-15 – Manny as the CMC gameplay mesh
 
-Status: **PR open**, implemented 2026-10-17 on `claude/gasp-15-manny-gameplay-mesh`; the user check is pending. Defined 2026-10-17 (definition PR [#253](https://github.com/Athurito/SurvivalRpg/pull/253)): after merging `GASP-14`, the user asked to start `GASP-15` and chose its scope (see [Decisions](#decisions)). Results are under [Results](#results).
+Status: **PR open** ([#254](https://github.com/Athurito/SurvivalRpg/pull/254)), implemented 2026-10-17 on `claude/gasp-15-manny-gameplay-mesh`; the user check is pending. Defined 2026-10-17 (definition PR [#253](https://github.com/Athurito/SurvivalRpg/pull/253)): after merging `GASP-14`, the user asked to start `GASP-15` and chose its scope (see [Decisions](#decisions)). Results are under [Results](#results).
 
 ## Goal
 
