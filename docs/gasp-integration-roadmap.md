@@ -13,12 +13,11 @@ frühere Fassung mit Schnellstart-Verlauf und Aufgabenverträgen liegt in der
 
 ## Nächster bereiter Schritt
 
-Kein Schritt ist **Bereit**; der Nutzer markiert das nächste Paket als **Bereit**.
-`GASP-13` ist gemergt ([Bericht](gasp-presentation-polish.md)): Eine stehende Figur in der Kampfhaltung behält
-nach Wahl des Nutzers ihre Blickrichtung, bis sie läuft, blockt oder angreift; die Kamera läuft
-nach. Ein Problem beim Loslassen von Block hat der Nutzer auf später verschoben (siehe
-[offene Befunde](gasp-integration-handoff.md#offene-befunde)). Der vollständige Manny-Bake `GASP-14` backt die mit `GASP-10`
-gewählten Relaxed-Datenbanken.
+**`GASP-14` Vollständiger CMC-Bake auf Manny** ist **Bereit** ([Definition](gasp-manny-full-bake.md), [#250](https://github.com/Athurito/SurvivalRpg/pull/250)):
+Der Nutzer hat am 17.10.2026 `SKM_Manny_Simple` als Bake-Mesh gewählt. Gebacken werden die 71
+Relaxed-Datenbanken des CMC-Choosers (460 Clips) und der CMC-Traversal (34 Montagen) mit Manny-Kopien
+der Motion-Matching-Daten und des AnimBP; die Gameplay-Pawns bleiben bis `GASP-15` auf UEFN.
+`GASP-STAB-05` (Loslassen von Block) hat der Nutzer zurückgestellt; der PR [#249](https://github.com/Athurito/SurvivalRpg/pull/249) bleibt als Entwurf.
 `GASP-01`, `GASP-03` bis `GASP-13`, `GASP-STAB-04` und das Engine-Update `GASP-ENG-01` sind
 gemergt; offen bleiben `GASP-VAL-01`, `GASP-VAL-02` und die
 [offenen Befunde](gasp-integration-handoff.md#offene-befunde).
@@ -51,6 +50,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-STAB-02` | Falling bei belegtem Respawn | **Gemergt** | [#146](https://github.com/Athurito/SurvivalRpg/pull/146) | [Respawn-Falling](gasp-respawn-falling.md) |
 | `GASP-STAB-03` | Testboden vor den Pawns in CQTest-Netzwerktests | **Gemergt** | [#223](https://github.com/Athurito/SurvivalRpg/pull/223) | [Testboden](gasp-test-floor-race.md) |
 | `GASP-STAB-04` | Listen-Server: Client-Figur zittert in der Host-Ansicht beim Drehen im Stand (Offset Root Bone) | **Gemergt**; Sichtprüfung durch den Nutzer | [#244](https://github.com/Athurito/SurvivalRpg/pull/244) | [Host-Ansicht](gasp-host-view-turn-jitter.md) |
+| `GASP-STAB-05` | Loslassen von Block im Stand: Schritte statt Rutschen | **Zurückgestellt** (Nutzer, 17.10.2026): Drücken wirkte nicht mehr snappy; PR als Entwurf, nicht gemergt | [#249](https://github.com/Athurito/SurvivalRpg/pull/249) | [Loslassen (Branch)](https://github.com/Athurito/SurvivalRpg/blob/claude/gasp-stab-05-block-release/docs/gasp-block-release.md) |
 | `GASP-NET-01` | Rollback während aktivem Mantle | **Gemergt** | [#147](https://github.com/Athurito/SurvivalRpg/pull/147) | [Mantle-Rollback](gasp-active-mantle-rollback.md) |
 | `GASP-NET-02` | Terminaler Mantle-Grund bei Reconciliation | **Gemergt** | [#148](https://github.com/Athurito/SurvivalRpg/pull/148) | [Reconciliation](gasp-terminal-reconciliation.md) |
 | `GASP-NET-03` | Rekonstruktion nach Paketpause | **Gemergt**; Grenze bewertet, Werkzeug validiert, Runtime-Grenze bleibt | [#149](https://github.com/Athurito/SurvivalRpg/pull/149) | [Paketpause](gasp-packet-gap-recovery.md) |
@@ -69,6 +69,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-11` | Gemeinsames Bewegungsprofil (Trägheit, Drehung, Luft), lastunabhängig | **Gemergt**; Sichtprüfung durch den Nutzer | [#238](https://github.com/Athurito/SurvivalRpg/pull/238) | [Bewegungsprofil](gasp-movement-profile.md) |
 | `GASP-12` | Walk-Gait und Analog-Schwelle | **Gemergt**; Sichtprüfung durch den Nutzer | [#241](https://github.com/Athurito/SurvivalRpg/pull/241) | [Walk-Gait](gasp-walk-gait.md) |
 | `GASP-13` | Darstellung: Drehen im Stand (Kampfhaltung), Offset Root Bone, Steering, Spins, Kamera | **Gemergt**; Sichtprüfung durch den Nutzer, Problem beim Loslassen von Block auf später verschoben | [#247](https://github.com/Athurito/SurvivalRpg/pull/247) | [Darstellung](gasp-presentation-polish.md) |
+| `GASP-14` | Vollständiger CMC-Bake auf Manny (`SKM_Manny_Simple`): Relaxed-Locomotion, Traversal, Motion-Matching-Kopien, Manny-AnimBP, Entwicklungs-Pawn | **Bereit** | [#250](https://github.com/Athurito/SurvivalRpg/pull/250) | [Manny-Bake](gasp-manny-full-bake.md) |
 
 Statuswerte: **Geplant**, **Bereit**, **In Arbeit**, **Validierung**,
 **PR offen**, **Gemergt**, **Blockiert**, **Zurückgestellt**.
@@ -95,7 +96,6 @@ mit **Bereit** in die Statustabelle oben.
 
 | ID | Arbeitspaket | Status | Plan |
 | --- | --- | --- | --- |
-| `GASP-14` | Vollständiger CMC-Bake auf Manny (nur nach bestandenem `GASP-08`) | **Geplant** | [Plan](gasp-movement-plan.md#gasp-14-full-cmc-bake-to-manny-only-if-gasp-08-passes) |
 | `GASP-15` | Manny als Gameplay-Mesh (nur nach bestandenem `GASP-08`) | **Geplant** | [Plan](gasp-movement-plan.md#gasp-15-manny-gameplay-mesh-only-if-gasp-08-passes) |
 | `GASP-16` | Charakter- und Rüstungspilot (Asset-Auswahl durch den Nutzer), Rüstungs-Foley aus `GASP-13` | **Geplant** | [Plan](gasp-movement-plan.md#gasp-16-character-and-armor-pilot) |
 

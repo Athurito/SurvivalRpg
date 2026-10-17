@@ -10,24 +10,23 @@ diese Datei **ersetzen, nicht ergänzen**. Das frühere fortlaufende Protokoll b
 
 | Feld | Wert |
 | --- | --- |
-| Stand | 16.10.2026 |
-| Aktive Aufgabe, Status, zuständiger Chat | Keine. Zuletzt `GASP-13` Darstellung und Drehen im Stand, **gemergt** nach vier Sichtprüfungen des Nutzers; ein Problem beim Loslassen von Block ist auf Wunsch des Nutzers auf später verschoben. |
-| Branch, Worktree, Basis / PR | Kein aktiver Branch. Zuletzt `claude/gasp-13-presentation-polish` / [#247](https://github.com/Athurito/SurvivalRpg/pull/247), gemergt als `98a4f3f1` (Definition [#246](https://github.com/Athurito/SurvivalRpg/pull/246)). Davor `claude/gasp-stab-04-host-view-jitter` / [#244](https://github.com/Athurito/SurvivalRpg/pull/244), gemergt als `681eeafa`. |
-| Offene Abnahmepunkte | Keine. Jede Gameplay- und Bewegungsänderung auch im Mehrspieler prüfen (Nutzerwunsch 13.10.2026): PIE-Netzwerktests, 2- bis 3-Spieler-Messung der entfernten Figur und ein Mehrspieler-Schritt im Playtest. Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
+| Stand | 17.10.2026 |
+| Aktive Aufgabe, Status, zuständiger Chat | `GASP-14` Vollständiger CMC-Bake auf Manny, **Bereit** (Definition [#250](https://github.com/Athurito/SurvivalRpg/pull/250)). Der Nutzer hat nach dem Zurückstellen von `GASP-STAB-05` am 17.10.2026 die Fortsetzung der Roadmap und `SKM_Manny_Simple` als Bake-Mesh gewählt. |
+| Branch, Worktree, Basis / PR | Definition auf `claude/gasp-14-manny-bake` im Worktree `musing-ishizaka-7bac20`, Basis `master` `cf40597f` / [#250](https://github.com/Athurito/SurvivalRpg/pull/250); die Umsetzung folgt auf demselben Branch oder einem eigenen. Geparkt: `claude/gasp-stab-05-block-release` / [#249](https://github.com/Athurito/SurvivalRpg/pull/249) (Entwurf, nicht gemergt). Zuletzt gemergt: [#247](https://github.com/Athurito/SurvivalRpg/pull/247) (`GASP-13`) und Status [#248](https://github.com/Athurito/SurvivalRpg/pull/248) als `cf40597f`. |
+| Offene Abnahmepunkte | Keine für `GASP-14` vor der Umsetzung. Jede Gameplay- und Bewegungsänderung auch im Mehrspieler prüfen (Nutzerwunsch 13.10.2026): PIE-Netzwerktests, 2- bis 3-Spieler-Messung der entfernten Figur und ein Mehrspieler-Schritt im Playtest. Jeder Checkout muss vor dem nächsten Build seine 5.8.2-Overrides gemäß [README](../Build/Patches/NetworkPrediction/README.md#engine-updates) entfernen und neu stagen. |
 | Akzeptierter Runtime-Stand | `master` `98a4f3f1`; enthält alle GASP-Schritte bis GASP-13 (#247, Definition #246), GASP-STAB-04 (#244, Definition #243, Status #245), GASP-ENG-01 (#221), GASP-STAB-03 (#223, nur Testcode) und den [Bewegungsplan](gasp-movement-plan.md) (#229, nur Doku). Der CMC-Pawn nutzt Rotationsmodi (freie Bewegung und Kampfhaltung) und spielt das Relaxed-Set mit passenden Tempi (Laufen 375, Sprint 585, Ducken 200 cm/s) und bewegt sich nach `DA_RpgGasp_MovementProfile` (Sprung-Z 450, etwa 0,48 s bis Lauftempo); Gehen mit 165 cm/s über Feststelltaste, rechte Schultertaste oder einen Stick unter 0,7; `Lvl_RpgGaspCMC` steht in der GASP-Präsentation. Eine stehende Kampfhaltung behält ihre Blickrichtung, bis sie läuft, blockt oder angreift (Angriffe drehen mit 1800 °/s ein); dann drehen die Füße per Turn-in-Place mit, und die CMC-Kamera läuft nach (`CM_RpgGasp_Traversal`). Ein Listen-Server-Host sieht Client-Figuren beim Drehen so ruhig wie die anderen Clients. Die Produktion nutzt weiter UEFN; der Manny-Pilot liegt isoliert unter `/Game/SurvivalRpg/Characters/GASP/Pilot/`. |
-| Dateibesitz / Sperren | Keine GASP-Sperren. Die geteilten Relaxed- und Dense-Datenbanken nutzen CMC und Mover gemeinsam; CMC-spezifische Änderungen brauchen eigene Kopien. Das Lyra-`SK_Mannequin` trägt seit `GASP-08` die Blend-Profile `FastFeet+Root_Weight` und `FastHead_Weight`, die der Manny-AnimBP braucht; nicht entfernen. Eine separate Claude-Sitzung untersucht den zeitabhängigen Remote-Melee-Test aus den offenen Befunden. |
+| Dateibesitz / Sperren | `GASP-14` legt neue Assets unter `/Game/SurvivalRpg/Characters/GASP/Manny/` an und liest die geteilten Relaxed-Datenbanken, die CMC-Traversal-Assets und `ABP_RpgGasp_CMC` nur; keine andere Sitzung soll diese bis zum Merge ändern. Die geteilten Relaxed- und Dense-Datenbanken nutzen CMC und Mover gemeinsam; CMC-spezifische Änderungen brauchen eigene Kopien. Das Lyra-`SK_Mannequin` trägt seit `GASP-08` die Blend-Profile `FastFeet+Root_Weight` und `FastHead_Weight`, die der Manny-AnimBP braucht; nicht entfernen. Eine separate Claude-Sitzung untersucht den zeitabhängigen Remote-Melee-Test aus den offenen Befunden. |
 | Editor / PIE / Builds | Installiert ist UE 5.8.3 (CL 58210709), `master` pinnt 5.8.3. Branches ohne GASP-ENG-01 bauen erst nach Übernahme von `master`. PIE-Netzwerktests nur in einem Prozess gleichzeitig laufen lassen. Vor eigener Editor-/MCP-Nutzung andere Checkouts und Sitzungen prüfen. |
 | Plugin-Overrides | Git-ignoriert und checkout-lokal. In jedem Worktree vor Build oder Branchwechsel gemäß [README](../Build/Patches/NetworkPrediction/README.md) prüfen; Engine-Wechsel nach dem Abschnitt „Engine updates“. |
-| Lokale Belege | `Saved/...` existiert nur im erzeugenden Checkout; versioniert sind Zusammenfassungen in Berichten und Manifesten unter `docs/assets`. GASP-08-Rohdaten liegen in `Saved/Gasp08` und `Saved/Profiling/CSV`, GASP-09-Rohdaten in `Saved/Gasp09`, GASP-10-Rohdaten in `Saved/Gasp10`, GASP-11-Rohdaten in `Saved/Gasp11`, GASP-12-Rohdaten in `Saved/Gasp12`, GASP-STAB-04-Rohdaten in `Saved/GaspStab04`, GASP-13-Rohdaten in `Saved/Gasp13`, alle mit `Saved/ToolRuns` des Worktrees `musing-ishizaka-7bac20`. |
+| Lokale Belege | `Saved/...` existiert nur im erzeugenden Checkout; versioniert sind Zusammenfassungen in Berichten und Manifesten unter `docs/assets`. GASP-08-Rohdaten liegen in `Saved/Gasp08` und `Saved/Profiling/CSV`, GASP-09-Rohdaten in `Saved/Gasp09`, GASP-10-Rohdaten in `Saved/Gasp10`, GASP-11-Rohdaten in `Saved/Gasp11`, GASP-12-Rohdaten in `Saved/Gasp12`, GASP-STAB-04-Rohdaten in `Saved/GaspStab04`, GASP-13-Rohdaten in `Saved/Gasp13`, GASP-STAB-05-Rohdaten in `Saved/GaspStab05`, alle mit `Saved/ToolRuns` des Worktrees `musing-ishizaka-7bac20`. |
 
 ## Nächster Handgriff
 
-Kein Paket ist **Bereit**. Der Nutzer markiert das nächste Paket als **Bereit**. Offen
-und noch nicht eingeplant sind das Problem beim Loslassen von Block (aus `GASP-13`
-verschoben), die Turn-Clip-Wahl auf Proxies, die in `GASP-13` nicht übernommenen
-Tuning-Werte und der Port der Relaxed-Leans aus `GASP-10`; geplant sind `GASP-14` bis
-`GASP-16`. Jede Prüfung schließt Mehrspieler ein. Der vollständige Manny-Bake
-`GASP-14` backt die Relaxed-Datenbanken.
+`GASP-14` umsetzen, beginnend mit Phase A (Inventar der Bake-Menge) laut
+[Definition](gasp-manny-full-bake.md#scope). Der Bake bringt voraussichtlich etwa 650 MB neue
+LFS-Daten. Weiter offen und nicht eingeplant: die Turn-Clip-Wahl auf Proxies, die in `GASP-13`
+nicht übernommenen Tuning-Werte, der Port der Relaxed-Leans aus `GASP-10` und das zurückgestellte
+`GASP-STAB-05`.
 
 ## Offene Befunde
 
@@ -70,12 +69,19 @@ Tuning-Werte und der Port der Relaxed-Leans aus `GASP-10`; geplant sind `GASP-14
   das alte Verhalten). Das ändert die `GASP-09`-Drehregel. Nach der dritten Sichtprüfung
   („Blocken triggert doppelt“) startet unter dem Block-Layer und unter `DefaultSlot`-Montagen kein
   Basis-Turn-in-Place mehr; die eingefrorene Basis-Pose machte beim Loslassen einen zweiten
-  Schritt. Beim Loslassen von Block sieht der Nutzer noch ein Problem (16.10.2026, auf später
-  verschoben, nicht analysiert). Andere Clients sehen weiter keinen Aim Offset entfernter Spieler. Offen: Proxies wählen beim Drehen fast jeden Frame einen anderen Turn-Clip, weil
+  Schritt. Das danach gemeldete Problem beim Loslassen von Block ist `GASP-STAB-05` (zurückgestellt). Andere Clients sehen weiter keinen Aim Offset entfernter Spieler. Offen: Proxies wählen beim Drehen fast jeden Frame einen anderen Turn-Clip, weil
   die Engine-Trajektorie die Blickrichtung aus der im Netzwerktakt springenden Actor-Rotation
   vorhersagt (Host-Ansicht unauffällig). Steering 0,5, die Offset-Root-Bone-Halbwertszeit und
   weniger Spins wurden gemessen und nicht übernommen. Die Relaxed-Leans aus `GASP-10` fehlen
   in der Definition. [Bericht](gasp-presentation-polish.md#limits)
+- `GASP-STAB-05` (zurückgestellt am 17.10.2026, Entwurf [#249](https://github.com/Athurito/SurvivalRpg/pull/249), nicht gemergt):
+  Beim Loslassen im Stand spielt die End-Montage des Schilds den ganzen Körper und endet in der
+  breiten Kampfstellung des Pakets; danach rutschen die Füße etwa 40 cm (pro Fuß 58 bis 72 cm in
+  Bodennähe) in die GASP-Idle-Stellung, auf allen Rollen. Der Entwurf ersetzt das durch zwei
+  Schritte aus `Idle_Combat_to_Idle_Seq` (10 bis 22 cm), machte aber das Drücken kurz nach dem
+  Loslassen langsamer; deshalb zurückgestellt. Zusätzlich gemessen: Auf dem Mover stehen manche
+  Block-Starts etwa 20 cm zu hoch (auch auf `master`), nicht analysiert.
+  [Bericht auf dem Branch](https://github.com/Athurito/SurvivalRpg/blob/claude/gasp-stab-05-block-release/docs/gasp-block-release.md)
 - CMC-Review 11.10.2026 (UE 5.8.2; Pakete `GASP-09` bis `GASP-13` im [Bewegungsplan](gasp-movement-plan.md)): Der
   Rotationskonflikt ist mit `GASP-09` behoben, die Tempo-Parität mit `GASP-10`. Anfahren und
   Bremsen mit `GASP-11`: mit Profil 0,48 s bis Lauftempo und 0,29 s/51 cm

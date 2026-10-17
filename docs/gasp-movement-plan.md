@@ -146,7 +146,7 @@ Its recorded limits carry into GASP-14 and GASP-15:
 
 ### GASP-13: Presentation polish
 
-**Merged** in [#247](https://github.com/Athurito/SurvivalRpg/pull/247) after the user's checks; see the [task report](gasp-presentation-polish.md). The user deferred a remaining problem when block is released. On 2026-10-14 the user added the standing turn in place in the combat stance, found in GASP-STAB-04, and moved armor Foley to GASP-16 or its own audio package.
+**Merged** in [#247](https://github.com/Athurito/SurvivalRpg/pull/247) after the user's checks; see the [task report](gasp-presentation-polish.md). The user deferred a remaining problem when block is released; GASP-STAB-05 addressed it with exit steps, and the user parked it on 2026-10-17 because the press no longer felt snappy (draft [#249](https://github.com/Athurito/SurvivalRpg/pull/249)). On 2026-10-14 the user added the standing turn in place in the combat stance, found in GASP-STAB-04, and moved armor Foley to GASP-16 or its own audio package.
 
 - **Goal:** visual weight without gameplay change; a standing character in the combat stance turns its feet with the camera.
 - **Scope:**
@@ -160,6 +160,8 @@ Its recorded limits carry into GASP-14 and GASP-15:
 - **Acceptance:** user visual check. No movement value changes.
 
 ### GASP-14: Full CMC bake to Manny (only if GASP-08 passes)
+
+**Ready** since 2026-10-17: the user chose `SKM_Manny_Simple` as the target mesh; see the [definition](gasp-manny-full-bake.md).
 
 - **Goal:** bake the whole CMC closure the game uses onto the chosen Manny skeleton with the official retargeter, using the pilot's recorded retargeter settings.
 - **Scope:**
