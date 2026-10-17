@@ -69,7 +69,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-11` | Gemeinsames Bewegungsprofil (Trägheit, Drehung, Luft), lastunabhängig | **Gemergt**; Sichtprüfung durch den Nutzer | [#238](https://github.com/Athurito/SurvivalRpg/pull/238) | [Bewegungsprofil](gasp-movement-profile.md) |
 | `GASP-12` | Walk-Gait und Analog-Schwelle | **Gemergt**; Sichtprüfung durch den Nutzer | [#241](https://github.com/Athurito/SurvivalRpg/pull/241) | [Walk-Gait](gasp-walk-gait.md) |
 | `GASP-13` | Darstellung: Drehen im Stand (Kampfhaltung), Offset Root Bone, Steering, Spins, Kamera | **Gemergt**; Sichtprüfung durch den Nutzer, Problem beim Loslassen von Block auf später verschoben | [#247](https://github.com/Athurito/SurvivalRpg/pull/247) | [Darstellung](gasp-presentation-polish.md) |
-| `GASP-14` | Vollständiger CMC-Bake auf Manny (`SKM_Manny_Simple`): Relaxed-Locomotion, Traversal, Motion-Matching-Kopien, Manny-AnimBP, Entwicklungs-Pawn | **Bereit** | [#250](https://github.com/Athurito/SurvivalRpg/pull/250) | [Manny-Bake](gasp-manny-full-bake.md) |
+| `GASP-14` | Vollständiger CMC-Bake auf Manny (`SKM_Manny_Simple`): Relaxed-Locomotion, Traversal, Motion-Matching-Kopien, Manny-AnimBP, Entwicklungs-Pawn | **PR offen** | [#251](https://github.com/Athurito/SurvivalRpg/pull/251), Definition [#250](https://github.com/Athurito/SurvivalRpg/pull/250) | [Manny-Bake](gasp-manny-full-bake.md) |
 
 Statuswerte: **Geplant**, **Bereit**, **In Arbeit**, **Validierung**,
 **PR offen**, **Gemergt**, **Blockiert**, **Zurückgestellt**.
