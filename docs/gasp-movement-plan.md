@@ -173,6 +173,8 @@ Its recorded limits carry into GASP-14 and GASP-15:
 
 ### GASP-15: Manny gameplay mesh (only if GASP-08 passes)
 
+**Ready** since 2026-10-17: the user asked to start it, limited it to the CMC pawns (the Mover stays on UEFN with its follower, and block presentation becomes selectable per skeleton) and chose to remove the GASP-08 pilot; see the [definition](gasp-manny-gameplay-mesh.md).
+
 - **Goal:** make the Manny-skeleton character the `GetMesh()` of the CMC pawn.
 - **Scope:**
   - Move sockets, physics asset, ragdoll, montage slots, and gameplay montages over.
