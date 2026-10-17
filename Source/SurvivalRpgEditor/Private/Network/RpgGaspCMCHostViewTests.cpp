@@ -316,9 +316,36 @@ namespace RpgGaspCMCHostViewTests
 		const TMap<FString, TWeakObjectPtr<UWorld>>& GetWorlds() const { return Worlds; }
 		double GetRestOffset(const FString& Role) const { return RestOffset.FindRef(Role); }
 		double GetRestYaw(const FString& Role) const { return RestYaw.FindRef(Role); }
+		/** Starts or stops recording each role's world-space foot positions once per world tick. */
+		void TrackFeet(bool bTrack)
+		{
+			FWorldDelegates::OnWorldTickEnd.Remove(FeetHandle); FeetHandle.Reset();
+			if (!bTrack) return;
+			Feet.Reset();
+			FeetHandle = FWorldDelegates::OnWorldTickEnd.AddRaw(this, &FFlickTurn::SampleFeet);
+		}
+		/**
+		 * Horizontal distance in cm a foot moved while it stayed near the ground, that is no higher than 1.5 cm above
+		 * its height at the first or the last sample. A foot that slides covers it; a foot that steps lifts first.
+		 */
+		double GetPlantedTravel(const FString& Role, int32 Foot) const
+		{
+			const TArray<FVector>* Samples = Feet.Find(Role);
+			if (!Samples || Samples->Num() < 4) return TNumericLimits<double>::Max();
+			TArray<FVector> Track;
+			for (int32 Index = Foot; Index < Samples->Num(); Index += 2) Track.Add((*Samples)[Index]);
+			const double Limit = FMath::Max(Track[0].Z, Track.Last().Z) + 1.5;
+			double Travel = 0.;
+			for (int32 Index = 1; Index < Track.Num(); ++Index)
+			{
+				if (FMath::Max(Track[Index - 1].Z, Track[Index].Z) <= Limit) Travel += FVector::Dist2D(Track[Index - 1], Track[Index]);
+			}
+			return Travel;
+		}
 		void Stop()
 		{
 			FWorldDelegates::OnWorldTickStart.Remove(TickStartHandle); TickStartHandle.Reset();
+			TrackFeet(false);
 			if (bHoldingBlock) Block(false);
 			if (Controller.IsValid()) Controller->SetIgnoreLookInput(false);
 			Controller.Reset(); Worlds.Reset(); RestOffset.Reset(); RestYaw.Reset();
@@ -370,10 +397,24 @@ namespace RpgGaspCMCHostViewTests
 			FlickTime = FPlatformTime::Seconds();
 			FWorldDelegates::OnWorldTickStart.Remove(TickStartHandle); TickStartHandle.Reset();
 		}
+		void SampleFeet(UWorld* World, ELevelTick, float)
+		{
+			for (const auto& Pair : Worlds)
+			{
+				if (Pair.Value.Get() != World) continue;
+				const ARpgCharacter* Character = FindCharacter(World, SubjectId);
+				if (!Character) return;
+				TArray<FVector>& Samples = Feet.FindOrAdd(Pair.Key);
+				Samples.Add(Character->GetMesh()->GetSocketLocation(TEXT("foot_l")));
+				Samples.Add(Character->GetMesh()->GetSocketLocation(TEXT("foot_r")));
+			}
+		}
 		TWeakObjectPtr<APlayerController> Controller;
 		TMap<FString, TWeakObjectPtr<UWorld>> Worlds;
 		TMap<FString, double> RestOffset, RestYaw;
-		FDelegateHandle TickStartHandle;
+		/** Per role, alternating left and right foot positions in world space, one pair per world tick. */
+		TMap<FString, TArray<FVector>> Feet;
+		FDelegateHandle TickStartHandle, FeetHandle;
 		int32 SubjectId = INDEX_NONE;
 		double FlickTime = 0., SweepRemaining = 0., SweepRate = 0., WalkRemaining = 0.;
 		bool bHoldingBlock = false;
@@ -560,7 +601,8 @@ NETWORK_TEST_CLASS(GaspCMCHostViewPIE, "SurvivalRpg.GASP.CMC.HostView")
 
 	/**
 	 * Turns the owner's camera while it stands, holds block, then releases it. The block layer turns the body once;
-	 * the base pose below it froze and must not take another step afterwards.
+	 * the base pose below it froze and must not take another step afterwards. Releasing block while standing steps
+	 * the feet back from the wide block stance (GASP-STAB-05) instead of sliding them there.
 	 */
 	void QueueBlockAfterTurn(double Angle)
 	{
@@ -568,10 +610,12 @@ NETWORK_TEST_CLASS(GaspCMCHostViewPIE, "SurvivalRpg.GASP.CMC.HostView")
 		Network.ThenServer(TEXT("Turn the owner's camera, then hold block"), [this, Angle](FState&)
 			{ ASSERT_THAT(IsTrue(Flick.Flick(Angle))); Flick.Block(true); })
 			.UntilServer(TEXT("Hold block while the body turns to the camera"), [this](FState&) { return Flick.Settled(); }, Timeout())
-			.ThenServer(TEXT("Release block and record every role"), [this](FState&) { Flick.Block(false); ASSERT_THAT(IsTrue(Flick.Flick(0.))); })
+			.ThenServer(TEXT("Release block and record every role"), [this](FState&)
+				{ Flick.TrackFeet(true); Flick.Block(false); ASSERT_THAT(IsTrue(Flick.Flick(0.))); })
 			.UntilServer(TEXT("Give the base pose time to resume"), [this](FState&) { return Flick.Settled(); }, Timeout())
-			.ThenServer(TEXT("Every role faces the camera and took no step after the block"), [this](FState&)
+			.ThenServer(TEXT("Every role faces the camera, stepped out of the block stance and took no step after it"), [this](FState&)
 			{
+				Flick.TrackFeet(false);
 				for (const auto& Pair : Flick.GetWorlds())
 				{
 					const ARpgCharacter* Character = FindCharacter(Pair.Value.Get(), Flick.GetSubjectId());
@@ -580,11 +624,15 @@ NETWORK_TEST_CLASS(GaspCMCHostViewPIE, "SurvivalRpg.GASP.CMC.HostView")
 					const double Facing = FMath::FindDeltaAngleDegrees(Flick.GetCameraYaw(), Character->GetActorRotation().Yaw);
 					const double RootLag = FMath::Abs(FMath::FindDeltaAngleDegrees(Character->GetBaseRotationOffsetRotator().Yaw, RootOffset(Character)));
 					const double TurnAfterRelease = FMath::Abs(FMath::FindDeltaAngleDegrees(Flick.GetRestOffset(Pair.Key), RootOffset(Character)));
-					UE_LOG(LogTemp, Display, TEXT("RpgGaspCMCStandingHold block role=%s capsuleToCamera=%.1f rootLag=%.1f turnAfterRelease=%.1f"),
-						*Pair.Key, Facing, RootLag, TurnAfterRelease);
+					const double LeftSlide = Flick.GetPlantedTravel(Pair.Key, 0), RightSlide = Flick.GetPlantedTravel(Pair.Key, 1);
+					UE_LOG(LogTemp, Display, TEXT("RpgGaspCMCStandingHold block role=%s capsuleToCamera=%.1f rootLag=%.1f turnAfterRelease=%.1f slideLeft=%.1f slideRight=%.1f"),
+						*Pair.Key, Facing, RootLag, TurnAfterRelease, LeftSlide, RightSlide);
 					TestRunner->TestTrue(FString::Printf(TEXT("%s faces the camera after blocking (%.1f deg off)"), *Pair.Key, Facing), FMath::Abs(Facing) < 5.);
 					TestRunner->TestTrue(FString::Printf(TEXT("%s root stands on the capsule after the block (%.1f deg)"), *Pair.Key, RootLag), RootLag < 5.);
 					TestRunner->TestTrue(FString::Printf(TEXT("%s takes no step after the block (%.1f deg)"), *Pair.Key, TurnAfterRelease), TurnAfterRelease < 5.);
+					// Sliding from the block stance to the idle stance moved each foot 58 to 72 cm near the ground.
+					TestRunner->TestTrue(FString::Printf(TEXT("%s steps out of the block stance instead of sliding (left %.1f cm, right %.1f cm)"), *Pair.Key, LeftSlide, RightSlide),
+						LeftSlide < 35. && RightSlide < 35.);
 				}
 			});
 	}
