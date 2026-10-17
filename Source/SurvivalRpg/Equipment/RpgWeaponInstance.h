@@ -9,6 +9,7 @@
 
 class UAnimMontage;
 class UAnimInstance;
+class USkeleton;
 
 UENUM(BlueprintType)
 enum class ERpgWeaponAttackTraceMode : uint8
@@ -133,6 +134,49 @@ struct FRpgWeaponAttackDefinition
 	bool HasValidTraceData() const;
 };
 
+/**
+ * Block presentation for one gameplay-mesh skeleton. Linked layers only bind to their exact target skeleton, so a
+ * weapon used by pawns on different skeletons lists one presentation per further skeleton. Designer-authored static
+ * data; every machine resolves it from its local gameplay mesh, and gameplay tuning stays in the block definition.
+ */
+USTRUCT(BlueprintType)
+struct FRpgWeaponBlockPresentation
+{
+	GENERATED_BODY()
+
+	/** Gameplay-mesh skeleton this presentation serves, matched by exact identity like a linked anim layer. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
+	TObjectPtr<USkeleton> Skeleton = nullptr;
+
+	/** Linked block layer for this skeleton; its target skeleton must be Skeleton. Null retains the legacy loop montage. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
+	TSubclassOf<UAnimInstance> BlockLocomotionLayer;
+
+	/** Optional montage played when block starts on this skeleton. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
+	TObjectPtr<UAnimMontage> BlockStartMontage = nullptr;
+
+	/** Optional held-block montage on this skeleton, used only when BlockLocomotionLayer is unset. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
+	TObjectPtr<UAnimMontage> BlockLoopMontage = nullptr;
+
+	/** Optional montage played when block ends normally on this skeleton. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
+	TObjectPtr<UAnimMontage> BlockEndMontage = nullptr;
+
+	/** Optional reaction montage played when a normal block absorbs a hit on this skeleton. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
+	TObjectPtr<UAnimMontage> BlockHitMontage = nullptr;
+
+	/** Optional feedback montage played when a perfect block succeeds on this skeleton. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
+	TObjectPtr<UAnimMontage> PerfectBlockMontage = nullptr;
+
+	/** Optional montage used when this item's block is guard-broken on this skeleton. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
+	TObjectPtr<UAnimMontage> GuardBreakMontage = nullptr;
+};
+
 /** Designer-authored block gameplay and presentation. The ability snapshots gameplay tuning for each activation. */
 USTRUCT(BlueprintType)
 struct FRpgWeaponBlockDefinition
@@ -214,6 +258,16 @@ struct FRpgWeaponBlockDefinition
 	// Optional montage used when this item's block is guard-broken.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
 	TObjectPtr<UAnimMontage> GuardBreakMontage = nullptr;
+
+	/**
+	 * Optional presentations for further gameplay skeletons. An entry whose Skeleton is the gameplay mesh's skeleton
+	 * replaces the layer and every block montage above as a whole; without a match the fields above apply.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
+	TArray<FRpgWeaponBlockPresentation> SkeletonPresentations;
+
+	/** Returns a copy with the presentation for Skeleton applied; gameplay tuning is unchanged. The first match wins. */
+	SURVIVALRPG_API FRpgWeaponBlockDefinition ResolveForSkeleton(const USkeleton* Skeleton) const;
 };
 
 /**
@@ -255,7 +309,7 @@ public:
 		FGameplayTag AttackDefinitionTag,
 		float NewPlayRate,
 		float& OutPreviousPlayRate);
-	/** Configures only a live test equipment instance; never mutates a definition CDO or replicates test tuning. */
+	/** Configures only a live test equipment instance; never mutates a definition CDO or replicates test tuning. The layer goes to the presentation the pawn's gameplay skeleton resolves. */
 	bool ConfigureBlockLocomotionForTests(TSubclassOf<UAnimInstance> LayerClass, float SpeedLimit);
 #endif
 

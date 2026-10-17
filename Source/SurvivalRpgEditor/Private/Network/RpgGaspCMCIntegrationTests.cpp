@@ -46,10 +46,10 @@ namespace RpgGaspCMCIntegrationTests
 	constexpr TCHAR ExperiencePath[] = TEXT("/Game/SurvivalRpg/System/Experiences/RpgGaspCMCExperience.RpgGaspCMCExperience_C");
 	constexpr TCHAR PawnDataPath[] = TEXT("/Game/SurvivalRpg/Characters/GASP/CMC/RPG/DA_PawnData_GaspCMC.DA_PawnData_GaspCMC");
 	constexpr TCHAR PawnClassPath[] = TEXT("/Game/SurvivalRpg/Characters/GASP/CMC/RPG/BP_RpgGasp_CMC.BP_RpgGasp_CMC_C");
-	constexpr TCHAR AnimClassPath[] = TEXT("/Game/SurvivalRpg/Characters/GASP/CMC/RPG/ABP_RpgGasp_CMC.ABP_RpgGasp_CMC_C");
+	constexpr TCHAR AnimClassPath[] = TEXT("/Game/SurvivalRpg/Characters/GASP/Manny/ABP_RpgGasp_CMC_Manny.ABP_RpgGasp_CMC_Manny_C");
 	constexpr TCHAR GameModePath[] = TEXT("/Game/SurvivalRpg/Maps/Test/GaspCMC/BP_Rpg_GaspCMCTestGameMode.BP_Rpg_GaspCMCTestGameMode_C");
-	constexpr TCHAR MeshPath[] = TEXT("/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Meshes/SKM_UEFN_Mannequin.SKM_UEFN_Mannequin");
-	constexpr TCHAR DatabaseChooserPackage[] = TEXT("/Game/SurvivalRpg/Characters/GASP/CMC/RPG/Choosers/CHT_RpgGasp_CMC_PoseSearchDatabases");
+	constexpr TCHAR MeshPath[] = TEXT("/Game/SurvivalRpg/Characters/GASP/Manny/Meshes/SKM_Manny_Simple_GaspLook.SKM_Manny_Simple_GaspLook");
+	constexpr TCHAR DatabaseChooserPackage[] = TEXT("/Game/SurvivalRpg/Characters/GASP/Manny/Choosers/CHT_RpgGasp_CMC_PoseSearchDatabases");
 
 	FPrimaryAssetId ExperienceId()
 	{
@@ -167,7 +167,7 @@ bool FRpgGaspCMCCompositionTest::RunTest(const FString& Parameters)
 	const URpgCharacterMovementComponent* Movement = Cast<URpgCharacterMovementComponent>(Pawn->GetCharacterMovement());
 	TestTrue(TEXT("CharacterMovement owns yaw through the GASP rotation modes"), Movement && Movement->bUseRotationModes);
 	USkeletalMeshComponent* Mesh = Pawn->GetMesh();
-	TestTrue(TEXT("UEFN is the gameplay, equipment and montage mesh"),
+	TestTrue(TEXT("The GASP-look Manny is the gameplay, equipment and montage mesh"),
 		Mesh->GetSkeletalMeshAsset() && Mesh->GetSkeletalMeshAsset()->GetPathName() == MeshPath);
 	TestTrue(TEXT("GetMesh uses the adapted CMC AnimBP"), Mesh->GetAnimClass() == AnimClass);
 	TestTrue(TEXT("Montage root motion remains owned by CMC/GAS"),

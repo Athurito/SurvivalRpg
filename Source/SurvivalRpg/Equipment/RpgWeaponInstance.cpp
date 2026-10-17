@@ -1,7 +1,12 @@
 #include "RpgWeaponInstance.h"
 
 #include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
+#include "Animation/Skeleton.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
 
+#include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 #if WITH_EDITOR
@@ -10,6 +15,24 @@
 #endif
 
 #define LOCTEXT_NAMESPACE "RpgWeaponInstance"
+
+FRpgWeaponBlockDefinition FRpgWeaponBlockDefinition::ResolveForSkeleton(const USkeleton* Skeleton) const
+{
+	FRpgWeaponBlockDefinition Resolved = *this;
+	const FRpgWeaponBlockPresentation* Presentation = Skeleton ? SkeletonPresentations.FindByPredicate(
+		[Skeleton](const FRpgWeaponBlockPresentation& Candidate) { return Candidate.Skeleton == Skeleton; }) : nullptr;
+	if (Presentation)
+	{
+		Resolved.BlockLocomotionLayer = Presentation->BlockLocomotionLayer;
+		Resolved.BlockStartMontage = Presentation->BlockStartMontage;
+		Resolved.BlockLoopMontage = Presentation->BlockLoopMontage;
+		Resolved.BlockEndMontage = Presentation->BlockEndMontage;
+		Resolved.BlockHitMontage = Presentation->BlockHitMontage;
+		Resolved.PerfectBlockMontage = Presentation->PerfectBlockMontage;
+		Resolved.GuardBreakMontage = Presentation->GuardBreakMontage;
+	}
+	return Resolved;
+}
 
 FRpgWeaponAttackDefinition::FRpgWeaponAttackDefinition()
 {
@@ -82,7 +105,7 @@ EDataValidationResult URpgWeaponInstance::IsDataValid(FDataValidationContext& Co
 		Result = EDataValidationResult::Invalid;
 	}
 
-	if (UClass* LayerClass = BlockDefinition.BlockLocomotionLayer.Get())
+	const auto ValidateLayer = [&Context, &WeaponPath, &Result](UClass* LayerClass, const USkeleton* ExpectedSkeleton, const FText& Field)
 	{
 		const IAnimClassInterface* AnimClass = IAnimClassInterface::GetFromClass(LayerClass);
 		// LinkAnimClassLayers binds only implemented animation functions. A main AnimGraph alone,
@@ -96,14 +119,57 @@ EDataValidationResult URpgWeaponInstance::IsDataValid(FDataValidationContext& Co
 			|| !bHasImplementedLayer)
 		{
 			Context.AddError(FText::Format(LOCTEXT("InvalidBlockLocomotionLayer",
-				"Weapon '{0}' uses BlockDefinition.BlockLocomotionLayer '{1}', which is not a concrete compiled Anim Blueprint with an implemented animation layer. Assign a valid linked-layer class or clear it to retain the legacy block loop."),
-				WeaponPath, FText::FromString(LayerClass->GetPathName())));
+				"Weapon '{0}' uses {2} '{1}', which is not a concrete compiled Anim Blueprint with an implemented animation layer. Assign a valid linked-layer class or clear it to retain the legacy block loop."),
+				WeaponPath, FText::FromString(LayerClass->GetPathName()), Field));
+			Result = EDataValidationResult::Invalid;
+			return;
+		}
+		if (ExpectedSkeleton && AnimClass->GetTargetSkeleton() != ExpectedSkeleton)
+		{
+			Context.AddError(FText::Format(LOCTEXT("BlockLayerSkeletonMismatch",
+				"Weapon '{0}' assigns {4} '{1}' to skeleton '{2}', but the layer targets '{3}'. Linked layers only bind to their exact target skeleton."),
+				WeaponPath, FText::FromString(LayerClass->GetPathName()), FText::FromString(ExpectedSkeleton->GetPathName()),
+				FText::FromString(GetPathNameSafe(AnimClass->GetTargetSkeleton())), Field));
 			Result = EDataValidationResult::Invalid;
 		}
-		else
+		// Let the layer's existing asset-validation seam report its designer-owned selection checks.
+		Result = CombineDataValidationResults(Result, LayerClass->GetDefaultObject<UAnimInstance>()->IsDataValid(Context));
+	};
+
+	if (UClass* LayerClass = BlockDefinition.BlockLocomotionLayer.Get())
+	{
+		ValidateLayer(LayerClass, nullptr, LOCTEXT("DefaultBlockLayerField", "BlockDefinition.BlockLocomotionLayer"));
+	}
+
+	TSet<const USkeleton*> PresentationSkeletons;
+	for (const FRpgWeaponBlockPresentation& Presentation : BlockDefinition.SkeletonPresentations)
+	{
+		bool bDuplicate = false;
+		PresentationSkeletons.Add(Presentation.Skeleton, &bDuplicate);
+		if (!Presentation.Skeleton || bDuplicate)
 		{
-			// Let the layer's existing asset-validation seam report its designer-owned selection checks.
-			Result = CombineDataValidationResults(Result, LayerClass->GetDefaultObject<UAnimInstance>()->IsDataValid(Context));
+			Context.AddError(FText::Format(LOCTEXT("InvalidBlockPresentationSkeleton",
+				"Weapon '{0}' has a block presentation without a skeleton or with a skeleton listed twice ('{1}'). Each presentation needs its own gameplay skeleton."),
+				WeaponPath, FText::FromString(GetPathNameSafe(Presentation.Skeleton))));
+			Result = EDataValidationResult::Invalid;
+			continue;
+		}
+		if (UClass* LayerClass = Presentation.BlockLocomotionLayer.Get())
+		{
+			ValidateLayer(LayerClass, Presentation.Skeleton, LOCTEXT("PresentationBlockLayerField", "BlockDefinition.SkeletonPresentations.BlockLocomotionLayer"));
+		}
+		for (const UAnimMontage* Montage : { Presentation.BlockStartMontage.Get(), Presentation.BlockLoopMontage.Get(),
+			Presentation.BlockEndMontage.Get(), Presentation.BlockHitMontage.Get(), Presentation.PerfectBlockMontage.Get(),
+			Presentation.GuardBreakMontage.Get() })
+		{
+			if (Montage && Montage->GetSkeleton() != Presentation.Skeleton)
+			{
+				Context.AddError(FText::Format(LOCTEXT("BlockMontageSkeletonMismatch",
+					"Weapon '{0}' assigns the block montage '{1}' to skeleton '{2}', but the montage uses '{3}'."),
+					WeaponPath, FText::FromString(Montage->GetPathName()), FText::FromString(Presentation.Skeleton->GetPathName()),
+					FText::FromString(GetPathNameSafe(Montage->GetSkeleton()))));
+				Result = EDataValidationResult::Invalid;
+			}
 		}
 	}
 	return Result;
@@ -115,7 +181,12 @@ bool URpgWeaponInstance::ConfigureBlockLocomotionForTests(TSubclassOf<UAnimInsta
 {
 	if (HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject) || !GetPawn()
 		|| !FMath::IsFinite(SpeedLimit) || SpeedLimit < 0.f) { return false; }
-	BlockDefinition.BlockLocomotionLayer = LayerClass;
+	// Configure the presentation the test pawn resolves, so restoring its previously resolved layer is symmetric.
+	const USkeletalMeshComponent* Mesh = URpgPawnExtensionComponent::FindGameplayMesh(GetPawn());
+	const USkeleton* Skeleton = Mesh && Mesh->GetSkeletalMeshAsset() ? Mesh->GetSkeletalMeshAsset()->GetSkeleton() : nullptr;
+	FRpgWeaponBlockPresentation* Presentation = Skeleton ? BlockDefinition.SkeletonPresentations.FindByPredicate(
+		[Skeleton](const FRpgWeaponBlockPresentation& Candidate) { return Candidate.Skeleton == Skeleton; }) : nullptr;
+	(Presentation ? Presentation->BlockLocomotionLayer : BlockDefinition.BlockLocomotionLayer) = LayerClass;
 	BlockDefinition.MovementSpeedLimit = SpeedLimit;
 	return true;
 }
