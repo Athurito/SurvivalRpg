@@ -4,6 +4,7 @@
 #include "Animation/AnimInstance.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/ActorChannel.h"
+#include "Engine/SkeletalMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/Controller.h"
 #include "Net/UnrealNetwork.h"
@@ -544,7 +545,10 @@ void URpgEquipmentManagerComponent::RefreshBlockLocomotionLayer()
 		}
 	}
 	URpgWeaponInstance* Source = Cast<URpgWeaponInstance>(GetActiveBlockSource());
-	UClass* DesiredClass = Source ? Source->GetBlockDefinition().BlockLocomotionLayer.Get() : nullptr;
+	const USkeletalMesh* MeshAsset = Mesh ? Mesh->GetSkeletalMeshAsset() : nullptr;
+	UClass* DesiredClass = Source
+		? Source->GetBlockDefinition().ResolveForSkeleton(MeshAsset ? MeshAsset->GetSkeleton() : nullptr).BlockLocomotionLayer.Get()
+		: nullptr;
 	UAnimInstance* MainInstance = Mesh && Mesh->IsRegistered() ? Mesh->GetAnimInstance() : nullptr;
 	if (const URpgPawnExtensionComponent* Extension = BlockPawnExtension.Get())
 	{

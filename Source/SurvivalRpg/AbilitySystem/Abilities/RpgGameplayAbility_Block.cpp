@@ -4,11 +4,14 @@
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "Abilities/Tasks/AbilityTask_WaitInputRelease.h"
 #include "Animation/AnimInstance.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
 #include "HAL/IConsoleManager.h"
 #include "TimerManager.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgDefenseSet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Character/RpgHealthComponent.h"
+#include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 namespace
@@ -94,7 +97,10 @@ void URpgGameplayAbility_Block::ActivateAbility(
 		return;
 	}
 
-	ActiveBlockDefinition = *BlockDefinition;
+	// Presentation follows the avatar's gameplay mesh skeleton; prediction and the server resolve the same mesh.
+	const USkeletalMeshComponent* GameplayMesh = URpgPawnExtensionComponent::FindGameplayMesh(ActorInfo->AvatarActor.Get());
+	const USkeletalMesh* GameplayMeshAsset = GameplayMesh ? GameplayMesh->GetSkeletalMeshAsset() : nullptr;
+	ActiveBlockDefinition = BlockDefinition->ResolveForSkeleton(GameplayMeshAsset ? GameplayMeshAsset->GetSkeleton() : nullptr);
 	bBlockInputReleased = false;
 	bBlockLoopStarted = false;
 
