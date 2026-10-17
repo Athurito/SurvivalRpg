@@ -451,8 +451,8 @@ NETWORK_TEST_CLASS(GaspCMCHostViewPIE, "SurvivalRpg.GASP.CMC.HostView")
 	/**
 	 * By default a combat stance that stands still keeps its facing while the camera orbits, as in Souls-likes and
 	 * Valheim: no role may see the capsule or the root turn. A short walk then turns it toward the camera on the
-	 * owner, the listen server, a proxy and a late joiner. Blocking after a camera turn turns it once; the feet must
-	 * not take another step when the block ends.
+	 * owner, the listen server, a proxy and a late joiner. Blocking after a camera turn turns it once and at once, also
+	 * for the late joiner; the feet must not take another step when the block ends.
 	 */
 	TEST_METHOD(StandingStanceKeepsFacingUntilItMovesOnEveryRole)
 	{
@@ -465,6 +465,7 @@ NETWORK_TEST_CLASS(GaspCMCHostViewPIE, "SurvivalRpg.GASP.CMC.HostView")
 		QueueLateJoinRole(false);
 		QueueHold(-150.);
 		QueueWalk();
+		QueueBlockAfterTurn(100.);
 	}
 
 	/**
