@@ -1,6 +1,6 @@
 # GASP-STAB-06 – Block turning on every screen
 
-Status: **Planned**, defined 2026-10-17 from the first user check of `GASP-15`. It starts only when the user marks it Ready. Implement it after `GASP-15` ([#254](https://github.com/Athurito/SurvivalRpg/pull/254)) is merged, because that package adds the Manny copy of the block layer that this task has to change as well.
+Status: **Planned**, defined 2026-10-17 from the first user check of `GASP-15`. It starts only when the user marks it Ready. Definition PR [#255](https://github.com/Athurito/SurvivalRpg/pull/255), merged as `b3005564`. `GASP-15` ([#254](https://github.com/Athurito/SurvivalRpg/pull/254)) is merged, so both block layer parents it changes exist on `master`.
 
 ## Goal
 
