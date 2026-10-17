@@ -1,6 +1,6 @@
 # GASP-STAB-06 – Block turning on every screen
 
-Status: **PR open** ([#257](https://github.com/Athurito/SurvivalRpg/pull/257)), implemented 2026-10-17/18 on `claude/gasp-stab-06-block-turn`; the user check is pending. The user asked to start it on 2026-10-17 after merging #256. Defined 2026-10-17 from the first user check of `GASP-15` (definition PR [#255](https://github.com/Athurito/SurvivalRpg/pull/255), merged as `b3005564`). Results are under [Results](#results).
+Status: **PR open** ([#257](https://github.com/Athurito/SurvivalRpg/pull/257)), implemented 2026-10-17/18 on `claude/gasp-stab-06-block-turn`; in the user check on 2026-10-18 the user found it looks good. The user asked to start it on 2026-10-17 after merging #256. Defined 2026-10-17 from the first user check of `GASP-15` (definition PR [#255](https://github.com/Athurito/SurvivalRpg/pull/255), merged as `b3005564`). Results are under [Results](#results).
 
 ## Goal
 
@@ -111,7 +111,7 @@ All numbers come from runs in this task on UE 5.8.3 in the editor of the produci
 | Turn clips | **Met at the start of a turn, not over a whole partial turn.** The right turn clips no longer twist against the turn at the start: 0.0° hips and shoulders on every role in sweeps and flicks (before 12–14° hips, 7–10° shoulders). A full 180° turn shows no reversal at all. When the debt is smaller than the clip's angle, left turns still come back 12–24° at their end, and right turns up to 4° hips and 12° shoulders (unchanged from before); see [Limits](#limits). |
 | Direction | **Met up to 170°.** A remote copy waits until a smoothed flick has arrived before it starts a turn: a 180° flick plays one 180° clip instead of two 90° clips, and a −120° flick no longer starts a right turn from a 4° leftover. All roles turn the same way as the capsule for flicks up to 120° and sweeps. An exact 180° flick is still decided by the sign of ±180° per role; in the final runs all roles chose the same side, but nothing enforces it. |
 | Unchanged | **Met** for continuous turning (same turn starts and debts as before) and the Mover's block; see the regression below. |
-| User check | **Pending.** |
+| User check | **Positive.** On 2026-10-18 the user tested in the editor and found it looks good ("schaut gut aus denke ich"), without further findings; the partial-turn overshoot was not raised. |
 
 ### Phase A – inventory and baseline
 
