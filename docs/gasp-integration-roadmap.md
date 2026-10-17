@@ -14,13 +14,12 @@ frühere Fassung mit Schnellstart-Verlauf und Aufgabenverträgen liegt in der
 ## Nächster bereiter Schritt
 
 Kein Schritt ist **Bereit**; der Nutzer markiert das nächste Paket als **Bereit**.
-`GASP-15` ist gemergt ([#254](https://github.com/Athurito/SurvivalRpg/pull/254), [Bericht](gasp-manny-gameplay-mesh.md)): Die CMC-Pawns
-spielen das Lyra-Manny-Skelett nativ, der Block hat je Skelett eine eigene Darstellung, der `GASP-08`-Pilot und die
-`GASP-14`-Entwicklungskette sind entfernt; der Mover bleibt auf UEFN. Aus der Nutzerprüfung entstand `GASP-STAB-06`
-(Drehen mit Block, [Definition](gasp-block-turn.md)), **Geplant** bis zur Freigabe durch den Nutzer. `GASP-STAB-05` (Loslassen
-von Block) bleibt zurückgestellt; der PR [#249](https://github.com/Athurito/SurvivalRpg/pull/249) bleibt als Entwurf.
-`GASP-01`, `GASP-03` bis `GASP-15`, `GASP-STAB-04` und das Engine-Update `GASP-ENG-01` sind
-gemergt; offen bleiben `GASP-VAL-01`, `GASP-VAL-02` und die
+`GASP-STAB-06` ist gemergt ([#257](https://github.com/Athurito/SurvivalRpg/pull/257), [Bericht](gasp-block-turn.md)): Ein Blockdruck nach einer Kameradrehung richtet
+Körper und Schild auf allen Rollen sofort aus, und die Rechts-Turns unter Block holen nicht mehr gegen die Drehrichtung aus.
+`GASP-15` ist gemergt ([#254](https://github.com/Athurito/SurvivalRpg/pull/254)): Die CMC-Pawns spielen das Lyra-Manny-Skelett
+nativ; der Mover bleibt auf UEFN. `GASP-STAB-05` (Loslassen von Block) bleibt zurückgestellt; der PR
+[#249](https://github.com/Athurito/SurvivalRpg/pull/249) bleibt als Entwurf. `GASP-01`, `GASP-03` bis `GASP-15`, `GASP-STAB-04`,
+`GASP-STAB-06` und das Engine-Update `GASP-ENG-01` sind gemergt; offen bleiben `GASP-VAL-01`, `GASP-VAL-02` und die
 [offenen Befunde](gasp-integration-handoff.md#offene-befunde).
 
 ## Bereits vorhanden
@@ -29,7 +28,7 @@ gemergt; offen bleiben `GASP-VAL-01`, `GASP-VAL-02` und die
 | --- | --- | --- |
 | Baseline und Assetbasis | Baseline erhalten; übernommene Inhalte unter `/Game/SurvivalRpg/Characters/GASP`; Quell-Ziel-Zuordnung vorhanden; Originalimport entfernt | [Assetbasis](gasp-asset-foundation.md), [Manifest](assets/gasp-asset-map.json), [Entfernung](gasp-original-import-removal.md) |
 | CMC | GASP-Locomotion, Mantle, Vault und Hurdle in bestehenden Experiences; GAS-Sprint mit Ausdauer; seit `GASP-15` nativ auf dem Lyra-Manny-Skelett (`SKM_Manny_Simple_GaspLook`) | [CMC](gasp-cmc-integration.md), [Mantle](gasp-mantle-integration.md), [Vault](gasp-vault-integration.md), [Hurdle](gasp-hurdle-integration.md), [Sprint](gasp-cmc-sprint.md) |
-| Block-Locomotion | Linked Layer mit Datenkindern pro Animationssatz; je Skelett eine Darstellung (UEFN für den Mover, Manny für den CMC, `GASP-15`) | [Block-Locomotion](gasp-block-locomotion.md) |
+| Block-Locomotion | Linked Layer mit Datenkindern pro Animationssatz; je Skelett eine Darstellung (UEFN für den Mover, Manny für den CMC, `GASP-15`); Blockdruck richtet auf allen Rollen sofort aus (`GASP-STAB-06`) | [Block-Locomotion](gasp-block-locomotion.md), [Block-Drehen](gasp-block-turn.md) |
 | Runtime-Retargeting | Optionales Profil nur noch auf dem Mover, der UEFN als Gameplay-Mesh behält; die CMC-Pawns brauchen seit `GASP-15` keinen Follower | [Retargeting](gasp-runtime-retargeting.md), [Mover-Anbindung](gasp-mover-gameplay.md) |
 | Manny-Skelett-Pilot | Bestanden: 144 CMC-Dense-Clips offline mit dem offiziellen Retargeter auf das Lyra-`SK_Mannequin` gebacken; vollständiger Bake in `GASP-14`, Pilot-Assets in `GASP-15` entfernt | [Manny-Pilot](gasp-manny-skeleton-pilot.md), [Manifest](assets/gasp-08-manny-pilot.json) |
 | Mover-Grundlage | Eigene `RpgGaspMoverExperience`, Bewegung inklusive Sprint-Eingabe, Equipment/GAS, Tod/Respawn und optionales Retargeting | [Foundation](gasp-mover-foundation.md), [Gameplay](gasp-mover-gameplay.md), [Lifecycle](gasp-mover-lifecycle.md) |
@@ -52,7 +51,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-STAB-03` | Testboden vor den Pawns in CQTest-Netzwerktests | **Gemergt** | [#223](https://github.com/Athurito/SurvivalRpg/pull/223) | [Testboden](gasp-test-floor-race.md) |
 | `GASP-STAB-04` | Listen-Server: Client-Figur zittert in der Host-Ansicht beim Drehen im Stand (Offset Root Bone) | **Gemergt**; Sichtprüfung durch den Nutzer | [#244](https://github.com/Athurito/SurvivalRpg/pull/244) | [Host-Ansicht](gasp-host-view-turn-jitter.md) |
 | `GASP-STAB-05` | Loslassen von Block im Stand: Schritte statt Rutschen | **Zurückgestellt** (Nutzer, 17.10.2026): Drücken wirkte nicht mehr snappy; PR als Entwurf, nicht gemergt | [#249](https://github.com/Athurito/SurvivalRpg/pull/249) | [Loslassen (Branch)](https://github.com/Athurito/SurvivalRpg/blob/claude/gasp-stab-05-block-release/docs/gasp-block-release.md) |
-| `GASP-STAB-06` | Drehen mit Block auf allen Bildschirmen: Block nach Kameradrehung sofort überall, Gegendrehen der Rechts-Turns, Drehrichtung | **PR offen** | [#257](https://github.com/Athurito/SurvivalRpg/pull/257), Definition [#255](https://github.com/Athurito/SurvivalRpg/pull/255) | [Block-Drehen](gasp-block-turn.md) |
+| `GASP-STAB-06` | Drehen mit Block auf allen Bildschirmen: Block nach Kameradrehung sofort überall, Gegendrehen der Rechts-Turns, Drehrichtung | **Gemergt**; Sichtprüfung durch den Nutzer | [#257](https://github.com/Athurito/SurvivalRpg/pull/257), Definition [#255](https://github.com/Athurito/SurvivalRpg/pull/255) | [Block-Drehen](gasp-block-turn.md) |
 | `GASP-NET-01` | Rollback während aktivem Mantle | **Gemergt** | [#147](https://github.com/Athurito/SurvivalRpg/pull/147) | [Mantle-Rollback](gasp-active-mantle-rollback.md) |
 | `GASP-NET-02` | Terminaler Mantle-Grund bei Reconciliation | **Gemergt** | [#148](https://github.com/Athurito/SurvivalRpg/pull/148) | [Reconciliation](gasp-terminal-reconciliation.md) |
 | `GASP-NET-03` | Rekonstruktion nach Paketpause | **Gemergt**; Grenze bewertet, Werkzeug validiert, Runtime-Grenze bleibt | [#149](https://github.com/Athurito/SurvivalRpg/pull/149) | [Paketpause](gasp-packet-gap-recovery.md) |
@@ -62,7 +61,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-03` | Mover-Ragdoll-Experience: Source-Audit und Pilot | **Gemergt** | [#151](https://github.com/Athurito/SurvivalRpg/pull/151), [#152](https://github.com/Athurito/SurvivalRpg/pull/152) | [Source-Audit](gasp-mover-ragdoll-source-audit.md), [Pilot](gasp-mover-ragdoll-pilot.md) |
 | `GASP-04` | Vergleich der drei Varianten | **Gemergt** | [#154](https://github.com/Athurito/SurvivalRpg/pull/154) | [Variantenvergleich](gasp-variant-comparison.md) |
 | `GASP-05` | Importbereinigung: Audit und Entfernung | **Gemergt** | [#156](https://github.com/Athurito/SurvivalRpg/pull/156), [#158](https://github.com/Athurito/SurvivalRpg/pull/158) | [Audit](gasp-import-cleanup-audit.md), [Entfernung](gasp-original-import-removal.md) |
-| `GASP-06` | Erweiterbare Block-Locomotion | **Gemergt** | [#160](https://github.com/Athurito/SurvivalRpg/pull/160) | [Block-Locomotion](gasp-block-locomotion.md) |
+| `GASP-06` | Erweiterbare Block-Locomotion | **Gemergt** | [#160](https://github.com/Athurito/SurvivalRpg/pull/160) | [Block-Locomotion](gasp-block-locomotion.md), [Block-Drehen](gasp-block-turn.md) |
 | `GASP-07` | CMC-Sprint mit GAS-Ausdauer | **Gemergt** | [#161](https://github.com/Athurito/SurvivalRpg/pull/161) | [CMC-Sprint](gasp-cmc-sprint.md) |
 | `GASP-ENG-01` | Engine-Update auf UE 5.8.3: NetworkPrediction-/Mover-Overrides und Build-Pin | **Gemergt** | [#221](https://github.com/Athurito/SurvivalRpg/pull/221) | [UE 5.8.3](gasp-engine-5-8-3.md) |
 | `GASP-08` | Pilot: GASP-Locomotion offline auf UE5-Manny-Skelett | **Gemergt**; Exit-Entscheidung **Pass** (Nutzer) | [#228](https://github.com/Athurito/SurvivalRpg/pull/228) | [Manny-Pilot](gasp-manny-skeleton-pilot.md) |
