@@ -1,6 +1,6 @@
 # GASP-14 – Full CMC bake to Manny
 
-Status: **PR open** ([#251](https://github.com/Athurito/SurvivalRpg/pull/251)), implemented 2026-10-17 on `claude/gasp-14-full-cmc-bake`; the user accepted it on 2026-10-17. Defined 2026-10-17 ([#250](https://github.com/Athurito/SurvivalRpg/pull/250)): after parking `GASP-STAB-05`, the user asked to continue with the roadmap and chose `SKM_Manny_Simple` as the bake mesh. Results are under [Results](#results).
+Status: **Merged** ([#251](https://github.com/Athurito/SurvivalRpg/pull/251) as `8ebd81aa` on 2026-10-17, final head `b04c0bb6`; implemented on `claude/gasp-14-full-cmc-bake`, first commit `2bd8ad70`). The user accepted it on 2026-10-17. Defined 2026-10-17 ([#250](https://github.com/Athurito/SurvivalRpg/pull/250)): after parking `GASP-STAB-05`, the user asked to continue with the roadmap and chose `SKM_Manny_Simple` as the bake mesh. Results are under [Results](#results).
 
 ## Goal
 

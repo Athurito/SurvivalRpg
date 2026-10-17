@@ -1,7 +1,7 @@
 {
  "schema_version": 1,
  "task": "GASP-14 Full CMC bake to Manny",
- "status": "pr_open",
+ "status": "merged",
  "repository_base": "50ce5e31303e678a34a3e4749a9a975d4f16c89c",
  "branch": "claude/gasp-14-full-cmc-bake",
  "engine_version": "5.8.3",
@@ -286,7 +286,7 @@
  },
  "evidence": "Raw files under Saved/Gasp14, Saved/Profiling/CSV and Saved/ToolRuns of the producing checkout; not versioned.",
  "pull_request": "https://github.com/Athurito/SurvivalRpg/pull/251",
- "merge_commit": null,
+ "merge_commit": "8ebd81aafd6ac032b224a33d2dabe611bd3bbe17",
  "target_hashes": {
   "Content/SurvivalRpg/Characters/GASP/Manny/ABP_RpgGasp_CMC_Manny.uasset": "020e6cf8033d52d438a785066eb5498bbbb80bba3329ccb9daeac44dd54a6bf3",
   "Content/SurvivalRpg/Characters/GASP/Manny/Animations/AimOffset/BS_Neutral_AO_Stand.uasset": "93ded2bfa796b329fe86954495fda1865da484a51459de0dca78f99eb0f33785",
