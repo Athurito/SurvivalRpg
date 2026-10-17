@@ -128,7 +128,8 @@ These apply to Niagara work through the Unreal MCP toolset; they are also listed
   - drifting embers;
   - heat distortion bending the floor grid and block edges.
 - **Particle data:** confirmed alpha and size curves over normalized age after the recompile fix.
-- **Cook and asset validation:** results are in the PR description.
+- **Asset validation:** `EditorValidatorSubsystem` checked the 28 new assets: 28 valid, 0 warnings. A dependency scan shows the FX folder references only itself, `/Engine`, `/Niagara` and `/Script`.
+- **Cook:** `python Build/Tools/Unreal/ue.py cook /GF_Dev_Sandbox/Maps/Lvl_VfxGallery` passed with 0 errors. Its 3 warnings already existed: Steam disabled, no `GameplayCueNotifyPaths`, and the `CUI_RespawnScreen` tick.
 
 ## Limits
 
