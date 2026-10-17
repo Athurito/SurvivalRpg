@@ -630,8 +630,12 @@ NETWORK_TEST_CLASS(GaspCMCHostViewPIE, "SurvivalRpg.GASP.CMC.HostView")
 					ASSERT_THAT(IsNotNull(Character));
 					if (!Character) return;
 					const double CapsuleTurn = FMath::FindDeltaAngleDegrees(Flick.GetRestYaw(Pair.Key), Character->GetActorRotation().Yaw);
-					const double Lag = FMath::Abs(FMath::FindDeltaAngleDegrees(Flick.GetRestOffset(Pair.Key), RootOffset(Character)));
-					UE_LOG(LogTemp, Display, TEXT("RpgGaspCMCStandingTurn flick=%.0f rate=%.0f role=%s capsuleTurn=%.1f rootLag=%.1f"), Angle, Rate, *Pair.Key, CapsuleTurn, Lag);
+					// The root must end within the threshold of the capsule. A turn that starts from a remaining offset
+					// below the turn-in-place threshold may rightly keep the root where it stood, so the distance the
+					// root travelled since the flick is logged only.
+					const double Lag = FMath::Abs(FMath::FindDeltaAngleDegrees(Character->GetBaseRotationOffsetRotator().Yaw, RootOffset(Character)));
+					const double Travel = FMath::Abs(FMath::FindDeltaAngleDegrees(Flick.GetRestOffset(Pair.Key), RootOffset(Character)));
+					UE_LOG(LogTemp, Display, TEXT("RpgGaspCMCStandingTurn flick=%.0f rate=%.0f role=%s capsuleTurn=%.1f rootLag=%.1f rootTravelFromRest=%.1f"), Angle, Rate, *Pair.Key, CapsuleTurn, Lag, Travel);
 					TestRunner->TestTrue(FString::Printf(TEXT("%s sees the capsule turn %.0f deg (%.1f)"), *Pair.Key, Angle, CapsuleTurn),
 						FMath::Abs(FMath::FindDeltaAngleDegrees(CapsuleTurn, Angle)) < 10.);
 					TestRunner->TestFalse(FString::Printf(TEXT("%s keeps the pawn standing in the stance"), *Pair.Key),
