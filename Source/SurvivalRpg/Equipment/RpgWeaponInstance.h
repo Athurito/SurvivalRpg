@@ -309,7 +309,7 @@ public:
 		FGameplayTag AttackDefinitionTag,
 		float NewPlayRate,
 		float& OutPreviousPlayRate);
-	/** Configures only a live test equipment instance; never mutates a definition CDO or replicates test tuning. */
+	/** Configures only a live test equipment instance; never mutates a definition CDO or replicates test tuning. The layer goes to the presentation the pawn's gameplay skeleton resolves. */
 	bool ConfigureBlockLocomotionForTests(TSubclassOf<UAnimInstance> LayerClass, float SpeedLimit);
 #endif
 

@@ -11,9 +11,9 @@
 namespace RpgGaspCMCSpeedParityTests
 {
 	constexpr TCHAR PawnClassPath[] = TEXT("/Game/SurvivalRpg/Characters/GASP/CMC/RPG/BP_RpgGasp_CMC.BP_RpgGasp_CMC_C");
-	constexpr TCHAR AnimBlueprintPackage[] = TEXT("/Game/SurvivalRpg/Characters/GASP/CMC/RPG/ABP_RpgGasp_CMC");
-	constexpr TCHAR DatabaseChooserPackage[] = TEXT("/Game/SurvivalRpg/Characters/GASP/CMC/RPG/Choosers/CHT_RpgGasp_CMC_PoseSearchDatabases");
-	constexpr TCHAR AnimationRoot[] = TEXT("/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Animations/");
+	constexpr TCHAR AnimBlueprintPackage[] = TEXT("/Game/SurvivalRpg/Characters/GASP/Manny/ABP_RpgGasp_CMC_Manny");
+	constexpr TCHAR DatabaseChooserPackage[] = TEXT("/Game/SurvivalRpg/Characters/GASP/Manny/Choosers/CHT_RpgGasp_CMC_PoseSearchDatabases");
+	constexpr TCHAR AnimationRoot[] = TEXT("/Game/SurvivalRpg/Characters/GASP/Manny/Animations/");
 
 	// Capsule speed over authored loop speed; outside this band Motion Matching visibly slides the feet.
 	constexpr double MinPlayRate = 0.85;
@@ -105,7 +105,7 @@ bool FRpgGaspCMCSpeedParityTest::RunTest(const FString& Parameters)
 	}
 
 	const IAssetRegistry& Registry = FAssetRegistryModule::GetRegistry();
-	// Every pawn derived from the CMC pawn (traversal and pilot variants) moves with the same profile.
+	// Every pawn derived from the CMC pawn (the traversal variant) moves with the same profile.
 	TSet<FTopLevelAssetPath> DerivedClasses;
 	Registry.GetDerivedClassNames({FTopLevelAssetPath(PawnClass)}, {}, DerivedClasses);
 	TestTrue(TEXT("The CMC pawn has derived variants to check"), DerivedClasses.Num() > 1);

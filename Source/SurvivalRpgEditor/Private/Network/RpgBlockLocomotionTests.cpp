@@ -53,8 +53,32 @@
 
 namespace RpgBlockLocomotionTests
 {
-	constexpr TCHAR SourceMeshPath[] = TEXT("/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Meshes/SKM_UEFN_Mannequin.SKM_UEFN_Mannequin");
 	enum class EVariant : uint8 { CMC, Mover };
+	/** Since GASP-15 the CMC pawns play the Lyra Manny skeleton; the Mover keeps UEFN. */
+	const TCHAR* SourceMeshPath(EVariant Variant)
+	{
+		return Variant == EVariant::CMC
+			? TEXT("/Game/SurvivalRpg/Characters/GASP/Manny/Meshes/SKM_Manny_Simple_GaspLook.SKM_Manny_Simple_GaspLook")
+			: TEXT("/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Meshes/SKM_UEFN_Mannequin.SKM_UEFN_Mannequin");
+	}
+	/** The second designer block profile on the host's skeleton, used by the layer lifecycle test. */
+	const TCHAR* VariantProfilePath(EVariant Variant)
+	{
+		return Variant == EVariant::CMC
+			? TEXT("/GF_Combat_Core/Animations/BlockLocomotion/ABP_Block_TestVariant_Manny.ABP_Block_TestVariant_Manny_C")
+			: TEXT("/GF_Combat_Core/Animations/BlockLocomotion/ABP_Block_TestVariant.ABP_Block_TestVariant_C");
+	}
+	const USkeleton* GameplaySkeleton(const APawn* Character)
+	{
+		const USkeletalMeshComponent* Mesh = URpgPawnExtensionComponent::FindGameplayMesh(Character);
+		const USkeletalMesh* Asset = Mesh ? Mesh->GetSkeletalMeshAsset() : nullptr;
+		return Asset ? Asset->GetSkeleton() : nullptr;
+	}
+	/** Block definition with the presentation for the pawn's gameplay skeleton applied, as equipment and the ability resolve it. */
+	FRpgWeaponBlockDefinition ResolvedBlock(const APawn* Character, const URpgWeaponInstance* Weapon)
+	{
+		return Weapon ? Weapon->GetBlockDefinition().ResolveForSkeleton(GameplaySkeleton(Character)) : FRpgWeaponBlockDefinition();
+	}
 	enum class EScenario : uint8 { DirectionalFacing, SprintOrdering, FixedCorrection, AuthorityCancel, CapSnapshot, LayerLifecycle, Reactions };
 	FPrimaryAssetId ExperienceId(EVariant Variant)
 	{
@@ -133,8 +157,8 @@ namespace RpgBlockLocomotionTests
 		const URpgEquipmentManagerComponent* Manager = Equipment(Character);
 		const URpgWeaponInstance* Item = Manager ? Cast<URpgWeaponInstance>(Manager->GetActiveBlockSource()) : nullptr;
 		const UAnimInstance* Layer = Manager ? Manager->GetBlockLocomotionLayerInstance() : nullptr;
-		return Item && Item->GetBlockDefinition().BlockLocomotionLayer && Layer
-			&& Layer->GetClass() == Item->GetBlockDefinition().BlockLocomotionLayer.Get()
+		const TSubclassOf<UAnimInstance> Expected = ResolvedBlock(Character, Item).BlockLocomotionLayer;
+		return Item && Expected && Layer && Layer->GetClass() == Expected.Get()
 			&& EquipmentReady(Character, Item->GetEquippedSlot());
 	}
 	/** Reads the real Blueprint input schema; never writes or reconstructs a command. */
@@ -185,7 +209,7 @@ namespace RpgBlockLocomotionTests
 			&& Player->GetPawnData<URpgPawnData>() == Extension->GetPawnData<URpgPawnData>()
 			&& AbilitySystem == Player->GetRpgAbilitySystemComponent() && AbilitySystem->GetOwnerActor() == Player && AbilitySystem->GetAvatarActor() == Character
 			&& AbilitySystem->AbilityActorInfo.IsValid() && AbilitySystem->AbilityActorInfo->SkeletalMeshComponent.Get() == Source
-			&& Source->GetAnimInstance() && Source->GetSkeletalMeshAsset() && Source->GetSkeletalMeshAsset()->GetPathName() == SourceMeshPath
+			&& Source->GetAnimInstance() && Source->GetSkeletalMeshAsset() && Source->GetSkeletalMeshAsset()->GetPathName() == SourceMeshPath(Variant)
 			&& (Variant == EVariant::CMC ? Cast<ACharacter>(Character) != nullptr
 				: Character->IsA<ARpgMoverPawn>() && Mover(Character) && Mover(Character)->GetPrimaryVisualComponent() == Source)
 			&& (!Character->IsLocallyControlled() || Gameplay->IsReadyToBindInputs());
@@ -918,7 +942,8 @@ namespace RpgBlockLocomotionTests
 		void Restore()
 		{
 			for (const auto& Entry : Saved) if (URpgWeaponInstance* Weapon = Entry.Key.Get())
-				Weapon->ConfigureBlockLocomotionForTests(Entry.Value.BlockLocomotionLayer, Entry.Value.MovementSpeedLimit);
+				Weapon->ConfigureBlockLocomotionForTests(
+					Entry.Value.ResolveForSkeleton(GameplaySkeleton(Weapon->GetPawn())).BlockLocomotionLayer, Entry.Value.MovementSpeedLimit);
 			Saved.Empty();
 		}
 	private:
@@ -1027,7 +1052,7 @@ NETWORK_TEST_CLASS(BlockLocomotionPIE, "SurvivalRpg.Combat.BlockLocomotion")
 			{
 				const URpgWeaponInstance* Item = Cast<URpgWeaponInstance>(BlockSpec(Pawn(PeerState.World, SubjectId))->SourceObject.Get());
 				ASSERT_THAT(IsNotNull(Item)); if (!Item) return;
-				const FRpgWeaponBlockDefinition& Definition = Item->GetBlockDefinition();
+				const FRpgWeaponBlockDefinition Definition = ResolvedBlock(Pawn(PeerState.World, SubjectId), Item);
 				BlockSlot = Item->GetEquippedSlot(); BlockStart.Reset(Definition.BlockStartMontage.Get());
 				BlockLoop.Reset(Definition.BlockLoopMontage.Get()); BlockEnd.Reset(Definition.BlockEndMontage.Get());
 				BlockProfile.Reset(Definition.BlockLocomotionLayer.Get()); BlockCap = Definition.MovementSpeedLimit;
@@ -1060,7 +1085,7 @@ NETWORK_TEST_CLASS(BlockLocomotionPIE, "SurvivalRpg.Combat.BlockLocomotion")
 				const FGameplayAbilitySpec* Spec = BlockSpec(Character);
 				const URpgWeaponInstance* Weapon = Spec ? Cast<URpgWeaponInstance>(Spec->SourceObject.Get()) : nullptr;
 				ASSERT_THAT(IsTrue(Character && Character->HasAuthority() && Spec && Spec->IsActive() && Weapon)); if (!Weapon) return;
-				const FRpgWeaponBlockDefinition& Definition = Weapon->GetBlockDefinition();
+				const FRpgWeaponBlockDefinition Definition = ResolvedBlock(Character, Weapon);
 				UAnimMontage* Montage = bPerfect ? Definition.PerfectBlockMontage.Get() : Definition.BlockHitMontage.Get();
 				ASSERT_THAT(IsTrue(Montage && !Montage->HasRootMotion() && !Montage->SlotAnimTracks.IsEmpty())); if (!Montage) return;
 				Observations.BeginReaction(Montage, false);
@@ -1117,7 +1142,7 @@ NETWORK_TEST_CLASS(BlockLocomotionPIE, "SurvivalRpg.Combat.BlockLocomotion")
 				ASSERT_THAT(IsTrue(Character->HasAuthority() && Stagger && !Stagger->IsActive() && Blocking(Character))); if (!Stagger) return;
 				UGameplayAbility* StaggerInstance = Stagger->GetPrimaryInstance();
 				const URpgWeaponInstance* Weapon = Cast<URpgWeaponInstance>(BlockSpec(Character)->SourceObject.Get());
-				UAnimMontage* FixtureMontage = Weapon ? Weapon->GetBlockDefinition().GuardBreakMontage.Get() : nullptr;
+				UAnimMontage* FixtureMontage = Weapon ? ResolvedBlock(Character, Weapon).GuardBreakMontage.Get() : nullptr;
 				StaggerMontageProperty = FindFProperty<FObjectPropertyBase>(StaggerInstance->GetClass(), TEXT("GuardBreakMontage"));
 				ASSERT_THAT(IsTrue(StaggerInstance && !StaggerInstance->HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject)
 					&& StaggerMontageProperty && StaggerMontageProperty->PropertyClass == UAnimMontage::StaticClass()
@@ -1263,7 +1288,7 @@ NETWORK_TEST_CLASS(BlockLocomotionPIE, "SurvivalRpg.Combat.BlockLocomotion")
 		QueuePolicyCleanup(1, 3);
 		Network->ThenServer(TEXT("Retain all three real bindings and load the second designer profile"), [this](FState&)
 			{
-				VariantProfile.Reset(LoadClass<UAnimInstance>(nullptr, TEXT("/GF_Combat_Core/Animations/BlockLocomotion/ABP_Block_TestVariant.ABP_Block_TestVariant_C")));
+				VariantProfile.Reset(LoadClass<UAnimInstance>(nullptr, VariantProfilePath(Variant)));
 				ASSERT_THAT(IsTrue(VariantProfile.IsValid() && VariantProfile.Get() != BlockProfile.Get()));
 				for (const auto& Entry : Observations.GetPeers())
 				{
@@ -1325,7 +1350,7 @@ NETWORK_TEST_CLASS(BlockLocomotionPIE, "SurvivalRpg.Combat.BlockLocomotion")
 						|| Blocking(Character) || ASC(Character)->IsBlockMovementActive()
 						|| (Record.Item.IsValid() && Manager->GetActiveBlockSource() == Record.Item.Get())) return false;
 					const URpgWeaponInstance* Current = Cast<URpgWeaponInstance>(Manager->GetActiveBlockSource());
-					UClass* Desired = Current ? Current->GetBlockDefinition().BlockLocomotionLayer.Get() : nullptr;
+					UClass* Desired = Current ? ResolvedBlock(Character, Current).BlockLocomotionLayer.Get() : nullptr;
 					const UAnimInstance* Layer = Manager->GetBlockLocomotionLayerInstance();
 					if (Desired ? !Layer || Layer->GetClass() != Desired : Layer != nullptr) return false;
 				}

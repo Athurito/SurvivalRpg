@@ -3,7 +3,10 @@
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Animation/Skeleton.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
 
+#include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 #if WITH_EDITOR
@@ -178,10 +181,13 @@ bool URpgWeaponInstance::ConfigureBlockLocomotionForTests(TSubclassOf<UAnimInsta
 {
 	if (HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject) || !GetPawn()
 		|| !FMath::IsFinite(SpeedLimit) || SpeedLimit < 0.f) { return false; }
-	BlockDefinition.BlockLocomotionLayer = LayerClass;
+	// Configure the presentation the test pawn resolves, so restoring its previously resolved layer is symmetric.
+	const USkeletalMeshComponent* Mesh = URpgPawnExtensionComponent::FindGameplayMesh(GetPawn());
+	const USkeleton* Skeleton = Mesh && Mesh->GetSkeletalMeshAsset() ? Mesh->GetSkeletalMeshAsset()->GetSkeleton() : nullptr;
+	FRpgWeaponBlockPresentation* Presentation = Skeleton ? BlockDefinition.SkeletonPresentations.FindByPredicate(
+		[Skeleton](const FRpgWeaponBlockPresentation& Candidate) { return Candidate.Skeleton == Skeleton; }) : nullptr;
+	(Presentation ? Presentation->BlockLocomotionLayer : BlockDefinition.BlockLocomotionLayer) = LayerClass;
 	BlockDefinition.MovementSpeedLimit = SpeedLimit;
-	// The test layer applies to whichever skeleton the test pawn uses.
-	BlockDefinition.SkeletonPresentations.Reset();
 	return true;
 }
 #endif

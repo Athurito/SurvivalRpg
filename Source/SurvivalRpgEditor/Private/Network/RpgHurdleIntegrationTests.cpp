@@ -43,7 +43,7 @@
 namespace RpgHurdleIntegrationTests
 {
 	constexpr TCHAR MapPath[] = TEXT("/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMantle");
-	constexpr TCHAR AbilityPath[] = TEXT("/Game/SurvivalRpg/Characters/GASP/CMC/RPG/Traversal/GA_RpgGasp_Mantle.GA_RpgGasp_Mantle_C");
+	constexpr TCHAR AbilityPath[] = TEXT("/Game/SurvivalRpg/Characters/GASP/Manny/Traversal/GA_RpgGasp_Mantle_Manny.GA_RpgGasp_Mantle_Manny_C");
 	const FName BarrierTag(TEXT("Rpg.TraversalTest.Hurdle"));
 
 	FBox PhysicalBlockBounds(const AActor& Actor)

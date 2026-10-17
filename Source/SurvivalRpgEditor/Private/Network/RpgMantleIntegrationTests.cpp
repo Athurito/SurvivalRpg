@@ -54,7 +54,7 @@ namespace RpgMantleIntegrationTests
 	constexpr TCHAR ExperiencePath[] = TEXT("/Game/SurvivalRpg/System/Experiences/RpgGaspMantleExperience.RpgGaspMantleExperience_C");
 	constexpr TCHAR PawnDataPath[] = TEXT("/Game/SurvivalRpg/Characters/GASP/CMC/RPG/Traversal/DA_PawnData_GaspMantle.DA_PawnData_GaspMantle");
 	constexpr TCHAR PawnClassPath[] = TEXT("/Game/SurvivalRpg/Characters/GASP/CMC/RPG/Traversal/BP_RpgGasp_MantleCharacter.BP_RpgGasp_MantleCharacter_C");
-	constexpr TCHAR AbilityClassPath[] = TEXT("/Game/SurvivalRpg/Characters/GASP/CMC/RPG/Traversal/GA_RpgGasp_Mantle.GA_RpgGasp_Mantle_C");
+	constexpr TCHAR AbilityClassPath[] = TEXT("/Game/SurvivalRpg/Characters/GASP/Manny/Traversal/GA_RpgGasp_Mantle_Manny.GA_RpgGasp_Mantle_Manny_C");
 	constexpr TCHAR ObstacleClassPath[] = TEXT("/Game/SurvivalRpg/Characters/GASP/CMC/RPG/Traversal/BP_RpgMantleObstacle.BP_RpgMantleObstacle_C");
 	constexpr TCHAR GameModePath[] = TEXT("/Game/SurvivalRpg/Maps/Test/GaspMantle/BP_Rpg_GaspMantleTestGameMode.BP_Rpg_GaspMantleTestGameMode_C");
 	constexpr TCHAR CmcPawnDataPath[] = TEXT("/Game/SurvivalRpg/Characters/GASP/CMC/RPG/DA_PawnData_GaspCMC.DA_PawnData_GaspCMC");
