@@ -119,6 +119,17 @@ The task lists use these short toolset names:
 - Arrays are replaced as a whole, so send the complete new array with the existing elements as `get_properties` returned them. A call that changes the array size and existing elements together is rejected; split it into separate calls.
 - Float curves (`UCurveFloat`), such as a level curve a DataAsset references: no engine toolset creates them or edits their keys, and `set_properties` rejects their key data. Create or replace them with `AssetContractTools.import_float_curve`, then assign the curve with `set_properties` and read the keys back with `export_asset`.
 
+### Niagara systems
+
+- Shared FX building blocks, Effect Types and templates live in `Content/SurvivalRpg/FX`; feature effects belong to their GameFeature. `docs/vfx-roadmap.md` holds the rules and `docs/vfx-foundation.md` the inventory.
+- Author with `NiagaraToolsets.NiagaraToolset_System`:
+  - Structure: `CreateNiagaraSystem`, `AddEmitter`, `AddModule`, `AddRenderer`.
+  - Values: `SetStackInputData`, `SetRendererData`, `SetEmitterData`, `SetSystemData`. The data setters take `propertyValues` as a JSON string.
+  - Enum inputs need the internal name; resolve it from the display name with `NiagaraToolset_Info.UEnum_Info`.
+- `AddModule` appends to the end of the stack. Re-add `SolveForcesAndVelocity` after adding a force.
+- After replacing an input with *Float From Curve* and setting its keys, the compiled system still evaluates the empty curve (particles read 0). Open the system with `EditorAppToolset.OpenEditorForAsset` to recompile, save, and check one frame with the console variable `fx.DumpParticleData 1`.
+- Check culling with `fx.DumpNiagaraScalabilityState` and component state with `fx.Niagara.DumpComponents`.
+
 ### Save and validate
 
 - Save explicitly with `AssetTools.save_assets(asset_paths)` and the changed paths. An empty list saves every dirty package, which can include another agent's work in a shared editor.
