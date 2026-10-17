@@ -137,4 +137,3 @@ These apply to Niagara work through the Unreal MCP toolset; they are also listed
 - **Wisps:** `MI_FX_SmokeWispy` has no template yet; VFX-03 uses it.
 - **Light flash:** shows only on High+, and its brightness has not been tuned against real combat lighting.
 - **Spawning:** effects are presentation only. No GameplayCue spawns these templates yet; pooled spawning from cues arrives with the first feature effect (VFX-02).
-- **Licence:** the Niagara Examples pack licence is recorded but unverified; see [third-party notices](third-party-notices.md).
