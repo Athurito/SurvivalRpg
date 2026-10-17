@@ -1,0 +1,151 @@
+{
+ "schema_version": 1,
+ "task": "GASP-STAB-06 Block turning on every screen",
+ "status": "pr_open",
+ "repository_base": "2c05fb571fbc340db02ccd168ba0f4ba5a2a9ec7",
+ "branch": "claude/gasp-stab-06-block-turn",
+ "engine_version": "5.8.3",
+ "scope": "Block layer parents (UEFN and Manny): entry settle so a block press faces body and shield at once on every role, and a turn start gate for smoothed flicks; corrected right block turn clips in both derived sets without the source wind-up.",
+ "decisions": [
+  "2026-10-17 (user): the block turning findings of the GASP-15 user check become this package; GASP-15 unchanged",
+  "2026-10-17 (user): a block press after a camera turn faces body and shield at once on every screen; feet turn with it without a step",
+  "2026-10-17 (user): start GASP-STAB-06 after merging #256"
+ ],
+ "native_changes": {
+  "new_classes": 0,
+  "runtime_code": "none",
+  "tests": "RpgGaspCMCHostViewTests: block press faces every role at once, including a late joiner"
+ },
+ "layer_tuning": {
+  "parents": [
+   "/Game/SurvivalRpg/Characters/GASP/Shared/RPG/Block/ABP_RpgBlockLocomotion",
+   "/Game/SurvivalRpg/Characters/GASP/Manny/Block/ABP_RpgBlockLocomotion_Manny"
+  ],
+  "data_children_equal_values": [
+   "ABP_Block_SwordShield",
+   "ABP_Block_TestVariant",
+   "ABP_Block_SwordShield_Manny",
+   "ABP_Block_TestVariant_Manny"
+  ],
+  "EntrySettleMinTime_s": 0.2,
+  "EntrySettleMaxTime_s": 0.8,
+  "EntrySettleRate_deg_per_s": 30.0,
+  "TurnStartMaxRate_deg_per_s": 360.0,
+  "TurnForceStartDebt_deg": 150.0,
+  "runtime_only": [
+   "EntrySettleRemaining",
+   "EntrySettleMinRemaining"
+  ]
+ },
+ "clip_correction": {
+  "clips": [
+   "Turn_Block_90_R_Retargeted",
+   "Turn_Block_180_R_Retargeted"
+  ],
+  "sets": [
+   "GF_Combat_Core/Animations/BlockLocomotion/SwordShield/Sequences",
+   "GF_Combat_Core/Animations/BlockLocomotion/SwordShield/Manny/Sequences"
+  ],
+  "rule": "pelvis yaw about the component up axis so the hip line stays at or ahead of (1 - s_min) of the clip root turn; thighs keep component rotation",
+  "s_min": {
+   "90": 0.0,
+   "180": 0.6
+  },
+  "max_correction_deg": {
+   "90": 14.5,
+   "180": 20.5
+  },
+  "max_foot_shift_cm": {
+   "90": 2.52,
+   "180": 3.57
+  },
+  "unchanged": [
+   "start and end pose",
+   "root track",
+   "BlockRootYaw",
+   "notifies",
+   "FootContacts markers"
+  ]
+ },
+ "metrics": {
+  "block_entry_align_s": {
+   "before_remote": [
+    0.85,
+    1.03
+   ],
+   "after_all_roles": [
+    0.07,
+    0.16
+   ]
+  },
+  "block_entry_residual_debt_deg": {
+   "cmc": 1.5,
+   "mover": 4.5
+  },
+  "right_turn_start_twist_deg": {
+   "before": {
+    "hip": 13.7,
+    "shoulder": 8.6
+   },
+   "after": {
+    "hip": 0.0,
+    "shoulder": 0.0
+   }
+  },
+  "partial_turn_end_reversal_deg": {
+   "left_hip": [
+    12.0,
+    24.2
+   ],
+   "right_shoulder_max": 11.6,
+   "note": "unchanged, open"
+  }
+ },
+ "evidence": "Raw files under Saved/GaspStab06, Saved/Gasp15/UserCheck and Saved/ToolRuns of the producing checkout; not versioned.",
+ "pull_request": "https://github.com/Athurito/SurvivalRpg/pull/257",
+ "merge_commit": null,
+ "added": {},
+ "modified": {
+  "Content/SurvivalRpg/Characters/GASP/Manny/Block/ABP_RpgBlockLocomotion_Manny.uasset": {
+   "before": "b21f441f658ef30ca2934d08fb79610f7d84de5fdc87479c6e397f769102be5c",
+   "after": "0acb74bb7bf4de18afc2d575657f1f9c984b0246a0a6014968431dd496eba245"
+  },
+  "Content/SurvivalRpg/Characters/GASP/Shared/RPG/Block/ABP_RpgBlockLocomotion.uasset": {
+   "before": "f64122177fbed85d7763f972a79e79c266913124d15d1c866d7339cb60ae4453",
+   "after": "f8acfb66163d69717f77d816b532cc88ec47e68f0321671cacdac9af18214835"
+  },
+  "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/ABP_Block_SwordShield.uasset": {
+   "before": "dd2b562675425b3589ec45ee3db36658658ec79c470cb1fffd6a26ebaab3a8f2",
+   "after": "85e3e714be4f6241d55c79686bcf579272870be46869a23f31d984ced8bcf33f"
+  },
+  "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/ABP_Block_SwordShield_Manny.uasset": {
+   "before": "9acd8e91f353d2563edfd415caf881a1503a9e61f995079962d9690c532e71bb",
+   "after": "f1431d80dd567a2284190c21d6eb0550729a93d4268f14e26dcb5b6fcbdf3bfb"
+  },
+  "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/ABP_Block_TestVariant.uasset": {
+   "before": "a19acf6f487e0fa74907fd1cd600a8e604da8e267620160fe9d0ce07a89d75b9",
+   "after": "e7e5971170c187481a382ecc575860c3dbb0d35165cd0c36f7b96f30573edbcc"
+  },
+  "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/ABP_Block_TestVariant_Manny.uasset": {
+   "before": "38a3a2943f12072b61dd5c252c36248316a6e3140fc4133a92eda8e8ce75f480",
+   "after": "a1f8d7d4532f38abc645cd6a7efc854ec6a57fc9abf89c676ebf920adca5f924"
+  },
+  "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Manny/Sequences/Turn_Block_180_R_Retargeted.uasset": {
+   "before": "3f076b4fe335b70920d5c49bf23974c36688a8ec19ee15ccd0455de12e2b6941",
+   "after": "77a4a96de452b30c278191655949ff20ea1381aa684b5959e5ac0236c626bfb4"
+  },
+  "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Manny/Sequences/Turn_Block_90_R_Retargeted.uasset": {
+   "before": "29e95a0b623ff4e27c5978856470dacd189cbbbdbf16cd79f409761c989a2ed8",
+   "after": "5d84d81e19f9ad4b72d408fff6363fac0f39b5cc2d7749cc14e35bb35778d8ae"
+  },
+  "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Turn_Block_180_R_Retargeted.uasset": {
+   "before": "d2c2accd58717e13db6fa7a90c542c2b2b33b98744bb2c0f24ceb425f477b71b",
+   "after": "0e94903760eb05a604eb3f769be79ef8db98094391b16032e2bd7edd6bde71f5"
+  },
+  "Plugins/GameFeatures/GF_Combat_Core/Content/Animations/BlockLocomotion/SwordShield/Sequences/Turn_Block_90_R_Retargeted.uasset": {
+   "before": "d99644b237e90aa691f9a405f938f315a9c746e57377279a03d2c7c6f8a98050",
+   "after": "fb8357d97d361bf557223090e8fdcf056abd52ab19774da83bf4103a639c3286"
+  }
+ },
+ "removed": {}
+}
