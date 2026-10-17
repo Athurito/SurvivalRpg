@@ -50,7 +50,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-STAB-02` | Falling bei belegtem Respawn | **Gemergt** | [#146](https://github.com/Athurito/SurvivalRpg/pull/146) | [Respawn-Falling](gasp-respawn-falling.md) |
 | `GASP-STAB-03` | Testboden vor den Pawns in CQTest-Netzwerktests | **Gemergt** | [#223](https://github.com/Athurito/SurvivalRpg/pull/223) | [Testboden](gasp-test-floor-race.md) |
 | `GASP-STAB-04` | Listen-Server: Client-Figur zittert in der Host-Ansicht beim Drehen im Stand (Offset Root Bone) | **Gemergt**; Sichtprüfung durch den Nutzer | [#244](https://github.com/Athurito/SurvivalRpg/pull/244) | [Host-Ansicht](gasp-host-view-turn-jitter.md) |
-| `GASP-STAB-05` | Loslassen von Block im Stand: Schritte statt Rutschen (Block-Layer, CMC und Mover) | **PR offen** | [#249](https://github.com/Athurito/SurvivalRpg/pull/249) | [Loslassen](gasp-block-release.md) |
+| `GASP-STAB-05` | Loslassen von Block im Stand: Schritte statt Rutschen (Block-Layer, CMC und Mover) | **Zurückgestellt** (Nutzer, 17.10.2026); PR als Entwurf, nicht gemergt | [#249](https://github.com/Athurito/SurvivalRpg/pull/249) | [Loslassen](gasp-block-release.md) |
 | `GASP-NET-01` | Rollback während aktivem Mantle | **Gemergt** | [#147](https://github.com/Athurito/SurvivalRpg/pull/147) | [Mantle-Rollback](gasp-active-mantle-rollback.md) |
 | `GASP-NET-02` | Terminaler Mantle-Grund bei Reconciliation | **Gemergt** | [#148](https://github.com/Athurito/SurvivalRpg/pull/148) | [Reconciliation](gasp-terminal-reconciliation.md) |
 | `GASP-NET-03` | Rekonstruktion nach Paketpause | **Gemergt**; Grenze bewertet, Werkzeug validiert, Runtime-Grenze bleibt | [#149](https://github.com/Athurito/SurvivalRpg/pull/149) | [Paketpause](gasp-packet-gap-recovery.md) |

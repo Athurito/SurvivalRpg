@@ -1,6 +1,6 @@
 # GASP-STAB-05 – Releasing block while standing
 
-Status: **PR open** ([#249](https://github.com/Athurito/SurvivalRpg/pull/249) on `claude/gasp-stab-05-block-release`, first commit `788db119`). The user found the problem in the fourth [GASP-13 check](gasp-presentation-polish.md#limits) and deferred it; on 2026-10-16 the user marked it as the next package and chose real steps over a faster blend. This report defines the package and is its task report.
+Status: **Parked** at the user's choice on 2026-10-17; [#249](https://github.com/Athurito/SurvivalRpg/pull/249) is back in draft and not merged (branch `claude/gasp-stab-05-block-release`, first commit `788db119`). The user found the problem in the fourth [GASP-13 check](gasp-presentation-polish.md#limits) and chose it as the next package on 2026-10-16, with real steps over a faster blend. In the user check the press no longer felt snappy; see [User check](#user-check-2026-10-17--press-no-longer-snappy).
 
 ## Goal
 
@@ -81,6 +81,14 @@ Regression (`ue.py test`, after the build, one suite at a time):
 - `SurvivalRpg.GASP.Mover` 65/67: `MaximumDepthHurdleLandsBeyondRearEdge` and `LateJoinReconstructsTheCurrentVaultState` ran into their 60-s limit; both are known timing cases from earlier regressions and passed alone afterwards.
 - The first run of Hurdle (1/12), RuntimeRetarget (1/2), VariantComparison (1/3) and Network (15/19) failed on my side: a script waiting for an editor polled the MCP port 8000, which the test process held, and each poll logged `Toolset ... not found` as an error that the running test counted. Rerun without polling: Hurdle 12/12, RuntimeRetarget 2/2, VariantComparison 3/3, Network 19/19.
 
+## User check (2026-10-17) – press no longer snappy
+
+The user found the release steps but reported that pressing block now comes late, "as if it waits for the legs". Two parts of the change slow a press down:
+- Pressing block while the exit is still visible holds the upper body on the base pose for `TransitionBlendTime` (0.16 s), so the exit clip's sword flourish never shows. The block arms then wait for the legs to blend away from the exit clip.
+- After an exit, `ExitUpperBodyAlpha` stays at 1 until the next press and then decays over `EnterBlendTime` (0.15 s) while `LayerAlpha` rises over the same time, so the block arms come in as their product: slower in the first 0.15 s than on `master`.
+
+The user chose to park the package instead of fixing the press: the block presentation is combat content on top of the `GASP-06` layer and not needed for the GASP roadmap. `master` keeps the old release (snappy press, slide on release). A resumption would start from this branch: drop the upper-body hold, set `ExitUpperBodyAlpha` to 0 at once when block is pressed with the layer faded out, and find another way to keep the exit clip's flourish hidden on a quick re-press (for example an exit clip whose upper body is still).
+
 ## Failed attempts
 
 - **Turn abort.** The first version ended the exit once the capsule turned more than 15° from where it started. On the Mover, whose capsule turns back after a release, the stepping legs still swept with the capsule during the fade: planted travel rose above the baseline (owner 89 / 64 cm against 75 / 50). Counting the turn into `TurnDebt` instead brought it to 44 / 35 cm; with both, 78 / 49 cm. The abort and its two variables were removed.
@@ -107,3 +115,5 @@ Regression (`ue.py test`, after the build, one suite at a time):
 
 - `788db119` feat(gasp): step out of the block stance when block is released
 - `e4b7548b` test(gasp): check that releasing block steps out of the block stance
+- `8554980a` docs(gasp): record GASP-STAB-05 block release steps
+- `d9a9b94c` docs(gasp): link GASP-STAB-05 to its pull request
