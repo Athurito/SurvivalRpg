@@ -1,7 +1,7 @@
 {
  "schema_version": 1,
  "task": "GASP-15 Manny as the CMC gameplay mesh",
- "status": "pr_open",
+ "status": "merged",
  "repository_base": "f8e95aa466bc3cdff130cb801124e8cdd58fc995",
  "branch": "claude/gasp-15-manny-gameplay-mesh",
  "engine_version": "5.8.3",
@@ -168,7 +168,7 @@
  },
  "evidence": "Raw files under Saved/Gasp15 and Saved/ToolRuns of the producing checkout; not versioned.",
  "pull_request": "https://github.com/Athurito/SurvivalRpg/pull/254",
- "merge_commit": null,
+ "merge_commit": "988e81393a301ab65446392b4e6c02c3b794c63f",
  "added": {
   "Content/SurvivalRpg/Characters/GASP/Manny/Animations/Poses/BS_Additive_Lean_Run.uasset": "8859f2cf8875f2ca3d30f6e7b426e8221931187e21f0d2c355ceb31621060e49",
   "Content/SurvivalRpg/Characters/GASP/Manny/Block/ABP_RpgBlockLocomotion_Manny.uasset": "b21f441f658ef30ca2934d08fb79610f7d84de5fdc87479c6e397f769102be5c",

@@ -1,6 +1,6 @@
 # GASP-15 – Manny as the CMC gameplay mesh
 
-Status: **PR open** ([#254](https://github.com/Athurito/SurvivalRpg/pull/254)), implemented 2026-10-17 on `claude/gasp-15-manny-gameplay-mesh`; the user check is in progress ([User check 1](#user-check-1-2026-10-17--block-turning)). Defined 2026-10-17 (definition PR [#253](https://github.com/Athurito/SurvivalRpg/pull/253)): after merging `GASP-14`, the user asked to start `GASP-15` and chose its scope (see [Decisions](#decisions)). Results are under [Results](#results).
+Status: **Merged** ([#254](https://github.com/Athurito/SurvivalRpg/pull/254) as `988e8139` on 2026-10-17, final head `b9730880`; implemented on `claude/gasp-15-manny-gameplay-mesh`, first commit `4e86aeec`). The user asked for the merge on 2026-10-17 after [User check 1](#user-check-1-2026-10-17--block-turning), whose block turning findings predate this package and moved to `GASP-STAB-06` ([definition](gasp-block-turn.md)). Defined 2026-10-17 ([#253](https://github.com/Athurito/SurvivalRpg/pull/253), merged as `af424eeb`): after merging `GASP-14`, the user asked to start `GASP-15` and chose its scope (see [Decisions](#decisions)). Results are under [Results](#results).
 
 ## Goal
 
@@ -139,7 +139,7 @@ All numbers come from runs in this task on UE 5.8.3 in the editor of the produci
 | Performance | **Measured, no reliable difference.** In one editor session on the locomotion route, the Manny pawn costs 0.82–0.83 ms animation-worker time, against 0.94 ms for the same pawn switched to UEFN at runtime. `GASP-14` had measured the opposite (+0.08 ms for Manny), and one pawn varied by up to 0.17 ms between sessions. Game-thread animation is 0.32–0.35 ms for both. |
 | Cleanup | **Met.** 214 files (186.1 MB of LFS) are removed with no remaining referencer; 47 files (19.4 MB) are added. |
 | Regression | **Met** after the host-view test fix (Phase F). |
-| User check | **In progress.** The first findings concern block turning, predate `GASP-15` and moved to `GASP-STAB-06` ([User check 1](#user-check-1-2026-10-17--block-turning)). |
+| User check | **Merged at the user's request** after user check 1. Its findings concern block turning, predate `GASP-15` and moved to `GASP-STAB-06` ([User check 1](#user-check-1-2026-10-17--block-turning)). |
 
 ### Phase A – inventory and contracts
 
@@ -251,7 +251,7 @@ A scripted listen-server probe recorded the acting player on its own screen, the
 | Jitter while turning with block held | Every right turn clip (`Turn_Block_90_R`, `_180_R`) first turns the hips 13.7° and the shoulders 8.6° against the turn for about 0.1 s; left clips do not. Continuous turning steps stop-and-go, a 90° clip about every 1.4 s at 90°/s. Root motion itself is smooth on every role. | The right turn clips themselves (same on both skeletons and roles); the cadence comes from the layer's debt threshold and clip lengths. |
 | Starts one way, then the other | Besides the twist above: a 180° camera flick is ambiguous, and owner, listen server and remote copies pick different sides; a remote copy follows the direction of its mesh smoothing. Once, a remote copy started a right turn from a 4° leftover debt and switched to the left 0.25 s later. | Turn direction from the sign of a debt near ±180°, and turn starts from smoothing leftovers on remote copies. |
 
-The user moved all three into a separate stabilization package, `GASP-STAB-06` (definition [#255](https://github.com/Athurito/SurvivalRpg/pull/255), planned), and chose the target for a block press after a camera turn: body and shield face the block direction at once on every screen, as on the acting player's own screen now. `GASP-15` stays unchanged. Raw evidence: `Saved/Gasp15/UserCheck`.
+The user moved all three into a separate stabilization package, `GASP-STAB-06` (definition [#255](https://github.com/Athurito/SurvivalRpg/pull/255) merged as `b3005564`, [report](gasp-block-turn.md), planned), and chose the target for a block press after a camera turn: body and shield face the block direction at once on every screen, as on the acting player's own screen now. `GASP-15` stays unchanged. Raw evidence: `Saved/Gasp15/UserCheck`.
 
 ### Limits
 
@@ -261,4 +261,4 @@ The user moved all three into a separate stabilization package, `GASP-STAB-06` (
 - **Block set quality:** the Manny block clips are a bake of the UEFN set, which itself came from the Manny Sword & Shield clips. All authored data is preserved, but the poses went through two retargets.
 - **Runtime retarget coverage:** the CMC traversal test with a follower is retired. The follower during a traversal and the missing-source probe are no longer tested; the Mover suites cover the rest.
 - **Unused UEFN CMC chain:** `ABP_RpgGasp_CMC`, its choosers, `AC_RpgGasp_TraversalQuery`, `GA_RpgGasp_Mantle`, its ability set and `DA_RpgGasp_RuntimeRetarget` stay in place unused; their removal is a later package.
-- **Not checked by the user yet:** the weapon grips in Manny's hand geometry, block and combat feel on Manny, and a multiplayer session.
+- **User check:** after user check 1 the user asked for the merge without reporting separately on the weapon grips in Manny's hand geometry, combat feel, death or a multiplayer session.

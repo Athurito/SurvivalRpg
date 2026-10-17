@@ -173,7 +173,7 @@ Its recorded limits carry into GASP-14 and GASP-15:
 
 ### GASP-15: Manny gameplay mesh (only if GASP-08 passes)
 
-**Ready** since 2026-10-17: the user asked to start it, limited it to the CMC pawns (the Mover stays on UEFN with its follower, and block presentation becomes selectable per skeleton) and chose to remove the GASP-08 pilot; see the [definition](gasp-manny-gameplay-mesh.md).
+**Merged** in [#254](https://github.com/Athurito/SurvivalRpg/pull/254) at the user's request on 2026-10-17; see the [task report](gasp-manny-gameplay-mesh.md). The user limited it to the CMC pawns (the Mover stays on UEFN with its follower, and block presentation is selectable per skeleton) and chose to remove the GASP-08 pilot. Block turning findings from its user check, which predate it, are planned as `GASP-STAB-06` ([definition](gasp-block-turn.md)).
 
 - **Goal:** make the Manny-skeleton character the `GetMesh()` of the CMC pawn.
 - **Scope:**
@@ -193,7 +193,7 @@ Its recorded limits carry into GASP-14 and GASP-15:
 
 ## Order and parallelism
 
-1. **GASP-08** to **GASP-12** are merged, and so is **GASP-14** ([#251](https://github.com/Athurito/SurvivalRpg/pull/251)).
+1. **GASP-08** to **GASP-12** are merged, and so are **GASP-14** ([#251](https://github.com/Athurito/SurvivalRpg/pull/251)) and **GASP-15** ([#254](https://github.com/Athurito/SurvivalRpg/pull/254)).
 2. **GASP-STAB-04**, the host-view jitter found in the GASP-12 check, came first at the user's choice and is **merged** in [#244](https://github.com/Athurito/SurvivalRpg/pull/244) after the user's check ([task report](gasp-host-view-turn-jitter.md)); **GASP-13** is **merged** in [#247](https://github.com/Athurito/SurvivalRpg/pull/247) ([task report](gasp-presentation-polish.md)). Both concern the CMC AnimBP's Offset Root Bone path.
 3. After a GASP-08 pass: **GASP-14 → GASP-15**, then **GASP-16**, then the final dodge montages for #124.
 4. If GASP-08 fails: GASP-14 and GASP-15 are dropped. GASP-16 then targets the runtime follower path, and the dodge montages are retargeted to UEFN like the block set.

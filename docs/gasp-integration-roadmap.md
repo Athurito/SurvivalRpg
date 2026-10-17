@@ -13,12 +13,13 @@ frühere Fassung mit Schnellstart-Verlauf und Aufgabenverträgen liegt in der
 
 ## Nächster bereiter Schritt
 
-**`GASP-15` Manny als CMC-Gameplay-Mesh** ist **Bereit** ([Definition](gasp-manny-gameplay-mesh.md)):
-Der Nutzer hat am 17.10.2026 den Start gewünscht und entschieden: Nur die CMC-Pawns wechseln auf Manny; der
-Mover bleibt auf UEFN mit Runtime-Follower, und die Block-Darstellung wird je Skelett wählbar. Der
-`GASP-08`-Pilot wird entfernt, die `GASP-14`-Entwicklungskette geht in der Produktion auf.
-`GASP-STAB-05` (Loslassen von Block) bleibt zurückgestellt; der PR [#249](https://github.com/Athurito/SurvivalRpg/pull/249) bleibt als Entwurf.
-`GASP-01`, `GASP-03` bis `GASP-14`, `GASP-STAB-04` und das Engine-Update `GASP-ENG-01` sind
+Kein Schritt ist **Bereit**; der Nutzer markiert das nächste Paket als **Bereit**.
+`GASP-15` ist gemergt ([#254](https://github.com/Athurito/SurvivalRpg/pull/254), [Bericht](gasp-manny-gameplay-mesh.md)): Die CMC-Pawns
+spielen das Lyra-Manny-Skelett nativ, der Block hat je Skelett eine eigene Darstellung, der `GASP-08`-Pilot und die
+`GASP-14`-Entwicklungskette sind entfernt; der Mover bleibt auf UEFN. Aus der Nutzerprüfung entstand `GASP-STAB-06`
+(Drehen mit Block, [Definition](gasp-block-turn.md)), **Geplant** bis zur Freigabe durch den Nutzer. `GASP-STAB-05` (Loslassen
+von Block) bleibt zurückgestellt; der PR [#249](https://github.com/Athurito/SurvivalRpg/pull/249) bleibt als Entwurf.
+`GASP-01`, `GASP-03` bis `GASP-15`, `GASP-STAB-04` und das Engine-Update `GASP-ENG-01` sind
 gemergt; offen bleiben `GASP-VAL-01`, `GASP-VAL-02` und die
 [offenen Befunde](gasp-integration-handoff.md#offene-befunde).
 
@@ -27,10 +28,10 @@ gemergt; offen bleiben `GASP-VAL-01`, `GASP-VAL-02` und die
 | Bereich | Akzeptierter Stand | Berichte |
 | --- | --- | --- |
 | Baseline und Assetbasis | Baseline erhalten; übernommene Inhalte unter `/Game/SurvivalRpg/Characters/GASP`; Quell-Ziel-Zuordnung vorhanden; Originalimport entfernt | [Assetbasis](gasp-asset-foundation.md), [Manifest](assets/gasp-asset-map.json), [Entfernung](gasp-original-import-removal.md) |
-| CMC | GASP-Locomotion, Mantle, Vault und Hurdle in bestehenden Experiences; GAS-Sprint mit Ausdauer | [CMC](gasp-cmc-integration.md), [Mantle](gasp-mantle-integration.md), [Vault](gasp-vault-integration.md), [Hurdle](gasp-hurdle-integration.md), [Sprint](gasp-cmc-sprint.md) |
-| Block-Locomotion | Gemeinsamer Linked Layer mit Datenkindern pro Animationssatz auf CMC und Mover | [Block-Locomotion](gasp-block-locomotion.md) |
-| Runtime-Retargeting | Optionales Profil; UEFN bleibt Gameplay-Mesh und sichtbarer Standard; noch kein fest ausgewählter neuer Hauptcharacter | [Retargeting](gasp-runtime-retargeting.md), [Mover-Anbindung](gasp-mover-gameplay.md) |
-| Manny-Skelett-Pilot | Bestanden: 144 CMC-Dense-Clips offline mit dem offiziellen Retargeter auf das Lyra-`SK_Mannequin` gebacken, isolierte Pilot-Pawns und -Experiences; die Produktion nutzt weiter UEFN, bis `GASP-14`/`GASP-15` umstellen | [Manny-Pilot](gasp-manny-skeleton-pilot.md), [Manifest](assets/gasp-08-manny-pilot.json) |
+| CMC | GASP-Locomotion, Mantle, Vault und Hurdle in bestehenden Experiences; GAS-Sprint mit Ausdauer; seit `GASP-15` nativ auf dem Lyra-Manny-Skelett (`SKM_Manny_Simple_GaspLook`) | [CMC](gasp-cmc-integration.md), [Mantle](gasp-mantle-integration.md), [Vault](gasp-vault-integration.md), [Hurdle](gasp-hurdle-integration.md), [Sprint](gasp-cmc-sprint.md) |
+| Block-Locomotion | Linked Layer mit Datenkindern pro Animationssatz; je Skelett eine Darstellung (UEFN für den Mover, Manny für den CMC, `GASP-15`) | [Block-Locomotion](gasp-block-locomotion.md) |
+| Runtime-Retargeting | Optionales Profil nur noch auf dem Mover, der UEFN als Gameplay-Mesh behält; die CMC-Pawns brauchen seit `GASP-15` keinen Follower | [Retargeting](gasp-runtime-retargeting.md), [Mover-Anbindung](gasp-mover-gameplay.md) |
+| Manny-Skelett-Pilot | Bestanden: 144 CMC-Dense-Clips offline mit dem offiziellen Retargeter auf das Lyra-`SK_Mannequin` gebacken; vollständiger Bake in `GASP-14`, Pilot-Assets in `GASP-15` entfernt | [Manny-Pilot](gasp-manny-skeleton-pilot.md), [Manifest](assets/gasp-08-manny-pilot.json) |
 | Mover-Grundlage | Eigene `RpgGaspMoverExperience`, Bewegung inklusive Sprint-Eingabe, Equipment/GAS, Tod/Respawn und optionales Retargeting | [Foundation](gasp-mover-foundation.md), [Gameplay](gasp-mover-gameplay.md), [Lifecycle](gasp-mover-lifecycle.md) |
 | Mover-Traversal | Mantle, Vault und Grounded Hurdle | [Mover-Mantle](gasp-mover-mantle.md), [Mover-Vault](gasp-mover-vault.md), [Mover-Hurdle](gasp-mover-hurdle.md) |
 | Mover-Netzwerk | Fixed 50 Hz; versionierte UE-5.8.3-Interpolationserholung; entfernte Traversal-Animation folgt angezeigter Bewegung | [Fixed](gasp-mover-fixed-tick.md), [Recovery](gasp-mover-network-recovery.md), [Darstellung](gasp-mover-traversal-presentation.md) |
@@ -51,7 +52,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-STAB-03` | Testboden vor den Pawns in CQTest-Netzwerktests | **Gemergt** | [#223](https://github.com/Athurito/SurvivalRpg/pull/223) | [Testboden](gasp-test-floor-race.md) |
 | `GASP-STAB-04` | Listen-Server: Client-Figur zittert in der Host-Ansicht beim Drehen im Stand (Offset Root Bone) | **Gemergt**; Sichtprüfung durch den Nutzer | [#244](https://github.com/Athurito/SurvivalRpg/pull/244) | [Host-Ansicht](gasp-host-view-turn-jitter.md) |
 | `GASP-STAB-05` | Loslassen von Block im Stand: Schritte statt Rutschen | **Zurückgestellt** (Nutzer, 17.10.2026): Drücken wirkte nicht mehr snappy; PR als Entwurf, nicht gemergt | [#249](https://github.com/Athurito/SurvivalRpg/pull/249) | [Loslassen (Branch)](https://github.com/Athurito/SurvivalRpg/blob/claude/gasp-stab-05-block-release/docs/gasp-block-release.md) |
-| `GASP-STAB-06` | Drehen mit Block auf allen Bildschirmen: Block nach Kameradrehung sofort überall, Gegendrehen der Rechts-Turns, Drehrichtung | **Geplant** (Nutzer, 17.10.2026): startet nach Freigabe, nach `GASP-15` | – | [Block-Drehen](gasp-block-turn.md) |
+| `GASP-STAB-06` | Drehen mit Block auf allen Bildschirmen: Block nach Kameradrehung sofort überall, Gegendrehen der Rechts-Turns, Drehrichtung | **Geplant** (Nutzer, 17.10.2026): startet nach Freigabe | Definition [#255](https://github.com/Athurito/SurvivalRpg/pull/255) | [Block-Drehen](gasp-block-turn.md) |
 | `GASP-NET-01` | Rollback während aktivem Mantle | **Gemergt** | [#147](https://github.com/Athurito/SurvivalRpg/pull/147) | [Mantle-Rollback](gasp-active-mantle-rollback.md) |
 | `GASP-NET-02` | Terminaler Mantle-Grund bei Reconciliation | **Gemergt** | [#148](https://github.com/Athurito/SurvivalRpg/pull/148) | [Reconciliation](gasp-terminal-reconciliation.md) |
 | `GASP-NET-03` | Rekonstruktion nach Paketpause | **Gemergt**; Grenze bewertet, Werkzeug validiert, Runtime-Grenze bleibt | [#149](https://github.com/Athurito/SurvivalRpg/pull/149) | [Paketpause](gasp-packet-gap-recovery.md) |
@@ -71,7 +72,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-12` | Walk-Gait und Analog-Schwelle | **Gemergt**; Sichtprüfung durch den Nutzer | [#241](https://github.com/Athurito/SurvivalRpg/pull/241) | [Walk-Gait](gasp-walk-gait.md) |
 | `GASP-13` | Darstellung: Drehen im Stand (Kampfhaltung), Offset Root Bone, Steering, Spins, Kamera | **Gemergt**; Sichtprüfung durch den Nutzer, Problem beim Loslassen von Block auf später verschoben | [#247](https://github.com/Athurito/SurvivalRpg/pull/247) | [Darstellung](gasp-presentation-polish.md) |
 | `GASP-14` | Vollständiger CMC-Bake auf Manny (`SKM_Manny_Simple`): Relaxed-Locomotion, Traversal, Motion-Matching-Kopien, Manny-AnimBP, Entwicklungs-Pawn | **Gemergt**; Sichtprüfung durch den Nutzer | [#251](https://github.com/Athurito/SurvivalRpg/pull/251), Definition [#250](https://github.com/Athurito/SurvivalRpg/pull/250) | [Manny-Bake](gasp-manny-full-bake.md) |
-| `GASP-15` | Manny als CMC-Gameplay-Mesh: Mesh, Traversal, Block je Skelett, Waffen, Tod/Ragdoll, Pilot entfernen; Mover bleibt UEFN | **PR offen** | [#254](https://github.com/Athurito/SurvivalRpg/pull/254), Definition [#253](https://github.com/Athurito/SurvivalRpg/pull/253) | [Manny-Gameplay-Mesh](gasp-manny-gameplay-mesh.md) |
+| `GASP-15` | Manny als CMC-Gameplay-Mesh: Mesh, Traversal, Block je Skelett, Waffen, Tod/Ragdoll, Pilot entfernen; Mover bleibt UEFN | **Gemergt** auf Wunsch des Nutzers nach Nutzerprüfung 1; deren Block-Drehbefunde gingen an `GASP-STAB-06` | [#254](https://github.com/Athurito/SurvivalRpg/pull/254), Definition [#253](https://github.com/Athurito/SurvivalRpg/pull/253) | [Manny-Gameplay-Mesh](gasp-manny-gameplay-mesh.md) |
 
 Statuswerte: **Geplant**, **Bereit**, **In Arbeit**, **Validierung**,
 **PR offen**, **Gemergt**, **Blockiert**, **Zurückgestellt**.
