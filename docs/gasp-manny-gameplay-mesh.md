@@ -1,6 +1,6 @@
 # GASP-15 – Manny as the CMC gameplay mesh
 
-Status: **PR open** ([#254](https://github.com/Athurito/SurvivalRpg/pull/254)), implemented 2026-10-17 on `claude/gasp-15-manny-gameplay-mesh`; the user check is pending. Defined 2026-10-17 (definition PR [#253](https://github.com/Athurito/SurvivalRpg/pull/253)): after merging `GASP-14`, the user asked to start `GASP-15` and chose its scope (see [Decisions](#decisions)). Results are under [Results](#results).
+Status: **PR open** ([#254](https://github.com/Athurito/SurvivalRpg/pull/254)), implemented 2026-10-17 on `claude/gasp-15-manny-gameplay-mesh`; the user check is in progress ([User check 1](#user-check-1-2026-10-17--block-turning)). Defined 2026-10-17 (definition PR [#253](https://github.com/Athurito/SurvivalRpg/pull/253)): after merging `GASP-14`, the user asked to start `GASP-15` and chose its scope (see [Decisions](#decisions)). Results are under [Results](#results).
 
 ## Goal
 
@@ -67,6 +67,7 @@ On Manny the gameplay montages play natively, and one skeleton tick replaces mes
 - 2026-10-17 (user): remove the `GASP-08` pilot. The `GASP-14` development chain is absorbed into production, and its development assets are removed.
 - 2026-10-17 (user): create no legacy asset types such as `BlendSpace1D`. The block walk and the Manny additive lean use standard Blend Spaces.
 - 2026-10-17 (user): the standing-turn host-view test checks the documented criterion, root within 60° of the capsule, instead of the distance travelled since the flick. The larger remaining offset on remote Manny roles stays an open finding (see [Phase F](#phase-f--validation)).
+- 2026-10-17 (user, user check 1): the block turning findings, which predate `GASP-15`, go to a separate stabilization package (`GASP-STAB-06`); `GASP-15` stays unchanged.
 - Earlier, still in force: the mesh is `SKM_Manny_Simple` (`GASP-14`). The Lyra `interaction` bone carries the traversal ledge point, and `SK_Mannequin` gets no bone or hierarchy change (`GASP-14`).
 
 ## C++ boundary
@@ -138,7 +139,7 @@ All numbers come from runs in this task on UE 5.8.3 in the editor of the produci
 | Performance | **Measured, no reliable difference.** In one editor session on the locomotion route, the Manny pawn costs 0.82–0.83 ms animation-worker time, against 0.94 ms for the same pawn switched to UEFN at runtime. `GASP-14` had measured the opposite (+0.08 ms for Manny), and one pawn varied by up to 0.17 ms between sessions. Game-thread animation is 0.32–0.35 ms for both. |
 | Cleanup | **Met.** 214 files (186.1 MB of LFS) are removed with no remaining referencer; 47 files (19.4 MB) are added. |
 | Regression | **Met** after the host-view test fix (Phase F). |
-| User check | **Pending.** |
+| User check | **In progress.** The first findings concern block turning, predate `GASP-15` and moved to `GASP-STAB-06` ([User check 1](#user-check-1-2026-10-17--block-turning)). |
 
 ### Phase A – inventory and contracts
 
@@ -234,6 +235,23 @@ All numbers come from runs in this task on UE 5.8.3 in the editor of the produci
     - the mesh (UEFN even adds a post-process AnimBP);
     - translation retarget modes (UEFN uses the costlier `OrientAndScale` on 75 bones).
   - A structural difference that remains is the skeleton size: 161 bones in the Lyra skeleton against 91, 72 of them not in `SKM_Manny_Simple`. Because a same-session locomotion comparison then measured Manny 0.11 ms cheaper, no reliable per-pawn difference is established.
+
+### User check 1 (2026-10-17) – block turning
+
+The user found three things while blocking in a listen-server session:
+- turning the camera away and then pressing block is instant on one screen, while another screen drags the legs around;
+- turning in place with block held looks good, but jitters slightly while the camera still turns;
+- the body sometimes starts turning one way and then switches to the other.
+
+A scripted listen-server probe recorded the acting player on its own screen, the listen server or the other client, and a second client. Every case ran with Manny and with the same pawns switched to UEFN at runtime; the block layer and montages follow the skeleton. All three behave the same on UEFN, so they predate `GASP-15`:
+
+| Finding | Measured | Cause |
+| --- | --- | --- |
+| Block after a camera turn | Own screen and listen server: the body reaches the capsule in 0.11–0.15 s without a step. Remote copies: a 90° block turn clip over 0.85–1.2 s with two direction changes of the root (Manny 0.86–0.9 s, UEFN 0.85–0.96 s). | The capsule turns in the frame the block layer starts. Where the mesh follows at once, the layer sees no turn and the base root catches up through `Interpolate` (0.1-s half-life). A remote copy smooths its mesh rotation over several frames. The layer starts during that smoothing, counts the rest (about 80°) as turn debt and plays a turn clip. |
+| Jitter while turning with block held | Every right turn clip (`Turn_Block_90_R`, `_180_R`) first turns the hips 13.7° and the shoulders 8.6° against the turn for about 0.1 s; left clips do not. Continuous turning steps stop-and-go, a 90° clip about every 1.4 s at 90°/s. Root motion itself is smooth on every role. | The right turn clips themselves (same on both skeletons and roles); the cadence comes from the layer's debt threshold and clip lengths. |
+| Starts one way, then the other | Besides the twist above: a 180° camera flick is ambiguous, and owner, listen server and remote copies pick different sides; a remote copy follows the direction of its mesh smoothing. Once, a remote copy started a right turn from a 4° leftover debt and switched to the left 0.25 s later. | Turn direction from the sign of a debt near ±180°, and turn starts from smoothing leftovers on remote copies. |
+
+The user moved all three into a separate stabilization package, `GASP-STAB-06` (definition [#255](https://github.com/Athurito/SurvivalRpg/pull/255), planned), and chose the target for a block press after a camera turn: body and shield face the block direction at once on every screen, as on the acting player's own screen now. `GASP-15` stays unchanged. Raw evidence: `Saved/Gasp15/UserCheck`.
 
 ### Limits
 
