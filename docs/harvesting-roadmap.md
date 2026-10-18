@@ -1050,6 +1050,9 @@ Wave, turns Death Wave's wood into charcoal.
   - `Harvest_Kiln` stands next to the tool pickups in `Lvl_HarvestPickaxe`.
 - `WBP_HarvestTargetIndicator` appends the conversion to the marker text through
   `F_ConversionSuffix`.
+- **Presentation (VFX-06):** while the form is active, Death Wave plays its own
+  success cue, which ignites and chars the falling trees and leaves a burned
+  area. See [vfx-ash-wave.md](vfx-ash-wave.md).
 - **Design change:** the plan had the Ash Pact as a toggle ability with its own
   mode effect. In review the user preferred a skill form like the Diablo 4 skill
   transformations, so Ash Wave is an exclusive form of Death Wave. A passive

@@ -328,7 +328,11 @@ void URpgGameplayAbility_Harvest::ExecuteAuthorityCommit()
 	if (SummonsSwarm())
 	{
 		const bool bReserved = SummonSwarm(Selection, RequestTemplate, Values.Swarm);
-		ExecuteHarvestCue(bReserved ? SuccessGameplayCue : NoYieldGameplayCue, Selection.AimPoint, FVector::UpVector);
+		ExecuteHarvestCue(
+			bReserved ? Values.SuccessGameplayCue : NoYieldGameplayCue,
+			Selection.AimPoint,
+			FVector::UpVector,
+			Values.Targeting.AreaRadius);
 		if (!HarvestMontage && IsActive())
 		{
 			EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
@@ -360,10 +364,14 @@ void URpgGameplayAbility_Harvest::ExecuteAuthorityCommit()
 		}
 	}
 
-	ExecuteHarvestCue(
-		FirstHarvested ? SuccessGameplayCue : NoYieldGameplayCue,
-		FirstHarvested ? FVector(FirstHarvested->Hit.ImpactPoint) : Selection.AimPoint,
-		FirstHarvested ? FVector(FirstHarvested->Hit.ImpactNormal) : FVector::UpVector);
+	if (FirstHarvested)
+	{
+		ExecuteSuccessCue(Values, Selection, *FirstHarvested);
+	}
+	else
+	{
+		ExecuteHarvestCue(NoYieldGameplayCue, Selection.AimPoint, FVector::UpVector);
+	}
 
 	K2_OnHarvestResolved(Selection.Targets);
 	if (!HarvestMontage && IsActive())
@@ -524,7 +532,7 @@ void URpgGameplayAbility_Harvest::PulseStride()
 
 	if (FirstHarvested)
 	{
-		ExecuteHarvestCue(SuccessGameplayCue, FirstHarvested->Hit.ImpactPoint, FirstHarvested->Hit.ImpactNormal);
+		ExecuteSuccessCue(StrideValues, Selection, *FirstHarvested);
 		K2_OnHarvestResolved(Selection.Targets);
 	}
 }
@@ -576,7 +584,11 @@ void URpgGameplayAbility_Harvest::FinishStride()
 	StrideRequestTemplate = FRpgHarvestRequest();
 }
 
-void URpgGameplayAbility_Harvest::ExecuteHarvestCue(const FGameplayTag CueTag, const FVector& Location, const FVector& Normal) const
+void URpgGameplayAbility_Harvest::ExecuteHarvestCue(
+	const FGameplayTag CueTag,
+	const FVector& Location,
+	const FVector& Normal,
+	const float AreaRadius) const
 {
 	UAbilitySystemComponent* AbilitySystem = CurrentActorInfo ? CurrentActorInfo->AbilitySystemComponent.Get() : nullptr;
 	if (!AbilitySystem || !CueTag.IsValid())
@@ -588,7 +600,25 @@ void URpgGameplayAbility_Harvest::ExecuteHarvestCue(const FGameplayTag CueTag, c
 	CueParameters.EffectCauser = CurrentActorInfo->AvatarActor.Get();
 	CueParameters.Location = Location;
 	CueParameters.Normal = Normal;
+	CueParameters.RawMagnitude = AreaRadius;
+	// A commit without a montage or delay, such as a stride's first pulse, runs inside the owning client's predicted
+	// activation. No client predicts these cues; without the prediction key, the owning client plays them from
+	// replication like every other machine instead of skipping them as already predicted.
+	FScopedPredictionWindow UnpredictedCue(AbilitySystem, FPredictionKey(), false);
 	AbilitySystem->ExecuteGameplayCue(CueTag, CueParameters);
+}
+
+void URpgGameplayAbility_Harvest::ExecuteSuccessCue(
+	const FRpgHarvestTunedValues& Values,
+	const FRpgHarvestPreview& Selection,
+	const FRpgHarvestTargetEvaluation& FirstHarvested) const
+{
+	if (HarvestsArea())
+	{
+		ExecuteHarvestCue(Values.SuccessGameplayCue, Selection.AimPoint, FVector::UpVector, Values.Targeting.AreaRadius);
+		return;
+	}
+	ExecuteHarvestCue(Values.SuccessGameplayCue, FirstHarvested.Hit.ImpactPoint, FirstHarvested.Hit.ImpactNormal);
 }
 
 bool URpgGameplayAbility_Harvest::SummonSwarm(
@@ -744,6 +774,17 @@ void URpgGameplayAbility_Harvest::ResolveTunedValues(
 				(AbilitySystem && AbilitySystem->HasMatchingGameplayTag(Conversion.RequiredOwnerTag))))
 		{
 			OutValues.YieldConversions.Add(Conversion);
+		}
+	}
+
+	// A form can also replace the power's look.
+	OutValues.SuccessGameplayCue = SuccessGameplayCue;
+	for (const FRpgHarvestFormGameplayCue& FormCue : FormSuccessGameplayCues)
+	{
+		if (FormCue.RequiredOwnerTag.IsValid() && AbilitySystem && AbilitySystem->HasMatchingGameplayTag(FormCue.RequiredOwnerTag))
+		{
+			OutValues.SuccessGameplayCue = FormCue.GameplayCue;
+			break;
 		}
 	}
 }

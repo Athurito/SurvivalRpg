@@ -69,6 +69,8 @@ its own row below.
 | --- | --- | --- | --- |
 | VFX-01 | Foundation: core FX folder, master materials, curated flipbooks, Effect Types, VFX gallery map | Merged | [vfx-foundation.md](vfx-foundation.md), [PR #258](https://github.com/Athurito/SurvivalRpg/pull/258) |
 | VFX-02 | Echo rune: smouldering runes on the blade, flare on the third hit, ash-and-distortion ghost strike (`GF_Runes_Core`), as a prototype the gallery triggers by hand | Merged | [vfx-echo-rune.md](vfx-echo-rune.md), [PR #260](https://github.com/Athurito/SurvivalRpg/pull/260) |
-| VFX-03 | Soul harvest: wisps from killed enemies to the player when XP is awarded (`GF_Progression`), with a cue hook in the XP award and a multiplayer check | In review | [vfx-soul-harvest.md](vfx-soul-harvest.md) |
+| VFX-03 | Soul harvest: wisps from killed enemies to the player when XP is awarded (`GF_Progression`), with a cue hook in the XP award and a multiplayer check | Merged | [vfx-soul-harvest.md](vfx-soul-harvest.md), [PR #261](https://github.com/Athurito/SurvivalRpg/pull/261) |
 | VFX-04 | Portal closing: destabilise, rune ring locks, implosion, scar (`GF_Portals_Core`, `GA_ClosePortal`) | Planned | |
 | VFX-05 | Spell prototypes (seal break, rift bolt, ash fetter in `GF_Combat_Magic`) and Rift Sense (`GF_Harvesting_Magic`) | Planned | |
+| VFX-06 | Ash Wave: the Death Wave form ignites and chars the felled trees and leaves a burned area (`GF_Harvesting_Magic`), with form cues on harvest abilities and a multiplayer check | In review | [vfx-ash-wave.md](vfx-ash-wave.md) |
+| VFX-07 | Rift Grip: a short lightning strike hits each ore vein, which bursts into rock debris, dust and sparks (`GF_Harvesting_Magic`) | Planned | |
