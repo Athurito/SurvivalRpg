@@ -1,6 +1,6 @@
 # GASP-16 – Character and armor pilot
 
-Status: **In progress** since 2026-10-18. Phases A, B, C, D and D2 (MetaHuman base body) are done, apart from inventory equips by remote owners, which a separate inventory replication crash blocks (see [Phase D – network, death and respawn](#phase-d--network-death-and-respawn-2026-10-18)). Phase E (Knight_01 comparison) is next. On 2026-10-18 the user changed the design to Lyra Character Parts (see [Decisions](#decisions)). Defined in [#262](https://github.com/Athurito/SurvivalRpg/pull/262) after the user added character packs to the asset library and chose the pilot character and the character-editor scope. This report is the task report.
+Status: **In progress** since 2026-10-18. Phases A to E are done, apart from inventory equips by remote owners, which a separate inventory replication crash blocks (see [Phase D – network, death and respawn](#phase-d--network-death-and-respawn-2026-10-18)). Phase F (cost, regressions, user check) is next. On 2026-10-18 the user changed the design to Lyra Character Parts (see [Decisions](#decisions)). Defined in [#262](https://github.com/Athurito/SurvivalRpg/pull/262) after the user added character packs to the asset library and chose the pilot character and the character-editor scope. This report is the task report.
 
 ## Goal
 
@@ -490,3 +490,26 @@ Done after Phase D2, on the MetaHuman Paladin. Commits `5d977c95` (fix) and `e32
 - Inventory equips by remote owners are blocked by the crash above; the user check of armor in multiplayer has to wait for that fix.
 - The ragdoll trail described above.
 - `CharacterPartsDedicatedServerPIE` once crashed in the engine while PIE was shutting down (`GameViewport.IsUnique()` in `SLevelViewport::EndPlayInEditorSession`) after all its steps had passed. It did not happen again in four further runs.
+
+### Phase E – Knight_01 comparison (2026-10-18)
+
+The MetaHuman Paladin with its five armor pieces and `B_RpgPart_Knight01Body` were swapped on the same pawn in one PIE session (`Lvl_RpgGaspPaladin`, standalone). Images and samples are in `Saved/Gasp16/PhaseE`.
+
+**Fit and animation**
+- **Pose.** Both follow the Manny gameplay pose exactly. While running at 375 cm/s, hands, feet, `ball_l`, head and pelvis match the gameplay mesh at 0.0 cm, and sword and shield sit in the visible hands for both.
+- **Knight foot.** Knight_01's ball bones sit 3.2 cm further back in its reference pose (Phase A). The copied pose moves them to Manny's position, so its boot tips stretch by that amount.
+- **Correctives.** Knight_01 needs none (no weights on extra bones). The Paladin's armor inherits the MetaHuman body's RigLogic correctives.
+- **Modularity.** Knight_01 is one closed mesh: no removable pieces, no visible body, no masks. The Paladin is modular; every piece comes and goes with its equipment and uncovers only its own region.
+
+**Static budget per character** (LOD 0; textures as stored on disk, not GPU memory)
+
+| | Meshes | Vertices | Max. bones | Sections | LODs | Textures |
+| --- | --- | --- | --- | --- | --- | --- |
+| MetaHuman Paladin with armor | 7 + 2 grooms | 43,437 | 875 (face) | 16 | 3 for body and face, 1 for armor | 112, 261 MB |
+| Knight_01 | 1 | 104,366 | 161 | 5 | 1 | 16, 73 MB |
+| `SKM_Manny_Simple_GaspLook` (reference) | 1 | 48,705 | 89 | 2 | 3 | 15, 133 MB |
+
+**Result**
+- The Paladin passed Phase D, so Knight_01 stays a comparison and does not become the pilot character (decision rule in [Scope](#scope)).
+- The Paladin costs fewer vertices but more draw sections, a face skeleton with 875 bones and two grooms. Knight_01 has more than twice the vertices and no LODs.
+- Phase F measures the runtime cost with one and four characters.
