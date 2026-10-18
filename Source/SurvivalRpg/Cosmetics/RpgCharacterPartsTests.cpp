@@ -92,6 +92,12 @@ bool FRpgCharacterPartsAddRemoveTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("The part's child actor component attaches to the gameplay mesh"),
 		PartComponent != nullptr && PartComponent->GetAttachParent() == Character->GetMesh());
 	TestFalse(TEXT("Parts default to no collision"), BodyActor->GetActorEnableCollision());
+	const USkeletalMeshComponent* BodyMesh = CastChecked<ARpgCharacterPartsTestBodyPart>(BodyActor)->GetBodyMesh();
+	TestTrue(TEXT("A part mesh below the part's root ticks after the gameplay mesh"),
+		BodyMesh->PrimaryComponentTick.GetPrerequisites().ContainsByPredicate([Character](const FTickPrerequisite& Prerequisite)
+		{
+			return Prerequisite.PrerequisiteTickFunction == &Character->GetMesh()->PrimaryComponentTick;
+		}));
 	TestTrue(TEXT("Collected tags include the part's tags"), Parts->GetCombinedTags(FGameplayTag()).HasTagExact(Tag(TEXT("Cosmetic.Body"))));
 
 	FRpgCharacterPart ArmorPart;

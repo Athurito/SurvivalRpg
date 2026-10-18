@@ -1,6 +1,7 @@
 #include "RpgCharacterPartsAutomationTestTypes.h"
 
 #include "RpgPawnComponent_CharacterParts.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgCharacterPartsAutomationTestTypes)
@@ -10,6 +11,14 @@ ARpgCharacterPartsTestCharacter::ARpgCharacterPartsTestCharacter(const FObjectIn
 {
 	CharacterParts = CreateDefaultSubobject<URpgPawnComponent_CharacterParts>(TEXT("CharacterParts"));
 	EquipmentManager = CreateDefaultSubobject<URpgEquipmentManagerComponent>(TEXT("EquipmentManager"));
+}
+
+ARpgCharacterPartsTestBodyPart::ARpgCharacterPartsTestBodyPart(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
+	BodyMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Body"));
+	BodyMesh->SetupAttachment(RootComponent);
 }
 
 void ARpgCharacterPartsTestBodyPart::GetOwnedGameplayTags(FGameplayTagContainer& TagContainer) const

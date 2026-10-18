@@ -161,6 +161,13 @@ bool FRpgCharacterPartList::SpawnActorForEntry(FRpgAppliedCharacterPartEntry& En
 				{
 					SpawnedRootComponent->AddTickPrerequisiteComponent(ComponentToAttachTo);
 				}
+				// Meshes below the part's root need it too: a body that copies the parent's pose must tick after
+				// the parent, or it shows the previous frame's pose.
+				TInlineComponentArray<USkinnedMeshComponent*> PartMeshes(SpawnedActor);
+				for (USkinnedMeshComponent* PartMesh : PartMeshes)
+				{
+					PartMesh->AddTickPrerequisiteComponent(ComponentToAttachTo);
+				}
 			}
 
 			Entry.SpawnedComponent = PartComponent;
