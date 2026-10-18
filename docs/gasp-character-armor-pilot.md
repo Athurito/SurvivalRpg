@@ -1,6 +1,6 @@
 # GASP-16 – Character and armor pilot
 
-Status: **In progress** since 2026-10-18. Phases A, B and C are done; Phase D is built, and Phase D2 (MetaHuman base body) is next. On 2026-10-18 the user changed the design to Lyra Character Parts (see [Decisions](#decisions)). Defined in [#262](https://github.com/Athurito/SurvivalRpg/pull/262) after the user added character packs to the asset library and chose the pilot character and the character-editor scope. This report is the task report.
+Status: **In progress** since 2026-10-18. Phases A, B and C are done; Phase D is built and Phase D2 (MetaHuman base body) is built and checked in PIE. The rest of Phase D (inventory equip, late join, dedicated server, death and respawn) is next. On 2026-10-18 the user changed the design to Lyra Character Parts (see [Decisions](#decisions)). Defined in [#262](https://github.com/Athurito/SurvivalRpg/pull/262) after the user added character packs to the asset library and chose the pilot character and the character-editor scope. This report is the task report.
 
 ## Goal
 
@@ -118,6 +118,7 @@ Since `GASP-15`, the CMC pawns play the plain Lyra mannequin `SKM_Manny_Simple_G
 - 2026-10-18 (user): the packs are under the Fab Standard License. The user believes most were bought with the Professional tier, although the listings show "Standard".
 - 2026-10-18 (user): after the finding that the Polyphoria pack ships no naked body, use a MetaHuman body as the base body under the Paladin armor. This brings the MetaHuman plugins into scope, which the definition had left out. UE 5.8 ships them under `Engine/Plugins/MetaHuman` (`MetaHumanCharacter` is the in-editor Creator). The pack's `MH_Creator/MHC_paladin` is a MetaHuman Character asset made for this outfit.
 - 2026-10-18 (user): the base body is the pack's `MHC_paladin`, and the MetaHuman body becomes part of `GASP-16` (Phase D2) instead of a separate package.
+- 2026-10-18 (user): more MetaHumans follow later as male player variants under the same Paladin armor, in a separate package after Phase D2. Female variants stay out of scope.
 - Earlier, still in force: Manny (`SK_Mannequin`) is the gameplay and animation skeleton (`GASP-14`/`GASP-15`), and `SK_Mannequin` gets no bone or hierarchy change.
 
 ## C++ boundary
@@ -369,7 +370,82 @@ Items, Experience and map:
 
 **Not yet done:**
 - equipping through the inventory in PIE (the chest is in the map);
-- the PIE network test;
+- the late-join part of the PIE network test (listen server with clients passed in Phases D and D2);
 - a dedicated server;
 - death, ragdoll and respawn;
 - Phases E and F.
+
+### Phase D2 – MetaHuman base body (2026-10-18)
+
+Built in the asset library and the SurvivalRpg editor through the MCP workflow (ports 8001 and 8000). Raw evidence, scripts and images are in `Saved/Gasp16/PhaseD2`.
+
+**Asset library (not in the repository)**
+- `Assets_3DAssets.uproject` enables `MetaHumanCharacter`.
+- `MHC_paladin` was assembled with `MetaHumanCharacterEditorSubsystem.build_meta_human`: pipeline Optimized, quality Medium, into `/Game/MetaHumans_G16` (233 assets, 254 MB).
+- The build logged control-rig "Cannot break link" errors but produced every asset.
+- Before migration, these changes were made there:
+  - The face mesh lost its post-process AnimBP, its DNA asset user data and its physics asset (`PHYS_Face` previews the template `SKM_Face`).
+  - Both meshes lost their default animating rig.
+  - The body post-process became `ABP_MHPaladin_BodyPostProcess`: a copy of `ABP_Body_PostProcess` without the head-movement control rig and with the RigLogic body correctives always on.
+
+**Decisions from measurements**
+- **Skeleton.** The MetaHuman body has 342 bones and the GASP `SK_Mannequin` 161. The body therefore keeps its own `metahuman_base_skel`, and no mannequin skeleton gains a bone. `ABP_RpgPart_CopyPose_MetaHuman` copies the pose from the attach parent by bone name.
+- **Face.** The MetaHuman face replaces the light Polyphoria head, which left a gap at the neck on this body.
+  - It follows the body by Leader Pose with a neutral expression: no RigLogic face, no facial animation, no eye look-at.
+  - Mesh budget at LOD 0, 1 and 2:
+
+    | Mesh | Bones | Vertices |
+    | --- | --- | --- |
+    | Face (Optimized Medium) | 875 | 4,065 / 903 / 244 |
+    | Body (Optimized Medium) | 342 | 8,568 / 3,974 / 1,239 |
+    | `SKM_Manny_Simple`, for comparison | – | 48,705 / 24,928 / 16,736 |
+
+  - Phase F measures the cost with four characters.
+- **Plugins.** SurvivalRpg needs no new one. `MetaHumanCharacter` and `MetaHumanCoreTech` have been enabled since the GASP import (`9d631625`) and bring `RigLogic` (body correctives) and `HairStrands` (grooms).
+
+**Content in SurvivalRpg** (205 packages, 180.7 MB; manifest section `metahuman`)
+- **`Characters/MetaHumans/Common` and `MH_Paladin`:** the migrated body, face, hair and eyebrow grooms with their bindings and card meshes, and the shared MetaHuman materials and skeletons. `Common` is meant to be shared by the later player variants.
+- **Excluded:** `ABP_Face`, the face post-process, `CR_MetaHuman_HeadMovement_IK_Proc`, the face control board and `MetaHuman_ControlRig`.
+- **Texture cap:** `T_Body_BC_VT` was resized from 8192 to 2048 px; every other texture was already at or below 2048 px.
+- **`Materials/M_MetaHumanSkin_CoverMask`:**
+  - It is a masked copy of `M_skin_unified_baked`. The product of the R channels of `Hat`, `UpperBody`, `Hands`, `LowerBody`, `Feet` and `Socks Mask` drives its opacity mask, using the parameter names and sampler type of Polyphoria's `M_Skin_master`.
+  - Only the root instance `MI_Head_Baked_LOD0_VT` uses it. The body and face skin instances keep their original parent chain and static switches.
+- **`Parts/B_RpgPart_MetaHumanBody`:** a generic body part (`ARpgTaggedActor`, `Cosmetic.Body`).
+  - Components:
+    - `Body`, with the copy-pose AnimBP and the `CharacterPartLeader` tag;
+    - `Face`, which follows `Body` by Leader Pose;
+    - `Hair` and `Eyebrows` grooms on `FACIAL_C_FacialRoot`;
+    - a `LODSync` component with the MetaHuman mapping (body and face drive; the grooms use LODs 3, 5 and 7).
+  - Logic: `UpdateCover` sets the cover masks on the body and face skin and hides the hair under `Cosmetic.Cover.Head`. `FaceSkinSlot` names the face skin material slot.
+- **`Parts/B_RpgPart_MetaHumanPaladin`:** a data-only child that sets the Paladin meshes and grooms.
+- **Re-pointed and removed:**
+  - `BPC_RpgControllerParts_PaladinBody` now adds the MetaHuman Paladin.
+  - The Polyphoria head-and-hands part `B_RpgPart_PaladinBody` is deleted.
+  - The armor parts are unchanged.
+
+**PIE checks (`Lvl_RpgGaspPaladin`)**
+- **Pose.** The body copies the gameplay pose within 0.12 cm (root to `ball_l`, idle), and the face bones match the body exactly.
+- **Rendering.** Skin, hair and eyebrows render. The full armor follows the body; all five pieces have it as leader.
+- **Subsets** (server through `AddCharacterPart`):
+
+  | Worn pieces | Masks set | Visible |
+  | --- | --- | --- |
+  | Chest and boots | upper-body and feet | hands, head, hair |
+  | Helmet and pants | hat and lower-body | upper body, feet; hair hidden |
+
+- **Listen server with one client.** The client sees the server pawn as a simulated proxy with the same three parts, masks and hidden hair, and its followers are bound to the MetaHuman body (3/3). Its own pawn matches the server's view of it.
+- **Data validation.** All 212 assets in the new and changed folders are valid with 0 warnings, and all part Blueprints compile.
+
+**Failed attempts (fixed)**
+1. **Editor crash on the first move.** Moving the first migration inside SurvivalRpg crashed the editor: a RigVM assertion from `ABP_Face` while rendering the face thumbnail. Fixed by cutting the rigs in the asset library and migrating again.
+2. **Rigs back through editor-only references.** The second migration still pulled in the control rigs and `SKM_Face`, through `DefaultAnimatingRig` and the face physics asset's preview mesh. Both references were cleared before the final migration.
+3. **Grey skin after reparenting.** Reparenting the skin instances directly onto the masked material dropped their parent chain and static switches (`Use Baked Material`, `Use Virtual Texture` and others), so the skin rendered grey. The chain was restored, only the root instance moved, and the original switch values (read from the asset library by commandlet) were applied again.
+4. **Grooms invisible in PIE.** The grooms rendered in the editor but not in PIE. The Optimized grooms only carry LODs 3, 5 and 7 and need the LOD sync mapping. `LODSync` and the groom attachment were added as in the assembled `BP_MH_Paladin`.
+5. **PIE start hung on a modal.** Right after the move, a stale in-memory compile state of the post-process AnimBP left the PIE start waiting on the Blueprint error dialog. After an editor restart it compiled cleanly.
+
+**Limits**
+- **Face and correctives.** The face has a neutral expression. The body correctives come from RigLogic; the head-movement IK is gone.
+- **LOD sync.** The armor parts (one LOD each) are not part of it.
+- **Unused Polyphoria Base packages.** 34 packages (30.3 MB: the old head and hands, skin, eye and hair materials and textures, and two unused masks) are no longer referenced. They are listed in the manifest and kept until the user decides.
+- **VRAM.** With three editors open, the GPU ran out of video memory; the listen-server images show the warning. Phase F measures cost with only one editor running.
+- **Still open from Phase D:** equipping through the inventory, late join, the dedicated server, and death, ragdoll and respawn.
