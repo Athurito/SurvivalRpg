@@ -354,6 +354,9 @@ All assets live in `GF_Harvesting_Magic` and are authored through Unreal MCP.
     report their camera. Harvesting is not enabled in those experiences. To
     enable it there, the client first has to send its aim with the activation
     as target data.
+- **Presentation (VFX-07):** a lightning strike bursts every vein Rift Grip
+  harvests, through the per-resource `TargetGameplayCue` of harvest abilities.
+  See [vfx-rift-grip.md](vfx-rift-grip.md).
 
 ## Weak points (HARV-05)
 

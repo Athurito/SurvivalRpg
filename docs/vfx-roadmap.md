@@ -72,5 +72,5 @@ its own row below.
 | VFX-03 | Soul harvest: wisps from killed enemies to the player when XP is awarded (`GF_Progression`), with a cue hook in the XP award and a multiplayer check | Merged | [vfx-soul-harvest.md](vfx-soul-harvest.md), [PR #261](https://github.com/Athurito/SurvivalRpg/pull/261) |
 | VFX-04 | Portal closing: destabilise, rune ring locks, implosion, scar (`GF_Portals_Core`, `GA_ClosePortal`) | Planned | |
 | VFX-05 | Spell prototypes (seal break, rift bolt, ash fetter in `GF_Combat_Magic`) and Rift Sense (`GF_Harvesting_Magic`) | Planned | |
-| VFX-06 | Ash Wave: the Death Wave form ignites and chars the felled trees and leaves a burned area (`GF_Harvesting_Magic`), with form cues on harvest abilities and a multiplayer check | In review | [vfx-ash-wave.md](vfx-ash-wave.md) |
-| VFX-07 | Rift Grip: a short lightning strike hits each ore vein, which bursts into rock debris, dust and sparks (`GF_Harvesting_Magic`) | Planned | |
+| VFX-06 | Ash Wave: the Death Wave form ignites and chars the felled trees and leaves a burned area (`GF_Harvesting_Magic`), with form cues on harvest abilities and a multiplayer check | Merged | [vfx-ash-wave.md](vfx-ash-wave.md), [PR #263](https://github.com/Athurito/SurvivalRpg/pull/263) |
+| VFX-07 | Rift Grip: a short lightning strike hits each ore vein, which bursts into rock debris, dust and sparks (`GF_Harvesting_Magic`), with per-resource cues on harvest abilities and a multiplayer check | In review | [vfx-rift-grip.md](vfx-rift-grip.md) |
