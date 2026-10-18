@@ -144,6 +144,7 @@ How the bolt is built:
   - The test uses the real tag, so the client worlds also ran the real notify: the log shows `NS_Harvest_RiftGrip_Strike` initialised four times, two cubes on each of two clients.
 - **Regression proof for the network budget:** without `net.MaxRPCPerNetUpdate=10`, the new network test timed out: every client got the two target cues but not the success cue. GAS logged *"no more RPCs are allowed this net update. Max:2"*. With the setting, the log has no such warning.
 - **Look:** checked in Simulate with `slomo 0.05` in `Lvl_HarvestPickaxe` on its real actor veins and in the gallery demo. Checked at Epic and at Low (`sg.EffectsQuality 0`).
+- **Review (2026-10-18):** the project owner played the cast in single player and approved the look and the sounds. The two-player playtest has not been run yet.
 - **Asset validation:** the 25 new or changed assets are valid with 0 warnings, the gallery map included. No dependency points into the asset library projects.
 - **Cook:** `python Build/Tools/Unreal/ue.py cook /GF_Dev_Sandbox/Maps/Lvl_VfxGallery /GF_Harvesting_Magic/Harvesting/Tests/Lvl_HarvestPickaxe` passed with 0 errors and cooked the system, the cue, the demo, the sounds and the core assets.
   - Three of its 5 warnings already existed: Steam disabled, no `GameplayCueNotifyPaths`, and the `CUI_RespawnScreen` tick.
@@ -178,8 +179,8 @@ How the bolt is built:
   - the network test (dedicated server, two clients, real notify);
   - the gallery demo on real vein meshes.
 
-  The two-player cast is the playtest above.
-- **Sounds:** chosen by name and length and not judged by ear. The three cracks come from a magic spell pack's lightning set (stereo), not from recorded thunder.
+  The two-player cast is the playtest above; the project owner has so far played it in single player only.
+- **Sounds:** the three cracks come from a magic spell pack's lightning set (stereo), not from recorded thunder. The project owner approved them by ear in single player.
 - **Ordering:** the cue and the vein's stock reach a client separately. The vein can shrink a frame before or after the bolt.
 - **Ground:** debris and grit bounce on a flat plane at the height found next to the vein. They do not follow slopes or other rocks.
 - **Ceilings:** the upward trace uses the visibility channel, so trees or other blocking objects above a vein shorten the bolt too.
