@@ -110,6 +110,7 @@ Since `GASP-15`, the CMC pawns play the plain Lyra mannequin `SKM_Manny_Simple_G
 - 2026-10-18 (user): adopt Lyra's Character Parts instead of armor actors spawned through `ActorsToSpawn`. The visible body copies the pose and drives its corrective bones; the armor follows the body by Leader Pose. This changes the C++ boundary below.
 - 2026-10-18 (user): cap migrated textures at 2K.
 - 2026-10-18 (user): the packs are under the Fab Standard License. The user believes most were bought with the Professional tier, although the listings show "Standard".
+- 2026-10-18 (user): after the finding that the Polyphoria pack ships no naked body, use a MetaHuman body as the base body under the Paladin armor. This brings the MetaHuman plugins into scope, which the definition had left out. UE 5.8 ships them under `Engine/Plugins/MetaHuman` (`MetaHumanCharacter` is the in-editor Creator). The pack's `MH_Creator/MHC_paladin` is a MetaHuman Character asset made for this outfit.
 - Earlier, still in force: Manny (`SK_Mannequin`) is the gameplay and animation skeleton (`GASP-14`/`GASP-15`), and `SK_Mannequin` gets no bone or hierarchy change.
 
 ## C++ boundary
