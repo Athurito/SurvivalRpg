@@ -13,7 +13,7 @@ frühere Fassung mit Schnellstart-Verlauf und Aufgabenverträgen liegt in der
 
 ## Nächster bereiter Schritt
 
-Kein Schritt ist **Bereit**; der Nutzer markiert das nächste Paket als **Bereit**.
+Kein Schritt ist **Bereit**; der Nutzer markiert das nächste Paket als **Bereit**. `GASP-16` ist definiert ([Definition](gasp-character-armor-pilot.md)) und wartet darauf.
 `GASP-STAB-06` ist gemergt ([#257](https://github.com/Athurito/SurvivalRpg/pull/257), [Bericht](gasp-block-turn.md)): Ein Blockdruck nach einer Kameradrehung richtet
 Körper und Schild auf allen Rollen sofort aus, und die Rechts-Turns unter Block holen nicht mehr gegen die Drehrichtung aus.
 `GASP-15` ist gemergt ([#254](https://github.com/Athurito/SurvivalRpg/pull/254)): Die CMC-Pawns spielen das Lyra-Manny-Skelett
@@ -97,7 +97,7 @@ mit **Bereit** in die Statustabelle oben.
 
 | ID | Arbeitspaket | Status | Plan |
 | --- | --- | --- | --- |
-| `GASP-16` | Charakter- und Rüstungspilot (Asset-Auswahl durch den Nutzer), Rüstungs-Foley aus `GASP-13` | **Geplant** | [Plan](gasp-movement-plan.md#gasp-16-character-and-armor-pilot) |
+| `GASP-16` | Charakter- und Rüstungspilot: MetaHuman-Paladin von Polyphoria auf Manny, eine modulare Rüstung als Ausrüstung per Leader Pose, Knight_01 als Vergleich; ohne Sound und Charakter-Editor | **Definiert** 18.10.2026, wartet auf **Bereit** | [Definition](gasp-character-armor-pilot.md), [Plan](gasp-movement-plan.md#gasp-16-character-and-armor-pilot) |
 
 ## Arbeitsregeln über mehrere Chats
 
