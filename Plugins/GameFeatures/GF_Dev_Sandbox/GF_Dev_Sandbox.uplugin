@@ -22,6 +22,7 @@
 		{ "Name": "GF_AI_RiftMonsters", "Enabled": true },
 		{ "Name": "GF_Harvesting_Magic", "Enabled": true },
 		{ "Name": "GF_Portals_Core", "Enabled": true },
-		{ "Name": "GF_AI_Wildlife", "Enabled": true }
+		{ "Name": "GF_AI_Wildlife", "Enabled": true },
+		{ "Name": "GF_Runes_Core", "Enabled": true }
 	]
 }
