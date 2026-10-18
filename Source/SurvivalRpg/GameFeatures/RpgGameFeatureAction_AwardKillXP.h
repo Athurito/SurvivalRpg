@@ -22,8 +22,18 @@ public:
 	virtual void OnGameFeatureActivating(FGameFeatureActivatingContext& Context) override;
 	virtual void OnGameFeatureDeactivating(FGameFeatureDeactivatingContext& Context) override;
 
+	/** Designer-authored XP per enemy level, one curve per reward row of URpgExperienceRewardComponent. Server only. */
 	UPROPERTY(EditAnywhere, Category = "XP", meta = (AssetBundles = "Server"))
 	TSoftObjectPtr<UCurveTable> EnemyXPRewardCurveTable;
+
+	/**
+	 * Cosmetic GameplayCue the server executes on the killer's ability system when a kill awards XP. The cue
+	 * parameters carry the victim's location in Location and the awarded XP in RawMagnitude. Every client with the
+	 * killer's player state and character plays it on the character, the killer's own client included. Empty means
+	 * no cue.
+	 */
+	UPROPERTY(EditAnywhere, Category = "XP|Presentation", meta = (Categories = "GameplayCue"))
+	FGameplayTag XPAwardGameplayCueTag;
 
 private:
 	struct FPerContextData
@@ -38,6 +48,7 @@ private:
 	void Reset(FPerContextData& ActiveData);
 	void HandleActorKilled(FGameplayTag Channel, const FRpgCombatActorKilledMessage& Message);
 	float ResolveXPReward(const URpgExperienceRewardComponent* RewardComponent) const;
+	void ExecuteXPAwardCue(ARpgPlayerState& KillerPlayerState, AActor& Victim, float XPReward) const;
 	ARpgPlayerState* ResolveKillerPlayerState(const FRpgCombatActorKilledMessage& Message) const;
 	ARpgPlayerState* ResolvePlayerStateFromActor(AActor* Actor) const;
 

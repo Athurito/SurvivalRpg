@@ -33,6 +33,7 @@ public class SurvivalRpgEditor : ModuleRules
 			"GF_Harvesting_Magic",
 			"GameFeatures",
 			"GameplayAbilities",
+			"GameplayMessageRuntime",
 			"GameplayStateTreeModule",
 			"GameplayTags",
 			"IKRig",
