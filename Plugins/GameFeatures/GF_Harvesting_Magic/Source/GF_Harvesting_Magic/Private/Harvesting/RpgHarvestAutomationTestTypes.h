@@ -300,6 +300,11 @@ public:
 	}
 	void ConfigureCooldown(const TSubclassOf<UGameplayEffect> InCooldownEffect) { CooldownGameplayEffectClass = InCooldownEffect; }
 	void ConfigureYieldConversions(const TArray<FRpgHarvestYieldConversion>& InConversions) { YieldConversions = InConversions; }
+	void ConfigureSuccessCues(const FGameplayTag InSuccessCue, const TArray<FRpgHarvestFormGameplayCue>& InFormCues)
+	{
+		SuccessGameplayCue = InSuccessCue;
+		FormSuccessGameplayCues = InFormCues;
+	}
 	void ConfigureStride(const FRpgHarvestStrideParams& InStride, const FGameplayTag InCueTag)
 	{
 		Stride = InStride;

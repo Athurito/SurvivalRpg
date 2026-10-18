@@ -24,6 +24,7 @@
 #include "SurvivalRpg/UI/IndicatorSystem/RpgIndicatorManagerComponent.h"
 #include "Blueprint/UserWidget.h"
 
+#include "AbilitySystemGlobals.h"
 #include "Animation/AnimMontage.h"
 #include "Components/BoxComponent.h"
 #include "Components/SceneComponent.h"
@@ -33,6 +34,8 @@
 #include "EngineUtils.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
+#include "GameplayCueManager.h"
+#include "Misc/ScopeExit.h"
 #include "NativeGameplayTags.h"
 #include "UObject/UnrealType.h"
 
@@ -44,6 +47,8 @@ UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestTuningTest_Blast, "SkillTree.Node.Harve
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestTuningTest_Cooldown, "Cooldown.HarvestTuningTest");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestYieldTest_Form, "Harvest.Form.AutomationTest");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestStrideTest_Cue, "GameplayCue.HarvestStrideTest");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestFormCueTest_Plain, "GameplayCue.HarvestFormCueTest.Plain");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestFormCueTest_Form, "GameplayCue.HarvestFormCueTest.Form");
 
 namespace RpgHarvestAbilityTests
 {
@@ -2507,6 +2512,88 @@ bool FRpgHarvestYieldSwarmTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("The swarm harvests all twelve sections"), Swarm->GetHarvestedSections(), 12);
 	TestEqual(TEXT("Its 24 inputs convert at the summon's ratio into four outputs"), CountOutput(Harvester.PlayerState), 4);
 	TestEqual(TEXT("Four inputs remain as material"), CountMaterial(Harvester.PlayerState), 4);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestFormCueTest,
+	"SurvivalRpg.Harvesting.Feedback.FormSelectsSuccessCueAtAreaCenter",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestFormCueTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestTuningTests;
+
+	struct FRoutedCue
+	{
+		FGameplayTag Tag;
+		FVector Location = FVector::ZeroVector;
+		float RawMagnitude = 0.0f;
+	};
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	UGameplayCueManager* CueManager = UAbilitySystemGlobals::Get().GetGameplayCueManager();
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()) || !TestNotNull(TEXT("Cue manager exists"), CueManager))
+	{
+		return false;
+	}
+	RpgHarvestAutomation::AddInstanceStock(World);
+	ARpgHarvestAutomationInstancesActor* Grove = SpawnGrove(World, Harvester.Pawn->BaseEyeHeight);
+	const FGrantedAbility Power = GrantAreaAbility(Harvester.AbilitySystem, nullptr, 700.0f);
+	if (!TestNotNull(TEXT("Grove exists"), Grove) || !TestNotNull(TEXT("Area power exists"), Power.Instance))
+	{
+		return false;
+	}
+	FRpgHarvestTargetingParams AreaTargeting;
+	AreaTargeting.Shape = ERpgHarvestTargetShape::AreaAtAimPoint;
+	AreaTargeting.MaxAimDistance = 1000.0f;
+	AreaTargeting.MaxReachFromAvatar = 700.0f;
+	AreaTargeting.AreaRadius = 450.0f;
+	AreaTargeting.MaxTargets = 3;
+	Power.Instance->ConfigureTargeting(AreaTargeting);
+	FRpgHarvestFormGameplayCue FormCue;
+	FormCue.RequiredOwnerTag = TAG_HarvestYieldTest_Form;
+	FormCue.GameplayCue = TAG_HarvestFormCueTest_Form;
+	Power.Instance->ConfigureSuccessCues(TAG_HarvestFormCueTest_Plain, {FormCue});
+	TestWorld.PrimeTimerManager();
+
+	TArray<FRoutedCue> RoutedCues;
+	const FDelegateHandle RoutedHandle = CueManager->OnGameplayCueRouted().AddLambda(
+		[&RoutedCues](AActor*, const FGameplayTag Tag, const EGameplayCueEvent::Type Event,
+			const FGameplayCueParameters& CueParameters, EGameplayCueExecutionOptions)
+		{
+			if (Event == EGameplayCueEvent::Executed &&
+				(Tag == TAG_HarvestFormCueTest_Plain.GetTag() || Tag == TAG_HarvestFormCueTest_Form.GetTag()))
+			{
+				RoutedCues.Add({Tag, FVector(CueParameters.Location), CueParameters.RawMagnitude});
+			}
+		});
+	ON_SCOPE_EXIT
+	{
+		CueManager->OnGameplayCueRouted().Remove(RoutedHandle);
+	};
+
+	const FVector AreaCenter = Evaluate(Harvester.AbilitySystem, Power).AimPoint;
+	TestTrue(TEXT("Without the form the power executes"), Harvester.AbilitySystem->TryActivateAbility(Power.Handle));
+	if (!TestEqual(TEXT("The commit plays one success cue"), RoutedCues.Num(), 1))
+	{
+		return false;
+	}
+	TestEqual(TEXT("Without the form the plain success cue plays"), RoutedCues[0].Tag, TAG_HarvestFormCueTest_Plain.GetTag());
+	TestTrue(TEXT("An area cue plays at the area's center"), RoutedCues[0].Location.Equals(AreaCenter, 1.0));
+	TestEqual(TEXT("An area cue carries the area radius"), RoutedCues[0].RawMagnitude, 450.0f);
+
+	Harvester.AbilitySystem->AddLooseGameplayTag(TAG_HarvestYieldTest_Form);
+	TestTrue(TEXT("With the form the power executes"), Harvester.AbilitySystem->TryActivateAbility(Power.Handle));
+	if (!TestEqual(TEXT("The second commit plays one success cue"), RoutedCues.Num(), 2))
+	{
+		return false;
+	}
+	TestEqual(TEXT("The form's cue replaces the plain cue"), RoutedCues[1].Tag, TAG_HarvestFormCueTest_Form.GetTag());
+	TestEqual(TEXT("The form's cue carries the area radius too"), RoutedCues[1].RawMagnitude, 450.0f);
 	return true;
 }
 

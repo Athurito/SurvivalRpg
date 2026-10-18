@@ -36,6 +36,24 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestStrideParams
 };
 
 /**
+ * Success cue of one skill tree form, for example the burning ground of Ash Wave, so a form can look different from
+ * the plain power. Designer data on the ability.
+ */
+USTRUCT(BlueprintType)
+struct GF_HARVESTING_MAGIC_API FRpgHarvestFormGameplayCue
+{
+	GENERATED_BODY()
+
+	/** Owner tag that selects the cue, for example Harvest.Form.AshWave. Entries without a tag are ignored. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Feedback")
+	FGameplayTag RequiredOwnerTag;
+
+	/** Cosmetic cue executed instead of the ability's SuccessGameplayCue while the owner has RequiredOwnerTag. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Feedback", meta = (Categories = "GameplayCue"))
+	FGameplayTag GameplayCue;
+};
+
+/**
  * Values of one harvest after the learned skill tree tunings of the source weapon were applied to the ability's
  * authored values. The preview resolves them each time; the server captures them when execution starts.
  */
@@ -52,6 +70,9 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestTunedValues
 
 	/** Yield conversions whose owner tag the ability's owner has. */
 	TArray<FRpgHarvestYieldConversion> YieldConversions;
+
+	/** Success cue of the first form whose owner tag the owner has, otherwise the ability's SuccessGameplayCue. */
+	FGameplayTag SuccessGameplayCue;
 };
 
 /**
@@ -251,9 +272,24 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Execution", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "3.0", Units = "s"))
 	float CommitDelaySeconds = 0.0f;
 
-	/** Cosmetic cue executed on the server at the first harvested target; a stride executes it on every pulse that harvests. */
+	/**
+	 * Cosmetic cue the server executes on the harvester's ability system when the commit harvested something; a stride
+	 * executes it on every pulse that harvests, a swarm when it is summoned. Every machine plays it, the harvesting
+	 * client included.
+	 * - Single-target swings: Location and Normal are the struck point.
+	 * - Area harvests: Location is the area's center (the aim point, or the harvester for an area around it), Normal
+	 *   points up, and RawMagnitude carries the tuned area radius in centimeters.
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Feedback", meta = (Categories = "GameplayCue"))
 	FGameplayTag SuccessGameplayCue;
+
+	/**
+	 * Success cues of skill tree forms. The first entry whose RequiredOwnerTag the owner has replaces
+	 * SuccessGameplayCue, for example Ash Wave's burning ground on Death Wave. The server captures the choice with the
+	 * tuned values when execution starts. Designer data, cosmetic.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Feedback")
+	TArray<FRpgHarvestFormGameplayCue> FormSuccessGameplayCues;
 
 	/** Cosmetic cue executed on the server at the aim point when the commit harvested nothing, for example an empty node. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Feedback", meta = (Categories = "GameplayCue"))
@@ -303,8 +339,17 @@ protected:
 	FGameplayTag StrideGameplayCue;
 
 private:
-	/** Server: executes CueTag, when set, at Location for the current activation. */
-	void ExecuteHarvestCue(FGameplayTag CueTag, const FVector& Location, const FVector& Normal) const;
+	/** Server: executes CueTag, when set, at Location for the current activation; RawMagnitude carries AreaRadius. */
+	void ExecuteHarvestCue(FGameplayTag CueTag, const FVector& Location, const FVector& Normal, float AreaRadius = 0.0f) const;
+
+	/**
+	 * Server: executes the success cue of Values for a commit or pulse that harvested FirstHarvested, at the area's
+	 * center for area harvests and at the struck point otherwise.
+	 */
+	void ExecuteSuccessCue(
+		const FRpgHarvestTunedValues& Values,
+		const FRpgHarvestPreview& Selection,
+		const FRpgHarvestTargetEvaluation& FirstHarvested) const;
 
 	/** Server: summons the swarm at the selection's aim point; returns whether any creature reserved a resource. */
 	bool SummonSwarm(

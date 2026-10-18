@@ -193,3 +193,28 @@ public:
 	 */
 	void ConfigureStride(float Radius, float DurationSeconds, float PulseSeconds, int32 Sections, FGameplayTag CueTag);
 };
+
+/**
+ * Area harvest around the harvester that commits as soon as it activates, inside the owning client's predicted
+ * activation, and executes GetCueTag() as its success and no-yield cue. Configured when it is given, so the server
+ * and the predicting client run the same ability.
+ */
+UCLASS(NotBlueprintable)
+class URpgNetworkAutomationHarvestCueAbility final : public URpgGameplayAbility_Harvest
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgNetworkAutomationHarvestCueAbility(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	/** Area radius of the harvest in cm. */
+	static constexpr float AreaRadiusCm = 250.0f;
+
+	/** Cue the ability executes when it commits: the configured Ash Wave cue. */
+	static FGameplayTag GetCueTag();
+
+protected:
+	//~ UGameplayAbility interface
+	virtual void OnGiveAbility(const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilitySpec& Spec) override;
+	//~ End UGameplayAbility interface
+};

@@ -216,3 +216,28 @@ void URpgNetworkAutomationStrideAbility::ConfigureStride(
 	Stride.PulseIntervalSeconds = PulseSeconds;
 	StrideGameplayCue = CueTag;
 }
+
+URpgNetworkAutomationHarvestCueAbility::URpgNetworkAutomationHarvestCueAbility(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	HarvestAbilityId = RpgHarvestingMagicGameplayTags::Ability_Harvesting_Manual;
+	Targeting.Shape = ERpgHarvestTargetShape::AreaAroundHarvester;
+	Targeting.AreaRadius = AreaRadiusCm;
+	Targeting.MaxTargets = 1;
+}
+
+void URpgNetworkAutomationHarvestCueAbility::OnGiveAbility(
+	const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayAbilitySpec& Spec)
+{
+	Super::OnGiveAbility(ActorInfo, Spec);
+	// Config tags are not loaded yet when the class default object is built, so the instance takes the cue here, on
+	// the server and on the owning client alike.
+	SuccessGameplayCue = GetCueTag();
+	NoYieldGameplayCue = GetCueTag();
+}
+
+FGameplayTag URpgNetworkAutomationHarvestCueAbility::GetCueTag()
+{
+	return FGameplayTag::RequestGameplayTag(TEXT("GameplayCue.Harvesting.AshWave"));
+}
