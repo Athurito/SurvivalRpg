@@ -11,7 +11,7 @@ Everything shared lives under `Content/SurvivalRpg/FX`:
 | Folder | Content |
 | --- | --- |
 | `EffectTypes` | `FXT_Gameplay_Burst`, `FXT_Gameplay_Looping` |
-| `Materials` | Master materials `M_FX_SmokeAndFire`, `M_FX_Additive`, `M_FX_Distortion` and `MPC_FX_Exposure` |
+| `Materials` | Master materials `M_FX_SmokeAndFire`, `M_FX_Additive`, `M_FX_Distortion`, `MPC_FX_Exposure`, and the weapon rune overlay `M_FX_RuneOverlay` (added in VFX-02, see [vfx-echo-rune.md](vfx-echo-rune.md)) |
 | `Materials/Functions` | `MF_FX_ExposureCompensation`, `MF_FX_FastSphereNormal` |
 | `Materials/Instances` | `MI_FX_SmokePuff`, `MI_FX_SmokeWispy`, `MI_FX_SoftGlow`, `MI_FX_HeatHaze` |
 | `Textures` | Smoke flipbooks, masks and utility maps |
@@ -52,6 +52,7 @@ Everything shared lives under `Content/SurvivalRpg/FX`:
 | `T_FX_BaseEOO`, `T_FX_BaseNormal` | Niagara Examples utility defaults | 32 px | Material defaults |
 | `T_FX_SoftDot` | Generated procedurally (project-owned), grayscale | 128 px | Spark, ember and glow mask; distortion falloff |
 | `T_FX_HeatNoise_N` | Generated procedurally (project-owned), tileable sum-of-sines normal map | 256 px | Heat haze offset |
+| `T_FX_RuneGlyphs` | Generated procedurally (project-owned): three engraved runes, R stroke and G halo (VFX-02) | 384×128 px | Weapon rune overlay |
 
 All FX textures use the `Effects` texture group. The flipbooks keep their 2048 px source but cook at most 1024 px (128 px per frame).
 
@@ -66,7 +67,7 @@ Both types are distance-significance based. Neither culls effects owned by, atta
 
 Visibility culling:
 - **Burst:** pre-culls spawns outside the view frustum.
-- **Looping:** culls after 1 s outside the frustum or 2 s without rendering.
+- **Looping:** culls after 1 s outside the frustum. VFX-02 turned off culling after 2 s without rendering: a looping effect that is legitimately empty, such as rune embers at charge 0, never renders, so it was culled and could never resume.
 
 ### Template systems
 
