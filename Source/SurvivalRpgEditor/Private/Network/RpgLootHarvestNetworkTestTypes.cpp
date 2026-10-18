@@ -223,7 +223,7 @@ URpgNetworkAutomationHarvestCueAbility::URpgNetworkAutomationHarvestCueAbility(c
 	HarvestAbilityId = RpgHarvestingMagicGameplayTags::Ability_Harvesting_Manual;
 	Targeting.Shape = ERpgHarvestTargetShape::AreaAroundHarvester;
 	Targeting.AreaRadius = AreaRadiusCm;
-	Targeting.MaxTargets = 1;
+	Targeting.MaxTargets = 2;
 }
 
 void URpgNetworkAutomationHarvestCueAbility::OnGiveAbility(
@@ -235,9 +235,15 @@ void URpgNetworkAutomationHarvestCueAbility::OnGiveAbility(
 	// the server and on the owning client alike.
 	SuccessGameplayCue = GetCueTag();
 	NoYieldGameplayCue = GetCueTag();
+	TargetGameplayCue = GetTargetCueTag();
 }
 
 FGameplayTag URpgNetworkAutomationHarvestCueAbility::GetCueTag()
 {
 	return FGameplayTag::RequestGameplayTag(TEXT("GameplayCue.Harvesting.AshWave"));
+}
+
+FGameplayTag URpgNetworkAutomationHarvestCueAbility::GetTargetCueTag()
+{
+	return FGameplayTag::RequestGameplayTag(TEXT("GameplayCue.Harvesting.RiftGripStrike"));
 }

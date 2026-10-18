@@ -28,7 +28,7 @@ Everything shared lives under `Content/SurvivalRpg/FX`:
 - **Emission:** blackbody colour driven by the temperature channel.
 - **Dynamic Parameter 0:** Emissive Gain, Temperature Scale, Temperature Exponent, Opacity Exponent. Niagara's *Dynamic Material Parameters* module defaults all four to 0. Always set Opacity Exponent to 1, otherwise sprites render as squares. Set Emissive Gain to 0 for smoke that does not glow.
 
-**`M_FX_Additive`** renders sparks, embers and glows.
+**`M_FX_Additive`** renders sparks, embers and glows, on sprites and, since VFX-07, ribbons (the lightning bolt in [vfx-rift-grip.md](vfx-rift-grip.md)).
 - **Setup:** Unlit, Additive.
 - **Emissive:** the `Mask` red channel × particle colour × particle alpha × `Emissive Gain`, passed through `MF_FX_ExposureCompensation`.
 - **Colour:** comes from Niagara as HDR particle colour, for example (6, 2.4, 0.6) for a hot spark.
