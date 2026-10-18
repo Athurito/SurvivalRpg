@@ -318,3 +318,50 @@ A registry closure from the eight root meshes and the masks shows no unreference
   - Never move folders that contain redirectors.
   - Never call `delete_asset` or `load_asset` on a redirector path.
   - A mesh's `skeleton` property is read-only in Python; consolidation is the scriptable route.
+
+### Phase D – Paladin content (in progress, 2026-10-18)
+
+**Built**
+
+Gameplay mesh and parts:
+- `SKM_Manny_Simple_GaspLook_Invis` with `M_Manny_Invis` (masked, opacity 0).
+- `BPC_RpgPawnParts_GaspManny`: a pawn parts component. Its body-style rule switches to the invisible mesh while `Cosmetic.Body` is present.
+- `ABP_RpgPart_CopyPose`: copies the pose from the attach parent and copies curves. The body mesh runs the GASP `ABP_Manny_PostProcess` as its post-process.
+
+Part Blueprints, all `ARpgTaggedActor` children and not replicated:
+- `B_RpgPart_PaladinBody`:
+  - Body and hands; the hands follow the body by Leader Pose.
+  - Material instances for the body and head; `UpdateCover` sets the skin masks from `Cosmetic.Cover.*` and hides the hands under gloves.
+  - The body mesh carries the component tag `CharacterPartLeader`.
+- `B_RpgPart_Follower`: binds every skeletal mesh of the part to the `CharacterPartLeader` mesh, or to `GetMesh()` while there is none. It rebinds on `OnCharacterPartsChanged`.
+- Its five Paladin children, each with its cover tag.
+- `B_RpgPart_Knight01Body` in `GF_Dev_Sandbox`.
+
+Items, Experience and map:
+- `ED_BasicHelmet` gains the helmet part.
+- New `ED_/ID_PaladinChest`, `Bracers`, `Pants` and `Boots` in `GF_Combat_Core`. They have no ability sets and no itemization, and use gear glyphs as placeholder icons.
+- `BPC_RpgControllerParts_PaladinBody`.
+- `RpgGaspPaladinExperience`: the Mantle Experience plus an Add Components action for the pawn and controller parts components.
+- `GF_Dev_Sandbox/Maps/Lvl_RpgGaspPaladin`: a copy of `Lvl_RpgGaspMantle`, with a chest that seeds the five armor items. The map lives in the GameFeature because a `/Game` map may not reference `GF_Combat_Core` items (the asset reference check rejected the first copy).
+
+**Native change:** `ARpgWorldSettings::DefaultGameplayExperience` is now `EditAnywhere` instead of `EditDefaultsOnly`. It is per-level data on the level's world settings, and neither Python nor the MCP object tools can set an `EditDefaultsOnly` property on that instance. Behaviour is unchanged. Build passed.
+
+**PIE probe** (listen server with two clients; the armor was added on the server through `AddCharacterPart`):
+- Every pawn wears the Paladin body part; the gameplay mesh switched to the invisible copy and keeps `ABP_RpgGasp_CMC_Manny`.
+- The body runs `ABP_RpgPart_CopyPose` with `ABP_Manny_PostProcess`; `hand_r` lies within 0.01–0.37 cm of the gameplay mesh.
+- The five armor parts follow the body mesh by Leader Pose and carry their cover tags.
+- The body's material instances switch the skin masks, and the hands hide under the bracers.
+- On both clients the server pawn, a simulated proxy, has the same six parts, tags, leader bindings and masks.
+
+**Finding: the pack has no naked body.**
+- Polyphoria's `Base` body `SK_ma_meta_body_head_01` is head and neck only, plus a separate hands mesh. Confirmed in the asset library with the pack's own materials.
+- The Paladin armor covers everything else, so a Paladin without armor shows a floating head and hands.
+- The skin masks target a real MetaHuman body, which the pack does not include. `SK_tal_nrw_base` is a grey fitting template.
+- Removable armor pieces therefore need a base body. This is a decision for the user (see the PR).
+
+**Not yet done:**
+- equipping through the inventory in PIE (the chest is in the map);
+- the PIE network test;
+- a dedicated server;
+- death, ragdoll and respawn;
+- Phases E and F.
