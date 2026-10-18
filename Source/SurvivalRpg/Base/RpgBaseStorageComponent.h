@@ -142,7 +142,12 @@ private:
 	int32 LastObservedCapacity = INDEX_NONE;
 };
 
-/** Replicated resource list backing a base camp storage component. */
+/**
+ * Replicated resource list backing a base camp storage component.
+ *
+ * Sorting and moving resources reorder the replicated array, so delta struct serialization is disabled for the same
+ * reason as in FRpgInventoryList: its shadow fix-up cannot follow reorders.
+ */
 USTRUCT(BlueprintType)
 struct SURVIVALRPG_API FRpgBaseResourceList : public FFastArraySerializer
 {
@@ -151,11 +156,13 @@ struct SURVIVALRPG_API FRpgBaseResourceList : public FFastArraySerializer
 	FRpgBaseResourceList()
 		: OwnerComponent(nullptr)
 	{
+		SetDeltaSerializationEnabled(false);
 	}
 
 	explicit FRpgBaseResourceList(UActorComponent* InOwnerComponent)
 		: OwnerComponent(InOwnerComponent)
 	{
+		SetDeltaSerializationEnabled(false);
 	}
 
 	TArray<FRpgBaseResourceEntryView> GetAllResources() const;
