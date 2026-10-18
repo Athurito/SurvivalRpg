@@ -129,6 +129,7 @@ URpgEquipmentInstance* FRpgEquipmentList::AddEntry(
 	Result->SetEquippedSlot(EquippedSlot);
 
 	Result->SpawnEquipmentActors(EquipmentCDO->ActorsToSpawn);
+	Result->AddCharacterParts(EquipmentCDO->CharacterParts);
 	MarkItemDirty(NewEntry);
 	return Result;
 }
@@ -168,6 +169,7 @@ void FRpgEquipmentList::RemoveEntry(URpgEquipmentInstance* Instance)
 		Entry.SkillNodeGrants.Reset();
 
 		Instance->DestroyEquipmentActors();
+		Instance->RemoveCharacterParts();
 		EntryIt.RemoveCurrent();
 		MarkArrayDirty();
 		return;

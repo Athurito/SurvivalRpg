@@ -291,6 +291,39 @@ EDataValidationResult URpgEquipmentDefinition::IsDataValid(
 		}
 	}
 
+	for (int32 PartIndex = 0; PartIndex < CharacterParts.Num(); ++PartIndex)
+	{
+		const TSubclassOf<AActor> PartClass = CharacterParts[PartIndex].PartClass;
+		if (!PartClass)
+		{
+			Result = EDataValidationResult::Invalid;
+			Context.AddError(
+				FText::Format(
+					LOCTEXT(
+						"MissingCharacterPartClass",
+						"Equipment definition '{0}' has no part class at CharacterParts[{1}]. Set the part actor class "
+						"or remove the row."),
+					DefinitionPath,
+					FText::AsNumber(PartIndex)));
+			continue;
+		}
+
+		// Every non-dedicated machine spawns parts locally; a replicated part class would appear twice on clients.
+		if (PartClass->GetDefaultObject<AActor>()->GetIsReplicated())
+		{
+			Result = EDataValidationResult::Invalid;
+			Context.AddError(
+				FText::Format(
+					LOCTEXT(
+						"ReplicatedCharacterPart",
+						"Equipment definition '{0}' uses '{1}' at CharacterParts[{2}], but that actor class replicates. "
+						"Character parts are spawned locally on every machine; disable Replicates on the part class."),
+					DefinitionPath,
+					FText::FromString(GetNameSafe(PartClass.Get())),
+					FText::AsNumber(PartIndex)));
+		}
+	}
+
 	if (!bHasValidHandContract)
 	{
 		Result = EDataValidationResult::Invalid;
