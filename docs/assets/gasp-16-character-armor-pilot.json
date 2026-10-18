@@ -1,0 +1,484 @@
+{
+ "schema_version": 1,
+ "task": "GASP-16 Character and armor pilot",
+ "status": "in progress",
+ "repository_base": "d021918f7c2267ade123a3f20cd9b786b2e21272",
+ "branch": "claude/gasp-16-character-armor-pilot",
+ "engine_version": "5.8.3",
+ "decisions": [
+  "2026-10-18 (user): Polyphoria MetaHuman Paladin as pilot character, Knight_01 as comparison",
+  "2026-10-18 (user): Lyra Character Parts; body copies the pose and drives correctives, armor follows the body by Leader Pose",
+  "2026-10-18 (user): cap migrated textures at 2K",
+  "2026-10-18 (user): Fab Standard License"
+ ],
+ "migrated": {
+  "source": "D:/Repos/Assets/Assets_3DAssets",
+  "notes": [
+   "Body, hands and the Knight_01 mesh use the GASP UE5 mannequin skeleton (/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UE5_Mannequins/Meshes/SK_Mannequin) without adding bones.",
+   "Armor keeps the pack skeleton SKEL_metahuman_base.",
+   "25 textures were resized to 2048 px; 52 were already at or below 2048 px.",
+   "Removed after migration: the MetaHuman base body and a second chest variant (pulled in by soft references), the pack copies of the mannequin skeleton and physics asset (consolidated onto the GASP assets), the Knight_01 demo mannequin, and the unreferenced chest colour variant 05_d with its textures and the skirt physics asset.",
+   "The body slot M_teeth12 and the helmet slot \"pasted__Fbx Default Material 1\" have no material, as in the pack."
+  ],
+  "package_count": 114,
+  "bytes": 271682812,
+  "packages": [
+   {
+    "package": "/GF_Dev_Sandbox/Characters/Knight_01/Materials/Knight_01_Body/M_Knight_01_Body",
+    "bytes": 136955
+   },
+   {
+    "package": "/GF_Dev_Sandbox/Characters/Knight_01/Materials/Knight_01_Cloth_01/M_Knight_01_Cloth_01_1",
+    "bytes": 145909
+   },
+   {
+    "package": "/GF_Dev_Sandbox/Characters/Knight_01/Materials/Knight_01_Cloth_02/M_Knight_01_Cloth_02_1",
+    "bytes": 157405
+   },
+   {
+    "package": "/GF_Dev_Sandbox/Characters/Knight_01/Materials/Knight_01_Details/M_Knight_01_Details_1",
+    "bytes": 161216
+   },
+   {
+    "package": "/GF_Dev_Sandbox/Characters/Knight_01/Mesh_UE5/Knight_01_Full/SKM_Knight_01_Full_01",
+    "bytes": 24819025
+   },
+   {
+    "package": "/GF_Dev_Sandbox/Characters/Knight_01/Mesh_UE5/Knight_01_Full/SKM_Knight_01_Full_01_PhysicsAsset",
+    "bytes": 138548
+   },
+   {
+    "package": "/GF_Dev_Sandbox/Characters/Knight_01/Textures/Knight_01_Body/T_Knight_01_Body_Albedo",
+    "bytes": 3999179
+   },
+   {
+    "package": "/GF_Dev_Sandbox/Characters/Knight_01/Textures/Knight_01_Body/T_Knight_01_Body_Ao",
+    "bytes": 1060608
+   },
+   {
+    "package": "/GF_Dev_Sandbox/Characters/Knight_01/Textures/Knight_01_Body/T_Knight_01_Body_Metallic",
+    "bytes": 1228685
+   },
+   {
+    "package": "/GF_Dev_Sandbox/Characters/Knight_01/Textures/Knight_01_Body/T_Knight_01_Body_Normals",
+    "bytes": 3923966
+   },
+   {
+    "package": "/GF_Dev_Sandbox/Characters/Knight_01/Textures/Knight_01_Cloth_01/T_Knight_01_Cloth_01_Albedo_01",
+    "bytes": 5208437
+   },
+   {
+    "package": "/GF_Dev_Sandbox/Characters/Knight_01/Textures/Knight_01_Cloth_01/T_Knight_01_Cloth_01_Ao",
+    "bytes": 1963035
+   },
+   {
+    "package": "/GF_Dev_Sandbox/Characters/Knight_01/Textures/Knight_01_Cloth_01/T_Knight_01_Cloth_01_Metallic",
+    "bytes": 2849937
+   },
+   {
+    "package": "/GF_Dev_Sandbox/Characters/Knight_01/Textures/Knight_01_Cloth_01/T_Knight_01_Cloth_01_Normals",
+    "bytes": 10571487
+   },
+   {
+    "package": "/GF_Dev_Sandbox/Characters/Knight_01/Textures/Knight_01_Cloth_02/T_Knight_01_Cloth_02_Albedo_01",
+    "bytes": 4615323
+   },
+   {
+    "package": "/GF_Dev_Sandbox/Characters/Knight_01/Textures/Knight_01_Cloth_02/T_Knight_01_Cloth_02_Ao",
+    "bytes": 1524191
+   },
+   {
+    "package": "/GF_Dev_Sandbox/Characters/Knight_01/Textures/Knight_01_Cloth_02/T_Knight_01_Cloth_02_Metallic",
+    "bytes": 6803878
+   },
+   {
+    "package": "/GF_Dev_Sandbox/Characters/Knight_01/Textures/Knight_01_Cloth_02/T_Knight_01_Cloth_02_Normals",
+    "bytes": 9218042
+   },
+   {
+    "package": "/GF_Dev_Sandbox/Characters/Knight_01/Textures/Knight_01_Details/T_Knight_01_Details_Albedo_01",
+    "bytes": 5665051
+   },
+   {
+    "package": "/GF_Dev_Sandbox/Characters/Knight_01/Textures/Knight_01_Details/T_Knight_01_Details_Ao",
+    "bytes": 2033046
+   },
+   {
+    "package": "/GF_Dev_Sandbox/Characters/Knight_01/Textures/Knight_01_Details/T_Knight_01_Details_Metallic",
+    "bytes": 4527676
+   },
+   {
+    "package": "/GF_Dev_Sandbox/Characters/Knight_01/Textures/Knight_01_Details/T_Knight_01_Details_Normals",
+    "bytes": 7629598
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Materials/Basematerials/MI_tearline",
+    "bytes": 9275
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Materials/Basematerials/M_TearLine_",
+    "bytes": 31649
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Materials/Eye_hair/Eye/MI_eye_Brown_master",
+    "bytes": 16381
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Materials/Eye_hair/Eye/M_EyeRefractive_master",
+    "bytes": 60525
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Materials/Eye_hair/M_beard_base_master",
+    "bytes": 90484
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Materials/Eye_hair/M_eye_occlusion_master",
+    "bytes": 32397
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Materials/MI_BaseComplex_GlobalTint_",
+    "bytes": 97000
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Materials/M_Base_Complex_Master",
+    "bytes": 45805
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Materials/MaterialFunctions/MF_RGBA_Multiplier_Skin",
+    "bytes": 66821
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Materials/MaterialFunctions/MF_RGBA_PatternBlend",
+    "bytes": 47642
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Materials/MaterialFunctions/MF_RGBA_Tint_Skin",
+    "bytes": 66621
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Materials/MaterialFunctions/MF_RGBYMCA_Multiplier",
+    "bytes": 34677
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Materials/MaterialFunctions/MF_RGBYMCA_Tint",
+    "bytes": 44885
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Materials/MaterialFunctions/ML_EyeRefraction",
+    "bytes": 108080
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Materials/Skin/M_Skin_master",
+    "bytes": 87257
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Materials/Skin/Male/light_01/MI_ma_base_body_light_01_master",
+    "bytes": 17049
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Materials/Skin/Male/light_01/MI_ma_head_light_01_master",
+    "bytes": 17217
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Meshes/Male/SK_ma_meta_body_hands",
+    "bytes": 765442
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Meshes/Male/SK_ma_meta_body_head_01",
+    "bytes": 1954874
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Basebody/Skinset_light/T_ma_base_body_01_D",
+    "bytes": 5373844
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Basebody/Skinset_light/T_ma_base_body_01_ID",
+    "bytes": 19448
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Basebody/Skinset_light/T_ma_base_body_01_N",
+    "bytes": 5373497
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Basebody/Skinset_light/T_ma_base_body_01_ORS",
+    "bytes": 2679183
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Basebody/Skinset_light/T_ma_base_head_01_D",
+    "bytes": 4623807
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Basebody/Skinset_light/T_ma_base_head_01_ID",
+    "bytes": 10138
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Basebody/Skinset_light/T_ma_base_head_01_N",
+    "bytes": 1552957
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Basebody/Skinset_light/T_ma_base_head_01_ORS",
+    "bytes": 4824410
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Basebody/T_WhiteSquareTexture",
+    "bytes": 4121
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Basebody/T_ma_base_old_head_N",
+    "bytes": 4526427
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Basebody/wrinklemaps/T_pore_global__N",
+    "bytes": 1933391
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Basebody/wrinklemaps/T_pore_global__R",
+    "bytes": 1127469
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Basebody/wrinklemaps/T_pore_global__S",
+    "bytes": 1416260
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Demotextures/T_RGBA_Mask_master_NoTint",
+    "bytes": 5130
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Demotextures/T_RGBA_Mask_master_TintR",
+    "bytes": 4488
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Eye_Hair/T_eye_D",
+    "bytes": 386150
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Eye_Hair/T_eye_DISP",
+    "bytes": 167607
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Eye_Hair/T_eye_N",
+    "bytes": 605211
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Eye_Hair/T_eye_sclera_master",
+    "bytes": 266698
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Eye_Hair/T_hair_01_master_A",
+    "bytes": 1427074
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Eye_Hair/T_hair_01_master_ID",
+    "bytes": 2402787
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Eye_Hair/T_hair_01_master_Roots",
+    "bytes": 1538682
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Logo/T_polyphoria_logo_master",
+    "bytes": 83911
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Metahuman_body_mask/T_mh_body_mask_gloves",
+    "bytes": 51192
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Metahuman_body_mask/T_mh_body_mask_shoes",
+    "bytes": 60420
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Metahuman_body_mask/T_mh_body_mask_upperbody_long_arms",
+    "bytes": 66091
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Metahuman_body_mask/T_mh_mask_chest_full",
+    "bytes": 66102
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Metahuman_body_mask/T_mh_mask_legs",
+    "bytes": 55959
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Metahuman_body_mask/T_mh_mask_suit_upper",
+    "bytes": 66108
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/Metahuman_body_mask/head/T_mh_mask_headline",
+    "bytes": 47321
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Base/Textures/SP_caucasian",
+    "bytes": 3792
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Materials/Chest/MI_ma_chest_heavy_05_a",
+    "bytes": 124342
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Materials/Chest/MI_ma_cloak_01_a_brown",
+    "bytes": 15209
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Materials/Gloves_Bracers/MI_bracers_heavy_04",
+    "bytes": 15319
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Materials/Gloves_Bracers/MI_longglove_01_a",
+    "bytes": 16050
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Materials/Helmet/MI_helm_paladin",
+    "bytes": 17930
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Materials/Pants/MI_pants_medium_dark",
+    "bytes": 15864
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Materials/Shoes/MI_shoe_set_04_a_bright",
+    "bytes": 19542
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Materials/Shoes/MI_shoe_set_04_a_bright_gold",
+    "bytes": 20915
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Meshes/SKEL_metahuman_base",
+    "bytes": 243384
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Meshes/UE5/Male/Feet/SK_ma_tal_nrw_shoe_heavy_04_e",
+    "bytes": 1547670
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Meshes/UE5/Male/Gloves/SK_ma_tal_nrw_bracers_heavy_04_c",
+    "bytes": 1747965
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Meshes/UE5/Male/Hats/SK_ma_tal_nrw_heavy_helm_paladin_a_V2",
+    "bytes": 262877
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Meshes/UE5/Male/LowerBody/SK_ma_tal_nrw_pants_01_e_v2",
+    "bytes": 473433
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Meshes/UE5/Male/Physics_Metahuman/PH_m_tal_nrw_heavy_chest_04_a",
+    "bytes": 33319
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Meshes/UE5/Male/UpperBody/SK_ma_tal_nrw_chest_heavy_05_c",
+    "bytes": 4195493
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Textures/Bracers_Gloves/T_armor_gloves_01_D",
+    "bytes": 3983521
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Textures/Bracers_Gloves/T_armor_gloves_01_ID",
+    "bytes": 29527
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Textures/Bracers_Gloves/T_armor_gloves_01_N",
+    "bytes": 3447646
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Textures/Bracers_Gloves/T_armor_gloves_01_ORM",
+    "bytes": 5487662
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Textures/Bracers_Gloves/T_bracers_heavy_04_D",
+    "bytes": 4582271
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Textures/Bracers_Gloves/T_bracers_heavy_04_ID",
+    "bytes": 92954
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Textures/Bracers_Gloves/T_bracers_heavy_04_N",
+    "bytes": 4583407
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Textures/Bracers_Gloves/T_bracers_heavy_04_ORM",
+    "bytes": 7014546
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Textures/Chest/T_chest_heavy_armour_05_a_D",
+    "bytes": 6462454
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Textures/Chest/T_chest_heavy_armour_05_a_ID",
+    "bytes": 144304
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Textures/Chest/T_chest_heavy_armour_05_a_N",
+    "bytes": 8111241
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Textures/Chest/T_chest_heavy_armour_05_a_ORM",
+    "bytes": 7823207
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Textures/Chest/T_cloak_01_a_D",
+    "bytes": 5153772
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Textures/Chest/T_cloak_01_a_ID",
+    "bytes": 34250
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Textures/Chest/T_cloak_01_a_N",
+    "bytes": 6574683
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Textures/Chest/T_cloak_01_a_ORM",
+    "bytes": 3482310
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Textures/Helmet/T_helm_heavy_paladin_D",
+    "bytes": 3914650
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Textures/Helmet/T_helm_heavy_paladin_ID",
+    "bytes": 78413
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Textures/Helmet/T_helm_heavy_paladin_N",
+    "bytes": 2033952
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Textures/Helmet/T_helm_heavy_paladin_b_ORM",
+    "bytes": 8485553
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Textures/Pants_Shoes/Pants/T_pants_medium_01_D",
+    "bytes": 6996776
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Textures/Pants_Shoes/Pants/T_pants_medium_01_N",
+    "bytes": 10043856
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Textures/Pants_Shoes/Pants/T_pants_medium_01_ORM",
+    "bytes": 4798631
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Textures/Pants_Shoes/Shoes/T_shoe_heavy_paladin_D",
+    "bytes": 5357725
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Textures/Pants_Shoes/Shoes/T_shoe_heavy_paladin_ID",
+    "bytes": 80883
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Textures/Pants_Shoes/Shoes/T_shoe_heavy_paladin_N",
+    "bytes": 3797222
+   },
+   {
+    "package": "/Game/SurvivalRpg/Characters/Polyphoria/Paladin/Textures/Pants_Shoes/Shoes/T_shoe_heavy_paladin_ORM",
+    "bytes": 7593131
+   }
+  ]
+ }
+}

@@ -1,6 +1,6 @@
 # GASP-16 – Character and armor pilot
 
-Status: **In progress** since 2026-10-18. Phase A is done. On 2026-10-18 the user changed the design to Lyra Character Parts (see [Decisions](#decisions)); next is Phase B. Defined in [#262](https://github.com/Athurito/SurvivalRpg/pull/262) after the user added character packs to the asset library and chose the pilot character and the character-editor scope. This report is the task report.
+Status: **In progress** since 2026-10-18. Phases A, B and C are done; next is Phase D (Paladin content). On 2026-10-18 the user changed the design to Lyra Character Parts (see [Decisions](#decisions)). Defined in [#262](https://github.com/Athurito/SurvivalRpg/pull/262) after the user added character packs to the asset library and chose the pilot character and the character-editor scope. This report is the task report.
 
 ## Goal
 
@@ -249,3 +249,72 @@ Measured in the asset project `Assets_3DAssets` (UE 5.8.3, MCP port 8001) with a
   - So a body that copies the pose and runs the UE5 mannequin post-process (Pose Driver and `CR_Mannequin_Procedural`) drives the correctives, and the armor inherits them by Leader Pose.
   - This is Lyra's own pattern. Its `B_Manny` is a character part with the full `SKM_Manny`, the copy-pose AnimBP `ABP_Mannequin_CopyPose`, and the post-process `ABP_Manny_PostProcess` on the mesh.
 - Following the rule, the task stopped after Phase A for the user's decision. The user chose the Lyra Character Parts design with a corrective-driven body (see [Decisions](#decisions)).
+
+### Phase C – Character Parts (2026-10-18, done before Phase B's content work)
+
+The native port was built first, so that one editor build served both phases. Commit `e15edba5`.
+
+- **New native classes:** three, all under `Source/SurvivalRpg/Cosmetics`:
+  - `URpgPawnComponent_CharacterParts`;
+  - `URpgControllerComponent_CharacterParts`;
+  - `ARpgTaggedActor`.
+
+  New structs:
+  - the part types `FRpgCharacterPart` and `FRpgCharacterPartHandle`, plus the collision mode;
+  - the FastArray list;
+  - the body-style selection `FRpgAnimBodyStyleSelectionSet`.
+
+  They were ported from Lyra close to 1:1, without the cosmetic cheats, developer settings and animation-layer selection.
+- **Deviations from Lyra:**
+  - An unconfigured body style returns no mesh and leaves the gameplay mesh alone. Lyra would set a null mesh.
+  - The swap uses `SetSkeletalMesh(Mesh, false)`, so the running AnimBP instance and its linked layers (block) survive a body part that arrives after equip. Lyra re-initialises the pose.
+- **Equipment bridge:**
+  - `URpgEquipmentDefinition::CharacterParts`: data validation rejects a missing or replicating part class.
+  - `URpgEquipmentInstance::AddCharacterParts` and `RemoveCharacterParts`, called by the equipment list next to `SpawnEquipmentActors` and `DestroyEquipmentActors` on the authority.
+  - A pawn without a parts component wears nothing. This is how the Mover and the production pawns stay unchanged.
+- **Tags:**
+  - `Cosmetic.Body`;
+  - `Cosmetic.Cover.Head`, `.UpperBody`, `.Hands`, `.Legs` and `.Feet`. `UpperBody` replaces the planned `Chest` because the skin material's mask is called `UpperBody Mask`.
+- **Tests** (`SurvivalRpg.Cosmetics.CharacterParts.*`, 4 new):
+  - part list add and remove with handles, attachment, collision and tag filtering;
+  - body-style selection and the untouched-mesh rule;
+  - equip and unequip adding and removing exactly the equipment's parts;
+  - validation.
+
+  `ue.py test SurvivalRpg.Cosmetics SurvivalRpg.Equipment --null-rhi`: 21 run, 21 passed, no warnings. `ue.py build`: passed, no warnings.
+- **Still open for Phase D/F:** a PIE network test for proxies and late joiners, and the dedicated-server check. Both need the pilot content.
+
+### Phase B – migrated content (2026-10-18)
+
+**Result**
+- 114 packages, 271.7 MB on disk:
+  - `Content/SurvivalRpg/Characters/Polyphoria` (`Base` body, hands, skin materials and masks; `Paladin` helmet, chest, bracers, pants, boots, `SKEL_metahuman_base`), 166 MB;
+  - `Plugins/GameFeatures/GF_Dev_Sandbox/Content/Characters/Knight_01` (one full mesh with materials), 94 MB.
+- Manifest: [`docs/assets/gasp-16-character-armor-pilot.json`](assets/gasp-16-character-armor-pilot.json).
+- No existing project asset changed.
+
+**Steps**
+1. Migrated with `AssetTools.migrate_packages` from the asset library editor. 127 files, 624 MB.
+2. Moved the folders in the SurvivalRpg editor, then resaved every moved package so it stores the new paths.
+3. Re-pointed the body, hands and Knight_01 mesh onto the GASP UE5 mannequin skeleton and physics asset by consolidation. The skeleton has 161 bones, which cover all of them.
+4. Deleted the extras that the migration pulled in through soft references:
+   - the MetaHuman base body and a second chest variant;
+   - the pack copies of the mannequin skeleton and physics asset;
+   - the Knight_01 demo mannequin;
+   - an unreferenced chest colour variant with four textures, and the skirt physics asset.
+5. Removed the old folders on disk with the editor closed.
+
+A registry closure from the eight root meshes and the masks shows no unreferenced package and no dependency outside the two folders. All roots load with the expected skeleton.
+
+**Further details**
+- Textures: 25 resized to 2048 px and 52 already at or below it, so all 77 are capped at 2K. The Polyphoria textures were mostly 2K already; the Knight_01 textures were 4K.
+- Licence: recorded in [`third-party-notices.md`](third-party-notices.md).
+- Empty material slots: the body slot `M_teeth12` and the helmet slot `pasted__Fbx Default Material 1` have no material, as in the pack.
+
+**Failed attempt (undone)**
+- The first run consolidated the pack skeletons before moving the folders. `EditorAssetLibrary.rename_directory` then loaded the consolidation redirectors, which resolve to their target, and moved the project's GASP `SK_Mannequin` and `PA_Mannequin` into the new folders.
+- Recovery: the editor was closed without saving, the two files were restored from Git, and the migration was repeated with the folders moved first. No reference to the GASP skeleton was saved in between.
+- Lessons:
+  - Never move folders that contain redirectors.
+  - Never call `delete_asset` or `load_asset` on a redirector path.
+  - A mesh's `skeleton` property is read-only in Python; consolidation is the scriptable route.
