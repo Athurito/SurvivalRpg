@@ -375,7 +375,13 @@ private:
 	int32 LastObservedCount = INDEX_NONE;
 };
 
-/** List of inventory items */
+/**
+ * List of inventory items.
+ *
+ * Entries are re-sorted by placement after moves, so the replicated array is reordered. Delta struct serialization
+ * is disabled because its shadow fix-up cannot follow such reorders (engine check FixedShadowIndex > Index in
+ * FRepLayout::DeltaSerializeFastArrayProperty); the classic path matches entries by replication ID instead.
+ */
 USTRUCT(BlueprintType)
 struct FRpgInventoryList : public FFastArraySerializer
 {
@@ -384,11 +390,13 @@ struct FRpgInventoryList : public FFastArraySerializer
 	FRpgInventoryList()
 		: OwnerComponent(nullptr)
 	{
+		SetDeltaSerializationEnabled(false);
 	}
 
 	FRpgInventoryList(UActorComponent* InOwnerComponent)
 		: OwnerComponent(InOwnerComponent)
 	{
+		SetDeltaSerializationEnabled(false);
 	}
 
 	TArray<URpgInventoryItemInstance*> GetAllItems() const;
