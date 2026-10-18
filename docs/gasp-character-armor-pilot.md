@@ -1,6 +1,6 @@
 # GASP-16 – Character and armor pilot
 
-Status: **In progress** since 2026-10-18. Phases A to E are done, and Phase F's cost run and regression are done. The user check is next. Inventory equips by remote owners wait for a separate inventory replication fix (see [Phase D – network, death and respawn](#phase-d--network-death-and-respawn-2026-10-18)). On 2026-10-18 the user changed the design to Lyra Character Parts (see [Decisions](#decisions)). Defined in [#262](https://github.com/Athurito/SurvivalRpg/pull/262) after the user added character packs to the asset library and chose the pilot character and the character-editor scope. This report is the task report.
+Status: **In progress** since 2026-10-18. Phases A to E are done, and Phase F's cost run and regression are done. The user check is next. The inventory replication crash found in Phase D is fixed in [#264](https://github.com/Athurito/SurvivalRpg/pull/264) (merged and merged into this branch). On 2026-10-18 the user changed the design to Lyra Character Parts (see [Decisions](#decisions)). Defined in [#262](https://github.com/Athurito/SurvivalRpg/pull/262) after the user added character packs to the asset library and chose the pilot character and the character-editor scope. This report is the task report.
 
 ## Goal
 
@@ -463,7 +463,7 @@ Done after Phase D2, on the MetaHuman Paladin. Commits `5d977c95` (fix) and `e32
   - `ue.py test SurvivalRpg.Cosmetics SurvivalRpg.Equipment`: 23 run, 23 passed, twice.
   - The warnings are the usual PIE network noise (voice interface, NetGUID) and an existing respawn widget warning.
 
-**Finding: inventory equips by a remote owner crash the server** (outside `GASP-16`; fixed in [#264](https://github.com/Athurito/SurvivalRpg/pull/264), open)
+**Finding: inventory equips by a remote owner crashed the server** (outside `GASP-16`; fixed in [#264](https://github.com/Athurito/SurvivalRpg/pull/264), merged)
 - When a remote client equips a second item through `RequestApplyInventoryEquipmentIntent`, the server fails the engine check `FixedShadowIndex > Index` in `FRepLayout::DeltaSerializeFastArrayProperty` while replicating `FRpgInventoryList`.
 - Scope:
   - It happens on a listen server and on a dedicated server, whatever the item; the first equip goes through.
@@ -471,7 +471,7 @@ Done after Phase D2, on the MetaHuman Paladin. Commits `5d977c95` (fix) and `e32
   - The host's own sequential inventory equips do not crash; its inventory has no remote receiver.
 - Likely cause: the engine's shadow fix-up for reordered fast arrays never updates its ID-to-index map after a swap, and the inventory reorders its replicated entries after moves (`SortEntriesByPlacement`).
 - `master` has the same bug: two ordinary moves of one item reproduce it there. [#264](https://github.com/Athurito/SurvivalRpg/pull/264) disables FastArray delta struct serialization for the inventory and base storage lists and adds the regression test `SurvivalRpg.Network.InventoryReorderPIE`.
-- The tests therefore equip remote owners through the equipment manager, and only the host through the inventory.
+- Until the fix, the tests equipped remote owners through the equipment manager. After merging `master` with #264 into this branch, both tests use the real inventory route for every owner (see below).
 
 **Fix: part meshes tick after the gameplay mesh**
 - Problem: Lyra adds the tick prerequisite only to a part actor's root. The MetaHuman body's copy-pose mesh sits below a scene root, so it ticked before the gameplay mesh and showed the previous frame, up to 3.5 cm off during the death montage.
@@ -487,7 +487,6 @@ Done after Phase D2, on the MetaHuman Paladin. Commits `5d977c95` (fix) and `e32
 - After respawn, the controller parts component gives the new pawn the body again. Inventory-backed armor returns through the loadout. Armor equipped directly through the equipment manager does not return, as intended.
 
 **Limits**
-- Inventory equips by remote owners are blocked by the crash above; the user check of armor in multiplayer has to wait for that fix.
 - The ragdoll trail described above.
 - `CharacterPartsDedicatedServerPIE` once crashed in the engine while PIE was shutting down (`GameViewport.IsUnique()` in `SLevelViewport::EndPlayInEditorSession`) after all its steps had passed. It did not happen again in four further runs.
 
@@ -563,3 +562,12 @@ All 355 tests pass. The warnings are the known PIE network and editor noise.
 - **Alone:** play `Lvl_RpgGaspPaladin` alone, take the five Paladin pieces from the chest, equip and remove them, fight, die and respawn.
 - **Listen server:** the same with clients. A client's own inventory equips need the separate inventory replication fix first.
 - **Decision:** the user then decides whether the production CMC pawns adopt the Paladin.
+
+**After #264 (2026-10-18)**
+- `master` (with #264 and the VFX package #263) was merged into this branch.
+- The two network tests now equip through the real inventory route:
+  - `CharacterPartsListenServerPIE` (`InventoryArmorReachesOwnerProxyLateJoinAndRespawn`): the remote owner equips all five pieces one by one with equipment intents, takes the helmet off with an unequip intent, and after death and respawn the loadout re-equips the four pieces still worn. The host then equips its own five pieces the same way, and both clients see it armored.
+  - `CharacterPartsDedicatedServerPIE`: the client equips helmet and chest one after the other.
+- Results:
+  - `ue.py test SurvivalRpg.Cosmetics SurvivalRpg.Network.InventoryReorderPIE`: 7 / 7.
+  - `ue.py test SurvivalRpg.Cosmetics SurvivalRpg.Equipment SurvivalRpg.Inventory`: 197 / 197.
