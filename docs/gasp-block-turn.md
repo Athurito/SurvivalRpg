@@ -1,6 +1,6 @@
 # GASP-STAB-06 – Block turning on every screen
 
-Status: **PR open** ([#257](https://github.com/Athurito/SurvivalRpg/pull/257)), implemented 2026-10-17/18 on `claude/gasp-stab-06-block-turn`; in the user check on 2026-10-18 the user found it looks good. The user asked to start it on 2026-10-17 after merging #256. Defined 2026-10-17 from the first user check of `GASP-15` (definition PR [#255](https://github.com/Athurito/SurvivalRpg/pull/255), merged as `b3005564`). Results are under [Results](#results).
+Status: **Merged** ([#257](https://github.com/Athurito/SurvivalRpg/pull/257) as `713e262a` on 2026-10-18, final head `bcf6b17b`; implemented on `claude/gasp-stab-06-block-turn`, first commit `df6f9b0d`). The user checked it on 2026-10-18, found it looks good and asked for the merge. The user asked to start it on 2026-10-17 after merging #256. Defined 2026-10-17 from the first user check of `GASP-15` (definition PR [#255](https://github.com/Athurito/SurvivalRpg/pull/255), merged as `b3005564`). Results are under [Results](#results).
 
 ## Goal
 

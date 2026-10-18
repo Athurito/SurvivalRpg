@@ -1,7 +1,7 @@
 {
  "schema_version": 1,
  "task": "GASP-STAB-06 Block turning on every screen",
- "status": "pr_open",
+ "status": "merged",
  "repository_base": "2c05fb571fbc340db02ccd168ba0f4ba5a2a9ec7",
  "branch": "claude/gasp-stab-06-block-turn",
  "engine_version": "5.8.3",
@@ -103,7 +103,7 @@
  },
  "evidence": "Raw files under Saved/GaspStab06, Saved/Gasp15/UserCheck and Saved/ToolRuns of the producing checkout; not versioned.",
  "pull_request": "https://github.com/Athurito/SurvivalRpg/pull/257",
- "merge_commit": null,
+ "merge_commit": "713e262a8ef5eef85b1cf8deaaeeaad7182bf6a2",
  "added": {},
  "modified": {
   "Content/SurvivalRpg/Characters/GASP/Manny/Block/ABP_RpgBlockLocomotion_Manny.uasset": {
