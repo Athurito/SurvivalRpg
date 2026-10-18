@@ -1,6 +1,6 @@
 # GASP-16 – Character and armor pilot
 
-Status: **In progress** since 2026-10-18. Phases A to E are done, apart from inventory equips by remote owners, which a separate inventory replication crash blocks (see [Phase D – network, death and respawn](#phase-d--network-death-and-respawn-2026-10-18)). Phase F (cost, regressions, user check) is next. On 2026-10-18 the user changed the design to Lyra Character Parts (see [Decisions](#decisions)). Defined in [#262](https://github.com/Athurito/SurvivalRpg/pull/262) after the user added character packs to the asset library and chose the pilot character and the character-editor scope. This report is the task report.
+Status: **In progress** since 2026-10-18. Phases A to E are done, and Phase F's cost run and regression are done. The user check is next. Inventory equips by remote owners wait for a separate inventory replication fix (see [Phase D – network, death and respawn](#phase-d--network-death-and-respawn-2026-10-18)). On 2026-10-18 the user changed the design to Lyra Character Parts (see [Decisions](#decisions)). Defined in [#262](https://github.com/Athurito/SurvivalRpg/pull/262) after the user added character packs to the asset library and chose the pilot character and the character-editor scope. This report is the task report.
 
 ## Goal
 
@@ -513,3 +513,53 @@ The MetaHuman Paladin with its five armor pieces and `B_RpgPart_Knight01Body` we
 - The Paladin passed Phase D, so Knight_01 stays a comparison and does not become the pilot character (decision rule in [Scope](#scope)).
 - The Paladin costs fewer vertices but more draw sections, a face skeleton with 875 bones and two grooms. Knight_01 has more than twice the vertices and no LODs.
 - Phase F measures the runtime cost with one and four characters.
+
+### Phase F – cost and regression (2026-10-18)
+
+**Cost: one and four characters, MetaHuman Paladin against Manny**
+
+Measured in one editor session with only this editor open, in standalone PIE on `Lvl_RpgGaspPaladin`:
+- Scenarios: idle characters in view; the player plus three pawns spawned with `summon`.
+- Per scenario: 3 s settle, then 5 s with a CSV profile and an Insights CPU trace (`Saved/Gasp16/PhaseF`).
+- Values are per-frame medians; the frame is capped at 120 FPS (8.33 ms).
+
+| Scenario | Game-thread work | Render-thread work | GPU | Draw calls | Animation, game thread | Animation worker | Frame |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Manny ×1 | 3.87 ms | 4.13 ms | 6.23 ms | 268 | 0.30 ms | 0.78 ms | 8.33 ms |
+| Paladin ×1 | 4.67 ms | 4.54 ms | 7.53 ms | 328 | 0.44 ms | 0.91 ms | 8.40 ms |
+| Manny ×4 | 4.30 ms | 4.15 ms | 6.36 ms | 295 | 0.72 ms | 3.22 ms | 8.33 ms |
+| Paladin ×4 | 5.15 ms | 4.72 ms | 8.30 ms | 460 | 1.04 ms | 3.91 ms | 9.24 ms |
+
+- **CPU per Paladin against Manny** (from the four-character pair):
+  - animation worker about +0.17 ms, from the second evaluation of copy pose plus RigLogic;
+  - animation on the game thread about +0.08 ms;
+  - about +41 draw calls.
+- **Measured MetaHuman features per character** (Insights): RigLogic body correctives about 0.03 ms, grooms about 0.06 ms, chest cloth about 0.03 ms, copy-pose AnimBP about 0.01 ms.
+- **GPU.** It grows by 1.3 ms with one Paladin and by 1.9 ms with four.
+  - About 0.23 ms of that is the subsurface scattering pass, which runs once any MetaHuman skin is on screen.
+  - The rest is base pass, Nanite, Lumen and shadows for the extra meshes and sections.
+  - Four Paladins push the frame just over the cap (9.24 ms, GPU-bound in the editor).
+- **Render-thread waiting.** Once a Paladin is visible, the render thread waits about 4 ms per frame on visibility tasks (`EventWait/Visibility`; task oversubscription in Insights). This is waiting, not work; its cause is not isolated.
+- **Limits:** a single editor run per scenario with idle characters only. Earlier tasks saw up to 0.17 ms difference between sessions; cooked builds and moving groups are not measured.
+
+**Regression** (each suite on its own through `ue.py test`, on commit `81fc9da9` plus the unchanged content)
+
+| Suite | Result |
+| --- | --- |
+| `SurvivalRpg.Cosmetics`, `SurvivalRpg.Equipment`, `SurvivalRpg.Inventory` | 197 / 197 |
+| `SurvivalRpg.Animation` | 4 / 4 |
+| `SurvivalRpg.GASP.CMC` | 14 / 14 |
+| `SurvivalRpg.Combat.BlockLocomotion` | 16 / 16 |
+| `SurvivalRpg.GASP.Mantle` | 13 / 13 |
+| `SurvivalRpg.GASP.Vault` | 9 / 9 |
+| `SurvivalRpg.GASP.Hurdle` | 12 / 12 |
+| `SurvivalRpg.GASP.VariantComparison` | 3 / 3 |
+| `SurvivalRpg.Network` | 20 / 20 |
+| `SurvivalRpg.GASP.Mover` (`np.ForceReconcile 0`, `t.MaxFPS 30`) | 67 / 67 |
+
+All 355 tests pass. The warnings are the known PIE network and editor noise.
+
+**Open for the user check**
+- **Alone:** play `Lvl_RpgGaspPaladin` alone, take the five Paladin pieces from the chest, equip and remove them, fight, die and respawn.
+- **Listen server:** the same with clients. A client's own inventory equips need the separate inventory replication fix first.
+- **Decision:** the user then decides whether the production CMC pawns adopt the Paladin.
