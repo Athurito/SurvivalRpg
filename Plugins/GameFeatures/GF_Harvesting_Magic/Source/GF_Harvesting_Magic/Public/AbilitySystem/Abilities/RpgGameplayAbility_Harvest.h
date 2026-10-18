@@ -291,6 +291,21 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Feedback")
 	TArray<FRpgHarvestFormGameplayCue> FormSuccessGameplayCues;
 
+	/**
+	 * Cosmetic cue the server executes once for every resource the commit harvests directly, besides
+	 * SuccessGameplayCue, for example Rift Grip's lightning strike on each ore vein. Every machine plays it, the
+	 * harvesting client included.
+	 * - Location is the top center of the resource's bounds as presented before the commit (the struck instance for
+	 *   instanced resources), Normal points up, and RawMagnitude carries the bounds' horizontal radius in centimeters.
+	 * - At most 8 per commit, in selection order (nearest to the area's center first), so they fit the unreliable
+	 *   multicast budget per net update. Strides execute it on every pulse. Swarms and resources taken along by a
+	 *   chain execute none.
+	 * - It plays at the commit; the presentation wave does not delay it.
+	 * Designer data.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Feedback", meta = (Categories = "GameplayCue"))
+	FGameplayTag TargetGameplayCue;
+
 	/** Cosmetic cue executed on the server at the aim point when the commit harvested nothing, for example an empty node. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Feedback", meta = (Categories = "GameplayCue"))
 	FGameplayTag NoYieldGameplayCue;
@@ -339,8 +354,8 @@ protected:
 	FGameplayTag StrideGameplayCue;
 
 private:
-	/** Server: executes CueTag, when set, at Location for the current activation; RawMagnitude carries AreaRadius. */
-	void ExecuteHarvestCue(FGameplayTag CueTag, const FVector& Location, const FVector& Normal, float AreaRadius = 0.0f) const;
+	/** Server: executes CueTag, when set, at Location for the current activation; RawMagnitude carries Radius in cm. */
+	void ExecuteHarvestCue(FGameplayTag CueTag, const FVector& Location, const FVector& Normal, float Radius = 0.0f) const;
 
 	/**
 	 * Server: executes the success cue of Values for a commit or pulse that harvested FirstHarvested, at the area's

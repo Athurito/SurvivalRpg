@@ -5,6 +5,8 @@
 #include "Abilities/Tasks/AbilityTask_WaitInputRelease.h"
 #include "Animation/AnimMontage.h"
 #include "CollisionQueryParams.h"
+#include "Components/InstancedStaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
@@ -26,6 +28,31 @@
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillProgressionComponent.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgGameplayAbility_Harvest)
+
+namespace
+{
+	/**
+	 * Most target cues one commit or stride pulse executes. Each is one unreliable multicast, and net.MaxRPCPerNetUpdate
+	 * (10 in DefaultEngine.ini) drops what exceeds it per net update, so the success cue keeps room.
+	 */
+	constexpr int32 MaxTargetCuesPerCommit = 8;
+
+	/** Bounds of the resource Hit addresses as currently presented: the struck instance for instanced resources. */
+	FBox GetPresentedTargetBounds(const FHitResult& Hit)
+	{
+		const UPrimitiveComponent* Component = Hit.GetComponent();
+		if (const UInstancedStaticMeshComponent* Instances = Cast<UInstancedStaticMeshComponent>(Component))
+		{
+			FTransform InstanceTransform;
+			if (Instances->GetStaticMesh() && Instances->GetInstanceTransform(Hit.Item, InstanceTransform, true))
+			{
+				return Instances->GetStaticMesh()->GetBounds().GetBox().TransformBy(InstanceTransform);
+			}
+			return FBox(Hit.ImpactPoint, Hit.ImpactPoint);
+		}
+		return Component ? Component->Bounds.GetBox() : FBox(Hit.ImpactPoint, Hit.ImpactPoint);
+	}
+}
 
 URpgGameplayAbility_Harvest::URpgGameplayAbility_Harvest(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -400,6 +427,7 @@ const FRpgHarvestTargetEvaluation* URpgGameplayAbility_Harvest::CommitSelection(
 	}
 
 	int32 FirstHarvestedIndex = INDEX_NONE;
+	int32 TargetCues = 0;
 	TArray<float, TInlineAllocator<16>> PresentationDelays;
 	PresentationDelays.SetNumZeroed(Selection.Targets.Num());
 	for (int32 TargetIndex = 0; TargetIndex < Selection.Targets.Num(); ++TargetIndex)
@@ -410,6 +438,10 @@ const FRpgHarvestTargetEvaluation* URpgGameplayAbility_Harvest::CommitSelection(
 		{
 			continue;
 		}
+
+		// The commit may shrink or hide the resource right away, so its target cue takes the bounds from before.
+		const bool bTargetCue = TargetGameplayCue.IsValid() && TargetCues < MaxTargetCuesPerCommit;
+		const FBox TargetBounds = bTargetCue ? GetPresentedTargetBounds(Target.Hit) : FBox(ForceInit);
 
 		FRpgHarvestRequest Request = RequestTemplate;
 		Request.Hit = Target.Hit;
@@ -425,9 +457,24 @@ const FRpgHarvestTargetEvaluation* URpgGameplayAbility_Harvest::CommitSelection(
 		}
 		PresentationDelays[TargetIndex] = Request.PresentationDelaySeconds;
 		Target.Result = IRpgHarvestableTarget::Execute_CommitHarvest(Receiver, Request);
-		if (Target.Result.IsSuccess() && FirstHarvestedIndex == INDEX_NONE)
+		if (!Target.Result.IsSuccess())
+		{
+			continue;
+		}
+		if (FirstHarvestedIndex == INDEX_NONE)
 		{
 			FirstHarvestedIndex = TargetIndex;
+		}
+		if (bTargetCue)
+		{
+			const FVector Center = TargetBounds.GetCenter();
+			const FVector Extent = TargetBounds.GetExtent();
+			ExecuteHarvestCue(
+				TargetGameplayCue,
+				FVector(Center.X, Center.Y, TargetBounds.Max.Z),
+				FVector::UpVector,
+				static_cast<float>(FMath::Max(Extent.X, Extent.Y)));
+			++TargetCues;
 		}
 	}
 
@@ -588,7 +635,7 @@ void URpgGameplayAbility_Harvest::ExecuteHarvestCue(
 	const FGameplayTag CueTag,
 	const FVector& Location,
 	const FVector& Normal,
-	const float AreaRadius) const
+	const float Radius) const
 {
 	UAbilitySystemComponent* AbilitySystem = CurrentActorInfo ? CurrentActorInfo->AbilitySystemComponent.Get() : nullptr;
 	if (!AbilitySystem || !CueTag.IsValid())
@@ -600,7 +647,7 @@ void URpgGameplayAbility_Harvest::ExecuteHarvestCue(
 	CueParameters.EffectCauser = CurrentActorInfo->AvatarActor.Get();
 	CueParameters.Location = Location;
 	CueParameters.Normal = Normal;
-	CueParameters.RawMagnitude = AreaRadius;
+	CueParameters.RawMagnitude = Radius;
 	// A commit without a montage or delay, such as a stride's first pulse, runs inside the owning client's predicted
 	// activation. No client predicts these cues; without the prediction key, the owning client plays them from
 	// replication like every other machine instead of skipping them as already predicted.
