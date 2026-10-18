@@ -463,14 +463,14 @@ Done after Phase D2, on the MetaHuman Paladin. Commits `5d977c95` (fix) and `e32
   - `ue.py test SurvivalRpg.Cosmetics SurvivalRpg.Equipment`: 23 run, 23 passed, twice.
   - The warnings are the usual PIE network noise (voice interface, NetGUID) and an existing respawn widget warning.
 
-**Finding: inventory equips by a remote owner crash the server** (outside `GASP-16`; tracked as a separate task)
+**Finding: inventory equips by a remote owner crash the server** (outside `GASP-16`; fixed in [#264](https://github.com/Athurito/SurvivalRpg/pull/264), open)
 - When a remote client equips a second item through `RequestApplyInventoryEquipmentIntent`, the server fails the engine check `FixedShadowIndex > Index` in `FRepLayout::DeltaSerializeFastArrayProperty` while replicating `FRpgInventoryList`.
 - Scope:
   - It happens on a listen server and on a dedicated server, whatever the item; the first equip goes through.
   - Two intents in the same frame did not crash.
   - The host's own sequential inventory equips do not crash; its inventory has no remote receiver.
 - Likely cause: the engine's shadow fix-up for reordered fast arrays never updates its ID-to-index map after a swap, and the inventory reorders its replicated entries after moves (`SortEntriesByPlacement`).
-- The inventory code is unchanged on this branch, so the bug most likely exists on `master` too (not checked there).
+- `master` has the same bug: two ordinary moves of one item reproduce it there. [#264](https://github.com/Athurito/SurvivalRpg/pull/264) disables FastArray delta struct serialization for the inventory and base storage lists and adds the regression test `SurvivalRpg.Network.InventoryReorderPIE`.
 - The tests therefore equip remote owners through the equipment manager, and only the host through the inventory.
 
 **Fix: part meshes tick after the gameplay mesh**
