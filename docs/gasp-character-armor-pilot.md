@@ -1,6 +1,6 @@
 # GASP-16 – Character and armor pilot
 
-Status: **Defined** 2026-10-18, not yet **Ready**. The user added character packs to the asset library on 2026-10-18 and chose the pilot character and the character-editor scope (see [Decisions](#decisions)). The user marks the package **Ready** before implementation starts. This report defines the package and becomes its task report.
+Status: **In progress** since 2026-10-18; Phase A done, waiting for the user's decision before Phase B. Defined in [#262](https://github.com/Athurito/SurvivalRpg/pull/262) after the user added character packs to the asset library and chose the pilot character and the character-editor scope (see [Decisions](#decisions)). This report is the task report.
 
 ## Goal
 
@@ -79,6 +79,7 @@ Since `GASP-15`, the CMC pawns play the plain Lyra mannequin `SKM_Manny_Simple_G
 
 ## Decisions
 
+- 2026-10-18 (user): merge the definition and start Phase A.
 - 2026-10-18 (user): the Polyphoria MetaHuman Paladin is the pilot player character, with Knight_01 as a comparison.
 - 2026-10-18 (user): a character editor comes later. `GASP-16` builds one fixed Paladin and keeps the MetaHuman route open.
 - 2026-10-18 (user): sound, including armor Foley, comes later because things may still change. This reverses the 2026-10-14 move of armor Foley into `GASP-16`.
@@ -141,3 +142,68 @@ Build and test through `Build/Tools/Unreal/ue.py`. Run regressions as in `GASP-1
 3. Equip the five Paladin armor pieces one by one, then remove them in a different order. Watch the body under each piece.
 4. Die and respawn with full armor.
 5. Repeat as a listen server with two clients, one of which joins late with armor already equipped on the others.
+
+## Results
+
+### Phase A – inventory and fit (2026-10-18)
+
+Measured in the asset project `Assets_3DAssets` (UE 5.8.3, MCP port 8001) with a scratch measurement toolset that saves nothing. Raw evidence, scripts and images are in `Saved/Gasp16/PhaseA`. The repository is unchanged apart from this report.
+
+**Proportions: an exact fit.**
+- These meshes have the same component-space reference positions as the template `SKM_Manny_Simple` (0.0 cm at pelvis, spine, neck, head, clavicles, arms, hands, legs and feet):
+  - the Paladin body `SK_ma_meta_body_head_01`;
+  - the hands `SK_ma_meta_body_hands`;
+  - every Paladin armor mesh;
+  - the full Knight_01 meshes.
+- The MetaHuman base body `SK_tal_nrw_base` deviates by at most 0.06 cm.
+- Only Knight_01's `ball` bones sit 3.2 cm further back (foot to ball 13.8 cm instead of 16.8 cm). Under Leader Pose the toe of the Knight's boot stretches by that amount.
+- Leader Pose therefore keeps every proportion. The runtime retarget path is not needed.
+
+**Extra bones: the Paladin uses corrective bones heavily; Knight_01 does not.**
+
+| Mesh | Bones | Extra bones vs. Lyra `SK_Mannequin` | Vertices mostly weighted to extra bones |
+| --- | --- | --- | --- |
+| Paladin body | 150 | 70 (UE5 Manny corrective and twist-corrective bones); lacks the `ik_*` and `interaction` bones | 116 of 7,726 (clavicle) |
+| Paladin hands | 161 | 72 | 150 of 2,524 (wrist) |
+| Chest `chest_heavy_05_c` | 109 | 66 | 9,061 of 13,256 (shoulder `upperarm_out/fwd/bck`, `upperarm_twistCor`) |
+| Bracers `bracers_heavy_04_c` | 71 | 14 | 377 of 6,526 (wrist) |
+| Pants `pants_01_e_v2` | 50 | 30 | 865 of 1,501 (`calf_twistCor`, `thigh_twistCor`) |
+| Boots `shoe_heavy_04_e` | 20 | 6 | 2,768 of 5,648 (`calf_twistCor_02` at weight 1.0) |
+| Helmet `helm_paladin_a_V2` | 161 | 72 | 0 |
+| Knight_01 full, body, helmet | 161 | 72 | 0 |
+
+- In UE 5.8 a Leader Pose follower bone that the leader lacks keeps its reference transform relative to its animated parent (`SkeletalRender.cpp`, `UpdateRefToLocalMatrices`). So these bones follow rigidly, and the armor loses its corrective deformation but does not tear.
+- Polyphoria's own sample, `BP_Character`, drives the body with a Manny AnimBP and binds an armor part by `SetLeaderPoseComponent`. It does not drive the correctives either.
+- Visual probe:
+  - Setup: a Manny leader in idle, jog, two punches and a jump, with the Paladin set and Knight_01 following by Leader Pose (images in `Saved/Gasp16/PhaseA/shots*`).
+  - Result: no tearing and no visible gaps at shoulders, elbows, hips or knees. The chest's tabard is a Chaos cloth asset that does not simulate in the editor probe.
+- Driving the correctives would need a post-process AnimBP (copy pose plus corrective rig) on every follower. That is not part of the pilot.
+
+**Skeletons.**
+- The body's 150 bones are a subset of `SKEL_metahuman_base`. Body and armor can share that one skeleton, so no bone is added to `SK_Mannequin`.
+- The hands and Knight_01 additionally carry the `ik_*`, `interaction`, `weapon_*` and `center_of_mass` bones. These are harmless for followers.
+
+**Hiding the body.**
+- The skin material `M_Skin_master` has the mask texture parameters `Hat Mask`, `UpperBody Mask`, `Hands Mask`, `LowerBody Mask`, `Feet Mask` and `Socks Mask`. They are white, so nothing is hidden by default.
+- The pack ships matching masks in `Base/Textures/Metahuman_body_mask`: `T_mh_mask_headline`, `T_mh_mask_chest_full`, `T_mh_mask_suit_upper`, `T_mh_body_mask_upperbody_long_arms`, `T_mh_body_mask_gloves`, `T_mh_mask_legs` and `T_mh_body_mask_shoes`.
+- These map one to one onto the `Head`, `Chest`, `Hands`, `Legs` and `Feet` slots. The probe hid the body with dynamic material instances and showed no skin poking through.
+- Some parts also carry morph targets for this, such as `gloves_equipped` on the chest and `boot_high_equipped` on the pants.
+
+**Content and budget.**
+
+| Subset | Packages | On disk | Textures | Skeletal meshes | LODs |
+| --- | --- | --- | --- | --- | --- |
+| Paladin pilot: body, hands, helmet, chest, bracers, pants, boots, masks | 92 | 236 MB | 55, 223 MB | 7 | 1 each; about 38,000 vertices for the full outfit against 48,705 for `SKM_Manny_Simple` LOD 0 |
+| Knight_01 `SKM_Knight_01_Full_01` | 23 | 316 MB | 16, 288 MB | 1 (95,078 vertices) | 1 |
+
+- Both closures stay inside their pack, with no reference to demo content or other packs.
+- A 2K texture cap would shrink them substantially. It needs the user's agreement (see the scope).
+- Licences: not yet recorded; the user confirms them before Phase B.
+
+**Decision rule.**
+- The proportions pass.
+- The extra bones carry weight, which the rule does not allow. Their effect under Leader Pose was not visible in the probe.
+- Following the rule, the task stops after Phase A for the user's decision. The options:
+  - continue with plain Leader Pose (recommended);
+  - add corrective post-processing later as its own step;
+  - switch the pilot to Knight_01, which needs no correctives but carries the 3.2 cm toe offset and more texture memory.

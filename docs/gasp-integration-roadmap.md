@@ -13,7 +13,7 @@ frühere Fassung mit Schnellstart-Verlauf und Aufgabenverträgen liegt in der
 
 ## Nächster bereiter Schritt
 
-Kein Schritt ist **Bereit**; der Nutzer markiert das nächste Paket als **Bereit**. `GASP-16` ist definiert ([Definition](gasp-character-armor-pilot.md)) und wartet darauf.
+`GASP-16` ist **In Arbeit** ([Definition](gasp-character-armor-pilot.md), [#262](https://github.com/Athurito/SurvivalRpg/pull/262)): Der Nutzer hat es am 18.10.2026 freigegeben. Phase A ist erledigt: Paladin und Knight_01 passen exakt auf Manny-Proportionen, die Paladin-Rüstung nutzt aber Korrekturknochen, die unter Leader Pose starr mitlaufen; der Nutzer entscheidet vor Phase B.
 `GASP-STAB-06` ist gemergt ([#257](https://github.com/Athurito/SurvivalRpg/pull/257), [Bericht](gasp-block-turn.md)): Ein Blockdruck nach einer Kameradrehung richtet
 Körper und Schild auf allen Rollen sofort aus, und die Rechts-Turns unter Block holen nicht mehr gegen die Drehrichtung aus.
 `GASP-15` ist gemergt ([#254](https://github.com/Athurito/SurvivalRpg/pull/254)): Die CMC-Pawns spielen das Lyra-Manny-Skelett
@@ -72,6 +72,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-13` | Darstellung: Drehen im Stand (Kampfhaltung), Offset Root Bone, Steering, Spins, Kamera | **Gemergt**; Sichtprüfung durch den Nutzer, Problem beim Loslassen von Block auf später verschoben | [#247](https://github.com/Athurito/SurvivalRpg/pull/247) | [Darstellung](gasp-presentation-polish.md) |
 | `GASP-14` | Vollständiger CMC-Bake auf Manny (`SKM_Manny_Simple`): Relaxed-Locomotion, Traversal, Motion-Matching-Kopien, Manny-AnimBP, Entwicklungs-Pawn | **Gemergt**; Sichtprüfung durch den Nutzer | [#251](https://github.com/Athurito/SurvivalRpg/pull/251), Definition [#250](https://github.com/Athurito/SurvivalRpg/pull/250) | [Manny-Bake](gasp-manny-full-bake.md) |
 | `GASP-15` | Manny als CMC-Gameplay-Mesh: Mesh, Traversal, Block je Skelett, Waffen, Tod/Ragdoll, Pilot entfernen; Mover bleibt UEFN | **Gemergt** auf Wunsch des Nutzers nach Nutzerprüfung 1; deren Block-Drehbefunde gingen an `GASP-STAB-06` | [#254](https://github.com/Athurito/SurvivalRpg/pull/254), Definition [#253](https://github.com/Athurito/SurvivalRpg/pull/253) | [Manny-Gameplay-Mesh](gasp-manny-gameplay-mesh.md) |
+| `GASP-16` | Charakter- und Rüstungspilot: MetaHuman-Paladin von Polyphoria auf Manny, eine modulare Rüstung als Ausrüstung per Leader Pose, Knight_01 als Vergleich; ohne Sound und Charakter-Editor | **In Arbeit** seit 18.10.2026; Phase A erledigt, wartet auf Nutzerentscheidung | Definition [#262](https://github.com/Athurito/SurvivalRpg/pull/262) | [Charakter- und Rüstungspilot](gasp-character-armor-pilot.md) |
 
 Statuswerte: **Geplant**, **Bereit**, **In Arbeit**, **Validierung**,
 **PR offen**, **Gemergt**, **Blockiert**, **Zurückgestellt**.
@@ -93,11 +94,7 @@ Geplante, noch nicht bereite Pakete aus dem [Bewegungsplan](gasp-movement-plan.m
 Befunde, Abhängigkeiten und Reihenfolge stehen dort. Ein Paket wechselt erst
 mit **Bereit** in die Statustabelle oben.
 
-- `GASP-16` setzt auf dem Manny-Skelett aus `GASP-14`/`GASP-15` auf.
-
-| ID | Arbeitspaket | Status | Plan |
-| --- | --- | --- | --- |
-| `GASP-16` | Charakter- und Rüstungspilot: MetaHuman-Paladin von Polyphoria auf Manny, eine modulare Rüstung als Ausrüstung per Leader Pose, Knight_01 als Vergleich; ohne Sound und Charakter-Editor | **Definiert** 18.10.2026, wartet auf **Bereit** | [Definition](gasp-character-armor-pilot.md), [Plan](gasp-movement-plan.md#gasp-16-character-and-armor-pilot) |
+Derzeit ist kein weiteres Paket geplant.
 
 ## Arbeitsregeln über mehrere Chats
 
