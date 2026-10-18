@@ -1,6 +1,6 @@
 # GASP-16 – Character and armor pilot
 
-Status: **In progress** since 2026-10-18. Phases A, B and C are done; Phase D is built and Phase D2 (MetaHuman base body) is built and checked in PIE. The rest of Phase D (inventory equip, late join, dedicated server, death and respawn) is next. On 2026-10-18 the user changed the design to Lyra Character Parts (see [Decisions](#decisions)). Defined in [#262](https://github.com/Athurito/SurvivalRpg/pull/262) after the user added character packs to the asset library and chose the pilot character and the character-editor scope. This report is the task report.
+Status: **In progress** since 2026-10-18. Phases A, B, C, D and D2 (MetaHuman base body) are done, apart from inventory equips by remote owners, which a separate inventory replication crash blocks (see [Phase D – network, death and respawn](#phase-d--network-death-and-respawn-2026-10-18)). Phase E (Knight_01 comparison) is next. On 2026-10-18 the user changed the design to Lyra Character Parts (see [Decisions](#decisions)). Defined in [#262](https://github.com/Athurito/SurvivalRpg/pull/262) after the user added character packs to the asset library and chose the pilot character and the character-editor scope. This report is the task report.
 
 ## Goal
 
@@ -369,12 +369,7 @@ Items, Experience and map:
 - The skin masks target a real MetaHuman body, which the pack does not include. `SK_tal_nrw_base` is a grey fitting template.
 - Removable armor pieces therefore need a base body. This is a decision for the user (see the PR).
 
-**Not yet done:**
-- equipping through the inventory in PIE (the chest is in the map);
-- the late-join part of the PIE network test (listen server with clients passed in Phases D and D2);
-- a dedicated server;
-- death, ragdoll and respawn;
-- Phases E and F.
+**Not yet done at this point:** inventory equips, late join, the dedicated server, and death, ragdoll and respawn. See [Phase D – network, death and respawn](#phase-d--network-death-and-respawn-2026-10-18).
 
 ### Phase D2 – MetaHuman base body (2026-10-18)
 
@@ -449,4 +444,49 @@ Built in the asset library and the SurvivalRpg editor through the MCP workflow (
 - **LOD sync.** The armor parts (one LOD each) are not part of it.
 - **Unused Polyphoria Base packages.** 34 packages (30.3 MB: the old head and hands, skin, eye and hair materials and textures, and two unused masks) were no longer referenced and were deleted with the user's approval. The manifest lists them.
 - **VRAM.** With three editors open, the GPU ran out of video memory; the listen-server images show the warning. Phase F measures cost with only one editor running.
-- **Still open from Phase D:** equipping through the inventory, late join, the dedicated server, and death, ragdoll and respawn.
+- **Still open from Phase D at that point:** equipping through the inventory, late join, the dedicated server, and death, ragdoll and respawn (done in the next section).
+
+### Phase D – network, death and respawn (2026-10-18)
+
+Done after Phase D2, on the MetaHuman Paladin. Commits `5d977c95` (fix) and `e3232fda` (tests).
+
+**PIE network tests** (`SurvivalRpg.Cosmetics.CharacterParts.*PIE`, CQTest, the pilot Experience `RpgGaspPaladinExperience`)
+- `CharacterPartsListenServerPIE`: a listen server, one client, and a late joiner that connects mid-test.
+  - The controller-granted body reaches every machine.
+  - Five armor pieces equipped through the equipment manager reach the owner, the listen server and the late joiner.
+  - Taking the helmet off uncovers the head everywhere.
+  - After death and respawn, the new pawn wears the body again on every machine, and armor equipped on it reaches the late joiner.
+  - The host then equips all five pieces one by one through the real inventory route (grant, equipment intent, loadout, equipment, part). Both clients see the host armored.
+  - Every machine checks the part list, the cover tags, the Leader Pose binding of every armor mesh to the body's leader mesh, and the invisible gameplay mesh.
+- `CharacterPartsDedicatedServerPIE`: the client shows the body with helmet and chest. The dedicated server holds both equipment instances but spawns no part actor.
+- Results:
+  - `ue.py test SurvivalRpg.Cosmetics SurvivalRpg.Equipment`: 23 run, 23 passed, twice.
+  - The warnings are the usual PIE network noise (voice interface, NetGUID) and an existing respawn widget warning.
+
+**Finding: inventory equips by a remote owner crash the server** (outside `GASP-16`; tracked as a separate task)
+- When a remote client equips a second item through `RequestApplyInventoryEquipmentIntent`, the server fails the engine check `FixedShadowIndex > Index` in `FRepLayout::DeltaSerializeFastArrayProperty` while replicating `FRpgInventoryList`.
+- Scope:
+  - It happens on a listen server and on a dedicated server, whatever the item; the first equip goes through.
+  - Two intents in the same frame did not crash.
+  - The host's own sequential inventory equips do not crash; its inventory has no remote receiver.
+- Likely cause: the engine's shadow fix-up for reordered fast arrays never updates its ID-to-index map after a swap, and the inventory reorders its replicated entries after moves (`SortEntriesByPlacement`).
+- The inventory code is unchanged on this branch, so the bug most likely exists on `master` too (not checked there).
+- The tests therefore equip remote owners through the equipment manager, and only the host through the inventory.
+
+**Fix: part meshes tick after the gameplay mesh**
+- Problem: Lyra adds the tick prerequisite only to a part actor's root. The MetaHuman body's copy-pose mesh sits below a scene root, so it ticked before the gameplay mesh and showed the previous frame, up to 3.5 cm off during the death montage.
+- Fix: `URpgPawnComponent_CharacterParts` now gives every skinned mesh of a spawned part the prerequisite. This is the only native change of Phase D/D2; there are no new classes.
+- Test: the spawn test checks it, and fails without the fix.
+- PIE measurement: while running at 375 cm/s and during the death montage, the body's hands, feet, head and pelvis match the gameplay mesh at 0.0 cm.
+
+**Death, ragdoll and respawn (PIE)**
+- The corpse keeps the body and all five armor parts, and they follow the ragdoll.
+- The visible body trails the ragdoll by one physics frame: pelvis 0.0 cm, but feet and head 4–21 cm off while falling. Physics writes the ragdoll bones after the body has copied the pose.
+- A post-physics tick group on the body would remove the trail. It was tried and reverted: the chest's cloth follows the body by Leader Pose and would then simulate on the previous frame's pose.
+- This Experience removes the corpse with its parts about 2 s after death (corpse profile).
+- After respawn, the controller parts component gives the new pawn the body again. Inventory-backed armor returns through the loadout. Armor equipped directly through the equipment manager does not return, as intended.
+
+**Limits**
+- Inventory equips by remote owners are blocked by the crash above; the user check of armor in multiplayer has to wait for that fix.
+- The ragdoll trail described above.
+- `CharacterPartsDedicatedServerPIE` once crashed in the engine while PIE was shutting down (`GameViewport.IsUnique()` in `SLevelViewport::EndPlayInEditorSession`) after all its steps had passed. It did not happen again in four further runs.
