@@ -1,6 +1,6 @@
 # GASP-16 – Character and armor pilot
 
-Status: **In progress** since 2026-10-18. Phases A, B and C are done; next is Phase D (Paladin content). On 2026-10-18 the user changed the design to Lyra Character Parts (see [Decisions](#decisions)). Defined in [#262](https://github.com/Athurito/SurvivalRpg/pull/262) after the user added character packs to the asset library and chose the pilot character and the character-editor scope. This report is the task report.
+Status: **In progress** since 2026-10-18. Phases A, B and C are done; Phase D is built, and Phase D2 (MetaHuman base body) is next. On 2026-10-18 the user changed the design to Lyra Character Parts (see [Decisions](#decisions)). Defined in [#262](https://github.com/Athurito/SurvivalRpg/pull/262) after the user added character packs to the asset library and chose the pilot character and the character-editor scope. This report is the task report.
 
 ## Goal
 
@@ -82,6 +82,12 @@ Since `GASP-15`, the CMC pawns play the plain Lyra mannequin `SKM_Manny_Simple_G
    - Five Paladin armor items for `Head`, `Chest`, `Hands`, `Legs` and `Feet`, with equipment definitions that list their part. The existing `ID_BasicHelmet` gets the Paladin helmet part.
    - A pilot Experience on a test map copied from the approved `Lvl_RpgGaspMantle` presentation. It adds the pawn parts component to the CMC Mantle pawn and a controller parts component with the Paladin body, as Lyra's `B_PickRandomCharacter` does. The production Experiences stay unchanged.
    - Load weights and other armor balance values stay unchanged unless the user sets them.
+4b. **Phase D2 – MetaHuman base body (added 2026-10-18).** The pack has no naked body (see Phase D results).
+   - Enable the MetaHuman plugins in the asset project only, open the pack's `MHC_paladin` MetaHuman Character and assemble it.
+   - Bring its body into the project as the base body under the Paladin armor, on the MetaHuman body skeleton or the UE5 mannequin skeleton where the bones allow. The body mask textures then hide the covered regions.
+   - Decide with measurements whether the MetaHuman face replaces the Polyphoria head, or the light head stays. Weigh the face's bone count, LODs and cost against four players.
+   - SurvivalRpg enables a MetaHuman plugin only if the assembled assets need one at runtime; the report records which plugin and why.
+   - The armor stays as built; only the body part changes.
 5. **Phase E – Knight_01 comparison.**
    - Swap the controller's body part to a Knight_01 part in the same PIE session.
    - Compare fit, animation quality and cost with the Paladin.
@@ -94,7 +100,7 @@ Since `GASP-15`, the CMC pawns play the plain Lyra mannequin `SKM_Manny_Simple_G
 
 ## Out of scope
 
-- A player-facing character editor, and enabling the MetaHuman plugins or `MH_Creator` assets. That is a later package (user decision 2026-10-18).
+- A player-facing character editor. That is a later package (user decision 2026-10-18). The MetaHuman plugins and `MHC_paladin` came into scope through Phase D2.
 - Armor Foley and all other sound (user decision 2026-10-18).
 - Switching the production CMC pawns or the Mover pawns. The Mover keeps UEFN and gets no parts component, so it shows no armor.
 - Enemy characters and their retargeting (`SkeletonArmy`, `BLACKMOON`, `YI_NPC`, `SkeletonCharacter`, Paragon).
@@ -111,6 +117,7 @@ Since `GASP-15`, the CMC pawns play the plain Lyra mannequin `SKM_Manny_Simple_G
 - 2026-10-18 (user): cap migrated textures at 2K.
 - 2026-10-18 (user): the packs are under the Fab Standard License. The user believes most were bought with the Professional tier, although the listings show "Standard".
 - 2026-10-18 (user): after the finding that the Polyphoria pack ships no naked body, use a MetaHuman body as the base body under the Paladin armor. This brings the MetaHuman plugins into scope, which the definition had left out. UE 5.8 ships them under `Engine/Plugins/MetaHuman` (`MetaHumanCharacter` is the in-editor Creator). The pack's `MH_Creator/MHC_paladin` is a MetaHuman Character asset made for this outfit.
+- 2026-10-18 (user): the base body is the pack's `MHC_paladin`, and the MetaHuman body becomes part of `GASP-16` (Phase D2) instead of a separate package.
 - Earlier, still in force: Manny (`SK_Mannequin`) is the gameplay and animation skeleton (`GASP-14`/`GASP-15`), and `SK_Mannequin` gets no bone or hierarchy change.
 
 ## C++ boundary
