@@ -183,9 +183,12 @@ Its recorded limits carry into GASP-14 and GASP-15:
 
 ### GASP-16: Character and armor pilot
 
+**Defined** on 2026-10-18 and waiting for **Ready**; see the [definition](gasp-character-armor-pilot.md).
+
 - **Goal:** prove a marketplace character on the chosen skeleton with one modular armor set driven by Leader Pose, including hiding body parts under armor.
-- **Armor Foley:** moved here from GASP-13 at the user's choice on 2026-10-14, unless it becomes its own audio package. Its layers may differ by load, because Foley keeps the pace and does not change movement.
-- **Depends on:** GASP-08 decision and a character asset the user selects. MetaHuman remains an option only if a character creator becomes a goal.
+- **Character:** the user chose the Polyphoria MetaHuman Paladin, with Knight_01 as a comparison. A character editor comes later; GASP-16 keeps the MetaHuman route open.
+- **Armor Foley:** moved here from GASP-13 on 2026-10-14. On 2026-10-18 the user deferred all sound, so it is out of GASP-16 and waits for a later audio package. Its layers may differ by load, because Foley keeps the pace and does not change movement.
+- **Depends on:** GASP-15 (merged).
 
 ### Related combat work
 
