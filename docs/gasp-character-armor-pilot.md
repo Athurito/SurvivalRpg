@@ -118,6 +118,7 @@ Since `GASP-15`, the CMC pawns play the plain Lyra mannequin `SKM_Manny_Simple_G
 - 2026-10-18 (user): the packs are under the Fab Standard License. The user believes most were bought with the Professional tier, although the listings show "Standard".
 - 2026-10-18 (user): after the finding that the Polyphoria pack ships no naked body, use a MetaHuman body as the base body under the Paladin armor. This brings the MetaHuman plugins into scope, which the definition had left out. UE 5.8 ships them under `Engine/Plugins/MetaHuman` (`MetaHumanCharacter` is the in-editor Creator). The pack's `MH_Creator/MHC_paladin` is a MetaHuman Character asset made for this outfit.
 - 2026-10-18 (user): the base body is the pack's `MHC_paladin`, and the MetaHuman body becomes part of `GASP-16` (Phase D2) instead of a separate package.
+- 2026-10-18 (user): delete the Polyphoria Base packages that Phase D2 left unused.
 - 2026-10-18 (user): more MetaHumans follow later as male player variants under the same Paladin armor, in a separate package after Phase D2. Female variants stay out of scope.
 - Earlier, still in force: Manny (`SK_Mannequin`) is the gameplay and animation skeleton (`GASP-14`/`GASP-15`), and `SK_Mannequin` gets no bone or hierarchy change.
 
@@ -446,6 +447,6 @@ Built in the asset library and the SurvivalRpg editor through the MCP workflow (
 **Limits**
 - **Face and correctives.** The face has a neutral expression. The body correctives come from RigLogic; the head-movement IK is gone.
 - **LOD sync.** The armor parts (one LOD each) are not part of it.
-- **Unused Polyphoria Base packages.** 34 packages (30.3 MB: the old head and hands, skin, eye and hair materials and textures, and two unused masks) are no longer referenced. They are listed in the manifest and kept until the user decides.
+- **Unused Polyphoria Base packages.** 34 packages (30.3 MB: the old head and hands, skin, eye and hair materials and textures, and two unused masks) were no longer referenced and were deleted with the user's approval. The manifest lists them.
 - **VRAM.** With three editors open, the GPU ran out of video memory; the listen-server images show the warning. Phase F measures cost with only one editor running.
 - **Still open from Phase D:** equipping through the inventory, late join, the dedicated server, and death, ragdoll and respawn.

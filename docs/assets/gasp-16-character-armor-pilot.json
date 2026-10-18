@@ -11,7 +11,8 @@
   "2026-10-18 (user): cap migrated textures at 2K",
   "2026-10-18 (user): Fab Standard License",
   "2026-10-18 (user): base body is a MetaHuman body built from the pack's MHC_paladin, integrated into GASP-16 as Phase D2",
-  "2026-10-18 (user): more MetaHumans as male player variants come later as a separate package after Phase D2"
+  "2026-10-18 (user): more MetaHumans as male player variants come later as a separate package after Phase D2",
+  "2026-10-18 (user): delete the Polyphoria Base packages left unused by Phase D2"
  ],
  "migrated": {
   "source": "D:/Repos/Assets/Assets_3DAssets",
@@ -493,7 +494,7 @@
    "M_MetaHumanSkin_CoverMask is a masked copy of M_skin_unified_baked with the Polyphoria cover mask parameters. The root instance MI_Head_Baked_LOD0_VT uses it; the body and face skin instances keep their original parent chain and static switches.",
    "T_Body_BC_VT was resized from 8192 to 2048 px; every other texture was already at or below 2048 px.",
    "SurvivalRpg needs no new plugin: MetaHumanCharacter and MetaHumanCoreTech have been enabled since the GASP import and bring RigLogic and HairStrands.",
-   "Unused since Phase D2 and kept pending the owner's decision: 34 Polyphoria Base packages (old head, hands, skin, eye and hair materials and textures, two unused masks)."
+   "Deleted on 2026-10-18 with the owner's approval: 34 Polyphoria Base packages (30.3 MB: the old head and hands, skin, eye and hair materials and textures, two unused masks) that nothing referenced after Phase D2."
   ],
   "package_count": 205,
   "bytes": 180742524,
@@ -1322,7 +1323,7 @@
     "project_authored": true
    }
   ],
-  "unused_polyphoria_base_packages": [
+  "deleted_polyphoria_base_packages": [
    "/Game/SurvivalRpg/Characters/Polyphoria/Base/Materials/Basematerials/MI_tearline",
    "/Game/SurvivalRpg/Characters/Polyphoria/Base/Materials/Basematerials/M_TearLine_",
    "/Game/SurvivalRpg/Characters/Polyphoria/Base/Materials/Eye_hair/Eye/MI_eye_Brown_master",
