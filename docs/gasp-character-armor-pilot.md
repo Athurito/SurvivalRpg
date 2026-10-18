@@ -1,10 +1,17 @@
 # GASP-16 – Character and armor pilot
 
-Status: **In progress** since 2026-10-18; Phase A done, waiting for the user's decision before Phase B. Defined in [#262](https://github.com/Athurito/SurvivalRpg/pull/262) after the user added character packs to the asset library and chose the pilot character and the character-editor scope (see [Decisions](#decisions)). This report is the task report.
+Status: **In progress** since 2026-10-18. Phase A is done. On 2026-10-18 the user changed the design to Lyra Character Parts (see [Decisions](#decisions)); next is Phase B. Defined in [#262](https://github.com/Athurito/SurvivalRpg/pull/262) after the user added character packs to the asset library and chose the pilot character and the character-editor scope. This report is the task report.
 
 ## Goal
 
-A marketplace player character runs on the Manny gameplay skeleton from `GASP-14`/`GASP-15`: the Polyphoria MetaHuman Paladin with one modular armor set. The armor pieces are equipment that follow the gameplay mesh by Leader Pose and hide the body parts they cover. This works on every network role, including late join, death and ragdoll. Knight_01 runs as a comparison and fallback. The MetaHuman route to a later character editor stays open.
+A marketplace player character runs on the Manny gameplay skeleton from `GASP-14`/`GASP-15`: the Polyphoria MetaHuman Paladin with one modular armor set.
+
+The project adopts Lyra's Character Parts:
+- The animated `GetMesh()` stays the Manny gameplay mesh. It becomes invisible while a body part is present.
+- The visible Paladin body is a character part. It copies the gameplay mesh's pose and drives its corrective bones with the UE5 mannequin post-process.
+- The armor pieces are character parts that equipment adds and removes. They follow the body by Leader Pose and inherit its corrective bones. Through their cosmetic tags they hide the body regions they cover.
+
+This works on every network role, including late join, death and ragdoll. Knight_01 runs as a comparison and fallback. The MetaHuman route to a later character editor stays open, and the Character Parts controller component becomes its seam.
 
 ## Why
 
@@ -41,27 +48,44 @@ Since `GASP-15`, the CMC pawns play the plain Lyra mannequin `SKM_Manny_Simple_G
    - If the Paladin body and armor fit Manny within 2 cm per segment and the extra bones carry no visible weight, continue with Leader Pose.
    - Otherwise stop after Phase A. Present the fit, the cost of the runtime retarget path (which keeps the Paladin's proportions) and the Knight_01 fallback to the user before Phase B.
 2. **Phase B – migrate the curated subset.**
-   - Migrate the Paladin base body, hands, the materials and textures they need, and one armor set: one helmet, chest, bracers, pants and boots.
+   - Migrate the Paladin base body, hands, the materials and textures they need, the body masks, and one armor set: one helmet, chest, bracers, pants and boots.
    - Migrate one full Knight_01 mesh with its materials.
-   - Re-point the base body to the Lyra `SK_Mannequin` only if that adds no bone (the "muscle_head_v3" name needs checking). Otherwise the body keeps its own skeleton and follows by Leader Pose.
-   - The armor keeps `SKEL_metahuman_base`, because adding the MetaHuman bones to `SK_Mannequin` is ruled out.
+   - Cap the source data of every migrated texture at 2048 pixels (user decision), so the repository stores 2K data.
+   - Skeletons:
+     - The body and hands move to the UE5 mannequin skeleton that `ABP_Manny_PostProcess` targets (`Characters/GASP/Shared/Characters/UE5_Mannequins/Meshes/SK_Mannequin`), but only if that adds no bone.
+     - Otherwise they keep `SKEL_metahuman_base` and get a copy of the post-process on that skeleton.
+     - The armor keeps `SKEL_metahuman_base`.
+     - The Lyra `SK_Mannequin` gets no bone.
    - Leave out demo content, `MH_Creator`, weapons and UE4 variants.
-   - Record each pack's licence and the added LFS volume. Cap textures above 2K only with the user's agreement.
-3. **Phase C – Paladin pilot pawn.**
-   - Add a child of `BP_RpgGasp_MantleCharacter` whose `GetMesh()` is the Paladin base body, with `ABP_RpgGasp_CMC_Manny` and a matching physics asset.
-   - Give it a PawnData and an Experience on a test map copied from the approved `Lvl_RpgGaspMantle` presentation.
-   - The gameplay mesh stays on `SK_Mannequin` or plays the Manny AnimBP as a compatible skeleton, so that montages, traversal and the Manny block presentation work unchanged.
-   - Weapon grips are checked against Manny.
-4. **Phase D – armor as equipment.**
-   - Add Paladin armor items for `Head`, `Chest`, `Hands`, `Legs` and `Feet`, each with an equipment definition. Each definition spawns an armor actor through `ActorsToSpawn`. The existing `ID_BasicHelmet` gets the Paladin helmet.
-   - The armor actor (Blueprint) binds its skeletal mesh to the attach parent by Leader Pose on every machine and unbinds on removal.
-   - A Blueprint appearance component on the pilot pawn collects the body regions that the active armor hides and sets the body material masks. Removing one piece reveals only regions that no other piece still covers.
-   - On a gameplay mesh whose skeleton the armor does not fit (the UEFN Mover), the armor actor stays hidden instead of showing a distorted mesh.
+   - Record the licence (Fab Standard License) in `docs/third-party-notices.md`, plus the added LFS volume.
+3. **Phase C – Character Parts (native, ported from Lyra).**
+   - Port `ULyraPawnComponent_CharacterParts`, `ULyraControllerComponent_CharacterParts`, the part types and the body-style selection as `URpg...` types, close to 1:1. Also port `ALyraTaggedActor` as the base for part actors, because `IGameplayTagAssetInterface` cannot be implemented in Blueprint.
+   - Keep Lyra's behaviour:
+     - a FastArray list of parts on the pawn, changed only by the authority;
+     - each non-dedicated machine spawns the part actors locally as child actor components on `GetMesh()`;
+     - cosmetic tags are collected from the parts;
+     - the body-style rules pick the gameplay mesh from those tags;
+     - the controller component re-applies its parts when it possesses a new pawn.
+   - Leave out the cosmetic cheats, developer settings and animation-layer selection.
+   - Bridge to equipment: `URpgEquipmentDefinition` gains a list of character parts. `URpgEquipmentInstance` adds them to the pawn's parts component on equip (authority only), keeps the handles, and removes them on unequip and on teardown.
+   - Native tests at the seams:
+     - part list add and remove with handles;
+     - collected tags and body-style selection;
+     - equip and unequip adding and removing parts.
+   - A PIE network test checks that a proxy and a late joiner spawn the same parts.
+4. **Phase D – Paladin content.**
+   - An invisible variant of the gameplay mesh, `SKM_Manny_Simple_GaspLook` with an invisible material (Lyra's `SKM_Manny_Invis` pattern). The pawn's body-style rules select it while a body tag is present. Without a body part the pawn looks as it does today.
+   - The body part, a Blueprint on the tagged actor:
+     - It carries the Paladin body and hands. A copy-pose AnimBP takes the pose from the attach parent, and the mesh's post-process drives the correctives.
+     - It listens to the parts component's change event. It sets the skin mask textures for the collected `Cover` tags and hides the hands while gloves are present.
+   - Armor part Blueprints bind Leader Pose to the body part's mesh, or to `GetMesh()` while no body part exists, and rebind on every parts change. Each piece carries its `Cover` tag.
+   - Five Paladin armor items for `Head`, `Chest`, `Hands`, `Legs` and `Feet`, with equipment definitions that list their part. The existing `ID_BasicHelmet` gets the Paladin helmet part.
+   - A pilot Experience on a test map copied from the approved `Lvl_RpgGaspMantle` presentation. It adds the pawn parts component to the CMC Mantle pawn and a controller parts component with the Paladin body, as Lyra's `B_PickRandomCharacter` does. The production Experiences stay unchanged.
    - Load weights and other armor balance values stay unchanged unless the user sets them.
 5. **Phase E – Knight_01 comparison.**
-   - Swap the pilot pawn's mesh to the full Knight_01 mesh in the same PIE session, as the `GASP-15` skeleton A/B did, without a separate pawn.
+   - Swap the controller's body part to a Knight_01 part in the same PIE session.
    - Compare fit, animation quality and cost with the Paladin.
-   - If Phase A or D fails for the Paladin, Knight_01 becomes the pilot character after the user agrees.
+   - If the Paladin fails in Phase D, Knight_01 becomes the pilot character after the user agrees.
 6. **Phase F – validation and the user check.**
    - Network: equip and unequip on owner, listen server, proxy and late joiner.
    - Combat, block, hit reaction, death, corpse ragdoll and respawn with full armor.
@@ -72,10 +96,10 @@ Since `GASP-15`, the CMC pawns play the plain Lyra mannequin `SKM_Manny_Simple_G
 
 - A player-facing character editor, and enabling the MetaHuman plugins or `MH_Creator` assets. That is a later package (user decision 2026-10-18).
 - Armor Foley and all other sound (user decision 2026-10-18).
-- Switching the production CMC pawns or the Mover pawns. The Mover keeps UEFN and shows no armor.
+- Switching the production CMC pawns or the Mover pawns. The Mover keeps UEFN and gets no parts component, so it shows no armor.
 - Enemy characters and their retargeting (`SkeletonArmy`, `BLACKMOON`, `YI_NPC`, `SkeletonCharacter`, Paragon).
 - Paladin weapons and shields as weapon items, armor stats, armor balance and new load values.
-- Female body variants, hair and beard customization.
+- Female body variants, hair and beard customization, and cosmetic animation-layer selection.
 
 ## Decisions
 
@@ -83,25 +107,40 @@ Since `GASP-15`, the CMC pawns play the plain Lyra mannequin `SKM_Manny_Simple_G
 - 2026-10-18 (user): the Polyphoria MetaHuman Paladin is the pilot player character, with Knight_01 as a comparison.
 - 2026-10-18 (user): a character editor comes later. `GASP-16` builds one fixed Paladin and keeps the MetaHuman route open.
 - 2026-10-18 (user): sound, including armor Foley, comes later because things may still change. This reverses the 2026-10-14 move of armor Foley into `GASP-16`.
+- 2026-10-18 (user): adopt Lyra's Character Parts instead of armor actors spawned through `ActorsToSpawn`. The visible body copies the pose and drives its corrective bones; the armor follows the body by Leader Pose. This changes the C++ boundary below.
+- 2026-10-18 (user): cap migrated textures at 2K.
+- 2026-10-18 (user): the packs are under the Fab Standard License. The user believes most were bought with the Professional tier, although the listings show "Standard".
 - Earlier, still in force: Manny (`SK_Mannequin`) is the gameplay and animation skeleton (`GASP-14`/`GASP-15`), and `SK_Mannequin` gets no bone or hierarchy change.
 
 ## C++ boundary
 
-- **Classification:** designer-owned content and composition on existing mechanisms.
+- **Classification:**
+  - Character Parts is a reusable native mechanism: replicated state, authority-only changes, and the lifecycle of locally spawned part actors.
+  - The equipment link is a schema extension of the equipment definition.
+  - Everything Paladin-specific is designer content.
 - **Runtime truth:**
   - Equipped armor is server-owned equipment state, as today.
-  - The armor actors are replicated, spawned by the server through `ActorsToSpawn`.
-  - Leader Pose binding and body masks are cosmetic, and each machine derives them from the replicated actors.
+  - The pawn's part list is server-owned and replicated as a FastArray; the controller's part list is server-owned.
+  - Part actors, Leader Pose, the copy pose, correctives and body masks are cosmetic. Each non-dedicated machine derives them from the replicated list.
 - **Existing seams:**
-  - `URpgEquipmentDefinition::ActorsToSpawn` and `URpgEquipmentInstance::SpawnEquipmentActors`;
+  - `URpgEquipmentDefinition` and `URpgEquipmentInstance` (equip and unequip lifecycle);
+  - `UPawnComponent` / `UControllerComponent` from ModularGameplay;
+  - Experience `AddComponents` actions;
   - `URpgPawnExtensionComponent::FindGameplayMesh`;
-  - `FRpgWeaponBlockDefinition::SkeletonPresentations`;
-  - the armor equipment slots;
-  - `URpgRuntimeRetargetComponent`, only if Phase A requires it.
+  - `FRpgWeaponBlockDefinition::SkeletonPresentations` (unchanged, because `GetMesh()` stays on `SK_Mannequin`);
+  - `ABP_Manny_PostProcess` and `CR_Mannequin_Procedural` from the GASP content.
 - **Ownership:**
-  - Blueprint and assets: armor actor, appearance component, item and equipment definitions, pilot pawn, PawnData, Experience and map.
-  - C++: nothing new.
-- **New native classes:** none expected. One exception is possible. If Blueprint cannot bind Leader Pose reliably when a late joiner receives the armor actor before the pawn's mesh, the smallest native seam would be a reusable component that rebinds on attachment replication. The report would record that need.
+  - C++: the parts components, the part types, the body-style selection, the tagged actor base, the equipment part list and its lifecycle.
+  - Blueprint and assets: the part actors, invisible mesh, copy-pose AnimBP, items, equipment definitions, the controller parts Blueprint, and the pilot Experience and map.
+- **New native classes:** three, ported from Lyra:
+  - `URpgPawnComponent_CharacterParts`;
+  - `URpgControllerComponent_CharacterParts`;
+  - `ARpgTaggedActor`.
+
+  The part types and the body-style selection come along as structs. Justification:
+  - replication via FastArray and authority-only mutation;
+  - client-local spawn and teardown lifecycle;
+  - `IGameplayTagAssetInterface`, which Blueprint cannot implement.
 - **Asset work:** migration with the asset project's MCP (port 8001), authoring through the Unreal MCP workflow (port 8000), compile and save, asset-registry closure checks, PIE probes.
 
 ## Ownership
@@ -109,26 +148,28 @@ Since `GASP-15`, the CMC pawns play the plain Lyra mannequin `SKM_Manny_Simple_G
 | Concern | Owner |
 | --- | --- |
 | Equipped armor, slots, grants | Unchanged: equipment components on the server |
-| Armor visuals | Armor actor Blueprint per piece, spawned by the equipment definition |
-| Body masking under armor | Blueprint appearance component on the pawn; cosmetic, per machine |
-| Character mesh, physics asset, pilot pawn, PawnData, Experience, map | Designer content through the Unreal MCP workflow |
+| Which parts a pawn wears | Native parts components; equipment adds armor parts, the controller adds the body |
+| Part visuals, Leader Pose, copy pose, correctives | Part actor Blueprints and AnimBPs; cosmetic, per machine |
+| Body masking under armor | Body part Blueprint from the collected `Cover` tags; cosmetic, per machine |
+| Invisible gameplay mesh selection | Body-style rules on the pawn parts component |
+| Pilot Experience, map, items | Designer content through the Unreal MCP workflow |
 | Migrated third-party content | Curated subset, licence entry in `docs/third-party-notices.md`, manifest under `docs/assets` |
-| Verification | PIE network tests and probes, asset contract checks; no C++ test per visual leaf |
+| Verification | Native tests at the parts and equipment seams, a PIE network test, asset contract checks; no C++ test per visual leaf |
 
 ## Acceptance criteria
 
 | Area | Criterion |
 | --- | --- |
-| Fit | Phase A reports bone-length differences, extra-bone weights and the chosen binding (Leader Pose or retarget), with the decision rule applied. |
+| Fit | Phase A reports bone-length differences, extra-bone weights and the chosen binding (done). |
 | Character | The pilot pawn shows the Paladin body and plays locomotion, traversal, attacks, block, hit reaction and death natively on Manny animations. Weapon grips match Manny within 1 cm and 2°, or the user accepts the difference. |
-| Armor | Each of the five pieces equips and unequips through the inventory, follows the body without visible lag, and hides the body regions it covers. Removing one piece reveals only its own regions. |
-| Network | Owner, listen server, proxy and late joiner see the same armor and body masks after equip, unequip and respawn. |
-| Death and ragdoll | Armor follows the corpse ragdoll and is gone or restored correctly after respawn. |
-| Mover | The Mover pawn with armor equipped shows no distorted armor. |
+| Armor | Each of the five pieces equips and unequips through the inventory, follows the body without visible lag, deforms with the body's correctives, and hides the body regions it covers. Removing one piece reveals only its own regions. |
+| Network | Owner, listen server, proxy and late joiner see the same parts, armor and body masks after equip, unequip and respawn. A dedicated server spawns no part actors. |
+| Death and ragdoll | Body and armor follow the corpse ragdoll and are gone or restored correctly after respawn. |
+| Mover and production | The Mover and the production Experiences are unchanged; a pawn without a body part looks as today. |
 | Comparison | Knight_01 is compared with the Paladin in the same session on fit, animation and cost. |
 | Performance | Game-thread, render-thread and animation-worker cost and draw calls for one and four armored characters against Manny, in the same editor run. |
-| Content | Only the curated subset is migrated. No remaining reference into the asset library or to demo content. Licences and LFS volume are recorded. |
-| Regression | Native, animation, CMC, block, traversal, equipment, network and Mover suites pass apart from documented timing cases. |
+| Content | Only the curated subset is migrated, with textures at 2K or less. No remaining reference into the asset library or to demo content. Licence and LFS volume are recorded. |
+| Regression | Native (including the new parts tests), animation, CMC, block, traversal, equipment, network and Mover suites pass apart from documented timing cases. |
 | User check | The user plays the pilot map alone and in a listen-server session, equips and removes armor, fights and dies. |
 
 ## Verification
@@ -197,13 +238,14 @@ Measured in the asset project `Assets_3DAssets` (UE 5.8.3, MCP port 8001) with a
 | Knight_01 `SKM_Knight_01_Full_01` | 23 | 316 MB | 16, 288 MB | 1 (95,078 vertices) | 1 |
 
 - Both closures stay inside their pack, with no reference to demo content or other packs.
-- A 2K texture cap would shrink them substantially. It needs the user's agreement (see the scope).
-- Licences: not yet recorded; the user confirms them before Phase B.
+- The user chose a 2K texture cap. Licence: Fab Standard License (see [Decisions](#decisions)).
 
 **Decision rule.**
 - The proportions pass.
 - The extra bones carry weight, which the rule does not allow. Their effect under Leader Pose was not visible in the probe.
-- Following the rule, the task stops after Phase A for the user's decision. The options:
-  - continue with plain Leader Pose (recommended);
-  - add corrective post-processing later as its own step;
-  - switch the pilot to Knight_01, which needs no correctives but carries the 3.2 cm toe offset and more texture memory.
+- Follow-up check:
+  - Every extra bone of the five armor pieces also exists in the Paladin body.
+  - The body's bones equal the full UE5 `SKM_Manny`, without its `ik_*`, `interaction`, `weapon_*` and `center_of_mass` bones.
+  - So a body that copies the pose and runs the UE5 mannequin post-process (Pose Driver and `CR_Mannequin_Procedural`) drives the correctives, and the armor inherits them by Leader Pose.
+  - This is Lyra's own pattern. Its `B_Manny` is a character part with the full `SKM_Manny`, the copy-pose AnimBP `ABP_Mannequin_CopyPose`, and the post-process `ABP_Manny_PostProcess` on the mesh.
+- Following the rule, the task stopped after Phase A for the user's decision. The user chose the Lyra Character Parts design with a corrective-driven body (see [Decisions](#decisions)).

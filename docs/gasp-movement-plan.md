@@ -187,6 +187,7 @@ Its recorded limits carry into GASP-14 and GASP-15:
 
 - **Goal:** prove a marketplace character on the chosen skeleton with one modular armor set driven by Leader Pose, including hiding body parts under armor.
 - **Character:** the user chose the Polyphoria MetaHuman Paladin, with Knight_01 as a comparison. A character editor comes later; GASP-16 keeps the MetaHuman route open.
+- **Design:** after Phase A the user chose Lyra's Character Parts on 2026-10-18. The visible body copies the pose and drives its corrective bones, and the armor follows the body by Leader Pose. Migrated textures are capped at 2K.
 - **Armor Foley:** moved here from GASP-13 on 2026-10-14. On 2026-10-18 the user deferred all sound, so it is out of GASP-16 and waits for a later audio package. Its layers may differ by load, because Foley keeps the pace and does not change movement.
 - **Depends on:** GASP-15 (merged).
 
