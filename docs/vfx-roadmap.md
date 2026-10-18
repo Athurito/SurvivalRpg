@@ -68,7 +68,7 @@ its own row below.
 | ID | Task | Status | Report / PR |
 | --- | --- | --- | --- |
 | VFX-01 | Foundation: core FX folder, master materials, curated flipbooks, Effect Types, VFX gallery map | Merged | [vfx-foundation.md](vfx-foundation.md), [PR #258](https://github.com/Athurito/SurvivalRpg/pull/258) |
-| VFX-02 | Echo rune: smouldering runes on the blade, flare on the third hit, ash-and-distortion ghost strike (`GF_Runes_Core`), as a prototype the gallery triggers by hand | In review | [vfx-echo-rune.md](vfx-echo-rune.md) |
-| VFX-03 | Soul harvest: wisps from killed enemies to the player when XP is awarded (`GF_Progression`), with a cue hook in the XP award and a multiplayer check | Planned | |
+| VFX-02 | Echo rune: smouldering runes on the blade, flare on the third hit, ash-and-distortion ghost strike (`GF_Runes_Core`), as a prototype the gallery triggers by hand | Merged | [vfx-echo-rune.md](vfx-echo-rune.md), [PR #260](https://github.com/Athurito/SurvivalRpg/pull/260) |
+| VFX-03 | Soul harvest: wisps from killed enemies to the player when XP is awarded (`GF_Progression`), with a cue hook in the XP award and a multiplayer check | In review | [vfx-soul-harvest.md](vfx-soul-harvest.md) |
 | VFX-04 | Portal closing: destabilise, rune ring locks, implosion, scar (`GF_Portals_Core`, `GA_ClosePortal`) | Planned | |
 | VFX-05 | Spell prototypes (seal break, rift bolt, ash fetter in `GF_Combat_Magic`) and Rift Sense (`GF_Harvesting_Magic`) | Planned | |

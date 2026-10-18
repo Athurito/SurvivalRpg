@@ -1,5 +1,6 @@
 #include "RpgGameFeatureAction_AwardKillXP.h"
 
+#include "AbilitySystemComponent.h"
 #include "Engine/CurveTable.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
@@ -86,6 +87,28 @@ void URpgGameFeatureAction_AwardKillXP::HandleActorKilled(FGameplayTag Channel, 
 	{
 		ProgressionComponent->AddXP(XPReward);
 	}
+
+	ExecuteXPAwardCue(*KillerPlayerState, *Message.Victim, XPReward);
+}
+
+void URpgGameFeatureAction_AwardKillXP::ExecuteXPAwardCue(ARpgPlayerState& KillerPlayerState, AActor& Victim, const float XPReward) const
+{
+	UAbilitySystemComponent* AbilitySystemComponent = KillerPlayerState.GetAbilitySystemComponent();
+	if (!XPAwardGameplayCueTag.IsValid() || !AbilitySystemComponent)
+	{
+		return;
+	}
+
+	FGameplayCueParameters CueParameters;
+	CueParameters.Location = Victim.GetActorLocation();
+	CueParameters.RawMagnitude = XPReward;
+	CueParameters.Instigator = AbilitySystemComponent->GetAvatarActor();
+	CueParameters.EffectCauser = &Victim;
+
+	// Kills usually resolve inside the killer's predicted attack. A cue sent with that prediction key counts as
+	// already predicted on the killer's client, which then skips it, so send it without a key.
+	FScopedPredictionWindow ClearPredictionKey(AbilitySystemComponent, FPredictionKey(), false);
+	AbilitySystemComponent->ExecuteGameplayCue(XPAwardGameplayCueTag, CueParameters);
 }
 
 float URpgGameFeatureAction_AwardKillXP::ResolveXPReward(const URpgExperienceRewardComponent* RewardComponent) const
