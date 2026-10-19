@@ -195,9 +195,9 @@ public:
 };
 
 /**
- * Area harvest around the harvester that commits as soon as it activates, inside the owning client's predicted
- * activation, and executes GetCueTag() as its success and no-yield cue. Configured when it is given, so the server
- * and the predicting client run the same ability.
+ * Area harvest of up to two resources around the harvester that commits as soon as it activates, inside the owning
+ * client's predicted activation. It executes GetCueTag() as its success and no-yield cue and GetTargetCueTag() on
+ * every harvested resource. Configured when it is given, so the server and the predicting client run the same ability.
  */
 UCLASS(NotBlueprintable)
 class URpgNetworkAutomationHarvestCueAbility final : public URpgGameplayAbility_Harvest
@@ -212,6 +212,9 @@ public:
 
 	/** Cue the ability executes when it commits: the configured Ash Wave cue. */
 	static FGameplayTag GetCueTag();
+
+	/** Cue the ability executes on every harvested resource: the configured Rift Grip strike cue. */
+	static FGameplayTag GetTargetCueTag();
 
 protected:
 	//~ UGameplayAbility interface

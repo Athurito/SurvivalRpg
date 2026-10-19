@@ -49,6 +49,7 @@ UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestYieldTest_Form, "Harvest.Form.Automatio
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestStrideTest_Cue, "GameplayCue.HarvestStrideTest");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestFormCueTest_Plain, "GameplayCue.HarvestFormCueTest.Plain");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestFormCueTest_Form, "GameplayCue.HarvestFormCueTest.Form");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestTargetCueTest, "GameplayCue.HarvestTargetCueTest");
 
 namespace RpgHarvestAbilityTests
 {
@@ -2594,6 +2595,109 @@ bool FRpgHarvestFormCueTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("The form's cue replaces the plain cue"), RoutedCues[1].Tag, TAG_HarvestFormCueTest_Form.GetTag());
 	TestEqual(TEXT("The form's cue carries the area radius too"), RoutedCues[1].RawMagnitude, 450.0f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestTargetCueTest,
+	"SurvivalRpg.Harvesting.Feedback.TargetCuePlaysOnEveryHarvestedResource",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestTargetCueTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestTuningTests;
+
+	struct FRoutedCue
+	{
+		FVector Location = FVector::ZeroVector;
+		float RawMagnitude = 0.0f;
+	};
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	UGameplayCueManager* CueManager = UAbilitySystemGlobals::Get().GetGameplayCueManager();
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()) || !TestNotNull(TEXT("Cue manager exists"), CueManager))
+	{
+		return false;
+	}
+	RpgHarvestAutomation::AddInstanceStock(World);
+	ARpgHarvestAutomationInstancesActor* Grove = SpawnGrove(World, Harvester.Pawn->BaseEyeHeight);
+	const FGrantedAbility Power = GrantAreaAbility(Harvester.AbilitySystem, nullptr, 700.0f);
+	if (!TestNotNull(TEXT("Grove exists"), Grove) || !TestNotNull(TEXT("Area power exists"), Power.Instance))
+	{
+		return false;
+	}
+	FRpgHarvestTargetingParams AreaTargeting;
+	AreaTargeting.Shape = ERpgHarvestTargetShape::AreaAtAimPoint;
+	AreaTargeting.MaxAimDistance = 1000.0f;
+	AreaTargeting.MaxReachFromAvatar = 700.0f;
+	AreaTargeting.AreaRadius = 450.0f;
+	AreaTargeting.MaxTargets = 3;
+	Power.Instance->ConfigureTargeting(AreaTargeting);
+	// Every harvested cube is depleted, and depletion scales its instance to zero.
+	Power.Instance->ConfigureSections(4);
+	Power.Instance->ConfigureTargetCue(TAG_HarvestTargetCueTest);
+	TestWorld.PrimeTimerManager();
+
+	// The cubes are 100 cm wide: each cue should sit 50 cm above its instance's center and carry a 50 cm radius.
+	TArray<int32> HarvestedInstances;
+	TArray<FVector> ExpectedTops;
+	for (const FRpgHarvestTargetEvaluation& Target : Evaluate(Harvester.AbilitySystem, Power).Targets)
+	{
+		FTransform InstanceTransform;
+		if (Target.WouldHarvest() && Grove->Instances->GetInstanceTransform(Target.Hit.Item, InstanceTransform, true))
+		{
+			HarvestedInstances.Add(Target.Hit.Item);
+			ExpectedTops.Add(InstanceTransform.GetLocation() + FVector(0.0, 0.0, 50.0));
+		}
+	}
+	if (!TestTrue(TEXT("The area covers several cubes"), ExpectedTops.Num() >= 2))
+	{
+		return false;
+	}
+
+	TArray<FRoutedCue> RoutedCues;
+	const FDelegateHandle RoutedHandle = CueManager->OnGameplayCueRouted().AddLambda(
+		[&RoutedCues](AActor*, const FGameplayTag Tag, const EGameplayCueEvent::Type Event,
+			const FGameplayCueParameters& CueParameters, EGameplayCueExecutionOptions)
+		{
+			if (Event == EGameplayCueEvent::Executed && Tag == TAG_HarvestTargetCueTest.GetTag())
+			{
+				RoutedCues.Add({FVector(CueParameters.Location), CueParameters.RawMagnitude});
+			}
+		});
+	ON_SCOPE_EXIT
+	{
+		CueManager->OnGameplayCueRouted().Remove(RoutedHandle);
+	};
+
+	TestTrue(TEXT("The power executes"), Harvester.AbilitySystem->TryActivateAbility(Power.Handle));
+	if (!TestEqual(TEXT("Every harvested cube plays one target cue"), RoutedCues.Num(), ExpectedTops.Num()))
+	{
+		return false;
+	}
+	for (int32 CueIndex = 0; CueIndex < RoutedCues.Num(); ++CueIndex)
+	{
+		TestTrue(
+			FString::Printf(TEXT("Target cue %d plays on top of its cube, in selection order"), CueIndex),
+			RoutedCues[CueIndex].Location.Equals(ExpectedTops[CueIndex], 1.0));
+		TestEqual(
+			FString::Printf(TEXT("Target cue %d carries the cube's size from before the commit"), CueIndex),
+			RoutedCues[CueIndex].RawMagnitude,
+			50.0f,
+			0.5f);
+	}
+	for (const int32 InstanceIndex : HarvestedInstances)
+	{
+		FTransform InstanceTransform;
+		TestTrue(
+			FString::Printf(TEXT("Harvested cube %d is depleted and hidden after the commit"), InstanceIndex),
+			Grove->Instances->GetRemainingSections(InstanceIndex) == 0 &&
+				Grove->Instances->GetInstanceTransform(InstanceIndex, InstanceTransform, true) &&
+				InstanceTransform.GetScale3D().IsNearlyZero());
+	}
 	return true;
 }
 

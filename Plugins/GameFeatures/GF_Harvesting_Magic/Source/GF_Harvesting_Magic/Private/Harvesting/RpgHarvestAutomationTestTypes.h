@@ -305,6 +305,7 @@ public:
 		SuccessGameplayCue = InSuccessCue;
 		FormSuccessGameplayCues = InFormCues;
 	}
+	void ConfigureTargetCue(const FGameplayTag InTargetCue) { TargetGameplayCue = InTargetCue; }
 	void ConfigureStride(const FRpgHarvestStrideParams& InStride, const FGameplayTag InCueTag)
 	{
 		Stride = InStride;
