@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Templates/SubclassOf.h"
 #include "UObject/SoftObjectPtr.h"
+#include "SurvivalRpg/Cosmetics/RpgCharacterPartTypes.h"
 #include "RpgEquipmentDefinition.generated.h"
 
 class AActor;
@@ -218,4 +219,13 @@ public:
 	// Each actor class must replicate; clients only see these actors through replication.
 	UPROPERTY(EditDefaultsOnly, Category = "Equipment")
 	TArray<FRpgEquipmentActorToSpawn> ActorsToSpawn;
+
+	/**
+	 * Cosmetic character parts worn while this equipment is active, typically armor pieces.
+	 * The server adds them to the pawn's URpgPawnComponent_CharacterParts on equip and removes them on unequip; every
+	 * non-dedicated machine spawns them locally, so part classes must not replicate. Pawns without that component show
+	 * no parts. Presentation only: gameplay never reads them.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Equipment|Cosmetics")
+	TArray<FRpgCharacterPart> CharacterParts;
 };

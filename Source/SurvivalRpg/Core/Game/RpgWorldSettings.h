@@ -23,7 +23,10 @@ public:
 	FPrimaryAssetId GetDefaultGameplayExperience() const;
 
 protected:
-	/** Default experience to use unless URL, PIE settings, or command line select another one. */
-	UPROPERTY(EditDefaultsOnly, Category = "GameMode")
+	/**
+	 * Default experience to use unless URL, PIE settings, or command line select another one.
+	 * Per-level designer data on the level's world settings; editable on that instance so editor scripts can set it.
+	 */
+	UPROPERTY(EditAnywhere, Category = "GameMode")
 	TSoftClassPtr<URpgExperienceDefinition> DefaultGameplayExperience;
 };

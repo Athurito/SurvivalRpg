@@ -43,6 +43,12 @@ public:
 	virtual void SpawnEquipmentActors(const TArray<FRpgEquipmentActorToSpawn>& ActorsToSpawn);
 	virtual void DestroyEquipmentActors();
 
+	/** Authority only: adds the definition's cosmetic parts to the owning pawn's parts component, if it has one. */
+	void AddCharacterParts(const TArray<FRpgCharacterPart>& Parts);
+
+	/** Authority only: removes the parts this instance added. Safe to call when none were added. */
+	void RemoveCharacterParts();
+
 	virtual void OnEquipped();
 	virtual void OnUnequipped();
 
@@ -67,4 +73,7 @@ private:
 
 	UPROPERTY(Replicated)
 	TArray<TObjectPtr<AActor>> SpawnedActors;
+
+	/** Handles of the cosmetic parts this instance added on the authority. Not replicated; the parts list replicates. */
+	TArray<FRpgCharacterPartHandle> CharacterPartHandles;
 };

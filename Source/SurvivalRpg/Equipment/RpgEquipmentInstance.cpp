@@ -5,6 +5,7 @@
 #include "Net/UnrealNetwork.h"
 #include "RpgEquipmentDefinition.h"
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
+#include "SurvivalRpg/Cosmetics/RpgPawnComponent_CharacterParts.h"
 
 #include "Components/SceneComponent.h"
 #include "Iris/ReplicationSystem/ReplicationFragmentUtil.h"
@@ -113,6 +114,38 @@ void URpgEquipmentInstance::DestroyEquipmentActors()
 	}
 
 	SpawnedActors.Reset();
+}
+
+void URpgEquipmentInstance::AddCharacterParts(const TArray<FRpgCharacterPart>& Parts)
+{
+	APawn* OwningPawn = GetPawn();
+	if (Parts.IsEmpty() || OwningPawn == nullptr || !OwningPawn->HasAuthority())
+	{
+		return;
+	}
+
+	if (URpgPawnComponent_CharacterParts* PartsComponent = OwningPawn->FindComponentByClass<URpgPawnComponent_CharacterParts>())
+	{
+		for (const FRpgCharacterPart& Part : Parts)
+		{
+			CharacterPartHandles.Add(PartsComponent->AddCharacterPart(Part));
+		}
+	}
+}
+
+void URpgEquipmentInstance::RemoveCharacterParts()
+{
+	APawn* OwningPawn = GetPawn();
+	URpgPawnComponent_CharacterParts* PartsComponent = OwningPawn ? OwningPawn->FindComponentByClass<URpgPawnComponent_CharacterParts>() : nullptr;
+	if (PartsComponent != nullptr && OwningPawn->HasAuthority())
+	{
+		for (const FRpgCharacterPartHandle& Handle : CharacterPartHandles)
+		{
+			PartsComponent->RemoveCharacterPart(Handle);
+		}
+	}
+
+	CharacterPartHandles.Reset();
 }
 
 void URpgEquipmentInstance::OnEquipped()
