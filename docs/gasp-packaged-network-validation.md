@@ -78,9 +78,9 @@ Findings become follow-up tasks. This task measures and documents; it fixes only
    Evidence per run: role-tagged logs, correction counts (CMC server corrections; Mover NetworkPrediction reconciles), CSV profiles, captures of remote characters, and the scripted probes from Phase C where they apply.
 
    Compare with the PIE results and `GASP-NET-03`.
-5. **Phase E – real WAN (optional, user decision).**
+5. **Phase E – real WAN (deferred).**
    - Two machines over the internet, through Steam (App 480 needs two Steam accounts) or a direct IP connection.
-   - Only when the user provides a second machine or player.
+   - The user cannot provide a second machine or player now (2026-10-19). This run leaves Phase E out; it stays open as a later check.
 6. **Phase F – report and user check.**
    - Results per variant, profile and scenario, with findings as proposed follow-up tasks.
    - The user plays the packaged build as a listen server with a client under the Average profile.
@@ -90,15 +90,15 @@ Findings become follow-up tasks. This task measures and documents; it fixes only
 - A packaged dedicated server. It needs a source-built engine; the `WindowsServer` cook remains possible but is not run.
 - Shipping configuration, consoles, Linux, Steam lobby and session UI, and matchmaking.
 - Fixing the findings, except trivial packaging blockers. Performance work beyond recording the cost.
+- Real WAN (Phase E, deferred by the user).
 - `GASP-VAL-01`, `GASP-STAB-05`, and the unplanned leftovers in the handoff.
 
 ## Decisions
 
 - 2026-10-19 (user): define `GASP-VAL-02`.
-- **Open until Ready (user):**
-  - Phase E, real WAN with a second machine or player: now, later, or never.
-  - Packaged routes are played by hand. Proposed default: the user plays them with prepared launch scripts, and I analyse logs and CSVs. The alternative is a development-only console command that drives a scripted route in packaged builds; it would add native code.
-  - The emulation profiles above as proposed, or other values.
+- 2026-10-19 (user): no real WAN test now. Phase E is deferred, and the WAN part of the original `GASP-VAL-02` finding stays open.
+- 2026-10-19 (user): the user plays the packaged routes by hand with launch scripts from this task. No development-only route command is added.
+- 2026-10-19 (user): the emulation profiles in Phase D stay as proposed.
 
 ## C++ boundary
 
@@ -113,7 +113,7 @@ Findings become follow-up tasks. This task measures and documents; it fixes only
   - UE's `BuildCookRun` and `NetEmulation.*`;
   - the CSV profiler;
   - the GASP test maps and their Experiences.
-- **New native classes:** none by default. The optional scripted-route command would be one development-only native seam for input injection, and only if the user chooses it.
+- **New native classes:** none. The user chose to play the packaged routes instead of a development-only route command.
 - **Asset work:** none planned. Packaging blockers in asset references are fixed through the Unreal MCP workflow.
 
 ## Ownership
