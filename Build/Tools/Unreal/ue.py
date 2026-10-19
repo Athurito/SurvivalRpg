@@ -1,4 +1,4 @@
-"""Build, test and cook SurvivalRpg from one entry point with a compact result.
+"""Build, test, cook and package SurvivalRpg from one entry point with a compact result.
 
 Every command resolves the engine, verifies the checkout-local NetworkPrediction/Mover
 overrides, keeps the full log (and the automation report) under Saved/ToolRuns and
@@ -24,6 +24,8 @@ PROJECT = REPO / "SurvivalRpg.uproject"
 AGENTS_MD = REPO / "AGENTS.md"
 PREPARE = REPO / "Build/Patches/NetworkPrediction/prepare.py"
 RUNS = REPO / "Saved/ToolRuns"
+PACKAGES = REPO / "Saved/Packaged"
+GAME_EXE = "SurvivalRpg.exe"
 ENGINE_ENV = "SURVIVALRPG_UE_ROOT"
 TEST_MAP = "/Engine/Maps/Entry"
 
@@ -47,6 +49,7 @@ CRASH = re.compile(r"=== Critical error: ===|Fatal error!|Unhandled Exception: "
 ENSURE = re.compile(r"Ensure condition failed:")
 NETWORK_PREDICTION = re.compile(r"InternalLoadLibrary: 'NetworkPrediction' \('(?P<path>[^']+)'\)")
 LOG_PREFIX = re.compile(r"^\[[^\]]*\]\[[^\]]*\]")
+UAT_EXIT = re.compile(r"AutomationTool exiting with ExitCode=(?P<code>-?\d+) \((?P<result>[^)]*)\)")
 
 
 class SetupError(RuntimeError):
@@ -67,6 +70,10 @@ class Engine:
     @property
     def editor_cmd(self) -> Path:
         return self.root / "Engine/Binaries/Win64/UnrealEditor-Cmd.exe"
+
+    @property
+    def run_uat(self) -> Path:
+        return self.root / "Engine/Build/BatchFiles/RunUAT.bat"
 
 
 @dataclass
@@ -186,12 +193,12 @@ def plural(count: int, word: str) -> str:
     return f"{count} {word}{'' if count == 1 else 's'}"
 
 
-def run_directory(kind: str, requested: Path | None) -> Path:
+def run_directory(kind: str, requested: Path | None, option: str = "--out") -> Path:
     """A fresh folder per run so a stale report can never be mistaken for a new one."""
     if requested:
         path = Path(requested).resolve()
         if path.exists() and any(path.iterdir()):
-            raise SetupError(f"--out must be a new or empty directory: {path}")
+            raise SetupError(f"{option} must be a new or empty directory: {path}")
     else:
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         path, index = RUNS / f"{stamp}-{kind}", 2
@@ -476,6 +483,55 @@ def command_cook(args, engine: Engine) -> int:
     return finish("COOK", outcome, time.monotonic() - started, [("log", log)])
 
 
+# --- Package -----------------------------------------------------------------------------------
+
+def package_command(engine: Engine, maps: list[str], config: str, archive: Path, extra: list[str]) -> list:
+    """BuildCookRun for a Win64 client: compile, cook the maps, stage, pak and copy the result to `archive`."""
+    return [engine.run_uat, "BuildCookRun", f"-project={PROJECT}", "-noP4", "-utf8output", "-unattended",
+            "-platform=Win64", f"-clientconfig={config}", "-build", "-cook", "-stage", "-pak", "-archive",
+            f"-archivedirectory={archive}", f"-map={'+'.join(maps)}", *extra]
+
+
+def staged_files(archive: Path) -> list[Path]:
+    return [path for path in archive.rglob("*") if path.is_file()] if archive.is_dir() else []
+
+
+def summarize_package(text: str, exit_code: int | None, timed_out: bool, archive: Path) -> Outcome:
+    lines = text.splitlines()
+    errors = unique(line for line in lines if ERROR_LINE.search(line))
+    warnings = unique(line for line in lines if WARNING_LINE.search(line) and not ERROR_LINE.search(line))
+    exits = list(UAT_EXIT.finditer(text))
+    result = exits[-1]["result"] if exits else "no AutomationTool exit line"
+    files = staged_files(archive)
+    games = [path for path in files if path.name == GAME_EXE]
+    passed = not timed_out and exit_code == 0 and bool(exits) and exits[-1]["code"] == "0" and bool(games) and not errors
+    headline = f"{result}, {plural(len(errors), 'error')}, {plural(len(warnings), 'warning')}"
+    if timed_out:
+        headline = f"timed out, {headline}"
+    details = listed("  ", errors, MAX_ERRORS) + listed("  warning: ", warnings, MAX_WARNINGS)
+    if games:
+        size = sum(path.stat().st_size for path in files)
+        details += [f"game: {shown(games[0])}", f"staged: {plural(len(files), 'file')}, {size / 1024 ** 3:.2f} GiB"]
+    elif not timed_out:
+        details.append(f"no {GAME_EXE} under {shown(archive)}")
+    if not passed and not errors:
+        details += [f"  {line}" for line in tail(text)]
+    return Outcome(passed, headline, details)
+
+
+def command_package(args, engine: Engine) -> int:
+    maps = [resolve_map(name) for name in args.maps]
+    verify_overrides(engine)
+    run = run_directory("package", args.out)
+    archive = run_directory("package", args.archive or PACKAGES / run.name, "--archive")
+    log = run / "uat.log"
+    print(f"package {' '.join(maps)} Win64 {args.config} with UE {engine.version}; log: {shown(log)}", flush=True)
+    started = time.monotonic()
+    exit_code, timed_out = run_process(package_command(engine, maps, args.config, archive, args.ue_arg), log, args.timeout)
+    outcome = summarize_package(read_log(log), exit_code, timed_out, archive)
+    return finish("PACKAGE", outcome, time.monotonic() - started, [("log", log), ("archive", archive)])
+
+
 # --- Command line ------------------------------------------------------------------------------
 
 def command_engine(args, engine: Engine) -> int:
@@ -511,7 +567,13 @@ def parser() -> argparse.ArgumentParser:
     cook.add_argument("maps", nargs="+", help="/Game/... package path or unique map name")
     cook.add_argument("--platform", default="Windows", help="cook target platform (default Windows)")
 
-    for command, timeout in ((build, None), (test, 60.0), (cook, None)):
+    package = commands.add_parser("package", help="build, cook, stage and pak a Win64 game with BuildCookRun")
+    package.add_argument("maps", nargs="+", help="/Game/... package path or unique map name to cook")
+    package.add_argument("--config", default="Development", choices=("Development", "DebugGame", "Shipping"))
+    package.add_argument("--archive", type=Path,
+                         help="new or empty folder for the staged game (default Saved/Packaged/<time>-package)")
+
+    for command, timeout in ((build, None), (test, 60.0), (cook, None), (package, None)):
         # Also accepted after the command; SUPPRESS keeps the value given before it.
         command.add_argument("--engine", type=Path, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
         command.add_argument("--ue-arg", action="append", default=[], metavar="ARG",
@@ -522,6 +584,7 @@ def parser() -> argparse.ArgumentParser:
     build.set_defaults(run=command_build)
     test.set_defaults(run=command_test)
     cook.set_defaults(run=command_cook)
+    package.set_defaults(run=command_package)
     commands.choices["engine"].set_defaults(run=command_engine)
     return root
 
@@ -534,7 +597,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         engine = resolve_engine(args.engine)
         if args.command != "engine":
-            tool = engine.build_bat if args.command == "build" else engine.editor_cmd
+            tool = {"build": engine.build_bat, "package": engine.run_uat}.get(args.command, engine.editor_cmd)
             if not tool.is_file():
                 raise SetupError(f"Missing {tool}; Windows with an installed UE {engine.version} is required")
         return args.run(args, engine)

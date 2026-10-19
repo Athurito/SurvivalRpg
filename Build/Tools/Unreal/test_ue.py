@@ -208,6 +208,45 @@ class CookSummary(unittest.TestCase):
         self.assertEqual(ue.summarize_cook("crash\n", None, True).headline, "timed out (exit code None)")
 
 
+UAT_LOG = """Running AutomationTool...
+LogCook: Display: Cooked packages 1234
+LogCook: Warning: Unable to find package for cooking /Game/Old
+{error}AutomationTool exiting with ExitCode={code} ({result})
+"""
+
+
+class PackageSummary(unittest.TestCase):
+    def setUp(self):
+        self.archive = temporary(self)
+
+    def stage_game(self):
+        game = self.archive / "Windows" / ue.GAME_EXE
+        game.parent.mkdir(parents=True)
+        game.write_bytes(b"x" * 1024)
+        (self.archive / "Windows/SurvivalRpg/Content/Paks").mkdir(parents=True)
+        (self.archive / "Windows/SurvivalRpg/Content/Paks/a.pak").write_bytes(b"y" * 2048)
+
+    def test_success_reports_the_game_and_staged_size(self):
+        self.stage_game()
+        outcome = ue.summarize_package(UAT_LOG.format(error="", code=0, result="Success"), 0, False, self.archive)
+        self.assertTrue(outcome.passed)
+        self.assertEqual(outcome.headline, "Success, 0 errors, 1 warning")
+        self.assertIn("staged: 2 files, 0.00 GiB", outcome.lines)
+        self.assertTrue(any(line.startswith("game: ") and line.endswith(ue.GAME_EXE) for line in outcome.lines))
+
+    def test_errors_exit_code_or_missing_game_fail(self):
+        self.stage_game()
+        failed = ue.summarize_package(UAT_LOG.format(error="LogCook: Error: Missing asset\n", code=25, result="Error_UnknownCookFailure"),
+                                      25, False, self.archive)
+        self.assertFalse(failed.passed)
+        self.assertEqual(failed.lines[0], "  LogCook: Error: Missing asset")
+        empty = temporary(self)
+        missing = ue.summarize_package(UAT_LOG.format(error="", code=0, result="Success"), 0, False, empty)
+        self.assertFalse(missing.passed)
+        self.assertTrue(any(line.startswith(f"no {ue.GAME_EXE} under") for line in missing.lines))
+        self.assertEqual(ue.summarize_package("", None, True, empty).headline, "timed out, no AutomationTool exit line, 0 errors, 0 warnings")
+
+
 class Maps(unittest.TestCase):
     def setUp(self):
         self.repo = temporary(self)
@@ -247,6 +286,16 @@ class CommandLine(unittest.TestCase):
         self.assertIn("-NullRHI", command)
         self.assertIn("-ExecCmds=t.MaxFPS 30,Automation RunTests A; Quit", command)
         self.assertIn("-LogCmds=LogA Verbose, LogB Log", command)
+
+    def test_package_command_line(self):
+        engine = ue.Engine(Path("E"), "5.8.3", "test")
+        args = ue.parser().parse_args(["package", "Lvl_A", "--config", "DebugGame", "--ue-arg=-iterate"])
+        self.assertEqual((args.config, args.timeout, args.archive), ("DebugGame", None, None))
+        command = [str(part) for part in ue.package_command(engine, ["/Game/A", "/GF_X/B"], args.config, Path("out"), args.ue_arg)]
+        self.assertEqual(command[:2], [str(Path("E/Engine/Build/BatchFiles/RunUAT.bat")), "BuildCookRun"])
+        for part in ("-platform=Win64", "-clientconfig=DebugGame", "-build", "-cook", "-stage", "-pak", "-archive",
+                     f"-archivedirectory={Path('out')}", "-map=/Game/A+/GF_X/B", "-iterate"):
+            self.assertIn(part, command)
 
     def test_unverified_overrides_stop_with_the_stage_command(self):
         script = temporary(self) / "prepare.py"
