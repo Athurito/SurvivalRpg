@@ -39,7 +39,7 @@ CMC Experiences, taken from `docs/gasp-manny-gameplay-mesh.md`. They are re-chec
 ## Scope
 
 1. **Action set.**
-   - Create `LAS_RpgCharacter_Paladin` next to the Paladin parts. It holds the pilot's `AddComponents` entries:
+   - Create `LAS_RpgCharacter_Paladin` in `System/Experiences/ActionSets`, the only folder where the asset manager registers Experience action sets. It holds the pilot's `AddComponents` entries:
      - the pawn parts component on `BP_RpgGasp_CMC`, so its Mantle child is covered;
      - the controller parts component on the player controller, with the same client/server flags as the pilot.
    - Switch `RpgGaspPaladinExperience` to the action set. The pilot map then proves that it behaves exactly as before.
@@ -122,3 +122,97 @@ CMC Experiences, taken from `docs/gasp-manny-gameplay-mesh.md`. They are re-chec
 2. Equip armor from the inventory, fight, die and respawn.
 3. Repeat as a listen server with a client that joins late.
 4. Open `Lvl_RpgGaspMover` and start PIE: the UEFN Mover pawn looks as before.
+
+## Results
+
+### Composition (2026-10-19)
+
+**Checked in the editor first**
+- The three CMC Experiences and their pawns match the definition.
+- Maps that select them, from the asset registry:
+  - `RpgGaspCMCExperience`: `Lvl_RpgGaspCMC`.
+  - `RpgGaspMantleExperience`: `Lvl_RpgGaspMantle`, plus `GF_Harvesting_Magic` `Lvl_HarvestPickaxe` and `GF_Dev_Sandbox` `Lvl_ResourceParity` and `Lvl_VfxGallery`.
+  - `RpgInventoryStorageExperience`: `Lvl_RpgInventoryStorage`.
+- The harvesting test map and the VFX gallery therefore show the Paladin too. The harvesting suite joins the regression.
+- The pilot's `AddComponents` action had two entries:
+  - `BPC_RpgPawnParts_GaspManny` on `BP_RpgGasp_MantleCharacter`, for client and server;
+  - `BPC_RpgControllerParts_PaladinBody` on `RpgPlayerController`, server only.
+
+**Built**
+- `LAS_RpgCharacter_Paladin` (`System/Experiences/ActionSets`) with one `AddComponents` action:
+  - the pawn parts component now targets `BP_RpgGasp_CMC`, so its Mantle child is covered;
+  - the controller entry is unchanged.
+- The CMC, Mantle and inventory storage Experiences list it after `LAS_Rpg_StandardUI`. The values survive a Blueprint compile.
+- The pilot map:
+  - `Lvl_RpgGaspPaladin` now runs on `RpgGaspMantleExperience`.
+  - Listen-server PIE on that map: the player wears the body; five inventory equips fill all five slots and show the body and five armor parts; the client's own pawn wears the body as well.
+  - `RpgGaspPaladinExperience` was then deleted after the asset registry showed no referencer.
+- No pawn Blueprint, PawnData or AnimBP changed, and there is no new native code.
+
+**Failed attempt**
+- The action set was first created next to the MetaHuman parts.
+- The asset manager registers `RpgExperienceActionSet` only under `/Game/SurvivalRpg/System/Experiences/ActionSets` (`Config/DefaultGame.ini`). So the Experience manager logged `Invalid Primary Asset Id RpgExperienceActionSet:LAS_RpgCharacter_Paladin` and skipped the set's bundle state. The components still arrived.
+- The first regression run showed the warning and was stopped.
+- The set was recreated in the scanned folder, the three Experiences were pointed at it, and the old asset was deleted. No redirector was created.
+
+**Tests**
+- `RpgGaspCMCIntegrationTests` (respawn check) and `RpgBlockLocomotionTests` (pawn readiness) now check that the live gameplay mesh plays the expected skeleton.
+  - The body part swaps the asset for `SKM_Manny_Simple_GaspLook_Invis` on the same skeleton.
+  - The pawn class-default checks keep the visible asset, because the pawn Blueprints are unchanged.
+- The character-parts PIE tests run on `RpgGaspMantleExperience`.
+- New `SurvivalRpg.Cosmetics.CharacterParts.PaladinExperienceComposition`: the three CMC Experiences compose the action set, and the Mover and Mover-Ragdoll Experiences do not.
+
+### Validation (2026-10-19, on `f385db0d`)
+
+**Build:** `ue.py build` passed.
+
+**Regression, each suite on its own through `ue.py test`**
+
+| Suite | Result |
+| --- | --- |
+| `SurvivalRpg.Cosmetics`, `SurvivalRpg.Equipment`, `SurvivalRpg.Inventory` | 198 / 198 (one more than `GASP-16`: the new composition test) |
+| `SurvivalRpg.Animation` | 4 / 4 |
+| `SurvivalRpg.GASP.CMC` | 14 / 14 |
+| `SurvivalRpg.Combat.BlockLocomotion` | 16 / 16 |
+| `SurvivalRpg.GASP.Mantle` | 13 / 13 |
+| `SurvivalRpg.GASP.Vault` | 8 / 9, then 9 / 9 on the rerun without the MCP server |
+| `SurvivalRpg.GASP.Hurdle` | crashed, then 11 / 12, then 12 / 12 (see below) |
+| `SurvivalRpg.GASP.VariantComparison` | 3 / 3 |
+| `SurvivalRpg.GASP.RuntimeRetarget` | 1 / 1 |
+| `SurvivalRpg.Network` | 23 / 23 |
+| `SurvivalRpg.Harvesting` (its test map now shows the Paladin) | 60 / 60 |
+| `SurvivalRpg.GASP.Mover` (`np.ForceReconcile 0`, `t.MaxFPS 30`) | 66 / 67, then `SurvivalRpg.GASP.Mover.Ragdoll` 7 / 7 on the rerun without the MCP server |
+
+The warnings are the known PIE network and editor noise. The `Invalid Primary Asset Id` warning of the first run is gone.
+
+**Failures and how they were checked**
+- **MCP noise (Vault, Mover-Ragdoll):**
+  - `NegativeAngledVaultAlignsWithoutTurningTheView` and `CancelledGetupCannotCompleteTheNextRagdollEpisode` failed only on `LogModelContextProtocol: Call to unknown method "server/discover"`.
+  - That is an outside MCP client calling the test editor's own MCP server on port 8000.
+  - Rerun with `--ue-arg=-ini:EditorPerProjectUserSettings:[/Script/ModelContextProtocolEngine.ModelContextProtocolSettings]:bAutoStartServer=False`, both suites passed.
+- **Hurdle teardown crash:**
+  - The first Hurdle run crashed after all steps of `WalkingHurdleUsesMappedAnalogInputAndBackFloor` had passed.
+  - The crash is `Assertion failed: IsInGameThread()` in `FSceneViewport::Destroy`, released from `FSlateRHIRenderer::DrawWindow_RenderThread` while a client window closed.
+  - It is the same family as the `GASP-16` teardown crash in `SLevelViewport::EndPlayInEditorSession`. It did not recur in the next two Hurdle runs.
+- **Hurdle rotation check:**
+  - `CancelledHurdleReleasesMovementCollisionAndRotation` failed once, at `RpgHurdleIntegrationTests.cpp:409`. After the server cancels the hurdle, the owner's yaw must be within 5° of the approach yaw.
+  - Comparison of that test alone, without the MCP server:
+    - 5 / 5 passed with the Paladin;
+    - 5 / 5 passed with the Mantle Experience restored to `master` (no Paladin).
+  - Over all runs the test passed 7 of 8 times with the Paladin. Its history shows no earlier failure at this line.
+  - It is recorded as a rare timing case, not as a defect of the Paladin.
+
+**PIE, listen server with two players, scripted probe** (`Saved/Gasp17`)
+- `Lvl_RpgGaspMantle` and `Lvl_RpgGaspCMC`: on the server and the client, every pawn has `BPC_RpgPawnParts_GaspManny`, wears `B_RpgPart_MetaHumanPaladin` and plays `SKM_Manny_Simple_GaspLook_Invis`. This covers authority, autonomous proxy and simulated proxy.
+- `Lvl_RpgGaspMover`: no pawn has a parts component, and all play `SKM_UEFN_Mannequin`.
+- Way back:
+  - The action set was removed from `RpgGaspMantleExperience` in memory only. In PIE every pawn on every role was the plain `SKM_Manny_Simple_GaspLook` again, with no parts component.
+  - The package was then reloaded from disk without saving. The action set was back and nothing was dirty.
+- Late join, death, respawn, inventory equips and the dedicated server are covered by the character-parts PIE tests on `RpgGaspMantleExperience`, in the Cosmetics suite above.
+
+**Limits**
+- The Hurdle rotation timing case and the engine teardown crash above.
+- `Lvl_HarvestPickaxe`, `Lvl_ResourceParity` and `Lvl_VfxGallery` use the Mantle Experience and now show the Paladin. That includes the VFX gallery other tasks use for their captures.
+- The `GASP-16` limits still apply: the ragdoll trail, the cost per Paladin and the render-thread visibility wait.
+- Open: the user check on a production map.
+
