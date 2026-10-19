@@ -193,7 +193,7 @@ Its recorded limits carry into GASP-14 and GASP-15:
 
 ### GASP-17: Paladin in the production CMC Experiences
 
-**PR open** ([#268](https://github.com/Athurito/SurvivalRpg/pull/268)) since 2026-10-19, waiting for the user check; see the [task report](gasp-paladin-production.md).
+**Merged** on 2026-10-19 ([#268](https://github.com/Athurito/SurvivalRpg/pull/268)); see the [task report](gasp-paladin-production.md).
 
 - **Goal:** the production CMC Experiences show the MetaHuman Paladin from GASP-16 through one Experience action set that can be removed again. Pawn Blueprints, PawnData, animation and gameplay stay unchanged.
 - **Out:** Mover, Baseline, Prototype and enemy pawns; character editor; male MetaHuman variants; sound.

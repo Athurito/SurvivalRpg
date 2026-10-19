@@ -13,13 +13,14 @@ frühere Fassung mit Schnellstart-Verlauf und Aufgabenverträgen liegt in der
 
 ## Nächster bereiter Schritt
 
-`GASP-17` hat einen **offenen PR** ([#268](https://github.com/Athurito/SurvivalRpg/pull/268); [Bericht](gasp-paladin-production.md), Definition [#267](https://github.com/Athurito/SurvivalRpg/pull/267)): Der Paladin kommt über das entfernbare Action Set `LAS_RpgCharacter_Paladin` in die CMC-, Mantle- und Inventar-Lager-Experiences; Regression und Mehrspieler-Probe ohne Befund am Paladin; offen ist die Nutzerprüfung.
-`GASP-16` ist gemergt ([#266](https://github.com/Athurito/SurvivalRpg/pull/266), [Bericht](gasp-character-armor-pilot.md)): MetaHuman-Paladin mit fünfteiliger Rüstung über Lyras Character Parts auf dem Manny-Gameplay-Skelett, bisher nur in der Pilot-Experience; Nutzerprüfung ohne offene Befunde.
+Kein Schritt ist **Bereit**; der Nutzer markiert das nächste Paket als **Bereit**.
+`GASP-17` ist gemergt ([#268](https://github.com/Athurito/SurvivalRpg/pull/268), [Bericht](gasp-paladin-production.md)): Die CMC-, Mantle- und Inventar-Lager-Experiences zeigen den MetaHuman-Paladin über das entfernbare Action Set `LAS_RpgCharacter_Paladin`; Pawns, PawnData und Animation sind unverändert.
+`GASP-16` ist gemergt ([#266](https://github.com/Athurito/SurvivalRpg/pull/266), [Bericht](gasp-character-armor-pilot.md)): MetaHuman-Paladin mit fünfteiliger Rüstung über Lyras Character Parts auf dem Manny-Gameplay-Skelett, seit `GASP-17` in den produktiven CMC-Experiences; Nutzerprüfung ohne offene Befunde.
 `GASP-STAB-06` ist gemergt ([#257](https://github.com/Athurito/SurvivalRpg/pull/257), [Bericht](gasp-block-turn.md)): Ein Blockdruck nach einer Kameradrehung richtet
 Körper und Schild auf allen Rollen sofort aus, und die Rechts-Turns unter Block holen nicht mehr gegen die Drehrichtung aus.
 `GASP-15` ist gemergt ([#254](https://github.com/Athurito/SurvivalRpg/pull/254)): Die CMC-Pawns spielen das Lyra-Manny-Skelett
 nativ; der Mover bleibt auf UEFN. `GASP-STAB-05` (Loslassen von Block) bleibt zurückgestellt; der PR
-[#249](https://github.com/Athurito/SurvivalRpg/pull/249) bleibt als Entwurf. `GASP-01`, `GASP-03` bis `GASP-16`, `GASP-STAB-04`,
+[#249](https://github.com/Athurito/SurvivalRpg/pull/249) bleibt als Entwurf. `GASP-01`, `GASP-03` bis `GASP-17`, `GASP-STAB-04`,
 `GASP-STAB-06` und das Engine-Update `GASP-ENG-01` sind gemergt; offen bleiben `GASP-VAL-01`, `GASP-VAL-02` und die
 [offenen Befunde](gasp-integration-handoff.md#offene-befunde).
 
@@ -74,7 +75,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-14` | Vollständiger CMC-Bake auf Manny (`SKM_Manny_Simple`): Relaxed-Locomotion, Traversal, Motion-Matching-Kopien, Manny-AnimBP, Entwicklungs-Pawn | **Gemergt**; Sichtprüfung durch den Nutzer | [#251](https://github.com/Athurito/SurvivalRpg/pull/251), Definition [#250](https://github.com/Athurito/SurvivalRpg/pull/250) | [Manny-Bake](gasp-manny-full-bake.md) |
 | `GASP-15` | Manny als CMC-Gameplay-Mesh: Mesh, Traversal, Block je Skelett, Waffen, Tod/Ragdoll, Pilot entfernen; Mover bleibt UEFN | **Gemergt** auf Wunsch des Nutzers nach Nutzerprüfung 1; deren Block-Drehbefunde gingen an `GASP-STAB-06` | [#254](https://github.com/Athurito/SurvivalRpg/pull/254), Definition [#253](https://github.com/Athurito/SurvivalRpg/pull/253) | [Manny-Gameplay-Mesh](gasp-manny-gameplay-mesh.md) |
 | `GASP-16` | Charakter- und Rüstungspilot: MetaHuman-Paladin von Polyphoria auf Manny über Lyra-Character-Parts (Körper mit Korrekturknochen, Rüstung als Ausrüstungs-Teile per Leader Pose am Körper), Knight_01 als Vergleich; ohne Sound und Charakter-Editor | **Gemergt** 19.10.2026; Nutzerprüfung ohne offene Befunde, Paladin bleibt | [#266](https://github.com/Athurito/SurvivalRpg/pull/266), Definition [#262](https://github.com/Athurito/SurvivalRpg/pull/262) | [Charakter- und Rüstungspilot](gasp-character-armor-pilot.md) |
-| `GASP-17` | Paladin in den produktiven CMC-Experiences über ein entfernbares Experience-Action-Set (`LAS_RpgCharacter_Paladin`); Pilot-Experience auflösen; Mover, Baseline und Gegner unverändert | **PR offen** ([#268](https://github.com/Athurito/SurvivalRpg/pull/268)); Nutzerprüfung offen | [#267](https://github.com/Athurito/SurvivalRpg/pull/267) | [Paladin in Produktion](gasp-paladin-production.md) |
+| `GASP-17` | Paladin in den produktiven CMC-Experiences über ein entfernbares Experience-Action-Set (`LAS_RpgCharacter_Paladin`); Pilot-Experience auflösen; Mover, Baseline und Gegner unverändert | **Gemergt** 19.10.2026 auf Wunsch des Nutzers; ein Ergebnis der Nutzerprüfung wurde nicht gemeldet | [#268](https://github.com/Athurito/SurvivalRpg/pull/268), Definition [#267](https://github.com/Athurito/SurvivalRpg/pull/267) | [Paladin in Produktion](gasp-paladin-production.md) |
 
 Statuswerte: **Geplant**, **Bereit**, **In Arbeit**, **Validierung**,
 **PR offen**, **Gemergt**, **Blockiert**, **Zurückgestellt**.
