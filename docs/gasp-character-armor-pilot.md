@@ -560,7 +560,7 @@ All 355 tests pass. The warnings are the known PIE network and editor noise.
 
 **Open for the user check**
 - **Alone:** play `Lvl_RpgGaspPaladin` alone, take the five Paladin pieces from the chest, equip and remove them, fight, die and respawn.
-- **Listen server:** the same with clients. A client's own inventory equips need the separate inventory replication fix first.
+- **Listen server:** the same with clients. Since #264, clients equip through their own inventory as well (see below).
 - **Decision:** the user then decides whether the production CMC pawns adopt the Paladin.
 
 **After #264 (2026-10-18)**
@@ -571,3 +571,14 @@ All 355 tests pass. The warnings are the known PIE network and editor noise.
 - Results:
   - `ue.py test SurvivalRpg.Cosmetics SurvivalRpg.Network.InventoryReorderPIE`: 7 / 7.
   - `ue.py test SurvivalRpg.Cosmetics SurvivalRpg.Equipment SurvivalRpg.Inventory`: 197 / 197.
+
+**User check finding: the chest held no pants (2026-10-19)**
+- In the first user run, the chest in `Lvl_RpgGaspPaladin` held only four pieces; the pants were missing.
+- Cause:
+  - `BP_TestStockedChest` grants its `SeedItems` one by one with first-fit placement and ignores a failed grant.
+  - Its 6 × 4 grid has exactly the 24 cells the five pieces need (2 × 2, 2 × 3, 2 × 2, 2 × 3, 2 × 2).
+  - After helmet, chest and bracers, no free 2 × 3 area was left, so the pants were dropped silently. The boots still fit.
+- Fix: the map's chest instance (`G16_PaladinArmorChest`) overrides its inventory grid to 6 × 6. The shared Blueprint keeps 6 × 4.
+- Check: in PIE the chest now holds all five pieces, with the pants at (0, 2).
+- Equipping itself was correct. A scripted PIE run equipped all five pieces through inventory intents and filled all five slots with visible meshes.
+- The pants are plain cloth trousers. Under the chest's long mail skirt and the high boots, only the gap between the mail panels shows them.
