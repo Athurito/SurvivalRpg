@@ -148,3 +148,82 @@ Findings become follow-up tasks. This task measures and documents; it fixes only
 1. Run `python Build/Tools/Unreal/ue.py package` and start the staged build on `Lvl_RpgGaspMantle`.
 2. Start a listen server with `-nosteam` and two clients, one of them later, then apply a profile with `NetEmulation.*`.
 3. Walk, sprint and traverse; fight, die and respawn; equip Paladin armor. Watch the remote characters on every window.
+
+## Results
+
+### Phase A – packaging (2026-10-19)
+
+- **New command `ue.py package`:** it runs `BuildCookRun` for a Win64 client. It compiles the game target, cooks the given maps, stages, paks and archives to `Saved/Packaged/<run>`.
+  - The verdict comes from AutomationTool's exit line, the log's unique errors and warnings, and a check for the staged `SurvivalRpg.exe` and its size.
+  - The cook repeats its warnings in a `LogInit` summary, so each message is counted once.
+  - Unit tests: 32 / 32.
+- **First package:** the five GASP maps plus `BootMenu` and `MainMenu`.
+  - Passed in 610 s with 0 errors and 3 unique warnings:
+    - an engine-API deprecation in `ChaosMoverSimulation.cpp`;
+    - the missing `GameplayCueNotifyPaths`;
+    - the never-ticking `CUI_RespawnScreen`.
+  - Staged: 61 files, 2.06 GiB.
+- **Overrides:** the package compiled the project's NetworkPrediction, Mover and ChaosMover overrides under `Plugins/`, not the engine's plugins.
+- **Bootstrap:** the staged `Windows/SurvivalRpg.exe` only starts `SurvivalRpg/Binaries/Win64/SurvivalRpg.exe` as a child process. The session tool starts the real binary.
+
+### Phase B – packaged smoke, automated part (2026-10-19)
+
+`Build/Tools/GaspNetSession/session.py` started each map alone in the package and captured the game window once after 30–35 s (`Saved/GaspVal02/session_smoke*`).
+
+- Every map loads its Experience without a crash or an ensure.
+- `Lvl_RpgGaspCMC`, `Lvl_RpgGaspMantle` and `Lvl_RpgGaspPaladin` log no errors. The capture shows the MetaHuman Paladin with its hair grooms and the HUD.
+- **Finding F1: the Mover maps log 141 `LogStreaming` errors.**
+  - On `Lvl_RpgGaspMover` and `Lvl_RpgGaspMoverRagdoll`, the cooked `CR_UEFN_Mannequin_FullBodyIK` references editor-only `RigVMDeveloper.RigVMPin` exports that the game cannot create.
+  - The UEFN Mover pawn still renders. Whether its full-body IK still works is not checked yet.
+  - The CMC's Manny rigs do not show this.
+- **Minor finding:** in the package, `a.animnode.offsetrootbone.enable` and the GASP debug variables `DDCvar.DrawCharacterDebug*` each passed 500 `FindConsoleObject` calls. Blueprint looks these console variables up every frame.
+
+### Phase C – separate processes (2026-10-19)
+
+- **Packaged session on `Lvl_RpgGaspMantle`:** listen host and two clients, the second joining 20 s late, at 60 / 30 / 120 FPS under the Average profile.
+  - All three processes loaded `RpgGaspMantleExperience`, and the host admitted both clients.
+  - No role logged an error or a network failure. The late joiner's capture shows its Paladin.
+- **Offline join:** without Steam the server rejects a client whose join URL has no canonical UUID-v4 `PlayerProfileId`. The session tool now adds one, as the packet-gap probe already did.
+- **Scripted routes:** the packet-gap probe gained `--variant cmc`. It drives the CMC Mantle pawn with the Paladin over the tagged Vault lane on `Lvl_RpgGaspMantle` with real `IA_Move` and `IA_Jump` input, in three uncooked `-game` processes (host, owner, observer). One run mixed 60 / 30 / 120 FPS.
+
+### Phase D – emulated network conditions, scripted (2026-10-19)
+
+24 runs with real input, three processes each (`Saved/GaspVal02/scripted_runs.md`, `scripted_runs.json`). Profiles were applied to every process with `--profile`.
+
+| Variant, driver | Profiles | Route | Corrections and reconciles |
+| --- | --- | --- | --- |
+| Mover, host drives | none, good, average, bad, average + 350 ms pause | Vault crossed and landed in every run | Client reconciles (owner / observer): 1 / 1, 2 / 2, 2 / 2, 13 / 6, 2 / 2. Both clients saw the Vault on the proxy. |
+| Mover, client drives | average, bad | Vault crossed and landed | Reconciles 4 / 2 in both runs. The host and the observer saw the Vault. |
+| CMC, host drives | none, good, average, bad, average + 350 ms pause | Vault crossed and landed (one bad run failed in the probe, see below) | No corrections. Both clients saw the Vault montage on the simulated proxy. |
+| CMC, client drives | none ×3, average ×3, bad ×4, bad at 60 / 30 / 120 FPS | Vault crossed and landed in every run | See finding F2. |
+
+No run logged an unexplained error or a network failure. Errors that every uncooked `-game` process logs, from the engine's experimental Python toolsets, are counted as known noise.
+
+**Finding F2: after a CMC Vault driven by the client, the client flies on alone.**
+- After the owner's Vault montage ends and the movement handoff runs, the owning client switches to `MOVE_FLYING` without a montage or a new ability. It keeps moving forward at about 460–490 cm/s.
+- Meanwhile the server is already walking and brakes to a stop. The server then corrects the client back. `Build/Tools/GaspPacketGap/cmc_handoff_analyze.py` measures this:
+
+| Profile | Runs | Client-only flying | Travel | Largest server correction |
+| --- | --- | --- | --- | --- |
+| none | 3 | 0.03–0.05 s | 14–21 cm | 2.0–3.5 cm |
+| average | 3 | 0.08–0.15 s | 40–71 cm | 31–44 cm |
+| bad | 4 + 1 mixed FPS | 0.10–0.38 s | 44–181 cm | 15–144 cm |
+
+- The phase lasts about one round trip. The client appears to wait in `MOVE_FLYING` for the server's end of the traversal.
+- Without latency it is barely visible. At 250 ms it is a visible snap of up to 1.4 m.
+- It is a candidate for a follow-up task on the CMC traversal handoff and is not fixed here.
+
+**Probe fixes during the runs**
+- Under the bad profile a client's pawn can arrive before its PlayerState. The first CMC bad run failed in the probe for that reason.
+- Both runtimes now wait for the PlayerState, and the rerun passed.
+- The analyser treats the session-end disconnect as known: clients report "Host closed the connection" when the host quits first. Timeouts still count as failures.
+
+### Still open
+
+- **Phase B, manual:** the user plays every packaged map:
+  - movement, sprint and crouch; Mantle, Vault and Hurdle;
+  - sword attack and block; death and respawn;
+  - on the Paladin map: the chest and armor.
+- **Phase D, manual:** the user plays packaged sessions under good, average and bad. These cover combat, inventory equip, death and respawn and a late join under each profile, which the scripts do not drive. The scripts drive only the Vault.
+- **Phase F:** the user check under the average profile, and the final report with proposed follow-up tasks for F1 and F2.
+
