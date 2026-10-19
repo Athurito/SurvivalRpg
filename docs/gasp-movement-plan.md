@@ -210,4 +210,4 @@ Its recorded limits carry into GASP-14 and GASP-15:
 3. After a GASP-08 pass: **GASP-14 → GASP-15**, then **GASP-16**, then the final dodge montages for #124.
 4. If GASP-08 fails: GASP-14 and GASP-15 are dropped. GASP-16 then targets the runtime follower path, and the dodge montages are retargeted to UEFN like the block set.
 
-`GASP-VAL-02` (cooked, packaged, and emulated-network validation) stays open alongside this plan.
+`GASP-VAL-02` (cooked, packaged, and emulated-network validation) is **defined** since 2026-10-19 and waits for **Ready**; see the [definition](gasp-packaged-network-validation.md).
