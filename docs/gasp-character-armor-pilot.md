@@ -1,6 +1,6 @@
 # GASP-16 – Character and armor pilot
 
-Status: **PR open** ([#266](https://github.com/Athurito/SurvivalRpg/pull/266)). Phases A to F are done, including the user check on 2026-10-19. The user keeps the Paladin; the production CMC pawns adopt it in `GASP-17`. The inventory replication crash found in Phase D is fixed in [#264](https://github.com/Athurito/SurvivalRpg/pull/264) (merged and merged into this branch). On 2026-10-18 the user changed the design to Lyra Character Parts (see [Decisions](#decisions)). Defined in [#262](https://github.com/Athurito/SurvivalRpg/pull/262) after the user added character packs to the asset library and chose the pilot character and the character-editor scope. This report is the task report.
+Status: **Merged** on 2026-10-19 ([#266](https://github.com/Athurito/SurvivalRpg/pull/266) as `9c181c48`). Phases A to F are done, including the user check on 2026-10-19. The user keeps the Paladin; the production CMC pawns adopt it in `GASP-17`. The inventory replication crash found in Phase D is fixed in [#264](https://github.com/Athurito/SurvivalRpg/pull/264) (merged and merged into this branch). On 2026-10-18 the user changed the design to Lyra Character Parts (see [Decisions](#decisions)). Defined in [#262](https://github.com/Athurito/SurvivalRpg/pull/262) after the user added character packs to the asset library and chose the pilot character and the character-editor scope. This report is the task report.
 
 ## Goal
 

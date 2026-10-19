@@ -61,6 +61,16 @@ namespace RpgBlockLocomotionTests
 			? TEXT("/Game/SurvivalRpg/Characters/GASP/Manny/Meshes/SKM_Manny_Simple_GaspLook.SKM_Manny_Simple_GaspLook")
 			: TEXT("/Game/SurvivalRpg/Characters/GASP/Shared/Characters/UEFN_Mannequin/Meshes/SKM_UEFN_Mannequin.SKM_UEFN_Mannequin");
 	}
+	/**
+	 * True when the live source mesh plays the variant's gameplay skeleton. On the CMC, the Experience's Paladin body part
+	 * swaps the asset for an invisible copy on the same skeleton (GASP-17), so the skeleton is the contract, not the asset.
+	 */
+	bool PlaysVariantSkeleton(const USkeletalMeshComponent* Source, EVariant Variant)
+	{
+		const USkeletalMesh* Expected = LoadObject<USkeletalMesh>(nullptr, SourceMeshPath(Variant));
+		const USkeletalMesh* Asset = Source ? Source->GetSkeletalMeshAsset() : nullptr;
+		return Expected && Asset && Asset->GetSkeleton() == Expected->GetSkeleton();
+	}
 	/** The second designer block profile on the host's skeleton, used by the layer lifecycle test. */
 	const TCHAR* VariantProfilePath(EVariant Variant)
 	{
@@ -209,7 +219,7 @@ namespace RpgBlockLocomotionTests
 			&& Player->GetPawnData<URpgPawnData>() == Extension->GetPawnData<URpgPawnData>()
 			&& AbilitySystem == Player->GetRpgAbilitySystemComponent() && AbilitySystem->GetOwnerActor() == Player && AbilitySystem->GetAvatarActor() == Character
 			&& AbilitySystem->AbilityActorInfo.IsValid() && AbilitySystem->AbilityActorInfo->SkeletalMeshComponent.Get() == Source
-			&& Source->GetAnimInstance() && Source->GetSkeletalMeshAsset() && Source->GetSkeletalMeshAsset()->GetPathName() == SourceMeshPath(Variant)
+			&& Source->GetAnimInstance() && PlaysVariantSkeleton(Source, Variant)
 			&& (Variant == EVariant::CMC ? Cast<ACharacter>(Character) != nullptr
 				: Character->IsA<ARpgMoverPawn>() && Mover(Character) && Mover(Character)->GetPrimaryVisualComponent() == Source)
 			&& (!Character->IsLocallyControlled() || Gameplay->IsReadyToBindInputs());
