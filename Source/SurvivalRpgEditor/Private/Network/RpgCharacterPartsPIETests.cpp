@@ -14,11 +14,13 @@
 #include "GameFramework/GameModeBase.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerState.h"
+#include "Misc/AutomationTest.h"
 #include "Misc/Guid.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Character/RpgCharacter.h"
 #include "SurvivalRpg/Core/Character/RpgDownedComponent.h"
 #include "SurvivalRpg/Core/Character/RpgHealthComponent.h"
+#include "SurvivalRpg/Core/Game/Experience/RpgExperienceActionSet.h"
 #include "SurvivalRpg/Core/Game/Experience/RpgExperienceDefinition.h"
 #include "SurvivalRpg/Core/Game/Experience/RpgExperienceManagerComponent.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
@@ -34,9 +36,10 @@
 #include "SurvivalRpg/Inventory/RpgInventoryUiActionComponent.h"
 
 /**
- * GASP-16 pilot content contract for Lyra-style character parts in a real network session.
+ * GASP-16 content contract for Lyra-style character parts in a real network session.
  *
- * The pilot Experience gives every pawn the MetaHuman Paladin body part through the controller parts component.
+ * The Mantle Experience composes the Paladin action set (GASP-17), which gives every pawn the MetaHuman Paladin body
+ * part through the controller parts component.
  * Armor reaches pawns through the production route: inventory grant, the owner's equipment intent, loadout,
  * equipment instance, character part. Only replicated part lists, collected cosmetic tags and the Leader Pose
  * binding are asserted; masks, grooms and materials stay presentation details of the part Blueprints.
@@ -61,7 +64,7 @@ namespace RpgCharacterPartsPIETests
 
 	FPrimaryAssetId ExperienceId()
 	{
-		return FPrimaryAssetId(URpgExperienceDefinition::StaticClass()->GetFName(), TEXT("RpgGaspPaladinExperience"));
+		return FPrimaryAssetId(URpgExperienceDefinition::StaticClass()->GetFName(), TEXT("RpgGaspMantleExperience"));
 	}
 	FTimespan Timeout() { return FTimespan::FromSeconds(90.0); }
 
@@ -507,5 +510,40 @@ NETWORK_TEST_CLASS(CharacterPartsDedicatedServerPIE, "SurvivalRpg.Cosmetics.Char
 };
 
 #endif // ENABLE_PIE_NETWORK_TEST
+
+/**
+ * GASP-17 composition contract: the production CMC Experiences show the Paladin only through the removable
+ * LAS_RpgCharacter_Paladin action set, and the UEFN Mover Experiences never compose it.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgPaladinExperienceCompositionTest,
+	"SurvivalRpg.Cosmetics.CharacterParts.PaladinExperienceComposition",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgPaladinExperienceCompositionTest::RunTest(const FString& Parameters)
+{
+	const URpgExperienceActionSet* Paladin = LoadObject<URpgExperienceActionSet>(nullptr,
+		TEXT("/Game/SurvivalRpg/Characters/MetaHumans/Parts/LAS_RpgCharacter_Paladin.LAS_RpgCharacter_Paladin"));
+	if (!TestNotNull(TEXT("The Paladin action set loads"), Paladin)) return false;
+	// Unset when the Experience does not load; otherwise whether it composes the Paladin action set.
+	auto Composes = [Paladin](const TCHAR* Name) -> TOptional<bool>
+	{
+		const UClass* Class = LoadClass<URpgExperienceDefinition>(nullptr,
+			*FString::Printf(TEXT("/Game/SurvivalRpg/System/Experiences/%s.%s_C"), Name, Name));
+		if (!Class) return {};
+		return GetDefault<URpgExperienceDefinition>(Class)->ActionSets.ContainsByPredicate(
+			[Paladin](const TObjectPtr<URpgExperienceActionSet>& Set) { return Set == Paladin; });
+	};
+	for (const TCHAR* Name : { TEXT("RpgGaspCMCExperience"), TEXT("RpgGaspMantleExperience"), TEXT("RpgInventoryStorageExperience") })
+	{
+		TestTrue(FString::Printf(TEXT("%s composes the Paladin action set"), Name), Composes(Name).Get(false));
+	}
+	for (const TCHAR* Name : { TEXT("RpgGaspMoverExperience"), TEXT("RpgGaspMoverRagdollExperience") })
+	{
+		const TOptional<bool> Result = Composes(Name);
+		TestTrue(FString::Printf(TEXT("%s loads"), Name), Result.IsSet());
+		TestFalse(FString::Printf(TEXT("%s keeps the UEFN Mover without the Paladin"), Name), Result.Get(true));
+	}
+	return true;
+}
 
 #endif // WITH_DEV_AUTOMATION_TESTS

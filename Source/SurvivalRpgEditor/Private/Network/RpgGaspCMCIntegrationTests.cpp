@@ -56,6 +56,17 @@ namespace RpgGaspCMCIntegrationTests
 		return FPrimaryAssetId(URpgExperienceDefinition::StaticClass()->GetFName(), TEXT("RpgGaspCMCExperience"));
 	}
 
+	/**
+	 * True when a live gameplay mesh plays the GASP-look Manny's skeleton. The Experience's Paladin body part swaps the
+	 * asset for an invisible copy on the same skeleton (GASP-17), so the asset itself is not the contract at runtime.
+	 */
+	bool PlaysMannySkeleton(const USkeletalMeshComponent* Mesh)
+	{
+		const USkeletalMesh* Manny = LoadObject<USkeletalMesh>(nullptr, MeshPath);
+		const USkeletalMesh* Asset = Mesh ? Mesh->GetSkeletalMeshAsset() : nullptr;
+		return Manny && Asset && Asset->GetSkeleton() == Manny->GetSkeleton();
+	}
+
 	/** Reads the shared presentation struct contract without freezing graph nodes or generated field GUIDs. */
 	const FProperty* FindPresentationField(const UAnimInstance* Animation, const TCHAR* Prefix, const void*& OutData)
 	{
@@ -328,8 +339,7 @@ namespace RpgGaspCMCIntegrationTests
 			&& !PlayerState->IsWaitingForRespawn() && Health && Health->GetHealth() > 0.0f && !Health->IsDeadOrDying()
 			&& ASC && ASC == State.PersistentASC.Get() && ASC == PlayerState->GetRpgAbilitySystemComponent()
 			&& ASC->GetAvatarActor() == Character && ASC->GetOwnerActor() == PlayerState
-			&& Character->GetMesh()->GetSkeletalMeshAsset()
-			&& Character->GetMesh()->GetSkeletalMeshAsset()->GetPathName() == MeshPath ? Character : nullptr;
+			&& PlaysMannySkeleton(Character->GetMesh()) ? Character : nullptr;
 	}
 	const FGameplayTag& PrimaryInput()
 	{
