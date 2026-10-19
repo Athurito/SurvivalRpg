@@ -1,6 +1,6 @@
 # GASP-17 – Paladin in the production CMC Experiences
 
-Status: **PR open** ([#268](https://github.com/Athurito/SurvivalRpg/pull/268)), waiting for the user check; work on `claude/gasp-17-paladin-production` since 2026-10-19. Defined in [#267](https://github.com/Athurito/SurvivalRpg/pull/267) and marked Ready by the user. [`GASP-16`](gasp-character-armor-pilot.md) is merged ([#266](https://github.com/Athurito/SurvivalRpg/pull/266)). This report is the task report.
+Status: **Merged** on 2026-10-19 ([#268](https://github.com/Athurito/SurvivalRpg/pull/268) as `7a559d37`) at the user's request. The user did not report a result of the planned user check. Defined in [#267](https://github.com/Athurito/SurvivalRpg/pull/267) and marked Ready by the user. [`GASP-16`](gasp-character-armor-pilot.md) is merged ([#266](https://github.com/Athurito/SurvivalRpg/pull/266)). This report is the task report.
 
 ## Goal
 
@@ -214,5 +214,5 @@ The warnings are the known PIE network and editor noise. The `Invalid Primary As
 - The Hurdle rotation timing case and the engine teardown crash above.
 - `Lvl_HarvestPickaxe`, `Lvl_ResourceParity` and `Lvl_VfxGallery` use the Mantle Experience and now show the Paladin. That includes the VFX gallery other tasks use for their captures.
 - The `GASP-16` limits still apply: the ragdoll trail, the cost per Paladin and the render-thread visibility wait.
-- Open: the user check on a production map.
+- The user merged the PR without reporting a user check on a production map.
 
