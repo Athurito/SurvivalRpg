@@ -22,7 +22,7 @@ diese Datei **ersetzen, nicht ergänzen**. Das frühere fortlaufende Protokoll b
 
 ## Nächster Handgriff
 
-Der Nutzer prüft und mergt den `GASP-16`-PR ([#266](https://github.com/Athurito/SurvivalRpg/pull/266)). Danach beginnt `GASP-17` (**Bereit**, [Definition](gasp-paladin-production.md), DEF_LINK): Der Paladin kommt über
+Der Nutzer prüft und mergt den `GASP-16`-PR ([#266](https://github.com/Athurito/SurvivalRpg/pull/266)). Danach beginnt `GASP-17` (**Bereit**, [Definition](gasp-paladin-production.md), [#267](https://github.com/Athurito/SurvivalRpg/pull/267)): Der Paladin kommt über
 ein entfernbares Experience-Action-Set in die produktiven CMC-Experiences. Weiter offen
 und nicht eingeplant: das Überschießen von Teil-Turns unter Block, das zurückgestellte `GASP-STAB-05`, das Entfernen der ungenutzten
 UEFN-CMC-Kette, die Turn-Clip-Wahl auf Proxies, die in `GASP-13` nicht übernommenen Tuning-Werte und der Port der Relaxed-Leans aus
