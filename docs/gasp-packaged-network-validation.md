@@ -1,6 +1,6 @@
 # GASP-VAL-02 – Packaged build and network conditions
 
-Status: **Defined** on 2026-10-19 at the user's request, waiting for **Ready**. This report is the task report.
+Status: **In progress** since 2026-10-19 on `claude/gasp-val-02-packaged-network`. Defined in [#270](https://github.com/Athurito/SurvivalRpg/pull/270), and the user started it the same day. This report is the task report.
 
 ## Goal
 
@@ -95,7 +95,7 @@ Findings become follow-up tasks. This task measures and documents; it fixes only
 
 ## Decisions
 
-- 2026-10-19 (user): define `GASP-VAL-02`.
+- 2026-10-19 (user): define `GASP-VAL-02`, merge the definition and start it.
 - 2026-10-19 (user): no real WAN test now. Phase E is deferred, and the WAN part of the original `GASP-VAL-02` finding stays open.
 - 2026-10-19 (user): the user plays the packaged routes by hand with launch scripts from this task. No development-only route command is added.
 - 2026-10-19 (user): the emulation profiles in Phase D stay as proposed.

@@ -13,7 +13,7 @@ frühere Fassung mit Schnellstart-Verlauf und Aufgabenverträgen liegt in der
 
 ## Nächster bereiter Schritt
 
-Kein Schritt ist **Bereit**; der Nutzer markiert das nächste Paket als **Bereit**. `GASP-VAL-02` (gepackter Build und Netzbedingungen) ist definiert ([Definition](gasp-packaged-network-validation.md)) und wartet darauf.
+`GASP-VAL-02` ist **In Arbeit** ([Definition](gasp-packaged-network-validation.md), [#270](https://github.com/Athurito/SurvivalRpg/pull/270)): gepackter Development-Build, getrennte Prozesse und emulierte Netzbedingungen; der Nutzer hat es am 19.10.2026 gestartet.
 `GASP-17` ist gemergt ([#268](https://github.com/Athurito/SurvivalRpg/pull/268), [Bericht](gasp-paladin-production.md)): Die CMC-, Mantle- und Inventar-Lager-Experiences zeigen den MetaHuman-Paladin über das entfernbare Action Set `LAS_RpgCharacter_Paladin`; Pawns, PawnData und Animation sind unverändert.
 `GASP-16` ist gemergt ([#266](https://github.com/Athurito/SurvivalRpg/pull/266), [Bericht](gasp-character-armor-pilot.md)): MetaHuman-Paladin mit fünfteiliger Rüstung über Lyras Character Parts auf dem Manny-Gameplay-Skelett, seit `GASP-17` in den produktiven CMC-Experiences; Nutzerprüfung ohne offene Befunde.
 `GASP-STAB-06` ist gemergt ([#257](https://github.com/Athurito/SurvivalRpg/pull/257), [Bericht](gasp-block-turn.md)): Ein Blockdruck nach einer Kameradrehung richtet
@@ -58,7 +58,7 @@ drei Experience-Dateien zu besitzen.
 | `GASP-NET-02` | Terminaler Mantle-Grund bei Reconciliation | **Gemergt** | [#148](https://github.com/Athurito/SurvivalRpg/pull/148) | [Reconciliation](gasp-terminal-reconciliation.md) |
 | `GASP-NET-03` | Rekonstruktion nach Paketpause | **Gemergt**; Grenze bewertet, Werkzeug validiert, Runtime-Grenze bleibt | [#149](https://github.com/Athurito/SurvivalRpg/pull/149) | [Paketpause](gasp-packet-gap-recovery.md) |
 | `GASP-VAL-01` | Onset-Messung Walking→Traversing | **Zurückgestellt**: Messgrenze, nur bei Bedarf verfeinern | – | [Offene Befunde](gasp-integration-handoff.md#offene-befunde) |
-| `GASP-VAL-02` | Gepackter Development-Build, getrennte Prozesse, emulierte Latenz/Jitter/Verlust und Paketpause für CMC mit Paladin, Mover und Mover-Ragdoll; echtes WAN später | **Definiert** 19.10.2026, wartet auf **Bereit** | – | [Definition](gasp-packaged-network-validation.md), [Offene Befunde](gasp-integration-handoff.md#offene-befunde) |
+| `GASP-VAL-02` | Gepackter Development-Build, getrennte Prozesse, emulierte Latenz/Jitter/Verlust und Paketpause für CMC mit Paladin, Mover und Mover-Ragdoll; echtes WAN später | **In Arbeit** seit 19.10.2026 | Definition [#270](https://github.com/Athurito/SurvivalRpg/pull/270) | [Definition](gasp-packaged-network-validation.md), [Offene Befunde](gasp-integration-handoff.md#offene-befunde) |
 | `GASP-VAL-03` | Traversal B bei noch gepufferter Traversal A | **Gemergt** | [#150](https://github.com/Athurito/SurvivalRpg/pull/150) | [Gepufferter Replay](gasp-buffered-traversal-replay.md) |
 | `GASP-03` | Mover-Ragdoll-Experience: Source-Audit und Pilot | **Gemergt** | [#151](https://github.com/Athurito/SurvivalRpg/pull/151), [#152](https://github.com/Athurito/SurvivalRpg/pull/152) | [Source-Audit](gasp-mover-ragdoll-source-audit.md), [Pilot](gasp-mover-ragdoll-pilot.md) |
 | `GASP-04` | Vergleich der drei Varianten | **Gemergt** | [#154](https://github.com/Athurito/SurvivalRpg/pull/154) | [Variantenvergleich](gasp-variant-comparison.md) |
