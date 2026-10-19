@@ -191,6 +191,14 @@ Its recorded limits carry into GASP-14 and GASP-15:
 - **Armor Foley:** moved here from GASP-13 on 2026-10-14. On 2026-10-18 the user deferred all sound, so it is out of GASP-16 and waits for a later audio package. Its layers may differ by load, because Foley keeps the pace and does not change movement.
 - **Depends on:** GASP-15 (merged).
 
+### GASP-17: Paladin in the production CMC Experiences
+
+**Ready** since 2026-10-19; see the [definition](gasp-paladin-production.md).
+
+- **Goal:** the production CMC Experiences show the MetaHuman Paladin from GASP-16 through one Experience action set that can be removed again. Pawn Blueprints, PawnData, animation and gameplay stay unchanged.
+- **Out:** Mover, Baseline, Prototype and enemy pawns; character editor; male MetaHuman variants; sound.
+- **Depends on:** GASP-16 ([#266](https://github.com/Athurito/SurvivalRpg/pull/266)).
+
 ### Related combat work
 
 [#124](https://github.com/Athurito/SurvivalRpg/issues/124), the load-dependent dodge, may build its skeleton-independent parts at any time: grant, input, cost, blockers, tier snapshot contract, and tests. Its final roll and sidestep montages follow the GASP-08 decision. With GASP-15 they need no retargeting, because the sources are Manny clips. Directional dodges assume the GASP-09 combat stance.
