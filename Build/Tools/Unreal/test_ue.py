@@ -211,6 +211,7 @@ class CookSummary(unittest.TestCase):
 UAT_LOG = """Running AutomationTool...
 LogCook: Display: Cooked packages 1234
 LogCook: Warning: Unable to find package for cooking /Game/Old
+[2026.10.19-10.00.00:000][  0]LogInit: Display: LogCook: Warning: Unable to find package for cooking /Game/Old
 {error}AutomationTool exiting with ExitCode={code} ({result})
 """
 

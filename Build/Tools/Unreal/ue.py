@@ -497,7 +497,9 @@ def staged_files(archive: Path) -> list[Path]:
 
 
 def summarize_package(text: str, exit_code: int | None, timed_out: bool, archive: Path) -> Outcome:
-    lines = text.splitlines()
+    # The cook repeats its warnings in a LogInit summary; count each message once.
+    lines = [SUMMARY_ENTRY.sub(lambda match: match["entry"], line) if "LogInit: Display: " in line else line
+             for line in text.splitlines()]
     errors = unique(line for line in lines if ERROR_LINE.search(line))
     warnings = unique(line for line in lines if WARNING_LINE.search(line) and not ERROR_LINE.search(line))
     exits = list(UAT_EXIT.finditer(text))
