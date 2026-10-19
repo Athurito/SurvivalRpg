@@ -19,7 +19,8 @@ SERVER_CORRECTION = re.compile(r"\*\*\* Server: Error for (?P<pawn>\S+) at Time=
 CLIENT_CORRECTION = re.compile(r"\*\*\* Client: Error for (?P<pawn>\S+) at Time=\S+ is (?P<distance>[\d.]+)")
 RECONCILE = re.compile(r"Reconcile required due to Sync/Aux mismatch")
 JOIN = re.compile(r"LogNet: Join succeeded")
-NETWORK_FAILURE = re.compile(r"NetworkFailure|Network Failure|ConnectionLost|ConnectionTimeout")
+# A real loss shows a timeout first; the host closing the session only produces FailureReceived and ConnectionLost.
+NETWORK_FAILURE = re.compile(r"NetworkFailure: (?!FailureReceived, Error: 'Host closed the connection|ConnectionLost)|ConnectionTimeout")
 ERROR = re.compile(r"(?:^|[\s:)])Error:")
 ENSURE = re.compile(r"Ensure condition failed:")
 CRASH = re.compile(r"=== Critical error: ===|Fatal error!|Unhandled Exception: ")
@@ -27,6 +28,11 @@ CRASH = re.compile(r"=== Critical error: ===|Fatal error!|Unhandled Exception: "
 KNOWN_NOISE = [
     re.compile(r"LogOnline: Error: STEAM:"),
     re.compile(r"LogSteamShared: Error:"),
+    # Uncooked -game probes only: the engine's experimental toolset plugins fail to import under -game.
+    re.compile(r"LogPython: Error:"),
+    # Session end: the host quits first, so clients report the closed connection. Timeouts stay real failures.
+    re.compile(r"Host closed the connection"),
+    re.compile(r"Your connection to the host has been lost"),
 ]
 
 
