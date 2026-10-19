@@ -582,3 +582,9 @@ All 355 tests pass. The warnings are the known PIE network and editor noise.
 - Check: in PIE the chest now holds all five pieces, with the pants at (0, 2).
 - Equipping itself was correct. A scripted PIE run equipped all five pieces through inventory intents and filled all five slots with visible meshes.
 - The pants are plain cloth trousers. Under the chest's long mail skirt and the high boots, only the gap between the mail panels shows them.
+
+**User check result (2026-10-19)**
+- After the chest fix, the user reported that the chest holds all five pieces and that the armored Paladin looks very good.
+- Asked about combat, death, respawn and the listen-server run, the user said these were already tested and reported no problems.
+- The editor log of that session shows one listen-server PIE run with a joined client, in which the chest piece was equipped, with no errors or ensures.
+- Open: the user decides whether the production CMC pawns adopt the Paladin.
