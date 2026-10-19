@@ -1,6 +1,6 @@
 # GASP-17 – Paladin in the production CMC Experiences
 
-Status: **Ready** since 2026-10-19 (user). Work starts after [`GASP-16`](gasp-character-armor-pilot.md) ([#266](https://github.com/Athurito/SurvivalRpg/pull/266)) is merged. This report is the task report.
+Status: **In progress** since 2026-10-19 on `claude/gasp-17-paladin-production`. Defined in [#267](https://github.com/Athurito/SurvivalRpg/pull/267) and marked Ready by the user. [`GASP-16`](gasp-character-armor-pilot.md) is merged ([#266](https://github.com/Athurito/SurvivalRpg/pull/266)). This report is the task report.
 
 ## Goal
 

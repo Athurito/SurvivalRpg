@@ -183,7 +183,7 @@ Its recorded limits carry into GASP-14 and GASP-15:
 
 ### GASP-16: Character and armor pilot
 
-**PR open** ([#266](https://github.com/Athurito/SurvivalRpg/pull/266)); see the [task report](gasp-character-armor-pilot.md). The user keeps the Paladin; the production CMC pawns adopt it in `GASP-17`.
+**Merged** on 2026-10-19 ([#266](https://github.com/Athurito/SurvivalRpg/pull/266)); see the [task report](gasp-character-armor-pilot.md). The user keeps the Paladin; the production CMC pawns adopt it in `GASP-17`.
 
 - **Goal:** prove a marketplace character on the chosen skeleton with one modular armor set driven by Leader Pose, including hiding body parts under armor.
 - **Character:** the user chose the Polyphoria MetaHuman Paladin, with Knight_01 as a comparison. A character editor comes later; GASP-16 keeps the MetaHuman route open.
@@ -193,7 +193,7 @@ Its recorded limits carry into GASP-14 and GASP-15:
 
 ### GASP-17: Paladin in the production CMC Experiences
 
-**Ready** since 2026-10-19; see the [definition](gasp-paladin-production.md).
+**In progress** since 2026-10-19; see the [task report](gasp-paladin-production.md).
 
 - **Goal:** the production CMC Experiences show the MetaHuman Paladin from GASP-16 through one Experience action set that can be removed again. Pawn Blueprints, PawnData, animation and gameplay stay unchanged.
 - **Out:** Mover, Baseline, Prototype and enemy pawns; character editor; male MetaHuman variants; sound.
