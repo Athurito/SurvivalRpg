@@ -522,7 +522,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgPaladinExperienceCompositionTest,
 bool FRpgPaladinExperienceCompositionTest::RunTest(const FString& Parameters)
 {
 	const URpgExperienceActionSet* Paladin = LoadObject<URpgExperienceActionSet>(nullptr,
-		TEXT("/Game/SurvivalRpg/Characters/MetaHumans/Parts/LAS_RpgCharacter_Paladin.LAS_RpgCharacter_Paladin"));
+		TEXT("/Game/SurvivalRpg/System/Experiences/ActionSets/LAS_RpgCharacter_Paladin.LAS_RpgCharacter_Paladin"));
 	if (!TestNotNull(TEXT("The Paladin action set loads"), Paladin)) return false;
 	// Unset when the Experience does not load; otherwise whether it composes the Paladin action set.
 	auto Composes = [Paladin](const TCHAR* Name) -> TOptional<bool>
