@@ -1,6 +1,6 @@
 # GASP-16 – Character and armor pilot
 
-Status: **In progress** since 2026-10-18. Phases A to E are done, and Phase F's cost run and regression are done. The user check is next. The inventory replication crash found in Phase D is fixed in [#264](https://github.com/Athurito/SurvivalRpg/pull/264) (merged and merged into this branch). On 2026-10-18 the user changed the design to Lyra Character Parts (see [Decisions](#decisions)). Defined in [#262](https://github.com/Athurito/SurvivalRpg/pull/262) after the user added character packs to the asset library and chose the pilot character and the character-editor scope. This report is the task report.
+Status: **PR open** ([#266](https://github.com/Athurito/SurvivalRpg/pull/266)). Phases A to F are done, including the user check on 2026-10-19. The user keeps the Paladin; the production CMC pawns adopt it in `GASP-17`. The inventory replication crash found in Phase D is fixed in [#264](https://github.com/Athurito/SurvivalRpg/pull/264) (merged and merged into this branch). On 2026-10-18 the user changed the design to Lyra Character Parts (see [Decisions](#decisions)). Defined in [#262](https://github.com/Athurito/SurvivalRpg/pull/262) after the user added character packs to the asset library and chose the pilot character and the character-editor scope. This report is the task report.
 
 ## Goal
 
@@ -120,6 +120,7 @@ Since `GASP-15`, the CMC pawns play the plain Lyra mannequin `SKM_Manny_Simple_G
 - 2026-10-18 (user): the base body is the pack's `MHC_paladin`, and the MetaHuman body becomes part of `GASP-16` (Phase D2) instead of a separate package.
 - 2026-10-18 (user): delete the Polyphoria Base packages that Phase D2 left unused.
 - 2026-10-18 (user): more MetaHumans follow later as male player variants under the same Paladin armor, in a separate package after Phase D2. Female variants stay out of scope.
+- 2026-10-19 (user): keep the MetaHuman Paladin. The production CMC pawns adopt it in a separate task, `GASP-17`, which stays separable: the Paladin comes through an Experience action set that can be removed again, not through the pawn Blueprint or PawnData.
 - Earlier, still in force: Manny (`SK_Mannequin`) is the gameplay and animation skeleton (`GASP-14`/`GASP-15`), and `SK_Mannequin` gets no bone or hierarchy change.
 
 ## C++ boundary
@@ -587,4 +588,9 @@ All 355 tests pass. The warnings are the known PIE network and editor noise.
 - After the chest fix, the user reported that the chest holds all five pieces and that the armored Paladin looks very good.
 - Asked about combat, death, respawn and the listen-server run, the user said these were already tested and reported no problems.
 - The editor log of that session shows one listen-server PIE run with a joined client, in which the chest piece was equipped, with no errors or ensures.
-- Open: the user decides whether the production CMC pawns adopt the Paladin.
+- Decision: the user keeps the Paladin. The production CMC pawns adopt it in `GASP-17` through an Experience action set (see [Decisions](#decisions)).
+
+**Merge with `master` before the PR (2026-10-19)**
+- `master` with the VFX package #265 was merged into this branch; `docs/third-party-notices.md` kept both sides.
+- `ue.py build`: passed.
+- `ue.py test SurvivalRpg.Cosmetics SurvivalRpg.Network.InventoryReorderPIE`: 7 / 7.
