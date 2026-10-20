@@ -71,7 +71,8 @@ Both types are distance-significance based. Neither culls effects owned by, atta
 | `FXT_Gameplay_Looping`: rune glow, portal states, auras | Medium | Deactivate, resume when back in range | 30 m, 16 (8), ×0.5 | 45 m, 24 (12), ×0.75 | 60 m, 40 (16), ×1 |
 
 Visibility culling:
-- **Burst:** pre-culls spawns outside the view frustum.
+- **Burst:** pre-culls spawns outside the view frustum and culls a running effect the moment it leaves the frustum (*Deactivate immediately*, no resume). Long-lived bursts override the visibility settings in their system, such as the Ash Wave systems (VFX-06).
+- **Refused spawns:** a pre-culled spawn returns None. Blueprints check it with `IsValid` before setting user parameters (see [vfx-roadmap.md](vfx-roadmap.md)).
 - **Looping:** culls after 1 s outside the frustum. VFX-02 turned off culling after 2 s without rendering: a looping effect that is legitimately empty, such as rune embers at charge 0, never renders, so it was culled and could never resume.
 
 ### Template systems

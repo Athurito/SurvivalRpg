@@ -115,7 +115,12 @@ The sounds use the effect sound class `SFX_Effects` and `ATT_FX_World`. That att
   Lights at the peak: 6 (`NumLights 6`).
 - **Quality tiers:** all three systems use `FXT_Gameplay_Burst`.
   - Low halves spawns and turns off every light; a Low capture still reads as burning, charred trunks.
-  - Burst allows 8 instances per system at High and 4 at Low. On Low, at most four trees of a cast burn; the others fall unburned.
+  - Burst allows 8 instances per system at High and 4 at Low. On Low, at most four trees of a cast burn; the others fall unburned but still char.
+- **Visibility (2026-10-20):** the tree burn, smoulder and ground systems override only the Effect Type's visibility settings: no culling when not rendered, no frustum culling and no frustum pre-culling. Distance and instance limits still come from `FXT_Gameplay_Burst`.
+  - `FXT_Gameplay_Burst` culls a running burst the moment it leaves the view, with no resume. A player who looked away for a moment erased the burning trees and the scorch for good; another player who looked away at the cast never saw them.
+- **Refused spawns (2026-10-20):** a spawn that the Effect Type refuses returns None.
+  - `BP_HarvestFallingTree.Ignite` and `BP_HarvestBurnArea.Start` set user parameters only on a valid system (`IsValid`). Charring, sounds and the ignition of the trees run either way.
+  - Before, every refused spawn logged "Accessed None" errors, about 70 in one minute of play in the gallery.
 - **Bounds:** fixed. Tree burn ±15 m around the trunk (−7 m to +29 m along it), ground ±14 m, smoulder ±6 m.
 - **Pooling:** the burn area and the tree spawn every system with AutoRelease pooling. A tree's system can outlive the falling tree actor by a few seconds; its world-space smoke then finishes where it is.
 
