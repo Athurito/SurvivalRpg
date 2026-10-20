@@ -1,6 +1,6 @@
 # GASP-VAL-02 – Packaged build and network conditions
 
-Status: **PR open** (PR_LINK). Work ran on `claude/gasp-val-02-packaged-network` from 2026-10-19. Defined in [#270](https://github.com/Athurito/SurvivalRpg/pull/270), and the user started it the same day. This report is the task report.
+Status: **PR open** ([#271](https://github.com/Athurito/SurvivalRpg/pull/271)). Work ran on `claude/gasp-val-02-packaged-network` from 2026-10-19. Defined in [#270](https://github.com/Athurito/SurvivalRpg/pull/270), and the user started it the same day. This report is the task report.
 
 ## Goal
 

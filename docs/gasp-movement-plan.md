@@ -210,4 +210,4 @@ Its recorded limits carry into GASP-14 and GASP-15:
 3. After a GASP-08 pass: **GASP-14 → GASP-15**, then **GASP-16**, then the final dodge montages for #124.
 4. If GASP-08 fails: GASP-14 and GASP-15 are dropped. GASP-16 then targets the runtime follower path, and the dodge montages are retargeted to UEFN like the block set.
 
-`GASP-VAL-02` (cooked, packaged, and emulated-network validation) has an **open PR** (PR_LINK); see the [task report](gasp-packaged-network-validation.md). Real WAN stays deferred.
+`GASP-VAL-02` (cooked, packaged, and emulated-network validation) has an **open PR** ([#271](https://github.com/Athurito/SurvivalRpg/pull/271)); see the [task report](gasp-packaged-network-validation.md). Real WAN stays deferred.
