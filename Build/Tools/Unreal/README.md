@@ -1,6 +1,6 @@
 # Unreal tooling
 
-`ue.py` builds, tests and cooks this checkout from the repository root. The
+`ue.py` builds, tests, cooks and packages this checkout from the repository root. The
 other Python files here are optional editor-side Unreal MCP toolsets
 (`import unreal`) that an editor Python bootstrap loads. Their purpose,
 registration and invocation are described in
@@ -10,6 +10,7 @@ registration and invocation are described in
 python Build/Tools/Unreal/ue.py build
 python Build/Tools/Unreal/ue.py test SurvivalRpg.Combat.Block.Lifecycle
 python Build/Tools/Unreal/ue.py cook Lvl_RpgGaspMantle
+python Build/Tools/Unreal/ue.py package Lvl_RpgGaspMantle BootMenu
 python Build/Tools/Unreal/ue.py engine
 ```
 
@@ -95,7 +96,16 @@ Cooked output lands in `Saved/Cooked/<platform>`. `--platform WindowsServer`
 cooks for a dedicated server. The verdict and the listed errors and warnings
 come from the commandlet's unique warning/error summary.
 
-`build`, `test` and `cook` pass further Unreal arguments with
+`package` runs `BuildCookRun` for a Win64 client. It compiles the game target,
+cooks the given maps, stages, paks and copies the result to `--archive`, by
+default `Saved/Packaged/<time>-package`. `--config` selects `Development` (the
+default), `DebugGame` or `Shipping`. The verdict comes from AutomationTool's exit
+line and the log's error and warning lines, plus a check that `SurvivalRpg.exe`
+was staged. On success it names the staged game and its size. The game starts on
+the project's default map (`BootMenu`), so list it with the maps to play. The
+installed engine builds no dedicated server, so there is no server package.
+
+`build`, `test`, `cook` and `package` pass further Unreal arguments with
 `--ue-arg=-Switch=Value`; the `=` form is required because the value starts with
 a dash. Example:
 `--ue-arg=-ini:Engine:[ConsoleVariables]:TestFramework.CQTest.CommandTimeout.Network=90`.

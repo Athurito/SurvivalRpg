@@ -19,6 +19,17 @@ python Build/Tools/GaspPacketGap/probe_launch.py control --engine D:/Programme/U
 python Build/Tools/GaspPacketGap/probe_launch.py gap350 --engine D:/Programme/UE_5.8/Engine --without-observer --port 17994 --observer-gap-ms 350
 ```
 
+`GASP-VAL-02` added two options:
+- `--variant cmc` drives the CMC Mantle pawn (with the Paladin) over the same tagged Vault lane on
+  `Lvl_RpgGaspMantle` with the project's `IA_Move`/`IA_Jump`. Its corrections exist only as
+  `p.NetShowCorrections` log lines, which the launcher enables.
+- `--profile none|good|average|bad` applies the round-trip profiles of
+  [`GaspNetSession`](../GaspNetSession/README.md) to every process.
+
+`python Build/Tools/GaspNetSession/analyze.py <run>` counts corrections, reconciles and errors in a run's
+logs. `python Build/Tools/GaspPacketGap/cmc_handoff_analyze.py <run>...` measures, for an owner-driven CMC
+run, a client-only flying phase after the Vault and the largest server correction.
+
 Adjust `--engine` to your Engine directory. Defaults are host-driven running
 Vault, 60 FPS on both processes, lane 0 and 15 seconds of warmup. Gap injection
 requires `--driver host`; it affects receiving clients, never Authority input.

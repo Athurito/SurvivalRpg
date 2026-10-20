@@ -18,7 +18,15 @@ import uuid
 BASE = Path(__file__).resolve().parent
 ROOT = BASE.parents[2]
 PROJECT = ROOT / 'SurvivalRpg.uproject'
-MAP = '/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMover'
+# Per variant: saved map, runtime script and extra console commands. The CMC route uses the same tagged Vault lanes
+# on the Mantle map; its corrections are only visible as p.NetShowCorrections log lines (GASP-VAL-02).
+VARIANTS = {
+    'mover': ('/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMover', 'probe_runtime.py', []),
+    'cmc': ('/Game/SurvivalRpg/Maps/Test/Lvl_RpgGaspMantle', 'probe_runtime_cmc.py',
+            ['p.NetShowCorrections 1', 'p.NetCorrectionLifetime 0.01']),
+}
+sys.path.insert(0, str(ROOT / 'Build/Tools/GaspNetSession'))
+from session import PROFILES, profile_commands  # noqa: E402  (GASP-VAL-02 network profiles, one definition)
 
 
 def write_json(path, value):
@@ -69,7 +77,12 @@ def main():
     parser.add_argument('--lane', type=int, choices=(0, 1), default=0)
     parser.add_argument('--port', type=int, default=17992)
     parser.add_argument('--observer-gap-ms', type=int, default=0)
+    parser.add_argument('--variant', choices=sorted(VARIANTS), default='mover',
+                        help='mover: Lvl_RpgGaspMover Vault (default); cmc: the CMC Mantle pawn on Lvl_RpgGaspMantle')
+    parser.add_argument('--profile', choices=sorted(PROFILES), default='none',
+                        help='GASP-VAL-02 emulated round-trip profile applied to every process')
     args = parser.parse_args()
+    map_path, runtime, variant_commands = VARIANTS[args.variant]
     editor = args.engine.resolve() / 'Binaries/Win64/UnrealEditor.exe'
     if os.name != 'nt' or not editor.is_file() or not PROJECT.is_file():
         parser.error('This probe requires Windows and a built SurvivalRpg checkout with UnrealEditor.exe')
@@ -97,7 +110,7 @@ def main():
     manifest = {'arguments': {key: str(value) if isinstance(value, Path) else value for key, value in vars(args).items()},
                 'created_utc': time.time(), 'processes': {}, 'provenance': provenance(editor),
                 'input': 'IA_Move plus IA_Jump (the existing Space action), with real mapped handlers; no gameplay-state or transform writes',
-                'scope': 'Uncooked UnrealEditor -game, ordinary separate-process transport, original saved Mover map',
+                'scope': 'Uncooked UnrealEditor -game, ordinary separate-process transport, original saved ' + map_path,
                 'role_names': 'host/owner/observer are process labels; inspect player_id/net_role. With driver=host, owner observes that pawn as a SimulatedProxy.',
                 'limits': 'Not a cooked/packaged build, forced correction test, exact GAS end-delegate or historical NP-state verification'}
 
@@ -105,10 +118,12 @@ def main():
         write_json(run / 'manifest.json', manifest)
 
     def launch(role, fps):
-        url = MAP + '?listen' if role == 'host' else '127.0.0.1:' + str(args.port) + '?PlayerProfileId=' + str(uuid.uuid4())
+        url = map_path + '?listen' if role == 'host' else '127.0.0.1:' + str(args.port) + '?PlayerProfileId=' + str(uuid.uuid4())
         # UE 5.8 Python accepts an unquoted filename with spaces up to .py. An
         # inner quote would prematurely close UE's outer -ExecCmds value.
-        commands = 't.MaxFPS ' + str(fps) + ',r.VSync 0,r.ScreenPercentage 25,np.PrintReconciles 1,py ' + (BASE / 'probe_runtime.py').as_posix()
+        commands = ','.join(['t.MaxFPS ' + str(fps), 'r.VSync 0', 'r.ScreenPercentage 25', 'np.PrintReconciles 1',
+                             *variant_commands, *profile_commands(args.profile),
+                             'py ' + (BASE / runtime).as_posix()])
         command = [str(editor), str(PROJECT), url, '-game', '-nosteam', '-NoSaveConfig', '-NoSplash',
                    '-NoLoadingScreen', '-NoSound', '-unattended', '-ForceEnablePython', '-windowed',
                    '-ResX=640', '-ResY=360', '-port=' + str(args.port), '-RpgVaultProbeRole=' + role,

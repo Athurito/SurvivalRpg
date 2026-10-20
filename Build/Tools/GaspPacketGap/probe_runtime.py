@@ -204,7 +204,8 @@ def discover(now):
         record('pawn', path=key, local=pawn.is_locally_controlled(), net_role=str(pawn.get_local_role()))
     controller = STATE['controller']
     pawn = controller.get_controlled_pawn()
-    if STATE['ready'] or pawn.get_path_name() not in STATE['pawns']:
+    # Under emulated latency the pawn can arrive before its PlayerState; wait for both before reporting ready.
+    if STATE['ready'] or pawn.get_path_name() not in STATE['pawns'] or not pawn.get_editor_property('player_state'):
         return
     lane = find_lane(world)
     if ROLE == DRIVER:
