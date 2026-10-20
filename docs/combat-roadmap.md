@@ -96,7 +96,7 @@ untuned grips, no armed locomotion and enemies without real behavior.
 
 | ID | Task | Status | Report / PR |
 | --- | --- | --- | --- |
-| CMB-01 | Weapon grips: grip sockets of the same name on the Manny skeleton (and on UEFN for the Mover), equipment definitions point to them, grips tuned against the visible Paladin hands and gauntlets; sword, two-handed sword, shield, pickaxe and axe | In review | [combat-weapon-grips.md](combat-weapon-grips.md) |
+| CMB-01 | Weapon grips: grip sockets of the same name on the Manny skeleton (and on UEFN for the Mover), equipment definitions point to them, grips tuned against the visible Paladin hands and gauntlets; sword, two-handed sword, shield, pickaxe and axe | In review | [combat-weapon-grips.md](combat-weapon-grips.md), [PR #274](https://github.com/Athurito/SurvivalRpg/pull/274) |
 | CMB-02 | Armed locomotion: a per-weapon hold pose from the pack (`Idle_Combat`) layered over the GASP locomotion, delivered by the weapon instance through the anim-layer seam that already links the block layer; weapons stop clipping into the body while walking, running and sprinting | Planned | |
 | CMB-03 | Player combo: a three- to four-hit sword-and-shield combo from `Combo_Attack_01`, input buffer and chaining window, cancel into dodge and block, damage and trace per step on the weapon | Planned | |
 | CMB-04 | Hit feedback: directional and heavy hit reactions from the pack, short hitstop, camera shake, cue tags and hook points for swing, hit, block, perfect block, parry, guard break and death, with placeholder effects | Planned | |
