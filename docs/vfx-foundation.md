@@ -58,6 +58,8 @@ Everything shared lives under `Content/SurvivalRpg/FX`:
 | `T_FX_SoftDot` | Generated procedurally (project-owned), grayscale | 128 px | Spark, ember and glow mask; distortion falloff |
 | `T_FX_HeatNoise_N` | Generated procedurally (project-owned), tileable sum-of-sines normal map | 256 px | Heat haze offset |
 | `T_FX_RuneGlyphs` | Generated procedurally (project-owned): three engraved runes, R stroke and G halo (VFX-02) | 384×128 px | Weapon rune overlay |
+| `T_FX_FireBall_EOO`, `T_FX_FireBall_N` | Niagara Examples `T_FireBall_*_Loop`, 8×8 frames, looping (VFX-05) | 1024 px (source 2048) | A roiling ball of fire, `MI_FX_FireBall` |
+| `T_FX_Explosion_EOO`, `T_FX_Explosion_N` | Niagara Examples `T_Explosion_*`, 8×8 frames, one-shot from fireball to smoke (VFX-05) | EOO 2048 px, normals 1024 px (source 4096) | Explosion billows, `MI_FX_Explosion` |
 
 All FX textures use the `Effects` texture group. The flipbooks keep their 2048 px source but cook at most 1024 px (128 px per frame).
 

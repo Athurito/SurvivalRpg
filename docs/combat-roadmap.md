@@ -117,6 +117,10 @@ untuned grips, no armed locomotion and enemies without real behavior.
 
 - **Spear:** second melee family from the Spear pack and the weapon meshes in
   `SkeletonProps` and `SkeletonCharacter`.
+- **Projectile foundation:** one native, server-authoritative and replicated
+  projectile for spells and arrows: movement, hit detection, damage through
+  GameplayEffects and an impact GameplayCue. The VFX-05 fireball flight system
+  and impact cue ([VFX roadmap](vfx-roadmap.md)) are its first content.
 - **Bow:** ranged foundation with aiming, projectiles and ammunition, in a new
   `GF_Combat_Ranged`.
 - **Mage and combat magic:** with the spell prototypes of VFX-05 in
