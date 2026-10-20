@@ -1,6 +1,6 @@
 # CMB-03: Player combo
 
-Task report for CMB-03 in the [combat roadmap](combat-roadmap.md). The sword's primary attack becomes a four-hit sword-and-shield combo from the pack's `Combo_Attack_01`, with an input buffer, a chaining window per hit, and dodge and block canceling the recovery.
+Task report for CMB-03 in the [combat roadmap](combat-roadmap.md), [PR #282](https://github.com/Athurito/SurvivalRpg/pull/282). The sword's primary attack becomes a four-hit sword-and-shield combo from the pack's `Combo_Attack_01`, with an input buffer, a chaining window per hit, and dodge and block canceling the recovery.
 
 ## C++ boundary decision
 
