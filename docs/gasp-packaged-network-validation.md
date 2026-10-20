@@ -1,6 +1,6 @@
 # GASP-VAL-02 – Packaged build and network conditions
 
-Status: **In progress** since 2026-10-19 on `claude/gasp-val-02-packaged-network`. Defined in [#270](https://github.com/Athurito/SurvivalRpg/pull/270), and the user started it the same day. This report is the task report.
+Status: **PR open** (PR_LINK). Work ran on `claude/gasp-val-02-packaged-network` from 2026-10-19. Defined in [#270](https://github.com/Athurito/SurvivalRpg/pull/270), and the user started it the same day. This report is the task report.
 
 ## Goal
 
@@ -218,12 +218,44 @@ No run logged an unexplained error or a network failure. Errors that every uncoo
 - Both runtimes now wait for the PlayerState, and the rerun passed.
 - The analyser treats the session-end disconnect as known: clients report "Host closed the connection" when the host quits first. Timeouts still count as failures.
 
-### Still open
+### Phase B, D and F – user sessions in the package (2026-10-19)
 
-- **Phase B, manual:** the user plays every packaged map:
-  - movement, sprint and crouch; Mantle, Vault and Hurdle;
-  - sword attack and block; death and respawn;
-  - on the Paladin map: the chest and armor.
-- **Phase D, manual:** the user plays packaged sessions under good, average and bad. These cover combat, inventory equip, death and respawn and a late join under each profile, which the scripts do not drive. The scripts drive only the Vault.
-- **Phase F:** the user check under the average profile, and the final report with proposed follow-up tasks for F1 and F2.
+The user played the package with `session.py` (`Saved/GaspVal02/session_user*`):
 
+| Session | Map, profile | Played | Log result |
+| --- | --- | --- | --- |
+| `userPaladinSolo` | `Lvl_RpgGaspPaladin`, alone | about 5 min | No error, ensure or crash. |
+| `userMoverSolo` | `Lvl_RpgGaspMover`, alone | about 15 min | Only the 141 `CR_UEFN_Mannequin_FullBodyIK` load errors of finding F1; no crash. |
+| `userPaladinAverage` | `Lvl_RpgGaspPaladin`, listen host and one late client, Average | host about 85 s, client about 47 s | The client loaded the Experience and joined. The chest piece was equipped, and both logs recreate its cloth. 7 server corrections of at most 4.4 cm; no error. |
+
+- The user reported no problem ("sollte schon so passen") and did not play the Bad session by hand. The Bad profile is covered only by the scripted runs.
+- The user did not report anything visible from finding F1 on the Mover.
+
+## Outcome
+
+- **The package works.** Every GASP map runs in a Win64 Development package with the patched NetworkPrediction/Mover plugins:
+  - the MetaHuman Paladin with grooms and armor;
+  - separate processes with a late join and mixed frame rates;
+  - all emulated profiles, including a 350 ms packet pause.
+- **No crash, ensure or network failure** occurred in any packaged or scripted session. Phase E (real WAN) stays deferred.
+
+## Proposed follow-up tasks
+
+Not on the roadmap; each needs the user to mark it Ready.
+
+1. **CMC Vault handoff under latency (finding F2).**
+   - After an owner-driven CMC Vault, the owning client stays in `MOVE_FLYING` without a montage for about one round trip and keeps moving.
+   - The server then corrects it by up to 44 cm at 120 ms and up to 144 cm at 250 ms.
+   - Reproduction: `probe_launch.py <label> --variant cmc --driver owner --profile bad`, then `cmc_handoff_analyze.py`.
+   - Mantle and Hurdle handoffs were not scripted and may share the cause.
+2. **Mover full-body IK rig in cooked builds (finding F1).**
+   - The cooked `CR_UEFN_Mannequin_FullBodyIK` carries editor-only `RigVMDeveloper.RigVMPin` exports and logs 141 load errors on every Mover map.
+   - Resaving or recompiling the rig in UE 5.8.3 may strip them. Whether the Mover's IK works in the package is unverified.
+3. **Per-frame console-variable lookups (minor).** Blueprint looks up `a.animnode.offsetrootbone.enable` and the GASP `DDCvar.DrawCharacterDebug*` variables every frame (500 `FindConsoleObject` calls each in the package).
+
+## Limits
+
+- The scripted routes cover only the Vault. Mantle, Hurdle, combat, inventory and respawn under the profiles rest on the short manual Average session and on PIE tests.
+- The user's sessions were short, and none ran under the Bad profile.
+- The profiles are emulated on one machine. Real WAN (Phase E) and a packaged dedicated server, which needs a source-built engine, are not covered.
+- The scripted probes run uncooked `-game` processes; the sessions run the Development package. Shipping is not covered.
