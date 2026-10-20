@@ -48,7 +48,7 @@ A machine that sees the portal close plays this sequence. All times are seconds 
   - `CloseSequenceClass` (category *Portal Presentation*) selects the sequence actor.
   - Its `OnPortalClosedPresentation` hides and deactivates `RiftFX` for an initial state. Otherwise it spawns the sequence at the portal and passes it `RiftFX` and the rift's height.
 - **`BP_PortalCloseSequence`** (new actor, `GF_Portals_Core/FX`) runs the sequence locally.
-  - `Start` spawns `NS_Portal_Close` at the ground with AutoRelease pooling and passes it the timing. It plays the tension sound and steps the sequence on a 16 ms looping timer.
+  - `Start` spawns `NS_Portal_Close` at the ground with AutoRelease pooling and passes it the timing, guarded by `IsValid`: if the Effect Type refuses the spawn, the sequence runs without the closing particles. It plays the tension sound and steps the sequence on a 16 ms looping timer.
   - Each step drives `Destabilise` and `Collapse` on the rift, plays the rune, seal and suck sounds on time, and handles the implosion. At the implosion it hides and deactivates the rift, plays the implosion sounds and the world camera shake, and starts the residue loop with its fade.
   - The actor lives 45 s. The particle system and the residue sound are independent of it.
 
@@ -171,6 +171,7 @@ Sounds, all with `SFX_Effects` and `ATT_FX_World`:
   3. After 1 s each machine ran exactly one sequence with all 8 runes. After 4 s both had imploded and hidden the rift.
   4. Calling the presentation with `bInitialState` on the client hid the rift and started no second sequence.
 - **Look:** checked in Simulate in the gallery in slow motion and in real time, from the ground and from above, at Epic and at Low, up to 25 s after the close.
+- **Refused spawn:** with `CloseSystem` cleared in memory, the gallery close still ran all 8 runes, the implosion and the rift hiding. `BP_PortalCloseSequence` logged no runtime error.
 - **Asset validation:** the 24 new or changed assets are valid with 0 warnings, the gallery map included. No dependency points into the asset library projects.
 - **Cook:** `python Build/Tools/Unreal/ue.py cook Lvl_VfxGallery Lvl_ResourceParity` passed with 0 errors, again after the last change to the rift. It cooked both systems, the sequence, the demo and the sounds. Its 3 warnings already existed: Steam disabled, no `GameplayCueNotifyPaths`, and the `CUI_RespawnScreen` tick.
 
