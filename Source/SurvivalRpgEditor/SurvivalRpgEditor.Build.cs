@@ -31,6 +31,7 @@ public class SurvivalRpgEditor : ModuleRules
 			"EngineSettings",
 			"EnhancedInput",
 			"GF_Harvesting_Magic",
+			"GF_Portals_Core",
 			"GameFeatures",
 			"GameplayAbilities",
 			"GameplayMessageRuntime",
