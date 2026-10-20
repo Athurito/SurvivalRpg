@@ -406,7 +406,8 @@ NETWORK_TEST_CLASS(GaspHurdleAuthoredMapPIE, "SurvivalRpg.GASP.Hurdle")
 					ASSERT_THAT(IsTrue(OwnerRecord.Ends == 1 && AuthorityRecord.Ends == 1));
 					ASSERT_THAT(IsFalse(OwnerRecord.bLandedBeyond));
 					ASSERT_THAT(IsTrue(AuthorityRecord.HandoffVelocity.IsNearlyZero(0.01)));
-					ASSERT_THAT(IsTrue(FMath::Abs(FMath::FindDeltaAngleDegrees(Owner()->GetActorRotation().Yaw, static_cast<double>(ApproachYaw))) < 5.0));
+					// The yaw at standstill only shows how far the warp turned before the cancel arrived: a standing
+					// combat stance holds its facing. The rotation release is proven by the renewed input below.
 					return;
 				}
 				for (const FObservation* Record : {&OwnerRecord, &AuthorityRecord, &ProxyRecord})
@@ -443,6 +444,19 @@ NETWORK_TEST_CLASS(GaspHurdleAuthoredMapPIE, "SurvivalRpg.GASP.Hurdle")
 				}
 				if (ApproachYaw != 0.0f) ASSERT_THAT(IsTrue(FMath::Abs(PressYaw) >= 25.0f));
 			});
+		if (!bCancelOnServer) return;
+		TestCommandBuilder
+			.Do(TEXT("Hold forward again after the cancelled Hurdle"), [this]() { Key(EKeys::W, true); })
+			.Until(TEXT("Ordinary movement turns the owner and the server back to the unchanged view"), [this]()
+			{
+				return FacesApproachWhileMoving(Owner()) && FacesApproachWhileMoving(Authority());
+			}, FTimespan::FromSeconds(5.0))
+			.Then(TEXT("The renewed input starts no second traversal"), [this]()
+			{
+				Key(EKeys::W, false);
+				ASSERT_THAT(IsTrue(OwnerRecord.Commits == 1 && AuthorityRecord.Commits == 1));
+				ASSERT_THAT(IsTrue(MaximumViewError < 1.0f));
+			});
 	}
 
 	UWorld* InputWorld() const { return bHost ? ServerWorld.Get() : ClientWorld.Get(); }
@@ -452,6 +466,12 @@ NETWORK_TEST_CLASS(GaspHurdleAuthoredMapPIE, "SurvivalRpg.GASP.Hurdle")
 	bool Finished(const FObservation& Record) const
 	{
 		return Record.bLandedBeyond && Record.bRestoredFacing && ((bStanding && !bResumeStandingInput) || Record.bMovingAfterLanding);
+	}
+	/** Moving under ordinary input faces the view again once traversal no longer owns the rotation. */
+	bool FacesApproachWhileMoving(const ARpgCharacter* Character) const
+	{
+		return Character && Character->GetVelocity().Size2D() > 30.0
+			&& FMath::Abs(FMath::FindDeltaAngleDegrees(Character->GetActorRotation().Yaw, static_cast<double>(ApproachYaw))) < 5.0;
 	}
 	bool SupportedBeyondRear(const ARpgCharacter* Character) const
 	{
@@ -767,9 +787,9 @@ NETWORK_TEST_CLASS(GaspHurdleAuthoredMapPIE, "SurvivalRpg.GASP.Hurdle")
 	}
 	void Report(const TCHAR* Phase) const
 	{
-		UE_LOG(LogTemp, Display, TEXT("RpgHurdleInput phase=%s host=%d standing=%d walking=%d lane=%d yaw=%.2f waypoint=%d position=%s barrierMin=%s barrierMax=%s floorZ=%.2f pressSpeed=%.2f pressYaw=%.2f viewError=%.2f resumedStandingInput=%d blocked=%d cancel=%d"),
+		UE_LOG(LogTemp, Display, TEXT("RpgHurdleInput phase=%s host=%d standing=%d walking=%d lane=%d yaw=%.2f waypoint=%d position=%s ownerYaw=%.2f barrierMin=%s barrierMax=%s floorZ=%.2f pressSpeed=%.2f pressYaw=%.2f viewError=%.2f resumedStandingInput=%d blocked=%d cancel=%d"),
 			Phase, bHost, bStanding, bWalking, LaneIndex, ApproachYaw, Waypoint, Owner() ? *Owner()->GetActorLocation().ToCompactString() : TEXT("None"),
-			*BarrierBounds.Min.ToCompactString(), *BarrierBounds.Max.ToCompactString(), FloorZ, PressSpeed, PressYaw,
+			Owner() ? Owner()->GetActorRotation().Yaw : 0.0, *BarrierBounds.Min.ToCompactString(), *BarrierBounds.Max.ToCompactString(), FloorZ, PressSpeed, PressYaw,
 			MaximumViewError, bResumedStandingInput, bBlockExitOnServer, bCancelledOnServer);
 		for (const FObservation* Record : {&OwnerRecord, &AuthorityRecord, &ProxyRecord})
 		{
