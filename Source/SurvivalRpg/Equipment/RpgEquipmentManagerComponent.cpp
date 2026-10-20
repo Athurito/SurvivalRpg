@@ -426,6 +426,7 @@ void URpgEquipmentManagerComponent::UninitializeComponent()
 {
 	bBlockLayerShuttingDown = true;
 	ClearBlockLocomotionLayer();
+	ClearWeaponHoldLayers();
 	TArray<URpgEquipmentInstance*> EquipmentInstances;
 	for (const FRpgAppliedEquipmentEntry& Entry : EquipmentList.Entries)
 	{
@@ -464,6 +465,7 @@ void URpgEquipmentManagerComponent::EndPlay(const EEndPlayReason::Type EndPlayRe
 	}
 	BlockPawnExtension.Reset();
 	ClearBlockLocomotionLayer();
+	ClearWeaponHoldLayers();
 	if (USkeletalMeshComponent* Mesh = BlockGameplayMesh.Get())
 	{
 		Mesh->OnAnimInitialized.RemoveDynamic(this, &ThisClass::HandleBlockAnimationInitialized);
@@ -494,6 +496,7 @@ void URpgEquipmentManagerComponent::HandleBlockAnimationInitialized()
 {
 	// Reinitialization can reuse the same UAnimInstance pointer while recreating its linked nodes.
 	ClearBlockLocomotionLayer();
+	ClearWeaponHoldLayers();
 	RefreshBlockLocomotionLayer();
 }
 
@@ -534,6 +537,7 @@ void URpgEquipmentManagerComponent::RefreshBlockLocomotionLayer()
 	if (BlockGameplayMesh.Get() != Mesh)
 	{
 		ClearBlockLocomotionLayer();
+		ClearWeaponHoldLayers();
 		if (USkeletalMeshComponent* PreviousMesh = BlockGameplayMesh.Get())
 		{
 			PreviousMesh->OnAnimInitialized.RemoveDynamic(this, &ThisClass::HandleBlockAnimationInitialized);
@@ -552,6 +556,8 @@ void URpgEquipmentManagerComponent::RefreshBlockLocomotionLayer()
 		? Source->GetBlockDefinition().ResolveForSkeleton(MeshAsset ? MeshAsset->GetSkeleton() : nullptr).BlockLocomotionLayer.Get()
 		: nullptr;
 	UAnimInstance* MainInstance = Mesh && Mesh->IsRegistered() ? Mesh->GetAnimInstance() : nullptr;
+	// Hold poses follow the replicated hands alone; unlike block they need no ability system.
+	RefreshWeaponHoldLayers(MainInstance, MeshAsset ? MeshAsset->GetSkeleton() : nullptr);
 	if (const URpgPawnExtensionComponent* Extension = BlockPawnExtension.Get())
 	{
 		const URpgAbilitySystemComponent* ASC = Extension->GetRpgAbilitySystemComponent();
@@ -571,6 +577,79 @@ void URpgEquipmentManagerComponent::RefreshBlockLocomotionLayer()
 	BlockLayerClass = DesiredClass;
 	BlockLayerSource = Source;
 	MainInstance->LinkAnimClassLayers(DesiredClass);
+}
+
+UAnimInstance* URpgEquipmentManagerComponent::GetWeaponHoldLayerInstance(ERpgEquipmentSlot Slot) const
+{
+	check(IsInGameThread());
+	UAnimInstance* MainInstance = HoldMainAnimInstance.Get();
+	const USkeletalMeshComponent* Mesh = BlockGameplayMesh.Get();
+	if (!MainInstance || !Mesh || Mesh->GetAnimInstance() != MainInstance)
+	{
+		return nullptr;
+	}
+	const FWeaponHoldBinding* Binding = HoldBindings.FindByPredicate(
+		[Slot](const FWeaponHoldBinding& Candidate) { return Candidate.Slot == Slot; });
+	return Binding && Binding->LayerClass.IsValid() ? MainInstance->GetLinkedAnimLayerInstanceByClass(Binding->LayerClass.Get()) : nullptr;
+}
+
+void URpgEquipmentManagerComponent::ClearWeaponHoldLayers()
+{
+	check(IsInGameThread());
+	UAnimInstance* PreviousInstance = HoldMainAnimInstance.Get();
+	const TArray<FWeaponHoldBinding, TInlineAllocator<2>> PreviousBindings = MoveTemp(HoldBindings);
+	HoldBindings.Reset();
+	HoldMainAnimInstance.Reset();
+	// Unlink only our own classes, and only on the instance we linked them to. A replacement main instance owns a fresh graph.
+	if (!PreviousInstance || !BlockGameplayMesh.IsValid() || BlockGameplayMesh->GetAnimInstance() != PreviousInstance)
+	{
+		return;
+	}
+	for (const FWeaponHoldBinding& Binding : PreviousBindings)
+	{
+		if (UClass* LayerClass = Binding.LayerClass.Get())
+		{
+			PreviousInstance->UnlinkAnimClassLayers(LayerClass);
+		}
+	}
+}
+
+void URpgEquipmentManagerComponent::RefreshWeaponHoldLayers(UAnimInstance* MainInstance, const USkeleton* Skeleton)
+{
+	check(IsInGameThread());
+	TArray<FWeaponHoldBinding, TInlineAllocator<2>> Desired;
+	if (MainInstance && Skeleton)
+	{
+		// Main hand first: a both-hands item's main-hand layer may also implement the off-hand interface.
+		for (const ERpgEquipmentSlot Slot : { ERpgEquipmentSlot::MainHand, ERpgEquipmentSlot::OffHand })
+		{
+			for (const FRpgAppliedEquipmentEntry& Entry : EquipmentList.Entries)
+			{
+				const URpgEquipmentDefinition* Definition = Entry.EquippedSlot == Slot && Entry.EquipmentDefinition
+					? GetDefault<URpgEquipmentDefinition>(Entry.EquipmentDefinition) : nullptr;
+				UClass* LayerClass = Definition ? Definition->ResolveHoldLayer(Skeleton, Slot).Get() : nullptr;
+				if (LayerClass && !Desired.ContainsByPredicate([LayerClass](const FWeaponHoldBinding& Binding) { return Binding.LayerClass.Get() == LayerClass; }))
+				{
+					Desired.Add({ LayerClass, Slot });
+				}
+			}
+		}
+	}
+	if (HoldMainAnimInstance.Get() == MainInstance && HoldBindings == Desired)
+	{
+		return;
+	}
+	ClearWeaponHoldLayers();
+	if (!MainInstance || Desired.IsEmpty())
+	{
+		return;
+	}
+	HoldMainAnimInstance = MainInstance;
+	HoldBindings = MoveTemp(Desired);
+	for (const FWeaponHoldBinding& Binding : HoldBindings)
+	{
+		MainInstance->LinkAnimClassLayers(Binding.LayerClass.Get());
+	}
 }
 
 void URpgEquipmentManagerComponent::ReadyForReplication()

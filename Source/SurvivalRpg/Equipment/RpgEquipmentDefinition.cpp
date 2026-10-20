@@ -2,7 +2,11 @@
 
 #include "RpgEquipmentInstance.h"
 
+#include "Animation/AnimInstance.h"
+#include "Animation/Skeleton.h"
+
 #if WITH_EDITOR
+#include "Animation/AnimClassInterface.h"
 #include "GameFramework/Actor.h"
 #include "Misc/DataValidation.h"
 #include "RpgWeaponInstance.h"
@@ -43,6 +47,21 @@ FName FRpgEquipmentActorToSpawn::GetAttachSocketForSlot(ERpgEquipmentSlot Slot) 
 	}
 
 	return AttachSocket;
+}
+
+TSubclassOf<UAnimInstance> URpgEquipmentDefinition::ResolveHoldLayer(const USkeleton* Skeleton, ERpgEquipmentSlot Slot) const
+{
+	if (!Skeleton || (Slot != ERpgEquipmentSlot::MainHand && Slot != ERpgEquipmentSlot::OffHand))
+	{
+		return nullptr;
+	}
+	const FRpgEquipmentHoldPresentation* Presentation = HoldPresentations.FindByPredicate(
+		[Skeleton](const FRpgEquipmentHoldPresentation& Candidate) { return Candidate.Skeleton == Skeleton; });
+	if (!Presentation)
+	{
+		return nullptr;
+	}
+	return Slot == ERpgEquipmentSlot::MainHand ? Presentation->MainHandLayer : Presentation->OffHandLayer;
 }
 
 URpgEquipmentDefinition::URpgEquipmentDefinition(const FObjectInitializer& ObjectInitializer)
@@ -350,6 +369,47 @@ EDataValidationResult URpgEquipmentDefinition::IsDataValid(
 					DefinitionPath,
 					FText::AsNumber(
 						static_cast<int64>(HandOccupancy))));
+		}
+	}
+
+	TSet<const USkeleton*> HoldSkeletons;
+	for (int32 PresentationIndex = 0; PresentationIndex < HoldPresentations.Num(); ++PresentationIndex)
+	{
+		const FRpgEquipmentHoldPresentation& Presentation = HoldPresentations[PresentationIndex];
+		bool bDuplicate = false;
+		HoldSkeletons.Add(Presentation.Skeleton, &bDuplicate);
+		if (!Presentation.Skeleton || bDuplicate)
+		{
+			Context.AddError(FText::Format(LOCTEXT("InvalidHoldPresentationSkeleton",
+				"Equipment definition '{0}' has a hold presentation without a skeleton or with a skeleton listed twice at "
+				"HoldPresentations[{1}]. Each presentation needs its own gameplay skeleton."),
+				DefinitionPath, FText::AsNumber(PresentationIndex)));
+			Result = EDataValidationResult::Invalid;
+			continue;
+		}
+		for (const UClass* LayerClass : { Presentation.MainHandLayer.Get(), Presentation.OffHandLayer.Get() })
+		{
+			if (!LayerClass)
+			{
+				continue;
+			}
+			// LinkAnimClassLayers binds only implemented layer functions of a compiled Anim Blueprint for the exact skeleton.
+			const IAnimClassInterface* AnimClass = IAnimClassInterface::GetFromClass(LayerClass);
+			const bool bHasImplementedLayer = AnimClass && AnimClass->GetAnimBlueprintFunctions().ContainsByPredicate(
+				[](const FAnimBlueprintFunction& Function)
+				{
+					return Function.bImplemented && !Function.Name.IsNone() && Function.Name != TEXT("AnimGraph");
+				});
+			if (LayerClass->HasAnyClassFlags(CLASS_Abstract | CLASS_Deprecated | CLASS_NewerVersionExists | CLASS_Interface)
+				|| !bHasImplementedLayer || AnimClass->GetTargetSkeleton() != Presentation.Skeleton)
+			{
+				Context.AddError(FText::Format(LOCTEXT("InvalidHoldLayer",
+					"Equipment definition '{0}' uses '{1}' at HoldPresentations[{2}], which is not a concrete compiled Anim Blueprint "
+					"with an implemented layer for skeleton '{3}'. Assign a hold layer that targets that skeleton or clear it."),
+					DefinitionPath, FText::FromString(LayerClass->GetPathName()), FText::AsNumber(PresentationIndex),
+					FText::FromString(Presentation.Skeleton->GetPathName())));
+				Result = EDataValidationResult::Invalid;
+			}
 		}
 	}
 
