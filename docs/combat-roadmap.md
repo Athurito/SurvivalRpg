@@ -121,10 +121,15 @@ untuned grips, no armed locomotion and enemies without real behavior.
   projectile for spells and arrows: movement, hit detection, damage through
   GameplayEffects and an impact GameplayCue. The VFX-05 fireball flight system
   and impact cue ([VFX roadmap](vfx-roadmap.md)) are its first content.
+- **Spell area foundation:** one native, server-authoritative and replicated
+  spell area that can move over the ground, applies damage over time through
+  GameplayEffects and carries a looping GameplayCue. The VFX-08 fire tornado
+  and its carrier contract ([vfx-fire-tornado.md](vfx-fire-tornado.md)) are
+  its first content.
 - **Bow:** ranged foundation with aiming, projectiles and ammunition, in a new
   `GF_Combat_Ranged`.
-- **Mage and combat magic:** with the spell prototypes of VFX-05 in
-  `GF_Combat_Magic`.
+- **Mage and combat magic:** with the spell effects of the VFX roadmap
+  (VFX-05 and later) in `GF_Combat_Magic`.
 - **UE4 enemies** (`SkeletonArmy`, the `BLACKMOON_BOSS_PACK1` Golem as a portal
   boss candidate): choose one pipeline in a pilot:
   - re-rig the mesh onto the Manny bone set with the skeletal mesh editing

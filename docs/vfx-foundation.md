@@ -16,6 +16,7 @@ Everything shared lives under `Content/SurvivalRpg/FX`:
 | `Materials/Instances` | `MI_FX_SmokePuff`, `MI_FX_SmokeWispy`, `MI_FX_SoftGlow`, `MI_FX_HeatHaze` |
 | `Textures` | Smoke flipbooks, masks and utility maps |
 | `Curves` | `Atlas_FX_ColorCurves`, `Curve_FX_EmissiveColor` (used by `M_FX_SmokeAndFire`) |
+| `CameraShakes` | `CS_FX_RockBurst` (VFX-07), `CS_FX_Rumble` (VFX-08) |
 | `Templates` | Four template systems: `NS_FX_Tpl_SparkBurst`, `NS_FX_Tpl_SmokePuff`, `NS_FX_Tpl_EmberDrift`, `NS_FX_Tpl_HeatHaze` |
 
 ### Master materials
