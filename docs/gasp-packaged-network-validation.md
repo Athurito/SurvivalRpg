@@ -1,6 +1,6 @@
 # GASP-VAL-02 – Packaged build and network conditions
 
-Status: **PR open** ([#271](https://github.com/Athurito/SurvivalRpg/pull/271)). Work ran on `claude/gasp-val-02-packaged-network` from 2026-10-19. Defined in [#270](https://github.com/Athurito/SurvivalRpg/pull/270), and the user started it the same day. This report is the task report.
+Status: **Merged** on 2026-10-20 ([#271](https://github.com/Athurito/SurvivalRpg/pull/271) as `7ee773b9`) at the user's request. Real WAN (Phase E) stays deferred. Defined in [#270](https://github.com/Athurito/SurvivalRpg/pull/270), and the user started it the same day. This report is the task report.
 
 ## Goal
 
