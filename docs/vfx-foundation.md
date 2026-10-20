@@ -33,6 +33,11 @@ Everything shared lives under `Content/SurvivalRpg/FX`:
 - **Emissive:** the `Mask` red channel × particle colour × particle alpha × `Emissive Gain`, passed through `MF_FX_ExposureCompensation`.
 - **Colour:** comes from Niagara as HDR particle colour, for example (6, 2.4, 0.6) for a hot spark.
 
+**`M_FX_AdditiveSubUV`** is `M_FX_Additive` with a flipbook mask, for glyph atlases (VFX-04, [vfx-portal-closing.md](vfx-portal-closing.md)).
+- **Mask:** a SubUV texture parameter `Mask` (masks sampler); the sub-image comes from the sprite renderer's `SubImageSize` and `Particles.SubImageIndex`.
+- **Emissive:** (`Mask` red + `Mask` green × `Halo Gain`) × particle colour × particle alpha × `Emissive Gain`, through `MF_FX_ExposureCompensation`. Green is a soft halo around the glyph; keep `Halo Gain` low (0.02 on `MI_FX_RuneBurn`), or the halo shows the cell edges.
+- **`MI_FX_RuneBurn`** uses the 3×1 glyph atlas `T_FX_RuneGlyphs` for the burning runes of the portal closing.
+
 **`M_FX_Distortion`** renders heat haze.
 - **Setup:** Unlit, Translucent, opacity 0, Refraction Method *2D Offset*.
 - **Offset:** the `Distortion Normal` red and green channels, panned upwards and offset by particle random, × `Falloff Mask` × particle alpha × `Distortion Strength`. The offset is a screen-space fraction, default 0.02.
@@ -117,6 +122,7 @@ These apply to Niagara work through the Unreal MCP toolset; they are also listed
 
 - **Curves do not recompile:** replacing an input with *Float From Curve* and then setting the curve keys compiles the system with the empty curve, and the key edit alone triggers no recompile. Particles then read 0, so alpha 0 makes them invisible and size 0 hides them. Opening the system in the Niagara editor (`EditorAppToolset.OpenEditorForAsset`) recompiles it. Save afterwards and verify with `fx.DumpParticleData 1` for one frame.
 - **Template flag:** `ObjectTools.set_properties` takes `values` as a JSON *string*. `TemplateSpecification` on a Niagara system cannot be set this way, so the templates are not flagged for the *New System* dialog.
+- **Trimmed attributes:** `bTrimAttributes` can drop a spawn-written attribute that only an HLSL expression input in a CPU emitter's update script reads. The expression then reads nothing, and the emitter falls back to defaults or vanishes. Systems with such expressions turn trimming off; check with `fx.DumpParticleData 1` ([vfx-portal-closing.md](vfx-portal-closing.md)).
 - **Material setters:** `MaterialEditingLibrary.set_material_instance_*` returns `False` even on success; read the value back instead. Static switch changes need a recompile of the base material.
 
 ## Validation
