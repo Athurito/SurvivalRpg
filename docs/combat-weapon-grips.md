@@ -1,5 +1,7 @@
 # CMB-01: Weapon grips
 
+Status: **Merged** on 2026-10-20 ([#274](https://github.com/Athurito/SurvivalRpg/pull/274) as `885e18f1`) at the user's request, without a user check; the user checks the grips together with CMB-02.
+
 Task report for CMB-01 in the [combat roadmap](combat-roadmap.md). Sword, two-handed sword, shield, pickaxe and axe now sit in the hand the way the Sword and Shield pack authored them, on the player, the enemies and the Mover.
 
 ## Behavior
