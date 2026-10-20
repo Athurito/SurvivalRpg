@@ -37,7 +37,7 @@ The vein itself still shrinks or vanishes through its replicated stock as before
 2. A line trace from just above the cue location finds the vein's actual surface, so the bolt lands on the rock instead of the top of its bounding box.
 3. A trace next to the vein, on the camera's side, finds the ground. Debris bounces there and the dust starts there.
 4. A trace upward finds a ceiling or overhang. In a cave the bolt then starts under the ceiling instead of passing through rock. Under open sky it is 85–100 % of `MaxBoltHeight` (35 m).
-5. It spawns `NS_Harvest_RiftGrip_Strike` at the strike point with AutoRelease pooling. It sets `BoltHeight`, `Radius` and `GroundDepth`.
+5. It spawns `NS_Harvest_RiftGrip_Strike` at the strike point with AutoRelease pooling. It sets `BoltHeight`, `Radius` and `GroundDepth` if the Effect Type did not refuse the spawn (`IsValid`, 2026-10-20); the sounds and the shake play either way.
 6. It plays one random sound from each of its three lists at 0.92–1.08 pitch.
 7. The notify's own burst effects play `CS_FX_RockBurst` as a world camera shake.
 
