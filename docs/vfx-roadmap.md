@@ -42,6 +42,14 @@ its own row below.
   is gated off.
 - Gameplay cues that spawn effects use pooled Niagara components (auto
   release for fire-and-forget effects).
+- An Effect Type can refuse a spawn: out of view, over its instance budget or
+  out of range. The spawn then returns None. Blueprint code checks the
+  result with `IsValid` before it sets user parameters and continues without
+  the effect.
+- `FXT_Gameplay_Burst` culls an effect as soon as it leaves the view. An
+  effect that leaves marks for more than a few seconds, such as scorch or
+  floating embers, overrides only the visibility settings in the system's
+  scalability overrides; a short look away must not erase it.
 
 ### Placement
 

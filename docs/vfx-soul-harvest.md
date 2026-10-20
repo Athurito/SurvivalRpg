@@ -34,7 +34,7 @@ The whole effect lasts about 2 to 3 s; the flight itself takes 0.8 to 1.8 s, dep
 **`GCN_Progression_SoulHarvest`** is a `GameplayCueNotify_Burst` Blueprint. Its `OnBurst`:
 - runs only for a character target, and only when the victim is within `MaxDistance` (2500 cm);
 - spawns the system attached to the character's mesh with pooling AutoRelease;
-- sets `SourcePosition` from the cue location and `SoulCount` from the XP: `clamp(round(XP / XPPerSoul), MinSouls, MaxSouls)`, by default 5 XP per soul, 2 to 6 souls.
+- sets `SourcePosition` from the cue location and `SoulCount` from the XP: `clamp(round(XP / XPPerSoul), MinSouls, MaxSouls)`, by default 5 XP per soul, 2 to 6 souls. Since 2026-10-20 only on a valid system (`IsValid`): the Effect Type may refuse the spawn, for example out of view or over its instance budget. `BP_VfxSoulHarvestDemo` checks it the same way.
 
 The burst effects list is empty; a sound can be added there later.
 
