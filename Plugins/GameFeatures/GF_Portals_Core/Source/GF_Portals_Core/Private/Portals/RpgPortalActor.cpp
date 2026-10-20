@@ -8,6 +8,7 @@
 #include "Engine/Level.h"
 #include "Engine/LevelStreamingDynamic.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
@@ -558,6 +559,7 @@ int32 ARpgPortalActor::GetRemainingTrackedEnemyCount() const
 
 void ARpgPortalActor::OnRep_PortalState()
 {
+	bSawOpenState |= PortalState != ERpgPortalState::Closed;
 	OnPortalStateChanged.Broadcast(PortalState);
 
 	if (PortalState == ERpgPortalState::Closed)
@@ -1761,6 +1763,7 @@ void ARpgPortalActor::SetPortalState(ERpgPortalState NewState)
 	}
 
 	PortalState = NewState;
+	bSawOpenState |= PortalState != ERpgPortalState::Closed;
 	OnPortalStateChanged.Broadcast(PortalState);
 }
 
@@ -1776,7 +1779,54 @@ void ARpgPortalActor::ApplyClosedPresentation()
 		PortalMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		PortalMesh->SetHiddenInGame(true);
 	}
+
+	// Presentation only; a dedicated server shows nothing.
+	if (GetNetMode() != NM_DedicatedServer)
+	{
+		OnPortalClosedPresentation(IsClosedPresentationInitial());
+	}
 }
+
+void ARpgPortalActor::OnPortalClosedPresentation_Implementation(bool bInitialState)
+{
+}
+
+#if !UE_BUILD_SHIPPING
+bool ARpgPortalActor::ForceSealableForTesting()
+{
+	if (!HasAuthority() || PortalState == ERpgPortalState::Dormant || PortalState == ERpgPortalState::Closed)
+	{
+		return false;
+	}
+
+	CurrentStability = GetMaxStability();
+	SetPortalState(ERpgPortalState::Sealable);
+	return true;
+}
+
+namespace RpgPortalDevCommands
+{
+	/** Playtest helper: makes every open portal sealable, so its close interaction can be tried without clearing it. */
+	static FAutoConsoleCommandWithWorldAndArgs MakeSealableCommand(
+		TEXT("Rpg.Portal.MakeSealable"),
+		TEXT("Rpg.Portal.MakeSealable: makes every open portal sealable on the server or listen host, so it can be closed."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic([](const TArray<FString>& Args, UWorld* World)
+		{
+			if (!World || World->GetNetMode() == NM_Client)
+			{
+				UE_LOG(LogRpgPortalActor, Warning, TEXT("Rpg.Portal.MakeSealable must run on the server or listen host."));
+				return;
+			}
+
+			int32 Count = 0;
+			for (TActorIterator<ARpgPortalActor> It(World); It; ++It)
+			{
+				Count += It->ForceSealableForTesting() ? 1 : 0;
+			}
+			UE_LOG(LogRpgPortalActor, Display, TEXT("Rpg.Portal.MakeSealable made %d portal(s) sealable."), Count);
+		}));
+}
+#endif
 
 AActor* ARpgPortalActor::ResolveTravelActor(AActor* Actor) const
 {

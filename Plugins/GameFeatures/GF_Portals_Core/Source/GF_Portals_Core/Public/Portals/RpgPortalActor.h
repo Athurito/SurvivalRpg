@@ -158,6 +158,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Portal|Interaction")
 	FText GetExitInteractionSubText() const;
 
+#if !UE_BUILD_SHIPPING
+	/** Playtest helper: fills stability and makes an open portal sealable at once. Server-only; not in shipping builds. */
+	bool ForceSealableForTesting();
+#endif
+
 	/** Broadcast locally when the portal changes interaction/encounter phase. */
 	UPROPERTY(BlueprintAssignable, Category = "Portal")
 	FRpgPortalStateChanged OnPortalStateChanged;
@@ -167,6 +172,19 @@ public:
 	FRpgPortalStabilityChanged OnPortalStabilityChanged;
 
 protected:
+	/**
+	 * Cosmetic: called once on every machine except a dedicated server when the closed state reaches it, after the
+	 * portal lost its collision and hid PortalMesh. Blueprint subclasses play their closing sequence here.
+	 * bInitialState is true when this machine never saw the portal open, for example on late join or when the portal
+	 * becomes relevant again after it closed; present the closed end state then instead of the closing sequence.
+	 * Never changes gameplay state.
+	 */
+	UFUNCTION(BlueprintNativeEvent, Category = "Portal|Presentation")
+	void OnPortalClosedPresentation(bool bInitialState);
+
+	/** True when this machine never saw the portal open before it closed. */
+	bool IsClosedPresentationInitial() const { return !bSawOpenState; }
+
 	UFUNCTION()
 	void OnRep_PortalState();
 
@@ -368,4 +386,7 @@ protected:
 	FTimerHandle ParticipantLocationSampleTimerHandle;
 	FGameplayMessageListenerHandle ActorKilledListenerHandle;
 	int32 NextPortalTravelRequestId = 0;
+
+	/** Local: this machine has seen the portal in a state other than Closed. Decides how a close is presented. */
+	bool bSawOpenState = false;
 };

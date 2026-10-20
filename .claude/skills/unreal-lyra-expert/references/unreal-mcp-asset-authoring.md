@@ -131,6 +131,8 @@ The task lists use these short toolset names:
 - `AddModule` appends to the end of the stack. Re-add `SolveForcesAndVelocity` after adding a force.
 - After replacing an input with *Float From Curve* and setting its keys, the compiled system still evaluates the empty curve (particles read 0). Open the system with `EditorAppToolset.OpenEditorForAsset` to recompile, save, and check one frame with the console variable `fx.DumpParticleData 1`.
 - Check culling with `fx.DumpNiagaraScalabilityState` and component state with `fx.Niagara.DumpComponents`.
+- Attribute trimming (`bTrimAttributes`) can drop an attribute that the spawn script writes and only an HLSL expression input in a CPU emitter's update script reads. The emitter then falls back to defaults or vanishes. Turn trimming off for such systems and confirm the attributes with `fx.DumpParticleData 1`.
+- Edit and rebuild systems only with PIE stopped. Edits made during Simulate applied only partly, and the save failed.
 
 ### Save and validate
 
