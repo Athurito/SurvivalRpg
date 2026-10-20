@@ -12,6 +12,8 @@
 #if WITH_EDITOR
 #include "Animation/AnimClassInterface.h"
 #include "Misc/DataValidation.h"
+#include "SurvivalRpg/Animation/AnimNotifyState_RpgComboWindow.h"
+#include "SurvivalRpg/Animation/AnimNotify_RpgWeaponAttackWindow.h"
 #endif
 
 #define LOCTEXT_NAMESPACE "RpgWeaponInstance"
@@ -169,6 +171,73 @@ EDataValidationResult URpgWeaponInstance::IsDataValid(FDataValidationContext& Co
 					WeaponPath, FText::FromString(Montage->GetPathName()), FText::FromString(Presentation.Skeleton->GetPathName()),
 					FText::FromString(GetPathNameSafe(Montage->GetSkeleton()))));
 				Result = EDataValidationResult::Invalid;
+			}
+		}
+	}
+
+	for (const TPair<FGameplayTag, FRpgWeaponAttackDefinition>& Entry : AttackDefinitions)
+	{
+		const FRpgWeaponAttackDefinition& Attack = Entry.Value;
+		if (!Attack.ComboNextAttack.IsValid())
+		{
+			continue;
+		}
+		const FText AttackName = FText::FromName(Entry.Key.GetTagName());
+		auto AddComboError = [&Context, &WeaponPath, &AttackName, &Result](const FText& Reason)
+		{
+			Context.AddError(FText::Format(LOCTEXT("InvalidComboAttack", "Weapon '{0}' attack '{1}' cannot chain: {2}"),
+				WeaponPath, AttackName, Reason));
+			Result = EDataValidationResult::Invalid;
+		};
+
+		// Walk the chain once from every entry; a revisited attack means the combo never ends.
+		TSet<FGameplayTag> Visited{ Entry.Key };
+		for (FGameplayTag Next = Attack.ComboNextAttack; Next.IsValid();)
+		{
+			const FRpgWeaponAttackDefinition* NextAttack = AttackDefinitions.Find(Next);
+			if (!NextAttack)
+			{
+				AddComboError(FText::Format(LOCTEXT("MissingComboNext", "the chain reaches '{0}', which is not an attack of this weapon."),
+					FText::FromName(Next.GetTagName())));
+				break;
+			}
+			bool bRevisited = false;
+			Visited.Add(Next, &bRevisited);
+			if (bRevisited)
+			{
+				AddComboError(FText::Format(LOCTEXT("CyclicCombo", "the chain returns to '{0}' and never ends."), FText::FromName(Next.GetTagName())));
+				break;
+			}
+			Next = NextAttack->ComboNextAttack;
+		}
+
+		float WindowStart = 0.0f;
+		float WindowEnd = 0.0f;
+		FString Failure;
+		if (!UAnimNotifyState_RpgComboWindow::FindComboWindow(Attack.Montage, WindowStart, WindowEnd, Failure))
+		{
+			AddComboError(FText::FromString(Failure));
+			continue;
+		}
+		for (const FAnimNotifyEvent& NotifyEvent : Attack.Montage->Notifies)
+		{
+			// The next hit replaces this montage, so it may not start before this hit's damage window has closed.
+			if (NotifyEvent.Notify && NotifyEvent.Notify->IsA<UAnimNotify_RpgWeaponAttackWindowEnd>()
+				&& NotifyEvent.GetTriggerTime() > WindowStart)
+			{
+				AddComboError(FText::Format(LOCTEXT("ComboBeforeAttackEnd", "its Combo Window starts at {0} s, before the attack window ends at {1} s."),
+					FText::AsNumber(WindowStart), FText::AsNumber(NotifyEvent.GetTriggerTime())));
+			}
+		}
+		const float EffectivePlayRate = Attack.MontagePlayRate * Attack.Montage->RateScale;
+		if (Attack.Montage->bEnableAutoBlendOut && EffectivePlayRate > UE_SMALL_NUMBER)
+		{
+			const float BlendOutTrigger = Attack.Montage->BlendOutTriggerTime >= 0.0f
+				? Attack.Montage->BlendOutTriggerTime : Attack.Montage->BlendOut.GetBlendTime();
+			if ((Attack.Montage->GetPlayLength() - WindowEnd) / EffectivePlayRate <= BlendOutTrigger)
+			{
+				AddComboError(FText::Format(LOCTEXT("ComboAfterBlendOut", "its Combo Window ends at {0} s, inside the montage's auto blend-out, when the attack already finishes."),
+					FText::AsNumber(WindowEnd)));
 			}
 		}
 	}

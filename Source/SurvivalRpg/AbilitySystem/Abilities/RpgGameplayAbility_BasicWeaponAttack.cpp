@@ -10,6 +10,7 @@
 #include "DrawDebugHelpers.h"
 #include "GameFramework/Controller.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/Animation/AnimNotifyState_RpgComboWindow.h"
 #include "SurvivalRpg/Animation/AnimNotify_RpgWeaponAttackWindow.h"
 #include "SurvivalRpg/Camera/RpgCameraMode.h"
 #include "SurvivalRpg/Combat/RpgCombatDeveloperSettings.h"
@@ -158,7 +159,10 @@ bool URpgGameplayAbility_BasicWeaponAttack::HasPendingAttackTimersForTests() con
 	const FTimerManager& TimerManager = World->GetTimerManager();
 	return TimerManager.TimerExists(TraceSampleTimerHandle) ||
 		TimerManager.TimerExists(AuthorityAttackWindowStartTimerHandle) ||
-		TimerManager.TimerExists(AuthorityAttackWindowEndTimerHandle);
+		TimerManager.TimerExists(AuthorityAttackWindowEndTimerHandle) ||
+		TimerManager.TimerExists(ComboWindowOpenTimerHandle) ||
+		TimerManager.TimerExists(ComboWindowCloseTimerHandle) ||
+		TimerManager.TimerExists(RecoveryCancelTimerHandle);
 }
 
 bool URpgGameplayAbility_BasicWeaponAttack::HasResidualAttackRuntimeStateForTests() const
@@ -171,7 +175,16 @@ bool URpgGameplayAbility_BasicWeaponAttack::HasResidualAttackRuntimeStateForTest
 		bAttackWindowOpen ||
 		bAuthorityAttackWindowScheduled ||
 		!PreviousTracePointLocations.IsEmpty() ||
-		!HitActorsThisWindow.IsEmpty();
+		!HitActorsThisWindow.IsEmpty() ||
+		ActiveMontageTask != nullptr ||
+		ActiveAttackTag.IsValid() ||
+		ComboStepIndex != 0 ||
+		bComboWindowOpen ||
+		bComboInputBuffered ||
+		bComboRequestPending ||
+		bRecoveryCancelable ||
+		ComboInputPressedHandle.IsValid() ||
+		ComboRequestHandle.IsValid();
 }
 #endif
 
@@ -267,14 +280,18 @@ void URpgGameplayAbility_BasicWeaponAttack::ActivateAbility(
 	check(ActorInfo);
 
 	ActiveWeaponInstance = Cast<URpgWeaponInstance>(GetSourceObject(Handle, ActorInfo));
-	const FRpgWeaponAttackDefinition* AttackDefinition = ActiveWeaponInstance ? ActiveWeaponInstance->FindAttackDefinition(ResolveAttackDefinitionTag(Handle, ActorInfo)) : nullptr;
+	const FGameplayTag EntryAttackTag = ResolveAttackDefinitionTag(Handle, ActorInfo);
+	const FRpgWeaponAttackDefinition* AttackDefinition = ActiveWeaponInstance ? ActiveWeaponInstance->FindAttackDefinition(EntryAttackTag) : nullptr;
 	if (!ActiveWeaponInstance || !AttackDefinition)
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
 
-	ActiveAttackDefinition = *AttackDefinition;
+	RolledDamage = -1.0f;
+	RolledStaggerDamage = -1.0f;
+	EntryAuthoredDamage = AttackDefinition->Damage;
+	EntryAuthoredStaggerDamage = AttackDefinition->StaggerDamage;
 	if (const URpgInventoryItemInstance* AssociatedItem = GetAssociatedItem();
 		AssociatedItem && AssociatedItem->HasGeneratedItemization())
 	{
@@ -289,21 +306,16 @@ void URpgGameplayAbility_BasicWeaponAttack::ActivateAbility(
 
 		if (HasRolledStat(RpgItemizationGameplayTags::Item_Stat_WeaponDamage))
 		{
-			ActiveAttackDefinition.Damage = FMath::Max(
+			RolledDamage = FMath::Max(
 				0.0f,
 				Itemization.GetTotalValueForStat(RpgItemizationGameplayTags::Item_Stat_WeaponDamage));
 		}
 		if (HasRolledStat(RpgItemizationGameplayTags::Item_Stat_WeaponStagger))
 		{
-			ActiveAttackDefinition.StaggerDamage = FMath::Max(
+			RolledStaggerDamage = FMath::Max(
 				0.0f,
 				Itemization.GetTotalValueForStat(RpgItemizationGameplayTags::Item_Stat_WeaponStagger));
 		}
-	}
-	if (!ActiveAttackDefinition.CanApplyDamage())
-	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-		return;
 	}
 	bWaitingForMontage = false;
 	bFinishingAttack = false;
@@ -320,84 +332,22 @@ void URpgGameplayAbility_BasicWeaponAttack::ActivateAbility(
 	bLoggedTracePointFailureThisActivation = false;
 	PreviousTracePointLocations.Reset();
 	HitActorsThisWindow.Reset();
-
-	if (!ActiveAttackDefinition.Montage || !ActiveAttackDefinition.HasValidTraceData())
-	{
-		UE_LOG(
-			LogRpgWeapons,
-			Warning,
-			TEXT("BasicWeaponAttack[%s] cannot run: Montage=%s TraceMode=%d TracePoints=%d TraceRadius=%.2f TraceSampleInterval=%.3f."),
-			*GetNameSafe(this),
-			*GetNameSafe(ActiveAttackDefinition.Montage),
-			static_cast<int32>(ActiveAttackDefinition.TraceMode),
-			ActiveAttackDefinition.TracePointSockets.Num(),
-			ActiveAttackDefinition.TraceRadius,
-			ActiveAttackDefinition.TraceSampleInterval);
-
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-		return;
-	}
-	if (!FMath::IsFinite(ActiveAttackDefinition.MontagePlayRate) ||
-		ActiveAttackDefinition.MontagePlayRate <= UE_SMALL_NUMBER)
-	{
-		UE_LOG(
-			LogRpgWeapons,
-			Error,
-			TEXT("BasicWeaponAttack[%s] cannot run montage [%s] with invalid play rate %.6f."),
-			*GetNameSafe(this),
-			*GetNameSafe(ActiveAttackDefinition.Montage),
-			ActiveAttackDefinition.MontagePlayRate);
-		LogAttackLifecycleLazy(
-			TEXT("ActivationRejected.InvalidPlayRate"),
-			[this]()
-			{
-				return FString::Printf(
-					TEXT("PlayRate=%.6f"),
-					ActiveAttackDefinition.MontagePlayRate);
-			});
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-		return;
-	}
-	const AActor* AttackAvatar = ActorInfo->AvatarActor.Get();
-	if (AttackAvatar && !FMath::IsNearlyEqual(
-			AttackAvatar->CustomTimeDilation,
-			1.0f,
-			KINDA_SMALL_NUMBER))
-	{
-		const FString FailureReason = FString::Printf(
-			TEXT("Avatar CustomTimeDilation %.6f is unsupported by the one-shot authority schedule."),
-			AttackAvatar->CustomTimeDilation);
-		UE_LOG(LogRpgWeapons, Error, TEXT("BasicWeaponAttack[%s] cannot run: %s"),
-			*GetNameSafe(this), *FailureReason);
-		LogAttackLifecycle(TEXT("ActivationRejected.CustomTimeDilation"), FailureReason);
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-		return;
-	}
+	ActiveAttackTag = EntryAttackTag;
+	ComboStepIndex = 0;
+	bComboWindowOpen = false;
+	bComboWindowClosed = false;
+	bComboInputBuffered = false;
+	bComboRequestPending = false;
+	bRecoveryCancelable = false;
 
 	float AttackWindowStartTime = 0.0f;
 	float AttackWindowEndTime = 0.0f;
-	FString AttackWindowFailureReason;
-	float ConfiguredTaskPlayRate = ActiveAttackDefinition.MontagePlayRate;
-	UAbilitySystemGlobals::NonShipping_ApplyGlobalAbilityScaler_Rate(ConfiguredTaskPlayRate);
-	const float ConfiguredEffectivePlayRate = ConfiguredTaskPlayRate *
-		ActiveAttackDefinition.Montage->RateScale;
-	if (!ResolveAttackWindowTiming(
-			ConfiguredEffectivePlayRate,
-			AttackWindowStartTime,
-			AttackWindowEndTime,
-			AttackWindowFailureReason))
+	if (!PrepareAttackStep(*AttackDefinition, ActiveAttackDefinition, AttackWindowStartTime, AttackWindowEndTime))
 	{
-		UE_LOG(
-			LogRpgWeapons,
-			Error,
-			TEXT("BasicWeaponAttack[%s] cannot run montage [%s]: %s"),
-			*GetNameSafe(this),
-			*GetNameSafe(ActiveAttackDefinition.Montage),
-			*AttackWindowFailureReason);
-		LogAttackLifecycle(TEXT("ActivationRejected.InvalidAttackWindow"), AttackWindowFailureReason);
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
+	ActiveAttackWindowEndTime = AttackWindowEndTime;
 
 	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
@@ -444,34 +394,435 @@ void URpgGameplayAbility_BasicWeaponAttack::ActivateAbility(
 	WindowEndTask->EventReceived.AddDynamic(this, &ThisClass::OnAttackWindowEnded);
 	WindowEndTask->ReadyForActivation();
 
-	if (ActiveAttackDefinition.Montage)
+	// Presses while active reach the owner as InputPressed; a remote owner's chain steps reach the server as GameCustom1.
+	if (UAbilitySystemComponent* AbilitySystem = ActorInfo->AbilitySystemComponent.Get())
 	{
-		bWaitingForMontage = true;
-		UAbilityTask_PlayMontageAndWait* MontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
-			this,
-			NAME_None,
-			ActiveAttackDefinition.Montage,
-			ActiveAttackDefinition.MontagePlayRate);
-
-		MontageTask->OnCompleted.AddDynamic(this, &ThisClass::OnMontageCompleted);
-		MontageTask->OnBlendOut.AddDynamic(this, &ThisClass::OnMontageBlendOut);
-		MontageTask->OnInterrupted.AddDynamic(this, &ThisClass::OnMontageInterrupted);
-		MontageTask->OnCancelled.AddDynamic(this, &ThisClass::OnMontageCancelled);
-		MontageTask->ReadyForActivation();
-
-		if (IsActive())
+		const FPredictionKey ActivationKey = ActivationInfo.GetActivationPredictionKey();
+		if (ActorInfo->IsLocallyControlled())
 		{
-			if (!ScheduleAuthorityAttackWindow())
-			{
-				LogAttackLifecycle(
-					TEXT("ActivationAborted.AuthoritySchedule"),
-					TEXT("The server could not establish an authoritative attack window."));
-				FinishAttack(true);
-				return;
-			}
-			LogAttackLifecycle(TEXT("MontageStarted"));
+			ComboInputPressedHandle = AbilitySystem->AbilityReplicatedEventDelegate(
+				EAbilityGenericReplicatedEvent::InputPressed, Handle, ActivationKey).AddUObject(this, &ThisClass::OnComboInputPressed);
+		}
+		else if (ActorInfo->IsNetAuthority())
+		{
+			ComboRequestHandle = AbilitySystem->AbilityReplicatedEventDelegate(
+				EAbilityGenericReplicatedEvent::GameCustom1, Handle, ActivationKey).AddUObject(this, &ThisClass::OnComboStepRequested);
 		}
 	}
+
+	if (!StartAttackMontage())
+	{
+		FinishAttack(true);
+	}
+}
+
+bool URpgGameplayAbility_BasicWeaponAttack::PrepareAttackStep(
+	const FRpgWeaponAttackDefinition& Source,
+	FRpgWeaponAttackDefinition& OutStep,
+	float& OutWindowStartTime,
+	float& OutWindowEndTime)
+{
+	OutStep = Source;
+	// An item roll replaces the entry attack's damage; later combo steps keep their authored ratio to the entry.
+	if (RolledDamage >= 0.0f)
+	{
+		OutStep.Damage = EntryAuthoredDamage > UE_KINDA_SMALL_NUMBER
+			? Source.Damage * RolledDamage / EntryAuthoredDamage
+			: RolledDamage;
+	}
+	if (RolledStaggerDamage >= 0.0f)
+	{
+		OutStep.StaggerDamage = EntryAuthoredStaggerDamage > UE_KINDA_SMALL_NUMBER
+			? Source.StaggerDamage * RolledStaggerDamage / EntryAuthoredStaggerDamage
+			: RolledStaggerDamage;
+	}
+	if (!OutStep.CanApplyDamage())
+	{
+		return false;
+	}
+
+	if (!OutStep.Montage || !OutStep.HasValidTraceData())
+	{
+		UE_LOG(
+			LogRpgWeapons,
+			Warning,
+			TEXT("BasicWeaponAttack[%s] cannot run: Montage=%s TraceMode=%d TracePoints=%d TraceRadius=%.2f TraceSampleInterval=%.3f."),
+			*GetNameSafe(this),
+			*GetNameSafe(OutStep.Montage),
+			static_cast<int32>(OutStep.TraceMode),
+			OutStep.TracePointSockets.Num(),
+			OutStep.TraceRadius,
+			OutStep.TraceSampleInterval);
+		return false;
+	}
+	if (!FMath::IsFinite(OutStep.MontagePlayRate) ||
+		OutStep.MontagePlayRate <= UE_SMALL_NUMBER)
+	{
+		UE_LOG(
+			LogRpgWeapons,
+			Error,
+			TEXT("BasicWeaponAttack[%s] cannot run montage [%s] with invalid play rate %.6f."),
+			*GetNameSafe(this),
+			*GetNameSafe(OutStep.Montage),
+			OutStep.MontagePlayRate);
+		LogAttackLifecycleLazy(
+			TEXT("ActivationRejected.InvalidPlayRate"),
+			[&OutStep]()
+			{
+				return FString::Printf(
+					TEXT("PlayRate=%.6f"),
+					OutStep.MontagePlayRate);
+			});
+		return false;
+	}
+	const AActor* AttackAvatar = GetAvatarActorFromActorInfo();
+	if (AttackAvatar && !FMath::IsNearlyEqual(
+			AttackAvatar->CustomTimeDilation,
+			1.0f,
+			KINDA_SMALL_NUMBER))
+	{
+		const FString FailureReason = FString::Printf(
+			TEXT("Avatar CustomTimeDilation %.6f is unsupported by the one-shot authority schedule."),
+			AttackAvatar->CustomTimeDilation);
+		UE_LOG(LogRpgWeapons, Error, TEXT("BasicWeaponAttack[%s] cannot run: %s"),
+			*GetNameSafe(this), *FailureReason);
+		LogAttackLifecycle(TEXT("ActivationRejected.CustomTimeDilation"), FailureReason);
+		return false;
+	}
+
+	FString AttackWindowFailureReason;
+	float ConfiguredTaskPlayRate = OutStep.MontagePlayRate;
+	UAbilitySystemGlobals::NonShipping_ApplyGlobalAbilityScaler_Rate(ConfiguredTaskPlayRate);
+	const float ConfiguredEffectivePlayRate = ConfiguredTaskPlayRate *
+		OutStep.Montage->RateScale;
+	if (!ResolveAttackWindowTiming(
+			OutStep,
+			ConfiguredEffectivePlayRate,
+			OutWindowStartTime,
+			OutWindowEndTime,
+			AttackWindowFailureReason))
+	{
+		UE_LOG(
+			LogRpgWeapons,
+			Error,
+			TEXT("BasicWeaponAttack[%s] cannot run montage [%s]: %s"),
+			*GetNameSafe(this),
+			*GetNameSafe(OutStep.Montage),
+			*AttackWindowFailureReason);
+		LogAttackLifecycle(TEXT("ActivationRejected.InvalidAttackWindow"), AttackWindowFailureReason);
+		return false;
+	}
+	return true;
+}
+
+bool URpgGameplayAbility_BasicWeaponAttack::StartAttackMontage()
+{
+	bWaitingForMontage = true;
+	UAbilityTask_PlayMontageAndWait* MontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
+		this,
+		NAME_None,
+		ActiveAttackDefinition.Montage,
+		ActiveAttackDefinition.MontagePlayRate);
+
+	MontageTask->OnCompleted.AddDynamic(this, &ThisClass::OnMontageCompleted);
+	MontageTask->OnBlendOut.AddDynamic(this, &ThisClass::OnMontageBlendOut);
+	MontageTask->OnInterrupted.AddDynamic(this, &ThisClass::OnMontageInterrupted);
+	MontageTask->OnCancelled.AddDynamic(this, &ThisClass::OnMontageCancelled);
+	ActiveMontageTask = MontageTask;
+	MontageTask->ReadyForActivation();
+
+	if (!IsActive())
+	{
+		// The montage could not start, and its task already finished the attack.
+		return true;
+	}
+	if (!ScheduleAuthorityAttackWindow())
+	{
+		LogAttackLifecycle(
+			TEXT("ActivationAborted.AuthoritySchedule"),
+			TEXT("The server could not establish an authoritative attack window."));
+		return false;
+	}
+	ScheduleComboTimers();
+	LogAttackLifecycle(TEXT("MontageStarted"));
+	return true;
+}
+
+void URpgGameplayAbility_BasicWeaponAttack::DetachAttackMontageTask()
+{
+	if (UAbilityTask_PlayMontageAndWait* MontageTask = ActiveMontageTask.Get())
+	{
+		MontageTask->OnCompleted.RemoveAll(this);
+		MontageTask->OnBlendOut.RemoveAll(this);
+		MontageTask->OnInterrupted.RemoveAll(this);
+		MontageTask->OnCancelled.RemoveAll(this);
+		// Ending the task alone keeps its montage playing until the next step's montage replaces it.
+		MontageTask->EndTask();
+	}
+	ActiveMontageTask = nullptr;
+	bWaitingForMontage = false;
+}
+
+void URpgGameplayAbility_BasicWeaponAttack::ScheduleComboTimers()
+{
+	ClearComboTimers();
+	UWorld* World = GetWorld();
+	const UAnimMontage* Montage = ActiveAttackDefinition.Montage;
+	if (!World || !Montage || !CurrentActorInfo)
+	{
+		return;
+	}
+
+	float PlayRate = ActiveAttackDefinition.MontagePlayRate;
+	UAbilitySystemGlobals::NonShipping_ApplyGlobalAbilityScaler_Rate(PlayRate);
+	PlayRate *= Montage->RateScale;
+	float Position = 0.0f;
+	if (UAnimInstance* AnimInstance = CurrentActorInfo->GetAnimInstance();
+		AnimInstance && AnimInstance->Montage_IsPlaying(Montage))
+	{
+		PlayRate = AnimInstance->Montage_GetEffectivePlayRate(Montage);
+		Position = AnimInstance->Montage_GetPosition(Montage);
+	}
+	if (!FMath::IsFinite(PlayRate) || PlayRate <= UE_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	// A remote owner acts at its own window edge; its request reaches a server montage that started later by about the
+	// same latency, so only jitter separates the two clocks.
+	const bool bRemoteOwner = CurrentActorInfo->IsNetAuthority() && !CurrentActorInfo->IsLocallyControlled();
+	const float Lead = bRemoteOwner ? ComboServerLeadTolerance : 0.0f;
+	auto Schedule = [this, World, Position, PlayRate](FTimerHandle& TimerHandle, void (ThisClass::*Callback)(), float MontageTime)
+	{
+		// Never call back synchronously: a chain started here would replace the step that is still being scheduled.
+		const float Delay = FMath::Max((MontageTime - Position) / PlayRate, UE_KINDA_SMALL_NUMBER);
+		World->GetTimerManager().SetTimer(TimerHandle, this, Callback, Delay, false);
+	};
+
+	Schedule(RecoveryCancelTimerHandle, &ThisClass::OnRecoveryCancelOpened, ActiveAttackWindowEndTime - Lead);
+	if (!ActiveAttackDefinition.ComboNextAttack.IsValid())
+	{
+		return;
+	}
+	float ComboWindowStart = 0.0f;
+	float ComboWindowEnd = 0.0f;
+	FString Failure;
+	if (!UAnimNotifyState_RpgComboWindow::FindComboWindow(Montage, ComboWindowStart, ComboWindowEnd, Failure))
+	{
+		LogAttackLifecycle(TEXT("ComboWindowMissing"), Failure);
+		return;
+	}
+	Schedule(ComboWindowOpenTimerHandle, &ThisClass::OnComboWindowOpened, ComboWindowStart - Lead);
+	// The server keeps accepting a remote owner's step until this step ends; the owner sent it inside its window.
+	if (!bRemoteOwner)
+	{
+		Schedule(ComboWindowCloseTimerHandle, &ThisClass::OnComboWindowClosed, ComboWindowEnd);
+	}
+}
+
+void URpgGameplayAbility_BasicWeaponAttack::ClearComboTimers()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ComboWindowOpenTimerHandle);
+		World->GetTimerManager().ClearTimer(ComboWindowCloseTimerHandle);
+		World->GetTimerManager().ClearTimer(RecoveryCancelTimerHandle);
+	}
+}
+
+void URpgGameplayAbility_BasicWeaponAttack::OnComboWindowOpened()
+{
+	if (!IsActive() || bFinishingAttack || !CurrentActorInfo)
+	{
+		return;
+	}
+	bComboWindowOpen = true;
+	LogAttackLifecycle(TEXT("ComboWindowOpened"));
+	if (CurrentActorInfo->IsLocallyControlled())
+	{
+		if (bComboInputBuffered)
+		{
+			ChainComboFromOwner();
+		}
+	}
+	else if (bComboRequestPending)
+	{
+		bComboRequestPending = false;
+		FScopedPredictionWindow ScopedPrediction(GetAbilitySystemComponentFromActorInfo(), PendingComboPredictionKey);
+		StartComboStep(ActiveAttackDefinition.ComboNextAttack);
+	}
+}
+
+void URpgGameplayAbility_BasicWeaponAttack::OnComboWindowClosed()
+{
+	bComboWindowOpen = false;
+	bComboWindowClosed = true;
+	bComboInputBuffered = false;
+	LogAttackLifecycle(TEXT("ComboWindowClosed"));
+}
+
+void URpgGameplayAbility_BasicWeaponAttack::OnRecoveryCancelOpened()
+{
+	if (!IsActive() || bFinishingAttack || bRecoveryCancelable)
+	{
+		return;
+	}
+	// Lyra's activation groups then let dodge, block or another exclusive ability replace the recovery.
+	if (CanChangeActivationGroup(ERpgAbilityActivationGroup::Exclusive_Replaceable)
+		&& ChangeActivationGroup(ERpgAbilityActivationGroup::Exclusive_Replaceable))
+	{
+		bRecoveryCancelable = true;
+		LogAttackLifecycle(TEXT("RecoveryCancelable"));
+	}
+}
+
+void URpgGameplayAbility_BasicWeaponAttack::OnComboInputPressed()
+{
+	if (UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponentFromActorInfo())
+	{
+		AbilitySystem->ConsumeGenericReplicatedEvent(EAbilityGenericReplicatedEvent::InputPressed, CurrentSpecHandle,
+			CurrentActivationInfo.GetActivationPredictionKey());
+	}
+	if (!IsActive() || bFinishingAttack || !ActiveAttackDefinition.ComboNextAttack.IsValid() || bComboWindowClosed)
+	{
+		return;
+	}
+	if (bComboWindowOpen)
+	{
+		ChainComboFromOwner();
+	}
+	else
+	{
+		bComboInputBuffered = true;
+		LogAttackLifecycle(TEXT("ComboInputBuffered"));
+	}
+}
+
+void URpgGameplayAbility_BasicWeaponAttack::OnComboStepRequested()
+{
+	UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponentFromActorInfo();
+	if (AbilitySystem)
+	{
+		AbilitySystem->ConsumeGenericReplicatedEvent(EAbilityGenericReplicatedEvent::GameCustom1, CurrentSpecHandle,
+			CurrentActivationInfo.GetActivationPredictionKey());
+	}
+	if (!IsActive() || bFinishingAttack || !AbilitySystem)
+	{
+		return;
+	}
+	if (bComboRequestPending)
+	{
+		// Requests arrive in order; play the earlier step before judging this one.
+		bComboRequestPending = false;
+		FScopedPredictionWindow ScopedPrediction(AbilitySystem, PendingComboPredictionKey);
+		if (!StartComboStep(ActiveAttackDefinition.ComboNextAttack))
+		{
+			return;
+		}
+	}
+	if (!ActiveAttackDefinition.ComboNextAttack.IsValid())
+	{
+		LogAttackLifecycle(TEXT("ComboRequestRejected"), TEXT("The running step has no next attack."));
+		return;
+	}
+	if (bComboWindowOpen)
+	{
+		// Still inside the request's prediction window: the montage replicates under the owner's key.
+		StartComboStep(ActiveAttackDefinition.ComboNextAttack);
+		return;
+	}
+	bComboRequestPending = true;
+	PendingComboPredictionKey = AbilitySystem->ScopedPredictionKey;
+	LogAttackLifecycle(TEXT("ComboRequestDeferred"));
+}
+
+void URpgGameplayAbility_BasicWeaponAttack::ChainComboFromOwner()
+{
+	bComboInputBuffered = false;
+	UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponentFromActorInfo();
+	const FGameplayTag NextAttackTag = ActiveAttackDefinition.ComboNextAttack;
+	const FRpgWeaponAttackDefinition* Source = ActiveWeaponInstance ? ActiveWeaponInstance->FindAttackDefinition(NextAttackTag) : nullptr;
+	FRpgWeaponAttackDefinition CheckedStep;
+	float WindowStart = 0.0f;
+	float WindowEnd = 0.0f;
+	// Check before telling the server, so the owner never requests a step it cannot play itself.
+	if (!AbilitySystem || !CurrentActorInfo || !Source || !PrepareAttackStep(*Source, CheckedStep, WindowStart, WindowEnd))
+	{
+		LogAttackLifecycle(TEXT("ComboStepRejected"), NextAttackTag.ToString());
+		return;
+	}
+	if (CurrentActorInfo->IsNetAuthority())
+	{
+		StartComboStep(NextAttackTag);
+		return;
+	}
+	// The new key makes the montage below a prediction; the server plays its step under the same key.
+	FScopedPredictionWindow ScopedPrediction(AbilitySystem, true);
+	AbilitySystem->ServerSetReplicatedEvent(EAbilityGenericReplicatedEvent::GameCustom1, CurrentSpecHandle,
+		CurrentActivationInfo.GetActivationPredictionKey(), AbilitySystem->ScopedPredictionKey);
+	StartComboStep(NextAttackTag);
+}
+
+bool URpgGameplayAbility_BasicWeaponAttack::StartComboStep(FGameplayTag NextAttackTag)
+{
+	const FRpgWeaponAttackDefinition* Source = ActiveWeaponInstance ? ActiveWeaponInstance->FindAttackDefinition(NextAttackTag) : nullptr;
+	FRpgWeaponAttackDefinition NextStep;
+	float WindowStart = 0.0f;
+	float WindowEnd = 0.0f;
+	if (!Source || !PrepareAttackStep(*Source, NextStep, WindowStart, WindowEnd))
+	{
+		LogAttackLifecycle(TEXT("ComboStepRejected"), NextAttackTag.ToString());
+		return false;
+	}
+
+	DetachAttackMontageTask();
+	// The owner chains after this step's damage window; a lagging server cuts at most its lead tolerance from it.
+	CloseAttackWindow(false);
+	ClearComboTimers();
+	if (bRecoveryCancelable)
+	{
+		ChangeActivationGroup(ERpgAbilityActivationGroup::Exclusive_Blocking);
+		bRecoveryCancelable = false;
+	}
+	bComboWindowOpen = false;
+	bComboWindowClosed = false;
+	bComboInputBuffered = false;
+	bComboRequestPending = false;
+	bReceivedAttackWindowStart = false;
+	bReceivedAttackWindowEnd = false;
+	bAuthorityWindowOpenedBySchedule = false;
+	bAuthorityWindowClosedBySchedule = false;
+	HitActorsThisWindow.Reset();
+	PreviousTracePointLocations.Reset();
+
+	ActiveAttackDefinition = MoveTemp(NextStep);
+	ActiveAttackTag = NextAttackTag;
+	ActiveAttackWindowEndTime = WindowEnd;
+	++ComboStepIndex;
+	if (ActiveAttackDefinition.CameraMode)
+	{
+		SetCameraMode(ActiveAttackDefinition.CameraMode);
+	}
+	else
+	{
+		ClearCameraMode();
+	}
+	// Every step may re-aim during its windup, like the first attack.
+	BeginFacingCommitment(WindupSteeringRate);
+	LogAttackLifecycleLazy(
+		TEXT("ComboStepStarted"),
+		[this, WindowStart, WindowEnd]()
+		{
+			return FString::Printf(TEXT("Step=%d Attack=%s AuthoredWindow=%.3f..%.3f"),
+				ComboStepIndex, *ActiveAttackTag.ToString(), WindowStart, WindowEnd);
+		});
+
+	if (!StartAttackMontage())
+	{
+		FinishAttack(true);
+		return false;
+	}
+	return true;
 }
 
 void URpgGameplayAbility_BasicWeaponAttack::EndAbility(
@@ -487,6 +838,23 @@ void URpgGameplayAbility_BasicWeaponAttack::EndAbility(
 	}
 
 	CloseAttackWindow(false);
+	ClearComboTimers();
+	if (UAbilitySystemComponent* AbilitySystem = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr)
+	{
+		const FPredictionKey ActivationKey = ActivationInfo.GetActivationPredictionKey();
+		if (ComboInputPressedHandle.IsValid())
+		{
+			AbilitySystem->AbilityReplicatedEventDelegate(EAbilityGenericReplicatedEvent::InputPressed, Handle, ActivationKey)
+				.Remove(ComboInputPressedHandle);
+		}
+		if (ComboRequestHandle.IsValid())
+		{
+			AbilitySystem->AbilityReplicatedEventDelegate(EAbilityGenericReplicatedEvent::GameCustom1, Handle, ActivationKey)
+				.Remove(ComboRequestHandle);
+		}
+	}
+	ComboInputPressedHandle.Reset();
+	ComboRequestHandle.Reset();
 	const UWorld* World = GetWorld();
 	const FTimerManager* TimerManager = World ? &World->GetTimerManager() : nullptr;
 	const bool bHasPendingTimers = TimerManager &&
@@ -512,7 +880,18 @@ void URpgGameplayAbility_BasicWeaponAttack::EndAbility(
 		});
 
 	ActiveWeaponInstance = nullptr;
+	ActiveMontageTask = nullptr;
 	ActiveAttackDefinition = FRpgWeaponAttackDefinition();
+	ActiveAttackTag = FGameplayTag();
+	ActiveAttackWindowEndTime = 0.0f;
+	ComboStepIndex = 0;
+	bComboWindowOpen = false;
+	bComboWindowClosed = false;
+	bComboInputBuffered = false;
+	bComboRequestPending = false;
+	// The activation group leaves the ASC with the ability, whichever group it holds now.
+	bRecoveryCancelable = false;
+	PendingComboPredictionKey = FPredictionKey();
 	bWaitingForMontage = false;
 	bFinishingAttack = false;
 	bAttackWindowOpen = false;
@@ -530,6 +909,8 @@ void URpgGameplayAbility_BasicWeaponAttack::EndAbility(
 	HitActorsThisWindow.Reset();
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
+	// The ASC has released the group this activation ended in; the reused instance starts blocking again.
+	ActivationGroup = GetClass()->GetDefaultObject<ThisClass>()->GetActivationGroup();
 }
 
 void URpgGameplayAbility_BasicWeaponAttack::OnAttackWindowStarted(FGameplayEventData Payload)
@@ -707,6 +1088,7 @@ bool URpgGameplayAbility_BasicWeaponAttack::IsAttackWindowEndBeforeAutoBlendOutF
 #endif
 
 bool URpgGameplayAbility_BasicWeaponAttack::ResolveAttackWindowTiming(
+	const FRpgWeaponAttackDefinition& AttackDefinition,
 	const float EffectivePlayRate,
 	float& OutStartTime,
 	float& OutEndTime,
@@ -716,7 +1098,7 @@ bool URpgGameplayAbility_BasicWeaponAttack::ResolveAttackWindowTiming(
 	OutEndTime = 0.0f;
 	OutFailureReason.Reset();
 
-	const UAnimMontage* Montage = ActiveAttackDefinition.Montage;
+	const UAnimMontage* Montage = AttackDefinition.Montage;
 	if (!Montage)
 	{
 		OutFailureReason = TEXT("No attack montage is configured.");
@@ -869,6 +1251,7 @@ bool URpgGameplayAbility_BasicWeaponAttack::ScheduleAuthorityAttackWindow()
 	FString FailureReason;
 	const float EffectivePlayRate = AnimInstance->Montage_GetEffectivePlayRate(Montage);
 	if (!ResolveAttackWindowTiming(
+			ActiveAttackDefinition,
 			EffectivePlayRate,
 			StartTime,
 			EndTime,

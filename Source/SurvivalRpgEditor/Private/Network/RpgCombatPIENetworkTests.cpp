@@ -49,12 +49,18 @@ namespace RpgCombatPIENetworkTests
 		TEXT("/GF_Combat_Core/Equipment/Weapons/ED_BasicSword.ED_BasicSword_C");
 	constexpr TCHAR HitReactionAbilityClassPath[] =
 		TEXT("/GF_Combat_Core/GAS/Abilities/GA_Combat_HitReaction.GA_Combat_HitReaction_C");
+	constexpr TCHAR BasicSwordWeaponInstanceClassPath[] =
+		TEXT("/GF_Combat_Core/Equipment/Weapons/BP_WeaponInstance_BasicSword.BP_WeaponInstance_BasicSword_C");
+	constexpr TCHAR DodgeAbilityClassPath[] =
+		TEXT("/Game/SurvivalRpg/AbilitySystem/Abilities/GA_Dodge.GA_Dodge_C");
 	constexpr int32 NormalCompletedAttackCount = 20;
 	constexpr int32 CompletedAttackCount = NormalCompletedAttackCount + 1;
 	constexpr double CleanupStabilitySeconds = 0.2;
 	constexpr float MinimumBladeCenterAdvance = 2.0f;
 	constexpr float FastMontageTimingPlayRate = 1.5f;
-	const FVector FixedBasicSwordContactOffset(140.0f, -25.0f, 0.0f);
+	// On the path of the combo's first hit (AM_SwordShieldCombo01_Step1, 0.13..0.30 s): the blade's sampled sweep,
+	// with the CMB-01 grip and root motion, passes through the target capsule's center.
+	const FVector FixedBasicSwordContactOffset(160.0f, 20.0f, 0.0f);
 
 	/** Keeps every newly created test PIE world off disk before its GameMode can load a save. */
 	class FScopedPIEWorldSaveIsolation final
@@ -611,6 +617,52 @@ namespace RpgCombatPIENetworkTests
 			: -1.0;
 		State.bObservedPostCleanupMutation = false;
 	}
+
+	const FGameplayTag& BlockInputTag()
+	{
+		static const FGameplayTag Tag = FGameplayTag::RequestGameplayTag(TEXT("InputTag.Weapon.Block"));
+		return Tag;
+	}
+
+	bool IsBlocking(const ARpgCharacter* Character)
+	{
+		const URpgAbilitySystemComponent* AbilitySystem = Character ? Character->GetRpgAbilitySystemComponent() : nullptr;
+		return AbilitySystem && AbilitySystem->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Blocking")));
+	}
+
+	/** Resolves the owner's attack ability instance in a client world. */
+	URpgGameplayAbility_BasicWeaponAttack* FindOwnerAttackAbility(FNetworkState& State, URpgAbilitySystemComponent*& OutAbilitySystem)
+	{
+		ARpgCharacter* Character = FindLocalCharacter(State.World);
+		OutAbilitySystem = Character ? Character->GetRpgAbilitySystemComponent() : nullptr;
+		FGameplayAbilitySpec* AttackSpec = OutAbilitySystem && State.AttackAbilityHandle.IsValid()
+			? OutAbilitySystem->FindAbilitySpecFromHandle(State.AttackAbilityHandle)
+			: nullptr;
+		return GetAttackAbilityInstance(AttackSpec);
+	}
+
+	/** One press and release through the ASC's input path, as the player controller would deliver it. */
+	void PressAbilityInput(URpgAbilitySystemComponent& AbilitySystem, const FGameplayTag& InputTag)
+	{
+		AbilitySystem.AbilityInputTagPressed(InputTag);
+		AbilitySystem.ProcessAbilityInput(1.0f / 60.0f, false);
+		AbilitySystem.AbilityInputTagReleased(InputTag);
+		AbilitySystem.ProcessAbilityInput(1.0f / 60.0f, false);
+	}
+
+	/** The running step and the montage playing on this machine both match the weapon's attack for StepTag. */
+	bool IsAtComboStep(
+		const URpgAbilitySystemComponent* AbilitySystem,
+		const URpgGameplayAbility_BasicWeaponAttack* Attack,
+		const URpgWeaponInstance* Weapon,
+		const int32 StepIndex,
+		const FGameplayTag& StepTag)
+	{
+		const FRpgWeaponAttackDefinition* Step = Weapon ? Weapon->FindAttackDefinition(StepTag) : nullptr;
+		return AbilitySystem && Attack && Step && Step->Montage && Attack->IsActive()
+			&& Attack->GetComboStepIndexForTests() == StepIndex && Attack->GetActiveAttackTagForTests() == StepTag
+			&& AbilitySystem->GetCurrentMontage() == Step->Montage;
+	}
 }
 
 NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
@@ -621,6 +673,9 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 	RpgCombatPIENetworkTests::FScopedPIEWorldSaveIsolation WorldSaveIsolation;
 	FRpgScopedNetworkTestGround Ground;
 	RpgCombatPIENetworkTests::FScopedAbilityLifecycle HitReactionLifecycle;
+	RpgCombatPIENetworkTests::FScopedAbilityLifecycle AttackLifecycle;
+	RpgCombatPIENetworkTests::FScopedAbilityLifecycle DodgeLifecycle;
+	FGameplayAbilitySpecHandle DodgeAbilityHandle;
 	FPIENetworkComponent<FNetworkState> Network{
 		TestRunner,
 		TestCommandBuilder,
@@ -1228,6 +1283,7 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 		StepDescriptions.Reset();
 		SubjectPlayerId = INDEX_NONE;
 		AuthorityAttackAbilityHandle = FGameplayAbilitySpecHandle();
+		DodgeAbilityHandle = FGameplayAbilitySpecHandle();
 
 		URpgDeveloperSettings* DeveloperSettings =
 			GetMutableDefault<URpgDeveloperSettings>();
@@ -1272,13 +1328,16 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 	AFTER_EACH()
 	{
 		HitReactionLifecycle.Stop();
+		AttackLifecycle.Stop();
+		DodgeLifecycle.Stop();
 		GetMutableDefault<URpgDeveloperSettings>()->ExperienceOverride =
 			OriginalExperienceOverride;
 		GetMutableDefault<URpgCombatDeveloperSettings>()
 			->bLogWeaponAttackLifecycle = bOriginalAttackLifecycleLogging;
 	}
 
-	TEST_METHOD(RemoteClientAttackWindowDamageAndCancellation)
+	/** Equips the real Basic Sword on the remote client's pawn and waits until both sides can attack. */
+	void QueueRemoteSwordReady()
 	{
 		using namespace RpgCombatPIENetworkTests;
 
@@ -1412,7 +1471,13 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 					return IsClientAttackReady(State);
 				},
 				NetworkTimeout());
+	}
 
+	TEST_METHOD(RemoteClientAttackWindowDamageAndCancellation)
+	{
+		using namespace RpgCombatPIENetworkTests;
+
+		QueueRemoteSwordReady();
 		for (int32 AttackIndex = 0; AttackIndex < NormalCompletedAttackCount; ++AttackIndex)
 		{
 			QueueCompletedAttack(AttackIndex);
@@ -1429,6 +1494,307 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 				ASSERT_THAT(IsTrue(HitReactionLifecycle.Activations == 1 && HitReactionLifecycle.Ends == 1));
 				ASSERT_THAT(IsTrue(HitReactionLifecycle.CancelledEnds == 0));
 			});
+	}
+
+	const TCHAR* Describe(const FString& Description)
+	{
+		TSharedPtr<FString> Stored = MakeShared<FString>(Description);
+		const TCHAR* Result = **Stored;
+		StepDescriptions.Add(MoveTemp(Stored));
+		return Result;
+	}
+
+	/** The Basic Sword's primary chain as authored, entry attack first. */
+	TArray<FGameplayTag> ResolveBasicSwordComboChain()
+	{
+		using namespace RpgCombatPIENetworkTests;
+		TArray<FGameplayTag> Chain;
+		const UClass* WeaponClass = LoadClass<URpgWeaponInstance>(nullptr, BasicSwordWeaponInstanceClassPath);
+		const URpgWeaponInstance* Defaults = WeaponClass ? WeaponClass->GetDefaultObject<URpgWeaponInstance>() : nullptr;
+		for (FGameplayTag Step = PrimaryWeaponAttackTag(); Defaults && Step.IsValid() && !Chain.Contains(Step);)
+		{
+			const FRpgWeaponAttackDefinition* Attack = Defaults->FindAttackDefinition(Step);
+			if (!Attack)
+			{
+				break;
+			}
+			Chain.Add(Step);
+			Step = Attack->ComboNextAttack;
+		}
+		return Chain;
+	}
+
+	TEST_METHOD(RemoteClientComboChainsEveryStepOnOwnerAndServer)
+	{
+		using namespace RpgCombatPIENetworkTests;
+
+		const TArray<FGameplayTag> Chain = ResolveBasicSwordComboChain();
+		ASSERT_THAT(IsTrue(Chain.Num() >= 2));
+		QueueRemoteSwordReady();
+		Network
+			.ThenServer(TEXT("Combo: record authority baselines and keep the target away"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = nullptr;
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					FGameplayAbilitySpec* AttackSpec = nullptr;
+					URpgGameplayAbility_BasicWeaponAttack* Attack = nullptr;
+					ASSERT_THAT(IsTrue(ResolveAuthorityAttack(State, Character, AbilitySystem, AttackSpec, Attack)));
+					ASSERT_THAT(IsTrue(HasCleanAuthorityAttack(State)));
+					if (!Attack)
+					{
+						return;
+					}
+					State.WindowOpenBaseline = Attack->GetAuthorityWindowOpenCountForTests();
+					State.WindowCloseBaseline = Attack->GetAuthorityWindowCloseCountForTests();
+					MoveTargetAwayFromWeapon(State, Character);
+					AttackLifecycle.Start(AbilitySystem, AttackSpec->Handle);
+				})
+			.ThenClient(TEXT("Combo: owner attacks and presses again during the first swing"), 0,
+				[this](FNetworkState& State)
+				{
+					State.AttackAbilityHandle = AuthorityAttackAbilityHandle;
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					URpgGameplayAbility_BasicWeaponAttack* Attack = FindOwnerAttackAbility(State, AbilitySystem);
+					ASSERT_THAT(IsTrue(AbilitySystem && Attack && IsClientAttackReady(State)));
+					if (!AbilitySystem || !Attack)
+					{
+						return;
+					}
+					PressAbilityInput(*AbilitySystem, PrimaryWeaponInputTag());
+					ASSERT_THAT(IsTrue(Attack->IsActive() && Attack->GetComboStepIndexForTests() == 0));
+					// The second press lands before the combo window: it is buffered, not lost or chained early.
+					PressAbilityInput(*AbilitySystem, PrimaryWeaponInputTag());
+					ASSERT_THAT(IsTrue(Attack->IsActive() && Attack->GetComboStepIndexForTests() == 0));
+				});
+
+		for (int32 StepIndex = 1; StepIndex < Chain.Num(); ++StepIndex)
+		{
+			const FGameplayTag StepTag = Chain[StepIndex];
+			Network
+				.UntilClient(Describe(FString::Printf(TEXT("Combo: owner predicts step %d (%s)"), StepIndex + 1, *StepTag.ToString())), 0,
+					[this, StepIndex, StepTag](FNetworkState& State)
+					{
+						State.AttackAbilityHandle = AuthorityAttackAbilityHandle;
+						URpgAbilitySystemComponent* AbilitySystem = nullptr;
+						const URpgGameplayAbility_BasicWeaponAttack* Attack = FindOwnerAttackAbility(State, AbilitySystem);
+						const ARpgCharacter* Character = FindLocalCharacter(State.World);
+						const URpgEquipmentManagerComponent* Equipment = Character ? Character->FindComponentByClass<URpgEquipmentManagerComponent>() : nullptr;
+						const URpgWeaponInstance* Weapon = Equipment
+							? Cast<URpgWeaponInstance>(Equipment->GetEquipmentInstanceInSlot(ERpgEquipmentSlot::MainHand)) : nullptr;
+						return IsAtComboStep(AbilitySystem, Attack, Weapon, StepIndex, StepTag);
+					}, NetworkTimeout())
+				.UntilServer(Describe(FString::Printf(TEXT("Combo: server accepts step %d and plays the same montage"), StepIndex + 1)),
+					[StepIndex, StepTag](FNetworkState& State)
+					{
+						ARpgCharacter* Character = nullptr;
+						URpgAbilitySystemComponent* AbilitySystem = nullptr;
+						FGameplayAbilitySpec* AttackSpec = nullptr;
+						URpgGameplayAbility_BasicWeaponAttack* Attack = nullptr;
+						return ResolveAuthorityAttack(State, Character, AbilitySystem, AttackSpec, Attack)
+							&& IsAtComboStep(AbilitySystem, Attack, State.AuthorityWeapon.Get(), StepIndex, StepTag);
+					}, NetworkTimeout());
+			if (StepIndex + 1 < Chain.Num())
+			{
+				Network.ThenClient(Describe(FString::Printf(TEXT("Combo: owner presses for step %d"), StepIndex + 2)), 0,
+					[this](FNetworkState& State)
+					{
+						URpgAbilitySystemComponent* AbilitySystem = nullptr;
+						const URpgGameplayAbility_BasicWeaponAttack* Attack = FindOwnerAttackAbility(State, AbilitySystem);
+						ASSERT_THAT(IsTrue(AbilitySystem && Attack && Attack->IsActive()));
+						if (AbilitySystem)
+						{
+							PressAbilityInput(*AbilitySystem, PrimaryWeaponInputTag());
+						}
+					});
+			}
+		}
+
+		Network
+			.UntilServer(TEXT("Combo: the server ends the combo after its last step"),
+				[](FNetworkState& State) { return HasCleanAuthorityAttack(State); }, NetworkTimeout())
+			.ThenServer(TEXT("Combo: one activation ran every step with exactly one authority window each"),
+				[this, StepCount = Chain.Num()](FNetworkState& State)
+				{
+					ARpgCharacter* Character = nullptr;
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					FGameplayAbilitySpec* AttackSpec = nullptr;
+					URpgGameplayAbility_BasicWeaponAttack* Attack = nullptr;
+					ASSERT_THAT(IsTrue(ResolveAuthorityAttack(State, Character, AbilitySystem, AttackSpec, Attack)));
+					if (!Attack)
+					{
+						return;
+					}
+					ASSERT_THAT(IsTrue(Attack->GetAuthorityWindowOpenCountForTests() - State.WindowOpenBaseline == static_cast<uint32>(StepCount)));
+					ASSERT_THAT(IsTrue(Attack->GetAuthorityWindowCloseCountForTests() - State.WindowCloseBaseline == static_cast<uint32>(StepCount)));
+					ASSERT_THAT(IsTrue(AttackLifecycle.Activations == 1 && AttackLifecycle.Ends == 1 && AttackLifecycle.CancelledEnds == 0));
+					ASSERT_THAT(IsTrue(Attack->GetActivationGroup() == ERpgAbilityActivationGroup::Exclusive_Blocking));
+					AttackLifecycle.Stop();
+				})
+			.UntilClient(TEXT("Combo: the owner ends its combo and can attack again"), 0,
+				[this](FNetworkState& State)
+				{
+					State.AttackAbilityHandle = AuthorityAttackAbilityHandle;
+					return IsClientAttackReady(State);
+				}, NetworkTimeout());
+	}
+
+	TEST_METHOD(RemoteClientRecoveryYieldsToBlockAndDodgeButNotTheSwing)
+	{
+		using namespace RpgCombatPIENetworkTests;
+
+		QueueRemoteSwordReady();
+		Network
+			.ThenServer(TEXT("Cancel: grant the dodge, observe both abilities and keep the target away"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = nullptr;
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					FGameplayAbilitySpec* AttackSpec = nullptr;
+					URpgGameplayAbility_BasicWeaponAttack* Attack = nullptr;
+					ASSERT_THAT(IsTrue(ResolveAuthorityAttack(State, Character, AbilitySystem, AttackSpec, Attack)));
+					TSubclassOf<URpgGameplayAbility> DodgeClass = LoadClass<URpgGameplayAbility>(nullptr, DodgeAbilityClassPath);
+					ASSERT_THAT(IsNotNull(DodgeClass.Get()));
+					if (!AbilitySystem || !AttackSpec || !DodgeClass)
+					{
+						return;
+					}
+					// The dodge has no input binding yet; the grant gives the owner a predicted spec to activate.
+					DodgeAbilityHandle = AbilitySystem->GiveAbility(FGameplayAbilitySpec(DodgeClass, 1));
+					ASSERT_THAT(IsTrue(DodgeAbilityHandle.IsValid()));
+					AttackLifecycle.Start(AbilitySystem, AttackSpec->Handle);
+					DodgeLifecycle.Start(AbilitySystem, DodgeAbilityHandle);
+					MoveTargetAwayFromWeapon(State, Character);
+				})
+			.UntilClient(TEXT("Cancel: owner receives the dodge grant"), 0,
+				[this](FNetworkState& State)
+				{
+					State.AttackAbilityHandle = AuthorityAttackAbilityHandle;
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					FindOwnerAttackAbility(State, AbilitySystem);
+					return AbilitySystem && AbilitySystem->FindAbilitySpecFromHandle(DodgeAbilityHandle) && IsClientAttackReady(State);
+				}, NetworkTimeout())
+			.ThenClient(TEXT("Cancel: owner attacks and holds block from the start of the swing"), 0,
+				[this](FNetworkState& State)
+				{
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					const URpgGameplayAbility_BasicWeaponAttack* Attack = FindOwnerAttackAbility(State, AbilitySystem);
+					ASSERT_THAT(IsTrue(AbilitySystem && Attack));
+					if (!AbilitySystem)
+					{
+						return;
+					}
+					PressAbilityInput(*AbilitySystem, PrimaryWeaponInputTag());
+					// Held from here on: the player controller retries the block every frame.
+					AbilitySystem->AbilityInputTagPressed(BlockInputTag());
+					AbilitySystem->ProcessAbilityInput(1.0f / 60.0f, false);
+					ASSERT_THAT(IsTrue(Attack->IsActive() && !IsBlocking(FindLocalCharacter(State.World))));
+				})
+			.UntilClient(TEXT("Cancel: the owner's swing reaches its attack window"), 0,
+				[this](FNetworkState& State)
+				{
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					const URpgGameplayAbility_BasicWeaponAttack* Attack = FindOwnerAttackAbility(State, AbilitySystem);
+					return Attack && Attack->IsAttackWindowOpenForTests();
+				}, NetworkTimeout())
+			.ThenClient(TEXT("Cancel: block held through the swing has not replaced it"), 0,
+				[this](FNetworkState& State)
+				{
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					const URpgGameplayAbility_BasicWeaponAttack* Attack = FindOwnerAttackAbility(State, AbilitySystem);
+					ASSERT_THAT(IsTrue(Attack && Attack->IsActive() && !Attack->IsRecoveryCancelableForTests()));
+					ASSERT_THAT(IsFalse(IsBlocking(FindLocalCharacter(State.World))));
+				})
+			.UntilClient(TEXT("Cancel: the held block takes over the owner's recovery"), 0,
+				[this](FNetworkState& State)
+				{
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					const URpgGameplayAbility_BasicWeaponAttack* Attack = FindOwnerAttackAbility(State, AbilitySystem);
+					return Attack && !Attack->IsActive() && IsBlocking(FindLocalCharacter(State.World));
+				}, NetworkTimeout())
+			.UntilServer(TEXT("Cancel: the server's attack yields to the owner's block"),
+				[this](FNetworkState& State)
+				{
+					return AttackLifecycle.Ends == 1 && IsBlocking(FindCharacterByPlayerId(State.World, SubjectPlayerId));
+				}, NetworkTimeout())
+			.ThenServer(TEXT("Cancel: the block canceled the attack once and the instance blocks again"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = nullptr;
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					FGameplayAbilitySpec* AttackSpec = nullptr;
+					URpgGameplayAbility_BasicWeaponAttack* Attack = nullptr;
+					ASSERT_THAT(IsTrue(ResolveAuthorityAttack(State, Character, AbilitySystem, AttackSpec, Attack)));
+					ASSERT_THAT(IsTrue(AttackLifecycle.Activations == 1 && AttackLifecycle.CancelledEnds == 1));
+					ASSERT_THAT(IsTrue(Attack && !Attack->HasResidualAttackRuntimeStateForTests()
+						&& Attack->GetActivationGroup() == ERpgAbilityActivationGroup::Exclusive_Blocking));
+				})
+			.ThenClient(TEXT("Cancel: owner releases block"), 0,
+				[this](FNetworkState& State)
+				{
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					FindOwnerAttackAbility(State, AbilitySystem);
+					ASSERT_THAT(IsNotNull(AbilitySystem));
+					if (AbilitySystem)
+					{
+						AbilitySystem->AbilityInputTagReleased(BlockInputTag());
+						AbilitySystem->ProcessAbilityInput(1.0f / 60.0f, false);
+					}
+				})
+			.UntilServer(TEXT("Dodge: block ends and the attack is idle again"),
+				[this](FNetworkState& State)
+				{
+					return !IsBlocking(FindCharacterByPlayerId(State.World, SubjectPlayerId)) && HasCleanAuthorityAttack(State);
+				}, NetworkTimeout())
+			.UntilClient(TEXT("Dodge: owner is ready to attack again"), 0,
+				[this](FNetworkState& State)
+				{
+					State.AttackAbilityHandle = AuthorityAttackAbilityHandle;
+					return !IsBlocking(FindLocalCharacter(State.World)) && IsClientAttackReady(State);
+				}, NetworkTimeout())
+			.ThenClient(TEXT("Dodge: owner attacks"), 0,
+				[this](FNetworkState& State)
+				{
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					FindOwnerAttackAbility(State, AbilitySystem);
+					ASSERT_THAT(IsNotNull(AbilitySystem));
+					if (AbilitySystem)
+					{
+						PressAbilityInput(*AbilitySystem, PrimaryWeaponInputTag());
+					}
+				})
+			.UntilClient(TEXT("Dodge: the owner's recovery becomes cancelable"), 0,
+				[this](FNetworkState& State)
+				{
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					const URpgGameplayAbility_BasicWeaponAttack* Attack = FindOwnerAttackAbility(State, AbilitySystem);
+					return Attack && Attack->IsActive() && Attack->IsRecoveryCancelableForTests();
+				}, NetworkTimeout())
+			.ThenClient(TEXT("Dodge: owner dodges out of the recovery"), 0,
+				[this](FNetworkState& State)
+				{
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					const URpgGameplayAbility_BasicWeaponAttack* Attack = FindOwnerAttackAbility(State, AbilitySystem);
+					ASSERT_THAT(IsTrue(AbilitySystem && Attack));
+					if (!AbilitySystem || !Attack)
+					{
+						return;
+					}
+					ASSERT_THAT(IsTrue(AbilitySystem->TryActivateAbility(DodgeAbilityHandle)));
+					ASSERT_THAT(IsFalse(Attack->IsActive()));
+				})
+			.UntilServer(TEXT("Dodge: the server accepts the dodge and cancels its attack"),
+				[this](FNetworkState&)
+				{
+					return DodgeLifecycle.Activations == 1 && AttackLifecycle.Activations == 2 && AttackLifecycle.Ends == 2;
+				}, NetworkTimeout())
+			.ThenServer(TEXT("Dodge: the dodge canceled the second attack"),
+				[this](FNetworkState&)
+				{
+					ASSERT_THAT(IsTrue(AttackLifecycle.CancelledEnds == 2));
+				})
+			.UntilServer(TEXT("Dodge: the dodge finishes and the attack is idle"),
+				[this](FNetworkState& State) { return DodgeLifecycle.HasEnded() && HasCleanAuthorityAttack(State); }, NetworkTimeout());
 	}
 };
 
