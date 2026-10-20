@@ -7,7 +7,9 @@
 #include "RpgEquipmentDefinition.generated.h"
 
 class AActor;
+class UAnimInstance;
 class UAnimMontage;
+class USkeleton;
 class URpgAbilitySet;
 class URpgEquipmentInstance;
 class FDataValidationContext;
@@ -148,6 +150,35 @@ struct SURVIVALRPG_API FRpgEquipmentActorToSpawn
 	FName GetAttachSocketForSlot(ERpgEquipmentSlot Slot) const;
 };
 
+/**
+ * Arm hold pose for one gameplay-mesh skeleton while this equipment is in a hand. Linked layers only bind to their exact
+ * target skeleton, so equipment used by pawns on different skeletons lists one presentation per skeleton. Designer-authored
+ * static data; every machine resolves it from its local gameplay mesh and the replicated equipped slot. Presentation only.
+ */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgEquipmentHoldPresentation
+{
+	GENERATED_BODY()
+
+	/** Gameplay-mesh skeleton this presentation serves, matched by exact identity like a linked anim layer. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
+	TObjectPtr<USkeleton> Skeleton = nullptr;
+
+	/**
+	 * Linked layer used while the item is in the main hand, including both-hands items. It implements the main-hand hold
+	 * layer interface of the host AnimBP and targets Skeleton. Null leaves that arm to locomotion.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
+	TSubclassOf<UAnimInstance> MainHandLayer;
+
+	/**
+	 * Linked layer used while the item is in the off hand. It implements the off-hand hold layer interface of the host
+	 * AnimBP and targets Skeleton. Null leaves that arm to locomotion.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Animation")
+	TSubclassOf<UAnimInstance> OffHandLayer;
+};
+
 UCLASS(Blueprintable, Const, Abstract, BlueprintType)
 class SURVIVALRPG_API URpgEquipmentDefinition : public UObject
 {
@@ -228,4 +259,15 @@ public:
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Equipment|Cosmetics")
 	TArray<FRpgCharacterPart> CharacterParts;
+
+	/**
+	 * Arm hold poses while this item is in a hand, at most one entry per gameplay skeleton. The equipment manager links the
+	 * layer for the equipped hand on every machine, so held weapons and tools stay clear of the body during locomotion.
+	 * Montage slots, block and traversal layers above it still override the arms. Presentation only: gameplay never reads it.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Equipment|Animation", meta = (TitleProperty = "Skeleton"))
+	TArray<FRpgEquipmentHoldPresentation> HoldPresentations;
+
+	/** Returns the hold layer for a hand slot on Skeleton, or null when no presentation matches or Slot is not a hand. */
+	TSubclassOf<UAnimInstance> ResolveHoldLayer(const USkeleton* Skeleton, ERpgEquipmentSlot Slot) const;
 };

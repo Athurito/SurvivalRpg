@@ -197,6 +197,13 @@ public:
 	UAnimInstance* GetBlockLocomotionLayerInstance() const;
 
 	/**
+	 * Hold layer instance linked on the gameplay mesh for the item in a hand slot, or null while that hand is empty, its
+	 * definition has no hold presentation for the mesh's skeleton, or local presentation is not ready. Cosmetic; game thread only.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Equipment|Animation")
+	UAnimInstance* GetWeaponHoldLayerInstance(ERpgEquipmentSlot Slot) const;
+
+	/**
 	 * Authority: re-grants the learned skill tree nodes of every equipped item after the player's skill tree changed,
 	 * then re-resolves the owning controller's Q/E/R and quick-access bindings.
 	 */
@@ -232,6 +239,19 @@ private:
 	TWeakObjectPtr<UClass> BlockLayerClass;
 	bool bRefreshingBlockLayer = false;
 	bool bBlockLayerShuttingDown = false;
+
+	/** One hold layer linked for an equipped hand; local presentation state, never replicated. */
+	struct FWeaponHoldBinding
+	{
+		TWeakObjectPtr<UClass> LayerClass;
+		ERpgEquipmentSlot Slot = ERpgEquipmentSlot::None;
+		bool operator==(const FWeaponHoldBinding& Other) const { return LayerClass == Other.LayerClass && Slot == Other.Slot; }
+	};
+	/** Links the hold layers of the items in hand on MainInstance; Skeleton is the gameplay mesh's skeleton. */
+	void RefreshWeaponHoldLayers(UAnimInstance* MainInstance, const USkeleton* Skeleton);
+	void ClearWeaponHoldLayers();
+	TWeakObjectPtr<UAnimInstance> HoldMainAnimInstance;
+	TArray<FWeaponHoldBinding, TInlineAllocator<2>> HoldBindings;
 
 	bool CanEquipItemInSlot(TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition, ERpgEquipmentSlot Slot) const;
 	void UnequipConflictingItems(TSubclassOf<URpgEquipmentDefinition> EquipmentDefinition, ERpgEquipmentSlot Slot);
