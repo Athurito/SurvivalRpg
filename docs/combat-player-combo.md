@@ -1,6 +1,6 @@
 # CMB-03: Player combo
 
-Task report for CMB-03 in the [combat roadmap](combat-roadmap.md), [PR #282](https://github.com/Athurito/SurvivalRpg/pull/282). The sword's primary attack becomes a four-hit sword-and-shield combo from the pack's `Combo_Attack_01`, with an input buffer, a chaining window per hit, and dodge and block canceling the recovery.
+Task report for CMB-03 in the [combat roadmap](combat-roadmap.md), [PR #282](https://github.com/Athurito/SurvivalRpg/pull/282). The sword's primary attack becomes a four-hit sword-and-shield combo from the pack's `Combo_Attack_01`, with an input buffer, a chaining window per hit, and dodge and block canceling the recovery. On the user's request (2026-10-24) the task also makes the dodge playable: a Souls-style eight-way roll or step on its own key, with invulnerability frames and a stamina cost.
 
 ## C++ boundary decision
 
@@ -12,6 +12,11 @@ Task report for CMB-03 in the [combat roadmap](combat-roadmap.md), [PR #282](htt
   - **Mechanism:** the chain itself is native because it is a predicted, server-validated transition inside one activation: the owner buffers the press, starts the next hit inside a new prediction window and tells the server; the server checks the step timing, plays the same montage under the owner's prediction key and reschedules its damage window. The recovery after each hit's damage window switches the ability to `Exclusive_Replaceable`, so dodge and block can cancel it through the existing activation groups.
   - **Validation:** the weapon instance's data validation checks every chain (targets exist, no cycles, one combo window after the damage window and before auto blend-out).
 - **No new classes for content:** no new ability class; `GA_BasicWeaponAttack` stays the concrete Blueprint. Montages, chain order, timing, damage and traces are assets and data on `BP_WeaponInstance_BasicSword`.
+- **Dodge (added 2026-10-24):** extends the existing `URpgGameplayAbility_Dodge` base, whose Blueprint `GA_Dodge` had no montage, no grant and no input.
+  - **Runtime truth:** the server's dodge: it receives the owner's direction, pays the cost and owns the invulnerability window; damage reads the window only on the server.
+  - **Native, and why:** the direction must be the same on owner and server, so the owner picks it from its movement input and sends it as replicated target data with the predicted activation (`FRpgDodgeDirectionTargetData`, as the mantle sends its proposal); the server waits for it. The commit moves to native code so the invulnerability tag (`State.Evading`, a replicated timed loose tag) is only granted after the cost is paid. The damage execution ignores hits on an evading target. A grounded check and a recovery cancel time make the roll committed until its recovery, like the attack. Data validation checks every dodge montage for its eight direction sections.
+  - **Tooling:** `URpgAnimationAssetTools::SetMontageSectionSequences` with the toolset tool `set_montage_section_sequences` builds a montage with one unlinked section per sequence; montage sections were not reachable from Python or MCP.
+  - **Content:** `GA_Combat_Dodge` (child of `GA_Dodge`) in `GF_Combat_Core` holds montages per load tier, tuning, cost, blockers and timing; the core keeps only the generic flow and the controller's tier profile names.
 
 ## Behavior
 
@@ -42,7 +47,16 @@ The sword had one primary attack (`AM_Combo_Attack_03_01_Seq_Montage`, a single 
 
   Step 3 is the pack's shield bash: the left hand thrusts while the blade stays out of the front, so it traces the forearm and the shield grip.
 - **Weapon data.** `BP_WeaponInstance_BasicSword` keeps its secondary attack; its primary entry now starts the chain.
-- **Notice.** The pack had no row in the [third-party notices](third-party-notices.md); this task adds it.
+- **Notice.** The pack had no row in the [third-party notices](third-party-notices.md); this task adds it, with the Fab Standard License stated by the user.
+
+### Dodge
+
+- **Key.** `IA_Dodge` on Left Alt and gamepad B (east face button), the Souls-like dodge button. On the keyboard the space bar stays jump and traversal, so mantle, vault and hurdle keep their key. Bound in `IMC_Combat` and `DA_InputConfig_Combat` to `InputTag.Ability.Dodge`; the combat GameFeature grants `GA_Combat_Dodge` through `AS_Combat_Core_Default`.
+- **Direction.** Eight directions relative to the facing (F, FR, R, BR, B, BL, L, FL), from the owner's last movement input; without input the dodge goes backward, like a Souls backstep. In the combat stance the character faces the camera, so the dodge goes where the stick or WASD points.
+- **Load tiers** (existing equipment load, `Equipment.Load.*`): Light rolls (`Roll_Combat`, root motion at 85 %, about 3.6 m), Medium rolls shorter (70 %), Heavy steps (`Dodge_Combat`, 50 %, about 2.4 to 3.3 m). The controller's tier profiles carry only the names; `GA_Combat_Dodge` maps them to its montages.
+- **Commitment.** Dodge is `Exclusive_Blocking`: an attack or block pressed during the roll is ignored. After 0.55 s of montage time the recovery becomes replaceable, so an attack or block takes over. From an attack's recovery, the dodge cancels the attack as before.
+- **Invulnerability and cost.** For 0.35 s from the start the server ignores incoming damage, stagger included, and no hit reaction plays. Each dodge costs 15 stamina (`GE_Dodge_Cost`); without enough stamina it does not start. Dead, staggered or guard-broken characters cannot dodge, nor can airborne ones.
+- **Montages.** `GF_Combat_Core/Animations/Dodge/SwordShield/AM_SwordShieldDodge_Roll` and `_Step`, one section per direction from the pack's eight clips, blend in 0.1 s, blend out 0.2 s; root motion enabled on the 16 pack sequences.
 
 ## Validation (2026-10-20, on `master` `da8bacab` plus this change)
 
@@ -60,6 +74,20 @@ The sword had one primary attack (`AM_Combo_Attack_03_01_Seq_Montage`, a single 
 - **Multiplayer probe, `Lvl_RpgGaspCMC` (Paladin), listen server with two clients:** client 1 mashed attack. Client 1 (autonomous proxy), the server (authority) and client 2 (simulated proxy) all showed step 1 to 4 in order, within 0.04 s of each other, and the presses during step 4 started a fresh single attack after the combo ended.
 - **PIE, standalone, `Lvl_RpgGaspCMC` (Paladin):** mashing attack plays all four steps; with the editor unthrottled, steps start 0.34, 0.48 and 0.37 s into the previous one, at the Combo Windows; the ability ends after step 4's blend-out; about 6.1 m travel. Block pressed in step 1's recovery cancels it at once; block held from the swing takes over at the end of the attack window. Slow-motion captures show the four hits.
 
+### Dodge validation (2026-10-24, on `master` `8461d3cd` plus this change)
+
+- **Build:** `ue.py build` passed, 0 warnings.
+- **Assets:** `GA_Combat_Dodge`, `GA_Dodge`, `GE_Dodge_Cost`, both dodge montages, `AS_Combat_Core_Default`, `IA_Dodge`, `IMC_Combat`, `DA_InputConfig_Combat` and `BP_Rpg_PlayerController` pass data validation (10 / 10, 0 warnings), including the eight-section check.
+- **New tests:**
+  - `SurvivalRpg.Combat.Dodge.DirectionFollowsMovementInput` passed: eight sectors around two facings, backward without or with tiny input, distinct section names, and every direction survives net serialization.
+  - `SurvivalRpg.Network.CombatRemoteMeleePIE.RemoteClientDodgesInTheInputDirectionWithServerInvulnerability` passed (remote client, 60 ms lag). The owner holds D and dodges: owner and server both play section R, the server from the owner's target data, and the server is evading. A hit from the hostile fixture inside the window leaves health unchanged, and stamina has dropped; after the window the same hit lands. Without input the next dodge is a backstep on both.
+  - `...RemoteClientRecoveryYieldsToBlockAndDodgeButNotTheSwing` now uses the granted dodge through its input instead of a test grant, and passed.
+- **Regression** (`ue.py test`, test editor MCP off, own editor closed): `SurvivalRpg.Combat` 39 / 39, `SurvivalRpg.Network` 27 / 27, `SurvivalRpg.GASP.CMC` 14 / 14, `SurvivalRpg.AI`, `.Equipment`, `.Cosmetics`, `.Animation`, `.UI` 79 / 79.
+- **Mover:** `SurvivalRpg.GASP.Mover` 62 / 67 in the suite run. Alone, `Mover.Mantle` 16 / 17 and `Mover.Vault` 15 / 17 and 16 / 17, each time with other single traversal timeouts or fixed-correction failures. A/B with `AS_Combat_Core_Default` back on `master` (no dodge grant, same code): `Mover.Vault` 16 / 17 twice, again with a different single failure. The Mover traversal cases are timing-sensitive on this machine independently of the dodge.
+- **Load sensitivity:** `RemoteClientAttackWindowDamageAndCancellation` failed 3 of 3 runs while this worktree's editor with the MetaHuman map ran in parallel (a random attack missed its target) and passed 2 of 2 with it closed.
+- **PIE, standalone, `Lvl_RpgGaspCMC` (Paladin):** D plus dodge plays section R, no input plays B, W plus A plays FL. Dodge in an attack's recovery cancels the attack; dodge during the swing does nothing; an attack 0.3 s into a roll does nothing, one at 0.7 s replaces the roll.
+- **Multiplayer probe, listen server with two clients:** client 1 dodged with A held and with S plus D held; client 1 (autonomous proxy), the server and client 2 (simulated proxy) all played L and BR respectively.
+
 ## Playtest
 
 1. Open `Lvl_RpgGaspCMC` and start PIE (Paladin with sword and shield).
@@ -68,14 +96,20 @@ The sword had one primary attack (`AM_Combo_Attack_03_01_Seq_Montage`, a single 
 4. Press attack late in a hit's recovery: the combo ends.
 5. Hold block before or during a swing: the swing finishes its hit, then block takes over. Press block after a hit: block cancels the recovery at once.
 6. Listen server with two clients: both players see each other's full combo; a client's combo plays every hit on its own screen without hitches.
+7. Dodge with Left Alt or gamepad B: with W, A, S or D (or the stick) held, the character rolls in that direction; without input it backsteps. Attack or block during the roll do nothing; from the end of the roll they take over.
+8. Dodge out of an attack's recovery: the attack stops and the roll starts.
+9. Heavy armor (Gear and Carry weight of 23 kg or more): the dodge is a short step instead of a roll.
+10. Listen server with two clients: each player sees the other's rolls in the right direction.
 
 ## Limits
 
-- **No dodge input.** `GA_Dodge` is not granted or bound to an input in any Experience (see [GAS ability content](gas-ability-content.md)). The recovery cancel works for any exclusive ability and is tested with a dodge granted by the test, but players can only cancel into block until a dodge input exists, for example with the load-dependent dodge ([#124](https://github.com/Athurito/SurvivalRpg/issues/124)).
-- **Dodge input is not buffered.** A dodge pressed during a swing is dropped; only a held block waits for the recovery.
+- **Inputs are not buffered across abilities.** A dodge pressed during a swing, or an attack pressed during a roll, is dropped; only a held block waits for the recovery.
+- **Dodge out of block.** Block is `Exclusive_Blocking`, so a dodge pressed while holding block does nothing; release block first.
+- **Load-dependent dodge ([#124](https://github.com/Athurito/SurvivalRpg/issues/124)).** Light, Medium and Heavy are now configured and playable; the issue's remaining acceptance (equipment changes right before a dodge under lag and loss, respawn and late join) is not covered here.
+- **Invulnerability scope.** `State.Evading` ignores every damage through the damage execution, not only attacks; it lasts 0.35 s per dodge.
 - **Root motion.** The pack's combo travels about 6 m forward over four hits, as authored; tuning it would mean scaling root motion per step.
 - **Server lead.** When a remote owner's request or cancel reaches a server that runs behind, the server shortens its own damage window by up to the lead tolerance to stay in step with the owner, who has already finished that window.
 - **Other loadouts.** The sword without a shield plays the same combo, including the shield bash with an empty hand. The two-handed sword keeps its single attack. Enemies with the Basic Sword now open with step 1 and never chain; enemy combos are CMB-06.
 - **Mover.** Like the previous primary montage, the steps target the Manny skeleton; the UEFN Mover pawn was not checked.
 - **No hit feedback** (CMB-04) and no sound yet.
-- **Pack licence.** The Sword and Shield pack now has a [third-party notice](third-party-notices.md) row, but its licence is not recorded yet.
+- **Pack licence.** The Sword and Shield pack now has a [third-party notice](third-party-notices.md) row with the Fab Standard License, as the user stated.
