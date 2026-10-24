@@ -46,6 +46,8 @@ namespace RpgGameplayTags
 	extern SURVIVALRPG_API FNativeGameplayTag Data_StaminaDelta;
 	/** Opt-in living-ragdoll input granted by a supporting Experience; press again to request getup. */
 	extern SURVIVALRPG_API FNativeGameplayTag InputTag_Ability_Ragdoll;
+	/** Dodge request routed to the granted dodge ability; the owner's movement input picks the direction. */
+	extern SURVIVALRPG_API FNativeGameplayTag InputTag_Ability_Dodge;
 	/** GAS-owned living-ragdoll/getup activation; separate from the terminal health/death lifecycle. */
 	extern SURVIVALRPG_API FNativeGameplayTag Status_Ragdoll;
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_UI_Inventory);
@@ -112,6 +114,8 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Staggered);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_GuardBroken);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_StaggerImmune);
+	/** Dodge invulnerability window: the damage execution ignores hits on targets with this tag. */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Evading);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Trait_Staggerable);
 	// Exported because runtime GameFeature modules use the canonical death gate.
 	extern SURVIVALRPG_API FNativeGameplayTag Status_Death;

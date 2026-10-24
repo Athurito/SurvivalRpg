@@ -436,6 +436,32 @@ class AnimationAssetTools(unreal.ToolsetDefinition):
 
     @toolset_registry.tool_call
     @staticmethod
+    def set_montage_section_sequences(asset_path: str, sections_json: str) -> int:
+        """Replace a montage's first slot and sections: one sequence per section, unlinked; does not save.
+
+        sections_json is [{"section":"F","sequence":"/Mount/Sequence"}], in playback order.
+        Each section stops and blends out at its own end, for directional variants in one montage.
+        Sequences must share the montage's skeleton; names must be unique.
+        """
+        _guard()
+        sections = json.loads(sections_json)
+        if not isinstance(sections, list) or not 1 <= len(sections) <= 64:
+            raise RuntimeError('Expected 1..64 explicit sections')
+        names, sequences = [], []
+        for section in sections:
+            if not isinstance(section, dict) or set(section) != {'section', 'sequence'}:
+                raise RuntimeError('Each section needs exactly section and sequence')
+            if not isinstance(section['section'], str) or not section['section'].strip():
+                raise RuntimeError('Section names must be nonempty strings')
+            names.append(unreal.Name(section['section']))
+            sequences.append(_asset(section['sequence'], unreal.AnimSequence))
+        if not unreal.RpgAnimationAssetTools.set_montage_section_sequences(
+                _asset(asset_path, unreal.AnimMontage), names, sequences):
+            raise RuntimeError('Montage rejected the sections; check project content, skeletons and unique names')
+        return len(names)
+
+    @toolset_registry.tool_call
+    @staticmethod
     def create_chooser(asset_path: str) -> str:
         """Create an empty root Chooser using the engine factory, then configure its signature/rows explicitly."""
         _guard()

@@ -168,7 +168,7 @@ Each toolset is named `Game.Build.Tools.Unreal.<module>.<Class>`:
 - `AnimationAssetTools` in `Build/Tools/Unreal/animation_asset_tools.py`: animation asset structure.
   - AnimBPs and layers: `create_anim_blueprint`, `set_anim_blueprint_abstract`, `create_animation_layer_interface`, `implement_animation_layer_interface`, `add_animation_layer`, `create_linked_animation_layer_node`, and `configure_linked_animation_layer`.
   - Blueprint metadata: `set_local_function_thread_safety` and `set_variable_tooltip`.
-  - Montages and notifies: `create_montage_from_sequence`, `register_animation_slot`, `add_animation_notifies`, and `animation_notify_contract`.
+  - Montages and notifies: `create_montage_from_sequence`, `set_montage_section_sequences` (one unlinked section per sequence, for directional variants), `register_animation_slot`, `add_animation_notifies`, and `animation_notify_contract`.
   - Skeletons: `copy_skeleton_blend_profiles`.
   - BlendSpaces and Choosers: `create_blend_space`, `set_blend_space_samples`, `create_chooser`, `configure_chooser`, and `set_chooser_disabled_rows` (also for embedded tables).
 - `AnimationRetargetTools` in `Build/Tools/Unreal/animation_retarget_tools.py`: derived animation batches through the IK retargeter. Tools: `retarget_animation_batch`, `retarget_asset_contract`, and `normalize_derived_sequence`.

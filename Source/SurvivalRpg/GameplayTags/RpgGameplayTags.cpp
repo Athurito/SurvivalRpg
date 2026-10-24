@@ -6,6 +6,7 @@
 namespace RpgGameplayTags
 {
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Ability_Ragdoll, "InputTag.Ability.Ragdoll", "Experience-granted living ragdoll and getup request.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Ability_Dodge, "InputTag.Ability.Dodge", "Dodge in the direction of the owner's movement input; backward without input.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Ragdoll, "Status.Ragdoll", "GAS activation owns a living ragdoll or getup; terminal death remains a separate status.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_ActivateFail_IsDead, "Ability.ActivateFail.IsDead", "Ability failed to activate because its owner is dead.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_ActivateFail_Cooldown, "Ability.ActivateFail.Cooldown", "Ability failed to activate because it is on cool down.");
@@ -99,6 +100,7 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Staggered, "State.Staggered", "Target is staggered.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_GuardBroken, "State.GuardBroken", "Target's guard is broken.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_StaggerImmune, "State.StaggerImmune", "Target is temporarily immune to new stagger buildup.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Evading, "State.Evading", "Target is inside a dodge's invulnerability window; incoming damage is ignored.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Trait_Staggerable, "Trait.Staggerable", "Target can build stagger and enter stagger reactions.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Death, "Status.Death", "Target has the death status.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Death_Dying, "Status.Death.Dying", "Target has begun the death process.");
