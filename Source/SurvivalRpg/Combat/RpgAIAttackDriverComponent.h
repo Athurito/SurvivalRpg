@@ -16,6 +16,10 @@ class SURVIVALRPG_API URpgAIAttackDriverComponent : public UActorComponent
 public:
 	explicit URpgAIAttackDriverComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
+	/**
+	 * Server: makes NewTarget the combat target and schedules an attack after the retaliation delay. Confirming the
+	 * current target again keeps an attack that is already scheduled, so callers may confirm it every tick.
+	 */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rpg|AI Combat")
 	void SetCombatTarget(AActor* NewTarget);
 
@@ -24,6 +28,11 @@ public:
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Rpg|AI Combat")
 	AActor* GetCombatTarget() const { return CombatTarget.Get(); }
+
+#if WITH_DEV_AUTOMATION_TESTS
+	/** Server attack attempts so far, successful or not. */
+	uint32 GetAttackAttemptCountForTests() const { return AttackAttemptCountForTests; }
+#endif
 
 protected:
 	virtual void OnRegister() override;
@@ -103,4 +112,8 @@ private:
 
 	float LastAttackTime = -1000.0f;
 	bool bAttackInputHeld = false;
+
+#if WITH_DEV_AUTOMATION_TESTS
+	uint32 AttackAttemptCountForTests = 0;
+#endif
 };
