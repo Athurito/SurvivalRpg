@@ -88,6 +88,11 @@ The sword had one primary attack (`AM_Combo_Attack_03_01_Seq_Montage`, a single 
 - **PIE, standalone, `Lvl_RpgGaspCMC` (Paladin):** D plus dodge plays section R, no input plays B, W plus A plays FL. Dodge in an attack's recovery cancels the attack; dodge during the swing does nothing; an attack 0.3 s into a roll does nothing, one at 0.7 s replaces the roll.
 - **Multiplayer probe, listen server with two clients:** client 1 dodged with A held and with S plus D held; client 1 (autonomous proxy), the server and client 2 (simulated proxy) all played L and BR respectively.
 
+### Heavy dodge and user check (2026-10-25)
+
+- **Heavy tier, PIE standalone, `Lvl_RpgGaspCMC`:** every equipment definition has an `EquipLoadWeight` of 0 kg, so a player is always Light. With `ED_BasicSword` set to 25 kg in memory only (discarded afterwards by reloading the package), the loadout reported Heavy at 25 kg, and a dodge without input played `AM_SwordShieldDodge_Step` section B.
+- **User playtest:** the user checked combo and dodge in PIE, including the heavy step, and accepted them for now; the presentation is not final.
+
 ## Playtest
 
 1. Open `Lvl_RpgGaspCMC` and start PIE (Paladin with sword and shield).
@@ -98,14 +103,14 @@ The sword had one primary attack (`AM_Combo_Attack_03_01_Seq_Montage`, a single 
 6. Listen server with two clients: both players see each other's full combo; a client's combo plays every hit on its own screen without hitches.
 7. Dodge with Left Alt or gamepad B: with W, A, S or D (or the stick) held, the character rolls in that direction; without input it backsteps. Attack or block during the roll do nothing; from the end of the roll they take over.
 8. Dodge out of an attack's recovery: the attack stops and the roll starts.
-9. Heavy armor (Gear and Carry weight of 23 kg or more): the dodge is a short step instead of a roll.
+9. Heavy load (Gear and Carry weight of 23 kg or more): the dodge is a short step instead of a roll. No equipment has a load weight yet, so give an equipped item a temporary `EquipLoadWeight` first, for example 25 kg on `ED_BasicSword`, and do not save it.
 10. Listen server with two clients: each player sees the other's rolls in the right direction.
 
 ## Limits
 
 - **Inputs are not buffered across abilities.** A dodge pressed during a swing, or an attack pressed during a roll, is dropped; only a held block waits for the recovery.
 - **Dodge out of block.** Block is `Exclusive_Blocking`, so a dodge pressed while holding block does nothing; release block first.
-- **Load-dependent dodge ([#124](https://github.com/Athurito/SurvivalRpg/issues/124)).** Light, Medium and Heavy are now configured and playable; the issue's remaining acceptance (equipment changes right before a dodge under lag and loss, respawn and late join) is not covered here.
+- **Load-dependent dodge ([#124](https://github.com/Athurito/SurvivalRpg/issues/124)).** Light, Medium and Heavy are configured, but every equipment definition still has 0 kg `EquipLoadWeight`, so players are always Light in play. Real item weights wait until the load system itself is settled (user, 2026-10-25). The issue's remaining acceptance (equipment changes right before a dodge under lag and loss, respawn and late join) is not covered here.
 - **Invulnerability scope.** `State.Evading` ignores every damage through the damage execution, not only attacks; it lasts 0.35 s per dodge.
 - **Root motion.** The pack's combo travels about 6 m forward over four hits, as authored; tuning it would mean scaling root motion per step.
 - **Server lead.** When a remote owner's request or cancel reaches a server that runs behind, the server shortens its own damage window by up to the lead tolerance to stay in step with the owner, who has already finished that window.
