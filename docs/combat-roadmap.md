@@ -99,7 +99,7 @@ untuned grips, no armed locomotion and enemies without real behavior.
 | CMB-01 | Weapon grips: grip sockets of the same name on the Manny skeleton (and on UEFN for the Mover), equipment definitions point to them, grips tuned against the visible Paladin hands and gauntlets; sword, two-handed sword, shield, pickaxe and axe | Merged; user check passed with CMB-02 (2026-10-20) | [combat-weapon-grips.md](combat-weapon-grips.md), [PR #274](https://github.com/Athurito/SurvivalRpg/pull/274) |
 | CMB-02 | Armed locomotion: a per-weapon hold pose from the pack (`Idle_Combat`) layered over the GASP locomotion, delivered by the weapon instance through the anim-layer seam that already links the block layer; weapons stop clipping into the body while walking, running and sprinting | Merged; shield arm tuned after the user check | [combat-armed-locomotion.md](combat-armed-locomotion.md), [PR #278](https://github.com/Athurito/SurvivalRpg/pull/278) |
 | CMB-03 | Player combo: a three- to four-hit sword-and-shield combo from `Combo_Attack_01`, input buffer and chaining window, cancel into dodge and block, damage and trace per step on the weapon | Merged; user check passed (2026-10-25), presentation not final; a directional, load-tier dodge was added | [combat-player-combo.md](combat-player-combo.md), [PR #282](https://github.com/Athurito/SurvivalRpg/pull/282) |
-| CMB-04 | Hit feedback: directional and heavy hit reactions from the pack, short hitstop, camera shake, cue tags and hook points for swing, hit, block, perfect block, parry, guard break and death, with placeholder effects | Planned | |
+| CMB-04 | Hit feedback: a light hit only plays a directional flinch, impact effect and sound and never interrupts; stagger and guard break come only from the stagger meter, with the pack's heavy reaction clips; local camera shake; cue tags and hook points for swing, hit, block, perfect block, parry, guard break and death, with placeholder effects; no hitstop ([rules](#hit-feedback-rules-cmb-04)) | Planned | |
 | CMB-05 | First enemy type: the skeleton warrior from `Assets_3DAssets/SkeletonCharacter` replaces the Manny placeholder of the Rift Grunt; skeleton check against `SK_Mannequin`, migration with notice entry, grips, a combat AnimBP with the Sword and Shield clips and the pack's own stun, knockback and death clips, death and ragdoll on its physics asset | Planned | |
 | CMB-06 | Enemy AI: StateTree for the skeleton warrior with approach and spacing, telegraphed attacks the perfect block can read, combo, block, hit reaction, stagger and retreat, on the existing AI drivers and loadouts | Planned | |
 | CMB-07 | Echo rune: every third hit of the combo triggers a ghost strike that deals damage; the rune sits on the weapon's item instance and drives the VFX-02 presentation; first rune of the vision ([#25](https://github.com/Athurito/SurvivalRpg/issues/25)) | Planned | |
@@ -112,6 +112,48 @@ untuned grips, no armed locomotion and enemies without real behavior.
 3. CMB-07 needs the combo (CMB-03) and preferably the cue hooks (CMB-04).
 4. Then the vertical slice level and a playtest against section 12 of the
    game vision, planned separately.
+
+### Hit feedback rules (CMB-04)
+
+Decided with the user on 2026-10-25 so that hit feedback holds up when
+several players hit the same target:
+
+- **A light hit is presentation only.** After the server confirms a hit, a
+  hit GameplayCue carries the impact point, the direction from the attacker
+  and the attack's strength. Every client plays the impact effect, the sound
+  and a short directional flinch on an additive upper-body slot. The flinch
+  never cancels an ability and does not play through the ability system's
+  montage, so overlapping hits from several attackers blend instead of
+  restarting a reaction.
+- **Heavy reactions come only from the stagger meter.** Stagger and guard
+  break stay with `GA_Combat_Stagger` and `State.Staggered`. The meter
+  already sums the hits of all attackers and grants `State.StaggerImmune`
+  afterwards, so several players cannot lock a target. How often an enemy
+  staggers is tuned per enemy through `MaxStagger`; a tag that keeps an enemy
+  from staggering during its heavy attacks is left to CMB-06.
+- **`GA_Combat_HitReaction`:** the task checks what the existing per-hit
+  reaction does on `GameplayEvent.HitReaction` and removes any interruption,
+  either by turning it into the cue path or by restricting it.
+- **The attacker sees each hit once and without delay.** GAS skips server
+  cues inside a predicted activation on the owning client, so the attacking
+  player needs its own feedback path. The task chooses between a local
+  feedback trace on the owner (immediate; it may rarely show a hit the server
+  rejects) and the server's confirmation (exact, one round trip late) and
+  records the choice.
+- **Camera shake is local:** for the attacker on its own hits and for a
+  player who is hit, never for bystanders.
+- **No hitstop**, neither global nor local. It would need local hit
+  prediction plus timing compensation against the combo and damage windows
+  that run in step on owner and server. Impact comes from sound, effect,
+  flinch and camera shake. A short local hitstop on the own character can be
+  tried later as its own task if hits feel weak.
+- **Animation ownership:** the flinch slot goes into `ABP_RpgGasp_CMC_Manny`
+  and the current enemy AnimBP; CMB-05's combat AnimBP keeps it.
+- **Multiplayer acceptance:** a PIE network test with lag in which two
+  clients hit the same target at the same time: every confirmed hit deals
+  damage, both combos stay in step, each hit plays its cue once on every
+  client, and the stagger fires once and then holds its immunity. Plus a
+  three-player probe and a multiplayer playtest step.
 
 ### Later (not planned)
 
