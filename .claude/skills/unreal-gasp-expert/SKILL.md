@@ -121,6 +121,7 @@ Use the narrowest verification that proves the change, then widen when the bound
 - For traversal, test authoritative obstacle validation, activation cost, montage/root-motion handoff, cancellation, collision failure, correction, combat interruption, death/ragdoll, and rollback of the isolated feature.
 - For gameplay integration, run montage, notify, root-motion, equipment socket, hit reaction, death, corpse, and ragdoll regressions.
 - Inspect Pose Search cost/debug output and profile animation-thread and game-thread cost before tuning by feel alone.
+- To tell a Manny regression from older behavior, compare in one PIE session instead of checking out `master`: in every PIE world, swap each CMC pawn to `SKM_UEFN_Mannequin` with `MI_UEFN_Mannequin_CMC` and `set_anim_instance_class` to the `ABP_RpgGasp_CMC` generated class, then wait about 150 frames before measuring. The equipment manager relinks the matching block layer, and block montages resolve per skeleton.
 - Record actual results, failed attempts, and remaining limits in the task report and PR; update only the task's roadmap status row and replace the handoff's current state. Never present historical results as freshly executed.
 
 Report which project files and reference assets were inspected, which behavior intentionally follows GASP and which intentionally differs, why each changed responsibility lives in C++, Blueprint, or DataAssets, and which verification actually ran.
