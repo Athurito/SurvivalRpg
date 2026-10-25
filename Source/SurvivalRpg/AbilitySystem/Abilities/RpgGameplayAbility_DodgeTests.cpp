@@ -9,6 +9,8 @@
 #include "GameFramework/Pawn.h"
 #include "GameplayAbilitySpec.h"
 #include "Misc/ScopeExit.h"
+#include "Serialization/BitReader.h"
+#include "Serialization/BitWriter.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "UObject/StrongObjectPtr.h"
 #include "UObject/UnrealType.h"
@@ -127,6 +129,55 @@ bool FRpgDodgeProfileLifecycleTest::RunTest(const FString& Parameters)
 	Ability->OnGameplayAbilityEnded.Clear();
 	ASC->ClearAbility(Handle);
 	return !HasAnyErrors();
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgDodgeDirectionTest,
+	"SurvivalRpg.Combat.Dodge.DirectionFollowsMovementInput",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgDodgeDirectionTest::RunTest(const FString& Parameters)
+{
+	using EDir = ERpgDodgeDirection;
+	const FRotator FacingX(0.0, 0.0, 0.0);
+	TestEqual(TEXT("No input dodges backward"), URpgGameplayAbility_Dodge::ResolveDodgeDirection(FVector::ZeroVector, FacingX), EDir::Backward);
+	TestEqual(TEXT("Tiny input dodges backward"), URpgGameplayAbility_Dodge::ResolveDodgeDirection(FVector(0.05, 0.0, 0.0), FacingX), EDir::Backward);
+	const TPair<FVector, EDir> Cases[] = {
+		{ FVector(1, 0, 0), EDir::Forward }, { FVector(1, 1, 0), EDir::ForwardRight }, { FVector(0, 1, 0), EDir::Right },
+		{ FVector(-1, 1, 0), EDir::BackwardRight }, { FVector(-1, 0, 0), EDir::Backward }, { FVector(-1, -1, 0), EDir::BackwardLeft },
+		{ FVector(0, -1, 0), EDir::Left }, { FVector(1, -1, 0), EDir::ForwardLeft } };
+	for (const TPair<FVector, EDir>& Case : Cases)
+	{
+		TestEqual(*FString::Printf(TEXT("Input %s facing +X"), *Case.Key.ToString()),
+			URpgGameplayAbility_Dodge::ResolveDodgeDirection(Case.Key, FacingX), Case.Value);
+	}
+	const FRotator FacingY(0.0, 90.0, 0.0);
+	TestEqual(TEXT("Input along the facing is forward"), URpgGameplayAbility_Dodge::ResolveDodgeDirection(FVector(0, 1, 0), FacingY), EDir::Forward);
+	TestEqual(TEXT("Input to the facing's left is left"), URpgGameplayAbility_Dodge::ResolveDodgeDirection(FVector(1, 0, 0), FacingY), EDir::Left);
+	TestEqual(TEXT("Vertical input does not count"), URpgGameplayAbility_Dodge::ResolveDodgeDirection(FVector(0, 0, 1), FacingX), EDir::Backward);
+
+	TSet<FName> Sections;
+	for (uint8 Index = 0; Index < 8; ++Index)
+	{
+		const EDir Direction = static_cast<EDir>(Index);
+		const FName Section = URpgGameplayAbility_Dodge::GetDodgeDirectionSectionName(Direction);
+		TestFalse(TEXT("Every direction names a section"), Section.IsNone());
+		Sections.Add(Section);
+
+		FRpgDodgeDirectionTargetData Sent;
+		Sent.Direction = Direction;
+		FBitWriter Writer(64, true);
+		bool bWritten = false;
+		Sent.NetSerialize(Writer, nullptr, bWritten);
+		FBitReader Reader(Writer.GetData(), Writer.GetNumBits());
+		FRpgDodgeDirectionTargetData Received;
+		bool bRead = false;
+		Received.NetSerialize(Reader, nullptr, bRead);
+		TestTrue(TEXT("The direction survives net serialization"), bWritten && bRead && Received.Direction == Direction);
+	}
+	TestEqual(TEXT("The eight sections are distinct"), Sections.Num(), 8);
+	TestEqual(TEXT("Backward uses section B"), URpgGameplayAbility_Dodge::GetDodgeDirectionSectionName(EDir::Backward), FName(TEXT("B")));
+	return true;
 }
 
 #endif

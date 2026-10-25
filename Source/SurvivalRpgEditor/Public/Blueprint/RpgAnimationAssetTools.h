@@ -8,7 +8,9 @@ class UAnimBlueprint;
 class UAnimGraphNode_LinkedAnimLayer;
 class UAnimInstance;
 class UAnimLayerInterface;
+class UAnimMontage;
 class UAnimSequence;
+class UAnimSequenceBase;
 class UBlendSpace;
 class UBlueprint;
 class UChooserTable;
@@ -88,4 +90,12 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
 	static bool SetChooserDisabledRows(UChooserTable* RootChooser, FName NestedTableName, const TArray<bool>& DisabledRows);
+
+	/**
+	 * Replaces a project montage's first slot with one segment per sequence, laid end to end, and its sections with one
+	 * section per segment start. Sections are not linked, so playing from one stops and blends out at its end, as
+	 * directional variants in one montage need. Sequences must share the montage's skeleton. Records undo, never saves.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
+	static bool SetMontageSectionSequences(UAnimMontage* Montage, const TArray<FName>& SectionNames, const TArray<UAnimSequenceBase*>& Sequences);
 };

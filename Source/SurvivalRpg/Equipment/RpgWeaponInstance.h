@@ -52,7 +52,7 @@ struct FRpgConditionalAttackModifier
 };
 
 USTRUCT(BlueprintType)
-struct FRpgWeaponAttackDefinition
+struct SURVIVALRPG_API FRpgWeaponAttackDefinition
 {
 	GENERATED_BODY()
 
@@ -68,6 +68,15 @@ struct FRpgWeaponAttackDefinition
 	/** Positive constant playback-rate multiplier used by both montage playback and the authority attack-window schedule. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attack", meta = (ClampMin = "0.001", UIMin = "0.1"))
 	float MontagePlayRate = 1.0f;
+
+	/**
+	 * Attack on the same weapon that follows this one when attack input is pressed before or during this montage's
+	 * Combo Window; a press before the window chains at its start. None ends the combo with this attack. The montage then
+	 * needs exactly one Combo Window that starts after its attack window and ends before auto blend-out. Designer-authored
+	 * static data; the owner predicts each step and the server accepts it.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combo", meta = (Categories = "Weapon.Attack"))
+	FGameplayTag ComboNextAttack;
 
 	// GameplayEffect applied by the attack. It should consume SetByCaller.Damage and SetByCaller.StaggerDamage.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Damage")

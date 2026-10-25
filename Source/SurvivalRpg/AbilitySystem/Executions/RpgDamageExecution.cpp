@@ -285,6 +285,12 @@ void URpgDamageExecution::Execute_Implementation(const FGameplayEffectCustomExec
 		return;
 	}
 
+	// A dodge's invulnerability window evades the whole hit, stagger included; the server judges it from its own tag.
+	if (TargetASC && TargetASC->HasMatchingGameplayTag(RpgGameplayTags::State_Evading))
+	{
+		return;
+	}
+
 	if (const FRpgGameplayEffectContext* RpgContext = FRpgGameplayEffectContext::ExtractEffectContext(Spec.GetEffectContext()))
 	{
 		if (const IRpgAbilitySourceInterface* AbilitySource = RpgContext->GetAbilitySource())

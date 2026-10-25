@@ -16,8 +16,9 @@ remain the compatibility baseline.
   is introduced.
 - **Blueprint/DataAsset:** concrete ability identity, triggers, tuning,
   montages and grants. Hit reaction is entirely Blueprint flow. Dodge's
-  Blueprint owns commit and montage tasks; its native base snapshots the
-  equipment profile once per activation and clears it on end.
+  Blueprint owns montage playback; its native base snapshots the equipment
+  profile once per activation, resolves and replicates the owner's direction,
+  commits and opens the invulnerability window (CMB-03), and clears it on end.
 - **Presentation:** existing montages and UI remain consumers of gameplay
   state. No AnimBP, skeleton, movement simulation or UI authority changes.
 - **Editor:** existing Unreal MCP Blueprint/Object/Asset tools author,
@@ -34,7 +35,7 @@ remain the compatibility baseline.
 | `BasicWeaponAttack` | Authoritative attack windows, traces and cancellation | Existing `GA_BasicWeaponAttack` |
 | `Block` | Predicted source lease, attribute snapshot and restoration | Existing `GA_Combat_Block` |
 | `Death` | Exclusive uncancelable health lifecycle and terminal cleanup | Existing `GA_Combat_Death` |
-| `Dodge` | Per-activation equipment profile snapshot and lifecycle cleanup | `GA_Dodge` |
+| `Dodge` | Per-activation equipment profile snapshot, owner direction as target data, commit, invulnerability window, recovery cancel, lifecycle cleanup | `GA_Dodge`; `GA_Combat_Dodge` in `GF_Combat_Core` since CMB-03 |
 | `HitReaction` | Removed: guards, commit and montage/delay tasks are Blueprint-accessible | Existing `GA_Combat_HitReaction`, directly parented to `RpgGameplayAbility` |
 | `Revive` | Authority reservation, repeated target validation and cleanup | `GA_Revive` |
 | `SelfRevive` | Authoritative health reset and native attribute mutation | `GA_SelfRevive` |
@@ -82,6 +83,8 @@ recursive cook rule includes its soft dependencies.
 Existing AbilitySet, equipment and Experience composition is unchanged.
 `GA_Dodge` and `GA_SelfRevive` provide concrete configurable content for the
 existing mechanisms; this migration does not add new player input or grants.
+Since CMB-03 the combat GameFeature grants `GA_Combat_Dodge` on
+`InputTag.Ability.Dodge` ([player combo](combat-player-combo.md)).
 Feature-native portal and harvesting abilities outside the issue's 15-class
 inventory are outside this change.
 

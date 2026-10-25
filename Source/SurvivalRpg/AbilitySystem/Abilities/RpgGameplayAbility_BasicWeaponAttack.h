@@ -14,6 +14,11 @@ class UAbilitySystemComponent;
  *
  * The equipped URpgWeaponInstance supplies montage, damage GE, SetByCaller damage,
  * trace shape, and optional camera mode. Damage is applied only on authority.
+ *
+ * An attack definition with ComboNextAttack chains into that attack within the same activation: the owner buffers the
+ * input, starts the next step in a new prediction window inside the montage's Combo Window and asks the server, which
+ * accepts it from its own montage time and plays the same montage under the owner's prediction key. After each step's
+ * attack window the ability becomes replaceable, so dodge and block may cancel the recovery.
  */
 UCLASS(Abstract, Blueprintable)
 class SURVIVALRPG_API URpgGameplayAbility_BasicWeaponAttack : public URpgGameplayAbility_FromEquipment
@@ -36,6 +41,12 @@ public:
 	uint32 GetAuthorityTraceSampleCountForTests() const { return AuthorityTraceSampleCountForTests; }
 	uint32 GetAuthorityDamageHitCountForTests() const { return AuthorityDamageHitCountForTests; }
 	bool IsAttackWindowOpenForTests() const { return bAttackWindowOpen; }
+	/** Attack definition of the running combo step; empty while inactive. */
+	FGameplayTag GetActiveAttackTagForTests() const { return ActiveAttackTag; }
+	/** Zero-based index of the running combo step; zero for the entry attack. */
+	int32 GetComboStepIndexForTests() const { return ComboStepIndex; }
+	/** Whether the running step's recovery may be canceled by another exclusive ability. */
+	bool IsRecoveryCancelableForTests() const { return bRecoveryCancelable; }
 	bool HasPendingAttackTimersForTests() const;
 	bool HasResidualAttackRuntimeStateForTests() const;
 	/** Exercises the production auto-blend timing contract without requiring a mutable montage asset. */
@@ -100,7 +111,40 @@ protected:
 	UFUNCTION()
 	void OnAuthorityAttackWindowEnded();
 
+	/** Opens the running step's combo window; chains a buffered press or a pending server request. */
+	UFUNCTION()
+	void OnComboWindowOpened();
+
+	/** Closes the running step's combo window on the owner; later presses no longer chain. */
+	UFUNCTION()
+	void OnComboWindowClosed();
+
+	/** Makes the running step's recovery replaceable, so dodge and block may cancel it. */
+	UFUNCTION()
+	void OnRecoveryCancelOpened();
+
 private:
+	/**
+	 * Copies Source into OutStep with the activation's itemization scale and checks montage, trace, play rate and attack
+	 * window. Logs and returns false when the step cannot run.
+	 */
+	bool PrepareAttackStep(
+		const FRpgWeaponAttackDefinition& Source,
+		FRpgWeaponAttackDefinition& OutStep,
+		float& OutWindowStartTime,
+		float& OutWindowEndTime);
+	/** Plays the running step's montage and schedules its authority, combo and recovery windows. False aborts the attack. */
+	bool StartAttackMontage();
+	/** Stops listening to the running montage task, so replacing its montage does not end the ability. */
+	void DetachAttackMontageTask();
+	void ScheduleComboTimers();
+	void ClearComboTimers();
+	void OnComboInputPressed();
+	void OnComboStepRequested();
+	/** Owner side: starts the next step, inside a new prediction window that the server request carries. */
+	void ChainComboFromOwner();
+	/** Replaces the running step with NextAttackTag; false leaves the running step untouched. */
+	bool StartComboStep(FGameplayTag NextAttackTag);
 	FGameplayTag ResolveAttackDefinitionTag(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo) const;
 	bool TryGetSocketLocationFromWeapon(const URpgWeaponInstance* WeaponInstance, FName SocketName, FVector& OutLocation) const;
 	bool TryGetSocketLocationFromAvatar(FName SocketName, FVector& OutLocation) const;
@@ -118,6 +162,7 @@ private:
 		float& OutRemainingPlayTime,
 		float& OutBlendOutTriggerSeconds);
 	bool ResolveAttackWindowTiming(
+		const FRpgWeaponAttackDefinition& AttackDefinition,
 		float EffectivePlayRate,
 		float& OutStartTime,
 		float& OutEndTime,
@@ -165,10 +210,40 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Facing", meta = (ClampMin = "0.0", UIMax = "720.0", Units = "DegreesPerSecond"))
 	float WindupSteeringRate = 360.0f;
 
+	/**
+	 * Seconds by which the server opens a remote owner's combo window and recovery cancel ahead of its own montage time.
+	 * Absorbs jitter between the owner's and the server's montage clocks, so a step or dodge sent at the owner's window
+	 * edge is not refused. Designer netcode tuning, 0 to about 0.3 s; the owner itself never chains before the window.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Combo", meta = (ClampMin = "0.0", UIMax = "0.3", Units = "s"))
+	float ComboServerLeadTolerance = 0.15f;
+
 	UPROPERTY(Transient)
 	TObjectPtr<URpgWeaponInstance> ActiveWeaponInstance;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UAbilityTask_PlayMontageAndWait> ActiveMontageTask;
+
 	FRpgWeaponAttackDefinition ActiveAttackDefinition;
+	FGameplayTag ActiveAttackTag;
+	float ActiveAttackWindowEndTime = 0.0f;
+	int32 ComboStepIndex = 0;
+	/** Item-rolled damage replacing the entry attack's authored damage; negative keeps authored values. */
+	float RolledDamage = -1.0f;
+	float RolledStaggerDamage = -1.0f;
+	float EntryAuthoredDamage = 0.0f;
+	float EntryAuthoredStaggerDamage = 0.0f;
+	bool bComboWindowOpen = false;
+	bool bComboWindowClosed = false;
+	bool bComboInputBuffered = false;
+	bool bComboRequestPending = false;
+	bool bRecoveryCancelable = false;
+	FPredictionKey PendingComboPredictionKey;
+	FDelegateHandle ComboInputPressedHandle;
+	FDelegateHandle ComboRequestHandle;
+	FTimerHandle ComboWindowOpenTimerHandle;
+	FTimerHandle ComboWindowCloseTimerHandle;
+	FTimerHandle RecoveryCancelTimerHandle;
 	bool bWaitingForMontage = false;
 	bool bFinishingAttack = false;
 	bool bAttackWindowOpen = false;

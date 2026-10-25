@@ -3,6 +3,7 @@
 #include "Animation/AnimBlueprint.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimLayerInterface.h"
+#include "Animation/AnimMontage.h"
 #include "Animation/AnimSequence.h"
 #include "Animation/BlendProfile.h"
 #include "Animation/BlendSpace.h"
@@ -423,4 +424,55 @@ bool URpgAnimationAssetTools::SetChooserDisabledRows(UChooserTable* RootChooser,
 	RootChooser->Compile(true);
 	RootChooser->MarkPackageDirty();
 	return true;
+}
+
+bool URpgAnimationAssetTools::SetMontageSectionSequences(UAnimMontage* Montage, const TArray<FName>& SectionNames,
+	const TArray<UAnimSequenceBase*>& Sequences)
+{
+	if (!Montage || !IsProjectContentPackage(Montage->GetOutermost()->GetName()) || Montage->SlotAnimTracks.IsEmpty()
+		|| SectionNames.IsEmpty() || SectionNames.Num() != Sequences.Num())
+	{
+		return false;
+	}
+	TSet<FName> UniqueNames;
+	for (int32 Index = 0; Index < Sequences.Num(); ++Index)
+	{
+		bool bDuplicate = false;
+		UniqueNames.Add(SectionNames[Index], &bDuplicate);
+		const UAnimSequenceBase* Sequence = Sequences[Index];
+		if (SectionNames[Index].IsNone() || bDuplicate || !Sequence || Sequence->IsA<UAnimMontage>()
+			|| Sequence->GetSkeleton() != Montage->GetSkeleton() || Sequence->GetPlayLength() <= UE_KINDA_SMALL_NUMBER)
+		{
+			return false;
+		}
+	}
+
+	const FScopedTransaction Transaction(NSLOCTEXT("RpgAnimationAssetTools", "SetMontageSectionSequences", "Set Montage Section Sequences"));
+	Montage->Modify();
+	FAnimTrack& Track = Montage->SlotAnimTracks[0].AnimTrack;
+	Track.AnimSegments.Reset();
+	float SegmentStart = 0.0f;
+	for (UAnimSequenceBase* Sequence : Sequences)
+	{
+		FAnimSegment Segment;
+		Segment.SetAnimReference(Sequence, true);
+		Segment.StartPos = SegmentStart;
+		SegmentStart += Segment.GetLength();
+		Track.AnimSegments.Add(Segment);
+	}
+	Montage->SetCompositeLength(SegmentStart);
+
+	Montage->CompositeSections.Reset();
+	for (int32 Index = 0; Index < Sequences.Num(); ++Index)
+	{
+		Montage->AddAnimCompositeSection(SectionNames[Index], Track.AnimSegments[Index].StartPos);
+	}
+	// AddAnimCompositeSection chains each new section to the previous one; every section here ends on its own.
+	for (FCompositeSection& Section : Montage->CompositeSections)
+	{
+		Section.NextSectionName = NAME_None;
+	}
+	Montage->PostEditChange();
+	Montage->MarkPackageDirty();
+	return Montage->CompositeSections.Num() == Sequences.Num();
 }
