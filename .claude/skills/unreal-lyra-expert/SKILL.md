@@ -54,7 +54,13 @@ The repository-wide rules are in `.agents/skills/survival-rpg-orchestrator/refer
 - Keep UI WBP/MVVM-first: native subsystems, ViewModels, Slate primitives, lifecycle integration, geometry algorithms, and real hot paths may be C++; screens, entries, toasts, tooltips, layout, styling, and animation live in CommonUI Widget Blueprints. UI reflects gameplay state and never owns item or equipment truth. When a native widget already renders a fallback layout, add new rows and styling in its Widget Blueprint child and limit native changes to exposing read-only data through the ViewModels.
 - Expose narrow extension points instead of burying authoritative rules in widgets or creating a native class per presentation leaf.
 
-Read and follow the [Unreal MCP asset-authoring workflow](references/unreal-mcp-asset-authoring.md) for any work that creates or changes Blueprint, Widget Blueprint, Gameplay Ability, or DataAsset assets.
+Read and follow the [Unreal MCP asset-authoring workflow](references/unreal-mcp-asset-authoring.md) for any work that creates or changes Blueprint, Widget Blueprint, Gameplay Ability, or DataAsset assets. Before the matching work, also read the reference that collects the editor behavior observed in this project:
+
+- [Blueprint graph pitfalls](references/mcp-blueprint-graph-pitfalls.md) before writing or rewriting any Blueprint, Widget Blueprint, AnimBP, or cue notify graph
+- [Widget, CommonUI, and MVVM recipes](references/mcp-widget-recipes.md) for widget trees, view bindings, styles, and driving UI in PIE
+- [Niagara and material pitfalls](references/mcp-niagara-pitfalls.md) for Niagara systems, FX materials, and cue effects
+- [Editor sessions and PIE](references/editor-session-and-pie.md) before launching an editor, scripted PIE, captures, profiling, or packaging
+- [Asset library migration](references/asset-library-migration.md) before bringing purchased content into the project
 
 ## Testing
 
@@ -62,6 +68,11 @@ Read and follow the [Unreal MCP asset-authoring workflow](references/unreal-mcp-
 - For Blueprint and Widget Blueprint assets, validate compilation, intended parent class or interface, required MVVM source, registry/cook reachability, and genuinely stable references.
 - Do not add a C++ automation suite per screen, entry, tooltip, toast, or Blueprint specialization, and do not assert widget-tree structure, cosmetic names, binding counts, colors, text, animation details, or the absence of Blueprint graph functions.
 - Do not create a native widget or GameplayAbility leaf merely to make content easier to unit test.
+- Before writing timer, test-world, prediction, GameplayCue, or PIE network tests, read [GAS and network test pitfalls](references/gas-and-network-test-pitfalls.md).
+
+## Test maps
+
+Start new prototype and test maps from the approved GASP presentation in `Lvl_RpgGaspMantle`: its project-local GASP blocks and floor/grid materials with the matching LevelVisuals lighting, skylight, fog and exposure (documented in `docs/gasp-mantle-integration.md`). Keep surfaces and movement readable without overexposure. Reuse it unless the user asks for a different look; it is not the final dark-fantasy art direction.
 
 ## Build, test, and cook
 

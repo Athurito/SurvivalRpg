@@ -7,7 +7,7 @@ Shared instructions for coding agents (Codex, Claude Code, and others) working i
 - **Language:** Write new documentation, skills, code comments, commit messages, and issue/PR titles and bodies in English. For small edits to existing German documents, keep the surrounding language; translate the document when substantially revising it. Respond to the user in their language.
 - **Branches:** Use `<agent>/<task-id>-<slug>` in lowercase with hyphens, with `codex` or `claude` for the respective agent. Use the stable roadmap ID when available, otherwise `issue-<number>`; for work without either, use `<agent>/<slug>`. Examples: `codex/issue-170-agent-conventions`, `claude/gasp-07-cmc-sprint`. Keep one bounded task per branch/PR; existing branches need not be renamed.
 - **Commits:** Use Conventional Commit titles: `<type>(<scope>): <summary>`, with an optional scope and a short imperative English summary. Choose `feat`, `fix`, `docs`, `refactor`, `test`, `build`, `ci`, or `chore`; for example, `docs(agents): define shared conventions`. Use the same format for PR titles. Generated merge/revert titles may keep Git's default format.
-- **PRs:** Use `Behavior` for the problem and resulting change, `Validation` for checks actually run and their results, and `Limits` for remaining risks or unverified behavior (or `None`). Add `Playtest` with reproduction steps and expected behavior for observable gameplay changes. Link the issue and task ID when available; use `Closes #<number>` only when the PR fully resolves it. Apply relevant existing labels: `documentation`, `bug`, `feature`, or `refactor`; use more than one when appropriate.
+- **PRs:** Use `Behavior` for the problem and resulting change, `Validation` for checks actually run and their results, and `Limits` for remaining risks or unverified behavior (or `None`). Add `Playtest` with reproduction steps and expected behavior for observable gameplay changes. Link the issue and task ID when available; use `Closes #<number>` only when the PR fully resolves it. Apply relevant existing labels: `documentation`, `bug`, `feature`, or `refactor`; use more than one when appropriate. The repository disallows auto-merge: wait for the `check` run on the latest head, then merge with `gh pr merge --merge`.
 
 ## SurvivalRpg repository guidance
 
@@ -28,6 +28,7 @@ The canonical skills live in `.agents/skills/<name>/`, where Codex discovers the
 - Edit only `.agents/skills/`, then run `python Build/Tools/AgentSkills/sync.py`. CI runs it with `--check`, which fails on stale copies, dead repository paths, `/Game` paths, or `URpg*`-style identifiers, Codex-only `$name` syntax in Markdown, and an `AGENTS.md` without a sibling `CLAUDE.md` that imports it.
 - Refer to other skills by their plain name in shared Markdown.
 - After changing a skill description, a boundary rule, or the routing below, run the affected scenarios in `Build/Tools/AgentSkills/evals/` before and after the change; see "Evaluations" in `Build/Tools/AgentSkills/README.md`.
+- Record reusable tool, editor, or engine pitfalls you discover in the matching skill reference in the same PR. Agent-private memory is not shared with the other agents.
 
 At the start of a task, before inspecting, planning, reviewing, or changing anything in a skill's domain, load the closest matching skill, also when only a plan or review is requested. Combine only those whose boundaries the task crosses. This file summarizes the guardrails; the skills hold the binding detail:
 - `survival-rpg-project` for game identity, feature scope, first-playable priorities, survival/crafting/progression tradeoffs, portal fantasy, and long-term resource relevance.
@@ -56,19 +57,12 @@ Common combinations: runtime work on a new feature pairs `survival-rpg-project` 
 - Do not restore the archived native GASP port. Runtime assets must not depend on the external GASP sample checkout.
 - Keep movement gameplay authority in project-owned CMC/Mover, GAS, and Motion-Warping seams. Widening Mover scope or adopting Locomotor, sample camera, Foley, or experimental systems requires explicit roadmap scope and an isolated dependency evaluation; they are never incidental additions.
 
-## GASP roadmap and cross-chat handoff
+## Roadmap work
 
 - Standing user preference (26.09.2026): when a roadmap step cannot reasonably be tested manually by the user, perform the appropriate automated validation and review, then push/merge the verified work and continue with the next bounded step without requesting another manual sign-off. Preserve actual failures and remaining limits; this does not authorize bypassing required checks. For readily observable gameplay changes, provide a simple reproduction path.
-- Before GASP integration or movement follow-up work, read `docs/gasp-integration-handoff.md` (current state and open findings) and `docs/gasp-integration-roadmap.md` (status, rules, next ready step), then only the task report linked to the affected task ID, and verify the current branch, PR and repository state.
-- Use the roadmap's stable task IDs and keep one bounded task per implementation chat/PR. Respect the active task and recorded file ownership; coordinate shared editor/MCP sessions and binary assets across worktrees. Continue an already authorized active task at its recorded next step without requiring it to be marked ready again. When selecting a new task, if no task is marked ready, ask the user instead of picking one.
-- In the same work PR, record actual commits, validation, failed attempts and limits in the task report (`docs/gasp-<topic>.md`) and the PR description; update only the task's roadmap status row; replace the handoff's current state (active task, branch/PR, file ownership, next action, open findings) instead of appending history. Do not report an open PR as merged or historical test results as newly executed.
-- Ignored `Saved/` evidence and generated NetworkPrediction/Mover plugin overrides are not automatically available in another checkout. Follow the roadmap and `Build/Patches/NetworkPrediction/README.md` before building or changing branches.
-
-## Map presentation preference
-
-- For further prototype and test maps, use the approved GASP presentation in `Lvl_RpgGaspMantle` as the starting point: original project-local GASP blocks and floor/grid materials, with the matching LevelVisuals lighting, skylight, fog and exposure.
-- Keep lighting and exposure coordinated so surfaces and movement remain readable without overexposure. Reuse this setup for new test environments unless the user requests a different look; it is not the final dark-fantasy art direction.
-- The approved setup and asset ownership are documented in `docs/gasp-mantle-integration.md`.
+- The roadmaps (`docs/*-roadmap.md`) use stable task IDs; keep one bounded task per implementation chat/PR. Verify the current branch, PR and repository state before continuing a task. Continue an already authorized active task at its recorded next step without requiring it to be marked ready again. When selecting a new task, if no task is marked ready, ask the user instead of picking one.
+- In the same work PR, record actual commits, validation, failed attempts and limits in the task report and the PR description, and update only the task's roadmap status row. Do not report an open PR as merged or historical test results as newly executed.
+- Coordinate shared editor/MCP sessions and binary assets across worktrees. GASP and movement work also follows the handoff in `docs/gasp-integration-handoff.md`, as unreal-gasp-expert describes.
 
 ## Documentation defaults
 
@@ -81,10 +75,14 @@ Machine-specific locations on the primary workstation. If one is missing, say so
 - Unreal Engine 5.8: `D:/Programme/UE_5.8`
 - Lyra reference project: `D:/Repos/LyraStarterGame`
 - GASP reference project: `D:/Repos/GameAnimationSample`
+- Asset library: `D:/Repos/Assets` with the content-only projects `Assets_3DAssets`, `Assets_Animations`, `Assets_Sounds` and `Assets_VFX` (MCP ports 8001-8004). Migrate only what a task uses, with a `docs/third-party-notices.md` entry per pack, as `.agents/skills/unreal-lyra-expert/references/asset-library-migration.md` describes.
+- Never capture the whole desktop, which can show the user's private windows; capture only editor or game windows.
 
 ## Verification
 
+- A fresh worktree, or one that last pulled before assets changed, needs `git lfs pull`, the NetworkPrediction/Mover overrides from `Build/Patches/NetworkPrediction/README.md`, and `python Build/Tools/Unreal/ue.py build` before the editor or tests work. Ignored `Saved/` evidence stays in the checkout that produced it.
 - Build, test and cook through `python Build/Tools/Unreal/ue.py build`, `... test <filter>...` and `... cook <map>...` instead of assembling `Build.bat` or `UnrealEditor-Cmd.exe` calls. The wrapper verifies the NetworkPrediction/Mover overrides first, prints a compact verdict with log and report paths, and exits with 0 passed, 1 failed or 2 setup error. Options and the engine lookup are in `Build/Tools/Unreal/README.md`; unreal-lyra-expert has the short form.
 - Do not claim the project compiles unless the relevant Unreal build was actually run.
 - For replicated gameplay, check server authority, replicated state, late join behavior, and OnRep / FastArray behavior.
+- For every gameplay, movement, or animation change, also run the listen-server PIE tests, watch the remote character in a two-player PIE, and add a multiplayer step to the PR's `Playtest` (standing user preference).
 - For GASP animation changes, check worker-thread safety, simulated-proxy inputs, late join, montage/root-motion compatibility, and project-local asset dependencies.

@@ -85,6 +85,8 @@ For asset or Pose Search changes:
 - Remove Foley, EarlyTransition, BranchIn, state-machine, or other references only with an explicit local replacement policy.
 - Update the task report and the relevant manifest under `docs/assets` when membership or source parity changes.
 - Review binary/LFS scope and hard, soft, and management references before accepting an asset diff. On-disk compression size is not the content contract.
+- Never add a bone to `SK_Mannequin` or another widely shared skeleton without asking the user. It regenerates the skeleton GUID, so about 1,800 dependent assets re-conform on every load and Pose Search indexes rebuild. Reuse an existing spare bone first, as the traversal attach track does with Lyra's `interaction` bone. Blend profile additions keep the GUID.
+- Create no legacy asset types such as `BlendSpace1D` or `AimOffset1D`, also not as by-products of a bake, retarget, or duplicate. Check the output classes afterwards and replace a 1D blend space with a standard `BlendSpace` whose unused vertical axis repeats every sample.
 
 ## Preserve multiplayer and gameplay seams
 

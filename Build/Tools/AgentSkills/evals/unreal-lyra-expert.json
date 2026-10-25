@@ -47,5 +47,44 @@
       "Explains the wrapper's exit codes or that it verifies the NetworkPrediction/Mover overrides first.",
       "Does not claim that the build or the tests passed when they were not run."
     ]
+  },
+  {
+    "id": "lyra-widget-graph-rewrite",
+    "skills": ["unreal-lyra-expert"],
+    "excluded_skills": ["unreal-gasp-expert"],
+    "query": "Im Crafting-Screen soll der Start-Button zusätzlich einen Bestätigungs-Sound abspielen. Schreib den EventGraph dafür einfach komplett mit write_graph_dsl neu, das geht am schnellsten.",
+    "expected_behavior": [
+      "Edits the existing Widget Blueprint through the Unreal MCP workflow instead of adding a native widget class or C++ click handler.",
+      "Does not rely on a whole-graph write_graph_dsl rewrite alone: plans to delete the nodes a rewrite leaves behind, or adds the new nodes surgically with create_node and connect_pins.",
+      "Verifies the resulting wiring by reading node infos or connected pins back instead of trusting the read_graph_dsl output.",
+      "Compiles the Widget Blueprint and checks the editor log for compile errors before saving.",
+      "Saves only the changed asset paths and checks for unrelated dirty or changed assets before committing."
+    ]
+  },
+  {
+    "id": "lyra-server-cue-in-predicted-ability",
+    "skills": ["unreal-lyra-expert", "survival-rpg-combat-foundation"],
+    "excluded_skills": ["unreal-gasp-expert"],
+    "query": "Wenn eine Spielerfähigkeit eine Ressource abbaut, soll der Server zusätzlich einen Staub-Cue abspielen. Ich ruf dafür direkt in ActivateAbility auf dem Server ExecuteGameplayCue auf; ein Test im Standalone-PIE reicht mir.",
+    "expected_behavior": [
+      "Identifies that a cue the server executes inside the owning client's predicted activation carries the client's prediction key, so the predicting client never plays it, and clears the key, for example with `FScopedPredictionWindow(ASC, FPredictionKey(), false)`, or routes the cue so the owner still plays it.",
+      "Plans a listen-server PIE test that checks the owning client, the server, and another client receive the cue, instead of a standalone test only.",
+      "Keeps the harvest outcome authoritative on the server and the cue cosmetic.",
+      "Accounts for dropped cue multicasts, for example by asserting every cue of the same frame or checking the per-actor RPC limit `net.MaxRPCPerNetUpdate`.",
+      "Adds a multiplayer step with two players to the PR's Playtest or the reproduction steps."
+    ]
+  },
+  {
+    "id": "lyra-fresh-worktree-tests",
+    "skills": ["unreal-lyra-expert"],
+    "excluded_skills": ["unreal-gasp-expert"],
+    "query": "Ich hab gerade einen neuen Worktree angelegt. Starte dort den Editor und lass die Block-Tests laufen; im anderen Worktree läuft schon ein Editor.",
+    "expected_behavior": [
+      "Plans `git lfs pull`, or a check for LFS pointer files, before opening the editor or running tests in the new worktree.",
+      "Checks or stages the NetworkPrediction/Mover overrides as described in `Build/Patches/NetworkPrediction/README.md` and builds with `python Build/Tools/Unreal/ue.py build` before testing.",
+      "Keeps clear of the editor already running in the other worktree, for example by choosing a free MCP port or disabling the test editor's MCP auto-start, and never drives the other session's editor.",
+      "Runs the tests through `python Build/Tools/Unreal/ue.py test` with a block filter instead of assembling UnrealEditor-Cmd calls.",
+      "Does not claim results for steps that were not run."
+    ]
   }
 ]

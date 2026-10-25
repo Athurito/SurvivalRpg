@@ -1,5 +1,29 @@
 {
   "enabledPlugins": {
     "unreal-engine-skills-for-claude-code@claude-plugins-official": true
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PROJECT_DIR}/Build/Tools/AgentSkills/skill_hooks.py\" pre"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PROJECT_DIR}/Build/Tools/AgentSkills/skill_hooks.py\" post"
+          }
+        ]
+      }
+    ]
   }
 }
