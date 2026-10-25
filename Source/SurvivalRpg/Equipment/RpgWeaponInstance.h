@@ -138,6 +138,14 @@ struct SURVIVALRPG_API FRpgWeaponAttackDefinition
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Events", meta = (Categories = "GameplayEvent"))
 	FGameplayTag HitReactionEventTag;
 
+	/**
+	 * Designer-selected impact cue when this attack hits a body, for example GameplayCue.Combat.Hit.Heavy on a finisher.
+	 * Blocks and perfect blocks use the shared GameplayCue.Combat.Block and GameplayCue.Combat.PerfectBlock instead.
+	 * The server's damage execution plays it for everyone; the attacking client predicts it. Empty plays no impact cue.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Feedback", meta = (Categories = "GameplayCue.Combat.Hit"))
+	FGameplayTag HitCueTag;
+
 	FRpgWeaponAttackDefinition();
 	bool CanApplyDamage() const { return DamageEffect && (Damage > 0.0f || StaggerDamage > 0.0f); }
 	bool HasValidTraceData() const;

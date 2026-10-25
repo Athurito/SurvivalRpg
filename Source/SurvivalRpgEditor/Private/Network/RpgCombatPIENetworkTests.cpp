@@ -19,6 +19,7 @@
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
+#include "GameplayCueManager.h"
 #include "GameplayEffect.h"
 #include "GameplayTagContainer.h"
 #include "InputKeyEventArgs.h"
@@ -26,12 +27,14 @@
 
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_BasicWeaponAttack.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_Dodge.h"
+#include "SurvivalRpg/AbilitySystem/Attributes/RpgDefenseSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgStaminaSet.h"
 #include "SurvivalRpg/Core/Character/RpgHealthComponent.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "Animation/AnimInstance.h"
 #include "SurvivalRpg/Combat/RpgCombatDeveloperSettings.h"
+#include "SurvivalRpg/Combat/RpgCombatImpact.h"
 #include "SurvivalRpg/Core/Character/RpgCharacter.h"
 #include "SurvivalRpg/Core/Game/Experience/RpgExperienceDefinition.h"
 #include "SurvivalRpg/Core/Game/Experience/RpgExperienceManagerComponent.h"
@@ -52,8 +55,8 @@ namespace RpgCombatPIENetworkTests
 		TEXT("/Game/SurvivalRpg/Core/Character/BP_Rpg_Character");
 	constexpr TCHAR BasicSwordDefinitionClassPath[] =
 		TEXT("/GF_Combat_Core/Equipment/Weapons/ED_BasicSword.ED_BasicSword_C");
-	constexpr TCHAR HitReactionAbilityClassPath[] =
-		TEXT("/GF_Combat_Core/GAS/Abilities/GA_Combat_HitReaction.GA_Combat_HitReaction_C");
+	constexpr TCHAR StaggerAbilityClassPath[] =
+		TEXT("/GF_Combat_Core/GAS/Abilities/GA_Combat_Stagger.GA_Combat_Stagger_C");
 	constexpr TCHAR BasicSwordWeaponInstanceClassPath[] =
 		TEXT("/GF_Combat_Core/Equipment/Weapons/BP_WeaponInstance_BasicSword.BP_WeaponInstance_BasicSword_C");
 	constexpr TCHAR DamageEffectClassPath[] =
@@ -755,7 +758,6 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 	// Keep the hooks alive through CQTest network teardown; never restore persistence on test actors.
 	RpgCombatPIENetworkTests::FScopedPIEWorldSaveIsolation WorldSaveIsolation;
 	FRpgScopedNetworkTestGround Ground;
-	RpgCombatPIENetworkTests::FScopedAbilityLifecycle HitReactionLifecycle;
 	RpgCombatPIENetworkTests::FScopedAbilityLifecycle AttackLifecycle;
 	RpgCombatPIENetworkTests::FScopedAbilityLifecycle DodgeLifecycle;
 	FGameplayAbilitySpecHandle DodgeAbilityHandle;
@@ -784,24 +786,21 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 		return Result;
 	}
 
-	void QueueHitReactionLifecycle()
+	/** CMB-04: a light hit is presentation only, so the hit-reaction event no longer starts an interrupting ability. */
+	void QueueHitReactionEventStartsNothing()
 	{
 		using namespace RpgCombatPIENetworkTests;
 		Network
-			.ThenServer(TEXT("Trigger the authored hit reaction on the real composed remote pawn"),
+			.ThenServer(TEXT("A hit-reaction event starts no ability on the real composed remote pawn"),
 				[this](FNetworkState& State)
 				{
 					ARpgCharacter* Character = FindCharacterByPlayerId(State.World, SubjectPlayerId);
 					URpgAbilitySystemComponent* AbilitySystem = Character ? Character->GetRpgAbilitySystemComponent() : nullptr;
-					UClass* ReactionClass = LoadClass<URpgGameplayAbility>(nullptr, HitReactionAbilityClassPath);
-					FGameplayAbilitySpec* ReactionSpec = AbilitySystem && ReactionClass
-						? AbilitySystem->FindAbilitySpecFromClass(ReactionClass) : nullptr;
-					ASSERT_THAT(IsTrue(Character && Character->HasAuthority() && HasCleanAuthorityAttack(State)));
-					ASSERT_THAT(IsNotNull(ReactionSpec));
-					if (!Character || !AbilitySystem || !ReactionSpec) return;
-					ASSERT_THAT(IsFalse(ReactionSpec->IsActive()));
-					ASSERT_THAT(IsFalse(AbilitySystem->IsActivationGroupBlocked(ERpgAbilityActivationGroup::Exclusive_Replaceable)));
-					HitReactionLifecycle.Start(AbilitySystem, ReactionSpec->Handle);
+					ASSERT_THAT(IsTrue(Character && AbilitySystem && Character->HasAuthority() && HasCleanAuthorityAttack(State)));
+					if (!AbilitySystem)
+					{
+						return;
+					}
 
 					const FGameplayTag EventTag = FGameplayTag::RequestGameplayTag(TEXT("GameplayEvent.HitReaction"));
 					FGameplayEventData Payload;
@@ -809,26 +808,11 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 					Payload.Instigator = State.Target;
 					Payload.Target = Character;
 					Payload.ContextHandle = AbilitySystem->MakeEffectContext();
-					ASSERT_THAT(IsTrue(AbilitySystem->HandleGameplayEvent(EventTag, &Payload) == 1));
-					ASSERT_THAT(IsTrue(HitReactionLifecycle.Activations == 1));
-				})
-			.UntilServer(TEXT("The authored hit-reaction lifecycle finishes and clears its active spec"),
-				[this](FNetworkState&) { return HitReactionLifecycle.HasEnded(); }, NetworkTimeout())
-			.ThenServer(TEXT("Hit reaction ends once and releases the exclusive activation group"),
-				[this](FNetworkState& State)
-				{
-					ARpgCharacter* Character = FindCharacterByPlayerId(State.World, SubjectPlayerId);
-					URpgAbilitySystemComponent* AbilitySystem = Character ? Character->GetRpgAbilitySystemComponent() : nullptr;
-					ASSERT_THAT(IsTrue(HitReactionLifecycle.Activations == 1 && HitReactionLifecycle.Ends == 1));
-					ASSERT_THAT(IsTrue(HitReactionLifecycle.CancelledEnds == 0));
-					ASSERT_THAT(IsTrue(AbilitySystem &&
+					ASSERT_THAT(AreEqual(0, AbilitySystem->HandleGameplayEvent(EventTag, &Payload)));
+					ASSERT_THAT(IsTrue(HasCleanAuthorityAttack(State) &&
 						!AbilitySystem->IsActivationGroupBlocked(ERpgAbilityActivationGroup::Exclusive_Replaceable) &&
 						!AbilitySystem->IsActivationGroupBlocked(ERpgAbilityActivationGroup::Exclusive_Blocking)));
-				})
-			.UntilServer(TEXT("Authority montage state settles before the next genuine primary attack"),
-				[](FNetworkState& State) { return HasCleanAuthorityAttack(State); }, NetworkTimeout())
-			.UntilClient(TEXT("Owner is ready to submit primary input after the server hit reaction"), 0,
-				[](FNetworkState& State) { return IsClientAttackReady(State); }, NetworkTimeout());
+				});
 	}
 
 	void QueueCompletedAttack(
@@ -1411,7 +1395,6 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 
 	AFTER_EACH()
 	{
-		HitReactionLifecycle.Stop();
 		AttackLifecycle.Stop();
 		DodgeLifecycle.Stop();
 		GetMutableDefault<URpgDeveloperSettings>()->ExperienceOverride =
@@ -1566,18 +1549,11 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 		{
 			QueueCompletedAttack(AttackIndex);
 		}
-		QueueHitReactionLifecycle();
-		// Reusing the normal remote attack path proves that reaction cleanup admits the next action.
+		QueueHitReactionEventStartsNothing();
 		QueueCompletedAttack(
 			NormalCompletedAttackCount,
 			FastMontageTimingPlayRate);
 		QueueCancelledAttack();
-		Network.ThenServer(TEXT("Later attacks do not finish or reactivate the retired hit reaction"),
-			[this](FNetworkState&)
-			{
-				ASSERT_THAT(IsTrue(HitReactionLifecycle.Activations == 1 && HitReactionLifecycle.Ends == 1));
-				ASSERT_THAT(IsTrue(HitReactionLifecycle.CancelledEnds == 0));
-			});
 	}
 
 	const TCHAR* Describe(const FString& Description)
@@ -1998,6 +1974,437 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 				}, NetworkTimeout())
 			.UntilServer(TEXT("Dodge: the backstep ends"),
 				[this](FNetworkState&) { return DodgeLifecycle.Ends == 2 && DodgeLifecycle.CancelledEnds == 0; }, NetworkTimeout());
+	}
+};
+
+/**
+ * CMB-04 hit feedback rules: two remote attackers hit one target at once. Every hit deals damage on the server and
+ * plays its impact cue exactly once on every machine: predicted on its attacker's own client, from the server
+ * everywhere else. The shared stagger meter breaks once and then holds its immunity.
+ */
+NETWORK_TEST_CLASS(CombatImpactCuesPIE, "SurvivalRpg.Network")
+{
+	using FNetworkState = RpgCombatPIENetworkTests::FNetworkState;
+
+	struct FRoutedCue
+	{
+		TWeakObjectPtr<UWorld> World;
+		TWeakObjectPtr<AActor> Target;
+		FGameplayTag Tag;
+	};
+
+	static constexpr int32 AttackerCount = 2;
+	static constexpr double CueQuietSeconds = 1.0;
+
+	RpgCombatPIENetworkTests::FScopedPIEWorldSaveIsolation WorldSaveIsolation;
+	FRpgScopedNetworkTestGround Ground;
+	RpgCombatPIENetworkTests::FScopedAbilityLifecycle StaggerLifecycle;
+	FPIENetworkComponent<FNetworkState> Network{
+		TestRunner,
+		TestCommandBuilder,
+		bInitializing};
+	FPacketSimulationSettings PacketSettings;
+	FPrimaryAssetId OriginalExperienceOverride;
+	bool bOriginalAttackLifecycleLogging = false;
+	UClass* PrototypeGameModeClass = nullptr;
+	int32 AttackerIds[AttackerCount] = {INDEX_NONE, INDEX_NONE};
+	FGameplayAbilitySpecHandle AttackHandles[AttackerCount];
+	TWeakObjectPtr<URpgWeaponInstance> AuthorityWeapons[AttackerCount];
+	uint32 DamageHitBaselines[AttackerCount] = {0, 0};
+	uint32 OwnerPredictionBaselines[AttackerCount] = {0, 0};
+	uint32 TotalOwnerPredictions = 0;
+	TArray<FRoutedCue> RoutedCues;
+	FDelegateHandle CueRoutedHandle;
+	double ServerHitsTime = -1.0;
+	TArray<TSharedPtr<FString>> StepDescriptions;
+
+	/** Lanes along +Y in front of the spawn points; both attackers face +X, as they spawned. */
+	static FVector AttackerLocation(const int32 Index) { return FVector(0.0, 100.0 * Index, 100.0); }
+
+	/** Both blades cross this capsule on the first combo hit (the 1-client tests' contact offset, per lane). */
+	static FVector SharedTargetLocation() { return FVector(160.0, 70.0, 100.0); }
+
+	const TCHAR* Describe(const FString& Description)
+	{
+		TSharedPtr<FString> Stored = MakeShared<FString>(Description);
+		const TCHAR* Result = **Stored;
+		StepDescriptions.Add(MoveTemp(Stored));
+		return Result;
+	}
+
+	int32 CountCues(const UWorld* World, const FGameplayTag& Tag) const
+	{
+		int32 Count = 0;
+		for (const FRoutedCue& Cue : RoutedCues)
+		{
+			Count += Cue.World.Get() == World && Cue.Tag.MatchesTag(Tag) ? 1 : 0;
+		}
+		return Count;
+	}
+
+	/** Hit cues that actually played: routing also reports the server copies an impact notify absorbed. */
+	int32 CountPlayedHitCues(const UWorld* World, const FGameplayTag& HitCueTag) const
+	{
+		return CountCues(World, HitCueTag) - RpgCombatImpact::GetAbsorbedImpactCountForTests(World);
+	}
+
+	/** Places the fixture on this machine; it replicates no movement, so every world moves its own copy. */
+	static void PlaceSharedTarget(FNetworkState& State)
+	{
+		if (State.Target)
+		{
+			State.Target->GetHitCollision()->SetCapsuleSize(60.0f, 30.0f);
+			State.Target->SetActorLocation(SharedTargetLocation(), false, nullptr, ETeleportType::TeleportPhysics);
+		}
+	}
+
+	bool IsAuthorityAttackerReady(FNetworkState& State, const int32 Index)
+	{
+		State.SubjectPlayerId = AttackerIds[Index];
+		State.AuthorityWeapon = AuthorityWeapons[Index];
+		State.AttackAbilityHandle = FGameplayAbilitySpecHandle();
+		if (!RpgCombatPIENetworkTests::IsAuthorityAttackReady(State))
+		{
+			return false;
+		}
+		AttackHandles[Index] = State.AttackAbilityHandle;
+		return true;
+	}
+
+	URpgGameplayAbility_BasicWeaponAttack* FindAuthorityAttack(FNetworkState& State, const int32 Index)
+	{
+		using namespace RpgCombatPIENetworkTests;
+		ARpgCharacter* Character = FindCharacterByPlayerId(State.World, AttackerIds[Index]);
+		URpgAbilitySystemComponent* AbilitySystem = Character ? Character->GetRpgAbilitySystemComponent() : nullptr;
+		FGameplayAbilitySpec* Spec = AbilitySystem ? AbilitySystem->FindAbilitySpecFromHandle(AttackHandles[Index]) : nullptr;
+		return GetAttackAbilityInstance(Spec);
+	}
+
+	BEFORE_EACH()
+	{
+		using namespace RpgCombatPIENetworkTests;
+		StepDescriptions.Reset();
+		RoutedCues.Reset();
+		ServerHitsTime = -1.0;
+		TotalOwnerPredictions = 0;
+		for (int32 Index = 0; Index < AttackerCount; ++Index)
+		{
+			OwnerPredictionBaselines[Index] = 0;
+			AttackerIds[Index] = INDEX_NONE;
+			AttackHandles[Index] = FGameplayAbilitySpecHandle();
+			AuthorityWeapons[Index].Reset();
+		}
+
+		for (const FWorldContext& Context : GEngine->GetWorldContexts())
+		{
+			if (Context.WorldType == EWorldType::PIE && IsValid(Context.World()))
+			{
+				TestRunner->AddError(TEXT("Combat PIE automation requires all existing PIE sessions to be stopped first."));
+				return;
+			}
+		}
+
+		URpgDeveloperSettings* DeveloperSettings = GetMutableDefault<URpgDeveloperSettings>();
+		URpgCombatDeveloperSettings* CombatSettings = GetMutableDefault<URpgCombatDeveloperSettings>();
+		OriginalExperienceOverride = DeveloperSettings->ExperienceOverride;
+		bOriginalAttackLifecycleLogging = CombatSettings->bLogWeaponAttackLifecycle;
+		CombatSettings->bLogWeaponAttackLifecycle = true;
+		WorldSaveIsolation.Start();
+		Ground.Start();
+		PrototypeGameModeClass = LoadClass<ARpgGameModeBase>(nullptr, PrototypeGameModeClassPath);
+		ASSERT_THAT(IsNotNull(PrototypeGameModeClass));
+		DeveloperSettings->ExperienceOverride = FPrimaryAssetId(
+			URpgExperienceDefinition::StaticClass()->GetFName(),
+			PrototypeExperienceName);
+
+		// Every routed combat cue on every machine of this one-process session, local predictions included.
+		if (UGameplayCueManager* CueManager = UAbilitySystemGlobals::Get().GetGameplayCueManager())
+		{
+			const FGameplayTag CombatCueTag = FGameplayTag::RequestGameplayTag(TEXT("GameplayCue.Combat"));
+			CueRoutedHandle = CueManager->OnGameplayCueRouted().AddLambda(
+				[this, CombatCueTag](AActor* Target, FGameplayTag Tag, EGameplayCueEvent::Type Event,
+					const FGameplayCueParameters&, EGameplayCueExecutionOptions)
+				{
+					if (Event == EGameplayCueEvent::Executed && Tag.MatchesTag(CombatCueTag))
+					{
+						RoutedCues.Add({Target ? Target->GetWorld() : nullptr, Target, Tag});
+					}
+				});
+		}
+
+		PacketSettings = FPacketSimulationSettings();
+		PacketSettings.PktLag = 60;
+		PacketSettings.PktLagVariance = 10;
+		FNetworkComponentBuilder<FNetworkState>()
+			.WithClients(AttackerCount)
+			.AsListenServer()
+			.WithPacketSimulationSettings(&PacketSettings)
+			.WithGameInstanceClass(FSoftClassPath(
+				TEXT("/Game/SurvivalRpg/Core/Game/BP_Rpg_GameInstance.BP_Rpg_GameInstance_C")))
+			.WithGameMode(PrototypeGameModeClass)
+			.Build(Network);
+	}
+
+	AFTER_EACH()
+	{
+		StaggerLifecycle.Stop();
+		if (UGameplayCueManager* CueManager = UAbilitySystemGlobals::Get().GetGameplayCueManager())
+		{
+			CueManager->OnGameplayCueRouted().Remove(CueRoutedHandle);
+		}
+		GetMutableDefault<URpgDeveloperSettings>()->ExperienceOverride = OriginalExperienceOverride;
+		GetMutableDefault<URpgCombatDeveloperSettings>()->bLogWeaponAttackLifecycle = bOriginalAttackLifecycleLogging;
+	}
+
+	/** Two remote clients with the real Basic Sword stand side by side; the stagger-ready target waits in front of both. */
+	void QueueAttackersReady()
+	{
+		using namespace RpgCombatPIENetworkTests;
+
+		Network
+			.ThenServer(TEXT("Listen server uses its own nonpersistent test GameMode instance"),
+				[this](FNetworkState& State) { ASSERT_THAT(IsTrue(WorldSaveIsolation.IsWorldIsolated(State.World))); })
+			.SpawnAndReplicate<ARpgCombatNetworkTargetFixture, &FNetworkState::Target>(
+				[](ARpgCombatNetworkTargetFixture& Target) { Target.SetActorLocation(FVector(0.0, 0.0, 10000.0)); },
+				NetworkTimeout())
+			.UntilServer(TEXT("Prototype Experience loads with both clients"),
+				[](FNetworkState& State) { return IsPrototypeExperienceReady(State, AttackerCount); },
+				NetworkTimeout());
+
+		for (int32 Index = 0; Index < AttackerCount; ++Index)
+		{
+			Network
+				.UntilClient(Describe(FString::Printf(TEXT("Client %d owns a grounded Prototype pawn"), Index)), Index,
+					[](FNetworkState& State)
+					{
+						ARpgCharacter* Character = FindLocalCharacter(State.World);
+						return IsPrototypeExperienceReady(State, AttackerCount) && IsPrototypeCharacterReady(Character) &&
+							Character->GetLocalRole() == ROLE_AutonomousProxy &&
+							Character->GetCharacterMovement()->IsMovingOnGround();
+					},
+					NetworkTimeout())
+				.ThenClient(Describe(FString::Printf(TEXT("Capture attacker %d"), Index)), Index,
+					[this, Index](FNetworkState& State)
+					{
+						ARpgCharacter* Character = FindLocalCharacter(State.World);
+						ASSERT_THAT(IsTrue(Character && Character->GetPlayerState()));
+						AttackerIds[Index] = Character && Character->GetPlayerState() ? Character->GetPlayerState()->GetPlayerId() : INDEX_NONE;
+						ASSERT_THAT(IsTrue(AttackerIds[Index] != INDEX_NONE));
+					});
+		}
+
+		Network
+			.ThenServer(TEXT("Place both attackers in their lanes, equip the Basic Sword and make the target staggerable"),
+				[this](FNetworkState& State)
+				{
+					TSubclassOf<URpgEquipmentDefinition> BasicSwordDefinition =
+						LoadClass<URpgEquipmentDefinition>(nullptr, BasicSwordDefinitionClassPath);
+					ASSERT_THAT(IsNotNull(BasicSwordDefinition.Get()));
+					for (TActorIterator<ARpgCharacter> It(State.World); It; ++It)
+					{
+						ARpgCharacter* Character = *It;
+						const int32 PlayerId = Character->GetPlayerState() ? Character->GetPlayerState()->GetPlayerId() : INDEX_NONE;
+						const int32 Index = PlayerId == AttackerIds[0] ? 0 : PlayerId == AttackerIds[1] ? 1 : INDEX_NONE;
+						Character->TeleportTo(Index == INDEX_NONE ? FVector(10000.0, 0.0, 100.0) : AttackerLocation(Index), FRotator::ZeroRotator);
+						Character->GetCharacterMovement()->StopMovementImmediately();
+						Character->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+						Character->ForceNetUpdate();
+						URpgEquipmentManagerComponent* EquipmentManager = Character->FindComponentByClass<URpgEquipmentManagerComponent>();
+						if (Index == INDEX_NONE || !EquipmentManager || !BasicSwordDefinition)
+						{
+							continue;
+						}
+						EquipmentManager->UnequipItemInSlot(ERpgEquipmentSlot::MainHand);
+						AuthorityWeapons[Index] = Cast<URpgWeaponInstance>(
+							EquipmentManager->EquipItemInSlot(BasicSwordDefinition, ERpgEquipmentSlot::MainHand));
+						ASSERT_THAT(IsTrue(AuthorityWeapons[Index].IsValid()));
+					}
+
+					// The real stagger content on the target: two first hits (20 stagger each) break a 30 meter once.
+					ASSERT_THAT(IsNotNull(State.Target));
+					URpgAbilitySystemComponent* TargetAbilitySystem = State.Target ? State.Target->GetRpgAbilitySystemComponent() : nullptr;
+					UClass* StaggerClass = LoadClass<URpgGameplayAbility>(nullptr, StaggerAbilityClassPath);
+					ASSERT_THAT(IsTrue(TargetAbilitySystem && StaggerClass));
+					if (!TargetAbilitySystem || !StaggerClass)
+					{
+						return;
+					}
+					const FGameplayAbilitySpecHandle StaggerHandle = TargetAbilitySystem->GiveAbility(FGameplayAbilitySpec(StaggerClass));
+					StaggerLifecycle.Start(TargetAbilitySystem, StaggerHandle);
+					TargetAbilitySystem->AddLooseGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("Trait.Staggerable")));
+					TargetAbilitySystem->SetNumericAttributeBase(URpgDefenseSet::GetMaxStaggerAttribute(), 30.0f);
+					TargetAbilitySystem->SetNumericAttributeBase(URpgDefenseSet::GetStaggerAttribute(), 0.0f);
+					TargetAbilitySystem->SetNumericAttributeBase(URpgDefenseSet::GetStaggerDurationAttribute(), 0.3f);
+					TargetAbilitySystem->SetNumericAttributeBase(URpgDefenseSet::GetStaggerImmunityDurationAttribute(), 30.0f);
+					PlaceSharedTarget(State);
+					State.Target->ResetDamageObservations();
+				})
+			.ThenClients(TEXT("Every client places its copy of the target in front of both lanes"),
+				[](FNetworkState& State) { PlaceSharedTarget(State); });
+
+		for (int32 Index = 0; Index < AttackerCount; ++Index)
+		{
+			Network
+				.UntilServer(Describe(FString::Printf(TEXT("Authority attacker %d has the sword and an idle primary"), Index)),
+					[this, Index](FNetworkState& State) { return IsAuthorityAttackerReady(State, Index); },
+					NetworkTimeout())
+				.UntilClient(Describe(FString::Printf(TEXT("Owner %d stands in its lane with the sword's primary"), Index)), Index,
+					[this, Index](FNetworkState& State)
+					{
+						const ARpgCharacter* Character = FindLocalCharacter(State.World);
+						State.AttackAbilityHandle = AttackHandles[Index];
+						return Character && FVector::Dist2D(Character->GetActorLocation(), AttackerLocation(Index)) < 5.0 &&
+							FMath::IsNearlyZero(FRotator::NormalizeAxis(Character->GetActorRotation().Yaw), 1.0f) &&
+							IsClientAttackReady(State);
+					},
+					NetworkTimeout());
+		}
+	}
+
+	/** Both owners press primary in the same frame; each hit must play its impact cue once per machine. */
+	void QueueSimultaneousHits(const int32 Round)
+	{
+		using namespace RpgCombatPIENetworkTests;
+		const FGameplayTag HitCueTag = FGameplayTag::RequestGameplayTag(TEXT("GameplayCue.Combat.Hit"));
+		const int32 ExpectedHits = (Round + 1) * AttackerCount;
+
+		// The first combo hit carries its attacker about 1.5 m forward with root motion; every round starts in the lanes.
+		Network.ThenServer(Describe(FString::Printf(TEXT("Round %d: both attackers return to their lanes"), Round)),
+			[this](FNetworkState& State)
+			{
+				for (int32 Index = 0; Index < AttackerCount; ++Index)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(State.World, AttackerIds[Index]);
+					ASSERT_THAT(IsNotNull(Character));
+					if (Character)
+					{
+						Character->TeleportTo(AttackerLocation(Index), FRotator::ZeroRotator);
+						Character->GetCharacterMovement()->StopMovementImmediately();
+						Character->ForceNetUpdate();
+					}
+				}
+			});
+		for (int32 Index = 0; Index < AttackerCount; ++Index)
+		{
+			Network.UntilClient(Describe(FString::Printf(TEXT("Round %d: owner %d stands in its lane again"), Round, Index)), Index,
+				[Index](FNetworkState& State)
+				{
+					const ARpgCharacter* Character = FindLocalCharacter(State.World);
+					return Character && FVector::Dist2D(Character->GetActorLocation(), AttackerLocation(Index)) < 5.0 &&
+						Character->GetCharacterMovement()->IsMovingOnGround();
+				},
+				NetworkTimeout());
+		}
+
+		Network
+			.ThenServer(Describe(FString::Printf(TEXT("Round %d: record the authority hit baselines"), Round)),
+				[this](FNetworkState& State)
+				{
+					for (int32 Index = 0; Index < AttackerCount; ++Index)
+					{
+						const URpgGameplayAbility_BasicWeaponAttack* Attack = FindAuthorityAttack(State, Index);
+						ASSERT_THAT(IsNotNull(Attack));
+						DamageHitBaselines[Index] = Attack ? Attack->GetAuthorityDamageHitCountForTests() : 0;
+					}
+					ServerHitsTime = -1.0;
+				})
+			.ThenClients(Describe(FString::Printf(TEXT("Round %d: both owners press primary in the same frame"), Round)),
+				[this](FNetworkState& State)
+				{
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					State.AttackAbilityHandle = AttackHandles[State.ClientIndex];
+					ASSERT_THAT(IsNotNull(FindOwnerAttackAbility(State, AbilitySystem)));
+					if (AbilitySystem)
+					{
+						PressAbilityInput(*AbilitySystem, PrimaryWeaponInputTag());
+					}
+				})
+			.UntilServer(Describe(FString::Printf(TEXT("Round %d: each authority attack lands exactly one hit"), Round)),
+				[this, ExpectedHits](FNetworkState& State)
+				{
+					for (int32 Index = 0; Index < AttackerCount; ++Index)
+					{
+						const URpgGameplayAbility_BasicWeaponAttack* Attack = FindAuthorityAttack(State, Index);
+						if (!Attack || Attack->GetAuthorityDamageHitCountForTests() != DamageHitBaselines[Index] + 1)
+						{
+							return false;
+						}
+					}
+					if (!State.Target || State.Target->GetHealthDropCount() != ExpectedHits)
+					{
+						return false;
+					}
+					ServerHitsTime = State.World->GetTimeSeconds();
+					return true;
+				},
+				NetworkTimeout())
+			.UntilServer(Describe(FString::Printf(TEXT("Round %d: late copies of the cues had time to arrive"), Round)),
+				[this](FNetworkState& State) { return State.World->GetTimeSeconds() - ServerHitsTime >= CueQuietSeconds; },
+				NetworkTimeout())
+			.ThenServer(Describe(FString::Printf(TEXT("Round %d: the server played every hit once"), Round)),
+				[this, HitCueTag, ExpectedHits](FNetworkState& State)
+				{
+					ASSERT_THAT(AreEqual(ExpectedHits, CountCues(State.World, HitCueTag)));
+					ASSERT_THAT(AreEqual(0, RpgCombatImpact::GetAbsorbedImpactCountForTests(State.World)));
+				})
+			.ThenClients(Describe(FString::Printf(TEXT("Round %d: each client played every hit once, predicted or late"), Round)),
+				[this, HitCueTag, ExpectedHits, Round](FNetworkState& State)
+				{
+					// Its own hit plays once either way: from its prediction, or late from the server when its own trace missed.
+					ASSERT_THAT(AreEqual(ExpectedHits, CountPlayedHitCues(State.World, HitCueTag)));
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					State.AttackAbilityHandle = AttackHandles[State.ClientIndex];
+					const URpgGameplayAbility_BasicWeaponAttack* OwnerAttack = FindOwnerAttackAbility(State, AbilitySystem);
+					ASSERT_THAT(IsNotNull(OwnerAttack));
+					const uint32 Predictions = OwnerAttack ? OwnerAttack->GetOwnerPredictedImpactCountForTests() : 0u;
+					ASSERT_THAT(IsTrue(Predictions <= static_cast<uint32>(Round + 1)));
+					TotalOwnerPredictions += Predictions - OwnerPredictionBaselines[State.ClientIndex];
+					OwnerPredictionBaselines[State.ClientIndex] = Predictions;
+				});
+
+		for (int32 Index = 0; Index < AttackerCount; ++Index)
+		{
+			Network
+				.UntilServer(Describe(FString::Printf(TEXT("Round %d: authority attack %d finishes"), Round, Index)),
+					[this, Index](FNetworkState& State) { return IsAuthorityAttackerReady(State, Index); },
+					NetworkTimeout())
+				.UntilClient(Describe(FString::Printf(TEXT("Round %d: owner %d can attack again"), Round, Index)), Index,
+					[this, Index](FNetworkState& State)
+					{
+						State.AttackAbilityHandle = AttackHandles[Index];
+						return IsClientAttackReady(State);
+					},
+					NetworkTimeout());
+		}
+	}
+
+	TEST_METHOD(TwoRemoteAttackersHitOneTargetAndEachHitPlaysOnceEverywhere)
+	{
+		using namespace RpgCombatPIENetworkTests;
+		const FGameplayTag StaggerCueTag = FGameplayTag::RequestGameplayTag(TEXT("GameplayCue.Combat.Stagger"));
+
+		QueueAttackersReady();
+		QueueSimultaneousHits(0);
+		Network
+			.ThenServer(TEXT("The two first hits broke the shared stagger meter once"),
+				[this, StaggerCueTag](FNetworkState& State)
+				{
+					ASSERT_THAT(AreEqual(1, StaggerLifecycle.Activations));
+					ASSERT_THAT(AreEqual(1, CountCues(State.World, StaggerCueTag)));
+				})
+			.ThenClients(TEXT("Every client saw the stagger cue once"),
+				[this, StaggerCueTag](FNetworkState& State) { ASSERT_THAT(AreEqual(1, CountCues(State.World, StaggerCueTag))); });
+		QueueSimultaneousHits(1);
+		Network
+			.ThenServer(TEXT("The stagger immunity held through the second round"),
+				[this, StaggerCueTag](FNetworkState& State)
+				{
+					ASSERT_THAT(AreEqual(1, StaggerLifecycle.Activations));
+					ASSERT_THAT(AreEqual(1, CountCues(State.World, StaggerCueTag)));
+					// The attackers predicted their hits; a rare miss of their own trace still showed the server's copy above.
+					ASSERT_THAT(IsTrue(TotalOwnerPredictions > 0));
+					TestRunner->AddInfo(FString::Printf(TEXT("Owner predictions: %u of %d hits"), TotalOwnerPredictions, 2 * AttackerCount));
+				});
 	}
 };
 

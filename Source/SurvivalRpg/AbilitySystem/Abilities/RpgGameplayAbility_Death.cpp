@@ -6,6 +6,7 @@
 #include "SurvivalRpg/SurvivalRpg.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Character/RpgHealthComponent.h"
+#include "SurvivalRpg/Combat/RpgCombatImpact.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 URpgGameplayAbility_Death::URpgGameplayAbility_Death(const FObjectInitializer& ObjectInitializer)
@@ -42,7 +43,16 @@ void URpgGameplayAbility_Death::ActivateAbility(const FGameplayAbilitySpecHandle
 	{
 		StartDeath();
 	}
-	
+
+	if (AActor* AvatarActor = ActorInfo->AvatarActor.Get(); AvatarActor && DeathCueTag.IsValid())
+	{
+		FGameplayCueParameters CueParameters;
+		CueParameters.Instigator = TriggerEventData ? const_cast<AActor*>(TriggerEventData->Instigator.Get()) : nullptr;
+		CueParameters.EffectCauser = CueParameters.Instigator;
+		CueParameters.Location = AvatarActor->GetActorLocation();
+		RpgCombatImpact::ExecuteServerCue(RpgAsc, DeathCueTag, CueParameters);
+	}
+
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 }
 

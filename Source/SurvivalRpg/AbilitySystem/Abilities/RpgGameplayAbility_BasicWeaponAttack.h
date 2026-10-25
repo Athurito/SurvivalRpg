@@ -40,6 +40,8 @@ public:
 	uint32 GetAuthorityWindowCloseCountForTests() const { return AuthorityWindowCloseCountForTests; }
 	uint32 GetAuthorityTraceSampleCountForTests() const { return AuthorityTraceSampleCountForTests; }
 	uint32 GetAuthorityDamageHitCountForTests() const { return AuthorityDamageHitCountForTests; }
+	/** Impact cues the owning client played from its own feedback trace, one per target and attack window. */
+	uint32 GetOwnerPredictedImpactCountForTests() const { return OwnerPredictedImpactCountForTests; }
 	bool IsAttackWindowOpenForTests() const { return bAttackWindowOpen; }
 	/** Attack definition of the running combo step; empty while inactive. */
 	FGameplayTag GetActiveAttackTagForTests() const { return ActiveAttackTag; }
@@ -191,6 +193,10 @@ private:
 	void EvaluateConditionalModifiers(const UAbilitySystemComponent* TargetASC, float& Damage, float& StaggerDamage) const;
 	FGameplayEffectSpecHandle MakeWeaponDamageEffectSpec(const FHitResult& HitResult, const UAbilitySystemComponent* TargetASC) const;
 	void ApplyDamageToHitActor(AActor* TargetActor, const FHitResult& HitResult);
+	/** Whether this instance is a remote owner that traces its attack windows for local hit feedback only. */
+	bool ShouldPredictImpactFeedback() const;
+	/** Owner side: plays the impact cue the server will resolve for this hit, from the target's replicated state; presentation only. */
+	void PredictImpactFeedback(AActor* TargetActor, const FHitResult& HitResult);
 	void SendHitReactionEvent(AActor* TargetActor, const FHitResult& HitResult, const FGameplayEffectSpec* DamageSpec) const;
 	void FinishAttack(bool bWasCancelled);
 
@@ -269,5 +275,6 @@ private:
 	uint32 AuthorityWindowCloseCountForTests = 0;
 	uint32 AuthorityTraceSampleCountForTests = 0;
 	uint32 AuthorityDamageHitCountForTests = 0;
+	uint32 OwnerPredictedImpactCountForTests = 0;
 #endif
 };

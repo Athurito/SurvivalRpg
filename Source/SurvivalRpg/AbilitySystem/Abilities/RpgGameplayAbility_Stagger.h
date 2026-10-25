@@ -43,6 +43,7 @@ private:
 	void ApplyStaggerTags() const;
 	void ClearStaggerTags() const;
 	void ApplyStaggerImmunity() const;
+	void ExecuteStaggerCue(bool bGuardBreak, const FGameplayEventData* TriggerEventData) const;
 	float GetStaggerDuration() const;
 	float GetStaggerImmunityDuration() const;
 
@@ -64,4 +65,15 @@ private:
 	/** Designer fallback duration in seconds when the server has no positive stagger-duration attribute. */
 	UPROPERTY(EditDefaultsOnly, Category = "Stagger", meta = (ClampMin = "0.0", Units = "s"))
 	float FallbackDuration = 0.0f;
+
+	/**
+	 * Designer cue the server executes on the staggered character when its meter breaks outside a block, for every
+	 * machine. Location is the character, Instigator the attacker from the trigger event. Empty plays none.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Stagger|Feedback", meta = (Categories = "GameplayCue"))
+	FGameplayTag StaggerCueTag;
+
+	/** Designer cue executed instead when the meter breaks while the character blocks (guard break); empty falls back to StaggerCueTag. */
+	UPROPERTY(EditDefaultsOnly, Category = "Stagger|Feedback", meta = (Categories = "GameplayCue"))
+	FGameplayTag GuardBreakCueTag;
 };

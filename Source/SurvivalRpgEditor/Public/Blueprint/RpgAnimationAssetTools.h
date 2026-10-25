@@ -45,9 +45,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
 	static UAnimGraphNode_LinkedAnimLayer* CreateLinkedAnimationLayerNode(UEdGraph* Graph, TSubclassOf<UAnimLayerInterface> InterfaceClass, FName LayerName);
 
-	/** Adds a missing montage slot in the default group and records the skeleton change for save/undo. Existing slots are preserved. */
+	/**
+	 * Adds a missing montage slot and records the skeleton change for save/undo. Existing slots are preserved.
+	 * GroupName None uses the default group; another name creates that group if needed, so the slot's montages
+	 * no longer stop montages of other groups. An existing slot in a different group is refused, not moved.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
-	static bool RegisterAnimationSlot(USkeleton* Skeleton, FName SlotName);
+	static bool RegisterAnimationSlot(USkeleton* Skeleton, FName SlotName, FName GroupName = NAME_None);
 
 	/**
 	 * Copies named blend profiles to another skeleton by bone name, keeping each profile's mode and per-bone

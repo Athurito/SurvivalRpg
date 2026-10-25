@@ -13,6 +13,7 @@
 #include "SurvivalRpg/Animation/AnimNotifyState_RpgComboWindow.h"
 #include "SurvivalRpg/Animation/AnimNotify_RpgWeaponAttackWindow.h"
 #include "SurvivalRpg/Camera/RpgCameraMode.h"
+#include "SurvivalRpg/Combat/RpgCombatImpact.h"
 #include "SurvivalRpg/Combat/RpgCombatDeveloperSettings.h"
 #include "SurvivalRpg/Core/Character/RpgHealthComponent.h"
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
@@ -1550,16 +1551,21 @@ void URpgGameplayAbility_BasicWeaponAttack::OpenAttackWindow()
 	HitActorsThisWindow.Reset();
 	PreviousTracePointLocations.Reset();
 
-	if (!CurrentActorInfo || !CurrentActorInfo->IsNetAuthority())
+	// Authority traces for damage; a remote owner traces the same window only to play its hit feedback without a round trip.
+	const bool bAuthority = CurrentActorInfo && CurrentActorInfo->IsNetAuthority();
+	if (!bAuthority && !ShouldPredictImpactFeedback())
 	{
 		return;
 	}
 
 #if WITH_DEV_AUTOMATION_TESTS
-	++AuthorityWindowOpenCountForTests;
+	if (bAuthority)
+	{
+		++AuthorityWindowOpenCountForTests;
+	}
 #endif
 
-	if (!GatherTracePointLocations(PreviousTracePointLocations))
+	if (!GatherTracePointLocations(PreviousTracePointLocations) && bAuthority)
 	{
 		++AuthorityTracePointFailuresThisActivation;
 		UE_LOG(
@@ -1587,7 +1593,7 @@ void URpgGameplayAbility_BasicWeaponAttack::OpenAttackWindow()
 	// Seed or sample immediately so short windows do not lose their first interval and a
 	// transient socket/actor readiness miss is retried instead of disabling the whole attack.
 	PerformBladeTraceSample();
-	LogAttackLifecycle(TEXT("AttackWindowOpened.Authority"));
+	LogAttackLifecycle(bAuthority ? TEXT("AttackWindowOpened.Authority") : TEXT("AttackWindowOpened.OwnerFeedback"));
 }
 
 void URpgGameplayAbility_BasicWeaponAttack::CloseAttackWindow(bool bLogMissingEndNotify)
@@ -1601,7 +1607,11 @@ void URpgGameplayAbility_BasicWeaponAttack::CloseAttackWindow(bool bLogMissingEn
 		World->GetTimerManager().ClearTimer(TraceSampleTimerHandle);
 	}
 
-	if (bWasOpen && CurrentActorInfo && CurrentActorInfo->IsNetAuthority())
+	if (bWasOpen && ShouldPredictImpactFeedback())
+	{
+		PerformBladeTraceSample();
+	}
+	else if (bWasOpen && CurrentActorInfo && CurrentActorInfo->IsNetAuthority())
 	{
 		const int32 TraceSamplesBeforeFinalSample = AuthorityTraceSamplesThisActivation;
 		PerformBladeTraceSample();
@@ -1674,10 +1684,14 @@ void URpgGameplayAbility_BasicWeaponAttack::PerformBladeTraceSample()
 		return;
 	}
 
+	const bool bAuthority = CurrentActorInfo && CurrentActorInfo->IsNetAuthority();
 	TArray<FVector> CurrentTracePointLocations;
 	if (!GatherTracePointLocations(CurrentTracePointLocations))
 	{
-		++AuthorityTracePointFailuresThisActivation;
+		if (bAuthority)
+		{
+			++AuthorityTracePointFailuresThisActivation;
+		}
 		return;
 	}
 
@@ -1687,13 +1701,16 @@ void URpgGameplayAbility_BasicWeaponAttack::PerformBladeTraceSample()
 		return;
 	}
 
-	++AuthorityTraceSamplesThisActivation;
-#if WITH_DEV_AUTOMATION_TESTS
-	++AuthorityTraceSampleCountForTests;
-#endif
-	if (AuthorityTraceSamplesThisActivation == 1)
+	if (bAuthority)
 	{
-		LogAttackLifecycle(TEXT("AuthorityTraceStarted"));
+		++AuthorityTraceSamplesThisActivation;
+#if WITH_DEV_AUTOMATION_TESTS
+		++AuthorityTraceSampleCountForTests;
+#endif
+		if (AuthorityTraceSamplesThisActivation == 1)
+		{
+			LogAttackLifecycle(TEXT("AuthorityTraceStarted"));
+		}
 	}
 
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(RpgBasicWeaponAttack), false, AvatarActor);
@@ -1848,7 +1865,7 @@ void URpgGameplayAbility_BasicWeaponAttack::HandleTraceHitResults(const TArray<F
 		if (HitActorsThisWindow.Contains(TargetKey))
 		{
 			++AuthorityDuplicateHitsSkippedThisActivation;
-			if (AuthorityDuplicateHitsSkippedThisActivation == 1)
+			if (AuthorityDuplicateHitsSkippedThisActivation == 1 && CurrentActorInfo && CurrentActorInfo->IsNetAuthority())
 			{
 				LogAttackLifecycleLazy(
 					TEXT("AuthorityDuplicateHitSkipped"),
@@ -1861,7 +1878,14 @@ void URpgGameplayAbility_BasicWeaponAttack::HandleTraceHitResults(const TArray<F
 		}
 
 		HitActorsThisWindow.Add(TargetKey);
-		ApplyDamageToHitActor(TargetActor, HitResult);
+		if (CurrentActorInfo && CurrentActorInfo->IsNetAuthority())
+		{
+			ApplyDamageToHitActor(TargetActor, HitResult);
+		}
+		else
+		{
+			PredictImpactFeedback(TargetActor, HitResult);
+		}
 	}
 }
 
@@ -1902,6 +1926,11 @@ FGameplayEffectSpecHandle URpgGameplayAbility_BasicWeaponAttack::MakeWeaponDamag
 		DamageSpec->SetSetByCallerMagnitude(RpgGameplayTags::SetByCaller_Damage, FMath::Max(0.0f, Damage));
 		DamageSpec->SetSetByCallerMagnitude(RpgGameplayTags::SetByCaller_StaggerDamage, FMath::Max(0.0f, StaggerDamage));
 		DamageSpec->AppendDynamicAssetTags(ActiveAttackDefinition.DamageTypeTags);
+		if (ActiveAttackDefinition.HitCueTag.IsValid())
+		{
+			// The damage execution resolves hit, block or perfect block and plays the matching impact cue.
+			DamageSpec->AddDynamicAssetTag(ActiveAttackDefinition.HitCueTag);
+		}
 		DamageSpec->GetContext().AddHitResult(HitResult, true);
 	}
 
@@ -2008,6 +2037,58 @@ void URpgGameplayAbility_BasicWeaponAttack::ApplyDamageToHitActor(AActor* Target
 					*GetNameSafe(TargetActor));
 			});
 	}
+}
+
+bool URpgGameplayAbility_BasicWeaponAttack::ShouldPredictImpactFeedback() const
+{
+	return CurrentActorInfo && !CurrentActorInfo->IsNetAuthority() && CurrentActorInfo->IsLocallyControlled();
+}
+
+void URpgGameplayAbility_BasicWeaponAttack::PredictImpactFeedback(AActor* TargetActor, const FHitResult& HitResult)
+{
+	const URpgHealthComponent* HealthComponent = URpgHealthComponent::FindHealthComponent(TargetActor);
+	UAbilitySystemComponent* TargetASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(TargetActor);
+	AActor* AvatarActor = GetAvatarActorFromActorInfo();
+	if (!HealthComponent || HealthComponent->IsDeadOrDying() || !TargetASC || !AvatarActor)
+	{
+		return;
+	}
+
+	// The spec the server will apply carries the attack's hit cue, damage type and instigators.
+	const FGameplayEffectSpecHandle DamageSpecHandle = MakeWeaponDamageEffectSpec(HitResult, TargetASC);
+	const FGameplayEffectSpec* DamageSpec = DamageSpecHandle.Data.Get();
+	const FGameplayTag HitCueTag = DamageSpec ? RpgCombatImpact::FindHitCueTag(*DamageSpec) : FGameplayTag();
+	if (!HitCueTag.IsValid() || !RpgCombatImpact::CanDamageTarget(DamageSpec->GetEffectContext(), AvatarActor, TargetActor))
+	{
+		return;
+	}
+
+	ERpgCombatImpactOutcome Outcome = RpgCombatImpact::HasDamageType(*DamageSpec, RpgGameplayTags::Damage_Type_Melee)
+		? RpgCombatImpact::ResolveMeleeOutcome(TargetASC, TargetActor, AvatarActor)
+		: ERpgCombatImpactOutcome::Hit;
+	if (!RpgCombatImpact::IsPredictedByOwner(Outcome))
+	{
+		// The server's perfect-block cue reaches the attacker unpredicted; until then the shield takes a normal block.
+		Outcome = ERpgCombatImpactOutcome::Block;
+	}
+
+	const float Damage = DamageSpec->GetSetByCallerMagnitude(RpgGameplayTags::SetByCaller_Damage, false, 0.0f);
+	const float StaggerDamage = DamageSpec->GetSetByCallerMagnitude(RpgGameplayTags::SetByCaller_StaggerDamage, false, 0.0f);
+	const FGameplayTag CueTag = RpgCombatImpact::GetOutcomeCueTag(Outcome, HitCueTag);
+	RpgCombatImpact::PlayPredictedImpact(
+		TargetActor,
+		CueTag,
+		RpgCombatImpact::MakeCueParameters(DamageSpec->GetEffectContext(), AvatarActor, TargetASC, &HitResult, Damage, StaggerDamage));
+
+#if WITH_DEV_AUTOMATION_TESTS
+	++OwnerPredictedImpactCountForTests;
+#endif
+	LogAttackLifecycleLazy(
+		TEXT("OwnerImpactPredicted"),
+		[TargetActor, CueTag]()
+		{
+			return FString::Printf(TEXT("Target=%s Cue=%s"), *GetNameSafe(TargetActor), *CueTag.ToString());
+		});
 }
 
 void URpgGameplayAbility_BasicWeaponAttack::SendHitReactionEvent(AActor* TargetActor, const FHitResult& HitResult, const FGameplayEffectSpec* DamageSpec) const

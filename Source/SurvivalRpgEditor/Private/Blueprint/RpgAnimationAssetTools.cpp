@@ -282,16 +282,30 @@ UAnimGraphNode_LinkedAnimLayer* URpgAnimationAssetTools::CreateLinkedAnimationLa
 	return Node;
 }
 
-bool URpgAnimationAssetTools::RegisterAnimationSlot(USkeleton* Skeleton, FName SlotName)
+bool URpgAnimationAssetTools::RegisterAnimationSlot(USkeleton* Skeleton, FName SlotName, FName GroupName)
 {
 	if (!CanEdit(Skeleton) || SlotName.IsNone()) return false;
+	if (!GroupName.IsNone() && Skeleton->ContainsSlotName(SlotName) && Skeleton->GetSlotGroupName(SlotName) != GroupName)
+	{
+		// Moving a slot changes which montages stop each other; that is a separate, deliberate decision.
+		Fail(FString::Printf(TEXT("Slot %s already belongs to group %s"), *SlotName.ToString(), *Skeleton->GetSlotGroupName(SlotName).ToString()));
+		return false;
+	}
 	const FScopedTransaction Transaction(NSLOCTEXT("RpgAnimationAssetTools", "RegisterSlot", "Register Animation Slot"));
 	Skeleton->Modify();
-	Skeleton->RegisterSlotNode(SlotName);
+	if (GroupName.IsNone())
+	{
+		Skeleton->RegisterSlotNode(SlotName);
+	}
+	else
+	{
+		Skeleton->AddSlotGroupName(GroupName);
+		Skeleton->SetSlotGroupName(SlotName, GroupName);
+	}
 	// Compilation may already have registered this slot without dirtying the skeleton.
 	// Explicit authoring persists that registration even when ContainsSlotName is true.
 	Skeleton->MarkPackageDirty();
-	return Skeleton->ContainsSlotName(SlotName);
+	return Skeleton->ContainsSlotName(SlotName) && (GroupName.IsNone() || Skeleton->GetSlotGroupName(SlotName) == GroupName);
 }
 
 int32 URpgAnimationAssetTools::CopySkeletonBlendProfiles(USkeleton* SourceSkeleton, USkeleton* TargetSkeleton, const TArray<FName>& ProfileNames)
