@@ -107,7 +107,7 @@ For asset or Pose Search changes:
 
 ## Verify proportionally
 
-Use the narrowest verification that proves the change, then widen when the boundary demands it.
+Use the narrowest verification that proves the change, then widen when the boundary demands it. The multiplayer check that `AGENTS.md` requires for every gameplay, movement, or animation change belongs to that minimum, also for cosmetic AnimGraph or Pose Search work, because remote characters show the result through simulated-proxy inputs.
 
 - Run the relevant editor build after C++ or module dependency changes; never claim compilation without running it.
 - Discover and run the current focused automation filters for the changed behavior (see the task reports for filters). Archived GASP-port tests are historical evidence, not active fixtures.

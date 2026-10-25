@@ -2,7 +2,7 @@
 
 # Unreal MCP Asset Authoring
 
-Use this workflow whenever work creates or changes Blueprint, Widget Blueprint, Gameplay Ability, or DataAsset assets. The toolset and tool names below match UE 5.8.2 editor sessions of this project; `unreal-mcp:list_toolsets` and `unreal-mcp:describe_toolset` remain the authority for the running editor.
+Use this workflow whenever work creates or changes Blueprint, Widget Blueprint, Gameplay Ability, or DataAsset assets. The toolset and tool names below match UE 5.8 editor sessions of this project; `unreal-mcp:list_toolsets` and `unreal-mcp:describe_toolset` remain the authority for the running editor.
 
 ## Contents
 
