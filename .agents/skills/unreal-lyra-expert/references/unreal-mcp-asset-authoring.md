@@ -149,7 +149,8 @@ A `GameplayCueNotify_Burst` `OnBurst` override is const, so it cannot call the B
 - Prove a fresh load by calling `AssetContractTools.reload_assets` before that readback; `export_asset` writes a complete T3D export for diffs.
 - Read compile and load warnings with `LogsToolset.GetLogEntries`.
 - Run automation tests inside the editor with `AutomationTestToolset.DiscoverTests`, then `RunTestsByFilter`, `GetTestStatus`, and `GetTestResults`. Command-line builds, tests, and cooks go through `Build/Tools/Unreal/ue.py` instead.
-- Check gameplay with `EditorAppToolset.StartPIE`, `IsPIERunning`, `CaptureViewport`, and `StopPIE`. `AssetContractTools.set_pie_input_key` and `set_pie_view_rotation` drive a local PIE player, and `SlateInspectorToolset.SlateInspectorToolset` (`Snapshot`, `Click`, `Screenshot`) inspects UI.
+- Check gameplay with `EditorAppToolset.StartPIE`, `IsPIERunning`, `CaptureViewport`, and `StopPIE`.
+- Python cannot spawn actors into a PIE world. For a temporary test actor, place it in the editor level with `EditorActorSubsystem.spawn_actor_from_class`, start PIE, and remove it afterwards with `unreal.ToolsetLibrary.undo_transaction()`. This also places GameFeature actors that a core map may not reference. Never `reload_packages` the open map: the editor crashes. Undo also reverts other recent transactions, such as PIE settings changed through `ToolsetLibrary.set_object_properties`, so check them again afterwards. `AssetContractTools.set_pie_input_key` and `set_pie_view_rotation` drive a local PIE player, and `SlateInspectorToolset.SlateInspectorToolset` (`Snapshot`, `Click`, `Screenshot`) inspects UI.
 - Check Game Feature activation with `GameFeaturesToolset.ListEnabledGameFeaturePlugins`, `GetGameFeatureState`, and `RequestActivateGameFeature`.
 
 ### Compile C++ in the running editor
