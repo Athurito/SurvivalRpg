@@ -77,12 +77,15 @@ damage, no residual timers or attack state, and no mutation during the post-clea
 period.
 
 The test also dispatches `GameplayEvent.HitReaction` to the fully composed
-authority avatar between the normal attacks and the 1.5x attack. The actual
-granted Blueprint must activate and end once, clear its active spec, and
-release both exclusive activation groups. The following genuine remote attack
-proves recovery. This checks GAS lifecycle without depending on a graph layout
-or a particular montage; it does not assert owner-side montage replication for
-the server-only reaction.
+authority avatar between the normal attacks and the 1.5x attack. Since CMB-04 a
+light hit is presentation only ([hit feedback](combat-hit-feedback.md)), so the
+event must start no ability and leave both exclusive activation groups free.
+The following genuine remote attack proves that nothing was interrupted.
+
+`SurvivalRpg.Network.CombatImpactCuesPIE` covers several attackers: two remote
+clients hit one target in the same frame for two rounds. Each hit plays its
+impact cue exactly once on the server and on both clients, the attacker's copy
+from its own prediction, and the shared stagger meter breaks once.
 
 Run from the repository root. The wrapper's default rendered offscreen PIE is required here, so do
 not add `--null-rhi`:

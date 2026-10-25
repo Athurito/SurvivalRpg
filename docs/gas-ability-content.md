@@ -15,7 +15,8 @@ remain the compatibility baseline.
   Fourteen existing ability mechanisms become abstract. No new runtime class
   is introduced.
 - **Blueprint/DataAsset:** concrete ability identity, triggers, tuning,
-  montages and grants. Hit reaction is entirely Blueprint flow. Dodge's
+  montages and grants. Light hit reactions are no ability since CMB-04 but the
+  additive flinch of the `GCN_Combat_Hit` cue ([hit feedback](combat-hit-feedback.md)). Dodge's
   Blueprint owns montage playback; its native base snapshots the equipment
   profile once per activation, resolves and replicates the owner's direction,
   commits and opens the invulnerability window (CMB-03), and clears it on end.
@@ -32,14 +33,14 @@ remain the compatibility baseline.
 | --- | --- | --- |
 | `FromEquipment` | Spec source and equipment context; abstract family only | Existing attack/block children |
 | `ApplyItemEffects` | Server item-use transaction and deferred consumption cleanup | `GA_ApplyItemEffects` |
-| `BasicWeaponAttack` | Authoritative attack windows, traces and cancellation | Existing `GA_BasicWeaponAttack` |
+| `BasicWeaponAttack` | Authoritative attack windows, traces and cancellation; the remote owner's feedback-only trace and predicted impact cue (CMB-04) | Existing `GA_BasicWeaponAttack` |
 | `Block` | Predicted source lease, attribute snapshot and restoration | Existing `GA_Combat_Block` |
-| `Death` | Exclusive uncancelable health lifecycle and terminal cleanup | Existing `GA_Combat_Death` |
+| `Death` | Exclusive uncancelable health lifecycle and terminal cleanup; the designer's death cue | Existing `GA_Combat_Death` |
 | `Dodge` | Per-activation equipment profile snapshot, owner direction as target data, commit, invulnerability window, recovery cancel, lifecycle cleanup | `GA_Dodge`; `GA_Combat_Dodge` in `GF_Combat_Core` since CMB-03 |
-| `HitReaction` | Removed: guards, commit and montage/delay tasks are Blueprint-accessible | Existing `GA_Combat_HitReaction`, directly parented to `RpgGameplayAbility` |
+| `HitReaction` | Removed: guards, commit and montage/delay tasks are Blueprint-accessible | `GA_Combat_HitReaction` was removed in CMB-04; the hit cue's additive flinch replaces it |
 | `Revive` | Authority reservation, repeated target validation and cleanup | `GA_Revive` |
 | `SelfRevive` | Authoritative health reset and native attribute mutation | `GA_SelfRevive` |
-| `Stagger` | Replicated state-tag lifecycle, attribute reset and activation-group restoration | Existing `GA_Combat_Stagger` |
+| `Stagger` | Replicated state-tag lifecycle, attribute reset and activation-group restoration; stagger or guard-break cue from the block state at activation | Existing `GA_Combat_Stagger` |
 | `Collect` | Inventory graph transfer, consumption and equipment transaction | Existing `GA_InteractionCollect` and `GA_Combat_CollectBasicSword` |
 | `ExecuteInteraction` | Authoritative revalidation and native interaction-provider commit | `GA_ExecuteInteraction` |
 | `OpenStorageContainer` | Server access checks and owning-client storage RPC | `GA_OpenStorageContainer` |

@@ -77,11 +77,20 @@ The task lists use these short toolset names:
 ### Create, edit, and compile a Blueprint
 
 1. `BlueprintTools.create(folder_path, asset_name, asset_type)` creates a Blueprint whose parent is `asset_type`; `set_parent` reparents an existing one.
-2. `ObjectTools.set_properties(instance, values)` with the Blueprint and a JSON object of property values sets class defaults.
+2. `ObjectTools.set_properties(instance, values)` with the Blueprint and a JSON object of property values sets class defaults. `values` is that object serialized to a string, with the keys `get_properties` returns; an unserialized object only returns `false`.
 3. Add members with `add_variable`, `add_struct_variable`, `add_object_variable`, `set_variable_replication`, `add_function_graph`, `add_event`, or `add_component_bound_event`.
 4. For graphs, read `get_graph_dsl_docs` once, then use `read_graph_dsl` and `write_graph_dsl` (which also compiles) for whole graphs, or `find_node_types`, `create_node`, `connect_pins`, and `set_pin_value` for single nodes.
 5. Change components with `ActorTools.add_component` and `remove_component`. To edit an inherited component template, first get a child-owned override from `AssetContractTools.editable_blueprint_component`.
 6. Compile with `BlueprintTools.compile_blueprint(blueprint, warnings_as_errors=true)`.
+
+A `GameplayCueNotify_Burst` `OnBurst` override is const, so it cannot call the Blueprint's own functions, and no tool sets a function's const flag. Write its logic inline and split independent parts with `Utilities|FlowControl|Sequence` and `(:then_0 ...)`, `(:then_1 ...)`.
+
+### AnimBP graphs
+
+- `read_graph_dsl` returns nothing for an AnimGraph. Find nodes with `find_nodes`, read wiring with `get_node_infos`, and edit with `create_node`, `break_pins` and `connect_pins`. Pose node type ids include `Animation|Montage|Slot'DefaultSlot'`, `Animation|Blends|Layeredblendperbone`, `Animation|Poses|AdditiveIdentityPose` and `Animation|Blends|ApplyAdditive`.
+- A pose node's settings live in its `Node` struct, which `ObjectTools` does not write. In Python, `node = unreal.find_object(None, '<AnimBP path>:AnimGraph.<node name>')`, then `anim_node = node.get_editor_property('node')`, change it (`slot_name`, `layer_setup` with `unreal.InputBlendPose` and `unreal.BranchFilter`), and `node.set_editor_property('node', anim_node)`.
+- No tool creates a *Use cached pose* node. For an additive slot masked to part of the body, use an additive identity pose into the slot, a *Layered blend per bone* with another additive identity as its base, and *Apply Additive* onto the main pose (CMB-04 `HitFlinch` in `ABP_RpgGasp_CMC_Manny`).
+- A montage's slot track is not writable from Python (`slot_anim_tracks` edits land on a copy). Set `SlotAnimTracks` through `ObjectTools.set_properties`.
 
 ### GameplayAbility
 
@@ -166,7 +175,7 @@ Each toolset is named `Game.Build.Tools.Unreal.<module>.<Class>`:
 - `AnimationAssetTools` in `Build/Tools/Unreal/animation_asset_tools.py`: animation asset structure.
   - AnimBPs and layers: `create_anim_blueprint`, `set_anim_blueprint_abstract`, `create_animation_layer_interface`, `implement_animation_layer_interface`, `add_animation_layer`, `create_linked_animation_layer_node`, and `configure_linked_animation_layer`.
   - Blueprint metadata: `set_local_function_thread_safety` and `set_variable_tooltip`.
-  - Montages and notifies: `create_montage_from_sequence`, `set_montage_section_sequences` (one unlinked section per sequence, for directional variants), `register_animation_slot`, `add_animation_notifies`, and `animation_notify_contract`.
+  - Montages and notifies: `create_montage_from_sequence`, `set_montage_section_sequences` (one unlinked section per sequence, for directional variants), `register_animation_slot` (an optional `group_name` puts the slot in its own group, so its montages do not stop montages of the default group), `add_animation_notifies`, and `animation_notify_contract`.
   - Skeletons: `copy_skeleton_blend_profiles`.
   - BlendSpaces and Choosers: `create_blend_space`, `set_blend_space_samples`, `create_chooser`, `configure_chooser`, and `set_chooser_disabled_rows` (also for embedded tables).
 - `AnimationRetargetTools` in `Build/Tools/Unreal/animation_retarget_tools.py`: derived animation batches through the IK retargeter. Tools: `retarget_animation_batch`, `retarget_asset_contract`, and `normalize_derived_sequence`.
