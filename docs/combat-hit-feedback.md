@@ -1,6 +1,6 @@
 # CMB-04: Hit feedback
 
-Task report for CMB-04 in the [combat roadmap](combat-roadmap.md). Hits, blocks, perfect blocks, staggers, guard breaks and deaths get gameplay cues with placeholder effects, a light hit gets a short directional flinch that never interrupts, and the camera shakes locally. The rules come from the [hit feedback rules](combat-roadmap.md#hit-feedback-rules-cmb-04) decided with the user on 2026-10-25; there is no hitstop.
+Task report for CMB-04 in the [combat roadmap](combat-roadmap.md), [PR #289](https://github.com/Athurito/SurvivalRpg/pull/289). Hits, blocks, perfect blocks, staggers, guard breaks and deaths get gameplay cues with placeholder effects, a light hit gets a short directional flinch that never interrupts, and the camera shakes locally. The rules come from the [hit feedback rules](combat-roadmap.md#hit-feedback-rules-cmb-04) decided with the user on 2026-10-25; there is no hitstop.
 
 ## C++ boundary decision
 
