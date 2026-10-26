@@ -226,6 +226,13 @@ void URpgDefenseSet::HandleStaggerThreshold(const FGameplayEffectModCallbackData
 		return;
 	}
 
+	// Hyper armor keeps the hits: the meter waits one point below the break, so the first hit after the attack breaks it.
+	if (TargetASC->HasMatchingGameplayTag(RpgGameplayTags::State_HyperArmor))
+	{
+		TargetASC->SetNumericAttributeBase(GetStaggerAttribute(), FMath::Max(0.0f, Threshold - 1.0f));
+		return;
+	}
+
 	if (!TargetASC->HasMatchingGameplayTag(RpgGameplayTags::State_Staggered))
 	{
 		FGameplayEventData Payload;

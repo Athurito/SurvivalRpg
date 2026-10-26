@@ -18,7 +18,9 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Attack_Basic, "Ability.Attack.Basic", "Semantic tag for a basic attack ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Support_Heal, "Ability.Support.Heal", "Semantic tag for a support healing ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Defense_Block, "Ability.Defense.Block", "Semantic tag for a defensive block ability.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Type_Attack, "Ability.Type.Attack", "Marks an ability as an attack; enemy AI reads it on its combat target to react, for example to block.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(AI_Role_Grunt, "AI.Role.Grunt", "Semantic tag for a basic grunt AI role.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(AI_Event_TargetAttackStarted, "AI.Event.TargetAttackStarted", "StateTree event sent to an AI when its combat target starts an ability tagged Ability.Type.Attack.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Enemy_Archetype_BasicSword, "Enemy.Archetype.BasicSword", "Enemy combat archetype that equips a basic sword.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Enemy_Archetype_SwordShield, "Enemy.Archetype.SwordShield", "Enemy combat archetype that equips a sword and shield.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Enemy_Archetype_TwoHanded, "Enemy.Archetype.TwoHanded", "Enemy combat archetype that equips a basic two-handed weapon.");
@@ -104,6 +106,7 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Staggered, "State.Staggered", "Target is staggered.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_GuardBroken, "State.GuardBroken", "Target's guard is broken.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_StaggerImmune, "State.StaggerImmune", "Target is temporarily immune to new stagger buildup.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_HyperArmor, "State.HyperArmor", "Held on the server while an attack step grants it: stagger damage still fills the meter, but the meter cannot break until the tag is gone.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Evading, "State.Evading", "Target is inside a dodge's invulnerability window; incoming damage is ignored.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Trait_Staggerable, "Trait.Staggerable", "Target can build stagger and enter stagger reactions.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Death, "Status.Death", "Target has the death status.");

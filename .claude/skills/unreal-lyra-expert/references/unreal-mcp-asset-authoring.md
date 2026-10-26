@@ -182,9 +182,10 @@ Each toolset is named `Game.Build.Tools.Unreal.<module>.<Class>`:
 - `AnimationAssetTools` in `Build/Tools/Unreal/animation_asset_tools.py`: animation asset structure.
   - AnimBPs and layers: `create_anim_blueprint`, `set_anim_blueprint_abstract`, `create_animation_layer_interface`, `implement_animation_layer_interface`, `add_animation_layer`, `create_linked_animation_layer_node`, and `configure_linked_animation_layer`.
   - Blueprint metadata: `set_local_function_thread_safety` and `set_variable_tooltip`.
-  - Montages and notifies: `create_montage_from_sequence`, `set_montage_section_sequences` (one unlinked section per sequence, for directional variants), `register_animation_slot` (an optional `group_name` puts the slot in its own group, so its montages do not stop montages of the default group), `add_animation_notifies`, and `animation_notify_contract`.
+  - Montages and notifies: `create_montage_from_sequence`, `set_montage_section_sequences` (one unlinked section per sequence, for directional variants), `retime_montage_range` (plays a time range of a single-segment montage slower, for example a held wind-up as an enemy telegraph; later notifies move with it), `register_animation_slot` (an optional `group_name` puts the slot in its own group, so its montages do not stop montages of the default group), `add_animation_notifies`, and `animation_notify_contract`.
   - Skeletons: `copy_skeleton_blend_profiles`.
   - BlendSpaces and Choosers: `create_blend_space`, `set_blend_space_samples`, `create_chooser`, `configure_chooser`, and `set_chooser_disabled_rows` (also for embedded tables).
+- `AIAssetTools` in `Build/Tools/Unreal/ai_asset_tools.py`: `build_state_tree` writes a StateTree's evaluators, global tasks, states, conditions and transitions from a JSON description and compiles it; the engine's `StateTreeTools` only inspect. Keep the description next to the task report, so the tree can be rebuilt and reviewed as text.
 - `AnimationRetargetTools` in `Build/Tools/Unreal/animation_retarget_tools.py`: derived animation batches through the IK retargeter. Tools: `retarget_animation_batch`, `retarget_asset_contract`, and `normalize_derived_sequence`.
 - `GaspImportAuditTools` in `Build/Tools/Unreal/gasp_import_audit.py`: read-only registry inventory for the GASP import cleanup. Tool: `collect_registry`; the workflow is in `Build/Tools/GaspImportAudit/README.md`.
 
@@ -197,6 +198,7 @@ import sys
 sys.path.insert(0, '<repository root>/Build/Tools/Unreal')
 import asset_contract_tools
 import animation_asset_tools
+import ai_asset_tools
 ```
 
 - In a running editor, enter these lines in the Output Log's Python command line, or run a saved script with the `py "<script path>"` console command.

@@ -1,12 +1,15 @@
 #include "RpgAIAttackDriverComponent.h"
 
+#include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
+#include "Abilities/GameplayAbility.h"
 #include "HAL/IConsoleManager.h"
 #include "EngineUtils.h"
 #include "TimerManager.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/Pawn.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_BasicWeaponAttack.h"
 #include "SurvivalRpg/Core/Character/RpgHealthComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
@@ -20,6 +23,9 @@ namespace
 		TEXT("rpg.Combat.AIAttack.Debug"),
 		0,
 		TEXT("Logs server-side AI attack driver target acquisition and activation decisions."));
+
+	/** Seconds between checks of a running attack sequence for its next combo step. */
+	constexpr float AttackSequencePollInterval = 0.05f;
 }
 
 URpgAIAttackDriverComponent::URpgAIAttackDriverComponent(const FObjectInitializer& ObjectInitializer)
@@ -64,9 +70,13 @@ void URpgAIAttackDriverComponent::EndPlay(const EEndPlayReason::Type EndPlayReas
 		World->GetTimerManager().ClearTimer(AttackTimerHandle);
 		World->GetTimerManager().ClearTimer(TargetAcquisitionTimerHandle);
 		World->GetTimerManager().ClearTimer(ReleaseAttackInputTimerHandle);
+		World->GetTimerManager().ClearTimer(AttackSequenceTimerHandle);
 	}
 
 	ReleaseAttackInput();
+	bAttackSequenceActive = false;
+	UnbindTargetAbilitySystem();
+	CombatTarget.Reset();
 
 	if (CachedHealthComponent)
 	{
@@ -92,6 +102,12 @@ void URpgAIAttackDriverComponent::SetCombatTarget(AActor* NewTarget)
 		return;
 	}
 
+	if (bExternalControl)
+	{
+		SetCombatTargetInternal(NewTarget);
+		return;
+	}
+
 	// The StateTree target task confirms its target every tick; restarting the schedule each time starved the attack.
 	const UWorld* World = GetWorld();
 	if (CombatTarget.Get() == NewTarget && World && World->GetTimerManager().IsTimerActive(AttackTimerHandle))
@@ -99,13 +115,13 @@ void URpgAIAttackDriverComponent::SetCombatTarget(AActor* NewTarget)
 		return;
 	}
 
-	CombatTarget = NewTarget;
+	SetCombatTargetInternal(NewTarget);
 	ScheduleNextAttack(FMath::Max(0.0f, RetaliationDelay));
 }
 
 void URpgAIAttackDriverComponent::ClearCombatTarget()
 {
-	CombatTarget.Reset();
+	SetCombatTargetInternal(nullptr);
 
 	if (UWorld* World = GetWorld())
 	{
@@ -117,19 +133,26 @@ void URpgAIAttackDriverComponent::ClearCombatTarget()
 
 void URpgAIAttackDriverComponent::HandleHealthChanged(URpgHealthComponent* HealthComponent, float OldValue, float NewValue, AActor* Instigator)
 {
-	if (!bUseLastHostileDamageInstigator || !HealthComponent || HealthComponent->IsDeadOrDying() || NewValue >= OldValue)
+	if (!HealthComponent || HealthComponent->IsDeadOrDying() || NewValue >= OldValue || Instigator == GetOwner())
 	{
 		return;
 	}
 
-	if (Instigator == GetOwner())
+	if (bExternalControl)
 	{
+		const UWorld* World = GetWorld();
+		if (TargetPolicy == ERpgAICombatTargetPolicy::LastAttacker && World && Instigator != CombatTarget.Get() &&
+			IsValidCombatTarget(Instigator) &&
+			(!CombatTarget.IsValid() || World->GetTimeSeconds() - LastTargetSwitchTime >= TargetSwitchCooldown))
+		{
+			SetCombatTargetInternal(Instigator);
+		}
 		return;
 	}
 
-	if (IsValidCombatTarget(Instigator))
+	if (bUseLastHostileDamageInstigator && IsValidCombatTarget(Instigator))
 	{
-		CombatTarget = Instigator;
+		SetCombatTargetInternal(Instigator);
 		ScheduleNextAttack(FMath::Max(0.0f, RetaliationDelay));
 	}
 }
@@ -175,7 +198,7 @@ bool URpgAIAttackDriverComponent::IsValidCombatTarget(const AActor* Target) cons
 	return FactionSubsystem && FactionSubsystem->IsHostile(Owner, Target);
 }
 
-bool URpgAIAttackDriverComponent::CanAttemptAttack() const
+bool URpgAIAttackDriverComponent::CanAttemptAttack(const bool bRequireInterval) const
 {
 	const AActor* Owner = GetOwner();
 	if (!Owner || !Owner->HasAuthority() || !IsValidCombatTarget(CombatTarget.Get()))
@@ -190,7 +213,7 @@ bool URpgAIAttackDriverComponent::CanAttemptAttack() const
 	}
 
 	const UWorld* World = GetWorld();
-	if (!World || (World->GetTimeSeconds() - LastAttackTime) < MinAttackInterval)
+	if (!World || (bRequireInterval && (World->GetTimeSeconds() - LastAttackTime) < MinAttackInterval))
 	{
 		if (ShouldDebugLog())
 		{
@@ -275,17 +298,11 @@ bool URpgAIAttackDriverComponent::HasActiveMainHandPrimaryAttack() const
 	return MainHandWeapon && MainHandWeapon->FindAttackDefinition(RpgGameplayTags::Weapon_Attack_Primary) != nullptr;
 }
 
-AActor* URpgAIAttackDriverComponent::FindNearbyHostileTarget() const
+AActor* URpgAIAttackDriverComponent::FindNearestHostileTarget(const float SearchRadius) const
 {
 	const AActor* Owner = GetOwner();
 	UWorld* World = GetWorld();
-	if (!Owner || !World)
-	{
-		return nullptr;
-	}
-
-	const float SearchRadius = FMath::Max(0.0f, TargetAcquisitionRadius);
-	if (SearchRadius <= 0.0f)
+	if (!Owner || !World || SearchRadius <= 0.0f)
 	{
 		return nullptr;
 	}
@@ -342,7 +359,7 @@ void URpgAIAttackDriverComponent::FaceTarget(AActor* Target) const
 void URpgAIAttackDriverComponent::StartTargetAcquisitionIfNeeded()
 {
 	AActor* Owner = GetOwner();
-	if (!bAcquireNearbyHostileTargets || !Owner || !Owner->HasAuthority() || !IsOwnerAlive())
+	if (!bAcquireNearbyHostileTargets || bExternalControl || !Owner || !Owner->HasAuthority() || !IsOwnerAlive())
 	{
 		return;
 	}
@@ -365,14 +382,15 @@ void URpgAIAttackDriverComponent::StopDriverActivity()
 		World->GetTimerManager().ClearTimer(ReleaseAttackInputTimerHandle);
 	}
 
-	CombatTarget.Reset();
+	SetCombatTargetInternal(nullptr);
 	ReleaseAttackInput();
+	FinishAttackSequence();
 }
 
 void URpgAIAttackDriverComponent::ScheduleNextAttack(float Delay)
 {
 	UWorld* World = GetWorld();
-	if (!World || !GetOwner() || !GetOwner()->HasAuthority() || !IsOwnerAlive())
+	if (!World || bExternalControl || !GetOwner() || !GetOwner()->HasAuthority() || !IsOwnerAlive())
 	{
 		return;
 	}
@@ -417,14 +435,19 @@ void URpgAIAttackDriverComponent::TryAcquireNearbyTarget()
 		return;
 	}
 
+	if (bExternalControl)
+	{
+		return;
+	}
+
 	AActor* CurrentTarget = CombatTarget.Get();
 	if (!IsValidCombatTarget(CurrentTarget))
 	{
-		CombatTarget.Reset();
+		SetCombatTargetInternal(nullptr);
 
-		if (AActor* NewTarget = FindNearbyHostileTarget())
+		if (AActor* NewTarget = FindNearestHostileTarget(TargetAcquisitionRadius))
 		{
-			CombatTarget = NewTarget;
+			SetCombatTargetInternal(NewTarget);
 			if (ShouldDebugLog())
 			{
 				UE_LOG(LogTemp, Warning, TEXT("AIAttack[%s]: acquired nearby target [%s]."),
@@ -469,7 +492,7 @@ void URpgAIAttackDriverComponent::TryAttack()
 		return;
 	}
 
-	if (!CanAttemptAttack())
+	if (!CanAttemptAttack(true))
 	{
 		ScheduleNextAttack(FMath::Max(0.05f, AttackRetryInterval));
 		return;
@@ -503,10 +526,7 @@ void URpgAIAttackDriverComponent::TryAttack()
 		return;
 	}
 
-	const FGameplayTag ResolvedAttackInputTag = AttackInputTag.IsValid()
-		? AttackInputTag
-		: RpgGameplayTags::InputTag_Weapon_Primary;
-
+	const FGameplayTag ResolvedAttackInputTag = GetResolvedAttackInputTag();
 	const bool bActivated = ASC->TryActivateFirstAbilityByInputTag(ResolvedAttackInputTag, false);
 	if (ShouldDebugLog())
 	{
@@ -540,13 +560,9 @@ void URpgAIAttackDriverComponent::ReleaseAttackInput()
 
 	bAttackInputHeld = false;
 
-	const FGameplayTag ResolvedAttackInputTag = AttackInputTag.IsValid()
-		? AttackInputTag
-		: RpgGameplayTags::InputTag_Weapon_Primary;
-
 	if (URpgAbilitySystemComponent* ASC = GetRpgAbilitySystemComponent())
 	{
-		ASC->AbilityInputTagReleased(ResolvedAttackInputTag);
+		ASC->AbilityInputTagReleased(GetResolvedAttackInputTag());
 		ASC->ProcessAbilityInput(0.0f, false);
 	}
 }
@@ -565,4 +581,219 @@ void URpgAIAttackDriverComponent::HandleDeathStarted(AActor* OwningActor)
 bool URpgAIAttackDriverComponent::ShouldDebugLog() const
 {
 	return CVarRpgAIAttackDriverDebug.GetValueOnGameThread() != 0;
+}
+
+FGameplayTag URpgAIAttackDriverComponent::GetResolvedAttackInputTag() const
+{
+	return AttackInputTag.IsValid() ? AttackInputTag : RpgGameplayTags::InputTag_Weapon_Primary;
+}
+
+void URpgAIAttackDriverComponent::BeginExternalControl(const ERpgAICombatTargetPolicy InTargetPolicy, const float InTargetSwitchCooldown)
+{
+	const AActor* Owner = GetOwner();
+	if (!Owner || !Owner->HasAuthority())
+	{
+		return;
+	}
+
+	bExternalControl = true;
+	TargetPolicy = InTargetPolicy;
+	TargetSwitchCooldown = FMath::Max(0.0f, InTargetSwitchCooldown);
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(AttackTimerHandle);
+		World->GetTimerManager().ClearTimer(TargetAcquisitionTimerHandle);
+	}
+	ReleaseAttackInput();
+}
+
+void URpgAIAttackDriverComponent::EndExternalControl()
+{
+	if (!bExternalControl)
+	{
+		return;
+	}
+
+	bExternalControl = false;
+	CancelAttackSequence();
+	ClearCombatTarget();
+	StartTargetAcquisitionIfNeeded();
+}
+
+AActor* URpgAIAttackDriverComponent::RefreshCombatTarget(const float SearchRadius, const float LoseRadius)
+{
+	const AActor* Owner = GetOwner();
+	const UWorld* World = GetWorld();
+	if (!Owner || !World || !Owner->HasAuthority() || !IsOwnerAlive())
+	{
+		SetCombatTargetInternal(nullptr);
+		return nullptr;
+	}
+
+	AActor* CurrentTarget = CombatTarget.Get();
+	const bool bKeepCurrent = IsValidCombatTarget(CurrentTarget) &&
+		FVector::DistSquared2D(Owner->GetActorLocation(), CurrentTarget->GetActorLocation()) <=
+			FMath::Square(FMath::Max(0.0f, LoseRadius));
+	if (!bKeepCurrent)
+	{
+		SetCombatTargetInternal(FindNearestHostileTarget(SearchRadius));
+		return CombatTarget.Get();
+	}
+
+	if (TargetPolicy == ERpgAICombatTargetPolicy::Nearest &&
+		World->GetTimeSeconds() - LastTargetSwitchTime >= TargetSwitchCooldown)
+	{
+		AActor* NearestTarget = FindNearestHostileTarget(SearchRadius);
+		if (NearestTarget && NearestTarget != CurrentTarget)
+		{
+			SetCombatTargetInternal(NearestTarget);
+		}
+	}
+	return CombatTarget.Get();
+}
+
+bool URpgAIAttackDriverComponent::StartAttackSequence(const int32 StepCount)
+{
+#if WITH_DEV_AUTOMATION_TESTS
+	++AttackAttemptCountForTests;
+#endif
+
+	UWorld* World = GetWorld();
+	URpgAbilitySystemComponent* ASC = GetRpgAbilitySystemComponent();
+	AActor* Target = CombatTarget.Get();
+	if (bAttackSequenceActive || !World || !ASC || !IsOwnerAlive() || !IsValidCombatTarget(Target) || !CanAttemptAttack(false))
+	{
+		return false;
+	}
+
+	const FGameplayTag InputTag = GetResolvedAttackInputTag();
+	FGameplayAbilitySpecHandle SpecHandle;
+	for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
+	{
+		if (Spec.Ability && Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag))
+		{
+			SpecHandle = Spec.Handle;
+			break;
+		}
+	}
+	if (!SpecHandle.IsValid())
+	{
+		return false;
+	}
+
+	FaceTarget(Target);
+	const bool bActivated = ASC->TryActivateAbility(SpecHandle);
+	const FGameplayAbilitySpec* StartedSpec = ASC->FindAbilitySpecFromHandle(SpecHandle);
+	if (ShouldDebugLog())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("AIAttack[%s]: attack sequence of %d against [%s] -> %s."),
+			*GetNameSafe(GetOwner()), StepCount, *GetNameSafe(Target), bActivated ? TEXT("started") : TEXT("failed"));
+	}
+	if (!bActivated || !StartedSpec || !StartedSpec->IsActive())
+	{
+		return false;
+	}
+
+	bAttackSequenceActive = true;
+	AttackSequenceSpecHandle = SpecHandle;
+	AttackSequenceStepCount = FMath::Max(1, StepCount);
+	AttackSequenceStepsStarted = 1;
+	AttackSequencePressedDuringStep = -1;
+	LastAttackTime = World->GetTimeSeconds();
+	World->GetTimerManager().SetTimer(
+		AttackSequenceTimerHandle, this, &ThisClass::TickAttackSequence, AttackSequencePollInterval, true);
+	TickAttackSequence();
+	return true;
+}
+
+void URpgAIAttackDriverComponent::CancelAttackSequence()
+{
+	AttackSequenceStepCount = AttackSequenceStepsStarted;
+}
+
+void URpgAIAttackDriverComponent::TapAttackInput(URpgAbilitySystemComponent& ASC) const
+{
+	const FGameplayTag InputTag = GetResolvedAttackInputTag();
+	ASC.AbilityInputTagPressed(InputTag);
+	ASC.ProcessAbilityInput(0.0f, false);
+	ASC.AbilityInputTagReleased(InputTag);
+	ASC.ProcessAbilityInput(0.0f, false);
+}
+
+void URpgAIAttackDriverComponent::TickAttackSequence()
+{
+	URpgAbilitySystemComponent* ASC = GetRpgAbilitySystemComponent();
+	const FGameplayAbilitySpec* Spec = ASC ? ASC->FindAbilitySpecFromHandle(AttackSequenceSpecHandle) : nullptr;
+	if (!Spec || !Spec->IsActive() || !IsOwnerAlive())
+	{
+		FinishAttackSequence();
+		return;
+	}
+
+	const URpgGameplayAbility_BasicWeaponAttack* Attack =
+		Cast<URpgGameplayAbility_BasicWeaponAttack>(Spec->GetPrimaryInstance());
+	if (!Attack)
+	{
+		return;
+	}
+
+	const int32 StepIndex = Attack->GetComboStepIndex();
+	AttackSequenceStepsStarted = FMath::Max(AttackSequenceStepsStarted, StepIndex + 1);
+	// One press per running step, early in it: the ability buffers the press and chains at the step's Combo Window.
+	if (AttackSequenceStepsStarted < AttackSequenceStepCount && AttackSequencePressedDuringStep < StepIndex)
+	{
+		AttackSequencePressedDuringStep = StepIndex;
+		TapAttackInput(*ASC);
+	}
+}
+
+void URpgAIAttackDriverComponent::FinishAttackSequence()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(AttackSequenceTimerHandle);
+	}
+	bAttackSequenceActive = false;
+	AttackSequenceSpecHandle = FGameplayAbilitySpecHandle();
+	AttackSequenceStepCount = 0;
+	AttackSequencePressedDuringStep = -1;
+}
+
+void URpgAIAttackDriverComponent::SetCombatTargetInternal(AActor* NewTarget)
+{
+	if (CombatTarget.Get() == NewTarget)
+	{
+		return;
+	}
+
+	UnbindTargetAbilitySystem();
+	CombatTarget = NewTarget;
+	if (const UWorld* World = GetWorld())
+	{
+		LastTargetSwitchTime = World->GetTimeSeconds();
+	}
+	if (UAbilitySystemComponent* TargetAbilitySystem = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(NewTarget))
+	{
+		ObservedTargetAbilitySystem = TargetAbilitySystem;
+		TargetAbilityActivatedHandle =
+			TargetAbilitySystem->AbilityActivatedCallbacks.AddUObject(this, &ThisClass::HandleTargetAbilityActivated);
+	}
+}
+
+void URpgAIAttackDriverComponent::HandleTargetAbilityActivated(UGameplayAbility* ActivatedAbility)
+{
+	if (ActivatedAbility && ActivatedAbility->GetAssetTags().HasTag(RpgGameplayTags::Ability_Type_Attack))
+	{
+		++TargetAttackCount;
+	}
+}
+
+void URpgAIAttackDriverComponent::UnbindTargetAbilitySystem()
+{
+	if (UAbilitySystemComponent* TargetAbilitySystem = ObservedTargetAbilitySystem.Get())
+	{
+		TargetAbilitySystem->AbilityActivatedCallbacks.Remove(TargetAbilityActivatedHandle);
+	}
+	ObservedTargetAbilitySystem.Reset();
+	TargetAbilityActivatedHandle.Reset();
 }

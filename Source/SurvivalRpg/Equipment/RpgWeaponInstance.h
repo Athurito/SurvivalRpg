@@ -78,6 +78,14 @@ struct SURVIVALRPG_API FRpgWeaponAttackDefinition
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combo", meta = (Categories = "Weapon.Attack"))
 	FGameplayTag ComboNextAttack;
 
+	/**
+	 * Tags the attacker holds while this step runs, for example State.HyperArmor on a finisher the stagger meter cannot
+	 * interrupt. Designer-authored static data; the server adds them when the step starts and removes them when the next
+	 * step starts or the attack ends. Not replicated: only server rules read them.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attacker", meta = (Categories = "State"))
+	FGameplayTagContainer OwnerTagsDuringAttack;
+
 	// GameplayEffect applied by the attack. It should consume SetByCaller.Damage and SetByCaller.StaggerDamage.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Damage")
 	TSubclassOf<UGameplayEffect> DamageEffect;

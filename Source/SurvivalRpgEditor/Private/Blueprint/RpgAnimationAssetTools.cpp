@@ -490,3 +490,97 @@ bool URpgAnimationAssetTools::SetMontageSectionSequences(UAnimMontage* Montage, 
 	Montage->MarkPackageDirty();
 	return Montage->CompositeSections.Num() == Sequences.Num();
 }
+
+float URpgAnimationAssetTools::RetimeMontageRange(UAnimMontage* Montage, const float StartTime, const float EndTime, const float PlayRate)
+{
+	if (!Montage || !IsProjectContentPackage(Montage->GetOutermost()->GetName()) || Montage->SlotAnimTracks.IsEmpty()
+		|| !FMath::IsFinite(PlayRate) || PlayRate < 0.05f || PlayRate > 1.0f)
+	{
+		return -1.0f;
+	}
+
+	// Only an untouched single-segment montage has montage time equal to animation time.
+	FAnimTrack& Track = Montage->SlotAnimTracks[0].AnimTrack;
+	if (Track.AnimSegments.Num() != 1)
+	{
+		return -1.0f;
+	}
+	const FAnimSegment Source = Track.AnimSegments[0];
+	if (!FMath::IsNearlyEqual(Source.AnimPlayRate, 1.0f) || Source.LoopingCount != 1 || !FMath::IsNearlyZero(Source.StartPos)
+		|| !FMath::IsNearlyZero(Source.AnimStartTime) || StartTime < 0.0f || EndTime <= StartTime + UE_KINDA_SMALL_NUMBER
+		|| EndTime > Source.AnimEndTime + UE_KINDA_SMALL_NUMBER)
+	{
+		return -1.0f;
+	}
+
+	const float RangeEnd = FMath::Min(EndTime, Source.AnimEndTime);
+	const float StretchedLength = (RangeEnd - StartTime) / PlayRate;
+	const float AddedTime = StretchedLength - (RangeEnd - StartTime);
+	auto RemapTime = [StartTime, RangeEnd, PlayRate, AddedTime](const float Time)
+	{
+		return Time <= StartTime ? Time
+			: Time >= RangeEnd ? Time + AddedTime
+			: StartTime + (Time - StartTime) / PlayRate;
+	};
+
+	const FScopedTransaction Transaction(NSLOCTEXT("RpgAnimationAssetTools", "RetimeMontageRange", "Retime Montage Range"));
+	Montage->Modify();
+
+	// Read every notify's times before the segments change, while montage and animation time still agree.
+	struct FNotifyTimes
+	{
+		float Start = 0.0f;
+		float End = 0.0f;
+	};
+	TArray<FNotifyTimes> OldTimes;
+	OldTimes.Reserve(Montage->Notifies.Num());
+	for (const FAnimNotifyEvent& Notify : Montage->Notifies)
+	{
+		OldTimes.Add({ Notify.GetTime(), Notify.GetTime() + Notify.GetDuration() });
+	}
+
+	auto MakeSegment = [&Source](const float AnimStart, const float AnimEnd, const float Rate, const float StartPos)
+	{
+		FAnimSegment Segment = Source;
+		Segment.AnimStartTime = AnimStart;
+		Segment.AnimEndTime = AnimEnd;
+		Segment.AnimPlayRate = Rate;
+		Segment.StartPos = StartPos;
+		return Segment;
+	};
+	Track.AnimSegments.Reset();
+	float Position = 0.0f;
+	if (StartTime > UE_KINDA_SMALL_NUMBER)
+	{
+		Track.AnimSegments.Add(MakeSegment(0.0f, StartTime, 1.0f, Position));
+		Position += StartTime;
+	}
+	Track.AnimSegments.Add(MakeSegment(StartTime, RangeEnd, PlayRate, Position));
+	Position += StretchedLength;
+	if (Source.AnimEndTime - RangeEnd > UE_KINDA_SMALL_NUMBER)
+	{
+		Track.AnimSegments.Add(MakeSegment(RangeEnd, Source.AnimEndTime, 1.0f, Position));
+		Position += Source.AnimEndTime - RangeEnd;
+	}
+	Montage->SetCompositeLength(Position);
+
+	for (int32 Index = 0; Index < Montage->Notifies.Num(); ++Index)
+	{
+		FAnimNotifyEvent& Notify = Montage->Notifies[Index];
+		const float NewStart = RemapTime(OldTimes[Index].Start);
+		Notify.Link(Montage, NewStart, Notify.GetSlotIndex());
+		Notify.RefreshTriggerOffset(Montage->CalculateOffsetForNotify(NewStart));
+		if (Notify.NotifyStateClass)
+		{
+			const float NewEnd = RemapTime(OldTimes[Index].End);
+			Notify.SetDuration(NewEnd - NewStart);
+			Notify.EndLink.Link(Montage, NewEnd, Notify.GetSlotIndex());
+			Notify.RefreshEndTriggerOffset(Montage->CalculateOffsetForNotify(NewEnd));
+		}
+	}
+
+	Montage->RefreshCacheData();
+	Montage->PostEditChange();
+	Montage->MarkPackageDirty();
+	return Montage->GetPlayLength();
+}

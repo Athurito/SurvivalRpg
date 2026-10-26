@@ -171,6 +171,7 @@ bool URpgGameplayAbility_BasicWeaponAttack::HasResidualAttackRuntimeStateForTest
 	return HasPendingAttackTimersForTests() ||
 		ActiveWeaponInstance != nullptr ||
 		ActiveAttackDefinition.Montage != nullptr ||
+		!AppliedStepOwnerTags.IsEmpty() ||
 		bWaitingForMontage ||
 		bFinishingAttack ||
 		bAttackWindowOpen ||
@@ -364,6 +365,7 @@ void URpgGameplayAbility_BasicWeaponAttack::ActivateAbility(
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 	// Aim is chosen at the start: the windup may still steer toward the camera, the swing and recovery hold it.
 	BeginFacingCommitment(WindupSteeringRate);
+	ApplyStepOwnerTags();
 	LogAttackLifecycleLazy(
 		ActorInfo->IsNetAuthority()
 			? TEXT("ActivationAccepted.Server")
@@ -800,6 +802,7 @@ bool URpgGameplayAbility_BasicWeaponAttack::StartComboStep(FGameplayTag NextAtta
 	ActiveAttackTag = NextAttackTag;
 	ActiveAttackWindowEndTime = WindowEnd;
 	++ComboStepIndex;
+	ApplyStepOwnerTags();
 	if (ActiveAttackDefinition.CameraMode)
 	{
 		SetCameraMode(ActiveAttackDefinition.CameraMode);
@@ -826,6 +829,33 @@ bool URpgGameplayAbility_BasicWeaponAttack::StartComboStep(FGameplayTag NextAtta
 	return true;
 }
 
+void URpgGameplayAbility_BasicWeaponAttack::ApplyStepOwnerTags()
+{
+	RemoveStepOwnerTags();
+	UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponentFromActorInfo();
+	if (!AbilitySystem || !CurrentActorInfo || !CurrentActorInfo->IsNetAuthority() ||
+		ActiveAttackDefinition.OwnerTagsDuringAttack.IsEmpty())
+	{
+		return;
+	}
+	// Only server rules read these tags, so they stay unreplicated loose tags with their own count.
+	AppliedStepOwnerTags = ActiveAttackDefinition.OwnerTagsDuringAttack;
+	AbilitySystem->AddLooseGameplayTags(AppliedStepOwnerTags);
+}
+
+void URpgGameplayAbility_BasicWeaponAttack::RemoveStepOwnerTags()
+{
+	if (AppliedStepOwnerTags.IsEmpty())
+	{
+		return;
+	}
+	if (UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponentFromActorInfo())
+	{
+		AbilitySystem->RemoveLooseGameplayTags(AppliedStepOwnerTags);
+	}
+	AppliedStepOwnerTags.Reset();
+}
+
 void URpgGameplayAbility_BasicWeaponAttack::EndAbility(
 	const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
@@ -840,6 +870,7 @@ void URpgGameplayAbility_BasicWeaponAttack::EndAbility(
 
 	CloseAttackWindow(false);
 	ClearComboTimers();
+	RemoveStepOwnerTags();
 	if (UAbilitySystemComponent* AbilitySystem = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr)
 	{
 		const FPredictionKey ActivationKey = ActivationInfo.GetActivationPredictionKey();
