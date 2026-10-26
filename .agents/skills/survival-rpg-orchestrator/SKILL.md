@@ -9,19 +9,7 @@ Use this skill to plan broad or multi-system work and to decide ownership before
 
 ## Plan the work
 
-Copy this checklist and track it:
-
-```text
-- [ ] 1. Restate the deliverable and whether it changes code, docs, assets, or only needs advice
-- [ ] 2. Load the needed specialist skills and check the request against the first-playable scope
-- [ ] 3. Inspect existing systems and extension seams before proposing structure
-- [ ] 4. Record the C++ boundary decision
-- [ ] 5. Choose the smallest slice that proves fun, clarity, or architectural soundness
-- [ ] 6. Implement or document that slice
-- [ ] 7. Verify it and name the remaining risks
-```
-
-The game vision is `docs/game-vision.md`. When a request lies outside its first-playable scope (section 12), say so and propose the smallest slice or ask whether to build it now.
+Check the request against the first-playable scope in `docs/game-vision.md` (section 12); when it lies outside that scope, say so and propose the smallest slice or ask whether to build it now. Inspect the existing systems and their extension seams before proposing structure, record the C++ boundary decision below, and limit the work to the smallest slice that proves fun, clarity, or architectural soundness.
 
 ## Record the C++ boundary decision
 
