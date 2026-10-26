@@ -37,6 +37,7 @@ FRpgWeaponBlockDefinition FRpgWeaponBlockDefinition::ResolveForSkeleton(const US
 }
 
 FRpgWeaponAttackDefinition::FRpgWeaponAttackDefinition()
+	: HitCueTag(RpgGameplayTags::GameplayCue_Combat_Hit)
 {
 	TracePointSockets.Add(TEXT("blade_base"));
 	TracePointSockets.Add(TEXT("blade_mid"));

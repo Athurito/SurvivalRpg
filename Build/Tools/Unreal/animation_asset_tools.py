@@ -177,10 +177,15 @@ class AnimationAssetTools(unreal.ToolsetDefinition):
 
     @toolset_registry.tool_call
     @staticmethod
-    def register_animation_slot(skeleton_path: str, slot_name: str) -> bool:
-        """Register a named default-group slot on a project skeleton and mark it dirty; never changes bone retargeting."""
+    def register_animation_slot(skeleton_path: str, slot_name: str, group_name: str = '') -> bool:
+        """Register a named slot on a project skeleton and mark it dirty; never changes bone retargeting.
+
+        An empty group_name uses the default group. Another name creates that slot group if needed, so the
+        slot's montages do not stop montages of other groups. An existing slot in a different group is refused.
+        """
         _guard()
-        if not unreal.RpgAnimationAssetTools.register_animation_slot(_asset(skeleton_path, unreal.Skeleton), slot_name):
+        skeleton = _asset(skeleton_path, unreal.Skeleton)
+        if not unreal.RpgAnimationAssetTools.register_animation_slot(skeleton, slot_name, group_name or 'None'):
             raise RuntimeError('Animation slot registration failed')
         return True
 

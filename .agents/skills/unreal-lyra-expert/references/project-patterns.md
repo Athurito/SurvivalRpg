@@ -27,6 +27,8 @@ This project uses Lyra as a proven baseline, not as a sample to clone. Extend th
 | CommonUI | Screens, layers, focus and input routing | Activatable Widget Blueprints with MVVM | Ad hoc widget stacks; gameplay truth in widgets |
 | Enhanced Input | Gameplay input | Input configs and mapping contexts granted by Experience, PawnData, or Game Feature | Hard-coded bindings; gameplay input in widgets |
 
+Predicted presentation of a server-decided outcome follows the CMB-04 impact cues ([hit feedback](../../../../docs/combat-hit-feedback.md)). The remote owner plays its local copy and records it. The server's copy reaches every machine, and a native notify on the owner absorbs it only when a matching recent prediction exists (`RpgCombatImpact`, `URpgGameplayCueNotify_Impact`). Do not use the owner's activation prediction key to skip the server's copy. GAS then hides the confirmation whenever the owner's prediction missed, and a key from a listen-server host or an AI reaches every connection, so every client skips it.
+
 RPG adaptations layered on the inventory/equipment root include rarity, item level, affixes, sockets, durability, class or stat requirements, generated loot, crafting data, vendor and economy data, stat aggregation, progression scaling, and persistence mapping.
 
 ## Not adopted without evidence or request

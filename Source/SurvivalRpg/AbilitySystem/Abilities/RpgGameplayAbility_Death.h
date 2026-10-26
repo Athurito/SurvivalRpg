@@ -34,4 +34,11 @@ protected:
 	/** Designer opt-in to start death on activation; native end cleanup always finishes a started death. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Death")
 	bool bAutoStartDeath = false;
+
+	/**
+	 * Designer cue the server executes on the dying character when death starts, for every machine. Location is the
+	 * character, Instigator the killer from the death event. Empty plays none.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Death", meta = (Categories = "GameplayCue"))
+	FGameplayTag DeathCueTag;
 };

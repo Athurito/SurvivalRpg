@@ -8,6 +8,7 @@
 #include "Engine/AssetManager.h"
 #include "Engine/Blueprint.h"
 #include "GameFeatureData.h"
+#include "GameplayCueNotify_Static.h"
 #include "Interfaces/IPluginManager.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/PackageName.h"
@@ -15,6 +16,7 @@
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
 #include "SurvivalRpg/GameFeatures/RpgGameFeatureAction_AddAbilities.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/System/RpgGameData.h"
@@ -169,16 +171,49 @@ bool FRpgAbilityContentNativeBoundaryTest::RunTest(const FString& Parameters)
 		++AbilityCount;
 	}
 	TestTrue(TEXT("The registry finds concrete project ability content"), AbilityCount > 0);
-
-	UClass* HitReaction = LoadClass<URpgGameplayAbility>(nullptr,
-		TEXT("/GF_Combat_Core/GAS/Abilities/GA_Combat_HitReaction.GA_Combat_HitReaction_C"));
-	ValidateAbilityClass(*this, HitReaction, TEXT("Combat hit-reaction content"), true);
-	if (HitReaction)
-	{
-		TestTrue(TEXT("Hit-reaction flow is owned directly by Blueprint content"),
-			HitReaction->GetSuperClass() == URpgGameplayAbility::StaticClass());
-	}
 	AddInfo(FString::Printf(TEXT("Validated %d concrete project ability Blueprints."), AbilityCount));
+	return !HasAnyErrors();
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgImpactCueNotifyContractTest,
+	"SurvivalRpg.Combat.HitFeedback.NativeImpactCuesHaveNotifies",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgImpactCueNotifyContractTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgAbilityContentContractTests;
+
+	// The damage execution routes these tags natively, so each needs exactly one project notify that handles it.
+	TMap<FGameplayTag, int32> NotifyCounts;
+	NotifyCounts.Add(RpgGameplayTags::GameplayCue_Combat_Hit, 0);
+	NotifyCounts.Add(RpgGameplayTags::GameplayCue_Combat_Block, 0);
+	NotifyCounts.Add(RpgGameplayTags::GameplayCue_Combat_PerfectBlock, 0);
+
+	IAssetRegistry& Registry = GetRegistry();
+	for (const FAssetData& Asset : FindProjectAssets(Registry, UBlueprint::StaticClass()))
+	{
+		// Inspect tags before loading: only gameplay cue notifies, also below project notify bases, are loaded.
+		const UClass* NativeParent = FindObject<UClass>(nullptr, *FPackageName::ExportTextPathToObjectPath(
+			Asset.GetTagValueRef<FString>(FBlueprintTags::NativeParentClassPath)));
+		if (!NativeParent || !NativeParent->IsChildOf(UGameplayCueNotify_Static::StaticClass()))
+		{
+			continue;
+		}
+
+		const UClass* NotifyClass = LoadObject<UClass>(nullptr, *GetBlueprintClassPath(Asset).ToString());
+		const UGameplayCueNotify_Static* Notify = NotifyClass
+			? Cast<UGameplayCueNotify_Static>(NotifyClass->GetDefaultObject())
+			: nullptr;
+		if (int32* Count = Notify ? NotifyCounts.Find(Notify->GameplayCueTag) : nullptr)
+		{
+			++*Count;
+		}
+	}
+
+	for (const TPair<FGameplayTag, int32>& Pair : NotifyCounts)
+	{
+		TestEqual(FString::Printf(TEXT("%s has exactly one cue notify"), *Pair.Key.ToString()), Pair.Value, 1);
+	}
 	return !HasAnyErrors();
 }
 

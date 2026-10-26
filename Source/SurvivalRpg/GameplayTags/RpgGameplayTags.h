@@ -87,6 +87,10 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Downed);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayEvent_Revive);
 
+	extern SURVIVALRPG_API FNativeGameplayTag GameplayCue_Combat_Hit;
+	extern SURVIVALRPG_API FNativeGameplayTag GameplayCue_Combat_Block;
+	extern SURVIVALRPG_API FNativeGameplayTag GameplayCue_Combat_PerfectBlock;
+
 	extern SURVIVALRPG_API FNativeGameplayTag Ability_Interaction_Activate;
 	extern SURVIVALRPG_API FNativeGameplayTag Rpg_Interaction_Action;
 	extern SURVIVALRPG_API FNativeGameplayTag Rpg_Interaction_Action_Generic;

@@ -76,6 +76,10 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayEvent_Downed, "GameplayEvent.Downed", "Event that fires when a target enters the downed state.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayEvent_Revive, "GameplayEvent.Revive", "Event that fires when a target is revived.");
 
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Combat_Hit, "GameplayCue.Combat.Hit", "A melee impact lands on a body. Location and Normal are the impact point and surface normal, Instigator the attacker, RawMagnitude the damage, NormalizedMagnitude the stagger damage as a fraction of the target's maximum stagger. Child tags such as GameplayCue.Combat.Hit.Heavy select heavier feedback per attack. Executed on the target by the server's damage execution and predicted locally by the attacking client.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Combat_Block, "GameplayCue.Combat.Block", "A normal block absorbs a melee impact. Same parameters as GameplayCue.Combat.Hit. Executed on the blocker by the server's damage execution and predicted locally by the attacking client.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Combat_PerfectBlock, "GameplayCue.Combat.PerfectBlock", "A perfect block deflects a melee impact. Same parameters as GameplayCue.Combat.Hit. Executed on the blocker by the server for every machine, the attacker included.");
+
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Interaction_Activate, "Ability.Interaction.Activate", "Generic GAS event used to activate a validated interaction ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Interaction_Action, "Rpg.Interaction.Action", "Root tag for stable world-interaction action identifiers.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Interaction_Action_Generic, "Rpg.Interaction.Action.Generic", "Fallback id for legacy interaction options that have not yet authored a specific action tag.");

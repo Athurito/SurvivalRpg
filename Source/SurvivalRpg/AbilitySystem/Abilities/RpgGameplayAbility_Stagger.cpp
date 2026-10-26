@@ -5,6 +5,7 @@
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgDefenseSet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/Combat/RpgCombatImpact.h"
 #include "SurvivalRpg/Core/Character/RpgHealthComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
@@ -58,6 +59,8 @@ void URpgGameplayAbility_Stagger::ActivateAbility(
 		return;
 	}
 
+	// Read before the cancel below ends the block: a meter that breaks while blocking is a guard break.
+	const bool bGuardBreak = RpgASC->HasMatchingGameplayTag(RpgGameplayTags::State_Blocking);
 	RpgASC->CancelActivationGroupAbilities(ERpgAbilityActivationGroup::Exclusive_Blocking, this, true);
 	RpgASC->CancelActivationGroupAbilities(ERpgAbilityActivationGroup::Exclusive_Replaceable, this, true);
 
@@ -77,6 +80,7 @@ void URpgGameplayAbility_Stagger::ActivateAbility(
 		return;
 	}
 
+	ExecuteStaggerCue(bGuardBreak, TriggerEventData);
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
 	const float StaggerDuration = GetStaggerDuration();
@@ -141,6 +145,22 @@ void URpgGameplayAbility_Stagger::OnStaggerFinished()
 	{
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 	}
+}
+
+void URpgGameplayAbility_Stagger::ExecuteStaggerCue(bool bGuardBreak, const FGameplayEventData* TriggerEventData) const
+{
+	const FGameplayTag CueTag = bGuardBreak && GuardBreakCueTag.IsValid() ? GuardBreakCueTag : StaggerCueTag;
+	AActor* AvatarActor = GetAvatarActorFromActorInfo();
+	if (!CueTag.IsValid() || !AvatarActor)
+	{
+		return;
+	}
+
+	FGameplayCueParameters CueParameters;
+	CueParameters.Instigator = TriggerEventData ? const_cast<AActor*>(TriggerEventData->Instigator.Get()) : nullptr;
+	CueParameters.EffectCauser = CueParameters.Instigator;
+	CueParameters.Location = AvatarActor->GetActorLocation();
+	RpgCombatImpact::ExecuteServerCue(GetAbilitySystemComponentFromActorInfo(), CueTag, CueParameters);
 }
 
 void URpgGameplayAbility_Stagger::ApplyStaggerTags() const
