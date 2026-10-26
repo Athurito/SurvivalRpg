@@ -14,7 +14,7 @@ Purchased content lives in the asset library listed under "Local environment" in
 ## Rules
 
 - The asset projects are the full library. Migrate only the curated subset a roadmap step uses, and add a `docs/third-party-notices.md` entry per pack.
-- Licences: packs that Epic Games publishes, such as the Niagara examples, are cleared by the project owner. The owner also cleared the sound packs in `Assets_Sounds` for use in the game. Third-party seller packs still need their licence noted.
+- Licences: packs that Epic Games publishes, such as the Niagara examples, are cleared by the project owner. The owner also cleared the sound packs in `Assets_Sounds` for use in the game. The owner states that the library's third-party Fab packs are under the Fab Standard License (2026-10-26); record that licence in each pack's entry.
 - The SurvivalRpg MCP configuration knows only port 8000. Driving an asset project's editor (ports 8001-8004) needs a local MCP client entry or a small HTTP client. The asset projects have no free Python tool; launch one with `-ExecutePythonScript=<boot script>` that calls `unreal.EditorPythonScripting.set_keep_python_script_alive(True)` and registers a scratch toolset.
 
 ## Reading and copying assets
