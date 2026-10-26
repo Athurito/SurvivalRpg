@@ -56,6 +56,7 @@ Common combinations: runtime work on a new feature pairs `survival-rpg-project` 
 - Do not introduce unrelated Lyra subsystems only because Lyra has them.
 - Do not restore the archived native GASP port. Runtime assets must not depend on the external GASP sample checkout.
 - Keep movement gameplay authority in project-owned CMC/Mover, GAS, and Motion-Warping seams. Widening Mover scope or adopting Locomotor, sample camera, Foley, or experimental systems requires explicit roadmap scope and an isolated dependency evaluation; they are never incidental additions.
+- Standing user preference (26.10.2026): nothing is in production yet, so existing save games need not stay compatible. Do not build save migrations, class redirects, or definition remaps for obsolete content or schemas; dev saves may lose such items or be deleted. Saving and restoring current data must still work and be tested.
 
 ## Roadmap work
 
