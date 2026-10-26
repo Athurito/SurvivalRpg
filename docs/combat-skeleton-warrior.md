@@ -1,6 +1,6 @@
 # CMB-05: Skeleton warrior
 
-Task report for CMB-05 in the [combat roadmap](combat-roadmap.md). The Rift Grunt (`BP_RiftGrunt_Sword`) is now the skeleton warrior from the asset library's `SkeletonCharacter` pack: a Manny-native enemy with sword and shield in the CMB-01 grips, a sword-and-shield combat AnimBP, and its own stun, knockback and death clips, chosen by the attacker's side. It dies into a ragdoll on its own copy of the Manny physics asset, because the pack's own one was unstable. AI behavior is unchanged and belongs to CMB-06.
+Task report for CMB-05 in the [combat roadmap](combat-roadmap.md), [PR #292](https://github.com/Athurito/SurvivalRpg/pull/292). The Rift Grunt (`BP_RiftGrunt_Sword`) is now the skeleton warrior from the asset library's `SkeletonCharacter` pack: a Manny-native enemy with sword and shield in the CMB-01 grips, a sword-and-shield combat AnimBP, and its own stun, knockback and death clips, chosen by the attacker's side. It dies into a ragdoll on its own copy of the Manny physics asset, because the pack's own one was unstable. AI behavior is unchanged and belongs to CMB-06.
 
 ## C++ boundary decision
 
