@@ -41,6 +41,7 @@ The Rift Grunt was a plain `SKM_Manny_Simple` with the template `ABP_Unarmed`: a
 - **Loadout:** the warrior's archetype is `Enemy.Archetype.SwordShield`, so the GameFeature loadout component equips sword and shield (`DA_EnemyLoadout_SwordShield`).
 - **Combat AnimBP** `ABP_Enemy_SwordShield` (a copy of `ABP_Unarmed` on `URpgAnimInstance`, in `GF_Combat_Core`):
   - Locomotion from `BS_Enemy_SwordShield_Locomotion`: `Idle_Combat` at rest, `Walk_Combat` and `Run_Combat` loops in eight directions at their measured speeds (160 to 177 and 397 to 415 cm/s), and the fast run forward at 750 cm/s.
+  - `ShouldMove` is ground speed above 3 cm/s. The template also required `GetCurrentAcceleration() != 0`, which AI path following leaves at zero without `Use Acceleration for Paths`, so the warrior slid through its moves in the idle pose.
   - Armed jump, fall and land from the pack's `Jump_Combat_*_0` clips.
   - The `ALI_RpgBlockLocomotion` layer before `DefaultSlot`, as in the player's GASP AnimBP, so the shield's block layer links. Without a linked layer it passes the pose through.
   - Kept from `ABP_Unarmed`: `DefaultSlot`, the `UpperBody` slot, foot IK and the additive `HitFlinch` slot from CMB-04.
@@ -112,7 +113,13 @@ Run on 2026-10-26 on `master` `2e9961b9` plus this change.
   - **Stagger:** the server's meter break interrupted the warrior's attack. Server and both simulated proxies played `AM_SkeletonWarrior_Stagger_Front` at 0.4, 0.8 and 1.5 s with the pelvis at the same position; after 2 s it attacked again on all three.
   - **Death:** `AM_SkeletonWarrior_Death_Front` on all three at 0.8 s. At 3.8 s all three ragdolled; the corpses lay within 9 cm of each other and had not moved at 5.8 s. The weapons were unequipped.
   - **Late join:** the net-cull trick did not drop the corpse on the clients within 7 s, so a late joiner was not checked.
-- **Combat sandbox** `Lvl_CombatSandbox`: data validation passed. Without a navmesh the warrior stood still, because the source map has none. With the added volume a path to the player starts exists, and in PIE the warrior ran to the nearest player at about 500 cm/s and attacked with the sword combo.
+- **Combat sandbox** `Lvl_CombatSandbox`: data validation passed. Without a navmesh the warrior stood still, because the source map has none. With the added volume a path to the player starts exists, and in PIE the warrior moved to the nearest player at about 500 cm/s and attacked with the sword combo. That probe read only the velocity.
+- **Run animation, after the user's playtest** found the warrior sliding in the idle pose:
+  - **Cause:** in PIE the warrior moved at 211 cm/s with acceleration 0 and `ShouldMove` false, so the state machine stayed in Idle.
+  - **After the fix:** `ShouldMove` was true at 9 to 600 cm/s and false at rest. Captures of the warrior sent across the view at 600 cm/s show the armed run stride.
+  - **Listen server with two clients:** with the warrior sent on a path by the server, server and both simulated proxies showed the same `ShouldMove` in all six samples and the same speed while running; while braking the clients trailed by up to 51 cm/s.
+  - Data validation of `ABP_Enemy_SwordShield`: 1 valid, 0 warnings; it compiles with warnings as errors.
+  - `ue.py test SurvivalRpg.Combat SurvivalRpg.AI SurvivalRpg.Animation SurvivalRpg.Cosmetics` with rendering, the own editor open: 58 / 58. The 14 tests with warnings logged only the missing voice interface and unsupported untitled PIE levels.
 - **Failed attempts:**
   - The first front stagger chained the pack's `ANI_HitReact_FrontA` into the stun in one montage. Its sections cannot be linked, so it stopped after the hit reaction; it is now the stun clip alone.
   - The first blend-space write was rejected: the fast run's 750.2 cm/s lay outside the 750 axis.

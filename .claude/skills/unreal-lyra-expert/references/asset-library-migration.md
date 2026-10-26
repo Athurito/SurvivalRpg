@@ -41,6 +41,7 @@ Proven for the skeleton warrior (CMB-05, `docs/combat-skeleton-warrior.md`).
 - **Textures:** a pack master material can default its texture parameters to 4K textures although every instance uses 2K. Set the `texture` of its `MaterialExpressionTextureSampleParameter2D_<n>` subobjects (`unreal.find_object`) to the 2K textures, recompile, and delete the 4K copies.
 - **Physics asset:** test the ragdoll from the death pose before adopting a pack physics asset. The skeleton pack's `PA_Skeleton`, a modified copy of Epic's Manny asset, slid the corpse 0.6 to 6.6 m or sat it up in all nine runs, also after restoring the Manny body shapes and disabling collision on the four constraints that had it on; `PA_Mannequin` and a copy of it on the same mesh settled within 19 cm in six runs. The body-pair collision table, which no tool reads, is the remaining suspect.
 - A physics asset's preview mesh cannot be set from Python or `ObjectTools`; a migrated one keeps pointing at the pack's preview mesh.
+- **AnimBP for AI pawns:** the template `ABP_Unarmed` enters Walk/Run only with `GetCurrentAcceleration() != 0`. AI path following without `Use Acceleration for Paths` sets the velocity directly and leaves the acceleration at zero, so an AI pawn on a copy slides in the idle pose. Gate `ShouldMove` on ground speed, and check locomotion by reading the AnimBP's `ShouldMove`, not the pawn's velocity.
 
 ## Sounds
 
