@@ -72,6 +72,7 @@ The Rift Grunt was a plain `SKM_Manny_Simple` with the template `ABP_Unarmed`: a
 | `GF_AI_RiftMonsters/AI/PawnData/DA_RiftGrunt_Sword_PawnData` | `CombatReactionProfile` |
 | `GF_Combat_Core/GAS/Abilities/GA_Combat_Death` | `DeathMontage` default; the graph plays `GetDeathMontage(EventData)` |
 | 17 `Sword_and_Shield/.../Sequence2` `Walk_Combat_Loop_*`, `Run_Combat_Loop_*`, `Run_Fast_Combat_Loop` | `force_root_lock` |
+| `GF_Dev_Sandbox/Maps/Lvl_CombatSandbox` | Combat test map: a copy of `Lvl_RpgGaspCMC` (`RpgGaspCMCExperience`, three player starts) with `SkeletonWarrior_01` about 11 m in front of the starts and a navmesh over the play area. It lives in `GF_Dev_Sandbox`, which may reference every GameFeature, so later enemies and props can join it |
 
 Left in the asset library: the pack skeleton and physics asset, mesh variants B to D, the weapons, the other 43 clips and the 4K textures. Notice: [third-party notices](third-party-notices.md).
 
@@ -111,6 +112,7 @@ Run on 2026-10-26 on `master` `2e9961b9` plus this change.
   - **Stagger:** the server's meter break interrupted the warrior's attack. Server and both simulated proxies played `AM_SkeletonWarrior_Stagger_Front` at 0.4, 0.8 and 1.5 s with the pelvis at the same position; after 2 s it attacked again on all three.
   - **Death:** `AM_SkeletonWarrior_Death_Front` on all three at 0.8 s. At 3.8 s all three ragdolled; the corpses lay within 9 cm of each other and had not moved at 5.8 s. The weapons were unequipped.
   - **Late join:** the net-cull trick did not drop the corpse on the clients within 7 s, so a late joiner was not checked.
+- **Combat sandbox** `Lvl_CombatSandbox`: data validation passed. Without a navmesh the warrior stood still, because the source map has none. With the added volume a path to the player starts exists, and in PIE the warrior ran to the nearest player at about 500 cm/s and attacked with the sword combo.
 - **Failed attempts:**
   - The first front stagger chained the pack's `ANI_HitReact_FrontA` into the stun in one montage. Its sections cannot be linked, so it stopped after the hit reaction; it is now the stun clip alone.
   - The first blend-space write was rejected: the fast run's 750.2 cm/s lay outside the 750 axis.
@@ -119,7 +121,7 @@ Run on 2026-10-26 on `master` `2e9961b9` plus this change.
 
 ## Playtest
 
-1. Open `Lvl_RpgGaspCMC`, place a `BP_RiftGrunt_Sword` (`GF_AI_RiftMonsters/AI/Characters`) in front of a player start, and start PIE.
+1. Open `GF_Dev_Sandbox/Maps/Lvl_CombatSandbox` and start PIE. The warrior stands about 11 m in front of you and comes at you once it finds you.
 2. The enemy is a skeleton in the sword-and-shield stance, the sword in its right fist and the shield on its left forearm. It walks and runs at you with the armed loops and attacks with the sword combo.
 3. Break its stagger meter from the front: it stoops and sways, dazed, for about 2 s, then fights on. From behind it stumbles instead.
 4. Break it while it holds its shield up: it stumbles with the knockback clip (guard break).
