@@ -57,11 +57,11 @@ The warrior ran straight at the nearest player and swung the first combo hit eve
   | --- | --- | --- | --- |
   | Idle | No hostile within 30 m | Waits 0.5 s | Selects again |
   | Recover | `State.Staggered` or `State.GuardBroken` | Stands still until the tags are gone | Selects again |
-  | Approach | Target farther than 6.5 m | Runs until 4.5 m | Selects again |
-  | Circle | Otherwise | Walks sideways around the target at 2.5 to 4 m for 1.5 to 3.5 s, flipping direction now and then | Attack; Defend on a target attack (see below); Approach when the target gets away |
-  | Attack | After circling or a block | Closes in, then chains 1, 2, 3 or 4 combo steps (weights 35, 35, 20 and 10 %) | Retreat (50 %), else Circle |
+  | Approach | Target farther than 6.5 m | Runs until 4 m | Selects again |
+  | Circle | Otherwise | Walks sideways around the target at 2.3 to 4 m for 2 to 4 s, flipping direction every 2.5 to 5 s at most | Attack; Defend on a target attack (see below); Approach when the target gets away |
+  | Attack | After circling or a block | Walks in, then chains 1, 2, 3 or 4 combo steps (weights 35, 35, 20 and 10 %) | Retreat (50 %), else Circle |
   | Defend | The target starts an attack within 4 m while circling, 40 % chance | Holds the shield 0.6 to 1.0 s, facing the target | Counterattack (50 %), else Circle |
-  | Retreat | After some attacks | Walks backward to 4.5 to 5.5 m, at most 2 s | Circle |
+  | Retreat | After some attacks | Walks backward into the outer circling band, 3.3 to 4.2 m, at most 2 s | Circle |
 
   A stagger interrupts Approach and every Engage state at once.
 - **Target choice:** the global combat control task hands the drivers to the StateTree and picks the target by policy. The warrior uses the last attacker with a 4 s switch cooldown and drops a target beyond 40 m; the policy is a parameter of the task, so other enemies can choose the nearest player.
@@ -76,7 +76,12 @@ The warrior ran straight at the nearest player and swung the first combo hit eve
 
   Combo windows and the swing cue moved with the hit window. At 0.02 s each step plays `GameplayCue.Combat.Telegraph` through `AN_Combat_Telegraph`, which flashes the spark template at the warrior's head on every machine (placeholder effect).
 - **Hyper armor:** the finisher holds `State.HyperArmor` on the server. Hits still fill the stagger meter, but it waits one point below the break until the finisher ends; the next hit then breaks it.
-- **Movement:** the warrior uses the shared movement profile (`DA_RpgGasp_MovementProfile`): it walks at 165 and runs at 375 cm/s instead of always running at 600. It turns toward its focus at 720°/s instead of snapping to the controller, so it no longer tracks the player during a root-motion swing.
+- **Movement:** the warrior uses the shared movement profile (`DA_RpgGasp_MovementProfile`): it walks at 165 and runs at 375 cm/s instead of always running at 600. It turns toward its focus at 360°/s instead of snapping to the controller, so it no longer tracks the player during a root-motion swing. Its blend space smooths Direction over 0.3 s and Speed over 0.2 s.
+- **Smooth movement** (after the user's playtest, which found the warrior jerky, "as if it decided three times a second"):
+  - **Moves:** they no longer stop dead. Each move goal is projected onto the navmesh and must lie at least 40 cm away. The reach test leaves out the capsule radius, and a reached goal brakes instead of zeroing the velocity (see [Validation](#validation)).
+  - **Focus:** the combat control task holds it for all combat states, and no task stops the movement when its state ends.
+  - **Circling goal:** it always lies a step ahead around the target, also while the distance is corrected.
+  - **Gait:** the warrior only runs while approaching from far away.
 - **Drivers:** without the StateTree's combat control task both drivers keep their timers, so other AI pawns are unchanged.
 
 ### Content
@@ -84,7 +89,9 @@ The warrior ran straight at the nearest player and swung the first combo hit eve
 | Asset | Role |
 | --- | --- |
 | `GF_AI_RiftMonsters/AI/StateTrees/ST_SkeletonWarrior` | The warrior's StateTree; `DA_RiftGrunt_Sword_PawnData` points to it |
-| `GF_AI_RiftMonsters/AI/Characters/BP_RiftGrunt_Sword` | Movement profile, rotation toward the controller's desired rotation |
+| `GF_AI_RiftMonsters/AI/Characters/BP_RiftGrunt_Sword` | Movement profile, rotation toward the controller's desired rotation at 360°/s |
+| `GF_Combat_Core/Animations/Enemy/BS_Enemy_SwordShield_Locomotion` | Input smoothing: Direction 0.3 s, Speed 0.2 s |
+| `GF_Dev_Sandbox/Maps/Lvl_CombatSandbox` | Resaved after the warrior Blueprint changed |
 | `GF_Combat_Core/AI/EnemyWeapons/ID_EnemySword`, `ED_EnemySword`, `BP_WeaponInstance_EnemySword` | Enemy sword: the Basic Sword's item, equipment and instance with the enemy montages; the finisher holds `State.HyperArmor` |
 | `GF_Combat_Core/AI/CombatLoadouts/DA_EnemyLoadout_SwordShield` | Main hand is the enemy sword |
 | `GF_Combat_Core/Animations/Combo/SwordShield/Enemy/AM_EnemySwordShieldCombo01_Step1` to `_Step4` | Telegraphed combo steps |
@@ -124,6 +131,25 @@ Run on 2026-10-26 on `master` `9da1389a` plus this change.
 - **PIE, listen server with two clients, 25 s:**
   - Server and both simulated proxies showed the same montage in every sample, including one full four-step chain with the finisher.
   - They showed the same speed (proxies trailed by up to 130 cm/s during root-motion steps) and the same Direction (±180° counted as equal).
+- **Movement after the user's playtest:**
+  - **Measurement:** speed, yaw and Direction were sampled at about 35 Hz for 30 s in standalone PIE, the first half with the player standing, the second with the player walking back and forth at 200 cm/s.
+
+    | Measure | Before | After |
+    | --- | --- | --- |
+    | Hard stops (above 100 to below 30 cm/s between two samples, outside montages) | 8 | 0 |
+    | Gait switches | 10 | 0 |
+    | Turns faster than 400°/s outside montages | 11 | 0 |
+    | Share of samples moving | 52 % | 67 % |
+    | Attack sequences | 5 | 5 |
+
+  - **Causes:** every stop was the engine zeroing the velocity:
+    - when a circling goal was reached, or counted as reached because the capsule radius is added;
+    - on `StopMovement` when a task ended;
+    - and once on a failed request.
+
+    The fast turns were 720°/s catch-ups after each swing, and the gait switched for every attack approach.
+  - **Listen server with two clients, 25 s:** server and both simulated proxies showed the same montage in all 65 samples.
+  - **Tests:** `SurvivalRpg.AI`, `.Combat`, `.Animation` (MCP server off): 57 / 57.
 - **Failed attempts:**
   - **StateTree failed at start:** the first PIE run left the warrior standing, its StateTree `Failed`. The combat control task failed when the drivers did not exist yet, because `GF_Combat_Core` adds them after possession. It now takes control once they appear.
   - **Live Coding crash:** a Live Coding patch of that fix crashed the editor in PIE. The patch relinked the attack driver's debug check, whose file-static console variable was never constructed in the patch. A full build fixed it; the pitfall is in the [authoring reference](../.agents/skills/unreal-lyra-expert/references/unreal-mcp-asset-authoring.md).
@@ -132,12 +158,12 @@ Run on 2026-10-26 on `master` `9da1389a` plus this change.
 ## Playtest
 
 1. Open `GF_Dev_Sandbox/Maps/Lvl_CombatSandbox` and start PIE. The skeleton runs toward you and slows to a walk about 4 m away.
-2. It circles you sideways at 2.5 to 4 m, changing direction now and then, and after 1.5 to 3.5 s it closes in and attacks.
+2. It circles you sideways at 2.3 to 4 m in one smooth walk, without stopping or turning on the spot, changes direction now and then, and after 2 to 4 s walks in and attacks.
 3. Before every swing it visibly holds back for about half a second and a spark flashes at its head; block just before the hit lands to get a perfect block. The finisher (overhead swing, fourth hit) holds back longest.
 4. It chains one to four hits. During the finisher a stagger build-up does not stop it; the first hit afterwards does.
 5. Attack it while it circles: now and then it raises its shield, and sometimes it counterattacks right after.
 6. Break its stagger meter: it stops, plays the stun or stumble, and then resumes the fight.
-7. After some combos it walks backward to about 5 m before circling again.
+7. After some combos it walks backward to about 4 m and circles on.
 8. **Multiplayer:** listen server with two clients. Both clients see the same circling, attacks, blocks and retreats. Hit it with the second player: after a few seconds it turns to that player.
 
 ## Limits
@@ -145,6 +171,6 @@ Run on 2026-10-26 on `master` `9da1389a` plus this change.
 - **Placeholder telegraph effect:** the glow is the spark template at the head. It spawns on the warrior's `head` socket when the cue runs, but no capture shows it clearly, so how readable it is still needs the playtest. A proper effect belongs to the [VFX roadmap](vfx-roadmap.md).
 - **Wind-up by slowing the clip:** the held wind-up plays the first frames of the pack clips at a quarter speed; it may read as a slow lean rather than a deliberate raise.
 - **One enemy:** several warriors do not take turns; each attacks on its own schedule. Attack tokens, and the threat policy for a tank, are later work ("Later" in the roadmap).
-- **Movement:** the shared profile runs at 375 cm/s, slightly slower than the run loops (397 to 415), so the feet slide a little; there is still no turn-in-place.
+- **Movement:** the shared profile runs at 375 cm/s, slightly slower than the run loops (397 to 415), so the feet slide a little; there is still no turn-in-place. Entering the circle from a run drops the speed from 375 to 165 cm/s at once.
 - **Derived boss:** `BP_RiftBoss_Prototype` (`GF_Portals_Core`) derives from the warrior Blueprint and controller, so it now fights the same way.
 - **Not checked:** late join; a stagger applied during the finisher in PIE (the native test covers the rule); `SurvivalRpg.GASP.Mover`.

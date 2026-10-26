@@ -50,8 +50,9 @@ struct SURVIVALRPG_API FRpgStateTreeCombatControlTaskInstanceData
 /**
  * Global task: while active, the attack driver attacks only on the StateTree's command and the block driver no longer
  * blocks by chance after damage. It takes control as soon as the drivers exist, which GameFeature actions may add after
- * the StateTree starts. Every tick it refreshes the combat target and turns each new attack of the target into the
- * TargetAttackEventTag event. Ends both effects on exit.
+ * the StateTree starts. Every tick it refreshes the combat target, keeps the controller's focus on it for all combat
+ * states, and turns each new attack of the target into the TargetAttackEventTag event. While active, reached move goals
+ * brake instead of stopping dead. Ends all of this on exit.
  */
 USTRUCT(meta = (DisplayName = "Combat Control", Category = "Rpg|AI"))
 struct SURVIVALRPG_API FRpgStateTreeCombatControlTask : public FStateTreeAITaskBase
@@ -122,8 +123,9 @@ struct SURVIVALRPG_API FRpgStateTreeKeepCombatDistanceTaskInstanceData
 };
 
 /**
- * Moves into and keeps a distance band to the combat target while facing it: approaches from outside, backs off from
- * inside, and circles sideways inside the band when bStrafe is set. Fails without a combat target.
+ * Moves into and keeps a distance band to the combat target: approaches from outside, backs off from inside, and circles
+ * sideways when bStrafe is set. Facing comes from the combat control task, and the next state takes over the movement,
+ * so the task never stops the pawn. Fails without a combat target.
  */
 USTRUCT(meta = (DisplayName = "Keep Combat Distance", Category = "Rpg|AI"))
 struct SURVIVALRPG_API FRpgStateTreeKeepCombatDistanceTask : public FStateTreeAITaskBase
@@ -137,7 +139,6 @@ struct SURVIVALRPG_API FRpgStateTreeKeepCombatDistanceTask : public FStateTreeAI
 	virtual const UStruct* GetInstanceDataType() const override { return FInstanceDataType::StaticStruct(); }
 	virtual EStateTreeRunStatus EnterState(FStateTreeExecutionContext& Context, const FStateTreeTransitionResult& Transition) const override;
 	virtual EStateTreeRunStatus Tick(FStateTreeExecutionContext& Context, const float DeltaTime) const override;
-	virtual void ExitState(FStateTreeExecutionContext& Context, const FStateTreeTransitionResult& Transition) const override;
 };
 
 USTRUCT(BlueprintType)
@@ -205,7 +206,7 @@ struct SURVIVALRPG_API FRpgStateTreeHoldBlockTaskInstanceData
 	float DurationMax = 1.0f;
 };
 
-/** Raises the block toward the combat target through the block driver and succeeds when it is released. */
+/** Stops and raises the block through the block driver, facing the combat target, and succeeds when it is released. */
 USTRUCT(meta = (DisplayName = "Hold Block", Category = "Rpg|AI"))
 struct SURVIVALRPG_API FRpgStateTreeHoldBlockTask : public FStateTreeAITaskBase
 {

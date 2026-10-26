@@ -5,6 +5,7 @@
 #include "AIController.h"
 #include "GameFramework/Pawn.h"
 #include "Navigation/PathFollowingComponent.h"
+#include "NavigationSystem.h"
 #include "StateTreeExecutionContext.h"
 #include "SurvivalRpg/Combat/RpgAIBlockDriverComponent.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterMovementComponent.h"
@@ -65,11 +66,51 @@ namespace RpgStateTreeCombat
 		return FMath::FRandRange(FMath::Min(Min, Max), FMath::Max(Min, Max));
 	}
 
+	/** Goals nearer than this in cm are not requested: the engine would finish them at once and zero the velocity. */
+	constexpr float MinimumMoveDistance = 40.0f;
+
+	/**
+	 * Requests a move to Goal without the engine's hard stops. AAIController::MoveTo finishes a request that fails, for
+	 * example on a goal off the navmesh, or that counts as reached, which includes the capsule radius, at once and zeroes
+	 * the velocity. So the goal is projected first and must lie farther than MinimumMoveDistance, it counts as reached
+	 * only at the goal itself, and a reached goal brakes. False when the goal is not on the navmesh; the running move
+	 * then continues.
+	 */
+	bool RequestCombatMove(AAIController& Controller, const APawn& Pawn, const FVector& Goal)
+	{
+		UNavigationSystemV1* NavigationSystem = FNavigationSystem::GetCurrent<UNavigationSystemV1>(Controller.GetWorld());
+		FNavLocation Projected;
+		if (!NavigationSystem ||
+			!NavigationSystem->ProjectPointToNavigation(Goal, Projected, INVALID_NAVEXTENT, &Controller.GetNavAgentPropertiesRef()))
+		{
+			return false;
+		}
+		if (FVector::Dist2D(Projected.Location, Pawn.GetActorLocation()) < MinimumMoveDistance)
+		{
+			return true;
+		}
+
+		FAIMoveRequest Request(Projected.Location);
+		Request.SetAcceptanceRadius(10.0f);
+		Request.SetReachTestIncludesAgentRadius(false);
+		Request.SetProjectGoalLocation(false);
+		Request.SetUsePathfinding(true);
+		Request.SetAllowPartialPath(true);
+		Request.SetCanStrafe(true);
+		const FPathFollowingRequestResult Result = Controller.MoveTo(Request);
+		// Every stop (attack start, block) re-arms the hard stop on finish, so clear it with each request.
+		if (UPathFollowingComponent* PathFollowing = Controller.GetPathFollowingComponent())
+		{
+			PathFollowing->SetStopMovementOnFinish(false);
+		}
+		return Result.Code != EPathFollowingRequestResult::Failed;
+	}
+
 	/**
 	 * Hands the drivers to the StateTree once they exist. GameFeature actions add them after possession, which can be
 	 * after the StateTree starts, so the combat control task retries every tick instead of failing the tree.
 	 */
-	URpgAIAttackDriverComponent* EnsureCombatControl(APawn* Pawn, FRpgStateTreeCombatControlTaskInstanceData& InstanceData)
+	URpgAIAttackDriverComponent* EnsureCombatControl(AAIController* Controller, APawn* Pawn, FRpgStateTreeCombatControlTaskInstanceData& InstanceData)
 	{
 		URpgAIAttackDriverComponent* AttackDriver = ResolveAttackDriver(Pawn);
 		if (!AttackDriver || AttackDriver->IsExternallyControlled())
@@ -77,6 +118,11 @@ namespace RpgStateTreeCombat
 			return AttackDriver;
 		}
 
+		// A reached move goal brakes the character instead of zeroing its velocity, so chained moves do not stutter.
+		if (UPathFollowingComponent* PathFollowing = Controller ? Controller->GetPathFollowingComponent() : nullptr)
+		{
+			PathFollowing->SetStopMovementOnFinish(false);
+		}
 		AttackDriver->BeginExternalControl(InstanceData.TargetPolicy, InstanceData.TargetSwitchCooldown);
 		if (URpgAIBlockDriverComponent* BlockDriver = Pawn->FindComponentByClass<URpgAIBlockDriverComponent>())
 		{
@@ -102,19 +148,15 @@ EStateTreeRunStatus FRpgStateTreeCombatControlTask::EnterState(FStateTreeExecuti
 	using namespace RpgStateTreeCombat;
 	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
 	InstanceData.CombatTarget = nullptr;
-	APawn* Pawn = ResolveLivingPawn(ResolveController(Context));
-	if (URpgAIAttackDriverComponent* AttackDriver = EnsureCombatControl(Pawn, InstanceData))
-	{
-		InstanceData.CombatTarget = AttackDriver->RefreshCombatTarget(InstanceData.SearchRadius, InstanceData.LoseRadius);
-	}
-	return EStateTreeRunStatus::Running;
+	return Tick(Context, 0.0f);
 }
 
 EStateTreeRunStatus FRpgStateTreeCombatControlTask::Tick(FStateTreeExecutionContext& Context, const float DeltaTime) const
 {
 	using namespace RpgStateTreeCombat;
 	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
-	URpgAIAttackDriverComponent* AttackDriver = EnsureCombatControl(ResolveLivingPawn(ResolveController(Context)), InstanceData);
+	AAIController* Controller = ResolveController(Context);
+	URpgAIAttackDriverComponent* AttackDriver = EnsureCombatControl(Controller, ResolveLivingPawn(Controller), InstanceData);
 	if (!AttackDriver)
 	{
 		InstanceData.CombatTarget = nullptr;
@@ -122,6 +164,18 @@ EStateTreeRunStatus FRpgStateTreeCombatControlTask::Tick(FStateTreeExecutionCont
 	}
 
 	InstanceData.CombatTarget = AttackDriver->RefreshCombatTarget(InstanceData.SearchRadius, InstanceData.LoseRadius);
+	// One owner for facing: every combat state faces the target, so state changes never drop the focus for a frame.
+	if (Controller->GetFocusActorForPriority(EAIFocusPriority::Gameplay) != InstanceData.CombatTarget)
+	{
+		if (InstanceData.CombatTarget)
+		{
+			Controller->SetFocus(InstanceData.CombatTarget);
+		}
+		else
+		{
+			Controller->ClearFocus(EAIFocusPriority::Gameplay);
+		}
+	}
 	const uint32 TargetAttackCount = AttackDriver->GetTargetAttackCount();
 	if (TargetAttackCount != InstanceData.LastSeenTargetAttackCount)
 	{
@@ -140,8 +194,16 @@ void FRpgStateTreeCombatControlTask::ExitState(FStateTreeExecutionContext& Conte
 	using namespace RpgStateTreeCombat;
 	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
 	InstanceData.CombatTarget = nullptr;
-	const AAIController* Controller = ResolveController(Context);
+	AAIController* Controller = ResolveController(Context);
 	APawn* Pawn = Controller ? Controller->GetPawn() : nullptr;
+	if (Controller)
+	{
+		Controller->ClearFocus(EAIFocusPriority::Gameplay);
+		if (UPathFollowingComponent* PathFollowing = Controller->GetPathFollowingComponent())
+		{
+			PathFollowing->SetStopMovementOnFinish(true);
+		}
+	}
 	if (URpgAIAttackDriverComponent* AttackDriver = ResolveAttackDriver(Pawn))
 	{
 		AttackDriver->EndExternalControl();
@@ -170,7 +232,6 @@ EStateTreeRunStatus FRpgStateTreeKeepCombatDistanceTask::EnterState(FStateTreeEx
 		return EStateTreeRunStatus::Failed;
 	}
 
-	Controller->SetFocus(Target);
 	SetWalking(*Pawn, InstanceData.bWalk);
 	InstanceData.TimeLeft = RandomInRange(InstanceData.DurationMin, InstanceData.DurationMax);
 	InstanceData.TimeUntilRepath = 0.0f;
@@ -223,43 +284,33 @@ EStateTreeRunStatus FRpgStateTreeKeepCombatDistanceTask::Tick(FStateTreeExecutio
 
 	if (bInBand && !InstanceData.bStrafe)
 	{
-		Controller->StopMovement();
 		return EStateTreeRunStatus::Running;
 	}
 
-	// Back off or close in to a quarter of the band inside its edge, or keep the radius and step around the target.
-	const float BandInset = 0.25f * (MaxDistance - MinDistance);
-	const float Radius = Distance < MinDistance ? MinDistance + BandInset
-		: Distance > MaxDistance ? MaxDistance - BandInset
-		: Distance;
+	// Outside the band head for its middle; inside it keep the radius. A strafing goal always lies a step around the
+	// target, also while correcting the distance, so the pawn never reaches it before the next repath.
+	const float BandMiddle = 0.5f * (MinDistance + MaxDistance);
+	const float Radius = bInBand ? Distance : BandMiddle;
 	FVector FromTarget = (Pawn->GetActorLocation() - Target->GetActorLocation()).GetSafeNormal2D();
 	if (FromTarget.IsNearlyZero())
 	{
 		FromTarget = -Pawn->GetActorForwardVector().GetSafeNormal2D();
 	}
-	if (bInBand && InstanceData.bStrafe)
+	auto GoalAround = [&](const float Sign)
 	{
-		FromTarget = FromTarget.RotateAngleAxis(InstanceData.StrafeSign * InstanceData.StrafeAngleStep, FVector::UpVector);
-	}
+		const FVector Direction = InstanceData.bStrafe
+			? FromTarget.RotateAngleAxis(Sign * InstanceData.StrafeAngleStep, FVector::UpVector)
+			: FromTarget;
+		return Target->GetActorLocation() + Direction * Radius;
+	};
 
-	const FVector Destination = Target->GetActorLocation() + FromTarget * Radius;
-	const EPathFollowingRequestResult::Type Result =
-		Controller->MoveToLocation(Destination, 30.0f, false, true, true, true, nullptr, true);
-	if (Result == EPathFollowingRequestResult::Failed && bInBand && InstanceData.bStrafe)
+	if (!RequestCombatMove(*Controller, *Pawn, GoalAround(InstanceData.StrafeSign)) && InstanceData.bStrafe)
 	{
-		// Blocked on this side, for example by a wall: circle the other way next time.
+		// No navmesh on this side, for example at a wall: circle the other way.
 		InstanceData.StrafeSign = -InstanceData.StrafeSign;
+		RequestCombatMove(*Controller, *Pawn, GoalAround(InstanceData.StrafeSign));
 	}
 	return EStateTreeRunStatus::Running;
-}
-
-void FRpgStateTreeKeepCombatDistanceTask::ExitState(FStateTreeExecutionContext& Context, const FStateTreeTransitionResult& Transition) const
-{
-	if (AAIController* Controller = RpgStateTreeCombat::ResolveController(Context))
-	{
-		Controller->StopMovement();
-		Controller->ClearFocus(EAIFocusPriority::Gameplay);
-	}
 }
 
 FRpgStateTreeMeleeAttackTask::FRpgStateTreeMeleeAttackTask()
@@ -310,7 +361,6 @@ EStateTreeRunStatus FRpgStateTreeMeleeAttackTask::EnterState(FStateTreeExecution
 		return EStateTreeRunStatus::Failed;
 	}
 
-	Controller->SetFocus(Target);
 	SetWalking(*Pawn, !InstanceData.bRunToTarget);
 	InstanceData.StepCount = PickStepCount(InstanceData.StepCountWeights, FMath::FRand());
 	InstanceData.TimeLeft = InstanceData.ApproachTimeout;
@@ -377,13 +427,11 @@ void FRpgStateTreeMeleeAttackTask::ExitState(FStateTreeExecutionContext& Context
 	{
 		return;
 	}
-	// A leaving state stops further steps; the running swing plays out.
+	// A leaving state stops further steps; the running swing plays out. The next state takes over the movement.
 	if (URpgAIAttackDriverComponent* AttackDriver = ResolveAttackDriver(Controller->GetPawn()))
 	{
 		AttackDriver->CancelAttackSequence();
 	}
-	Controller->StopMovement();
-	Controller->ClearFocus(EAIFocusPriority::Gameplay);
 }
 
 FRpgStateTreeHoldBlockTask::FRpgStateTreeHoldBlockTask()
@@ -403,11 +451,7 @@ EStateTreeRunStatus FRpgStateTreeHoldBlockTask::EnterState(FStateTreeExecutionCo
 		return EStateTreeRunStatus::Failed;
 	}
 
-	// The block covers a frontal angle, so face the attacker first.
-	if (AActor* Target = ResolveCombatTarget(Pawn))
-	{
-		Controller->SetFocus(Target);
-	}
+	// The block covers a frontal angle; the combat control task keeps the focus on the attacker.
 	Controller->StopMovement();
 	return BlockDriver->HoldBlock(RandomInRange(InstanceData.DurationMin, InstanceData.DurationMax))
 		? EStateTreeRunStatus::Running
@@ -425,15 +469,11 @@ EStateTreeRunStatus FRpgStateTreeHoldBlockTask::Tick(FStateTreeExecutionContext&
 
 void FRpgStateTreeHoldBlockTask::ExitState(FStateTreeExecutionContext& Context, const FStateTreeTransitionResult& Transition) const
 {
-	AAIController* Controller = RpgStateTreeCombat::ResolveController(Context);
+	const AAIController* Controller = RpgStateTreeCombat::ResolveController(Context);
 	APawn* Pawn = Controller ? Controller->GetPawn() : nullptr;
 	if (URpgAIBlockDriverComponent* BlockDriver = Pawn ? Pawn->FindComponentByClass<URpgAIBlockDriverComponent>() : nullptr)
 	{
 		BlockDriver->ReleaseBlock();
-	}
-	if (Controller)
-	{
-		Controller->ClearFocus(EAIFocusPriority::Gameplay);
 	}
 }
 

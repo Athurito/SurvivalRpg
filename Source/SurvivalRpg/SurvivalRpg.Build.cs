@@ -47,6 +47,7 @@ public class SurvivalRpg : ModuleRules
 				"GameplayTasks",
 				"IKRig",
 				"ModelViewViewModel",
+				"NavigationSystem",
 				"AdvancedSessions",
 				"OnlineSubsystem",
 				"PhysicsCore",
