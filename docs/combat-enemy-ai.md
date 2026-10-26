@@ -1,6 +1,6 @@
 # CMB-06: Enemy AI
 
-Task report for CMB-06 in the [combat roadmap](combat-roadmap.md), [PR #295](https://github.com/Athurito/SurvivalRpg/pull/295). The skeleton warrior from [CMB-05](combat-skeleton-warrior.md) gets real behavior: it approaches, keeps its distance and circles, telegraphs its attacks so the perfect block can read them, chains one to four hits, blocks the player's attacks, recovers from stagger and backs off after a combo. The behavior is a StateTree on the existing AI drivers and loadouts.
+Task report for CMB-06 in the [combat roadmap](combat-roadmap.md), [PR #296](https://github.com/Athurito/SurvivalRpg/pull/296). The skeleton warrior from [CMB-05](combat-skeleton-warrior.md) gets real behavior: it approaches, keeps its distance and circles, telegraphs its attacks so the perfect block can read them, chains one to four hits, blocks the player's attacks, recovers from stagger and backs off after a combo. The behavior is a StateTree on the existing AI drivers and loadouts.
 
 ## Design decisions (user, 2026-10-26)
 
