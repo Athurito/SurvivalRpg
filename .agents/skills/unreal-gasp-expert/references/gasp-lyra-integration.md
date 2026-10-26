@@ -74,7 +74,7 @@ Inspect these contracts against the current project-owned baseline and existing 
 | Change | Minimum checks |
 | --- | --- |
 | Asset membership or metadata | Manifest/README update, content contract test, reference-closure audit, LFS diff review |
-| Pose Search or AnimGraph | Asset contract tests, AnimBP compile, database/schema validation, locomotion play test |
+| Pose Search or AnimGraph | Asset contract tests, AnimBP compile, database/schema validation, locomotion play test, remote character in a two-player PIE |
 | Threading or procedural animation | Threading and focused runtime tests, no worker-thread gameplay queries, LOD/performance check |
 | Movement input or rotation mode | Authority/autonomous/simulated-proxy test, correction behavior, late join |
 | Movement profile, sprint, or load-dependent dodge | Gait and sprint transitions, gear changes across load thresholds leaving movement unchanged, dodge variant per tier, movement/animation agreement, simulated proxies, correction, late join |

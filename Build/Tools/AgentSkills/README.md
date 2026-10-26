@@ -33,6 +33,12 @@ nothing and exits with 1 when:
 - an `AGENTS.md` has no sibling `CLAUDE.md` importing it with `@AGENTS.md`; once
   a `CLAUDE.md` exists, Claude Code reads only `CLAUDE.md` files
 
+In Claude Code, the project hooks in `.claude/settings.json` run `skill_hooks.py`:
+before an Edit or Write it blocks changes to a generated copy and names the
+canonical file, and after an edit under `.agents/skills/` it mirrors the skills
+again. Codex has no such hooks, so run `sync.py` there yourself; `--check`
+remains the verification for both.
+
 Only code spans and relative links are checked; globs and placeholders such as
 `<name>` or `*` are skipped. Folders under `.claude/skills/` without the
 generated marker are left alone, so Claude-only skills can live there under a
@@ -124,3 +130,26 @@ Run the affected scenarios with at least one model per tool before and after
 changing a skill description, a boundary rule, or the routing in `AGENTS.md`.
 Record the `report` tables and the deviations that led to the change in the pull
 request.
+
+Run each state from a detached worktree outside the repository, for example in a
+scratch folder:
+
+```powershell
+$env:GIT_LFS_SKIP_SMUDGE = "1"
+git -c core.longpaths=true worktree add --detach <folder> <commit>
+python <folder>/Build/Tools/AgentSkills/skill_evals.py run --tool codex --skill <skill>
+```
+
+- A worktree under `.claude/worktrees/` inherits the main checkout's `CLAUDE.md`
+  and `AGENTS.md` as parent instructions, so edits there leak into the run.
+- Long scratch paths fail with "Filename too long" without `core.longpaths`.
+  Skipping the LFS download is enough, because the sessions only read text.
+  Setting `core.longpaths` inside a worktree writes the shared `.git/config`.
+- Run `skill_evals.py` without `python -I`; isolated mode drops the script
+  directory, and `import sync` fails.
+- Worktrees share the repository's git directory, so headless Claude sessions
+  load the main checkout's auto-memory; Codex does not read it. A memory that
+  already holds the rule under test confounds the Claude comparison. Say so in
+  the pull request, or write such a memory only after the runs.
+- The headless `claude` CLI has its own login and plugin list, separate from the
+  desktop app. An expired login fails every scenario within seconds.

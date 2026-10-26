@@ -101,6 +101,8 @@ Combat behavior that depends on the equipped setup flows through GAS, not hard-c
 
 `InputTag.Weapon.Primary` and `InputTag.Weapon.Secondary` route through the active equipment context, slot occupancy, and gameplay tags instead of per-weapon-class branches.
 
+Server code that adds or executes a GameplayCue inside a client's predicted activation must clear the prediction key, or the predicting client never plays the cue. Read [GAS and network test pitfalls](../unreal-lyra-expert/references/gas-and-network-test-pitfalls.md#gameplaycues-and-prediction) before writing such code or its PIE network tests.
+
 ## GameFeature boundaries
 
 Use GameFeature plugins for modular gameplay packages without overcomplicating early prototypes.

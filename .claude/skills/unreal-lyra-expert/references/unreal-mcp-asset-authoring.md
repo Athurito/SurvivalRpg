@@ -2,7 +2,7 @@
 
 # Unreal MCP Asset Authoring
 
-Use this workflow whenever work creates or changes Blueprint, Widget Blueprint, Gameplay Ability, or DataAsset assets. The toolset and tool names below match UE 5.8.2 editor sessions of this project; `unreal-mcp:list_toolsets` and `unreal-mcp:describe_toolset` remain the authority for the running editor.
+Use this workflow whenever work creates or changes Blueprint, Widget Blueprint, Gameplay Ability, or DataAsset assets. The toolset and tool names below match UE 5.8 editor sessions of this project; `unreal-mcp:list_toolsets` and `unreal-mcp:describe_toolset` remain the authority for the running editor.
 
 ## Contents
 
@@ -13,9 +13,11 @@ Use this workflow whenever work creates or changes Blueprint, Widget Blueprint, 
 - [Other engine toolsets](#other-engine-toolsets)
 - [Capability gaps](#capability-gaps)
 
+Observed tool behavior lives in separate references: [Blueprint graph pitfalls](mcp-blueprint-graph-pitfalls.md), [Widget, CommonUI, and MVVM recipes](mcp-widget-recipes.md), [Niagara and material pitfalls](mcp-niagara-pitfalls.md), [Editor sessions and PIE](editor-session-and-pie.md), and [GAS and network test pitfalls](gas-and-network-test-pitfalls.md).
+
 ## Required workflow
 
-1. Check that Unreal Editor is running and that the project MCP endpoint is reachable at `http://127.0.0.1:8000/mcp`. The server is configured as `unreal-mcp` in `.codex/config.toml` for Codex and in `.mcp.json` for Claude Code; coordinate a shared editor session with other worktrees or agents before authoring.
+1. Check that Unreal Editor is running and that the project MCP endpoint is reachable at `http://127.0.0.1:8000/mcp`. The server is configured as `unreal-mcp` in `.codex/config.toml` for Codex and in `.mcp.json` for Claude Code; coordinate a shared editor session with other worktrees or agents before authoring. Ports, parallel editors, and modals are covered in [Editor sessions and PIE](editor-session-and-pie.md).
 2. Call `unreal-mcp:list_toolsets` and `unreal-mcp:describe_toolset` before deciding that an asset operation is unsupported. Availability depends on the enabled engine plugins and on the project toolsets the editor session loaded.
 3. Inspect the existing parent classes, related assets, Blueprint graphs, widget trees, object properties, references, and project naming/placement conventions before authoring.
 4. Author through the narrowest applicable toolset from [Tools by task](#tools-by-task). Use the [project toolsets](#project-toolsets) only for operations the engine toolsets cannot perform.
@@ -81,7 +83,7 @@ The task lists use these short toolset names:
 1. `BlueprintTools.create(folder_path, asset_name, asset_type)` creates a Blueprint whose parent is `asset_type`; `set_parent` reparents an existing one.
 2. `ObjectTools.set_properties(instance, values)` with the Blueprint and a JSON object of property values sets class defaults. `values` is that object serialized to a string, with the keys `get_properties` returns; an unserialized object only returns `false`.
 3. Add members with `add_variable`, `add_struct_variable`, `add_object_variable`, `set_variable_replication`, `add_function_graph`, `add_event`, or `add_component_bound_event`.
-4. For graphs, read `get_graph_dsl_docs` once, then use `read_graph_dsl` and `write_graph_dsl` (which also compiles) for whole graphs, or `find_node_types`, `create_node`, `connect_pins`, and `set_pin_value` for single nodes.
+4. For graphs, read `get_graph_dsl_docs` once, then use `read_graph_dsl` and `write_graph_dsl` (which also compiles) for whole graphs, or `find_node_types`, `create_node`, `connect_pins`, and `set_pin_value` for single nodes. A rewrite leaves stale nodes behind and `read_graph_dsl` is lossy; read [Blueprint graph pitfalls](mcp-blueprint-graph-pitfalls.md) first, and leave the graph structured, arranged, and commented as its [Readable graphs](mcp-blueprint-graph-pitfalls.md#readable-graphs) section describes.
 5. Change components with `ActorTools.add_component` and `remove_component`. To edit an inherited component template, first get a child-owned override from `AssetContractTools.editable_blueprint_component`.
 6. Compile with `BlueprintTools.compile_blueprint(blueprint, warnings_as_errors=true)`.
 

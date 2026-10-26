@@ -1,0 +1,44 @@
+# GAS and network test pitfalls
+
+Behavior observed in this project's automation tests and PIE sessions on UE 5.8. Read it before writing tests that step timers or standalone test worlds, before server code that adds or executes GameplayCues, and before PIE network tests. Correct this file in the same PR when a finding no longer holds.
+
+## Contents
+
+- [Timers in test worlds](#timers-in-test-worlds)
+- [Standalone test worlds](#standalone-test-worlds)
+- [GameplayCues and prediction](#gameplaycues-and-prediction)
+- [PIE network tests](#pie-network-tests)
+
+## Timers in test worlds
+
+- `FTimerManager::Tick` fires a timer only when the time is strictly past its expire time. Stepping exactly onto a deadline, such as `AdvanceTimers(0.5f)` for a 0.5 s timer, fires it one step late, and a looping timer may then fire twice. Step slightly past each deadline (0.55, then 0.5 each), as the harvesting tests do.
+- `FTimerManager::Tick` runs once per `GFrameCounter`; a second tick in the same frame does nothing. Guard the counter with `TGuardValue<uint64> FrameGuard(GFrameCounter, GFrameCounter)` and increment it before each tick.
+- A timer set outside a tick is pending: it gets its expire time only at the end of the next tick, so that tick's delta does not count toward it. Tick once with 0 before advancing time.
+
+## Standalone test worlds
+
+- `FScopedTestWorld` (`InitializeStandalone`) never initializes its actors, so `AActor::RouteEndPlay` skips them: unloading a level instance or destroying an actor calls no `EndPlay`. Call `World->InitializeActorsForPlay(FURL())` before spawning when a test needs it. `ULevelStreamingDynamic::LoadLevelInstance(World, "/Engine/Maps/Entry", ...)` plus `FlushLevelStreaming(Full)` gives a real runtime level instance.
+- In such worlds `AActor::IsNetStartupActor()` is true for every spawned actor. To model a runtime-spawned actor, clear both `bNetStartup` and `bNetLoadOnClient`.
+- An ability still running when the test world is destroyed gets cancelled during cleanup, after game-instance subsystems such as the GameplayMessageSubsystem are gone. Skip delivery when `World->bIsTearingDown || World->IsBeingCleanedUp()`.
+- A UMG widget creates its MVVM view and runs `OnInitialized` only with a valid player context, unless its class sets `bCanCallInitializedWithoutPlayerContext`. Create `NewObject<ULocalPlayer>(GEngine)`, spawn an `APlayerController`, set `PC->Player` and `LocalPlayer->PlayerController`, call `World->AddController(PC)` (spawned actors never run `PostInitializeComponents` there, so the controller is not in the list), then `CreateWidget(PC, Class)`.
+- `ARpgCharacter::OnAbilitySystemInitialized` refills health to max on authority. Compare against the attributes after `InitializeAbilitySystemComponent`, not the spawn values.
+- `UGameplayAbility::GetCurrentSourceObject` and `GetCurrentAbilitySpecHandle` ensure on a CDO. In an `AbilityActivatedCallbacks` handler, check `IsInstantiated()` first and read the spec from the ASC.
+
+## GameplayCues and prediction
+
+- A cue the server adds (`AddGameplayCue`) or executes (`ExecuteGameplayCue`) while still inside a client's predicted activation carries that client's prediction key. The owning client assumes it predicted the cue and never plays it, while every other machine does. This covers server code called synchronously from `ActivateAbility` and message handlers that run inside the killer's activation. Wrap the call in `FScopedPredictionWindow(ASC, FPredictionKey(), false)`, as `URpgGameFeatureAction_AwardKillXP` and `URpgGameplayAbility_Harvest` do; the tests `SurvivalRpg.Network.KillXPCuePIE` and `SurvivalRpg.Network.HarvestCuePIE` prove it.
+- A test can read the key from `UAbilitySystemComponent::ActiveGameplayCues` by reflection after `InternalTryActivateAbility(Handle, FPredictionKey::CreateNewPredictionKey(ASC))`.
+- `GameplayCueFunctionLibrary.ExecuteGameplayCueOnActor` on an actor with an ability system fires only on authority and replicates through the ASC; on a client it does nothing. Actors without an ASC play it locally.
+- A looping cue on a replicated actor without an ASC: `AddGameplayCueOnActor` plays locally, so add it in BeginPlay unless a replicated "ended" flag is set, and remove it in the flag's RepNotify and in EndPlay.
+- Cue multicasts are unreliable and limited by `net.MaxRPCPerNetUpdate` per actor and net update; the engine default is 2, and `Config/DefaultEngine.ini` sets Lyra's 10. A PIE test that waits only for the cue it expects passes even when another cue of the same frame was dropped, so assert every cue of the frame and search the log for "no more RPCs are allowed this net update".
+- `UGameplayCueManager::OnGameplayCueRouted()` (non-shipping) observes routed cues on every PIE machine in one process; dedicated-server worlds route none. `AbilitySystem.DisplayGameplayCues 1` logs every routed cue per machine.
+
+## PIE network tests
+
+- Real client predictions: give the ability on the server and call `TryActivateAbility` on the owning client. The avatar must be an autonomous actor; a PlayerState is a simulated proxy on clients, and GAS activates nothing on a simulated avatar, so bind the pawn with `InitAbilityActorInfo(PlayerState, PlayerState->GetPawn())` on every machine.
+- A FastArray whose replicated array gets re-sorted crashed the server (`FixedShadowIndex > Index`) once a move rotated three or more entries. Disable FastArray delta struct serialization for such a list, as `FRpgInventoryList` does; `SurvivalRpg.Network.InventoryReorderPIE` covers it.
+- Late joiners: when presentation depends on whether a machine saw an earlier state, remember on each machine that it saw that state. Comparing replicated timestamps with the GameState server time fails, because a joining client has not synced the server clock when the state arrives.
+- Native gameplay tags (`UE_DEFINE_GAMEPLAY_TAG_STATIC`) in the editor module `SurvivalRpgEditor` ensure at load. Editor-module tests use configured tags and set them on the ability in `OnGiveAbility`, because config tags are not loaded when the CDO is built.
+- `SurvivalRpgEditor` must list `GameplayMessageRuntime` itself to broadcast messages; public dependencies of `SurvivalRpg` do not propagate linking.
+- Running a PIE network test after `SurvivalRpg.Harvesting` in one session crashed at the PIE world-leak check; run those suites separately.
+- The standing multiplayer rule in `AGENTS.md` applies to every gameplay change: cover owner, authority, simulated proxy, late join, and corrections, and observe the remote character in a two-player PIE.

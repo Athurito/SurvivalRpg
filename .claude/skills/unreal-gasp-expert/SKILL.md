@@ -87,6 +87,8 @@ For asset or Pose Search changes:
 - Remove Foley, EarlyTransition, BranchIn, state-machine, or other references only with an explicit local replacement policy.
 - Update the task report and the relevant manifest under `docs/assets` when membership or source parity changes.
 - Review binary/LFS scope and hard, soft, and management references before accepting an asset diff. On-disk compression size is not the content contract.
+- Never add a bone to `SK_Mannequin` or another widely shared skeleton without asking the user. It regenerates the skeleton GUID, so about 1,800 dependent assets re-conform on every load and Pose Search indexes rebuild. Reuse an existing spare bone first, as the traversal attach track does with Lyra's `interaction` bone. Blend profile additions keep the GUID.
+- Create no legacy asset types such as `BlendSpace1D` or `AimOffset1D`, also not as by-products of a bake, retarget, or duplicate. Check the output classes afterwards and replace a 1D blend space with a standard `BlendSpace` whose unused vertical axis repeats every sample.
 
 ## Preserve multiplayer and gameplay seams
 
@@ -107,7 +109,7 @@ For asset or Pose Search changes:
 
 ## Verify proportionally
 
-Use the narrowest verification that proves the change, then widen when the boundary demands it.
+Use the narrowest verification that proves the change, then widen when the boundary demands it. The multiplayer check that `AGENTS.md` requires for every gameplay, movement, or animation change belongs to that minimum, also for cosmetic AnimGraph or Pose Search work, because remote characters show the result through simulated-proxy inputs.
 
 - Run the relevant editor build after C++ or module dependency changes; never claim compilation without running it.
 - Discover and run the current focused automation filters for the changed behavior (see the task reports for filters). Archived GASP-port tests are historical evidence, not active fixtures.
@@ -119,6 +121,7 @@ Use the narrowest verification that proves the change, then widen when the bound
 - For traversal, test authoritative obstacle validation, activation cost, montage/root-motion handoff, cancellation, collision failure, correction, combat interruption, death/ragdoll, and rollback of the isolated feature.
 - For gameplay integration, run montage, notify, root-motion, equipment socket, hit reaction, death, corpse, and ragdoll regressions.
 - Inspect Pose Search cost/debug output and profile animation-thread and game-thread cost before tuning by feel alone.
+- To tell a Manny regression from older behavior, compare in one PIE session instead of checking out `master`: in every PIE world, swap each CMC pawn to `SKM_UEFN_Mannequin` with `MI_UEFN_Mannequin_CMC` and `set_anim_instance_class` to the `ABP_RpgGasp_CMC` generated class, then wait about 150 frames before measuring. The equipment manager relinks the matching block layer, and block montages resolve per skeleton.
 - Record actual results, failed attempts, and remaining limits in the task report and PR; update only the task's roadmap status row and replace the handoff's current state. Never present historical results as freshly executed.
 
 Report which project files and reference assets were inspected, which behavior intentionally follows GASP and which intentionally differs, why each changed responsibility lives in C++, Blueprint, or DataAssets, and which verification actually ran.
