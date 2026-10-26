@@ -6,6 +6,8 @@
 #include "RpgGameplayAbility.h"
 #include "RpgGameplayAbility_Death.generated.h"
 
+class UAnimMontage;
+
 /** Abstract server death lifecycle: cancels incompatible abilities and guarantees terminal health cleanup. */
 UCLASS(Abstract, Blueprintable)
 class SURVIVALRPG_API URpgGameplayAbility_Death : public URpgGameplayAbility
@@ -29,6 +31,13 @@ protected:
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Ability")
 	void FinishDeath();
 
+	/**
+	 * Death montage for this activation: the pawn's combat reaction profile (PawnData) picks one by the killer's side
+	 * from the event, otherwise DeathMontage. Server activation only; null plays none.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Ability")
+	UAnimMontage* GetDeathMontage(const FGameplayEventData& EventData) const;
+
 protected:
 
 	/** Designer opt-in to start death on activation; native end cleanup always finishes a started death. */
@@ -41,4 +50,8 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Death", meta = (Categories = "GameplayCue"))
 	FGameplayTag DeathCueTag;
+
+	/** Designer fallback death montage for pawns whose reaction profile names none. It should hold its last pose. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Death")
+	TObjectPtr<UAnimMontage> DeathMontage;
 };

@@ -9,6 +9,7 @@ Purchased content lives in the asset library listed under "Local environment" in
 - [Rules](#rules)
 - [Reading and copying assets](#reading-and-copying-assets)
 - [Animations](#animations)
+- [Characters](#characters)
 - [Sounds](#sounds)
 - [MetaHumans](#metahumans)
 
@@ -28,6 +29,19 @@ Purchased content lives in the asset library listed under "Local environment" in
 
 - Some packs ship UE4 and UE5 variants: in Sword_and_Shield, Sword_Animations, and Mage the UE5 set is `Sequence2`; Archer and Spear are UE5 only; 505_Survival_Mocap keeps UE5 under `Animations_UE5`.
 - Migrate only UE5 variants and re-point them to SurvivalRpg's `SK_Mannequin`, so demo skeletons and meshes stay behind.
+- Sword_and_Shield combat loops (`Walk_Combat_Loop_*`, `Run_Combat_Loop_*`, `Run_Fast_Combat_Loop`) carry their travel in the root bone with root motion off. In a blend space they slide the mesh off the capsule; CMB-05 set `force_root_lock` on the 17 loops it uses.
+
+## Characters
+
+Proven for the skeleton warrior (CMB-05, `docs/combat-skeleton-warrior.md`).
+
+- **Skeleton check:** compare the pack skeleton's bone names and parents with `SK_Mannequin` in a headless asset-library run (a transient `SkeletalMeshComponent` with `get_num_bones`, `get_bone_name`, `get_parent_bone` and `get_ref_pose_transform`). With a matching subset, re-point the mesh and clips instead of retargeting: they keep the Grip sockets, the `HitFlinch` slot and the Sword and Shield clips.
+- **Re-point:** copy the packages, including the pack skeleton, to the same `/Game` path. While they are still under `/Game`, call `unreal.RpgBlueprintAssetTools.remap_owned_object_references(asset, {pack_skeleton: SK_Mannequin})` on the mesh and each clip, save, check that nothing references the pack skeleton, delete it, and only then move the folders. `SK_Mannequin` stays clean because no bone is missing.
+- **Pack clips on the pack mesh:** set each clip's `retarget_source_asset` to the pack mesh and clear `retarget_source`; a named source the pack skeleton had (`SKM_Quinn`) otherwise wins over the cached asset pose. `AssetContractTools.animation_pose_contract` still reported the pack's clips about 2.5 cm higher on that mesh afterwards, also with retargeting off.
+- **Textures:** a pack master material can default its texture parameters to 4K textures although every instance uses 2K. Set the `texture` of its `MaterialExpressionTextureSampleParameter2D_<n>` subobjects (`unreal.find_object`) to the 2K textures, recompile, and delete the 4K copies.
+- **Physics asset:** test the ragdoll from the death pose before adopting a pack physics asset. The skeleton pack's `PA_Skeleton`, a modified copy of Epic's Manny asset, slid the corpse 0.6 to 6.6 m or sat it up in all nine runs, also after restoring the Manny body shapes and disabling collision on the four constraints that had it on; `PA_Mannequin` and a copy of it on the same mesh settled within 19 cm in six runs. The body-pair collision table, which no tool reads, is the remaining suspect.
+- A physics asset's preview mesh cannot be set from Python or `ObjectTools`; a migrated one keeps pointing at the pack's preview mesh.
+- **AnimBP for AI pawns:** the template `ABP_Unarmed` enters Walk/Run only with `GetCurrentAcceleration() != 0`. AI path following without `Use Acceleration for Paths` sets the velocity directly and leaves the acceleration at zero, so an AI pawn on a copy slides in the idle pose. Gate `ShouldMove` on ground speed, and check locomotion by reading the AnimBP's `ShouldMove`, not the pawn's velocity.
 
 ## Sounds
 

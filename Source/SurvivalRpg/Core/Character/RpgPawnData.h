@@ -10,6 +10,7 @@ class URpgCameraMode;
 class URpgInputConfig;
 class URpgAbilitySet;
 class URpgAbilityTagRelationshipMapping;
+class URpgCombatReactionProfile;
 class URpgPlayerInventoryLayoutDefinition;
 class URpgRuntimeRetargetProfile;
 /**
@@ -56,4 +57,12 @@ public:
 	/** Optional static cosmetic appearance consumed by a RuntimeRetarget component on this pawn class; null retains the gameplay mesh. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Appearance")
 	TObjectPtr<const URpgRuntimeRetargetProfile> RuntimeRetargetProfile;
+
+	/**
+	 * Optional static montages for the heavy combat reactions of this pawn type (stagger, guard break, death), authored
+	 * for its gameplay mesh's skeleton. The server-only stagger and death abilities read it on activation; null keeps
+	 * their own default montages. Presentation only.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Combat")
+	TObjectPtr<const URpgCombatReactionProfile> CombatReactionProfile;
 };

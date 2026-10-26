@@ -93,6 +93,8 @@ A `GameplayCueNotify_Burst` `OnBurst` override is const, so it cannot call the B
 - A pose node's settings live in its `Node` struct, which `ObjectTools` does not write. In Python, `node = unreal.find_object(None, '<AnimBP path>:AnimGraph.<node name>')`, then `anim_node = node.get_editor_property('node')`, change it (`slot_name`, `layer_setup` with `unreal.InputBlendPose` and `unreal.BranchFilter`), and `node.set_editor_property('node', anim_node)`.
 - No tool creates a *Use cached pose* node. For an additive slot masked to part of the body, use an additive identity pose into the slot, a *Layered blend per bone* with another additive identity as its base, and *Apply Additive* onto the main pose (CMB-04 `HitFlinch` in `ABP_RpgGasp_CMC_Manny`).
 - A montage's slot track is not writable from Python (`slot_anim_tracks` edits land on a copy). Set `SlotAnimTracks` through `ObjectTools.set_properties`.
+- No tool links montage sections: `CompositeSections` and `SequenceLength` are not readable or writable through `ObjectTools` or Python, and `AnimationAssetTools.set_montage_section_sequences` leaves every section unlinked. A segment added through `SlotAnimTracks` does not extend `SequenceLength`, so playback still ends after the first one. Loops and chained sections need a new tool on the native helper.
+- `AnimationAssetTools.set_blend_space_samples` rejects the whole set when one coordinate lies outside an axis range, even by 0.2.
 
 ### GameplayAbility
 
