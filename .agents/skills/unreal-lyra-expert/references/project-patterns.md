@@ -26,10 +26,17 @@ This project uses Lyra as a proven baseline, not as a sample to clone. Extend th
 | Inventory / Equipment (Lyra root plus RPG layer) | Items, equipment, equipment grants | Definitions and native fragments, item and equipment instances, FastArray replication with intentional `OnRep`, server-authoritative mutation, save data as reconstruction source | Parallel inventory managers, pawn-owned item arrays, widget-owned equipment truth, reverting RPG code to Lyra sample behavior |
 | CommonUI | Screens, layers, focus and input routing | Activatable Widget Blueprints with MVVM | Ad hoc widget stacks; gameplay truth in widgets |
 | Enhanced Input | Gameplay input | Input configs and mapping contexts granted by Experience, PawnData, or Game Feature | Hard-coded bindings; gameplay input in widgets |
+| Enemy AI | Enemy behavior | A StateTree on `URpgAIPawnData`, composed of the `Rpg|AI` StateTree nodes under the combat control task; the AI drivers own the target and press the ability inputs | Behavior on driver timers or in Blueprints; tasks that set focus or stop movement on their own |
 
 Predicted presentation of a server-decided outcome follows the CMB-04 impact cues ([hit feedback](../../../../docs/combat-hit-feedback.md)). The remote owner plays its local copy and records it. The server's copy reaches every machine, and a native notify on the owner absorbs it only when a matching recent prediction exists (`RpgCombatImpact`, `URpgGameplayCueNotify_Impact`). Do not use the owner's activation prediction key to skip the server's copy. GAS then hides the confirmation whenever the owner's prediction missed, and a key from a listen-server host or an AI reaches every connection, so every client skips it.
 
 RPG adaptations layered on the inventory/equipment root include rarity, item level, affixes, sockets, durability, class or stat requirements, generated loot, crafting data, vendor and economy data, stat aggregation, progression scaling, and persistence mapping.
+
+AI movement looks jerky when it stops dead, which `AAIController::MoveTo` does more often than it seems (CMB-06, [enemy AI](../../../../docs/combat-enemy-ai.md)):
+- **Immediate finish:** a request that fails, for example on a goal off the navmesh, or that counts as already reached, measured with the capsule radius added, finishes at once and zeroes the velocity. So does every `StopMovement`.
+- **Stop on finish:** every abort sets the path following's stop-on-finish flag again, so a reached goal stops dead after the next stop.
+- **The fix:** route combat moves through `RequestCombatMove` in `RpgStateTreeCombatTasks.cpp`. It projects the goal first, skips goals closer than 40 cm, tests the reach without the capsule, and clears stop-on-finish with every request.
+- **Ownership:** the global combat control task holds the focus for all combat states, and tasks leave the movement to the next state instead of stopping on exit.
 
 ## Not adopted without evidence or request
 
@@ -76,3 +83,4 @@ If none apply, use normal Unreal patterns and keep the solution simple.
 - Blueprint-facing APIs: reflection macros, categories, metadata, null safety.
 - Asset-driven systems: soft references, Primary Asset usage, config registration, cook and load implications.
 - Replicated gameplay: authority path, replicated state, `OnRep` side effects, late join, prediction assumptions.
+- Enemy AI movement: sample speed, yaw and the AnimBP's Direction in PIE at 30 Hz or more, with the player standing and moving. Count hard stops (above 100 to below 30 cm/s in one sample outside montages), gait switches and turns faster than 400°/s before judging feel; a sample every 0.3 s hides the stutter.

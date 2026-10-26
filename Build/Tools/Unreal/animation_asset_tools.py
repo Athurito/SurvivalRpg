@@ -467,6 +467,24 @@ class AnimationAssetTools(unreal.ToolsetDefinition):
 
     @toolset_registry.tool_call
     @staticmethod
+    def retime_montage_range(asset_path: str, start_time: float, end_time: float, play_rate: float) -> float:
+        """Play start_time..end_time (seconds) of a single-segment montage at play_rate (0.05 to 1); does not save.
+
+        For telegraphs, such as a held wind-up before an attack window. Notifies after the range move later by the
+        added time, notifies inside it stretch with it. Returns the new montage length.
+        """
+        _guard()
+        values = (start_time, end_time, play_rate)
+        if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in values):
+            raise RuntimeError('Times and play rate must be finite numbers')
+        length = unreal.RpgAnimationAssetTools.retime_montage_range(
+            _asset(asset_path, unreal.AnimMontage), float(start_time), float(end_time), float(play_rate))
+        if length < 0.0:
+            raise RuntimeError('Montage or range does not qualify: one unscaled segment, a range inside it, play rate 0.05 to 1')
+        return length
+
+    @toolset_registry.tool_call
+    @staticmethod
     def create_chooser(asset_path: str) -> str:
         """Create an empty root Chooser using the engine factory, then configure its signature/rows explicitly."""
         _guard()

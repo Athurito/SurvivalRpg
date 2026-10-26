@@ -107,7 +107,7 @@ A `GameplayCueNotify_Burst` `OnBurst` override is const, so it cannot call the B
 ### GameplayEffects, cues, tags, and attributes
 
 - GameplayEffects (`GE_*`) are Blueprints parented to `/Script/GameplayAbilities.GameplayEffect`. Set modifiers, duration, and GE components with `ObjectTools.set_properties`; GE components follow the instanced-property rules below.
-- Gameplay tags: `GameplayTagsToolset.ListTags`, `GetTagInfo`, and `FindReferencersByTag` read. `AddTag(TagName, Comment, TagSource)`, `RemoveTag`, and `RenameTag` change the INI tag sources and need explicit user approval. Check `Source/` for a native declaration before adding a tag to an INI source.
+- Gameplay tags: `GameplayTagsToolset.ListTags`, `GetTagInfo`, and `FindReferencersByTag` read. `AddTag(TagName, Comment, TagSource)`, `RemoveTag`, and `RenameTag` change the INI tag sources and need explicit user approval. Check `Source/` for a native declaration before adding a tag to an INI source. `AddTag` rewrites the whole INI file, escaping every apostrophe in the comments and adding a blank line; restore the file and keep only the new `+GameplayTagList` line, which the running editor already knows.
 - Gameplay cues: `GameplayCueToolset.ListCues`, `GetCueInfo`, `FindCueNotifyAssets`, and `FindCueTagsWithoutNotifies` read. `CreateCueNotifyAsset` and `AddCueTag` need explicit user approval.
 - Attribute sets are native schema; `AttributeSetToolset.FindAttributeSetClasses` and `ListAttributes` only read them.
 - During PIE, `AbilitySystemInspectorToolset.GetGrantedAbilities`, `GetActiveTags`, `GetActiveEffects`, and `GetAttributeValues` show an actor's ability system state.
@@ -166,6 +166,7 @@ The project enables the engine's `LiveCodingToolset` (`AllToolsets` does not inc
 - `LiveCodingToolset.CompileLiveCoding` starts a Live Coding compile, waits for it, and returns `Result: Success`, `NoChanges`, or a failure status. Live Coding must be enabled in the editor preferences.
 - In UE 5.8.2 a compile error returns only `CompileNotStarted` and a pointer to the Live Coding console, without the compiler messages, which are missing from the editor log too. Read them from the changed file's `.cpp.sarif` under `Intermediate/Build/Win64/x64/UnrealEditor/Development/<Module>/` after checking its timestamp, or run `ue.py build` with the editor closed.
 - Use it only for function bodies in `.cpp` files. Header, reflection (`UCLASS`, `UPROPERTY`, `UFUNCTION`), constructor or default-value, `.Build.cs` and new-file changes need `ue.py build` with the editor closed.
+- A patch does not construct file-static objects. In CMB-06 a patch to one `.cpp` relinked a function of another file that reads a file-static `TAutoConsoleVariable`; in PIE it read the unconstructed copy and crashed the editor with a null access. After a Live Coding patch, avoid PIE paths through files with static console variables, or build with `ue.py build` instead.
 - Live Coding patches only the running editor process. Run `ue.py build` after closing the editor and before tests or a PR; a successful Live Coding compile does not prove that the project builds.
 
 ## Project toolsets
@@ -182,9 +183,10 @@ Each toolset is named `Game.Build.Tools.Unreal.<module>.<Class>`:
 - `AnimationAssetTools` in `Build/Tools/Unreal/animation_asset_tools.py`: animation asset structure.
   - AnimBPs and layers: `create_anim_blueprint`, `set_anim_blueprint_abstract`, `create_animation_layer_interface`, `implement_animation_layer_interface`, `add_animation_layer`, `create_linked_animation_layer_node`, and `configure_linked_animation_layer`.
   - Blueprint metadata: `set_local_function_thread_safety` and `set_variable_tooltip`.
-  - Montages and notifies: `create_montage_from_sequence`, `set_montage_section_sequences` (one unlinked section per sequence, for directional variants), `register_animation_slot` (an optional `group_name` puts the slot in its own group, so its montages do not stop montages of the default group), `add_animation_notifies`, and `animation_notify_contract`.
+  - Montages and notifies: `create_montage_from_sequence`, `set_montage_section_sequences` (one unlinked section per sequence, for directional variants), `retime_montage_range` (plays a time range of a single-segment montage slower, for example a held wind-up as an enemy telegraph; later notifies move with it), `register_animation_slot` (an optional `group_name` puts the slot in its own group, so its montages do not stop montages of the default group), `add_animation_notifies`, and `animation_notify_contract`.
   - Skeletons: `copy_skeleton_blend_profiles`.
   - BlendSpaces and Choosers: `create_blend_space`, `set_blend_space_samples`, `create_chooser`, `configure_chooser`, and `set_chooser_disabled_rows` (also for embedded tables).
+- `AIAssetTools` in `Build/Tools/Unreal/ai_asset_tools.py`: `build_state_tree` writes a StateTree's evaluators, global tasks, states, conditions and transitions from a JSON description and compiles it; the engine's `StateTreeTools` only inspect. Keep the description next to the task report, so the tree can be rebuilt and reviewed as text.
 - `AnimationRetargetTools` in `Build/Tools/Unreal/animation_retarget_tools.py`: derived animation batches through the IK retargeter. Tools: `retarget_animation_batch`, `retarget_asset_contract`, and `normalize_derived_sequence`.
 - `GaspImportAuditTools` in `Build/Tools/Unreal/gasp_import_audit.py`: read-only registry inventory for the GASP import cleanup. Tool: `collect_registry`; the workflow is in `Build/Tools/GaspImportAudit/README.md`.
 
@@ -197,6 +199,7 @@ import sys
 sys.path.insert(0, '<repository root>/Build/Tools/Unreal')
 import asset_contract_tools
 import animation_asset_tools
+import ai_asset_tools
 ```
 
 - In a running editor, enter these lines in the Output Log's Python command line, or run a saved script with the `py "<script path>"` console command.

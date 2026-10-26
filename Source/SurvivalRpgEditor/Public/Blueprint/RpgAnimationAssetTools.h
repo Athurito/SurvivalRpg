@@ -102,4 +102,14 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
 	static bool SetMontageSectionSequences(UAnimMontage* Montage, const TArray<FName>& SectionNames, const TArray<UAnimSequenceBase*>& Sequences);
+
+	/**
+	 * Plays the time range StartTime..EndTime (seconds) of a project montage at PlayRate (0.05 to 1), for example a held
+	 * wind-up before an attack window. The montage must still be one unscaled segment of one sequence, so montage and
+	 * animation time agree. The segment is split around the range; notifies after it move later by the added time and
+	 * notifies inside it stretch with it. Returns the new montage length in seconds, or a negative value when the montage
+	 * or the range does not qualify. Records undo, never saves.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
+	static float RetimeMontageRange(UAnimMontage* Montage, float StartTime, float EndTime, float PlayRate);
 };

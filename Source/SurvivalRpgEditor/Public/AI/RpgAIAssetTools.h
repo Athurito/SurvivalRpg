@@ -21,6 +21,15 @@ public:
 	static bool RebuildRiftGruntStateTree(UStateTree* StateTree);
 
 	/**
+	 * Replaces a StateTree's evaluators, global tasks and states with a JSON description and compiles it, because the
+	 * engine's StateTree toolset only inspects. Nodes are named by script struct path and their parameters set as Unreal
+	 * text values; the format is documented on the Python tool build_state_tree. Returns an empty string on success,
+	 * otherwise the errors, and leaves the asset unsaved.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|AI|Editor")
+	static FString BuildStateTreeFromJson(UStateTree* StateTree, const FString& DescriptionJson);
+
+	/**
 	 * Configures Rift Grunt PawnData, controller, and loadout ownership without changing startup AbilitySets.
 	 * Shared combat grants are composed by GF_Combat_Core and must not be copied into project-owned PawnData.
 	 */

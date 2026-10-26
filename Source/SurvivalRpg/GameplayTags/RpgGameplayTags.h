@@ -19,7 +19,11 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Attack_Basic);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Support_Heal);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Defense_Block);
+	/** Marks attack abilities; enemy AI watches its combat target's activations of them to react. */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Type_Attack);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(AI_Role_Grunt);
+	/** StateTree event an AI's combat control task sends when its combat target starts an attack. */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(AI_Event_TargetAttackStarted);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Enemy_Archetype_BasicSword);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Enemy_Archetype_SwordShield);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Enemy_Archetype_TwoHanded);
@@ -118,6 +122,8 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Staggered);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_GuardBroken);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_StaggerImmune);
+	/** Server-only while an attack step grants it: the stagger meter still fills but cannot break. */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_HyperArmor);
 	/** Dodge invulnerability window: the damage execution ignores hits on targets with this tag. */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Evading);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Trait_Staggerable);

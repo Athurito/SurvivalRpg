@@ -48,9 +48,29 @@ void URpgAIBlockDriverComponent::EndPlay(const EEndPlayReason::Type EndPlayReaso
 	Super::EndPlay(EndPlayReason);
 }
 
+void URpgAIBlockDriverComponent::SetBlockOnDamageEnabled(const bool bEnabled)
+{
+	bBlockOnDamageEnabled = bEnabled;
+}
+
+bool URpgAIBlockDriverComponent::HoldBlock(const float Duration)
+{
+	const AActor* Owner = GetOwner();
+	if (!Owner || !Owner->HasAuthority())
+	{
+		return false;
+	}
+	if (PressBlock(Duration))
+	{
+		return true;
+	}
+	ReleaseBlock();
+	return false;
+}
+
 void URpgAIBlockDriverComponent::HandleHealthChanged(URpgHealthComponent* HealthComponent, float OldValue, float NewValue, AActor* Instigator)
 {
-	if (!HealthComponent || HealthComponent->IsDeadOrDying() || NewValue >= OldValue)
+	if (!bBlockOnDamageEnabled || !HealthComponent || HealthComponent->IsDeadOrDying() || NewValue >= OldValue)
 	{
 		return;
 	}
@@ -65,15 +85,13 @@ void URpgAIBlockDriverComponent::HandleHealthChanged(URpgHealthComponent* Health
 
 void URpgAIBlockDriverComponent::TryStartBlock()
 {
-	AActor* Owner = GetOwner();
-	UWorld* World = GetWorld();
-	if (!Owner || !World || bBlockInputHeld)
+	const UWorld* World = GetWorld();
+	if (!World || bBlockInputHeld)
 	{
 		return;
 	}
 
-	const float Now = World->GetTimeSeconds();
-	if ((Now - LastBlockStartTime) < BlockCooldown)
+	if ((World->GetTimeSeconds() - LastBlockStartTime) < BlockCooldown)
 	{
 		return;
 	}
@@ -83,13 +101,22 @@ void URpgAIBlockDriverComponent::TryStartBlock()
 		return;
 	}
 
-	URpgAbilitySystemComponent* ASC = Cast<URpgAbilitySystemComponent>(UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(Owner));
-	if (!ASC)
+	PressBlock(BlockHoldDuration);
+}
+
+bool URpgAIBlockDriverComponent::PressBlock(const float Duration)
+{
+	AActor* Owner = GetOwner();
+	UWorld* World = GetWorld();
+	URpgAbilitySystemComponent* ASC = Owner
+		? Cast<URpgAbilitySystemComponent>(UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(Owner))
+		: nullptr;
+	if (!World || !ASC || bBlockInputHeld)
 	{
-		return;
+		return false;
 	}
 
-	LastBlockStartTime = Now;
+	LastBlockStartTime = World->GetTimeSeconds();
 	bBlockInputHeld = true;
 
 	ASC->AbilityInputTagPressed(RpgGameplayTags::InputTag_Weapon_Block);
@@ -99,8 +126,9 @@ void URpgAIBlockDriverComponent::TryStartBlock()
 		ReleaseBlockTimerHandle,
 		this,
 		&ThisClass::ReleaseBlock,
-		FMath::Max(0.0f, BlockHoldDuration),
+		FMath::Max(UE_KINDA_SMALL_NUMBER, Duration),
 		false);
+	return ASC->HasMatchingGameplayTag(RpgGameplayTags::State_Blocking);
 }
 
 void URpgAIBlockDriverComponent::ReleaseBlock()
@@ -111,6 +139,10 @@ void URpgAIBlockDriverComponent::ReleaseBlock()
 	}
 
 	bBlockInputHeld = false;
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ReleaseBlockTimerHandle);
+	}
 
 	if (AActor* Owner = GetOwner())
 	{

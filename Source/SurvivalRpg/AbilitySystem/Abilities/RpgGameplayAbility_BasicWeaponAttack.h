@@ -34,6 +34,12 @@ public:
 		const FGameplayTagContainer& FailedReason,
 		const FString& PredictionKey) const;
 
+	/**
+	 * Zero-based index of the running combo step, zero for the entry attack and while inactive. Read on the server by AI
+	 * drivers that press the next step once per running step.
+	 */
+	int32 GetComboStepIndex() const { return IsActive() ? ComboStepIndex : 0; }
+
 #if WITH_DEV_AUTOMATION_TESTS
 	/** Stable authority lifecycle counters used by rendered multiplayer contract tests. */
 	uint32 GetAuthorityWindowOpenCountForTests() const { return AuthorityWindowOpenCountForTests; }
@@ -147,6 +153,10 @@ private:
 	void ChainComboFromOwner();
 	/** Replaces the running step with NextAttackTag; false leaves the running step untouched. */
 	bool StartComboStep(FGameplayTag NextAttackTag);
+	/** Server: swaps the attacker's step tags (OwnerTagsDuringAttack) for those of the running step. */
+	void ApplyStepOwnerTags();
+	/** Server: removes the step tags this activation added. */
+	void RemoveStepOwnerTags();
 	FGameplayTag ResolveAttackDefinitionTag(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo) const;
 	bool TryGetSocketLocationFromWeapon(const URpgWeaponInstance* WeaponInstance, FName SocketName, FVector& OutLocation) const;
 	bool TryGetSocketLocationFromAvatar(FName SocketName, FVector& OutLocation) const;
@@ -231,6 +241,8 @@ private:
 	TObjectPtr<UAbilityTask_PlayMontageAndWait> ActiveMontageTask;
 
 	FRpgWeaponAttackDefinition ActiveAttackDefinition;
+	/** Loose tags the server added for the running step; removed on the next step or when the attack ends. */
+	FGameplayTagContainer AppliedStepOwnerTags;
 	FGameplayTag ActiveAttackTag;
 	float ActiveAttackWindowEndTime = 0.0f;
 	int32 ComboStepIndex = 0;

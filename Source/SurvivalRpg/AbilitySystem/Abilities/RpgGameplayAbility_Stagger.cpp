@@ -42,7 +42,8 @@ bool URpgGameplayAbility_Stagger::CanActivateAbility(
 		ASC->HasMatchingGameplayTag(RpgGameplayTags::Trait_Staggerable) &&
 		!ASC->HasMatchingGameplayTag(RpgGameplayTags::State_Staggered) &&
 		!ASC->HasMatchingGameplayTag(RpgGameplayTags::State_GuardBroken) &&
-		!ASC->HasMatchingGameplayTag(RpgGameplayTags::State_StaggerImmune);
+		!ASC->HasMatchingGameplayTag(RpgGameplayTags::State_StaggerImmune) &&
+		!ASC->HasMatchingGameplayTag(RpgGameplayTags::State_HyperArmor);
 }
 
 void URpgGameplayAbility_Stagger::ActivateAbility(
