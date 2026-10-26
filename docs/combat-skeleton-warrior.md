@@ -147,4 +147,4 @@ Run on 2026-10-26 on `master` `2e9961b9` plus this change.
   - The grips were checked in the idle stance and the reaction poses, not frame by frame in the attack swings.
   - `BP_RiftBoss_Prototype` derives from the grunt and now looks like the warrior too.
   - The UEFN Mover pawns are not affected; no enemy uses them.
-- **Licence:** the asset library does not record the pack's seller or licence ([third-party notices](third-party-notices.md)).
+- **Licence:** Fab Standard License, stated by the project owner on 2026-10-26 ([third-party notices](third-party-notices.md)).
