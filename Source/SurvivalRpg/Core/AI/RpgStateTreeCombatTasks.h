@@ -49,8 +49,9 @@ struct SURVIVALRPG_API FRpgStateTreeCombatControlTaskInstanceData
 
 /**
  * Global task: while active, the attack driver attacks only on the StateTree's command and the block driver no longer
- * blocks by chance after damage. Every tick it refreshes the combat target and turns each new attack of the target into
- * the TargetAttackEventTag event. Ends both effects on exit.
+ * blocks by chance after damage. It takes control as soon as the drivers exist, which GameFeature actions may add after
+ * the StateTree starts. Every tick it refreshes the combat target and turns each new attack of the target into the
+ * TargetAttackEventTag event. Ends both effects on exit.
  */
 USTRUCT(meta = (DisplayName = "Combat Control", Category = "Rpg|AI"))
 struct SURVIVALRPG_API FRpgStateTreeCombatControlTask : public FStateTreeAITaskBase

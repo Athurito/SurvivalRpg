@@ -107,7 +107,7 @@ A `GameplayCueNotify_Burst` `OnBurst` override is const, so it cannot call the B
 ### GameplayEffects, cues, tags, and attributes
 
 - GameplayEffects (`GE_*`) are Blueprints parented to `/Script/GameplayAbilities.GameplayEffect`. Set modifiers, duration, and GE components with `ObjectTools.set_properties`; GE components follow the instanced-property rules below.
-- Gameplay tags: `GameplayTagsToolset.ListTags`, `GetTagInfo`, and `FindReferencersByTag` read. `AddTag(TagName, Comment, TagSource)`, `RemoveTag`, and `RenameTag` change the INI tag sources and need explicit user approval. Check `Source/` for a native declaration before adding a tag to an INI source.
+- Gameplay tags: `GameplayTagsToolset.ListTags`, `GetTagInfo`, and `FindReferencersByTag` read. `AddTag(TagName, Comment, TagSource)`, `RemoveTag`, and `RenameTag` change the INI tag sources and need explicit user approval. Check `Source/` for a native declaration before adding a tag to an INI source. `AddTag` rewrites the whole INI file, escaping every apostrophe in the comments and adding a blank line; restore the file and keep only the new `+GameplayTagList` line, which the running editor already knows.
 - Gameplay cues: `GameplayCueToolset.ListCues`, `GetCueInfo`, `FindCueNotifyAssets`, and `FindCueTagsWithoutNotifies` read. `CreateCueNotifyAsset` and `AddCueTag` need explicit user approval.
 - Attribute sets are native schema; `AttributeSetToolset.FindAttributeSetClasses` and `ListAttributes` only read them.
 - During PIE, `AbilitySystemInspectorToolset.GetGrantedAbilities`, `GetActiveTags`, `GetActiveEffects`, and `GetAttributeValues` show an actor's ability system state.
@@ -166,6 +166,7 @@ The project enables the engine's `LiveCodingToolset` (`AllToolsets` does not inc
 - `LiveCodingToolset.CompileLiveCoding` starts a Live Coding compile, waits for it, and returns `Result: Success`, `NoChanges`, or a failure status. Live Coding must be enabled in the editor preferences.
 - In UE 5.8.2 a compile error returns only `CompileNotStarted` and a pointer to the Live Coding console, without the compiler messages, which are missing from the editor log too. Read them from the changed file's `.cpp.sarif` under `Intermediate/Build/Win64/x64/UnrealEditor/Development/<Module>/` after checking its timestamp, or run `ue.py build` with the editor closed.
 - Use it only for function bodies in `.cpp` files. Header, reflection (`UCLASS`, `UPROPERTY`, `UFUNCTION`), constructor or default-value, `.Build.cs` and new-file changes need `ue.py build` with the editor closed.
+- A patch does not construct file-static objects. In CMB-06 a patch to one `.cpp` relinked a function of another file that reads a file-static `TAutoConsoleVariable`; in PIE it read the unconstructed copy and crashed the editor with a null access. After a Live Coding patch, avoid PIE paths through files with static console variables, or build with `ue.py build` instead.
 - Live Coding patches only the running editor process. Run `ue.py build` after closing the editor and before tests or a PR; a successful Live Coding compile does not prove that the project builds.
 
 ## Project toolsets

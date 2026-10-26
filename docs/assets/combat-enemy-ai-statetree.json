@@ -1,0 +1,108 @@
+{
+  "asset": "/GF_AI_RiftMonsters/AI/StateTrees/ST_SkeletonWarrior",
+  "note": "CMB-06 skeleton warrior. Rebuild with AIAssetTools.build_state_tree(asset, json.dumps({key: this[key] for key in ('global_tasks', 'root')})). Distances in cm, times in s.",
+  "global_tasks": [
+    {"struct": "/Script/SurvivalRpg.RpgStateTreeCombatControlTask",
+     "values": {"TargetPolicy": "LastAttacker", "TargetSwitchCooldown": 4.0, "SearchRadius": 3000.0, "LoseRadius": 4000.0}}
+  ],
+  "root": {
+    "name": "SkeletonWarrior",
+    "selection": "TrySelectChildrenInOrder",
+    "children": [
+      {
+        "name": "Idle",
+        "description": "No hostile within reach: stand and look again.",
+        "enter_conditions": [{"struct": "/Script/SurvivalRpg.RpgStateTreeCombatTargetDistanceCondition", "values": {"bInvert": true}}],
+        "tasks": [{"struct": "/Script/StateTreeModule.StateTreeDelayTask", "values": {"Duration": 0.5}}],
+        "transitions": [{"trigger": "OnStateCompleted", "to": "SkeletonWarrior"}]
+      },
+      {
+        "name": "Combat",
+        "selection": "TrySelectChildrenInOrder",
+        "enter_conditions": [{"struct": "/Script/SurvivalRpg.RpgStateTreeCombatTargetDistanceCondition"}],
+        "children": [
+          {
+            "name": "Recover",
+            "description": "Staggered or guard broken: stand still until the reaction ends.",
+            "enter_conditions": [{"struct": "/Script/SurvivalRpg.RpgStateTreeOwnerHasTagsCondition",
+              "values": {"Tags": "(GameplayTags=((TagName=\"State.Staggered\"),(TagName=\"State.GuardBroken\")))"}}],
+            "tasks": [{"struct": "/Script/SurvivalRpg.RpgStateTreeWaitWhileOwnerTaggedTask"}],
+            "transitions": [{"trigger": "OnStateCompleted", "to": "SkeletonWarrior"}]
+          },
+          {
+            "name": "Approach",
+            "description": "The target is far: run until 4.5 m.",
+            "enter_conditions": [{"struct": "/Script/SurvivalRpg.RpgStateTreeCombatTargetDistanceCondition", "values": {"MinDistance": 650.0}}],
+            "tasks": [{"struct": "/Script/SurvivalRpg.RpgStateTreeKeepCombatDistanceTask",
+              "values": {"MinDistance": 0.0, "MaxDistance": 450.0, "bWalk": false, "bStrafe": false, "bSucceedInBand": true}}],
+            "transitions": [
+              {"trigger": "OnTick", "to": "Recover", "priority": "High",
+               "conditions": [{"struct": "/Script/SurvivalRpg.RpgStateTreeOwnerHasTagsCondition",
+                 "values": {"Tags": "(GameplayTags=((TagName=\"State.Staggered\"),(TagName=\"State.GuardBroken\")))"}}]},
+              {"trigger": "OnStateCompleted", "to": "SkeletonWarrior"}
+            ]
+          },
+          {
+            "name": "Engage",
+            "selection": "TrySelectChildrenInOrder",
+            "transitions": [
+              {"trigger": "OnTick", "to": "Recover", "priority": "High",
+               "conditions": [{"struct": "/Script/SurvivalRpg.RpgStateTreeOwnerHasTagsCondition",
+                 "values": {"Tags": "(GameplayTags=((TagName=\"State.Staggered\"),(TagName=\"State.GuardBroken\")))"}}]}
+            ],
+            "children": [
+              {
+                "name": "Circle",
+                "description": "Walk sideways around the target at 2.5 to 4 m for 1.5 to 3.5 s, then attack.",
+                "tasks": [{"struct": "/Script/SurvivalRpg.RpgStateTreeKeepCombatDistanceTask",
+                  "values": {"MinDistance": 250.0, "MaxDistance": 400.0, "bWalk": true, "bStrafe": true, "DurationMin": 1.5, "DurationMax": 3.5}}],
+                "transitions": [
+                  {"trigger": "OnEvent", "event": "AI.Event.TargetAttackStarted", "to": "Defend",
+                   "conditions": [
+                     {"struct": "/Script/SurvivalRpg.RpgStateTreeCombatTargetDistanceCondition", "values": {"MaxDistance": 400.0}},
+                     {"struct": "/Script/StateTreeModule.StateTreeRandomCondition", "values": {"Threshold": 0.4}}]},
+                  {"trigger": "OnTick", "to": "SkeletonWarrior",
+                   "conditions": [{"struct": "/Script/SurvivalRpg.RpgStateTreeCombatTargetDistanceCondition", "values": {"MinDistance": 650.0}}]},
+                  {"trigger": "OnStateSucceeded", "to": "Attack"},
+                  {"trigger": "OnStateFailed", "to": "SkeletonWarrior"}
+                ]
+              },
+              {
+                "name": "Attack",
+                "description": "Close in and chain one to four combo steps.",
+                "tasks": [{"struct": "/Script/SurvivalRpg.RpgStateTreeMeleeAttackTask",
+                  "values": {"StepCountWeights": "(0.35,0.35,0.2,0.1)", "bRunToTarget": true, "ApproachTimeout": 3.0}}],
+                "transitions": [
+                  {"trigger": "OnStateSucceeded", "to": "Retreat",
+                   "conditions": [{"struct": "/Script/StateTreeModule.StateTreeRandomCondition", "values": {"Threshold": 0.5}}]},
+                  {"trigger": "OnStateSucceeded", "to": "Circle"},
+                  {"trigger": "OnStateFailed", "to": "SkeletonWarrior"}
+                ]
+              },
+              {
+                "name": "Defend",
+                "description": "Raise the shield against the target's attack; sometimes counter right after.",
+                "tasks": [{"struct": "/Script/SurvivalRpg.RpgStateTreeHoldBlockTask", "values": {"DurationMin": 0.6, "DurationMax": 1.0}}],
+                "transitions": [
+                  {"trigger": "OnStateSucceeded", "to": "Attack",
+                   "conditions": [{"struct": "/Script/StateTreeModule.StateTreeRandomCondition", "values": {"Threshold": 0.5}}]},
+                  {"trigger": "OnStateCompleted", "to": "Circle"}
+                ]
+              },
+              {
+                "name": "Retreat",
+                "description": "Back off to 4.5 to 5.5 m while facing the target.",
+                "tasks": [{"struct": "/Script/SurvivalRpg.RpgStateTreeKeepCombatDistanceTask",
+                  "values": {"MinDistance": 450.0, "MaxDistance": 550.0, "bWalk": true, "bStrafe": false, "bSucceedInBand": true, "DurationMin": 2.0, "DurationMax": 2.0}}],
+                "transitions": [
+                  {"trigger": "OnStateSucceeded", "to": "Circle"},
+                  {"trigger": "OnStateFailed", "to": "SkeletonWarrior"}
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

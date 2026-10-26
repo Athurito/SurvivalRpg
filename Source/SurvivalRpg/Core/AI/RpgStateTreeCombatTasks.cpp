@@ -64,6 +64,27 @@ namespace RpgStateTreeCombat
 	{
 		return FMath::FRandRange(FMath::Min(Min, Max), FMath::Max(Min, Max));
 	}
+
+	/**
+	 * Hands the drivers to the StateTree once they exist. GameFeature actions add them after possession, which can be
+	 * after the StateTree starts, so the combat control task retries every tick instead of failing the tree.
+	 */
+	URpgAIAttackDriverComponent* EnsureCombatControl(APawn* Pawn, FRpgStateTreeCombatControlTaskInstanceData& InstanceData)
+	{
+		URpgAIAttackDriverComponent* AttackDriver = ResolveAttackDriver(Pawn);
+		if (!AttackDriver || AttackDriver->IsExternallyControlled())
+		{
+			return AttackDriver;
+		}
+
+		AttackDriver->BeginExternalControl(InstanceData.TargetPolicy, InstanceData.TargetSwitchCooldown);
+		if (URpgAIBlockDriverComponent* BlockDriver = Pawn->FindComponentByClass<URpgAIBlockDriverComponent>())
+		{
+			BlockDriver->SetBlockOnDamageEnabled(false);
+		}
+		InstanceData.LastSeenTargetAttackCount = AttackDriver->GetTargetAttackCount();
+		return AttackDriver;
+	}
 }
 
 FRpgStateTreeCombatControlTaskInstanceData::FRpgStateTreeCombatControlTaskInstanceData()
@@ -80,20 +101,12 @@ EStateTreeRunStatus FRpgStateTreeCombatControlTask::EnterState(FStateTreeExecuti
 {
 	using namespace RpgStateTreeCombat;
 	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	InstanceData.CombatTarget = nullptr;
 	APawn* Pawn = ResolveLivingPawn(ResolveController(Context));
-	URpgAIAttackDriverComponent* AttackDriver = ResolveAttackDriver(Pawn);
-	if (!AttackDriver)
+	if (URpgAIAttackDriverComponent* AttackDriver = EnsureCombatControl(Pawn, InstanceData))
 	{
-		return EStateTreeRunStatus::Failed;
+		InstanceData.CombatTarget = AttackDriver->RefreshCombatTarget(InstanceData.SearchRadius, InstanceData.LoseRadius);
 	}
-
-	AttackDriver->BeginExternalControl(InstanceData.TargetPolicy, InstanceData.TargetSwitchCooldown);
-	if (URpgAIBlockDriverComponent* BlockDriver = Pawn->FindComponentByClass<URpgAIBlockDriverComponent>())
-	{
-		BlockDriver->SetBlockOnDamageEnabled(false);
-	}
-	InstanceData.LastSeenTargetAttackCount = AttackDriver->GetTargetAttackCount();
-	InstanceData.CombatTarget = AttackDriver->RefreshCombatTarget(InstanceData.SearchRadius, InstanceData.LoseRadius);
 	return EStateTreeRunStatus::Running;
 }
 
@@ -101,7 +114,7 @@ EStateTreeRunStatus FRpgStateTreeCombatControlTask::Tick(FStateTreeExecutionCont
 {
 	using namespace RpgStateTreeCombat;
 	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
-	URpgAIAttackDriverComponent* AttackDriver = ResolveAttackDriver(ResolveLivingPawn(ResolveController(Context)));
+	URpgAIAttackDriverComponent* AttackDriver = EnsureCombatControl(ResolveLivingPawn(ResolveController(Context)), InstanceData);
 	if (!AttackDriver)
 	{
 		InstanceData.CombatTarget = nullptr;
