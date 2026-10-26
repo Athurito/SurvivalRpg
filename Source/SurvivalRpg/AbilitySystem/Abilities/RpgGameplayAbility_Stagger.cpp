@@ -6,6 +6,7 @@
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgDefenseSet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Combat/RpgCombatImpact.h"
+#include "SurvivalRpg/Combat/RpgCombatReactionProfile.h"
 #include "SurvivalRpg/Core/Character/RpgHealthComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
@@ -84,7 +85,7 @@ void URpgGameplayAbility_Stagger::ActivateAbility(
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
 	const float StaggerDuration = GetStaggerDuration();
-	UAnimMontage* MontageToPlay = GuardBreakMontage ? GuardBreakMontage : StaggerMontage;
+	UAnimMontage* MontageToPlay = ResolveStaggerMontage(bGuardBreak, TriggerEventData);
 	if (MontageToPlay)
 	{
 		UAbilityTask_PlayMontageAndWait* MontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
@@ -161,6 +162,26 @@ void URpgGameplayAbility_Stagger::ExecuteStaggerCue(bool bGuardBreak, const FGam
 	CueParameters.EffectCauser = CueParameters.Instigator;
 	CueParameters.Location = AvatarActor->GetActorLocation();
 	RpgCombatImpact::ExecuteServerCue(GetAbilitySystemComponentFromActorInfo(), CueTag, CueParameters);
+}
+
+UAnimMontage* URpgGameplayAbility_Stagger::ResolveStaggerMontage(bool bGuardBreak, const FGameplayEventData* TriggerEventData) const
+{
+	const AActor* AvatarActor = GetAvatarActorFromActorInfo();
+	if (const URpgCombatReactionProfile* Profile = URpgCombatReactionProfile::FindForActor(AvatarActor))
+	{
+		const bool bAttackerBehind = URpgCombatReactionProfile::IsAttackerBehind(AvatarActor, TriggerEventData);
+		UAnimMontage* ProfileMontage = bGuardBreak ? Profile->GuardBreak.Select(bAttackerBehind) : nullptr;
+		if (!ProfileMontage)
+		{
+			ProfileMontage = Profile->Stagger.Select(bAttackerBehind);
+		}
+		if (ProfileMontage)
+		{
+			return ProfileMontage;
+		}
+	}
+
+	return bGuardBreak && GuardBreakMontage ? GuardBreakMontage.Get() : StaggerMontage.Get();
 }
 
 void URpgGameplayAbility_Stagger::ApplyStaggerTags() const

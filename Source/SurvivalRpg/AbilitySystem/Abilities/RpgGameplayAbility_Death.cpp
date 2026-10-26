@@ -7,6 +7,7 @@
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Character/RpgHealthComponent.h"
 #include "SurvivalRpg/Combat/RpgCombatImpact.h"
+#include "SurvivalRpg/Combat/RpgCombatReactionProfile.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
 URpgGameplayAbility_Death::URpgGameplayAbility_Death(const FObjectInitializer& ObjectInitializer)
@@ -76,6 +77,19 @@ void URpgGameplayAbility_Death::StartDeath()
 			HealthComponent->StartDeath();
 		}
 	}
+}
+
+UAnimMontage* URpgGameplayAbility_Death::GetDeathMontage(const FGameplayEventData& EventData) const
+{
+	const AActor* AvatarActor = GetAvatarActorFromActorInfo();
+	if (const URpgCombatReactionProfile* Profile = URpgCombatReactionProfile::FindForActor(AvatarActor))
+	{
+		if (UAnimMontage* ProfileMontage = Profile->Death.Select(URpgCombatReactionProfile::IsAttackerBehind(AvatarActor, &EventData)))
+		{
+			return ProfileMontage;
+		}
+	}
+	return DeathMontage;
 }
 
 void URpgGameplayAbility_Death::FinishDeath()

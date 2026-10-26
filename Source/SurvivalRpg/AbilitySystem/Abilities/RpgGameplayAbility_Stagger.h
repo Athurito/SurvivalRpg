@@ -44,17 +44,21 @@ private:
 	void ClearStaggerTags() const;
 	void ApplyStaggerImmunity() const;
 	void ExecuteStaggerCue(bool bGuardBreak, const FGameplayEventData* TriggerEventData) const;
+	UAnimMontage* ResolveStaggerMontage(bool bGuardBreak, const FGameplayEventData* TriggerEventData) const;
 	float GetStaggerDuration() const;
 	float GetStaggerImmunityDuration() const;
 
 private:
 	ERpgAbilityActivationGroup ActivationGroupBeforeStagger = ERpgAbilityActivationGroup::Independent;
 
-	/** Designer-selected replicated stagger montage; optional when a duration supplies completion. */
+	/**
+	 * Designer-selected replicated stagger montage; optional when a duration supplies completion. The pawn's
+	 * combat reaction profile (PawnData) takes precedence.
+	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Stagger")
 	TObjectPtr<UAnimMontage> StaggerMontage;
 
-	/** Designer-selected guard-break montage, preferred over the stagger montage when configured. */
+	/** Designer-selected montage played instead of StaggerMontage on a guard break; the reaction profile takes precedence. */
 	UPROPERTY(EditDefaultsOnly, Category = "Stagger")
 	TObjectPtr<UAnimMontage> GuardBreakMontage;
 
