@@ -27,6 +27,7 @@
 
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_BasicWeaponAttack.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_Dodge.h"
+#include "SurvivalRpg/AbilitySystem/Attributes/RpgCombatSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgDefenseSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgStaminaSet.h"
 #include "SurvivalRpg/Core/Character/RpgHealthComponent.h"
@@ -43,6 +44,8 @@
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
 #include "SurvivalRpg/Equipment/RpgWeaponInstance.h"
+#include "SurvivalRpg/Runes/RpgWeaponRuneDefinition.h"
+#include "UObject/StrongObjectPtr.h"
 
 #if ENABLE_PIE_NETWORK_TEST
 
@@ -66,6 +69,7 @@ namespace RpgCombatPIENetworkTests
 	constexpr double CleanupStabilitySeconds = 0.2;
 	constexpr float MinimumBladeCenterAdvance = 2.0f;
 	constexpr float FastMontageTimingPlayRate = 1.5f;
+	constexpr float EchoTestDamage = 25.0f;
 	// On the path of the combo's first hit (AM_SwordShieldCombo01_Step1, 0.13..0.30 s): the blade's sampled sweep,
 	// with the CMB-01 grip and root motion, passes through the target capsule's center.
 	const FVector FixedBasicSwordContactOffset(160.0f, 20.0f, 0.0f);
@@ -773,6 +777,7 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 	bool bOriginalAttackLifecycleLogging = false;
 	UClass* PrototypeGameModeClass = nullptr;
 	TArray<TSharedPtr<FString>> StepDescriptions;
+	TStrongObjectPtr<URpgWeaponRuneDefinition> EchoTestRune;
 
 	const TCHAR* MakeStepDescription(const int32 AttackIndex, const TCHAR* Phase)
 	{
@@ -815,11 +820,14 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 				});
 	}
 
+	/** ExpectedEchoDamage above zero: the swing triggers an Echo strike, whose ghost hits the target once more after it. */
 	void QueueCompletedAttack(
 		const int32 AttackIndex,
-		const float MontagePlayRateOverride = 0.0f)
+		const float MontagePlayRateOverride = 0.0f,
+		const float ExpectedEchoDamage = 0.0f)
 	{
 		using namespace RpgCombatPIENetworkTests;
+		const int32 ExpectedHealthDrops = ExpectedEchoDamage > 0.0f ? 2 : 1;
 
 		Network
 			.ThenServer(
@@ -995,7 +1003,7 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 				AttackWindowPoseTimeout())
 			.UntilServer(
 				MakeStepDescription(AttackIndex, TEXT("authority applies damage and fully cleans up")),
-				[](FNetworkState& State)
+				[ExpectedHealthDrops](FNetworkState& State)
 				{
 					ARpgCharacter* Character = nullptr;
 					URpgAbilitySystemComponent* AbilitySystem = nullptr;
@@ -1014,7 +1022,7 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 							State.TraceSampleBaseline &&
 						AttackAbility->GetAuthorityDamageHitCountForTests() >=
 							State.DamageHitBaseline + 1 &&
-						State.Target->GetHealthDropCount() >= 1 &&
+						State.Target->GetHealthDropCount() >= ExpectedHealthDrops &&
 						State.Target->GetHealthSet()->GetHealth() <
 							State.TargetHealthBeforeAttack &&
 						HasCleanAuthorityAttack(State);
@@ -1022,7 +1030,7 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 				NetworkTimeout())
 			.ThenServer(
 				MakeStepDescription(AttackIndex, TEXT("verify exact authority deltas")),
-				[this](FNetworkState& State)
+				[this, ExpectedHealthDrops, ExpectedEchoDamage](FNetworkState& State)
 				{
 					ARpgCharacter* Character = nullptr;
 					URpgAbilitySystemComponent* AbilitySystem = nullptr;
@@ -1055,15 +1063,29 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 					ASSERT_THAT(IsTrue(
 						AttackAbility->GetAuthorityDamageHitCountForTests() ==
 							State.DamageHitBaseline + 1));
-					ASSERT_THAT(IsTrue(State.Target->GetHealthDropCount() == 1));
+					ASSERT_THAT(IsTrue(State.Target->GetHealthDropCount() == ExpectedHealthDrops));
 					ASSERT_THAT(IsTrue(State.Target->GetLastDamageSource() ==
 						State.AuthorityWeapon.Get()));
 					ASSERT_THAT(IsTrue(State.Target->GetLastDamageInstigator() ==
 						Character->GetPlayerState()));
 					ASSERT_THAT(IsTrue(State.Target->GetLastDamageCauser() == Character));
-					ASSERT_THAT(IsTrue(FMath::IsNearlyEqual(
-						State.Target->GetLastHealthBeforeDamage(),
-						State.TargetHealthBeforeAttack)));
+					if (ExpectedEchoDamage > 0.0f)
+					{
+						// The last drop is the ghost's, after the swing's own: the rune damage plus the source base damage.
+						const float BaseDamage = AbilitySystem->GetNumericAttribute(URpgCombatSet::GetBaseDamageAttribute());
+						ASSERT_THAT(IsTrue(
+							State.Target->GetLastHealthBeforeDamage() < State.TargetHealthBeforeAttack));
+						ASSERT_THAT(IsTrue(FMath::IsNearlyEqual(
+							State.Target->GetLastHealthBeforeDamage() - State.Target->GetLastHealthAfterDamage(),
+							ExpectedEchoDamage + BaseDamage,
+							0.01f)));
+					}
+					else
+					{
+						ASSERT_THAT(IsTrue(FMath::IsNearlyEqual(
+							State.Target->GetLastHealthBeforeDamage(),
+							State.TargetHealthBeforeAttack)));
+					}
 					ASSERT_THAT(IsTrue(
 						State.Target->GetLastHealthAfterDamage() <
 							State.Target->GetLastHealthBeforeDamage()));
@@ -1562,6 +1584,74 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 		const TCHAR* Result = **Stored;
 		StepDescriptions.Add(MoveTemp(Stored));
 		return Result;
+	}
+
+	/** CMB-07: the server's Echo charge, and the copy the owner received for the rune glow. */
+	void QueueEchoChargeReplicated(const int32 ExpectedCharge)
+	{
+		using namespace RpgCombatPIENetworkTests;
+		Network
+			.ThenServer(Describe(FString::Printf(TEXT("Echo: authority charge is %d"), ExpectedCharge)),
+				[this, ExpectedCharge](FNetworkState& State)
+				{
+					ASSERT_THAT(IsTrue(State.AuthorityWeapon.IsValid()));
+					ASSERT_THAT(AreEqual(ExpectedCharge, State.AuthorityWeapon.IsValid() ? State.AuthorityWeapon->GetEchoCharge() : -1));
+				})
+			.UntilClient(Describe(FString::Printf(TEXT("Echo: owner receives charge %d"), ExpectedCharge)),
+				0,
+				[ExpectedCharge](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindLocalCharacter(State.World);
+					URpgEquipmentManagerComponent* EquipmentManager = Character
+						? Character->FindComponentByClass<URpgEquipmentManagerComponent>()
+						: nullptr;
+					const URpgWeaponInstance* Weapon = EquipmentManager
+						? Cast<URpgWeaponInstance>(EquipmentManager->GetEquipmentInstanceInSlot(ERpgEquipmentSlot::MainHand))
+						: nullptr;
+					return Weapon && Weapon->GetEchoCharge() == ExpectedCharge;
+				},
+				NetworkTimeout());
+	}
+
+	/** CMB-07: every third swing that lands a hit repeats as a ghost strike on the server, and the charge replicates. */
+	TEST_METHOD(RemoteClientEchoRuneReplaysEveryThirdHittingSwing)
+	{
+		using namespace RpgCombatPIENetworkTests;
+
+		QueueRemoteSwordReady();
+		Network.ThenServer(TEXT("Echo: give the authority sword a transient Echo rune"),
+			[this](FNetworkState& State)
+			{
+				TSubclassOf<UGameplayEffect> DamageEffect = LoadClass<UGameplayEffect>(nullptr, DamageEffectClassPath);
+				ASSERT_THAT(IsNotNull(DamageEffect.Get()));
+				EchoTestRune.Reset(NewObject<URpgWeaponRuneDefinition>());
+				FRpgEchoStrikeSettings& Echo = EchoTestRune->EchoStrike;
+				Echo.bEnabled = true;
+				Echo.HitsToTrigger = 3;
+				Echo.StrikeDelay = 0.2f;
+				// The steps between swings take longer than real play; the charge test covers the timeout.
+				Echo.ChargeTimeout = 0.0f;
+				Echo.DamageEffect = DamageEffect;
+				Echo.Damage = EchoTestDamage;
+				ASSERT_THAT(IsTrue(State.AuthorityWeapon.IsValid() &&
+					State.AuthorityWeapon->SetEchoRuneForTests(EchoTestRune.Get())));
+			});
+		QueueEchoChargeReplicated(0);
+		QueueCompletedAttack(0);
+		QueueEchoChargeReplicated(1);
+		QueueCompletedAttack(1);
+		QueueEchoChargeReplicated(2);
+		QueueCompletedAttack(2, 0.0f, EchoTestDamage);
+		QueueEchoChargeReplicated(0);
+		QueueCompletedAttack(3);
+		QueueEchoChargeReplicated(1);
+		Network.ThenServer(TEXT("Echo: remove the transient rune"),
+			[this](FNetworkState& State)
+			{
+				ASSERT_THAT(IsTrue(State.AuthorityWeapon.IsValid() && State.AuthorityWeapon->SetEchoRuneForTests(nullptr)));
+				ASSERT_THAT(AreEqual(0, State.AuthorityWeapon.IsValid() ? State.AuthorityWeapon->GetEchoCharge() : -1));
+			});
+		QueueEchoChargeReplicated(0);
 	}
 
 	/** The Basic Sword's primary chain as authored, entry attack first. */

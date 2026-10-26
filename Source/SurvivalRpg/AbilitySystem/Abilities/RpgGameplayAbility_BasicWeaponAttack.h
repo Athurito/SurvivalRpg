@@ -199,6 +199,11 @@ private:
 		const FCollisionQueryParams& QueryParams);
 	void TraceDamageLine(const FVector& TraceStart, const FVector& TraceEnd, const FCollisionQueryParams& QueryParams);
 	void TraceDamageSweep(const FVector& TraceStart, const FVector& TraceEnd, const FCollisionQueryParams& QueryParams);
+	/** Authority: starts recording the window's trace queries when the weapon wants swing records (runes). */
+	void BeginSwingRecord(bool bAuthority);
+	void RecordSwingTrace(const FVector& TraceStart, const FVector& TraceEnd, ERpgRecordedTraceShape Shape, const FVector& ShapeExtent);
+	/** Authority: hands the recorded window and whether it landed a hit to the weapon instance. */
+	void FinishSwingRecord();
 	void HandleTraceHitResults(const TArray<FHitResult>& HitResults);
 	void EvaluateConditionalModifiers(const UAbilitySystemComponent* TargetASC, float& Damage, float& StaggerDamage) const;
 	FGameplayEffectSpecHandle MakeWeaponDamageEffectSpec(const FHitResult& HitResult, const UAbilitySystemComponent* TargetASC) const;
@@ -241,6 +246,10 @@ private:
 	TObjectPtr<UAbilityTask_PlayMontageAndWait> ActiveMontageTask;
 
 	FRpgWeaponAttackDefinition ActiveAttackDefinition;
+	/** Authority: trace queries of the open attack window, kept while the weapon wants swing records. */
+	FRpgWeaponSwingRecord SwingRecord;
+	bool bRecordingSwing = false;
+	int32 DamageHitsBeforeSwing = 0;
 	/** Loose tags the server added for the running step; removed on the next step or when the attack ends. */
 	FGameplayTagContainer AppliedStepOwnerTags;
 	FGameplayTag ActiveAttackTag;

@@ -178,6 +178,8 @@ bool URpgGameplayAbility_BasicWeaponAttack::HasResidualAttackRuntimeStateForTest
 		bAuthorityAttackWindowScheduled ||
 		!PreviousTracePointLocations.IsEmpty() ||
 		!HitActorsThisWindow.IsEmpty() ||
+		bRecordingSwing ||
+		!SwingRecord.Traces.IsEmpty() ||
 		ActiveMontageTask != nullptr ||
 		ActiveAttackTag.IsValid() ||
 		ComboStepIndex != 0 ||
@@ -1584,6 +1586,7 @@ void URpgGameplayAbility_BasicWeaponAttack::OpenAttackWindow()
 
 	// Authority traces for damage; a remote owner traces the same window only to play its hit feedback without a round trip.
 	const bool bAuthority = CurrentActorInfo && CurrentActorInfo->IsNetAuthority();
+	BeginSwingRecord(bAuthority);
 	if (!bAuthority && !ShouldPredictImpactFeedback())
 	{
 		return;
@@ -1673,6 +1676,7 @@ void URpgGameplayAbility_BasicWeaponAttack::CloseAttackWindow(bool bLogMissingEn
 
 	bAttackWindowOpen = false;
 	PreviousTracePointLocations.Reset();
+	FinishSwingRecord();
 
 	if (bWasOpen)
 	{
@@ -1832,6 +1836,7 @@ void URpgGameplayAbility_BasicWeaponAttack::TraceDamageLine(
 
 	TArray<FHitResult> HitResults;
 	World->LineTraceMultiByChannel(HitResults, TraceStart, TraceEnd, Rpg_TraceChannel_Weapon, QueryParams);
+	RecordSwingTrace(TraceStart, TraceEnd, ERpgRecordedTraceShape::Line, FVector::ZeroVector);
 
 #if ENABLE_DRAW_DEBUG
 	DrawWeaponAttackTraceLine(World, TraceStart, TraceEnd, HitResults);
@@ -1874,12 +1879,77 @@ void URpgGameplayAbility_BasicWeaponAttack::TraceDamageSweep(
 
 	TArray<FHitResult> HitResults;
 	World->SweepMultiByChannel(HitResults, TraceStart, TraceEnd, FQuat::Identity, Rpg_TraceChannel_Weapon, Shape, QueryParams);
+	switch (ActiveAttackDefinition.TraceMode)
+	{
+	case ERpgWeaponAttackTraceMode::SphereSweep:
+		RecordSwingTrace(TraceStart, TraceEnd, ERpgRecordedTraceShape::Sphere, FVector(Shape.GetSphereRadius(), 0.0, 0.0));
+		break;
+	case ERpgWeaponAttackTraceMode::CapsuleSweep:
+		RecordSwingTrace(TraceStart, TraceEnd, ERpgRecordedTraceShape::Capsule,
+			FVector(Shape.GetCapsuleRadius(), Shape.GetCapsuleHalfHeight(), 0.0));
+		break;
+	case ERpgWeaponAttackTraceMode::BoxSweep:
+		RecordSwingTrace(TraceStart, TraceEnd, ERpgRecordedTraceShape::Box, Shape.GetBox());
+		break;
+	default:
+		break;
+	}
 
 #if ENABLE_DRAW_DEBUG
 	DrawWeaponAttackTraceSweep(World, TraceStart, TraceEnd, ActiveAttackDefinition, HitResults);
 #endif
 
 	HandleTraceHitResults(HitResults);
+}
+
+void URpgGameplayAbility_BasicWeaponAttack::BeginSwingRecord(const bool bAuthority)
+{
+	const UWorld* World = GetWorld();
+	bRecordingSwing = bAuthority && World && ActiveWeaponInstance && ActiveWeaponInstance->WantsSwingRecords();
+	SwingRecord = FRpgWeaponSwingRecord();
+	if (bRecordingSwing)
+	{
+		SwingRecord.WindowStartTime = World->GetTimeSeconds();
+		DamageHitsBeforeSwing = AuthorityDamageHitsThisActivation;
+	}
+}
+
+void URpgGameplayAbility_BasicWeaponAttack::RecordSwingTrace(
+	const FVector& TraceStart,
+	const FVector& TraceEnd,
+	const ERpgRecordedTraceShape Shape,
+	const FVector& ShapeExtent)
+{
+	const UWorld* World = GetWorld();
+	if (!bRecordingSwing || !World)
+	{
+		return;
+	}
+
+	FRpgRecordedWeaponTrace& Trace = SwingRecord.Traces.AddDefaulted_GetRef();
+	Trace.TimeOffset = World->GetTimeSeconds() - SwingRecord.WindowStartTime;
+	Trace.Start = TraceStart;
+	Trace.End = TraceEnd;
+	Trace.Shape = Shape;
+	Trace.ShapeExtent = ShapeExtent;
+}
+
+void URpgGameplayAbility_BasicWeaponAttack::FinishSwingRecord()
+{
+	if (!bRecordingSwing)
+	{
+		return;
+	}
+
+	bRecordingSwing = false;
+	const UWorld* World = GetWorld();
+	SwingRecord.WindowEndTime = World ? World->GetTimeSeconds() : SwingRecord.WindowStartTime;
+	if (ActiveWeaponInstance)
+	{
+		// A swing counts as landed when it dealt health damage to at least one target.
+		ActiveWeaponInstance->HandleAttackSwingResolved(SwingRecord, AuthorityDamageHitsThisActivation > DamageHitsBeforeSwing);
+	}
+	SwingRecord = FRpgWeaponSwingRecord();
 }
 
 void URpgGameplayAbility_BasicWeaponAttack::HandleTraceHitResults(const TArray<FHitResult>& HitResults)
