@@ -6,8 +6,8 @@ This plan records the agreed first bow system: a player bow and a bow enemy usin
 
 ## Scheduling and scope
 
-- Keep the [combat roadmap](combat-roadmap.md) and its CMB tasks separate. The user is currently working on CMB-06.
-- Preserve the existing CMB/MST order in the [mastery map roadmap](mastery-map-roadmap.md). Planning ranged combat does not move it ahead of either phase or start an implementation task.
+- Ranged combat is an independent workstream with its own implementation start; this plan has no prerequisite to finish another roadmap.
+- Preserve the scheduling of other workstreams, including the [mastery map roadmap](mastery-map-roadmap.md). This document does not select when ranged implementation starts.
 - Every RNG task below remains Deferred until the user selects its start. Use one bounded task per branch/PR, named `codex/rng-<id>-<slug>` or `claude/rng-<id>-<slug>`.
 - The first delivery is one bow, one standard arrow type, and one bow enemy. Embedded arrows and recovery are required for that delivery, not later polish.
 - The player presentation targets CMC/Manny. Do not incidentally add a Mover bow presentation; regression-check shared mechanisms on Mover.
@@ -113,7 +113,7 @@ Target choice, delivery, and effect payload remain separate. Player and enemy bo
 - **Runtime truth:** GAS and the server own activation, resource costs, and damage. Inventory owns physical ammunition and committed loot. Equipment owns equipped state, source binding, and grants. Existing loot sources own pending corpse recovery until materialization.
 - **Existing seams:** `URpgRangedWeaponInstance`, `URpgGameplayAbility_FromEquipment`, `GetTunedValue`, the ASC, `RpgDamageExecution`, inventory transfers, `URpgLootSourceComponent`, `ARpgDroppedInventoryActor`, AI drivers, movement, and CommonUI/MVVM.
 - **Ownership:** C++ owns validated intent, shot/recovery lifecycle, native configuration structures, and replicated read state. Blueprint/DataAsset content owns bow identity, sequencing, curves, montage/cue selection, tuning, presentation, and AI behavior composition.
-- **New native classes:** four planned classes, listed below. Names are proposed and must be reconciled with the actual post-CMB baseline; reuse a delivered equivalent rather than duplicating it.
+- **New native classes:** four planned classes, listed below. Names are proposed and must be reconciled with the actual implementation baseline; reuse an existing equivalent rather than duplicating it.
 - **Asset work:** use Unreal MCP to inspect, author, compile, save, and validate concrete Blueprint, animation, equipment, effect, cue, and WBP assets. No native ability leaf substitutes for asset authoring.
 
 | Proposed class | Native responsibility |
@@ -137,7 +137,7 @@ Extend existing types with native shot/recovery configuration structures, source
 
 Use the existing ability skill-tuning resolver around `GetTunedValue` for draw time, release cost, optional hold drain, aim movement, and break chance. Keep damage and launch-speed curves authored in the bow's content. Resource mutations remain GAS-owned.
 
-The inspected tuning resolver discovers an equipment item's skill tree; NPC equipment currently can lack an item instance and then uses base tuning. Do not assume it already supports arbitrary global buffs or a future magic progression source. Re-inspect the delivered CMB/MST contracts before extending that resolver. Prove passive adjustments with focused test content rather than adding a production Archery tree.
+The inspected tuning resolver discovers an equipment item's skill tree; NPC equipment currently can lack an item instance and then uses base tuning. Do not assume it already supports arbitrary global buffs or a future magic progression source. Re-inspect the current equipment and progression contracts before extending that resolver. Prove passive adjustments with focused test content rather than adding a production Archery tree.
 
 Aim movement must use the real movement mechanism and its prediction snapshots. The inspected `URpgMobilitySet::MovementSpeed` is not consumed by the current movement calculation; merely modifying that attribute would not implement aim mobility. Add a distinct aim lease/state through the existing ASC and CMC seams instead of pretending aiming is blocking. Keep the ordinary movement profile and equipment-load rules unchanged.
 
@@ -170,9 +170,9 @@ For stackable ammunition, track ordered recovery credits per definition against 
 
 ### Enemy integration
 
-Extend the completed CMB-06 AI rather than creating a ranged AI authority beside it. The StateTree/configuration owns preferred distance, line-of-fire checks, readable draw timing, release decisions, and repositioning under obstruction or close pressure.
+Extend the existing enemy AI and its action-selection seam. The StateTree/configuration owns preferred distance, line-of-fire checks, readable draw timing, release decisions, and repositioning under obstruction or close pressure.
 
-The inspected pre-CMB-06 attack driver requires a melee primary attack definition and has no ranged target-data/draw lifecycle. Replace that assumption at the delivered action-selection seam so the same granted bow ability can receive player camera intent or a server-selected AI target. Preserve melee behavior and existing loadout grants.
+The attack driver inspected at the original planning commit requires a melee primary attack definition and has no ranged target-data/draw lifecycle. Check the current implementation before extending it: reuse any available generic action/targeting contract, and remove remaining melee-only restrictions where necessary so the same granted bow ability can receive player camera intent or a server-selected AI target. Preserve melee behavior and existing loadout grants.
 
 Unlimited NPC ammunition is an explicit content policy. The existing NPC inventory is corpse loot storage, not an implicit combat quiver. Keep the finite recovery budget separate from that inventory and from the number of attacks the AI may perform.
 
@@ -186,7 +186,7 @@ Unlimited NPC ammunition is an explicit content policy. The existing NPC invento
 
 ## Implementation roadmap
 
-All tasks are **Deferred**. The order below is internal to this plan and does not reschedule CMB or MST. Preserve these IDs, including the added recovery step `RNG-03b`.
+All tasks are **Deferred** because their implementation start has not been selected. The order below is internal to this plan and does not reschedule other workstreams. Preserve these IDs, including the added recovery step `RNG-03b`.
 
 | ID | Deliverable | Dependencies | Status |
 | --- | --- | --- | --- |
@@ -195,15 +195,15 @@ All tasks are **Deferred**. The order below is internal to this plan and does no
 | RNG-03 | Player input, shoulder camera, aim movement, grips, and draw/release animations on CMC/Manny | RNG-02 | Deferred |
 | RNG-03b | Embedded arrows, breakage, world pickup, corpse recovery, salvage lifetime, and finite NPC recovery-budget mechanism | RNG-03 | Deferred |
 | RNG-04 | Crosshair, draw-strength and ammunition HUD through CommonUI/MVVM; no trajectory or impact prediction display | RNG-03b | Deferred |
-| RNG-05 | One bow enemy using CMB-06 action/spacing behavior, common bow execution, and configured unlimited fire with bounded recovery | RNG-04; delivered CMB-06 contract | Deferred |
+| RNG-05 | One bow enemy extending existing AI action/spacing behavior, common bow execution, and configured unlimited fire with bounded recovery | RNG-04 | Deferred |
 | RNG-06 | Integrated acceptance, network/regression checks, and final first-bow feel tuning | RNG-05 | Deferred |
 
 Each task records its ownership boundary, changed assets, actual validation, failed attempts, remaining limits, PR, and next action. Do not defer the focused checks for early tasks until RNG-06. No implementation task is marked Ready by this document.
 
 ### Baseline refresh before RNG-01
 
-1. Verify current branch, working tree, PR state, and the merged CMB result. The planning checkout was clean at detached commit `17f16045`, with CMB-05 delivered and CMB-06 reported active by the user; this is historical inspection evidence, not the future implementation base.
-2. Re-read current AI action/targeting, equipment grants, damage/defense, rune/item-instance, skill-tuning, save schemas, and corpse contracts. Reuse changes delivered by CMB-06/CMB-07 or MST rather than duplicating them.
+1. Verify current branch, working tree, PR state, and the latest runtime baseline. The original planning checkout was clean at detached commit `17f16045`; this is historical inspection evidence, not the future implementation base.
+2. Re-read current AI action/targeting, equipment grants, damage/defense, rune/item-instance, skill-tuning, save schemas, and corpse contracts. Reuse existing foundations and account for changes since the original inspection rather than duplicating them.
 3. Confirm asset/editor ownership against the [GASP handoff](gasp-integration-handoff.md) and coordinate binary assets and shared MCP sessions. Run only one PIE network process at a time.
 4. Verify required local engine overrides and asset availability before builds/tests. Inspect the Archer pack's usable skeleton/clip subset before relying on it.
 
