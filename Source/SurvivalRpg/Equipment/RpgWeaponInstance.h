@@ -5,11 +5,15 @@
 #include "GameplayEffect.h"
 #include "RpgEquipmentInstance.h"
 #include "SurvivalRpg/Camera/RpgCameraMode.h"
+#include "SurvivalRpg/Runes/RpgWeaponSwingRecord.h"
+#include "Engine/TimerHandle.h"
+#include "UObject/ObjectKey.h"
 #include "RpgWeaponInstance.generated.h"
 
 class UAnimMontage;
 class UAnimInstance;
 class USkeleton;
+class URpgWeaponRuneDefinition;
 
 UENUM(BlueprintType)
 enum class ERpgWeaponAttackTraceMode : uint8
@@ -336,6 +340,8 @@ public:
 		float& OutPreviousPlayRate);
 	/** Configures only a live test equipment instance; never mutates a definition CDO or replicates test tuning. The layer goes to the presentation the pawn's gameplay skeleton resolves. */
 	bool ConfigureBlockLocomotionForTests(TSubclassOf<UAnimInstance> LayerClass, float SpeedLimit);
+	/** Server: gives a live test weapon instance an Echo rune, as an equipped rune item would; null removes it. */
+	bool SetEchoRuneForTests(const URpgWeaponRuneDefinition* Rune);
 #endif
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Weapon")
@@ -397,7 +403,28 @@ public:
 		float PerfectBlockStaggerDamage,
 		UAnimMontage* BlockLoopMontage);
 
+	/** Server: whether the attack ability should record this weapon's swings, true while it carries an Echo rune. */
+	bool WantsSwingRecords() const { return EchoRune != nullptr; }
+
+	/**
+	 * Server: the attack ability reports each closed attack window with its recorded traces. A window that landed a
+	 * hit charges the Echo rune; at the rune's trigger count the swing is replayed as a ghost strike after its delay.
+	 */
+	void HandleAttackSwingResolved(const FRpgWeaponSwingRecord& Swing, bool bLandedHit);
+
+	/** Swings that landed a hit since the last ghost strike. Server-owned, replicated to every machine for the rune glow. */
+	UFUNCTION(BlueprintPure, Category = "Weapon|Runes")
+	int32 GetEchoCharge() const { return EchoCharge; }
+
 protected:
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual void OnEquipped() override;
+	virtual void OnUnequipped() override;
+
+	/** Presentation on every machine, the server included, whenever the Echo charge changes; drives the rune glow. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Weapon|Runes", meta = (DisplayName = "On Echo Charge Changed"))
+	void K2_OnEchoChargeChanged(int32 NewCharge);
+
 	// Broad weapon type used by gameplay logic and future filtering, e.g. Weapon.Type.Melee.
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon", meta = (Categories = "Weapon.Type"))
 	FGameplayTag WeaponTypeTag;
@@ -417,4 +444,31 @@ protected:
 	// Block/perfect-block tuning for this weapon or shield.
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Block")
 	FRpgWeaponBlockDefinition BlockDefinition;
+
+private:
+	UFUNCTION()
+	void OnRep_EchoCharge();
+
+	void SetEchoCharge(int32 NewCharge);
+	void ExpireEchoCharge();
+	void StopEcho();
+	void TickGhostStrike();
+	void ApplyGhostStrikeTrace(const FRpgRecordedWeaponTrace& Trace);
+	void ApplyGhostStrikeHit(AActor* TargetActor, const FHitResult& HitResult);
+
+	/** Replicated so every machine shows the glow; written only by the server. */
+	UPROPERTY(ReplicatedUsing = OnRep_EchoCharge)
+	uint8 EchoCharge = 0;
+
+	/** Server: the Echo rune of the equipped item, resolved on equip. */
+	UPROPERTY(Transient)
+	TObjectPtr<const URpgWeaponRuneDefinition> EchoRune;
+
+	FRpgEchoStrikeCharge EchoChargeRule;
+	FRpgWeaponSwingRecord GhostStrikeSwing;
+	float GhostStrikeStartTime = 0.0f;
+	int32 NextGhostStrikeTrace = 0;
+	TSet<TObjectKey<AActor>> GhostStrikeHitActors;
+	FTimerHandle EchoChargeTimeoutHandle;
+	FTimerHandle GhostStrikeTimerHandle;
 };
