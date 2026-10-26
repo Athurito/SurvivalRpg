@@ -56,7 +56,7 @@ The repository-wide rules are in `.agents/skills/survival-rpg-orchestrator/refer
 
 Read and follow the [Unreal MCP asset-authoring workflow](references/unreal-mcp-asset-authoring.md) for any work that creates or changes Blueprint, Widget Blueprint, Gameplay Ability, or DataAsset assets. Before the matching work, also read the reference that collects the editor behavior observed in this project:
 
-- [Blueprint graph pitfalls](references/mcp-blueprint-graph-pitfalls.md) before writing or rewriting any Blueprint, Widget Blueprint, AnimBP, or cue notify graph
+- [Blueprint graph pitfalls](references/mcp-blueprint-graph-pitfalls.md) before writing or rewriting any Blueprint, Widget Blueprint, AnimBP, or cue notify graph; every authored graph ends structured, arranged, and commented as its "Readable graphs" section describes
 - [Widget, CommonUI, and MVVM recipes](references/mcp-widget-recipes.md) for widget trees, view bindings, styles, and driving UI in PIE
 - [Niagara and material pitfalls](references/mcp-niagara-pitfalls.md) for Niagara systems, FX materials, and cue effects
 - [Editor sessions and PIE](references/editor-session-and-pie.md) before launching an editor, scripted PIE, captures, profiling, or packaging

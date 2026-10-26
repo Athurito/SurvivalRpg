@@ -86,5 +86,18 @@
       "Runs the tests through `python Build/Tools/Unreal/ue.py test` with a block filter instead of assembling UnrealEditor-Cmd calls.",
       "Does not claim results for steps that were not run."
     ]
+  },
+  {
+    "id": "lyra-blueprint-readability",
+    "skills": ["unreal-lyra-expert"],
+    "excluded_skills": ["unreal-gasp-expert"],
+    "query": "Bau mir per MCP einen Blueprint für eine Druckplatten-Falle: Wenn ein Spieler drauftritt, fahren nach einer Sekunde Stacheln hoch und machen Schaden, nach drei Sekunden fahren sie wieder runter.",
+    "expected_behavior": [
+      "Builds the trap as a Blueprint through the Unreal MCP workflow and applies the damage through a GameplayEffect on the server, instead of a native C++ trap class.",
+      "Splits the logic into named functions or custom events, such as trigger, extend, damage, and retract, instead of one long event chain.",
+      "Lays out the authored nodes readably, for example by calling `arrange_nodes` after writing the graph, instead of leaving the nodes as the DSL placed them.",
+      "Plans comments, or descriptive names and tooltips, that explain each logical block of the graph.",
+      "Compiles the Blueprint, saves it by path, and reads the wiring or node layout back to verify it."
+    ]
   }
 ]

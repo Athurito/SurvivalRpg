@@ -4,6 +4,7 @@ Behavior of `BlueprintTools` (`read_graph_dsl`, `write_graph_dsl`, `create_node`
 
 ## Contents
 
+- [Readable graphs](#readable-graphs)
 - [Choose the edit style](#choose-the-edit-style)
 - [Node type ids](#node-type-ids)
 - [Arguments and pins](#arguments-and-pins)
@@ -11,6 +12,15 @@ Behavior of `BlueprintTools` (`read_graph_dsl`, `write_graph_dsl`, `create_node`
 - [Delegates and events](#delegates-and-events)
 - [AnimBP graphs](#animbp-graphs)
 - [Python access](#python-access)
+
+## Readable graphs
+
+Blueprints are designer-owned content: a person opens them in the editor and must follow them without asking the agent that wrote them. Every graph you create or change ends in this state:
+
+- **Structure.** The event graph only dispatches: each event calls named functions or custom events, one per logical step, such as `Trigger`, `Extend`, `ApplyDamage`, and `Retract`. Move a step with its own inputs or outputs, or more than a handful of nodes, into a function with a descriptive name; use a macro only for exec-flow helpers. Prefer local variables and the DSL's `bind` over long wires across the graph, and split a graph that no longer fits on one screen.
+- **Layout.** `write_graph_dsl` places nodes in a row, and `create_node` puts each node where you say. After writing, call `BlueprintTools.arrange_nodes` with the new and changed nodes: it lays them out left to right by exec and data flow, keeps producers left of their consumers, avoids overlaps, and anchors them to the untouched rest of the graph. Do not pass untouched nodes, because rearranging an author's existing layout destroys it and bloats the review; move single nodes with `set_node_position`. Exec wires run left to right without crossing back behind nodes; where they would, move the step into a function.
+- **Comments.** Each logical block gets a short English comment that says what it does and why, following the documentation defaults in `AGENTS.md`; skip comments that only repeat a node's title. The 5.8 `BlueprintTools` cannot create comment boxes, and a node's comment bubble (`NodeComment`, `bCommentBubbleVisible`) is not an editable property. `unreal.ToolsetLibrary.set_object_properties` may still set the bubble; that is not verified yet, so read the value back and record the result here. Until comments can be authored, let function, event, and variable names carry the explanation, add variable tooltips with `AssetContractTools.set_blueprint_variable_tooltips`, and say in the report which comments are still missing.
+- **Verification.** Read positions and connections back with `get_node_infos`. To review the picture, open the asset with `EditorAppToolset.OpenEditorForAsset` and capture the editor with `CaptureEditorImage`, never the desktop. Layout and comments are presentation, so do not assert them in C++ automation tests.
 
 ## Choose the edit style
 
