@@ -92,6 +92,13 @@ void URpgAIAttackDriverComponent::SetCombatTarget(AActor* NewTarget)
 		return;
 	}
 
+	// The StateTree target task confirms its target every tick; restarting the schedule each time starved the attack.
+	const UWorld* World = GetWorld();
+	if (CombatTarget.Get() == NewTarget && World && World->GetTimerManager().IsTimerActive(AttackTimerHandle))
+	{
+		return;
+	}
+
 	CombatTarget = NewTarget;
 	ScheduleNextAttack(FMath::Max(0.0f, RetaliationDelay));
 }
@@ -439,6 +446,10 @@ void URpgAIAttackDriverComponent::TryAcquireNearbyTarget()
 
 void URpgAIAttackDriverComponent::TryAttack()
 {
+#if WITH_DEV_AUTOMATION_TESTS
+	++AttackAttemptCountForTests;
+#endif
+
 	if (!IsOwnerAlive())
 	{
 		StopDriverActivity();
