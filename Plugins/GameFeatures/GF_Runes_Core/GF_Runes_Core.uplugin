@@ -16,6 +16,10 @@
 		{
 			"Name": "GameplayAbilities",
 			"Enabled": true
+		},
+		{
+			"Name": "GF_Combat_Core",
+			"Enabled": true
 		}
 	]
 }
