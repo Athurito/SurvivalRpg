@@ -162,14 +162,18 @@ several players hit the same target:
 - **Projectile foundation:** one native, server-authoritative and replicated
   projectile for spells and arrows: movement, hit detection, damage through
   GameplayEffects and an impact GameplayCue. The VFX-05 fireball flight system
-  and impact cue ([VFX roadmap](vfx-roadmap.md)) are its first content.
+  and impact cue ([VFX roadmap](vfx-roadmap.md)) are its first content. It is
+  built once, as RNG-01 of the [ranged combat roadmap](ranged-combat-roadmap.md);
+  combat magic reuses it instead of adding its own projectile.
 - **Spell area foundation:** one native, server-authoritative and replicated
   spell area that can move over the ground, applies damage over time through
   GameplayEffects and carries a looping GameplayCue. The VFX-08 fire tornado
   and its carrier contract ([vfx-fire-tornado.md](vfx-fire-tornado.md)) are
   its first content.
 - **Bow:** ranged foundation with aiming, projectiles and ammunition, in a new
-  `GF_Combat_Ranged`.
+  `GF_Combat_Ranged`. Planned in the
+  [ranged combat roadmap](ranged-combat-roadmap.md), independently of the CMB
+  milestones.
 - **Mage and combat magic:** with the spell effects of the VFX roadmap
   (VFX-05 and later) in `GF_Combat_Magic`.
 - **UE4 enemies** (`SkeletonArmy`, the `BLACKMOON_BOSS_PACK1` Golem as a portal
