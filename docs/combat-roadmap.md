@@ -101,7 +101,7 @@ untuned grips, no armed locomotion and enemies without real behavior.
 | CMB-03 | Player combo: a three- to four-hit sword-and-shield combo from `Combo_Attack_01`, input buffer and chaining window, cancel into dodge and block, damage and trace per step on the weapon | Merged; user check passed (2026-10-25), presentation not final; a directional, load-tier dodge was added | [combat-player-combo.md](combat-player-combo.md), [PR #282](https://github.com/Athurito/SurvivalRpg/pull/282) |
 | CMB-04 | Hit feedback: a light hit only plays a directional flinch, impact effect and sound and never interrupts; stagger and guard break come only from the stagger meter, with the pack's heavy reaction clips; local camera shake; cue tags and hook points for swing, hit, block, perfect block, parry, guard break and death, with placeholder effects; no hitstop ([rules](#hit-feedback-rules-cmb-04)) | Merged; user check passed (2026-10-26), placeholder effects and no sounds yet | [combat-hit-feedback.md](combat-hit-feedback.md), [PR #289](https://github.com/Athurito/SurvivalRpg/pull/289) |
 | CMB-05 | First enemy type: the skeleton warrior from `Assets_3DAssets/SkeletonCharacter` replaces the Manny placeholder of the Rift Grunt; skeleton check against `SK_Mannequin`, migration with notice entry, grips, a combat AnimBP with the Sword and Shield clips and the pack's own stun, knockback and death clips, death and ragdoll on its physics asset | Merged; user check passed (2026-10-26) after the run-loop fix; ragdoll on a copy of the Manny physics asset | [combat-skeleton-warrior.md](combat-skeleton-warrior.md), [PR #292](https://github.com/Athurito/SurvivalRpg/pull/292) |
-| CMB-06 | Enemy AI: StateTree for the skeleton warrior with approach and spacing, telegraphed attacks the perfect block can read, combo, block, hit reaction, stagger and retreat, on the existing AI drivers and loadouts | Ready | |
+| CMB-06 | Enemy AI: StateTree for the skeleton warrior with approach and spacing, telegraphed attacks the perfect block can read, combo, block, hit reaction, stagger and retreat, on the existing AI drivers and loadouts | In progress | [combat-enemy-ai.md](combat-enemy-ai.md) |
 | CMB-07 | Echo rune: every third hit of the combo triggers a ghost strike that deals damage; the rune sits on the weapon's item instance and drives the VFX-02 presentation; first rune of the vision ([#25](https://github.com/Athurito/SurvivalRpg/issues/25)) | Planned | |
 
 ### Order
@@ -179,6 +179,10 @@ several players hit the same target:
     may contain no bone outside `SK_Mannequin`;
   - bake the needed clips offline onto their UE4 skeleton;
   - the existing runtime retarget follower (two meshes per enemy).
+- **Threat meter (aggro):** enemies choose their target by accumulated threat
+  (damage, taunts, healing) instead of distance or the last hit, so a tank
+  role can hold enemies (user idea, 2026-10-26). CMB-06's target policy on the
+  attack driver is the seam it plugs into.
 - Load-dependent dodge ([#124](https://github.com/Athurito/SurvivalRpg/issues/124)),
   revive and bleedout in co-op ([#31](https://github.com/Athurito/SurvivalRpg/issues/31)),
   and a cleanup of unused pack clips like GASP-05.
