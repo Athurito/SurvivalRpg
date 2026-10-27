@@ -9,6 +9,8 @@
 #include "Blueprint/WidgetTree.h"
 #include "CommonActivatableWidget.h"
 #include "CommonLocalPlayer.h"
+#include "CommonUITypes.h"
+#include "Engine/DataTable.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
@@ -636,6 +638,38 @@ bool FRpgSkillTreeMapWidgetLifecycleTest::RunTest(const FString& Parameters)
 	const FRpgUIMapViewState* SelectedState = ViewCache->FindMapViewState(TreeTag);
 	TestTrue(TEXT("The selection is remembered"), SelectedState && SelectedState->SelectedTag == TAG_SkillTreeMapTest_FormA);
 
+	// The selected node's box is reported for a detail card: once per change, following pan and resize, and cleared.
+	URpgSkillTreeAutomationTestMapListener* BoxListener = NewObject<URpgSkillTreeAutomationTestMapListener>();
+	Map->OnSelectedNodeMoved.AddDynamic(BoxListener, &URpgSkillTreeAutomationTestMapListener::HandleSelectedNodeMoved);
+	Panel->Tick(Geometry, 0.0, 0.0f);
+	const FVector2D FormALocal = Panel->GetShownCamera().MapToLocal(FVector2D(-150.0, 300.0), Viewport);
+	TestTrue(TEXT("The selected node's box is reported"),
+		BoxListener->Broadcasts == 1 && BoxListener->bLastHasSelection && BoxListener->LastSize.X > 0.0 &&
+			(BoxListener->LastPosition + BoxListener->LastSize * 0.5).Equals(FormALocal, 0.01) &&
+			BoxListener->LastMapSize.Equals(Viewport));
+	Panel->Tick(Geometry, 0.0, 0.016f);
+	TestEqual(TEXT("An unchanged box is not reported again"), BoxListener->Broadcasts, 1);
+	const FVector2D BoxBeforePan = BoxListener->LastPosition;
+	Map->PanBy(FVector2D(30.0, -20.0));
+	Panel->Tick(Geometry, 0.0, 0.016f);
+	TestTrue(TEXT("Panning moves the reported box with the map"),
+		BoxListener->Broadcasts == 2 && BoxListener->LastPosition.Equals(BoxBeforePan + FVector2D(30.0, -20.0), 0.01));
+	const FVector2D Resized(1200.0, 700.0);
+	Panel->Tick(FGeometry::MakeRoot(Resized, FSlateLayoutTransform(1.0f)), 0.0, 0.016f);
+	TestTrue(TEXT("Resizing reports the box in the new size"),
+		BoxListener->Broadcasts == 3 && BoxListener->LastMapSize.Equals(Resized) &&
+			BoxListener->LastPosition.Equals(BoxBeforePan + FVector2D(130.0, -20.0), 0.01));
+	Panel->Tick(Geometry, 0.0, 0.016f);
+	Map->PanBy(FVector2D(-30.0, 20.0));
+	TreeView->SelectNode(FGameplayTag());
+	Panel->Tick(Geometry, 0.0, 0.016f);
+	TestTrue(TEXT("Clearing the selection reports no box"),
+		!BoxListener->bLastHasSelection && BoxListener->LastSize.IsZero());
+	TreeView->SelectNode(TAG_SkillTreeMapTest_FormA);
+	Panel->Tick(Geometry, 0.0, 0.016f);
+	TestTrue(TEXT("Selecting again reports the node's box"), BoxListener->bLastHasSelection);
+	Map->OnSelectedNodeMoved.RemoveAll(BoxListener);
+
 	// A drag and a canceled drag change the view but never the selection.
 	const FVector2D SecondLocal = Panel->GetCamera().MapToLocal(FVector2D(300.0, 0.0), Viewport);
 	Press(*Panel, Geometry, Viewport * 0.5);
@@ -743,6 +777,75 @@ bool FRpgSkillTreeMapSkillScreenContractTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("The skill screen hosts one skill tree map"), MapCount, 1);
 	TestTrue(TEXT("The map's node entries are User Object List Entries"), bEntriesAreListEntries);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgSkillTreeMapSkillScreenActionsTest,
+	"SurvivalRpg.UI.SkillTreeMap.Content.SkillScreenActions",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgSkillTreeMapSkillScreenActionsTest::RunTest(const FString& Parameters)
+{
+	// The skill screen binds its card and map commands to these rows, so keyboard and gamepad reach them while the map
+	// keeps focus. Which widgets bind them stays designer-owned.
+	const UDataTable* Actions = LoadObject<UDataTable>(
+		nullptr,
+		TEXT("/Game/SurvivalRpg/UI/Input/DT_RpgUIActions_SkillTree.DT_RpgUIActions_SkillTree"));
+	const UDataTable* GenericActions = LoadObject<UDataTable>(
+		nullptr,
+		TEXT("/Game/SurvivalRpg/UI/Input/DT_RpgUIActions_Generic.DT_RpgUIActions_Generic"));
+	if (!TestNotNull(TEXT("The skill screen actions load"), Actions) || !TestNotNull(TEXT("The generic UI actions load"), GenericActions))
+	{
+		return false;
+	}
+
+	auto KeyFor = [](const FCommonInputActionDataBase* Row, const ECommonInputType InputType)
+	{
+		return Row ? Row->GetInputTypeInfo(InputType, NAME_None).GetKey() : FKey();
+	};
+	TSet<FKey> GenericKeys;
+	GenericActions->ForeachRow<FCommonInputActionDataBase>(TEXT("SkillScreenActions"),
+		[&GenericKeys, &KeyFor](const FName&, const FCommonInputActionDataBase& Row)
+		{
+			GenericKeys.Add(KeyFor(&Row, ECommonInputType::MouseAndKeyboard));
+			GenericKeys.Add(KeyFor(&Row, ECommonInputType::Gamepad));
+		});
+
+	// Learn and Refund work on both devices; zoom and fit add gamepad bindings to the wheel and the top bar's buttons.
+	const TArray<TPair<FName, bool>> Rows = {
+		{TEXT("UI.SkillTree.Learn"), true},
+		{TEXT("UI.SkillTree.Refund"), true},
+		{TEXT("UI.SkillTree.ZoomIn"), false},
+		{TEXT("UI.SkillTree.ZoomOut"), false},
+		{TEXT("UI.SkillTree.Fit"), false}};
+	TSet<FKey> UsedKeys;
+	for (const TPair<FName, bool>& Entry : Rows)
+	{
+		const FCommonInputActionDataBase* Row = Actions->FindRow<FCommonInputActionDataBase>(Entry.Key, TEXT("SkillScreenActions"));
+		if (!TestNotNull(*FString::Printf(TEXT("%s exists"), *Entry.Key.ToString()), Row))
+		{
+			continue;
+		}
+		const FKey GamepadKey = KeyFor(Row, ECommonInputType::Gamepad);
+		const FKey KeyboardKey = KeyFor(Row, ECommonInputType::MouseAndKeyboard);
+		TestTrue(*FString::Printf(TEXT("%s has a gamepad key"), *Entry.Key.ToString()), GamepadKey.IsValid() && GamepadKey.IsGamepadKey());
+		TestEqual(*FString::Printf(TEXT("%s has a keyboard key only where expected"), *Entry.Key.ToString()), KeyboardKey.IsValid(), Entry.Value);
+		TestFalse(*FString::Printf(TEXT("%s has a display name"), *Entry.Key.ToString()), Row->DisplayName.IsEmpty());
+		for (const FKey& Key : {GamepadKey, KeyboardKey})
+		{
+			if (!Key.IsValid())
+			{
+				continue;
+			}
+			TestFalse(*FString::Printf(TEXT("%s keeps %s free for Back, Accept and the tabs"), *Entry.Key.ToString(), *Key.ToString()),
+				GenericKeys.Contains(Key));
+			bool bAlreadyUsed = false;
+			UsedKeys.Add(Key, &bAlreadyUsed);
+			TestFalse(*FString::Printf(TEXT("%s does not share %s with another skill screen action"), *Entry.Key.ToString(), *Key.ToString()),
+				bAlreadyUsed);
+		}
+	}
 	return true;
 }
 

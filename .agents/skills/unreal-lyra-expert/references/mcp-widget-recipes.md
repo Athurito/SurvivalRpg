@@ -48,6 +48,13 @@ Recipes and pitfalls observed in this project's UE 5.8 editor sessions. Read it 
 - `CommonActionWidget` sets its own visibility in `UpdateActionWidget`. `OnInputMethodChanged` fires after that, and `OnInputIconUpdated` fires before it becomes visible. HUD input contexts are applied after the HUD is built, so icons appear later through the Enhanced Input mappings-rebuilt path.
 - An activatable widget's `InputMapping` is added on activation and removed outright on deactivation, without reference counting. Two open screens with the same context lose it when the upper one closes, so only root screens carry a shared context. A main menu with `bIsBackHandler` deactivates itself on an unhandled back press.
 - A button with `bDisplayInActionBar` and a triggering action shows up in the screen's action bar; without a display name it shows a bare key.
+- Action bar and bindings (MST-03c):
+  - A CommonButton keeps its triggering-action binding while disabled or collapsed. The router skips it then, but the action bar still lists it.
+    - For an action that comes and goes, set the row with `CommonButton|Setters|SetTriggeringInputAction` while it is available and clear it otherwise.
+    - A row handle is empty only when both its table and its row are unset. A handle with a table and the row `None` logs "Cannot bind widget ... does not resolve to valid data"; clear it with an argument-free `MakeDataTableRowHandle`.
+  - The action bar lists a data-table action on mouse and keyboard even when the row has no keyboard key (`InputTypesExemptFromValidKeyCheck`), as a bare label. Gamepad-only actions need `bDisplayInActionBar` off.
+  - `CUI_ApplyButtonBase` overlays its glyph on the label. Narrow buttons need `bHideInputAction`.
+  - A `CommonActionWidget` collapses itself when its row has no key on the current device. Its `OnInputMethodChanged` event can switch a hint row between devices, as `CUI_HudKeyHints` and `CUI_Skills` do.
 - GASP pawns use their own input configs (`DA_InputConfig_GaspCMC`, `DA_InputConfig_GaspMover`, `DA_InputConfig_GaspMoverRagdoll`), so a new native hotkey needs an entry in each, not only in `DA_InputConfig`.
 - The asset registry misses config references, such as the CommonInput data assets named in `Config/DefaultGame.ini`. Treat those as roots before deleting "unused" assets.
 
@@ -69,7 +76,12 @@ Recipes and pitfalls observed in this project's UE 5.8 editor sessions. Read it 
 - Open screens with `RpgUIScreenBlueprintLibrary.open_ui_screen`; the game menu tag is `UI.Screen.GameMenu`. Close menus with `deactivate_widget()`, because `set_pie_input_key` does not reach CommonUI back actions.
 - Find runtime widgets with `unreal.ObjectIterator(cls)`; Python has no WidgetBlueprintLibrary lookup. HUD and menu widgets live under the GameInstance, so their paths lack `UEDPIE_`; filter out `/Game/`, `/Script/`, and `Default__` instead. Click a button with `widget.get_editor_property("Button").on_clicked.broadcast()`.
 - Real mouse input goes through `SlateInspectorToolset.SlateInspectorToolset`: `Windows` with action `select`, then `Observe` and `Snapshot` on the window ref give button refs. `Click` takes `button: right`, `Snapshot` with `maxDepth: 80` also lists grid item images, and `Drag(startRef, endRef)` moves items like a mouse. Take a new snapshot after anything that changes grid refs. Slate clicks switch CommonInput back to mouse, which hides gamepad-only tabs, and `Hover` sets hover state but never opens Slate tooltips.
-- Switch the input type with `CommonInputSubsystem.set_current_input_type(...)` on the PIE subsystem, found through `unreal.ObjectIterator` (its path contains `CommonLocalPlayer`). Slate inspector `Hover` and `PressKey` neither change the input type nor reach Enhanced Input.
+- Switch the input type with `CommonInputSubsystem.set_current_input_type(...)` on the PIE subsystem, found through `unreal.ObjectIterator` (its path contains `CommonLocalPlayer`). Slate inspector `Hover` and keyboard `PressKey` neither change the input type nor reach Enhanced Input.
+  - `PressKey` with a gamepad key, such as `Gamepad_FaceButton_Left`, on a focused PIE widget does switch CommonInput to gamepad. It also triggers data-table UI actions bound to that key (MST-03c).
+- Console commands without Python (MST-03c):
+  - In the main editor window, `Click` and `Type` into the `textbox` that follows the `Cmd` combobox in the status bar, then `PressKey Enter`.
+  - While PIE runs, commands with a world argument act on the PIE world, for example `Rpg.Progression.AddSkillXP Skill.Mastery.Harvesting 1500 1` for the second player.
+- A Slate snapshot of one PIE window also lists the widgets of the other PIE windows of the same process. Pick refs by their position, not by the first match (MST-03c).
 - Synthetic gamepad A: `Click` a harmless text first, which gives the PIE viewport user focus; switch CommonInput to gamepad; open the screen fresh, because a cached page keeps no focus; then `PressKey Gamepad_FaceButton_Bottom`. Enter does not activate buttons this way. Run a control with the feature off.
 - `has_any_user_focus` misses focus on a CommonButton's inner SButton; the log lines `LogUIActionRouter: [User 0] Focused desired target X` are reliable focus evidence.
 - `EnhancedInputLocalPlayerSubsystem.inject_input_vector_for_action(ia, Vector(1,0,0), [], [])` fires an action like a key; `inject_input_for_action` with a default value does not.

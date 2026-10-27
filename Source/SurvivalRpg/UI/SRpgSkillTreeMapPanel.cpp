@@ -203,6 +203,7 @@ void SRpgSkillTreeMapPanel::Construct(const FArguments& InArgs)
 	OnNodeClicked = InArgs._OnNodeClicked;
 	OnNodeNavigated = InArgs._OnNodeNavigated;
 	OnViewChanged = InArgs._OnViewChanged;
+	OnSelectedNodeMoved = InArgs._OnSelectedNodeMoved;
 	SetClipping(EWidgetClipping::ClipToBounds);
 	SetCanTick(true);
 }
@@ -547,6 +548,22 @@ void SRpgSkillTreeMapPanel::Tick(const FGeometry& AllottedGeometry, const double
 	ViewportSize = AllottedGeometry.GetLocalSize();
 	ApplyFitForViewport();
 	AdvanceGlide(InDeltaTime);
+	ReportSelectedNodeBox();
+}
+
+void SRpgSkillTreeMapPanel::ReportSelectedNodeBox()
+{
+	// The shown camera moves on every glide frame and the box with every resize, so compare the result, not the cause.
+	const bool bHasSelection = Children.IsValidIndex(SelectedIndex) && !ViewportSize.IsNearlyZero();
+	const FSlateRect Box = bHasSelection ? GetNodeLocalRect(SelectedIndex) : FSlateRect(0.0f, 0.0f, 0.0f, 0.0f);
+	if (bHasSelection == bReportedSelection && Box == ReportedSelectedBox && ViewportSize == ReportedViewportSize)
+	{
+		return;
+	}
+	bReportedSelection = bHasSelection;
+	ReportedSelectedBox = Box;
+	ReportedViewportSize = ViewportSize;
+	OnSelectedNodeMoved.ExecuteIfBound(bHasSelection, Box, ViewportSize);
 }
 
 FReply SRpgSkillTreeMapPanel::OnPreviewMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)

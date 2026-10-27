@@ -71,9 +71,13 @@ are data. Code is only needed when an ability gains a new tunable value.
 H opens the game menu on its Skills tab: `IA_UI_Skills` → `InputTag.UI.Skills` →
 `UI.Screen.GameMenu` with a payload whose screen tag is `UI.Screen.GameMenu.Skills`.
 The menu's `TabScreenTags` map such tags to its tabs.
-The tree sits on the mastery map (MST-02, [skill screen on the map](mastery-map-skill-screen.md)). Clicking a node
-only selects it; **Learn** and **Refund** in the detail panel send the node view model's `RequestUnlock` and
-`RequestRefund`.
+The Skills tab is one mastery map that fills the tab (MST-03c, [single-map skill screen](mastery-map-single-map.md);
+the map itself is MST-02, [skill screen on the map](mastery-map-skill-screen.md)). Character level and professions
+are on the Character tab.
+- **Top bar:** the tree's name and mastery level, available and spent points with **Reset tree**, region shortcuts once a tree has more than one region, input hints for the current device, and zoom out, zoom in and fit.
+- **Card:** clicking a node only selects it and opens one fixed-size card beside it, which follows the node while the map moves and stays inside the map. **Learn** and **Refund** on the card send the node view model's `RequestUnlock` and `RequestRefund`.
+- **Bound actions:** `DT_RpgUIActions_SkillTree`. Learn is F or the left face button and Refund R or the top face button; they work while focus stays on the map, and the menu's action bar lists each while it is available. Zoom and fit add gamepad bindings: the triggers and the right stick press.
+- **Q/E/R:** the screen has no Q/E/R bar. Assigning a learned active ability belongs on its card once a tree has active abilities; the assignment rules are unchanged.
 
 | Part | Role |
 | --- | --- |
@@ -82,7 +86,7 @@ only selects it; **Learn** and **Refund** in the detail panel send the node view
 | `URpgSkillTreeNodeViewModel` | One node: name, text, icon, kind, cell, cost, state (`Unlocked`, `Unlockable`, `Unaffordable`, `Locked`, `Excluded`), slot, and `bCanRefund` with the commands learn, refund and select. |
 | `URpgSkillTreeGridWidget` | Places one entry per node from `Row` and `Column`, draws the links and darkens locked rows. Entries implement User Object List Entry. No screen uses it since MST-02. |
 | `URpgSkillTreeMapWidget` | Zoomable, pannable map ([below](#mastery-map)) that `CUI_Skills` shows the selected tree on. |
-| `CUI_Skills`, `CUI_SkillTreeNode`, `CUI_TradeSkillEntry`, `CUI_SkillTreeListEntry` | Layout and style in `/Game/SurvivalRpg/UI/Menus/GameMenu/GameMenu/Skills`. |
+| `CUI_Skills`, `CUI_SkillTreeNode`, `CUI_SkillButtonStyle` | Layout and style in `/Game/SurvivalRpg/UI/Menus/GameMenu/GameMenu/Skills`. `CUI_TradeSkillEntry` there lists the professions on the Character tab. |
 
 ### Mastery map
 
@@ -93,6 +97,7 @@ only selects it; **Learn** and **Refund** in the detail panel send the node view
 - Arrow keys and the gamepad move the selection to the nearest node in that direction and bring it into view; Tab follows the authored order.
 - Blueprints get zoom, fit, region and node focus, pan and cancel commands, and `Overview`/`Detail` from `DetailZoom`.
 - Camera and selection come back when the screen reopens.
+- `OnSelectedNodeMoved` reports the selected node's drawn box in the map's local space whenever it moves, so a card can follow it without a tick (MST-03c).
 - Entries are presentation only and never receive presses; `URpgMvvmListEntryWidget` entries get their node view model as their entry item.
 
 The view models observe the replicated state and rebuild at most once per frame. Trade skill names come from
