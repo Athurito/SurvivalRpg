@@ -1,6 +1,7 @@
 #pragma once
 
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
+#include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeComponent.h"
 #include "SurvivalRpg/UI/RpgMvvmListEntryWidgets.h"
 
 #include "RpgSkillTreeAutomationTestTypes.generated.h"
@@ -33,6 +34,24 @@ public:
 	void HandleChanged() { ++Broadcasts; }
 
 	int32 Broadcasts = 0;
+};
+
+/** Records skill tree request rejections in arrival order. Test-only. */
+UCLASS(NotBlueprintable, Transient)
+class URpgSkillTreeAutomationTestRejectionListener final : public UObject
+{
+	GENERATED_BODY()
+
+public:
+	UFUNCTION()
+	void HandleRejected(FGameplayTag TreeTag, FGameplayTag NodeTag, ERpgSkillTreeRequestRejection Reason)
+	{
+		NodeTags.Add(NodeTag);
+		Reasons.Add(Reason);
+	}
+
+	TArray<FGameplayTag> NodeTags;
+	TArray<ERpgSkillTreeRequestRejection> Reasons;
 };
 
 /** Records the skill tree map's selected-node box reports. Test-only. */

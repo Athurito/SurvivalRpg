@@ -75,7 +75,8 @@ void URpgSkillTreeNodeViewModel::UpdateNode(
 	const int32 InAssignedSlotIndex,
 	const bool bInSelected,
 	const bool bInRowUnlocked,
-	const bool bInCanRefund)
+	const bool bInCanRefund,
+	const FRpgSkillTreeNodeInteraction& Interaction)
 {
 	Tree = InTree;
 
@@ -105,6 +106,12 @@ void URpgSkillTreeNodeViewModel::UpdateNode(
 	UE_MVVM_SET_PROPERTY_VALUE(bGrantsSlotAbility, NewAbilityId.IsValid());
 	UE_MVVM_SET_PROPERTY_VALUE(AssignedSlotIndex, InAssignedSlotIndex);
 	UE_MVVM_SET_PROPERTY_VALUE(bIsSelected, bInSelected);
+	UE_MVVM_SET_PROPERTY_VALUE(bCanSwap, Interaction.bCanSwap);
+	UE_MVVM_SET_PROPERTY_VALUE(SwapReplacesNodeTag, Interaction.SwapReplacesNodeTag);
+	UE_MVVM_SET_PROPERTY_VALUE(SwapReplacesName, Interaction.SwapReplacesName);
+	UE_MVVM_SET_PROPERTY_VALUE(RequestStatus, Interaction.RequestStatus);
+	UE_MVVM_SET_PROPERTY_VALUE(bIsRequestPending, Interaction.RequestStatus == ERpgSkillTreeRequestStatus::Pending);
+	UE_MVVM_SET_PROPERTY_VALUE(Rejection, Interaction.Rejection);
 }
 
 void URpgSkillTreeNodeViewModel::RequestUnlock()
@@ -120,6 +127,14 @@ void URpgSkillTreeNodeViewModel::RequestRefund()
 	if (URpgSkillTreeViewModel* OwningTree = Tree.Get())
 	{
 		OwningTree->RequestRefundNode(NodeTag);
+	}
+}
+
+void URpgSkillTreeNodeViewModel::RequestSwap()
+{
+	if (URpgSkillTreeViewModel* OwningTree = Tree.Get())
+	{
+		OwningTree->RequestSwapNode(NodeTag);
 	}
 }
 
@@ -146,6 +161,8 @@ void URpgSkillTreeViewModel::BindSkillTree(URpgSkillTreeComponent* InSkillTrees,
 		ObservedSkillTrees = InSkillTrees;
 		UE_MVVM_SET_PROPERTY_VALUE(TreeTag, InTreeTag);
 		SelectedNodeTag = FGameplayTag();
+		PendingNodeTags.Reset();
+		RejectedNodes.Reset();
 		Subscribe();
 	}
 	Refresh();
@@ -157,6 +174,8 @@ void URpgSkillTreeViewModel::UnbindSkillTree()
 	ObservedSkillTrees.Reset();
 	UE_MVVM_SET_PROPERTY_VALUE(TreeTag, FGameplayTag());
 	SelectedNodeTag = FGameplayTag();
+	PendingNodeTags.Reset();
+	RejectedNodes.Reset();
 	Refresh();
 }
 
@@ -176,7 +195,9 @@ void URpgSkillTreeViewModel::RequestUnlockNode(const FGameplayTag NodeTag)
 
 	// Selecting first lets the player place a freshly learned active on Q/E/R right away.
 	SelectNode(NodeTag);
+	BeginRequest(NodeTag);
 	SkillTrees->RequestUnlockNode(TreeTag, NodeTag);
+	Refresh();
 }
 
 void URpgSkillTreeViewModel::RequestRefundNode(const FGameplayTag NodeTag)
@@ -184,8 +205,31 @@ void URpgSkillTreeViewModel::RequestRefundNode(const FGameplayTag NodeTag)
 	URpgSkillTreeComponent* SkillTrees = ObservedSkillTrees.Get();
 	if (SkillTrees && TreeTag.IsValid() && NodeTag.IsValid())
 	{
+		BeginRequest(NodeTag);
 		SkillTrees->RequestRefundNode(TreeTag, NodeTag);
+		Refresh();
 	}
+}
+
+void URpgSkillTreeViewModel::RequestSwapNode(const FGameplayTag NodeTag)
+{
+	URpgSkillTreeComponent* SkillTrees = ObservedSkillTrees.Get();
+	if (!SkillTrees || !TreeTag.IsValid() || !NodeTag.IsValid())
+	{
+		return;
+	}
+
+	SelectNode(NodeTag);
+	BeginRequest(NodeTag);
+	SkillTrees->RequestSwapNode(TreeTag, NodeTag);
+	Refresh();
+}
+
+void URpgSkillTreeViewModel::BeginRequest(const FGameplayTag NodeTag)
+{
+	// On the server the request runs right away, and its change clears the wait again before the next rebuild.
+	RejectedNodes.Remove(NodeTag);
+	PendingNodeTags.Add(NodeTag);
 }
 
 void URpgSkillTreeViewModel::RequestResetTree()
@@ -203,6 +247,8 @@ void URpgSkillTreeViewModel::SelectNode(const FGameplayTag NodeTag)
 		return;
 	}
 	SelectedNodeTag = NodeTag;
+	// A rejection belongs to the moment it happened; a new selection starts clean.
+	RejectedNodes.Reset();
 	Refresh();
 }
 
@@ -255,8 +301,24 @@ void URpgSkillTreeViewModel::HandleSkillTreeChanged(const FGameplayTag ChangedTr
 {
 	if (ChangedTreeTag == TreeTag)
 	{
+		// The server's answer to an accepted request arrives as replicated state; the requests are no longer open.
+		PendingNodeTags.Reset();
 		QueueRefresh();
 	}
+}
+
+void URpgSkillTreeViewModel::HandleRequestRejected(
+	const FGameplayTag RejectedTreeTag,
+	const FGameplayTag NodeTag,
+	const ERpgSkillTreeRequestRejection Reason)
+{
+	if (RejectedTreeTag != TreeTag || !NodeTag.IsValid())
+	{
+		return;
+	}
+	PendingNodeTags.Remove(NodeTag);
+	RejectedNodes.Add(NodeTag, Reason);
+	QueueRefresh();
 }
 
 void URpgSkillTreeViewModel::HandleTradeSkillChanged(const FGameplayTag SkillTag, const FTradeSkillState& NewState)
@@ -276,6 +338,7 @@ void URpgSkillTreeViewModel::Subscribe()
 	}
 
 	SkillTrees->OnSkillTreeChanged.AddUniqueDynamic(this, &ThisClass::HandleSkillTreeChanged);
+	SkillTrees->OnRequestRejected.AddUniqueDynamic(this, &ThisClass::HandleRequestRejected);
 	const AActor* Owner = SkillTrees->GetOwner();
 	URpgTradeSkillProgressionComponent* TradeSkills =
 		Owner ? Owner->FindComponentByClass<URpgTradeSkillProgressionComponent>() : nullptr;
@@ -292,6 +355,7 @@ void URpgSkillTreeViewModel::Unsubscribe()
 	if (URpgSkillTreeComponent* SkillTrees = ObservedSkillTrees.Get())
 	{
 		SkillTrees->OnSkillTreeChanged.RemoveDynamic(this, &ThisClass::HandleSkillTreeChanged);
+		SkillTrees->OnRequestRejected.RemoveDynamic(this, &ThisClass::HandleRequestRejected);
 	}
 	if (URpgTradeSkillProgressionComponent* TradeSkills = ObservedTradeSkills.Get())
 	{
@@ -388,15 +452,41 @@ void URpgSkillTreeViewModel::Rebuild()
 			TArray<FGameplayTag> AbilityIds;
 			Node.GetGrantedAbilityIds(AbilityIds);
 			const int32 AssignedSlot = AbilityIds.IsEmpty() ? INDEX_NONE : SlotAbilityIds.IndexOfByKey(AbilityIds[0]);
+			const ERpgSkillTreeUnlockResult UnlockResult = SkillTrees->EvaluateUnlock(TreeTag, Node.NodeTag);
+
+			// An excluded choice can still be reached by swapping out the learned alternative.
+			FRpgSkillTreeNodeInteraction Interaction;
+			if (UnlockResult == ERpgSkillTreeUnlockResult::ExclusiveConflict)
+			{
+				FGameplayTag ReplacedTag;
+				Interaction.bCanSwap =
+					SkillTrees->EvaluateSwap(TreeTag, Node.NodeTag, ReplacedTag) == ERpgSkillTreeUnlockResult::Unlockable;
+				Interaction.SwapReplacesNodeTag = ReplacedTag;
+				if (const FRpgSkillTreeNode* ReplacedNode = Tree->FindNode(ReplacedTag))
+				{
+					Interaction.SwapReplacesName = ReplacedNode->DisplayName;
+				}
+			}
+			if (PendingNodeTags.Contains(Node.NodeTag))
+			{
+				Interaction.RequestStatus = ERpgSkillTreeRequestStatus::Pending;
+			}
+			else if (const ERpgSkillTreeRequestRejection* Rejection = RejectedNodes.Find(Node.NodeTag))
+			{
+				Interaction.RequestStatus = ERpgSkillTreeRequestStatus::Rejected;
+				Interaction.Rejection = *Rejection;
+			}
+
 			NodeViewModel->UpdateNode(
 				this,
 				Node,
 				Tree->GetNodeMapPosition(Node),
-				SkillTrees->EvaluateUnlock(TreeTag, Node.NodeTag),
+				UnlockResult,
 				AssignedSlot,
 				SelectedNodeTag.IsValid() && Node.NodeTag == SelectedNodeTag,
 				NewSpentPoints >= Node.RequiredPointsInTree,
-				SkillTrees->EvaluateRefund(TreeTag, Node.NodeTag) == ERpgSkillTreeRefundResult::Refundable);
+				SkillTrees->EvaluateRefund(TreeTag, Node.NodeTag) == ERpgSkillTreeRefundResult::Refundable,
+				Interaction);
 			NewNodes.Add(NodeViewModel);
 
 			NewRowCount = FMath::Max(NewRowCount, Node.Row + 1);

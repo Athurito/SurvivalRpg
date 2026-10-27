@@ -62,7 +62,10 @@ enum class ERpgSkillTreeUnlockResult : uint8
 	TreePointsRequired,
 
 	/** The node costs more than the available points. */
-	NotEnoughPoints
+	NotEnoughPoints,
+
+	/** A swap would replace a learned choice that other learned nodes still need; refund those first. */
+	ChoiceStillNeeded
 };
 
 /** Why a learned node can or cannot be refunded right now. */
@@ -88,7 +91,44 @@ enum class ERpgSkillTreeRefundResult : uint8
 	PointsStillNeeded
 };
 
+/** Why the server rejected a request of the owning player, for UI feedback. */
+UENUM(BlueprintType)
+enum class ERpgSkillTreeRequestRejection : uint8
+{
+	/** Nothing was rejected. */
+	None,
+
+	/** The request no longer matched the state, for example a node that was already learned or refunded. */
+	AlreadyChanged,
+
+	/** The tree or node is unknown to the server. */
+	UnknownNode,
+
+	/** Another node of the same exclusive group is learned. */
+	ExclusiveConflict,
+
+	/** A prerequisite node is not learned. */
+	MissingPrerequisite,
+
+	/** Too few points are spent in the tree. */
+	TreePointsRequired,
+
+	/** Too few free points. */
+	NotEnoughPoints,
+
+	/** A swap would replace a choice other learned nodes still need. */
+	ChoiceStillNeeded,
+
+	/** A refund would remove a node another learned node needs. */
+	RequiredByNode,
+
+	/** A refund would take points another learned node still needs. */
+	PointsStillNeeded
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRpgSkillTreeChangedSignature, FGameplayTag, TreeTag);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
+	FRpgSkillTreeRequestRejectedSignature, FGameplayTag, TreeTag, FGameplayTag, NodeTag, ERpgSkillTreeRequestRejection, Reason);
 
 /**
  * Character-owned progress of every skill tree, on the PlayerState next to the trade skills.
@@ -156,6 +196,14 @@ public:
 	ERpgSkillTreeUnlockResult EvaluateUnlock(FGameplayTag TreeTag, FGameplayTag NodeTag) const;
 
 	/**
+	 * Returns whether NodeTag of TreeTag can be learned now by replacing the learned node of its exclusive group in one
+	 * step, or the first reason it cannot. The replaced node's points count as free, so a swap works with no free points,
+	 * and every other learned node must stay learnable without it. Without a learned alternative this equals
+	 * EvaluateUnlock. OutReplacedNodeTag receives the node the swap would refund, or an empty tag.
+	 */
+	ERpgSkillTreeUnlockResult EvaluateSwap(FGameplayTag TreeTag, FGameplayTag NodeTag, FGameplayTag& OutReplacedNodeTag) const;
+
+	/**
 	 * Returns whether the learned NodeTag of TreeTag can be refunded now, or the first reason it cannot. A node can be
 	 * refunded when every other learned node stays learnable without it: no learned node lists it as a prerequisite, and
 	 * every point gate is still met.
@@ -182,6 +230,13 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Rpg|Skill Tree")
 	void RequestRefundNode(FGameplayTag TreeTag, FGameplayTag NodeTag);
 
+	/**
+	 * Learns NodeTag of TreeTag and refunds the learned node of its exclusive group in the same step, as EvaluateSwap
+	 * describes. The server validates it like SwapNode; rejected requests change nothing.
+	 */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Rpg|Skill Tree")
+	void RequestSwapNode(FGameplayTag TreeTag, FGameplayTag NodeTag);
+
 	/** Refunds every point of TreeTag for free and clears its Q/E/R assignment. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Rpg|Skill Tree")
 	void RequestResetTree(FGameplayTag TreeTag);
@@ -195,6 +250,12 @@ public:
 
 	/** Authority: learns a node when EvaluateUnlock allows it and places its abilities on free slots. */
 	ERpgSkillTreeUnlockResult UnlockNode(FGameplayTag TreeTag, FGameplayTag NodeTag);
+
+	/**
+	 * Authority: swaps in NodeTag when EvaluateSwap allows it. The replaced node leaves and NodeTag arrives in one change,
+	 * so grants, slots, replication and saves never see both or neither.
+	 */
+	ERpgSkillTreeUnlockResult SwapNode(FGameplayTag TreeTag, FGameplayTag NodeTag);
 
 	/** Authority: forgets one node when EvaluateRefund allows it, refunds its cost and clears its slots. */
 	ERpgSkillTreeRefundResult RefundNode(FGameplayTag TreeTag, FGameplayTag NodeTag);
@@ -250,9 +311,20 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Rpg|Skill Tree")
 	FRpgSkillTreeChangedSignature OnSkillTreeChanged;
 
+	/**
+	 * Fired on the owning client when the server rejected one of its node requests, with the reason. The state did not
+	 * change. UI read-only.
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "Rpg|Skill Tree")
+	FRpgSkillTreeRequestRejectedSignature OnRequestRejected;
+
 protected:
 	UFUNCTION()
 	void OnRep_TreeStates();
+
+	/** Tells the owning client why the server rejected its request for NodeTag of TreeTag. */
+	UFUNCTION(Client, Reliable)
+	void ClientReportRejectedRequest(FGameplayTag TreeTag, FGameplayTag NodeTag, ERpgSkillTreeRequestRejection Reason);
 
 private:
 	const FRpgSkillTreeState* FindState(FGameplayTag TreeTag) const;

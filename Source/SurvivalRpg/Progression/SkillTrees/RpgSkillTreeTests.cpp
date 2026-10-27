@@ -45,6 +45,8 @@ UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_SkillTreeTest_Wide, "SkillTree.Node.Automation
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_SkillTreeTest_Passive, "SkillTree.Node.AutomationTest.Passive");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_SkillTreeTest_Removed, "SkillTree.Node.AutomationTest.Removed");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_SkillTreeTest_Granted, "SkillTree.AutomationTest.Granted");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_SkillTreeTest_FormAGranted, "SkillTree.AutomationTest.FormAGranted");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_SkillTreeTest_FormBGranted, "SkillTree.AutomationTest.FormBGranted");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_SkillTreeTest_Alpha, "Ability.AutomationSkillTree.Alpha");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_SkillTreeTest_Beta, "Ability.AutomationSkillTree.Beta");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_SkillTreeTest_Gamma, "Ability.AutomationSkillTree.Gamma");
@@ -746,6 +748,156 @@ bool FRpgSkillTreeEquipmentGrantsTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgSkillTreeSwapTest,
+	"SurvivalRpg.Progression.SkillTrees.SwapExclusiveChoice",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgSkillTreeSwapTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgSkillTreeTests;
+
+	FScopedTestWorld TestWorld;
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		TestWorld.GetWorld() ? TestWorld.GetWorld()->SpawnActor<ARpgInventoryAutomationTestPlayerState>() : nullptr;
+	URpgSkillTreeComponent* SkillTrees = PlayerState ? PlayerState->GetSkillTreeComponent() : nullptr;
+	if (!TestNotNull(TEXT("Player state with skill trees spawns"), SkillTrees))
+	{
+		return false;
+	}
+
+	const FGameplayTag TreeTag = TAG_SkillTreeTest_Tree;
+	URpgSkillTreeDefinition* Tree = MakeTree();
+	SkillTrees->RegisterSkillTree(Tree);
+	RaiseLogging(*PlayerState, 4);
+	for (const FGameplayTag& NodeTag : TArray<FGameplayTag>{TAG_SkillTreeTest_Root, TAG_SkillTreeTest_Second, TAG_SkillTreeTest_FormA})
+	{
+		SkillTrees->UnlockNode(TreeTag, NodeTag);
+	}
+	TestEqual(TEXT("Every point is spent"), SkillTrees->GetAvailablePoints(TreeTag), 0);
+	TestEqual(TEXT("The other form is excluded"),
+		SkillTrees->EvaluateUnlock(TreeTag, TAG_SkillTreeTest_FormB), ERpgSkillTreeUnlockResult::ExclusiveConflict);
+
+	// A swap at zero free points: the replaced form's point pays for the new one.
+	FGameplayTag Replaced;
+	TestEqual(TEXT("Swapping forms needs no free point"),
+		SkillTrees->EvaluateSwap(TreeTag, TAG_SkillTreeTest_FormB, Replaced), ERpgSkillTreeUnlockResult::Unlockable);
+	TestEqual(TEXT("The swap names the learned form it replaces"), Replaced, FGameplayTag(TAG_SkillTreeTest_FormA));
+	TestEqual(TEXT("The swap succeeds"), SkillTrees->SwapNode(TreeTag, TAG_SkillTreeTest_FormB), ERpgSkillTreeUnlockResult::Unlockable);
+	TestTrue(TEXT("Only the new form is learned"),
+		!SkillTrees->IsNodeUnlocked(TreeTag, TAG_SkillTreeTest_FormA) && SkillTrees->IsNodeUnlocked(TreeTag, TAG_SkillTreeTest_FormB));
+	TestTrue(TEXT("The points moved over"), SkillTrees->GetSpentPoints(TreeTag) == 3 && SkillTrees->GetAvailablePoints(TreeTag) == 0);
+	const TArray<FGameplayTag> ExpectedOrder = {TAG_SkillTreeTest_Root, TAG_SkillTreeTest_Second, TAG_SkillTreeTest_FormB};
+	TestTrue(TEXT("The new form joins the end of the purchase order"), SkillTrees->GetUnlockedNodes(TreeTag) == ExpectedOrder);
+
+	// Repeated and stale requests change nothing.
+	TestEqual(TEXT("Repeating the swap is rejected"),
+		SkillTrees->SwapNode(TreeTag, TAG_SkillTreeTest_FormB), ERpgSkillTreeUnlockResult::AlreadyUnlocked);
+	TestTrue(TEXT("A repeated swap changes nothing"), SkillTrees->GetUnlockedNodes(TreeTag) == ExpectedOrder);
+	TestEqual(TEXT("A plain unlock still refuses the excluded form"),
+		SkillTrees->UnlockNode(TreeTag, TAG_SkillTreeTest_FormA), ERpgSkillTreeUnlockResult::ExclusiveConflict);
+	SkillTrees->RequestSwapNode(TreeTag, TAG_SkillTreeTest_FormA);
+	TestTrue(TEXT("The swap request switches back"),
+		SkillTrees->IsNodeUnlocked(TreeTag, TAG_SkillTreeTest_FormA) && !SkillTrees->IsNodeUnlocked(TreeTag, TAG_SkillTreeTest_FormB));
+	TestEqual(TEXT("Outside a learned group a swap is an unlock"),
+		SkillTrees->EvaluateSwap(TreeTag, TAG_SkillTreeTest_Wide, Replaced), SkillTrees->EvaluateUnlock(TreeTag, TAG_SkillTreeTest_Wide));
+	TestFalse(TEXT("Outside a learned group nothing would be replaced"), Replaced.IsValid());
+
+	// A choice another learned node needs stays, and the owner hears why.
+	URpgSkillTreeAutomationTestRejectionListener* Listener =
+		NewObject<URpgSkillTreeAutomationTestRejectionListener>(GetTransientPackage(), NAME_None, RF_Transient);
+	SkillTrees->OnRequestRejected.AddDynamic(Listener, &URpgSkillTreeAutomationTestRejectionListener::HandleRejected);
+	Tree->Nodes.FindByPredicate([](const FRpgSkillTreeNode& Node) { return Node.NodeTag == TAG_SkillTreeTest_Wide; })
+		->Prerequisites.Add(TAG_SkillTreeTest_FormA);
+	RaiseLogging(*PlayerState, 5);
+	TestEqual(TEXT("Wide builds on FormA"), SkillTrees->UnlockNode(TreeTag, TAG_SkillTreeTest_Wide), ERpgSkillTreeUnlockResult::Unlockable);
+	const TArray<FGameplayTag> NeededOrder = SkillTrees->GetUnlockedNodes(TreeTag);
+	TestEqual(TEXT("A needed choice cannot be swapped out"),
+		SkillTrees->EvaluateSwap(TreeTag, TAG_SkillTreeTest_FormB, Replaced), ERpgSkillTreeUnlockResult::ChoiceStillNeeded);
+	SkillTrees->RequestSwapNode(TreeTag, TAG_SkillTreeTest_FormB);
+	TestTrue(TEXT("A rejected swap changes nothing"), SkillTrees->GetUnlockedNodes(TreeTag) == NeededOrder);
+	SkillTrees->RequestUnlockNode(TreeTag, TAG_SkillTreeTest_Passive);
+	SkillTrees->RequestRefundNode(TreeTag, TAG_SkillTreeTest_FormA);
+	const TArray<FGameplayTag> ExpectedRejectedNodes = {TAG_SkillTreeTest_FormB, TAG_SkillTreeTest_Passive, TAG_SkillTreeTest_FormA};
+	const TArray<ERpgSkillTreeRequestRejection> ExpectedReasons = {
+		ERpgSkillTreeRequestRejection::ChoiceStillNeeded,
+		ERpgSkillTreeRequestRejection::NotEnoughPoints,
+		ERpgSkillTreeRequestRejection::RequiredByNode};
+	TestTrue(TEXT("Each rejected request reports its node and reason"),
+		Listener->NodeTags == ExpectedRejectedNodes && Listener->Reasons == ExpectedReasons);
+
+	// A form that costs more than the freed and free points together stays out of reach.
+	SkillTrees->RefundNode(TreeTag, TAG_SkillTreeTest_Wide);
+	Tree->Nodes.FindByPredicate([](const FRpgSkillTreeNode& Node) { return Node.NodeTag == TAG_SkillTreeTest_FormB; })->Cost = 3;
+	TestEqual(TEXT("A swap still needs enough points"),
+		SkillTrees->EvaluateSwap(TreeTag, TAG_SkillTreeTest_FormB, Replaced), ERpgSkillTreeUnlockResult::NotEnoughPoints);
+	TestEqual(TEXT("An unaffordable swap is refused"),
+		SkillTrees->SwapNode(TreeTag, TAG_SkillTreeTest_FormB), ERpgSkillTreeUnlockResult::NotEnoughPoints);
+	TestTrue(TEXT("An unaffordable swap keeps the learned form"), SkillTrees->IsNodeUnlocked(TreeTag, TAG_SkillTreeTest_FormA));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgSkillTreeSwapGrantsTest,
+	"SurvivalRpg.Progression.SkillTrees.SwapReconcilesGrants",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgSkillTreeSwapGrantsTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgSkillTreeTests;
+
+	FScopedTestWorld TestWorld;
+	FEquipmentFixture Fixture;
+	if (!MakeEquipmentFixture(*this, TestWorld.GetWorld(), Fixture))
+	{
+		return false;
+	}
+
+	const FGameplayTag TreeTag = TAG_SkillTreeTest_Tree;
+	URpgSkillTreeDefinition* Tree = MakeTree();
+	for (FRpgSkillTreeNode& Node : Tree->Nodes)
+	{
+		if (Node.NodeTag == TAG_SkillTreeTest_FormA)
+		{
+			Node.GrantedTags.AddTag(TAG_SkillTreeTest_FormAGranted);
+		}
+		else if (Node.NodeTag == TAG_SkillTreeTest_FormB)
+		{
+			Node.GrantedTags.AddTag(TAG_SkillTreeTest_FormBGranted);
+		}
+	}
+	FScopedTestToolTree ToolTree(Tree);
+	URpgEquipmentInstance* MainHand = Fixture.Equipment->EquipItemInSlotWithInstigator(
+		URpgEquipmentAutomationTestSwordDefinition::StaticClass(),
+		ERpgEquipmentSlot::MainHand,
+		Fixture.Tool);
+	if (!TestNotNull(TEXT("The tool equips in the main hand"), MainHand))
+	{
+		return false;
+	}
+
+	RaiseLogging(*Fixture.PlayerState, 4);
+	for (const FGameplayTag& NodeTag : TArray<FGameplayTag>{TAG_SkillTreeTest_Root, TAG_SkillTreeTest_Second, TAG_SkillTreeTest_FormA})
+	{
+		Fixture.SkillTrees->UnlockNode(TreeTag, NodeTag);
+	}
+	UAbilitySystemComponent& AbilitySystem = *Fixture.AbilitySystem;
+	TestEqual(TEXT("FormA's grant is owned once"), AbilitySystem.GetTagCount(TAG_SkillTreeTest_FormAGranted), 1);
+
+	Fixture.SkillTrees->SwapNode(TreeTag, TAG_SkillTreeTest_FormB);
+	TestEqual(TEXT("The swap removes FormA's grant"), AbilitySystem.GetTagCount(TAG_SkillTreeTest_FormAGranted), 0);
+	TestEqual(TEXT("The swap grants FormB once"), AbilitySystem.GetTagCount(TAG_SkillTreeTest_FormBGranted), 1);
+
+	Fixture.SkillTrees->SwapNode(TreeTag, TAG_SkillTreeTest_FormB);
+	TestEqual(TEXT("A repeated swap does not grant twice"), AbilitySystem.GetTagCount(TAG_SkillTreeTest_FormBGranted), 1);
+
+	Fixture.SkillTrees->SwapNode(TreeTag, TAG_SkillTreeTest_FormA);
+	TestTrue(TEXT("Swapping back restores FormA's grant alone"),
+		AbilitySystem.GetTagCount(TAG_SkillTreeTest_FormAGranted) == 1 && AbilitySystem.GetTagCount(TAG_SkillTreeTest_FormBGranted) == 0);
+	Fixture.Equipment->UnequipItem(MainHand);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgSkillTreeTuningTest,
 	"SurvivalRpg.Progression.SkillTrees.TuningsChangeAbilityValues",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -1379,6 +1531,60 @@ bool FRpgSkillProgressionViewModelTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Unbinding clears the trees"), Progression->GetSkillTrees().IsEmpty());
 	TestTrue(TEXT("Unbinding clears the skills"), Progression->GetSkills().IsEmpty());
 	TestTrue(TEXT("Unbinding clears the selection"), Progression->GetSelectedSkillTree() == nullptr);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgSkillTreeRequestFeedbackTest,
+	"SurvivalRpg.Progression.SkillTrees.ViewModel.SwapAndRejectionFeedback",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgSkillTreeRequestFeedbackTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgSkillTreeTests;
+
+	FScopedTestWorld TestWorld;
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		TestWorld.GetWorld() ? TestWorld.GetWorld()->SpawnActor<ARpgInventoryAutomationTestPlayerState>() : nullptr;
+	URpgSkillTreeComponent* SkillTrees = PlayerState ? PlayerState->GetSkillTreeComponent() : nullptr;
+	if (!TestNotNull(TEXT("Player state with skill trees spawns"), SkillTrees))
+	{
+		return false;
+	}
+
+	const FGameplayTag TreeTag = TAG_SkillTreeTest_Tree;
+	SkillTrees->RegisterSkillTree(MakeTree());
+	RaiseLogging(*PlayerState, 4);
+	for (const FGameplayTag& NodeTag : TArray<FGameplayTag>{TAG_SkillTreeTest_Root, TAG_SkillTreeTest_Second, TAG_SkillTreeTest_FormA})
+	{
+		SkillTrees->UnlockNode(TreeTag, NodeTag);
+	}
+
+	URpgSkillTreeViewModel* View = NewObject<URpgSkillTreeViewModel>(GetTransientPackage(), NAME_None, RF_Transient);
+	View->BindSkillTree(SkillTrees, TreeTag);
+	const URpgSkillTreeNodeViewModel* FormB = View->FindNode(TAG_SkillTreeTest_FormB);
+	TestTrue(TEXT("The excluded form offers a swap that replaces the learned one"),
+		FormB && FormB->GetState() == ERpgSkillTreeNodeState::Excluded && FormB->CanSwap() &&
+			FormB->GetSwapReplacesNodeTag() == TAG_SkillTreeTest_FormA);
+	const URpgSkillTreeNodeViewModel* Passive = View->FindNode(TAG_SkillTreeTest_Passive);
+	TestTrue(TEXT("A node outside the group offers no swap"), Passive && !Passive->CanSwap());
+
+	View->RequestSwapNode(TAG_SkillTreeTest_FormB);
+	TestTrue(TEXT("On the server the swap lands at once and nothing waits"),
+		FormB && FormB->GetState() == ERpgSkillTreeNodeState::Unlocked && FormB->GetRequestStatus() == ERpgSkillTreeRequestStatus::Idle);
+	const URpgSkillTreeNodeViewModel* FormA = View->FindNode(TAG_SkillTreeTest_FormA);
+	TestTrue(TEXT("The replaced form now offers the swap back"), FormA && FormA->CanSwap());
+
+	// Passive costs two points and none are free: the server rejects it and the card can say why.
+	View->RequestUnlockNode(TAG_SkillTreeTest_Passive);
+	TestTrue(TEXT("A rejected request shows its reason"),
+		Passive && Passive->GetRequestStatus() == ERpgSkillTreeRequestStatus::Rejected &&
+			Passive->GetRejection() == ERpgSkillTreeRequestRejection::NotEnoughPoints);
+	TestFalse(TEXT("A rejected request learns nothing"), SkillTrees->IsNodeUnlocked(TreeTag, TAG_SkillTreeTest_Passive));
+	View->SelectNode(TAG_SkillTreeTest_Root);
+	TestTrue(TEXT("Selecting another node clears the rejection"),
+		Passive && Passive->GetRequestStatus() == ERpgSkillTreeRequestStatus::Idle &&
+			Passive->GetRejection() == ERpgSkillTreeRequestRejection::None);
 	return true;
 }
 

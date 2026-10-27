@@ -15,6 +15,7 @@
 #include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeDefinition.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillGameplayTags.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillProgressionComponent.h"
+#include "UObject/StrongObjectPtr.h"
 
 #if ENABLE_PIE_NETWORK_TEST
 
@@ -36,6 +37,16 @@ namespace RpgSkillTreePIETests
 		return FGameplayTag::RequestGameplayTag(TEXT("SkillTree.Node.AutomationTest.Passive"));
 	}
 
+	FGameplayTag FormATag()
+	{
+		return FGameplayTag::RequestGameplayTag(TEXT("SkillTree.Node.AutomationTest.FormA"));
+	}
+
+	FGameplayTag FormBTag()
+	{
+		return FGameplayTag::RequestGameplayTag(TEXT("SkillTree.Node.AutomationTest.FormB"));
+	}
+
 	struct FNetworkState : public FBasePIENetworkComponentState
 	{
 	};
@@ -45,7 +56,10 @@ namespace RpgSkillTreePIETests
 		return FTimespan::FromSeconds(60.0);
 	}
 
-	/** Root costs one point; Expensive costs three, more than the players earn. */
+	/**
+	 * Root costs one point; Expensive costs three, more than the players earn. FormA and FormB cost one point each and
+	 * exclude each other.
+	 */
 	URpgSkillTreeDefinition* MakeTree(UObject* Outer)
 	{
 		URpgSkillTreeDefinition* Tree = NewObject<URpgSkillTreeDefinition>(Outer);
@@ -60,6 +74,14 @@ namespace RpgSkillTreePIETests
 		Expensive.NodeTag = ExpensiveTag();
 		Expensive.Column = 1;
 		Expensive.Cost = 3;
+
+		for (const FGameplayTag& FormTag : {FormATag(), FormBTag()})
+		{
+			FRpgSkillTreeNode& Form = Tree->Nodes.AddDefaulted_GetRef();
+			Form.NodeTag = FormTag;
+			Form.Column = Tree->Nodes.Num() - 1;
+			Form.ExclusiveGroup = TEXT("Form");
+		}
 		return Tree;
 	}
 
@@ -122,6 +144,19 @@ NETWORK_TEST_CLASS(SkillTreePIE, "SurvivalRpg.Network")
 		TestCommandBuilder,
 		bInitializing};
 	int32 OwnerPlayerId = INDEX_NONE;
+	TStrongObjectPtr<URpgNetworkAutomationRejectionListener> Rejections;
+
+	bool HeardRejection(const FGameplayTag NodeTag, const ERpgSkillTreeRequestRejection Reason) const
+	{
+		for (int32 Index = 0; Rejections && Index < Rejections->NodeTags.Num(); ++Index)
+		{
+			if (Rejections->NodeTags[Index] == NodeTag && Rejections->Reasons[Index] == Reason)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
 
 	BEFORE_EACH()
 	{
@@ -184,6 +219,9 @@ NETWORK_TEST_CLASS(SkillTreePIE, "SurvivalRpg.Network")
 					URpgSkillTreeComponent* SkillTrees = PlayerState->GetSkillTreeComponent();
 					ASSERT_THAT(IsNotNull(SkillTrees));
 					OwnerPlayerId = PlayerState->GetPlayerId();
+					Rejections.Reset(NewObject<URpgNetworkAutomationRejectionListener>());
+					SkillTrees->OnRequestRejected.AddDynamic(
+						Rejections.Get(), &URpgNetworkAutomationRejectionListener::HandleRejected);
 
 					// A client cannot change its progress locally; only the validated server request counts.
 					ASSERT_THAT(IsTrue(SkillTrees->UnlockNode(TreeTag(), RootTag()) !=
@@ -229,6 +267,66 @@ NETWORK_TEST_CLASS(SkillTreePIE, "SurvivalRpg.Network")
 					ASSERT_THAT(IsFalse(PlayerState->GetSkillTreeComponent()->IsNodeUnlocked(
 						TreeTag(), ExpensiveTag())));
 				})
+			.UntilClient(
+				TEXT("The owner hears why the unaffordable node was rejected"),
+				0,
+				[this](FNetworkState& State)
+				{
+					return HeardRejection(ExpensiveTag(), ERpgSkillTreeRequestRejection::NotEnoughPoints);
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("The owner learns FormA with its last point and swaps it for FormB"),
+				0,
+				[this](FNetworkState& State)
+				{
+					URpgSkillTreeComponent* SkillTrees = GetOwnPlayerState(State)->GetSkillTreeComponent();
+					SkillTrees->RequestUnlockNode(TreeTag(), FormATag());
+					SkillTrees->RequestSwapNode(TreeTag(), FormBTag());
+				})
+			.UntilServer(
+				TEXT("The server swapped the owner's form without a free point"),
+				[this](FNetworkState& State)
+				{
+					for (const ARpgPlayerState* PlayerState : GetPlayerStates(State))
+					{
+						const URpgSkillTreeComponent* SkillTrees = PlayerState->GetSkillTreeComponent();
+						if (PlayerState->GetPlayerId() == OwnerPlayerId)
+						{
+							return SkillTrees->IsNodeUnlocked(TreeTag(), FormBTag()) &&
+								!SkillTrees->IsNodeUnlocked(TreeTag(), FormATag()) &&
+								SkillTrees->GetAvailablePoints(TreeTag()) == 0;
+						}
+					}
+					return false;
+				},
+				NetworkTimeout())
+			.UntilClient(
+				TEXT("The owner receives the swapped form"),
+				0,
+				[](FNetworkState& State)
+				{
+					const URpgSkillTreeComponent* SkillTrees = GetOwnPlayerState(State)->GetSkillTreeComponent();
+					return SkillTrees->IsNodeUnlocked(TreeTag(), FormBTag()) && !SkillTrees->IsNodeUnlocked(TreeTag(), FormATag());
+				},
+				NetworkTimeout())
+			.ThenClient(
+				TEXT("The owner repeats the swap"),
+				0,
+				[](FNetworkState& State)
+				{
+					GetOwnPlayerState(State)->GetSkillTreeComponent()->RequestSwapNode(TreeTag(), FormBTag());
+				})
+			.UntilClient(
+				TEXT("The repeated swap is rejected as already done and changes nothing"),
+				0,
+				[this](FNetworkState& State)
+				{
+					const URpgSkillTreeComponent* SkillTrees = GetOwnPlayerState(State)->GetSkillTreeComponent();
+					return HeardRejection(FormBTag(), ERpgSkillTreeRequestRejection::AlreadyChanged) &&
+						SkillTrees->IsNodeUnlocked(TreeTag(), FormBTag()) && SkillTrees->GetAvailablePoints(TreeTag()) == 0;
+				},
+				NetworkTimeout())
 			.ThenServer(
 				TEXT("The owner's state replicated after the request"),
 				[this](FNetworkState& State)

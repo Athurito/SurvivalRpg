@@ -55,6 +55,7 @@ Recipes and pitfalls observed in this project's UE 5.8 editor sessions. Read it 
     - A row handle is empty only when both its table and its row are unset. A handle with a table and the row `None` logs "Cannot bind widget ... does not resolve to valid data"; clear it with an argument-free `MakeDataTableRowHandle`.
   - The action bar lists a data-table action on mouse and keyboard even when the row has no keyboard key (`InputTypesExemptFromValidKeyCheck`), as a bare label. Gamepad-only actions need `bDisplayInActionBar` off.
   - `CUI_ApplyButtonBase` overlays its glyph on the label. Narrow buttons need `bHideInputAction`.
+  - `CUI_ApplyButtonBase.SetButtonText` only sets the variable its Construct copies into the label. To change the label of a built button, also call `Widget|SetText` on `Class|CUIApplyButtonBase|GetText` (MST-04).
   - A `CommonActionWidget` collapses itself when its row has no key on the current device. Its `OnInputMethodChanged` event can switch a hint row between devices, as `CUI_HudKeyHints` and `CUI_Skills` do.
 - GASP pawns use their own input configs (`DA_InputConfig_GaspCMC`, `DA_InputConfig_GaspMover`, `DA_InputConfig_GaspMoverRagdoll`), so a new native hotkey needs an entry in each, not only in `DA_InputConfig`.
 - The asset registry misses config references, such as the CommonInput data assets named in `Config/DefaultGame.ini`. Treat those as roots before deleting "unused" assets.
