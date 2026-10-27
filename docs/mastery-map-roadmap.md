@@ -1,6 +1,6 @@
 # Mastery map roadmap
 
-Updated: 2026-10-27. Status: **In progress**; MST-03a is in review.
+Updated: 2026-10-27. Status: **In progress**; MST-03a is merged, MST-03b is next.
 
 This is the execution roadmap for the [mastery map implementation plan](mastery-map-implementation-plan.md): a zoomable shared harvesting mastery map, meaningful talent choices, and the rune loot/crafting/upgrade loop. The plan owns design, architecture, and detailed acceptance contracts; this roadmap owns task status, order, and the current handoff.
 
@@ -39,8 +39,8 @@ All dependencies below are within MST; every row also has the CMB scheduling gat
 | --- | --- | --- | --- | --- |
 | MST-01 | Free-position node/link schema, reusable native map geometry/input, LocalPlayer camera/selection cache; prove the surface with existing data | Post-CMB baseline refresh | Merged (2026-10-27, `293fce4f`) | [mastery-map-foundation.md](mastery-map-foundation.md), [PR #302](https://github.com/Athurito/SurvivalRpg/pull/302) |
 | MST-02 | Integrate `CUI_Skills`, node/details WBPs and existing MVVM/style; explicit learn/refund actions, focus, semantic zoom and close/reopen behavior | MST-01 | Merged (2026-10-27, `a888a078`) | [mastery-map-skill-screen.md](mastery-map-skill-screen.md), [PR #304](https://github.com/Athurito/SurvivalRpg/pull/304) |
-| MST-03a | Quantized harvesting work, residual progress, true overkill and proc provenance through existing stock/reward commits; actor/instance replication and saves | Post-CMB baseline refresh; technically independent of MST-01/02 | In review | [mastery-map-harvest-work.md](mastery-map-harvest-work.md), [PR #306](https://github.com/Athurito/SurvivalRpg/pull/306) |
-| MST-03b | Shared harvesting mastery/XP/tree/tool references, functional three-node Wucht branch, old-save migration and retirement of legacy harvesting allocations | MST-02, MST-03a | Planned | — |
+| MST-03a | Quantized harvesting work, residual progress, true overkill and proc provenance through existing stock/reward commits; actor/instance replication and saves | Post-CMB baseline refresh; technically independent of MST-01/02 | Merged (2026-10-27, `2554bb6c`) | [mastery-map-harvest-work.md](mastery-map-harvest-work.md), [PR #306](https://github.com/Athurito/SurvivalRpg/pull/306) |
+| MST-03b | Shared harvesting mastery/XP/tree/tool references, functional three-node Wucht branch, old-save migration and retirement of legacy harvesting allocations | MST-02, MST-03a | Ready | — |
 | MST-04 | Atomic replacement of exclusive choices, owner request/result feedback, grant reconciliation and VM updates | MST-03b | Planned | — |
 | MST-05 | Extend the delivered rune/item foundation with physical instances, ranks and three harvesting-tool sockets; validated moves, grants, replication and persistence | MST-04; CMB-07 contract re-inspection | Planned | — |
 | MST-06 | Source-tool activation evaluator, rune context/highlights and learned-but-inactive UI; Brand and the first implemented rune-dependent talent path | MST-05 | Planned | — |
@@ -85,8 +85,7 @@ Playtests of merged MST steps that wait for the user's batch test. Remove a row 
 ## Current handoff
 
 - **Active phase:** MST, started by the user on 2026-10-27 after CMB-01 to CMB-07 merged.
-- **Active task:** MST-03a, branch `claude/mst-03a-harvest-work`, [PR #306](https://github.com/Athurito/SurvivalRpg/pull/306); the report is [mastery-map-harvest-work.md](mastery-map-harvest-work.md). Harvest stock counts work in hundredths of a section, keeps residual work per resource, reports true overkill and work provenance, and replicates and saves the residual work.
-- **Previous task:** MST-02, merged on 2026-10-27 as `a888a078` ([PR #304](https://github.com/Athurito/SurvivalRpg/pull/304)).
-- **Next MST action:** after MST-03a merges, take MST-03b (shared harvesting mastery and the first Wucht nodes).
+- **Last task:** MST-03a, merged on 2026-10-27 as `2554bb6c` ([PR #306](https://github.com/Athurito/SurvivalRpg/pull/306)); the report is [mastery-map-harvest-work.md](mastery-map-harvest-work.md). Its regression playtest waits in the backlog.
+- **Next MST action:** MST-03b (shared harvesting mastery and the first Wucht nodes) is Ready.
 - **Rune contract for MST-05:** CMB-07 delivered `URpgWeaponRuneDefinition` and `URpgInventoryFragment_WeaponRunes`, with runes engraved on item definitions and no sockets yet. Recheck them before MST-05.
 - **Later content decisions:** production XP and cost curves and the starter and guaranteed-reward pacing remain authored tuning. Shared-world rune recipe knowledge is the plan's proposed co-op default and must be settled before MST-07.
