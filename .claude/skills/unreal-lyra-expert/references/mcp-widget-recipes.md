@@ -29,6 +29,7 @@ Recipes and pitfalls observed in this project's UE 5.8 editor sessions. Read it 
 - `MoveWidget` applies child indices after the removal and keeps the old slot's size rule, so a Fill button moved into a VerticalBox fills vertically. Move to `-1` (the end) step by step, read the order back with `GetWidgets`, and reset the slot size.
 - In Python, setting a SizeBox's `width_override` alone does not set its override flag. Set `bOverride_WidthOverride` (and the height flag) through `ObjectTools.set_properties`.
 - A Border's `Padding` is shared with its child slot padding. Set the slot first, then `border.set_editor_property("padding", ...)`.
+- `AutoWrapText` wraps at the width of the last arrange. `ForceLayoutPrepass` on a widget that was collapsed measures its text unwrapped, so a card placed and clamped from that size can hang past its area. Give the texts of a fixed-width card `WrapTextAt` (the card's inner width) and place the card again on the tick after it becomes visible (`SetTimerforNextTickbyFunctionName`) (MST-10a).
 - A horizontal CommonListView draws a horizontal scrollbar over its entries; collapse it with `ListViewBase|SetScrollbarVisibility` on Construct. A WidgetSwitcher sizes to its active page, so wrap it in a fixed-height SizeBox.
 
 ## MVVM bindings
@@ -84,6 +85,8 @@ Recipes and pitfalls observed in this project's UE 5.8 editor sessions. Read it 
   - In the main editor window, `Click` and `Type` into the `textbox` that follows the `Cmd` combobox in the status bar, then `PressKey Enter`.
   - While PIE runs, commands with a world argument act on the PIE world, for example `Rpg.Progression.AddSkillXP Skill.Mastery.Harvesting 1500 1` for the second player.
 - A Slate snapshot of one PIE window also lists the widgets of the other PIE windows of the same process. Pick refs by their position, not by the first match (MST-03c).
+  - It also lists widgets a map or scroll box clipped, at positions outside the window. A `Click` on such a ref lands outside the PIE window (MST-10a).
+- Slate `PressKey` reaches CommonUI's bound actions only while the PIE window is the active window of the desktop; inspector clicks do not activate it. In MST-10a neither F nor a gamepad face button arrived, even in a fresh PIE session, and after a click outside the window F went to the editor, which aligned its camera. Check such a command by clicking its button, and leave its keys to the playtest.
 - Synthetic gamepad A: `Click` a harmless text first, which gives the PIE viewport user focus; switch CommonInput to gamepad; open the screen fresh, because a cached page keeps no focus; then `PressKey Gamepad_FaceButton_Bottom`. Enter does not activate buttons this way. Run a control with the feature off.
 - `has_any_user_focus` misses focus on a CommonButton's inner SButton; the log lines `LogUIActionRouter: [User 0] Focused desired target X` are reliable focus evidence.
 - `EnhancedInputLocalPlayerSubsystem.inject_input_vector_for_action(ia, Vector(1,0,0), [], [])` fires an action like a key; `inject_input_for_action` with a default value does not.

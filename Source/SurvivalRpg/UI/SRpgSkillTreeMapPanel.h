@@ -101,6 +101,9 @@ struct FRpgSkillTreeMapSettings
 	/** Space between the selected entry and the focus brush. */
 	double FocusPadding = 6.0;
 
+	/** Space between a tree's lowest node and its tree label. */
+	double TreeLabelGap = 8.0;
+
 	/**
 	 * Time constant in seconds with which the shown camera glides to a new zoom, fit or focus. Zero jumps. Drags
 	 * always follow the pointer directly.
@@ -118,7 +121,8 @@ struct FRpgSkillTreeMapSettings
  * Internal Slate panel of URpgSkillTreeMapWidget: places node entries on a clipped, pannable, zoomable map, draws
  * regions and prerequisite links with the same camera, and owns every pointer gesture. Entries are presentation only;
  * presses never reach them, so a drag can never click one. Hit testing, spatial focus and the camera all use one
- * transform. Owns no gameplay state.
+ * transform. Tree labels, one per tree of a map with several trees, sit centered below their tree and take part in
+ * neither hit testing nor navigation. Owns no gameplay state.
  */
 class SURVIVALRPG_API SRpgSkillTreeMapPanel : public SPanel
 {
@@ -128,6 +132,31 @@ public:
 	{
 	public:
 		FVector2D Position = FVector2D::ZeroVector;
+	};
+
+	/**
+	 * One tree label. It sits centered on Anchor's X, just below the lowest drawn node of its range, so it never covers
+	 * a node at any zoom; a range without nodes puts it at Anchor.
+	 */
+	class FLabelSlot : public TSlotBase<FLabelSlot>
+	{
+	public:
+		/** Usually the bottom center of the tree's bounds, in map units. */
+		FVector2D Anchor = FVector2D::ZeroVector;
+
+		/** Nodes of the label's tree: FirstNode and the NodeCount nodes after it in the node order. */
+		int32 FirstNode = 0;
+		int32 NodeCount = 0;
+	};
+
+	/** Where one tree label sits; see FLabelSlot. */
+	struct FTreeLabelPlacement
+	{
+		FVector2D Anchor = FVector2D::ZeroVector;
+		int32 FirstNode = 0;
+		int32 NodeCount = 0;
+
+		bool operator==(const FTreeLabelPlacement& Other) const = default;
 	};
 
 	/** One prerequisite link between two node centers, in map units. */
@@ -167,6 +196,16 @@ public:
 
 	/** Moves the existing entries without recreating them. Ignored unless the count matches. */
 	void SetNodePositions(TConstArrayView<FVector2D> Positions);
+
+	/** Replaces every tree label. Labels and Placements are parallel arrays. */
+	void SetTreeLabels(TConstArrayView<TSharedRef<SWidget>> Labels, TConstArrayView<FTreeLabelPlacement> Placements);
+
+	/** Moves the existing tree labels without recreating them. Ignored unless the count matches. */
+	void SetTreeLabelPlacements(TConstArrayView<FTreeLabelPlacement> Placements);
+	int32 GetTreeLabelCount() const { return TreeLabels.Num(); }
+
+	/** Viewport-local box the tree label fills at the current camera. */
+	FSlateRect GetTreeLabelLocalRect(int32 LabelIndex) const;
 
 	void SetLinks(TArray<FLink> InLinks);
 	void SetRegions(TArray<FBox2D> InRegions);
@@ -275,7 +314,15 @@ private:
 	TArray<FVector2D> GetNodePositions() const;
 	FVector2D GetEntrySize(int32 NodeIndex) const;
 
+	/** Top-left corner and size of a tree label in viewport-local space, for a viewport of Size. */
+	FSlateRect ComputeTreeLabelRect(int32 LabelIndex, const FVector2D& Size) const;
+
+	/** Node entries; their indices are the node indices of every event and query. */
 	TPanelChildren<FSlot> Children;
+	TPanelChildren<FLabelSlot> TreeLabels;
+
+	/** Nodes, then tree labels, for Slate's child traversal. */
+	FCombinedChildren AllChildren;
 	FRpgSkillTreeMapSettings Settings;
 	FRpgSkillTreeMapCamera Camera;
 	FRpgSkillTreeMapCamera ShownCamera;

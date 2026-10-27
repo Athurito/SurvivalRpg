@@ -228,6 +228,13 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|Map", meta = (ClampMin = "1", UIMin = "40", UIMax = "400"))
 	FVector2D GridSpacing = FVector2D(160.0, 160.0);
 
+	/**
+	 * Where the tree sits on the mastery map that shows every tree, in map units. Node positions and grid cells are
+	 * relative to it, so moving a whole cluster is one edit. Trees on the same map must not overlap. Presentation only.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|Map")
+	FVector2D MapOrigin = FVector2D::ZeroVector;
+
 	/** Map regions, usually one per branch, that region shortcuts can focus. Optional. Presentation only. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|Map", meta = (TitleProperty = "RegionId"))
 	TArray<FRpgSkillTreeMapRegion> Regions;
@@ -242,7 +249,7 @@ public:
 	/** Returns the region with RegionId, or null. */
 	const FRpgSkillTreeMapRegion* FindRegion(FName RegionId) const;
 
-	/** Center of Node on the map in map units, from its cell on a Grid tree or its MapPosition otherwise. */
+	/** Center of Node on the map in map units: MapOrigin plus its cell on a Grid tree or its MapPosition otherwise. */
 	FVector2D GetNodeMapPosition(const FRpgSkillTreeNode& Node) const;
 
 	/** Box around the centers of RegionId's nodes, grown by its Padding; an invalid box when the region has no node. */

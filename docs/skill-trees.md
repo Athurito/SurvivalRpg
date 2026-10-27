@@ -72,31 +72,37 @@ H opens the game menu on its Skills tab: `IA_UI_Skills` → `InputTag.UI.Skills`
 `UI.Screen.GameMenu` with a payload whose screen tag is `UI.Screen.GameMenu.Skills`.
 The menu's `TabScreenTags` map such tags to its tabs.
 The Skills tab is one mastery map that fills the tab (MST-03c, [single-map skill screen](mastery-map-single-map.md);
-the map itself is MST-02, [skill screen on the map](mastery-map-skill-screen.md)). Character level and professions
-are on the Character tab.
-- **Top bar:** a compact budget entry per tree (name, level, free and spent points) with **Reset tree**, region shortcuts once a tree has more than one region, input hints for the current device, and zoom out, zoom in and fit.
-- **Card:** clicking a node only selects it and opens one fixed-size card beside it, which follows the node while the map moves and stays inside the map. **Learn** and **Refund** on the card send the node view model's `RequestUnlock` and `RequestRefund`.
+the map itself is MST-02, [skill screen on the map](mastery-map-skill-screen.md)). Every known tree is a cluster of
+that map at its `MapOrigin`, with its own points, as in Path of Exile's atlas (MST-10a,
+[several trees on one map](mastery-map-several-trees.md)). Character level and professions are on the Character tab.
+- **Top bar:** one budget entry per tree (`CUI_SkillTreeBudgetEntry`: name, level, free and spent points, **Reset tree**), the shortcuts, input hints for the current device, and zoom out, zoom in and fit.
+  - **Shortcuts:** one per tree, which frames its cluster, followed by the regions of every tree that has more than one. They show from the second shortcut on.
+- **Clusters:** below each tree's lowest node the map shows `CUI_SkillTreeClusterLabel` with the tree's name, level and free points. Fit frames every tree.
+- **Card:** clicking a node only selects it and opens one fixed-size card beside it, which follows the node while the map moves and stays inside the map. The map has one selection over all trees. **Learn** and **Refund** on the card send the node view model's `RequestUnlock` and `RequestRefund`, so they spend the points of the node's own tree.
 - **Bound actions:** `DT_RpgUIActions_SkillTree`. Learn is F or the left face button and Refund R or the top face button; they work while focus stays on the map, and the menu's action bar lists each while it is available. Zoom and fit add gamepad bindings: the triggers and the right stick press.
 - **Q/E/R:** the screen has no Q/E/R bar. Assigning a learned active ability belongs on its card once a tree has active abilities; the assignment rules are unchanged.
 
 | Part | Role |
 | --- | --- |
-| `URpgSkillProgressionViewModel` | Character level, trade skills with XP, one tree view model per known tree, the selected tree, free points. `OnProgressionChanged` also fires when the selected tree changes, so a screen refreshes from one event. |
+| `URpgSkillProgressionViewModel` | Character level, trade skills with XP, one tree view model per known tree, the node selected in any tree with its tree, free points. `OnProgressionChanged` also fires when any tree view model changes, so a screen refreshes from one event. |
 | `URpgSkillTreeViewModel` | Points, rows with their gates, prerequisite links, Q/E/R slots, the selected node, and the commands learn, reset, select and assign. |
 | `URpgSkillTreeNodeViewModel` | One node: name, text, icon, kind, cell, cost, state (`Unlocked`, `Unlockable`, `Unaffordable`, `Locked`, `Excluded`), slot, and `bCanRefund` with the commands learn, refund and select. |
 | `URpgSkillTreeGridWidget` | Places one entry per node from `Row` and `Column`, draws the links and darkens locked rows. Entries implement User Object List Entry. No screen uses it since MST-02. |
-| `URpgSkillTreeMapWidget` | Zoomable, pannable map ([below](#mastery-map)) that `CUI_Skills` shows the selected tree on. |
-| `CUI_Skills`, `CUI_SkillTreeNode`, `CUI_SkillButtonStyle` | Layout and style in `/Game/SurvivalRpg/UI/Menus/GameMenu/GameMenu/Skills`. `CUI_TradeSkillEntry` there lists the professions on the Character tab. |
+| `URpgSkillTreeMapWidget` | Zoomable, pannable map ([below](#mastery-map)) that `CUI_Skills` shows every tree on. |
+| `CUI_Skills`, `CUI_SkillTreeNode`, `CUI_SkillTreeBudgetEntry`, `CUI_SkillTreeClusterLabel`, `CUI_SkillButtonStyle` | Layout and style in `/Game/SurvivalRpg/UI/Menus/GameMenu/GameMenu/Skills`. `CUI_TradeSkillEntry` there lists the professions on the Character tab. |
 
 ### Mastery map
 
-`URpgSkillTreeMapWidget` (MST-01, [mastery map foundation](mastery-map-foundation.md)) shows one tree on a clipped map:
+`URpgSkillTreeMapWidget` (MST-01, [mastery map foundation](mastery-map-foundation.md)) shows one or several trees on a clipped map:
+- `SetSkillTrees` shows several trees as clusters; each node is identified by its tree and its node tag, so node tags and region ids only need to be unique per tree (MST-10a).
+- An optional `TreeEntryClass` widget per tree sits centered below the tree's lowest node and receives the tree view model.
 - The wheel zooms around the cursor; a drag with any mouse button pans after a few units.
 - Zoom, fit and focus glide over `CameraBlendTime`, and `BackgroundBrush` art pans and zooms with the tree.
 - A left click without a drag selects a node; nothing on the map learns or refunds.
 - Arrow keys and the gamepad move the selection to the nearest node in that direction and bring it into view; Tab follows the authored order.
-- Blueprints get zoom, fit, region and node focus, pan and cancel commands, and `Overview`/`Detail` from `DetailZoom`.
-- Camera and selection come back when the screen reopens.
+- Blueprints get zoom, fit, tree, region and node focus, pan and cancel commands, and `Overview`/`Detail` from `DetailZoom`.
+- The map keeps one selection: selecting a node clears the other trees' selections.
+- Camera and selection, with the selected node's tree, come back when the screen reopens; the view is remembered per set of shown trees.
 - `OnSelectedNodeMoved` reports the selected node's drawn box in the map's local space whenever it moves, so a card can follow it without a tick (MST-03c).
 - Entries are presentation only and never receive presses; `URpgMvvmListEntryWidget` entries get their node view model as their entry item.
 
@@ -125,6 +131,7 @@ trees stay unregistered: they grant nothing, requests for them are rejected, and
 1. Create a `URpgSkillTreeDefinition` DataAsset in the feature that owns the weapon:
    - Set `TreeTag` (`SkillTree.Tree.<Weapon>`) and `MasterySkillTag`.
    - Set `MaxPoints`, and optionally a `PointsByLevel` curve and `BranchNames`.
+   - Set `MapOrigin` so the tree's cluster does not overlap another tree on the shared map. Node positions are relative to it.
 2. Add `URpgInventoryFragment_SkillTree` to the weapon's item definition and point it at the tree. Change `ActiveInSlots` only for off-hand items.
 3. Make sure the asset manager scans the folder (`DefaultGame.ini` for `/Game`, the GameFeatureData for a plugin).
 4. Run data validation. The automation test `SurvivalRpg.Progression.SkillTrees.Content.AllTreesValid` checks every tree.
@@ -172,7 +179,8 @@ Add an entry to `Nodes`:
 - the map layout: grid fallback, free positions, regions and their projection
 
 `SurvivalRpg.UI.SkillTreeMap.*` covers the map's camera, spatial navigation, pointer gestures, widget lifecycle with
-the remembered view, and that every shipped tree fits on the map.
+the remembered view, several trees with one selection and their own points, a 200-node synthetic map, and that every
+shipped tree fits on the map, alone and with the others, without overlapping another tree.
 
 `SurvivalRpg.Save.WorldSave.MemoryRoundTrip` covers the save fields.
 `SurvivalRpg.Harvesting.Content.SharedHarvestingTreeContract` checks that axe and pickaxe carry the same tree, that its

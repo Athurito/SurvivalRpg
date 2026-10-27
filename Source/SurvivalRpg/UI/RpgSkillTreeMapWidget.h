@@ -2,16 +2,15 @@
 
 #include "Components/Widget.h"
 #include "GameplayTagContainer.h"
+#include "SRpgSkillTreeMapPanel.h"
 #include "Styling/SlateBrush.h"
 
 #include "RpgSkillTreeMapWidget.generated.h"
 
-class SRpgSkillTreeMapPanel;
 class UUserWidget;
 class URpgSkillTreeNodeViewModel;
 class URpgSkillTreeViewModel;
 class URpgUIScreenSubsystem;
-struct FRpgSkillTreeMapSettings;
 
 /** How much a skill tree map's entries should show at the current zoom. Local presentation state; UI read-only. */
 UENUM(BlueprintType)
@@ -30,21 +29,26 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(
 	FRpgSkillTreeMapSelectedNodeMoved, bool, bHasSelection, FVector2D, NodePosition, FVector2D, NodeSize, FVector2D, MapSize);
 
 /**
- * Zoomable, pannable mastery map of one skill tree. Places one NodeEntryClass widget per node at its map position,
- * draws regions and prerequisite links behind them, and owns every pointer gesture on the map.
+ * Zoomable, pannable mastery map of one or several skill trees. Each tree is a cluster at its definition's MapOrigin
+ * and keeps its own points. Places one NodeEntryClass widget per node at its map position and one optional
+ * TreeEntryClass widget below each tree, draws regions and prerequisite links behind them, and owns every pointer
+ * gesture on the map.
  *
  * - The mouse wheel zooms around the cursor; a drag with any button pans once it passes DragThreshold. Zoom, fit
  *   and focus glide over CameraBlendTime; a drag follows the pointer directly.
  * - A left click without a drag selects the node under the cursor. Nothing on the map learns or refunds; those are
  *   explicit commands of the detail panel.
- * - Keyboard and gamepad navigation moves the selection spatially and brings the node into view; at the map's edge
- *   focus leaves for the neighboring widgets.
- * - Camera and selection are remembered per tree for the local player, so closing and reopening the screen restores
- *   them, also for pooled screens.
+ * - Keyboard and gamepad navigation moves the selection spatially, also from one tree to the next, and brings the
+ *   node into view; at the map's edge focus leaves for the neighboring widgets.
+ * - The map has one selection: selecting a node clears the selection of every other tree shown.
+ * - Camera and selection are remembered for the local player under the set of trees shown, so closing and reopening
+ *   the screen restores them, also for pooled screens.
  *
- * Entries are presentation only and never receive presses. They implement User Object List Entry and receive their
- * URpgSkillTreeNodeViewModel again after every tree change; URpgMvvmListEntryWidget children get it as their entry
- * item. Pan and zoom never recreate entries or view models. The map owns no gameplay state.
+ * A node is identified by its tree and its NodeTag, because node tags only need to be unique per tree; functions that
+ * take only a NodeTag use the first shown tree that has it. Entries are presentation only and never receive presses.
+ * They implement User Object List Entry and receive their URpgSkillTreeNodeViewModel, or tree entries their
+ * URpgSkillTreeViewModel, again after every tree change; URpgMvvmListEntryWidget children get it as their entry item.
+ * Pan and zoom never recreate entries or view models. The map owns no gameplay state.
  */
 UCLASS(meta = (DisplayName = "Rpg Skill Tree Map"))
 class SURVIVALRPG_API URpgSkillTreeMapWidget : public UWidget
@@ -54,21 +58,44 @@ class SURVIVALRPG_API URpgSkillTreeMapWidget : public UWidget
 public:
 	explicit URpgSkillTreeMapWidget(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
-	/** Shows InSkillTree, or clears the map with null. The map follows the view model's later changes on its own. */
+	/**
+	 * Shows InSkillTrees as clusters of one map, in the given order, or clears the map with an empty array. Null and
+	 * repeated trees are skipped. The map follows the view models' later changes on its own.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Skill Tree|Map")
+	void SetSkillTrees(const TArray<URpgSkillTreeViewModel*>& InSkillTrees);
+
+	/** Shows only InSkillTree, or clears the map with null. */
 	UFUNCTION(BlueprintCallable, Category = "Skill Tree|Map")
 	void SetSkillTree(URpgSkillTreeViewModel* InSkillTree);
 
-	/** Tree currently shown, or null. */
+	/** Trees currently shown, in map order. */
 	UFUNCTION(BlueprintPure, Category = "Skill Tree|Map")
-	URpgSkillTreeViewModel* GetSkillTree() const { return SkillTree; }
+	TArray<URpgSkillTreeViewModel*> GetSkillTrees() const;
 
-	/** Entry widget created for each node, in authored node order. */
+	/** First tree shown, or null. */
+	UFUNCTION(BlueprintPure, Category = "Skill Tree|Map")
+	URpgSkillTreeViewModel* GetSkillTree() const;
+
+	/** Selected node of whichever tree, or null. */
+	UFUNCTION(BlueprintPure, Category = "Skill Tree|Map")
+	URpgSkillTreeNodeViewModel* GetSelectedNode() const;
+
+	/** Entry widget created for each node, tree by tree in authored node order. */
 	UFUNCTION(BlueprintPure, Category = "Skill Tree|Map")
 	TArray<UUserWidget*> GetNodeEntries() const;
 
-	/** Entry widget of NodeTag, or null. */
+	/** Entry widget of NodeTag in the first shown tree that has it, or null. */
 	UFUNCTION(BlueprintPure, Category = "Skill Tree|Map")
 	UUserWidget* GetNodeEntry(FGameplayTag NodeTag) const;
+
+	/** Entry widget of NodeTag in TreeTag, or null. */
+	UFUNCTION(BlueprintPure, Category = "Skill Tree|Map")
+	UUserWidget* GetTreeNodeEntry(FGameplayTag TreeTag, FGameplayTag NodeTag) const;
+
+	/** Tree entry widget of TreeTag, or null without a TreeEntryClass or when the tree is not shown. */
+	UFUNCTION(BlueprintPure, Category = "Skill Tree|Map")
+	UUserWidget* GetTreeEntry(FGameplayTag TreeTag) const;
 
 	/** Zooms in one step around the viewport center, for zoom buttons and actions without a mouse wheel. */
 	UFUNCTION(BlueprintCallable, Category = "Skill Tree|Map")
@@ -82,17 +109,29 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Skill Tree|Map")
 	void SetZoom(float NewZoom);
 
-	/** Frames the whole tree. */
+	/** Frames every shown tree. */
 	UFUNCTION(BlueprintCallable, Category = "Skill Tree|Map")
 	void FitTree();
 
-	/** Frames RegionId, for region shortcuts. Returns false when the tree has no such region. */
+	/** Frames the whole cluster of TreeTag, for tree shortcuts. Returns false when the tree is not shown. */
+	UFUNCTION(BlueprintCallable, Category = "Skill Tree|Map")
+	bool FocusTree(FGameplayTag TreeTag);
+
+	/** Frames RegionId of the first shown tree that has it. Returns false when no shown tree has it. */
 	UFUNCTION(BlueprintCallable, Category = "Skill Tree|Map")
 	bool FocusRegion(FName RegionId);
 
-	/** Centers the view on NodeTag without selecting it. Returns false when the tree has no such node. */
+	/** Frames RegionId of TreeTag, for region shortcuts. Returns false when the tree is not shown or lacks the region. */
+	UFUNCTION(BlueprintCallable, Category = "Skill Tree|Map")
+	bool FocusTreeRegion(FGameplayTag TreeTag, FName RegionId);
+
+	/** Centers the view on NodeTag of the first shown tree that has it, without selecting it. False when none has it. */
 	UFUNCTION(BlueprintCallable, Category = "Skill Tree|Map")
 	bool FocusNode(FGameplayTag NodeTag);
+
+	/** Centers the view on NodeTag of TreeTag without selecting it. Returns false when no shown tree has it. */
+	UFUNCTION(BlueprintCallable, Category = "Skill Tree|Map")
+	bool FocusTreeNode(FGameplayTag TreeTag, FGameplayTag NodeTag);
 
 	/** Moves the map by Delta slate units, as a drag of that length would. */
 	UFUNCTION(BlueprintCallable, Category = "Skill Tree|Map")
@@ -153,6 +192,18 @@ protected:
 	/** Widget created per node; must implement User Object List Entry. Presentation only; never receives presses. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill Tree|Map", meta = (MustImplement = "/Script/UMG.UserObjectListEntry"))
 	TSubclassOf<UUserWidget> NodeEntryClass;
+
+	/**
+	 * Optional widget created per shown tree, centered below its lowest node and scaled like the node entries, for example
+	 * the tree's name and free points. Receives the URpgSkillTreeViewModel; must implement User Object List Entry.
+	 * Presentation only; never receives presses. None shows no tree entries.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill Tree|Map", meta = (MustImplement = "/Script/UMG.UserObjectListEntry"))
+	TSubclassOf<UUserWidget> TreeEntryClass;
+
+	/** Space in slate units between a tree's lowest node and its tree entry. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill Tree|Map|Entries", meta = (ClampMin = "0", UIMin = "0", UIMax = "64"))
+	float TreeEntryGap = 8.0f;
 
 	/** Smallest zoom in slate units per map unit. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill Tree|Map|Camera", meta = (ClampMin = "0.05", UIMin = "0.05", UIMax = "1"))
@@ -237,13 +288,15 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill Tree|Map|Style")
 	FLinearColor LockedLinkColor = FLinearColor(0.3f, 0.3f, 0.3f, 0.6f);
 
-	/** Remembers camera and selection per tree for the local player across screen close and reopen. */
+	/** Remembers camera and selection per set of shown trees for the local player across screen close and reopen. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill Tree|Map")
 	bool bRememberView = true;
 
 private:
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FRpgSkillTreeMapWidgetLifecycleTest;
+	friend class FRpgSkillTreeMapSeveralTreesTest;
+	friend class FRpgSkillTreeMapSyntheticPerformanceTest;
 	friend class FRpgSkillTreeMapSkillScreenContractTest;
 #endif
 
@@ -255,38 +308,75 @@ private:
 	void HandlePanelViewChanged();
 	void HandlePanelSelectedNodeMoved(bool bHasSelection, const FSlateRect& LocalBox, const FVector2D& ViewportSize);
 
-	/** Reuses entries by node tag, creates missing ones, and refreshes positions, links and selection. */
+	/** A node on the map: node tags only need to be unique per tree. */
+	struct FNodeKey
+	{
+		FGameplayTag TreeTag;
+		FGameplayTag NodeTag;
+
+		bool IsValid() const { return NodeTag.IsValid(); }
+		bool operator==(const FNodeKey& Other) const = default;
+	};
+
+	/**
+	 * Keeps one selection on the map, reuses node and tree entries by identity, creates missing ones, and refreshes
+	 * positions, links and selection.
+	 */
 	void SyncEntries();
 	void PushNodes();
+	void PushTreeEntries();
 	void PushLinksAndRegions();
 
 	/** Shows the selection on the panel; a changed selection is brought into view and remembered. */
 	void PushSelection();
 
-	/** Restores the remembered view of a newly shown tree, or frames its default region. */
+	/** Clears the selection of every shown tree except KeepTree. Their refreshes sync the map again. */
+	void ClearSelectionExcept(const URpgSkillTreeViewModel* KeepTree);
+
+	/** When several trees hold a selection, keeps the newest one: one the map did not show as selected yet. */
+	void KeepSingleSelection();
+
+	/** Restores the remembered view of a newly shown set of trees, or frames its default region or every tree. */
 	void InitializeView();
 	void SaveViewState() const;
 	void UpdateDetailLevel();
 	void SelectNodeAt(int32 NodeIndex);
 	FRpgSkillTreeMapSettings MakeSettings() const;
 	URpgUIScreenSubsystem* GetViewStateCache() const;
-	FGameplayTag GetSelectedNodeTag() const;
+
+	/** Identity under which the view is remembered: the shown tree tags in map order. None without a tree. */
+	FName MakeViewMapId() const;
+	FBox2D GetCombinedBounds() const;
+	FNodeKey GetSelectedKey() const;
+	URpgSkillTreeViewModel* FindTree(FGameplayTag TreeTag) const;
+	URpgSkillTreeNodeViewModel* FindNodeViewModel(const FNodeKey& Key) const;
+
+	/** Index of Key's node entry; without a tree tag, the first one with Key's node tag. INDEX_NONE when absent. */
+	int32 FindEntryIndex(const FNodeKey& Key) const;
 
 	TSharedPtr<SRpgSkillTreeMapPanel> MyPanel;
 
+	/** Shown trees in map order. */
 	UPROPERTY(Transient)
-	TObjectPtr<URpgSkillTreeViewModel> SkillTree = nullptr;
+	TArray<TObjectPtr<URpgSkillTreeViewModel>> SkillTrees;
 
-	/** Entry per node in authored order, parallel to EntryNodeTags and EntryPositions. */
+	/** Entry per node, tree by tree in authored order, parallel to EntryKeys and EntryPositions. */
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UUserWidget>> NodeEntries;
 
-	TArray<FGameplayTag> EntryNodeTags;
+	TArray<FNodeKey> EntryKeys;
 	TArray<FVector2D> EntryPositions;
 
-	/** Tree whose view the panel shows; another tree restores or frames its own view. */
-	FGameplayTag ViewTreeTag;
-	FGameplayTag LastSelectedTag;
+	/** Entry per shown tree, parallel to TreeEntryTags and TreeEntryPlacements; empty without a TreeEntryClass. */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UUserWidget>> TreeEntries;
+
+	TArray<FGameplayTag> TreeEntryTags;
+	TArray<SRpgSkillTreeMapPanel::FTreeLabelPlacement> TreeEntryPlacements;
+
+	/** Set of trees whose view the panel shows; another set restores or frames its own view. */
+	FName ViewMapId;
+	FNodeKey LastSelected;
 	ERpgSkillTreeMapDetail DetailLevel = ERpgSkillTreeMapDetail::Overview;
 	bool bViewInitialized = false;
 

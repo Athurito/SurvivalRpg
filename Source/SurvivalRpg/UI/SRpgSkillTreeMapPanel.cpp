@@ -195,7 +195,11 @@ namespace RpgSkillTreeMapNavigation
 
 SRpgSkillTreeMapPanel::SRpgSkillTreeMapPanel()
 	: Children(this)
+	, TreeLabels(this)
+	, AllChildren(this)
 {
+	AllChildren.AddChildren(Children);
+	AllChildren.AddChildren(TreeLabels);
 }
 
 void SRpgSkillTreeMapPanel::Construct(const FArguments& InArgs)
@@ -251,6 +255,42 @@ void SRpgSkillTreeMapPanel::SetNodePositions(const TConstArrayView<FVector2D> Po
 		Children[Index].Position = Positions[Index];
 	}
 	Invalidate(EInvalidateWidgetReason::Layout);
+}
+
+void SRpgSkillTreeMapPanel::SetTreeLabels(
+	const TConstArrayView<TSharedRef<SWidget>> Labels,
+	const TConstArrayView<FTreeLabelPlacement> Placements)
+{
+	TreeLabels.Empty(Labels.Num());
+	for (int32 Index = 0; Index < Labels.Num(); ++Index)
+	{
+		FLabelSlot::FSlotArguments SlotArguments(MakeUnique<FLabelSlot>());
+		SlotArguments.AttachWidget(Labels[Index]);
+		TreeLabels.AddSlot(MoveTemp(SlotArguments));
+	}
+	SetTreeLabelPlacements(Placements);
+	Invalidate(EInvalidateWidgetReason::ChildOrder | EInvalidateWidgetReason::Layout);
+}
+
+void SRpgSkillTreeMapPanel::SetTreeLabelPlacements(const TConstArrayView<FTreeLabelPlacement> Placements)
+{
+	if (Placements.Num() != TreeLabels.Num())
+	{
+		return;
+	}
+	for (int32 Index = 0; Index < Placements.Num(); ++Index)
+	{
+		FLabelSlot& Label = TreeLabels[Index];
+		Label.Anchor = Placements[Index].Anchor;
+		Label.FirstNode = Placements[Index].FirstNode;
+		Label.NodeCount = Placements[Index].NodeCount;
+	}
+	Invalidate(EInvalidateWidgetReason::Layout);
+}
+
+FSlateRect SRpgSkillTreeMapPanel::GetTreeLabelLocalRect(const int32 LabelIndex) const
+{
+	return ComputeTreeLabelRect(LabelIndex, ViewportSize);
 }
 
 void SRpgSkillTreeMapPanel::SetLinks(TArray<FLink> InLinks)
@@ -444,11 +484,22 @@ void SRpgSkillTreeMapPanel::OnArrangeChildren(const FGeometry& AllottedGeometry,
 		const FVector2D TopLeft = ShownCamera.MapToLocal(Slot.Position, Size) - EntryDesiredSize * Scale * 0.5;
 		ArrangedChildren.AddWidget(AllottedGeometry.MakeChild(Widget, EntryDesiredSize, FSlateLayoutTransform(Scale, TopLeft)));
 	}
+
+	for (int32 Index = 0; Index < TreeLabels.Num(); ++Index)
+	{
+		const TSharedRef<SWidget>& Widget = TreeLabels[Index].GetWidget();
+		if (ArrangedChildren.Accepts(Widget->GetVisibility()))
+		{
+			const FSlateRect Box = ComputeTreeLabelRect(Index, Size);
+			ArrangedChildren.AddWidget(
+				AllottedGeometry.MakeChild(Widget, Widget->GetDesiredSize(), FSlateLayoutTransform(Scale, FVector2D(Box.GetTopLeft()))));
+		}
+	}
 }
 
 FChildren* SRpgSkillTreeMapPanel::GetChildren()
 {
-	return &Children;
+	return &AllChildren;
 }
 
 int32 SRpgSkillTreeMapPanel::OnPaint(
@@ -862,6 +913,32 @@ TArray<FVector2D> SRpgSkillTreeMapPanel::GetNodePositions() const
 		Positions.Add(Children[Index].Position);
 	}
 	return Positions;
+}
+
+FSlateRect SRpgSkillTreeMapPanel::ComputeTreeLabelRect(const int32 LabelIndex, const FVector2D& Size) const
+{
+	if (!TreeLabels.IsValidIndex(LabelIndex))
+	{
+		return FSlateRect();
+	}
+
+	// Labels scale like entries and sit just below the tree's lowest drawn node, whose size follows the clamped entry
+	// scale rather than the zoom. That keeps them inside the region padding a fit frames; without nodes, the anchor
+	// places them.
+	const FLabelSlot& Label = TreeLabels[LabelIndex];
+	const double Scale = GetEntryScale();
+	const FVector2D AnchorLocal = ShownCamera.MapToLocal(Label.Anchor, Size);
+	TOptional<double> LowestNodeBottom;
+	const int32 EndNode = FMath::Min(Label.FirstNode + Label.NodeCount, Children.Num());
+	for (int32 NodeIndex = FMath::Max(Label.FirstNode, 0); NodeIndex < EndNode; ++NodeIndex)
+	{
+		const double NodeBottom = ShownCamera.MapToLocal(Children[NodeIndex].Position, Size).Y + GetEntrySize(NodeIndex).Y * Scale * 0.5;
+		LowestNodeBottom = FMath::Max(LowestNodeBottom.Get(NodeBottom), NodeBottom);
+	}
+	const double Top = LowestNodeBottom.Get(AnchorLocal.Y);
+	const FVector2D LabelSize = Label.GetWidget()->GetDesiredSize() * Scale;
+	const FVector2D TopLeft(AnchorLocal.X - LabelSize.X * 0.5, Top + Settings.TreeLabelGap);
+	return FSlateRect(TopLeft, TopLeft + LabelSize);
 }
 
 FVector2D SRpgSkillTreeMapPanel::GetEntrySize(const int32 NodeIndex) const

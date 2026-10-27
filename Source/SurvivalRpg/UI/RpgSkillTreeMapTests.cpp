@@ -10,6 +10,7 @@
 #include "CommonActivatableWidget.h"
 #include "CommonLocalPlayer.h"
 #include "CommonUITypes.h"
+#include "GameplayTagsManager.h"
 #include "Engine/DataTable.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
@@ -25,6 +26,7 @@
 #include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeComponent.h"
 #include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeDefinition.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillGameplayTags.h"
+#include "SurvivalRpg/Progression/Skills/RpgTradeSkillProgressionComponent.h"
 #include "SurvivalRpg/UI/RpgUIScreenSubsystem.h"
 #include "Widgets/Layout/SBox.h"
 
@@ -32,6 +34,8 @@
 
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_SkillTreeMapTest_Tree, "SkillTree.Tree.AutomationMap");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_SkillTreeMapTest_GridTree, "SkillTree.Tree.AutomationMapGrid");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_SkillTreeMapTest_SecondTree, "SkillTree.Tree.AutomationMapSecond");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_SkillTreeMapTest_ThirdTree, "SkillTree.Tree.AutomationMapThird");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_SkillTreeMapTest_Root, "SkillTree.Node.AutomationMap.Root");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_SkillTreeMapTest_Second, "SkillTree.Node.AutomationMap.Second");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_SkillTreeMapTest_FormA, "SkillTree.Node.AutomationMap.FormA");
@@ -153,6 +157,45 @@ namespace RpgSkillTreeMapTests
 		FormB.Prerequisites.Add(TAG_SkillTreeMapTest_Root);
 		FormB.ExclusiveGroup = TEXT("Form");
 		return Tree;
+	}
+
+	/** Where MakeSecondMapTree's cluster sits, right of MakeMapTree's. */
+	const FVector2D SecondTreeOrigin(1200.0, 0.0);
+
+	/**
+	 * Synthetic second cluster at SecondTreeOrigin with its own points from Mining. It reuses MakeMapTree's node tags
+	 * Root and Second and its region id Core, which only need to be unique per tree.
+	 */
+	URpgSkillTreeDefinition* MakeSecondMapTree()
+	{
+		URpgSkillTreeDefinition* Tree = NewObject<URpgSkillTreeDefinition>(GetTransientPackage(), NAME_None, RF_Transient);
+		Tree->TreeTag = TAG_SkillTreeMapTest_SecondTree;
+		Tree->MasterySkillTag = RpgTradeSkillGameplayTags::Skill_Gathering_Mining;
+		Tree->MaxPoints = 10;
+		Tree->LayoutMode = ERpgSkillTreeLayoutMode::FreePosition;
+		Tree->MapOrigin = SecondTreeOrigin;
+		FRpgSkillTreeMapRegion& Region = Tree->Regions.AddDefaulted_GetRef();
+		Region.RegionId = TEXT("Core");
+		Region.Padding = FVector2D(60.0, 60.0);
+
+		FRpgSkillTreeNode& Root = Tree->Nodes.AddDefaulted_GetRef();
+		Root.NodeTag = TAG_SkillTreeMapTest_Root;
+		Root.RegionId = TEXT("Core");
+		FRpgSkillTreeNode& Second = Tree->Nodes.AddDefaulted_GetRef();
+		Second.NodeTag = TAG_SkillTreeMapTest_Second;
+		Second.MapPosition = FVector2D(0.0, 300.0);
+		Second.RegionId = TEXT("Core");
+		Second.Prerequisites.Add(TAG_SkillTreeMapTest_Root);
+		return Tree;
+	}
+
+	void RaiseSkillLevel(URpgTradeSkillProgressionComponent& TradeSkills, const FGameplayTag SkillTag, const int32 Level)
+	{
+		for (int32 Guard = 0; Guard < 200 && TradeSkills.GetSkillLevelByTag(SkillTag) < Level; ++Guard)
+		{
+			const float MissingXP = TradeSkills.GetXPToNextLevelByTag(SkillTag) - TradeSkills.GetSkillXPByTag(SkillTag);
+			TradeSkills.AddSkillXPByTag(SkillTag, FMath::Max(1.0f, MissingXP));
+		}
 	}
 
 	/** Legacy Grid tree: A and B in row 0, C below between them. */
@@ -610,7 +653,7 @@ bool FRpgSkillTreeMapWidgetLifecycleTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("The default region is framed inside the padding"),
 		Forms && IsInsideViewport(Panel->GetCamera(), Forms->Bounds.Min, Viewport, 63.9) &&
 			IsInsideViewport(Panel->GetCamera(), Forms->Bounds.Max, Viewport, 63.9));
-	const FRpgUIMapViewState* FittedState = ViewCache->FindMapViewState(TreeTag);
+	const FRpgUIMapViewState* FittedState = ViewCache->FindMapViewState(TreeTag.GetTagName());
 	TestTrue(TEXT("The framed view is remembered"),
 		FittedState && FMath::IsNearlyEqual(FittedState->Zoom, Panel->GetCamera().Zoom) && FittedState->Center.Equals(Panel->GetCamera().Center));
 
@@ -635,7 +678,7 @@ bool FRpgSkillTreeMapWidgetLifecycleTest::RunTest(const FString& Parameters)
 	URpgSkillTreeNodeViewModel* FormA = TreeView->FindNode(TAG_SkillTreeMapTest_FormA);
 	TestTrue(TEXT("The clicked node is selected"), FormA && FormA->IsSelected());
 	TestFalse(TEXT("A click never learns"), SkillTrees->IsNodeUnlocked(TreeTag, TAG_SkillTreeMapTest_FormA));
-	const FRpgUIMapViewState* SelectedState = ViewCache->FindMapViewState(TreeTag);
+	const FRpgUIMapViewState* SelectedState = ViewCache->FindMapViewState(TreeTag.GetTagName());
 	TestTrue(TEXT("The selection is remembered"), SelectedState && SelectedState->SelectedTag == TAG_SkillTreeMapTest_FormA);
 
 	// The selected node's box is reported for a detail card: once per change, following pan and resize, and cleared.
@@ -739,7 +782,369 @@ bool FRpgSkillTreeMapWidgetLifecycleTest::RunTest(const FString& Parameters)
 	Map->ReleaseSlateResources(true);
 
 	ViewCache->Deinitialize();
-	TestNull(TEXT("Removing the local player forgets the views"), ViewCache->FindMapViewState(TreeTag));
+	TestNull(TEXT("Removing the local player forgets the views"), ViewCache->FindMapViewState(TreeTag.GetTagName()));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgSkillTreeMapSeveralTreesTest,
+	"SurvivalRpg.UI.SkillTreeMap.Widget.SeveralTrees",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgSkillTreeMapSeveralTreesTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgSkillTreeMapTests;
+
+	FScopedWidgetWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		World ? World->SpawnActor<ARpgInventoryAutomationTestPlayerState>() : nullptr;
+	URpgSkillTreeComponent* SkillTrees = PlayerState ? PlayerState->GetSkillTreeComponent() : nullptr;
+	if (!TestNotNull(TEXT("Player state with skill trees spawns"), SkillTrees) || !TestNotNull(TEXT("Engine exists"), GEngine))
+	{
+		return false;
+	}
+	SkillTrees->RegisterSkillTree(MakeMapTree());
+	SkillTrees->RegisterSkillTree(MakeSecondMapTree());
+
+	UCommonLocalPlayer* LocalPlayer = NewObject<UCommonLocalPlayer>(GEngine);
+	URpgUIScreenSubsystem* ViewCache = NewObject<URpgUIScreenSubsystem>(LocalPlayer);
+	URpgSkillTreeAutomationTestMapEntry* Host = CreateWidget<URpgSkillTreeAutomationTestMapEntry>(World);
+	if (!TestNotNull(TEXT("View cache exists"), ViewCache) || !TestNotNull(TEXT("Host widget exists"), Host))
+	{
+		return false;
+	}
+	if (!Host->WidgetTree)
+	{
+		Host->WidgetTree = NewObject<UWidgetTree>(Host, TEXT("WidgetTree"), RF_Transient);
+	}
+
+	auto MakeMap = [Host, ViewCache]()
+	{
+		URpgSkillTreeMapWidget* NewMap = Host->WidgetTree->ConstructWidget<URpgSkillTreeMapWidget>();
+		NewMap->NodeEntryClass = URpgSkillTreeAutomationTestMapEntry::StaticClass();
+		NewMap->TreeEntryClass = URpgSkillTreeAutomationTestMapEntry::StaticClass();
+		NewMap->ViewStateCacheForTests = ViewCache;
+		NewMap->CameraBlendTime = 0.0f;
+		return NewMap;
+	};
+	auto MakeTreeView = [SkillTrees](const FGameplayTag TreeTag)
+	{
+		URpgSkillTreeViewModel* TreeView = NewObject<URpgSkillTreeViewModel>(GetTransientPackage(), NAME_None, RF_Transient);
+		TreeView->BindSkillTree(SkillTrees, TreeTag);
+		return TreeView;
+	};
+	auto EntryItemOf = [](UUserWidget* Entry)
+	{
+		const URpgSkillTreeAutomationTestMapEntry* MapEntry = Cast<URpgSkillTreeAutomationTestMapEntry>(Entry);
+		return MapEntry ? MapEntry->GetEntryItem() : nullptr;
+	};
+
+	const FGameplayTag TreeA = TAG_SkillTreeMapTest_Tree;
+	const FGameplayTag TreeB = TAG_SkillTreeMapTest_SecondTree;
+	URpgSkillTreeMapWidget* Map = MakeMap();
+	URpgSkillTreeViewModel* ViewA = MakeTreeView(TreeA);
+	URpgSkillTreeViewModel* ViewB = MakeTreeView(TreeB);
+	Map->SetSkillTrees({ViewA, ViewB, ViewA, nullptr});
+
+	// Node tags only need to be unique per tree: the second cluster reuses Root, Second and the region Core.
+	TestEqual(TEXT("Repeated and null trees are skipped"), Map->GetSkillTrees().Num(), 2);
+	TestEqual(TEXT("Both trees place their nodes"), Map->GetNodeEntries().Num(), 6);
+	UUserWidget* RootA = Map->GetTreeNodeEntry(TreeA, TAG_SkillTreeMapTest_Root);
+	UUserWidget* RootB = Map->GetTreeNodeEntry(TreeB, TAG_SkillTreeMapTest_Root);
+	TestTrue(TEXT("The same node tag has one entry per tree"), RootA && RootB && RootA != RootB);
+	TestTrue(TEXT("Each entry shows its own tree's node"),
+		EntryItemOf(RootA) == ViewA->FindNode(TAG_SkillTreeMapTest_Root) && EntryItemOf(RootB) == ViewB->FindNode(TAG_SkillTreeMapTest_Root));
+	TestTrue(TEXT("A node tag alone finds the first tree's entry"), Map->GetNodeEntry(TAG_SkillTreeMapTest_Root) == RootA);
+	TestTrue(TEXT("Each tree gets its tree entry"),
+		EntryItemOf(Map->GetTreeEntry(TreeA)) == ViewA && EntryItemOf(Map->GetTreeEntry(TreeB)) == ViewB);
+
+	Map->TakeWidget();
+	TSharedPtr<SRpgSkillTreeMapPanel> Panel = Map->MyPanel;
+	if (!TestTrue(TEXT("The map builds its panel"), Panel.IsValid()))
+	{
+		return false;
+	}
+	const FVector2D Viewport(1000.0, 700.0);
+	const FGeometry Geometry = FGeometry::MakeRoot(Viewport, FSlateLayoutTransform(1.0f));
+	Panel->Tick(Geometry, 0.0, 0.0f);
+	TestTrue(TEXT("The second tree sits at its map origin"),
+		Panel->GetNodePosition(4).Equals(SecondTreeOrigin) && Panel->GetNodePosition(5).Equals(SecondTreeOrigin + FVector2D(0.0, 300.0)));
+	auto AllNodesInside = [&Panel, &Viewport](const double Inset)
+	{
+		bool bInside = Panel->GetNodeCount() > 0;
+		for (int32 Index = 0; Index < Panel->GetNodeCount(); ++Index)
+		{
+			bInside &= IsInsideViewport(Panel->GetCamera(), Panel->GetNodePosition(Index), Viewport, Inset);
+		}
+		return bInside;
+	};
+	TestTrue(TEXT("Several trees open on the whole map, not on one tree's default region"), AllNodesInside(63.9));
+
+	// Each tree entry sits centered on its cluster, just below its lowest node, so a framed tree keeps it in view.
+	TestEqual(TEXT("One tree entry per tree on the panel"), Panel->GetTreeLabelCount(), 2);
+	const FVector2D CenterB = Panel->GetShownCamera().MapToLocal(ViewB->GetMapBounds().GetCenter(), Viewport);
+	const FSlateRect LabelB = Panel->GetTreeLabelLocalRect(1);
+	TestTrue(TEXT("The tree entry sits just below its lowest node"),
+		FMath::IsNearlyEqual(LabelB.Top, Panel->GetNodeLocalRect(5).Bottom + Map->TreeEntryGap, 0.01) &&
+			FMath::IsNearlyEqual((LabelB.Left + LabelB.Right) * 0.5, CenterB.X, 0.01));
+
+	// One selection on the map: selecting in one tree clears the other.
+	auto ClickAt = [](SRpgSkillTreeMapPanel& InPanel, const FGeometry& InGeometry, const FVector2D& Local)
+	{
+		Press(InPanel, InGeometry, Local);
+		Release(InPanel, InGeometry, Local);
+	};
+	Map->SetZoom(1.0f);
+	TestTrue(TEXT("FocusTreeNode finds the second tree's Root"), Map->FocusTreeNode(TreeB, TAG_SkillTreeMapTest_Root));
+	ClickAt(*Panel, Geometry, Viewport * 0.5);
+	URpgSkillTreeNodeViewModel* RootNodeA = ViewA->FindNode(TAG_SkillTreeMapTest_Root);
+	URpgSkillTreeNodeViewModel* RootNodeB = ViewB->FindNode(TAG_SkillTreeMapTest_Root);
+	TestTrue(TEXT("A click selects the node of the tree under the cursor"),
+		RootNodeB && RootNodeB->IsSelected() && RootNodeA && !RootNodeA->IsSelected());
+	TestTrue(TEXT("The map reports the selected node"), Map->GetSelectedNode() == RootNodeB);
+	TestTrue(TEXT("FocusTreeNode finds the first tree's FormA"), Map->FocusTreeNode(TreeA, TAG_SkillTreeMapTest_FormA));
+	ClickAt(*Panel, Geometry, Viewport * 0.5);
+	TestTrue(TEXT("Selecting in the first tree clears the second"),
+		ViewA->GetSelectedNode() == ViewA->FindNode(TAG_SkillTreeMapTest_FormA) && !ViewB->GetSelectedNode());
+	ViewB->SelectNode(TAG_SkillTreeMapTest_Second);
+	TestTrue(TEXT("A selection made outside the map is the newest and clears the other tree"),
+		!ViewA->GetSelectedNode() && Map->GetSelectedNode() == ViewB->FindNode(TAG_SkillTreeMapTest_Second) &&
+			Panel->GetSelectedIndex() == 5);
+
+	// Navigation crosses from one cluster to the next.
+	ViewA->SelectNode(TAG_SkillTreeMapTest_Second);
+	TestEqual(TEXT("The first tree's Second is selected"), Panel->GetSelectedIndex(), 1);
+	Navigate(*Panel, Geometry, EUINavigation::Right);
+	TestTrue(TEXT("Navigating right from the first cluster reaches the second"),
+		Panel->GetSelectedIndex() == 4 && RootNodeB->IsSelected() && !ViewA->GetSelectedNode());
+
+	// Each tree spends only its own points, even for the same node tag.
+	RaiseSkillLevel(*PlayerState->GetTradeSkillProgressionComponent(), RpgTradeSkillGameplayTags::Skill_Gathering_Logging, 3);
+	TestEqual(TEXT("The first tree can learn Root"), SkillTrees->UnlockNode(TreeA, TAG_SkillTreeMapTest_Root),
+		ERpgSkillTreeUnlockResult::Unlockable);
+	ViewA->Refresh();
+	ViewB->Refresh();
+	TestTrue(TEXT("Learning spends the first tree's points"), ViewA->GetSpentPoints() == 1 && ViewA->GetAvailablePoints() == 1);
+	TestTrue(TEXT("The second tree keeps its own budget"), ViewB->GetSpentPoints() == 0 && ViewB->GetAvailablePoints() == 0);
+	TestFalse(TEXT("The second tree's Root stays unlearned"), SkillTrees->IsNodeUnlocked(TreeB, TAG_SkillTreeMapTest_Root));
+	TestTrue(TEXT("The entries survive the refresh"), Map->GetTreeNodeEntry(TreeB, TAG_SkillTreeMapTest_Root) == RootB);
+
+	// Fit and focus work across the trees; equal region ids stay apart.
+	Map->FitTree();
+	TestTrue(TEXT("Fit frames every tree"), AllNodesInside(63.9));
+	TestTrue(TEXT("FocusTree frames the second cluster"), Map->FocusTree(TreeB));
+	TestTrue(TEXT("The second cluster is in view"),
+		IsInsideViewport(Panel->GetCamera(), Panel->GetNodePosition(4), Viewport, 0.0) &&
+			IsInsideViewport(Panel->GetCamera(), Panel->GetNodePosition(5), Viewport, 0.0));
+	TestFalse(TEXT("The first cluster is out of view"), IsInsideViewport(Panel->GetCamera(), Panel->GetNodePosition(0), Viewport, 0.0));
+	TestTrue(TEXT("FocusTreeRegion frames the first tree's Core"), Map->FocusTreeRegion(TreeA, TEXT("Core")));
+	TestTrue(TEXT("The first tree's Core is centered"), Panel->GetCamera().Center.Equals(ViewA->FindRegion(TEXT("Core"))->Bounds.GetCenter(), 0.01));
+	TestTrue(TEXT("FocusTreeRegion frames the second tree's Core"), Map->FocusTreeRegion(TreeB, TEXT("Core")));
+	TestTrue(TEXT("The second tree's Core is centered"), Panel->GetCamera().Center.Equals(ViewB->FindRegion(TEXT("Core"))->Bounds.GetCenter(), 0.01));
+	TestTrue(TEXT("FocusRegion finds a region of any tree"), Map->FocusRegion(TEXT("Forms")));
+	TestFalse(TEXT("A tree without the region refuses it"), Map->FocusTreeRegion(TreeB, TEXT("Forms")));
+	TestFalse(TEXT("A tree that is not shown refuses focus"), Map->FocusTree(TAG_SkillTreeMapTest_GridTree));
+
+	// The view is remembered under the set of trees, with the selected node's tree.
+	ViewB->SelectNode(TAG_SkillTreeMapTest_Second);
+	const FName MapId(*FString::Printf(TEXT("%s+%s"), *TreeA.ToString(), *TreeB.ToString()));
+	const FRpgUIMapViewState* State = ViewCache->FindMapViewState(MapId);
+	TestTrue(TEXT("The selection is remembered with its tree"),
+		State && State->SelectedTag == TAG_SkillTreeMapTest_Second && State->SelectedGroupTag == TreeB);
+	TestNull(TEXT("A single tree's view is kept apart"), ViewCache->FindMapViewState(TreeA.GetTagName()));
+
+	const FRpgSkillTreeMapCamera BeforeClose = Panel->GetCamera();
+	Map->ReleaseSlateResources(true);
+	Panel.Reset();
+	URpgSkillTreeViewModel* ReopenedA = MakeTreeView(TreeA);
+	URpgSkillTreeViewModel* ReopenedB = MakeTreeView(TreeB);
+	Map->SetSkillTrees({ReopenedA, ReopenedB});
+	Map->TakeWidget();
+	Panel = Map->MyPanel;
+	TestTrue(TEXT("A reopened map restores its camera"), Panel.IsValid() && AreCamerasNearlyEqual(Panel->GetCamera(), BeforeClose));
+	TestTrue(TEXT("A reopened map restores the node in its own tree"),
+		ReopenedB->GetSelectedNode() == ReopenedB->FindNode(TAG_SkillTreeMapTest_Second) && !ReopenedA->GetSelectedNode());
+
+	// Another set of trees has its own view, and a removed tree takes its entries along.
+	Map->SetSkillTree(ReopenedA);
+	TestTrue(TEXT("One tree alone frames itself"), Panel.IsValid() && Panel->HasPendingFit());
+	TestTrue(TEXT("The removed tree's entries are gone"),
+		Map->GetNodeEntries().Num() == 4 && !Map->GetTreeEntry(TreeB) && Panel->GetTreeLabelCount() == 1);
+	Map->SetSkillTrees({});
+	TestEqual(TEXT("Clearing the trees removes every entry"), Panel->GetNodeCount() + Panel->GetTreeLabelCount(), 0);
+	Map->ReleaseSlateResources(true);
+	ViewCache->Deinitialize();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgSkillTreeMapSyntheticPerformanceTest,
+	"SurvivalRpg.UI.SkillTreeMap.Widget.SyntheticMapPerformance",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgSkillTreeMapSyntheticPerformanceTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgSkillTreeMapTests;
+
+	// Node identities only need to be valid tags unique per tree, so the synthetic trees borrow registered tags.
+	FGameplayTagContainer AllTags;
+	UGameplayTagsManager::Get().RequestAllGameplayTags(AllTags, true);
+	TArray<FGameplayTag> NodeTags;
+	AllTags.GetGameplayTagArray(NodeTags);
+	constexpr int32 NodesPerTree = 50;
+	if (!TestTrue(TEXT("Enough registered tags exist for a synthetic tree"), NodeTags.Num() >= NodesPerTree))
+	{
+		return false;
+	}
+	NodeTags.SetNum(NodesPerTree);
+
+	const FGameplayTag TreeTags[] = {TAG_SkillTreeMapTest_Tree, TAG_SkillTreeMapTest_SecondTree, TAG_SkillTreeMapTest_GridTree,
+		TAG_SkillTreeMapTest_ThirdTree};
+	auto MakeSyntheticTree = [&NodeTags](const FGameplayTag TreeTag, const int32 NodeCount, const FVector2D& Origin)
+	{
+		URpgSkillTreeDefinition* Tree = NewObject<URpgSkillTreeDefinition>(GetTransientPackage(), NAME_None, RF_Transient);
+		Tree->TreeTag = TreeTag;
+		Tree->MasterySkillTag = RpgTradeSkillGameplayTags::Skill_Gathering_Logging;
+		Tree->MaxPoints = 50;
+		Tree->LayoutMode = ERpgSkillTreeLayoutMode::FreePosition;
+		Tree->MapOrigin = Origin;
+		for (int32 Branch = 0; Branch < 5; ++Branch)
+		{
+			Tree->Regions.AddDefaulted_GetRef().RegionId = *FString::Printf(TEXT("Branch%d"), Branch);
+		}
+		for (int32 Index = 0; Index < NodeCount; ++Index)
+		{
+			FRpgSkillTreeNode& Node = Tree->Nodes.AddDefaulted_GetRef();
+			Node.NodeTag = NodeTags[Index];
+			Node.MapPosition = FVector2D((Index % 10) * 160.0, (Index / 10) * 160.0);
+			Node.RegionId = Tree->Regions[(Index % 10) / 2].RegionId;
+			if (Index % 10 != 0)
+			{
+				Node.Prerequisites.Add(NodeTags[Index - 1]);
+			}
+		}
+		return Tree;
+	};
+
+	struct FMeasurement
+	{
+		int32 Nodes = 0;
+		double OpenMs = 0.0;
+		double FrameMs = 0.0;
+		double RefreshMs = 0.0;
+		bool bKeptEntries = false;
+		bool bKeptViewModels = false;
+	};
+	auto Measure = [this, &MakeSyntheticTree, &TreeTags](const int32 TreeCount, const int32 NodeCount)
+	{
+		FMeasurement Result;
+		FScopedWidgetWorld TestWorld;
+		UWorld* World = TestWorld.GetWorld();
+		ARpgInventoryAutomationTestPlayerState* PlayerState =
+			World ? World->SpawnActor<ARpgInventoryAutomationTestPlayerState>() : nullptr;
+		URpgSkillTreeComponent* SkillTrees = PlayerState ? PlayerState->GetSkillTreeComponent() : nullptr;
+		URpgSkillTreeAutomationTestMapEntry* Host = World ? CreateWidget<URpgSkillTreeAutomationTestMapEntry>(World) : nullptr;
+		if (!SkillTrees || !Host)
+		{
+			AddError(TEXT("The synthetic map's world could not be created"));
+			return Result;
+		}
+		if (!Host->WidgetTree)
+		{
+			Host->WidgetTree = NewObject<UWidgetTree>(Host, TEXT("WidgetTree"), RF_Transient);
+		}
+
+		TArray<URpgSkillTreeViewModel*> Views;
+		for (int32 TreeIndex = 0; TreeIndex < TreeCount; ++TreeIndex)
+		{
+			SkillTrees->RegisterSkillTree(MakeSyntheticTree(TreeTags[TreeIndex], NodeCount, FVector2D(TreeIndex * 2000.0, 0.0)));
+			URpgSkillTreeViewModel* View = NewObject<URpgSkillTreeViewModel>(GetTransientPackage(), NAME_None, RF_Transient);
+			View->BindSkillTree(SkillTrees, TreeTags[TreeIndex]);
+			Views.Add(View);
+		}
+		URpgSkillTreeMapWidget* Map = Host->WidgetTree->ConstructWidget<URpgSkillTreeMapWidget>();
+		Map->NodeEntryClass = URpgSkillTreeAutomationTestMapEntry::StaticClass();
+		Map->TreeEntryClass = URpgSkillTreeAutomationTestMapEntry::StaticClass();
+		Map->bRememberView = false;
+		Map->CameraBlendTime = 0.0f;
+
+		const FVector2D Viewport(1600.0, 900.0);
+		const FGeometry Geometry = FGeometry::MakeRoot(Viewport, FSlateLayoutTransform(1.0f));
+		auto Frame = [&Geometry](SRpgSkillTreeMapPanel& Panel)
+		{
+			Panel.Tick(Geometry, 0.0, 0.016f);
+			Panel.SlatePrepass(1.0f);
+			FArrangedChildren Arranged(EVisibility::Visible);
+			Panel.ArrangeChildren(Geometry, Arranged);
+		};
+
+		const double OpenStart = FPlatformTime::Seconds();
+		Map->SetSkillTrees(Views);
+		Map->TakeWidget();
+		const TSharedPtr<SRpgSkillTreeMapPanel> Panel = Map->MyPanel;
+		if (!Panel.IsValid())
+		{
+			AddError(TEXT("The synthetic map builds no panel"));
+			return Result;
+		}
+		Frame(*Panel);
+		Result.OpenMs = (FPlatformTime::Seconds() - OpenStart) * 1000.0;
+		Result.Nodes = Panel->GetNodeCount();
+
+		const TArray<UUserWidget*> Entries = Map->GetNodeEntries();
+		TArray<URpgSkillTreeNodeViewModel*> NodesBefore;
+		for (const URpgSkillTreeViewModel* View : Views)
+		{
+			NodesBefore.Append(View->GetNodes());
+		}
+
+		constexpr int32 Frames = 120;
+		const double FrameStart = FPlatformTime::Seconds();
+		for (int32 FrameIndex = 0; FrameIndex < Frames; ++FrameIndex)
+		{
+			Map->PanBy(FVector2D(7.0, -3.0));
+			if (FrameIndex % 10 == 0)
+			{
+				FrameIndex % 20 == 0 ? Map->ZoomIn() : Map->ZoomOut();
+			}
+			Frame(*Panel);
+		}
+		Result.FrameMs = (FPlatformTime::Seconds() - FrameStart) * 1000.0 / Frames;
+
+		const double RefreshStart = FPlatformTime::Seconds();
+		for (URpgSkillTreeViewModel* View : Views)
+		{
+			View->Refresh();
+		}
+		Frame(*Panel);
+		Result.RefreshMs = (FPlatformTime::Seconds() - RefreshStart) * 1000.0;
+
+		TArray<URpgSkillTreeNodeViewModel*> NodesAfter;
+		for (const URpgSkillTreeViewModel* View : Views)
+		{
+			NodesAfter.Append(View->GetNodes());
+		}
+		Result.bKeptEntries = Map->GetNodeEntries() == Entries;
+		Result.bKeptViewModels = NodesAfter == NodesBefore;
+		Map->ReleaseSlateResources(true);
+		return Result;
+	};
+
+	// The fifteen nodes of the shared harvesting tree against four synthetic clusters of fifty nodes.
+	const FMeasurement Small = Measure(1, 15);
+	const FMeasurement Large = Measure(4, NodesPerTree);
+	TestEqual(TEXT("The small map shows its fifteen nodes"), Small.Nodes, 15);
+	TestEqual(TEXT("The synthetic map shows two hundred nodes"), Large.Nodes, 4 * NodesPerTree);
+	for (const FMeasurement* Measurement : {&Small, &Large})
+	{
+		TestTrue(*FString::Printf(TEXT("%d nodes: pan, zoom and refresh keep every entry"), Measurement->Nodes), Measurement->bKeptEntries);
+		TestTrue(*FString::Printf(TEXT("%d nodes: pan, zoom and refresh keep every node view model"), Measurement->Nodes),
+			Measurement->bKeptViewModels);
+		AddInfo(FString::Printf(
+			TEXT("%d nodes: open %.2f ms, pan/zoom frame %.3f ms (tick, prepass, arrange), refresh of every tree %.2f ms"),
+			Measurement->Nodes, Measurement->OpenMs, Measurement->FrameMs, Measurement->RefreshMs));
+	}
 	return true;
 }
 
@@ -864,9 +1269,11 @@ bool FRpgSkillTreeMapContentTest::RunTest(const FString& Parameters)
 	AssetRegistry.GetAssetsByClass(URpgSkillTreeDefinition::StaticClass()->GetClassPathName(), TreeAssets, true);
 	TestTrue(TEXT("Skill tree assets exist"), !TreeAssets.IsEmpty());
 
-	// The shipped trees use the legacy grid; framed at 720p every node must appear inside the padding.
+	// Framed at 720p, alone or together with every other tree, each node must appear inside the padding.
 	const FVector2D Viewport(1280.0, 720.0);
 	constexpr double Padding = 64.0;
+	TArray<const URpgSkillTreeDefinition*> Trees;
+	FBox2D CombinedBounds(ForceInit);
 	for (const FAssetData& TreeAsset : TreeAssets)
 	{
 		const URpgSkillTreeDefinition* Tree = Cast<URpgSkillTreeDefinition>(TreeAsset.GetAsset());
@@ -883,6 +1290,32 @@ bool FRpgSkillTreeMapContentTest::RunTest(const FString& Parameters)
 			TestTrue(
 				*FString::Printf(TEXT("%s: %s is visible when the tree is framed"), *GetNameSafe(Tree), *Node.NodeTag.ToString()),
 				IsInsideViewport(Fit, Tree->GetNodeMapPosition(Node), Viewport, Padding - 0.1));
+		}
+		Trees.Add(Tree);
+		if (Bounds.bIsValid)
+		{
+			CombinedBounds += Bounds;
+		}
+	}
+
+	// The skill screen shows every tree as a cluster of one map, so their areas must not overlap.
+	for (int32 First = 0; First < Trees.Num(); ++First)
+	{
+		for (int32 Second = First + 1; Second < Trees.Num(); ++Second)
+		{
+			TestFalse(
+				*FString::Printf(TEXT("%s and %s do not overlap on the map"), *GetNameSafe(Trees[First]), *GetNameSafe(Trees[Second])),
+				Trees[First]->GetMapBounds().Intersect(Trees[Second]->GetMapBounds()));
+		}
+	}
+	const FRpgSkillTreeMapCamera CombinedFit = FRpgSkillTreeMapCamera::MakeFit(CombinedBounds, Viewport, Padding, 0.25, 2.0);
+	for (const URpgSkillTreeDefinition* Tree : Trees)
+	{
+		for (const FRpgSkillTreeNode& Node : Tree->Nodes)
+		{
+			TestTrue(
+				*FString::Printf(TEXT("%s: %s is visible when every tree is framed"), *GetNameSafe(Tree), *Node.NodeTag.ToString()),
+				IsInsideViewport(CombinedFit, Tree->GetNodeMapPosition(Node), Viewport, Padding - 0.1));
 		}
 	}
 	return true;

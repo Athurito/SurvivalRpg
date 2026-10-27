@@ -1,6 +1,6 @@
 # Mastery map roadmap
 
-Updated: 2026-10-27. Status: **In progress**; MST-03c is merged, MST-10a is next.
+Updated: 2026-10-27. Status: **In progress**; MST-10a is in review.
 
 This is the execution roadmap for the [mastery map implementation plan](mastery-map-implementation-plan.md): a zoomable shared harvesting mastery map, meaningful talent choices, and the rune loot/crafting/upgrade loop. The plan owns design, architecture, and detailed acceptance contracts; this roadmap owns task status, order, and the current handoff.
 
@@ -53,7 +53,7 @@ All dependencies below are within MST; every row also has the CMB scheduling gat
 | MST-09b | Erntesprung, Durchschlag, Ausbreitung and remaining Nachwirkung choices; finite propagation and no duplicated work | MST-09a | Planned | — |
 | MST-09c | Totenarbeiter and Helfer; temporary workers, correct beneficiary/reward attribution, lifecycle and bounded triggers | MST-09b | Planned | — |
 | MST-09d | Full catalog/cutover acceptance, legacy cleanup, input/performance/network regression and cook reachability | MST-09c | Planned | — |
-| MST-10a | Several skill trees with their own budgets as regions of the one map, Path of Exile style: tree placement as authored data, tree-qualified node identity, screen-level view cache, fit and shortcuts across trees, a budget entry per tree in the top bar and a point counter at each cluster; proven with the Harvesting tree and a synthetic second tree in automation | MST-03c | Planned | — |
+| MST-10a | Several skill trees with their own budgets as regions of the one map, Path of Exile style: tree placement as authored data, tree-qualified node identity, screen-level view cache, fit and shortcuts across trees, a budget entry per tree in the top bar and a point counter at each cluster; proven with the Harvesting tree and a synthetic second tree in automation | MST-03c | In review | [mastery-map-several-trees.md](mastery-map-several-trees.md) |
 | MST-10b | Combat tree: core mastery `Skill.Mastery.Combat` earned by kills through the existing kill XP action; one `DA_SkillTree_Combat` carried by the melee weapons, with Kampfrhythmus (1 point, +10 % base damage) forking into the exclusive Konter (3 points, perfect block +50 % stagger damage and more stamina back) and Bollwerk (3 points, blocking costs 25 % less stamina and stops 15 % more damage) as granted GameplayEffects | MST-10a | Planned | — |
 
 Default implementation order follows the table after CMB. MST-03a's technical independence documents an ownership boundary; it does not schedule concurrent work during CMB. Only expose purchasable talents once their gameplay exists. The Brand transfer choice therefore waits for Erntesprung in MST-09b.
@@ -90,16 +90,20 @@ Playtests of merged MST steps that wait for the user's batch test. Remove a row 
 | MST-03a | [Playtest](mastery-map-harvest-work.md#playtest): regression only, harvesting unchanged; pickaxe, axe, groves, swarm, two players on one vein | Waiting for the user |
 | MST-03b | [Playtest](mastery-map-shared-harvesting.md#playtest): one Harvesting tree for axe and pickaxe, mastery XP, Cleaving Force, Shatter or Follow Through, no Q/E/R powers, two players | Waiting for the user |
 | MST-03c | [Playtest](mastery-map-single-map.md#playtest): full-tab map and top bar, node card that follows its node, F/R and X/Y learn and refund, gamepad zoom, reopen, two players | Waiting for the user |
+| MST-10a | [Playtest](mastery-map-several-trees.md#playtest): cluster label and budget entry for Harvesting, card inside the map after reopen, mastery name on the card, two players | Waiting for the user |
 
 ## Current handoff
 
 - **Active phase:** MST, started by the user on 2026-10-27 after CMB-01 to CMB-07 merged.
-- **Active task:** none in progress; MST-10a is next on branch `claude/mst-10a-multi-tree-map`.
-- **Previous task:** MST-03c, merged on 2026-10-27 as `5d45019e` ([PR #310](https://github.com/Athurito/SurvivalRpg/pull/310)); the report is [mastery-map-single-map.md](mastery-map-single-map.md). The Skills tab is one map under a top bar with a budget entry, region shortcuts, device hints and zoom/fit; one card at the selected node carries Learn and Refund as bound actions.
+- **Active task:** MST-10a, branch `claude/mst-10a-multi-tree-map`; the report is [mastery-map-several-trees.md](mastery-map-several-trees.md).
+  - Every known tree is a cluster of the one map at its `MapOrigin`, with a budget entry in the top bar and a label below its nodes.
+  - The map keeps one selection across the trees, and the view is remembered per set of trees.
+  - Proven with a synthetic second tree in automation and a temporary copy in PIE; only Harvesting ships.
+- **Previous task:** MST-03c, merged on 2026-10-27 as `5d45019e` ([PR #310](https://github.com/Athurito/SurvivalRpg/pull/310)); the report is [mastery-map-single-map.md](mastery-map-single-map.md).
 - **User decisions (2026-10-27):**
   - One map for every tree. After the MST-03c review, MST-10a and MST-10b come before MST-04, with Combat as the second cluster, and the game window has a minimum size of 1280 x 720.
   - Combat talents as proposed: Kampfrhythmus (+10 % base damage), then Konter (perfect block +50 % stagger damage, more stamina back) or Bollwerk (block 25 % less stamina, 15 % more damage stopped). Combat mastery XP comes from kills.
   - For MST-03b, the retired tool trees and powers and the Impact talents as recorded in its report.
-- **Next MST action:** MST-10a (several trees on one map), then MST-10b (Combat tree), then MST-04 (atomic replacement of exclusive choices with feedback on the card).
+- **Next MST action:** after MST-10a merges, MST-10b (Combat tree at its own `MapOrigin`), then MST-04 (atomic replacement of exclusive choices with feedback on the card).
 - **Rune contract for MST-05:** CMB-07 delivered `URpgWeaponRuneDefinition` and `URpgInventoryFragment_WeaponRunes`, with runes engraved on item definitions and no sockets yet. Recheck them before MST-05.
 - **Later content decisions:** production XP and cost curves and the starter and guaranteed-reward pacing remain authored tuning. Shared-world rune recipe knowledge is the plan's proposed co-op default and must be settled before MST-07.

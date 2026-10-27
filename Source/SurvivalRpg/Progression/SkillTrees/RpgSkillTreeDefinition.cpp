@@ -58,9 +58,9 @@ FVector2D URpgSkillTreeDefinition::GetNodeMapPosition(const FRpgSkillTreeNode& N
 {
 	if (LayoutMode == ERpgSkillTreeLayoutMode::FreePosition)
 	{
-		return Node.MapPosition;
+		return MapOrigin + Node.MapPosition;
 	}
-	return FVector2D(Node.Column * GridSpacing.X, Node.Row * GridSpacing.Y);
+	return MapOrigin + FVector2D(Node.Column * GridSpacing.X, Node.Row * GridSpacing.Y);
 }
 
 FBox2D URpgSkillTreeDefinition::GetRegionBounds(const FName RegionId) const
@@ -144,6 +144,10 @@ bool URpgSkillTreeDefinition::ValidateTree(TArray<FText>& OutErrors) const
 	if (!bFreePosition && (!(GridSpacing.X > 0.0) || !(GridSpacing.Y > 0.0)))
 	{
 		OutErrors.Add(LOCTEXT("InvalidGridSpacing", "GridSpacing must be positive in both directions."));
+	}
+	if (!FMath::IsFinite(MapOrigin.X) || !FMath::IsFinite(MapOrigin.Y))
+	{
+		OutErrors.Add(LOCTEXT("InvalidMapOrigin", "MapOrigin must be finite."));
 	}
 
 	TSet<FName> RegionIds;

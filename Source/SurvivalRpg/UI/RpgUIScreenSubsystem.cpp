@@ -17,15 +17,15 @@ void URpgUIScreenSubsystem::Deinitialize()
 	Super::Deinitialize();
 }
 
-void URpgUIScreenSubsystem::SetMapViewState(const FGameplayTag MapId, const FRpgUIMapViewState& State)
+void URpgUIScreenSubsystem::SetMapViewState(const FName MapId, const FRpgUIMapViewState& State)
 {
-	if (MapId.IsValid() && !bIsDeinitializing)
+	if (!MapId.IsNone() && !bIsDeinitializing)
 	{
 		MapViewStates.Add(MapId, State);
 	}
 }
 
-const FRpgUIMapViewState* URpgUIScreenSubsystem::FindMapViewState(const FGameplayTag MapId) const
+const FRpgUIMapViewState* URpgUIScreenSubsystem::FindMapViewState(const FName MapId) const
 {
 	return MapViewStates.Find(MapId);
 }
