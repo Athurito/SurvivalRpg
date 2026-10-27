@@ -126,6 +126,9 @@ public:
 	/** Abilities this set grants, in authored order. Static data; read by skill trees to slot learned abilities. */
 	const TArray<FRpgAbilitySet_GameplayAbility>& GetGrantedGameplayAbilities() const { return GrantedGameplayAbilities; }
 
+	/** Effects this set applies, in authored order. Static data; read by content tests of skill tree talents. */
+	const TArray<FRpgAbilitySet_GameplayEffect>& GetGrantedGameplayEffects() const { return GrantedGameplayEffects; }
+
 protected:
 
 	// Gameplay abilities granted by this set. Equipment uses this for attack, block, and utility abilities.

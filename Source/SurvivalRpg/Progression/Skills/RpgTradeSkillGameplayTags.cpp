@@ -9,4 +9,5 @@ namespace RpgTradeSkillGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Skill_Crafting_Woodworking, "Skill.Crafting.Woodworking", "Use-based skill for processing timber and crafting wooden goods.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Skill_Crafting_Blacksmithing, "Skill.Crafting.Blacksmithing", "Use-based skill for forging metal goods, weapons, and armor.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Skill_Mastery_Harvesting, "Skill.Mastery.Harvesting", "Shared mastery of tool harvesting; earns the points of the shared harvesting skill tree.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Skill_Mastery_Combat, "Skill.Mastery.Combat", "Core combat mastery advanced by kills; earns the points of the combat skill tree.");
 }

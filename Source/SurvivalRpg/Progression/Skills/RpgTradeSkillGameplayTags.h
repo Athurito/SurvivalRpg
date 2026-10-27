@@ -27,4 +27,7 @@ namespace RpgTradeSkillGameplayTags
 	 * harvesting skill tree. The professions Logging and Mining keep their own levels.
 	 */
 	SURVIVALRPG_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Skill_Mastery_Harvesting);
+
+	/** Core combat mastery: kills advance it, and its level earns the points of the combat skill tree. */
+	SURVIVALRPG_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Skill_Mastery_Combat);
 }

@@ -120,6 +120,7 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Damage, "SetByCaller.Damage", "SetByCaller tag used by damage gameplay effects.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Heal, "SetByCaller.Heal", "SetByCaller tag used by healing gameplay effects.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_StaggerDamage, "SetByCaller.StaggerDamage", "SetByCaller tag used by stagger gameplay effects.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Tuning_Attack_Damage, "Ability.Tuning.Attack.Damage", "Damage of a weapon attack; learned skill tree nodes of the weapon's tree tune it.");
 	
 	// ---------------- Lifecycle ----------------
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InitState_Spawned, "InitState.Spawned", "Pawn spawned.");

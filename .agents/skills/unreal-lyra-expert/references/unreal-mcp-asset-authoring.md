@@ -105,6 +105,8 @@ A `GameplayCueNotify_Burst` `OnBurst` override is const, so it cannot call the B
 ### GameplayEffects, cues, tags, and attributes
 
 - GameplayEffects (`GE_*`) are Blueprints parented to `/Script/GameplayAbilities.GameplayEffect`. Set modifiers, duration, and GE components with `ObjectTools.set_properties`; GE components follow the instanced-property rules below.
+  - A `MultiplyAdditive` magnitude is the factor, not the change: 0.75 for -25 %, 1.5 for +50 %. GAS sums `magnitude - 1` over all such modifiers, so -0.25 as a magnitude multiplies by -0.25 and the attribute clamps to 0 (MST-10b).
+- Adding a `PrimaryAssetTypesToScan` entry to a GameFeatureData in a running editor scans nothing until the editor restarts. The server still finds a skill tree through the equipped weapon, but clients list trees only from the asset manager, so a client misses the new tree until then (MST-10b).
 - Gameplay tags: `GameplayTagsToolset.ListTags`, `GetTagInfo`, and `FindReferencersByTag` read. `AddTag(TagName, Comment, TagSource)`, `RemoveTag`, and `RenameTag` change the INI tag sources and need explicit user approval. Check `Source/` for a native declaration before adding a tag to an INI source. `AddTag` rewrites the whole INI file, escaping every apostrophe in the comments and adding a blank line; restore the file and keep only the new `+GameplayTagList` line, which the running editor already knows.
 - Gameplay cues: `GameplayCueToolset.ListCues`, `GetCueInfo`, `FindCueNotifyAssets`, and `FindCueTagsWithoutNotifies` read. `CreateCueNotifyAsset` and `AddCueTag` need explicit user approval.
 - Attribute sets are native schema; `AttributeSetToolset.FindAttributeSetClasses` and `ListAttributes` only read them.

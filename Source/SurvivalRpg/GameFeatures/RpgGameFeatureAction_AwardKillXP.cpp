@@ -11,6 +11,7 @@
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Progression/RpgExperienceRewardComponent.h"
 #include "SurvivalRpg/Progression/Player/RpgPlayerProgressionComponent.h"
+#include "SurvivalRpg/Progression/Skills/RpgTradeSkillProgressionComponent.h"
 
 void URpgGameFeatureAction_AwardKillXP::OnGameFeatureActivating(FGameFeatureActivatingContext& Context)
 {
@@ -86,6 +87,16 @@ void URpgGameFeatureAction_AwardKillXP::HandleActorKilled(FGameplayTag Channel, 
 	if (URpgPlayerProgressionComponent* ProgressionComponent = KillerPlayerState->GetPlayerProgressionComponent())
 	{
 		ProgressionComponent->AddXP(XPReward);
+	}
+	if (URpgTradeSkillProgressionComponent* TradeSkills = KillerPlayerState->GetTradeSkillProgressionComponent())
+	{
+		for (const FRpgKillSkillXPReward& SkillReward : SkillXPRewards)
+		{
+			if (SkillReward.SkillTag.IsValid() && SkillReward.XPScale > 0.0f)
+			{
+				TradeSkills->AddSkillXPByTag(SkillReward.SkillTag, XPReward * SkillReward.XPScale);
+			}
+		}
 	}
 
 	ExecuteXPAwardCue(*KillerPlayerState, *Message.Victim, XPReward);

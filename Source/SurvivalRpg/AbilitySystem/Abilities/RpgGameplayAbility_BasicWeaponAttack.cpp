@@ -2020,7 +2020,7 @@ FGameplayEffectSpecHandle URpgGameplayAbility_BasicWeaponAttack::MakeWeaponDamag
 	FGameplayEffectSpecHandle DamageSpecHandle = MakeOutgoingGameplayEffectSpec(ActiveAttackDefinition.DamageEffect, GetAbilityLevel());
 	if (FGameplayEffectSpec* DamageSpec = DamageSpecHandle.Data.Get())
 	{
-		float Damage = ActiveAttackDefinition.Damage;
+		float Damage = GetTunedValue(RpgGameplayTags::Ability_Tuning_Attack_Damage, ActiveAttackDefinition.Damage);
 		float StaggerDamage = ActiveAttackDefinition.StaggerDamage;
 		EvaluateConditionalModifiers(TargetASC, Damage, StaggerDamage);
 
