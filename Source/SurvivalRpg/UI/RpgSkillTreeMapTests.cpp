@@ -3,8 +3,11 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "Blueprint/IUserObjectListEntry.h"
 #include "Blueprint/UserWidget.h"
+#include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Blueprint/WidgetTree.h"
+#include "CommonActivatableWidget.h"
 #include "CommonLocalPlayer.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
@@ -445,6 +448,15 @@ bool FRpgSkillTreeMapPanelInputTest::RunTest(const FString& Parameters)
 	Navigate(*Panel, Geometry, EUINavigation::Down);
 	TestEqual(TEXT("Without a selection navigation starts at the node nearest the view center"), Panel->GetSelectedIndex(), 0);
 
+	// Focus set directly, as when a screen opens, selects nothing; navigating into the map picks the nearest node.
+	Navigated.Reset();
+	Panel->SetSelectedIndex(INDEX_NONE);
+	Panel->OnFocusReceived(Geometry, FFocusEvent(EFocusCause::SetDirectly, 0));
+	TestEqual(TEXT("Direct focus leaves the selection empty"), Panel->GetSelectedIndex(), INDEX_NONE);
+	Panel->OnFocusReceived(Geometry, FFocusEvent(EFocusCause::Navigation, 0));
+	TestEqual(TEXT("Navigating into the map selects the nearest node"), Panel->GetSelectedIndex(), 0);
+	TestTrue(TEXT("The navigated selection is reported once"), Navigated == TArray<int32>({0}));
+
 	// DPI scale and window offset only change the geometry; clicks and drags work in local units.
 	Clicked.Reset();
 	Panel->SetCamera(Start);
@@ -458,6 +470,56 @@ bool FRpgSkillTreeMapPanelInputTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Thirty pixels at 1.5 DPI pan twenty local units"),
 		Panel->GetCamera().MapToLocal(Positions[0], Viewport).Equals(NodeScreen + FVector2D(20.0, 0.0), 0.001));
 	Release(*Panel, ScaledGeometry, ScaledNodeScreen + FVector2D(30.0, 0.0));
+
+	// A requested fit follows the layout while it settles, until anything else moves the camera.
+	const FRpgSkillTreeMapSettings& Settings = Panel->GetSettings();
+	const FBox2D FitBox(FVector2D(0.0, 0.0), FVector2D(300.0, 300.0));
+	const FVector2D FirstLayout(1600.0, 900.0);
+	Panel->RequestFit(FitBox);
+	Panel->Tick(FGeometry::MakeRoot(FirstLayout, FSlateLayoutTransform(1.0f)), 0.0, 0.0f);
+	TestTrue(TEXT("A fit frames the first layout size"), AreCamerasNearlyEqual(
+		Panel->GetCamera(), FRpgSkillTreeMapCamera::MakeFit(FitBox, FirstLayout, Settings.FitPadding, Settings.MinZoom, Settings.MaxZoom)));
+	Panel->Tick(Geometry, 0.0, 0.0f);
+	TestTrue(TEXT("An untouched fit frames the settled layout again"), AreCamerasNearlyEqual(
+		Panel->GetCamera(), FRpgSkillTreeMapCamera::MakeFit(FitBox, Viewport, Settings.FitPadding, Settings.MinZoom, Settings.MaxZoom)));
+	Panel->PanByLocal(FVector2D(10.0, 0.0));
+	const FRpgSkillTreeMapCamera Moved = Panel->GetCamera();
+	Panel->Tick(FGeometry::MakeRoot(FVector2D(1000.0, 700.0), FSlateLayoutTransform(1.0f)), 0.0, 0.0f);
+	TestTrue(TEXT("A moved camera keeps its view when the layout changes"), AreCamerasNearlyEqual(Panel->GetCamera(), Moved));
+
+	// With a blend time the view glides: the target lands at once, the shown camera follows and keeps the point
+	// under the cursor in place on every frame.
+	FRpgSkillTreeMapSettings GlideSettings = Panel->GetSettings();
+	GlideSettings.CameraBlendTime = 0.1;
+	Panel->SetSettings(GlideSettings);
+	Panel->SetCamera(Start);
+	const FVector2D GlideCursor(250.0, 420.0);
+	const FVector2D GlideMapPoint = Panel->GetCamera().LocalToMap(GlideCursor, Viewport);
+	Panel->OnMouseWheel(Geometry, MakeMouseEvent(GlideCursor, EKeys::Invalid, {}, 3.0f));
+	TestTrue(TEXT("The wheel sets the target zoom at once"), Panel->GetCamera().Zoom > 1.4);
+	TestEqual(TEXT("The shown zoom has not moved before a frame"), Panel->GetShownCamera().Zoom, 1.0, 0.0001);
+	bool bAnchorHeld = true;
+	for (int32 Frame = 0; Frame < 4; ++Frame)
+	{
+		Panel->Tick(Geometry, 0.0, 0.016f);
+		bAnchorHeld &= Panel->GetShownCamera().LocalToMap(GlideCursor, Viewport).Equals(GlideMapPoint, 0.01);
+	}
+	TestTrue(TEXT("The shown zoom moves toward the target"),
+		Panel->GetShownCamera().Zoom > 1.0 && Panel->GetShownCamera().Zoom < Panel->GetCamera().Zoom);
+	TestTrue(TEXT("The point under the cursor stays there while gliding"), bAnchorHeld);
+	for (int32 Frame = 0; Frame < 120; ++Frame)
+	{
+		Panel->Tick(Geometry, 0.0, 0.016f);
+	}
+	TestTrue(TEXT("The glide settles exactly on the target"), Panel->GetShownCamera() == Panel->GetCamera());
+	const FRpgSkillTreeMapCamera BeforeDrag = Panel->GetShownCamera();
+	Panel->OnMouseWheel(Geometry, MakeMouseEvent(GlideCursor, EKeys::Invalid, {}, -2.0f));
+	Panel->Tick(Geometry, 0.0, 0.016f);
+	const FRpgSkillTreeMapCamera MidGlide = Panel->GetShownCamera();
+	Panel->PanByLocal(FVector2D(15.0, 0.0));
+	TestTrue(TEXT("A drag stops the glide where it is shown"),
+		Panel->GetShownCamera() == Panel->GetCamera() && FMath::IsNearlyEqual(Panel->GetCamera().Zoom, MidGlide.Zoom) &&
+			!(Panel->GetCamera() == BeforeDrag));
 	return true;
 }
 
@@ -499,6 +561,8 @@ bool FRpgSkillTreeMapWidgetLifecycleTest::RunTest(const FString& Parameters)
 		URpgSkillTreeMapWidget* NewMap = Host->WidgetTree->ConstructWidget<URpgSkillTreeMapWidget>();
 		NewMap->NodeEntryClass = URpgSkillTreeAutomationTestMapEntry::StaticClass();
 		NewMap->ViewStateCacheForTests = ViewCache;
+		// Glides are covered on the panel; here every command lands at once.
+		NewMap->CameraBlendTime = 0.0f;
 		return NewMap;
 	};
 	auto MakeTreeView = [SkillTrees](const FGameplayTag TreeTag)
@@ -534,6 +598,7 @@ bool FRpgSkillTreeMapWidgetLifecycleTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
+	TestEqual(TEXT("The UMG map keeps clipping its entries"), Panel->GetClipping(), EWidgetClipping::ClipToBounds);
 	TestTrue(TEXT("Framing waits for the viewport size"), Panel->HasPendingFit());
 	const FVector2D Viewport(1000.0, 700.0);
 	const FGeometry Geometry = FGeometry::MakeRoot(Viewport, FSlateLayoutTransform(1.0f));
@@ -584,6 +649,18 @@ bool FRpgSkillTreeMapWidgetLifecycleTest::RunTest(const FString& Parameters)
 	Release(*Panel, Geometry, SecondLocal + FVector2D(10.0, 10.0));
 	TestTrue(TEXT("FormA stays selected"), FormA && FormA->IsSelected());
 
+	// A click never moves the camera, even on a node that a focus margin would push inward.
+	Map->FocusMargin = 400.0f;
+	Map->SynchronizeProperties();
+	const FRpgSkillTreeMapCamera BeforeEdgeClick = Panel->GetCamera();
+	ClickAt(*Panel, Geometry, Panel->GetCamera().MapToLocal(FVector2D(300.0, 0.0), Viewport));
+	const URpgSkillTreeNodeViewModel* Second = TreeView->FindNode(TAG_SkillTreeMapTest_Second);
+	TestTrue(TEXT("The edge node is selected"), Second && Second->IsSelected());
+	TestTrue(TEXT("Selecting by click leaves the camera alone"), AreCamerasNearlyEqual(Panel->GetCamera(), BeforeEdgeClick));
+	Map->FocusMargin = 48.0f;
+	Map->SynchronizeProperties();
+	TreeView->SelectNode(TAG_SkillTreeMapTest_FormA);
+
 	// Closing and reopening with a new view model restores camera and selection.
 	const FRpgSkillTreeMapCamera BeforeClose = Panel->GetCamera();
 	Map->ReleaseSlateResources(true);
@@ -629,6 +706,43 @@ bool FRpgSkillTreeMapWidgetLifecycleTest::RunTest(const FString& Parameters)
 
 	ViewCache->Deinitialize();
 	TestNull(TEXT("Removing the local player forgets the views"), ViewCache->FindMapViewState(TreeTag));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgSkillTreeMapSkillScreenContractTest,
+	"SurvivalRpg.UI.SkillTreeMap.Content.SkillScreenHostsMap",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgSkillTreeMapSkillScreenContractTest::RunTest(const FString& Parameters)
+{
+	// The Skills tab of the game menu shows trees on the map; widget names, layout and style stay designer-owned.
+	const UWidgetBlueprintGeneratedClass* ScreenClass = LoadObject<UWidgetBlueprintGeneratedClass>(
+		nullptr,
+		TEXT("/Game/SurvivalRpg/UI/Menus/GameMenu/GameMenu/Skills/CUI_Skills.CUI_Skills_C"));
+	if (!TestNotNull(TEXT("The skill screen class loads"), ScreenClass))
+	{
+		return false;
+	}
+	TestTrue(TEXT("The skill screen is an activatable CommonUI widget"), ScreenClass->IsChildOf(UCommonActivatableWidget::StaticClass()));
+
+	TArray<UWidget*> Widgets;
+	if (const UWidgetTree* WidgetTree = ScreenClass->GetWidgetTreeArchetype())
+	{
+		WidgetTree->GetAllWidgets(Widgets);
+	}
+	int32 MapCount = 0;
+	bool bEntriesAreListEntries = true;
+	for (const UWidget* Widget : Widgets)
+	{
+		if (const URpgSkillTreeMapWidget* Map = Cast<URpgSkillTreeMapWidget>(Widget))
+		{
+			++MapCount;
+			bEntriesAreListEntries &= Map->NodeEntryClass && Map->NodeEntryClass->ImplementsInterface(UUserObjectListEntry::StaticClass());
+		}
+	}
+	TestEqual(TEXT("The skill screen hosts one skill tree map"), MapCount, 1);
+	TestTrue(TEXT("The map's node entries are User Object List Entries"), bEntriesAreListEntries);
 	return true;
 }
 

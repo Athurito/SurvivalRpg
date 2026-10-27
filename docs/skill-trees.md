@@ -70,22 +70,24 @@ are data. Code is only needed when an ability gains a new tunable value.
 H opens the game menu on its Skills tab: `IA_UI_Skills` → `InputTag.UI.Skills` →
 `UI.Screen.GameMenu` with a payload whose screen tag is `UI.Screen.GameMenu.Skills`.
 The menu's `TabScreenTags` map such tags to its tabs.
-Clicking a node learns it; right-clicking a learned node refunds it (`CUI_SkillTreeNode` overrides On Mouse Button Down
-and calls the node view model's `RequestRefund`).
+The tree sits on the mastery map (MST-02, [skill screen on the map](mastery-map-skill-screen.md)). Clicking a node
+only selects it; **Learn** and **Refund** in the detail panel send the node view model's `RequestUnlock` and
+`RequestRefund`.
 
 | Part | Role |
 | --- | --- |
 | `URpgSkillProgressionViewModel` | Character level, trade skills with XP, one tree view model per known tree, the selected tree, free points. `OnProgressionChanged` also fires when the selected tree changes, so a screen refreshes from one event. |
 | `URpgSkillTreeViewModel` | Points, rows with their gates, prerequisite links, Q/E/R slots, the selected node, and the commands learn, reset, select and assign. |
 | `URpgSkillTreeNodeViewModel` | One node: name, text, icon, kind, cell, cost, state (`Unlocked`, `Unlockable`, `Unaffordable`, `Locked`, `Excluded`), slot, and `bCanRefund` with the commands learn, refund and select. |
-| `URpgSkillTreeGridWidget` | Places one entry per node from `Row` and `Column`, draws the links and darkens locked rows. Entries implement User Object List Entry. `CUI_Skills` still uses it. |
-| `URpgSkillTreeMapWidget` | Zoomable, pannable map ([below](#mastery-map)). MST-02 replaces the grid in `CUI_Skills` with it. |
+| `URpgSkillTreeGridWidget` | Places one entry per node from `Row` and `Column`, draws the links and darkens locked rows. Entries implement User Object List Entry. No screen uses it since MST-02. |
+| `URpgSkillTreeMapWidget` | Zoomable, pannable map ([below](#mastery-map)) that `CUI_Skills` shows the selected tree on. |
 | `CUI_Skills`, `CUI_SkillTreeNode`, `CUI_TradeSkillEntry`, `CUI_SkillTreeListEntry` | Layout and style in `/Game/SurvivalRpg/UI/Menus/GameMenu/GameMenu/Skills`. |
 
 ### Mastery map
 
 `URpgSkillTreeMapWidget` (MST-01, [mastery map foundation](mastery-map-foundation.md)) shows one tree on a clipped map:
 - The wheel zooms around the cursor; a drag with any mouse button pans after a few units.
+- Zoom, fit and focus glide over `CameraBlendTime`, and `BackgroundBrush` art pans and zooms with the tree.
 - A left click without a drag selects a node; nothing on the map learns or refunds.
 - Arrow keys and the gamepad move the selection to the nearest node in that direction and bring it into view; Tab follows the authored order.
 - Blueprints get zoom, fit, region and node focus, pan and cancel commands, and `Overview`/`Detail` from `DetailZoom`.

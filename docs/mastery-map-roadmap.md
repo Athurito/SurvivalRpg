@@ -1,6 +1,6 @@
 # Mastery map roadmap
 
-Updated: 2026-10-27. Status: **In progress**; MST-01 is merged, MST-02 is next.
+Updated: 2026-10-27. Status: **In progress**; MST-02 is in review.
 
 This is the execution roadmap for the [mastery map implementation plan](mastery-map-implementation-plan.md): a zoomable shared harvesting mastery map, meaningful talent choices, and the rune loot/crafting/upgrade loop. The plan owns design, architecture, and detailed acceptance contracts; this roadmap owns task status, order, and the current handoff.
 
@@ -27,6 +27,7 @@ The full catalog goes beyond the first-playable minimum in [game-vision.md](game
 - Once CMB is complete and MST is started, mark MST-01 Ready and keep dependent work Planned. Update only the current task's status/evidence and replace the current handoff; do not append a second competing progress log.
 - Record each task's C++ boundary decision, file/asset ownership, actual checks, failures, limits, and next action in a `docs/mastery-map-<topic>.md` task report. Link the report and PR in the table when they exist.
 - Reuse existing progression, inventory, equipment, screen routing, ViewModels, and CommonUI styles. The plan's native map mechanism does not authorize native screen/content leaf classes or a parallel rune manager.
+- User decision, 2026-10-27: merge MST steps the user could test in the game once the build, the automated tests and the agent's own listen-server PIE check with two players pass. Collect each merged step's playtest in the [playtest backlog](#playtest-backlog); the user tests in batches, and findings become fixes in later PRs. Actual failures and limits are still reported.
 - Author and validate concrete WBP, Blueprint, and DataAsset content through Unreal MCP. Coordinate editor ownership and binary assets; run one PIE network process at a time.
 - Keep the CMB roadmap and CMB task reports owned by CMB. MST reports refer to their delivered contracts without renumbering, rescheduling, or reopening them implicitly.
 
@@ -37,7 +38,7 @@ All dependencies below are within MST; every row also has the CMB scheduling gat
 | ID | Scope | Dependencies | Status | Report / PR |
 | --- | --- | --- | --- | --- |
 | MST-01 | Free-position node/link schema, reusable native map geometry/input, LocalPlayer camera/selection cache; prove the surface with existing data | Post-CMB baseline refresh | Merged (2026-10-27, `293fce4f`) | [mastery-map-foundation.md](mastery-map-foundation.md), [PR #302](https://github.com/Athurito/SurvivalRpg/pull/302) |
-| MST-02 | Integrate `CUI_Skills`, node/details WBPs and existing MVVM/style; explicit learn/refund actions, focus, semantic zoom and close/reopen behavior | MST-01 | Ready | — |
+| MST-02 | Integrate `CUI_Skills`, node/details WBPs and existing MVVM/style; explicit learn/refund actions, focus, semantic zoom and close/reopen behavior | MST-01 | In review | [mastery-map-skill-screen.md](mastery-map-skill-screen.md), [PR #304](https://github.com/Athurito/SurvivalRpg/pull/304) |
 | MST-03a | Quantized harvesting work, residual progress, true overkill and proc provenance through existing stock/reward commits; actor/instance replication and saves | Post-CMB baseline refresh; technically independent of MST-01/02 | Planned | — |
 | MST-03b | Shared harvesting mastery/XP/tree/tool references, functional three-node Wucht branch, old-save migration and retirement of legacy harvesting allocations | MST-02, MST-03a | Planned | — |
 | MST-04 | Atomic replacement of exclusive choices, owner request/result feedback, grant reconciliation and VM updates | MST-03b | Planned | — |
@@ -72,15 +73,19 @@ Each task uses the detailed contracts in the implementation plan. Run relevant c
 - Observable changes include a short playtest with expected results; gameplay changes include another player's view. Verify map input/DPI/readability and compare real/synthetic-map performance when the map lands.
 - PR descriptions use Behavior, Validation, Limits and, for observable gameplay, Playtest. Record exact evidence before marking a task Merged.
 
+## Playtest backlog
+
+Playtests of merged MST steps that wait for the user's batch test. Remove a row once tested; findings go into later PRs.
+
+| Task | Playtest | Status |
+| --- | --- | --- |
+| MST-02 | [Playtest](mastery-map-skill-screen.md#playtest): H, wheel and drag, select, Learn/Refund with points, zoom levels, reopen, keyboard/gamepad, two players | Waiting for the user |
+
 ## Current handoff
 
 - **Active phase:** MST, started by the user on 2026-10-27 after CMB-01 to CMB-07 merged.
-- **Last task:** MST-01, merged on 2026-10-27 as `293fce4f` through [PR #302](https://github.com/Athurito/SurvivalRpg/pull/302); the report is [mastery-map-foundation.md](mastery-map-foundation.md), which records the baseline refresh at `29b4dae3`.
-- **Delivered in MST-01:**
-  - The layout schema (grid fallback, free positions, regions, default region) and the map read models.
-  - `URpgSkillTreeMapWidget` with its Slate panel.
-  - The LocalPlayer view cache in `URpgUIScreenSubsystem`.
-  - No screen, asset or save change; `CUI_Skills` still shows the grid.
-- **Next MST action:** MST-02 is Ready: integrate the map into `CUI_Skills` through Unreal MCP. The editor and the `unreal-mcp` server must be running for that.
+- **Active task:** MST-02, branch `claude/mst-02-skill-screen-map`, [PR #304](https://github.com/Athurito/SurvivalRpg/pull/304); the report is [mastery-map-skill-screen.md](mastery-map-skill-screen.md). The skill screen shows the map with select-only nodes, explicit Learn/Refund, zoom buttons, semantic zoom, gliding camera and map background.
+- **Previous task:** MST-01, merged on 2026-10-27 as `293fce4f` ([PR #302](https://github.com/Athurito/SurvivalRpg/pull/302)).
+- **Next MST action:** after MST-02 merges, take MST-03a (quantized harvest work).
 - **Rune contract for MST-05:** CMB-07 delivered `URpgWeaponRuneDefinition` and `URpgInventoryFragment_WeaponRunes`, with runes engraved on item definitions and no sockets yet. Recheck them before MST-05.
 - **Later content decisions:** production XP and cost curves and the starter and guaranteed-reward pacing remain authored tuning. Shared-world rune recipe knowledge is the plan's proposed co-op default and must be settled before MST-07.

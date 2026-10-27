@@ -214,7 +214,8 @@ void SRpgSkillTreeMapPanel::SetSettings(const FRpgSkillTreeMapSettings& InSettin
 	Settings.MaxZoom = FMath::Max(Settings.MaxZoom, Settings.MinZoom);
 	Settings.ZoomStep = FMath::Max(Settings.ZoomStep, 1.0 + UE_KINDA_SMALL_NUMBER);
 	Settings.MaxEntryScale = FMath::Max(Settings.MaxEntryScale, Settings.MinEntryScale);
-	SetCameraInternal(Camera);
+	Settings.CameraBlendTime = FMath::Max(Settings.CameraBlendTime, 0.0);
+	SetCameraInternal(Camera, true);
 	Invalidate(EInvalidateWidgetReason::Layout);
 }
 
@@ -266,7 +267,7 @@ void SRpgSkillTreeMapPanel::SetRegions(TArray<FBox2D> InRegions)
 void SRpgSkillTreeMapPanel::SetContentBounds(const FBox2D& InBounds)
 {
 	ContentBounds = InBounds;
-	SetCameraInternal(Camera);
+	SetCameraInternal(Camera, true);
 }
 
 void SRpgSkillTreeMapPanel::SetSelectedIndex(const int32 NodeIndex)
@@ -286,20 +287,31 @@ FVector2D SRpgSkillTreeMapPanel::GetNodePosition(const int32 NodeIndex) const
 
 void SRpgSkillTreeMapPanel::SetCamera(const FRpgSkillTreeMapCamera& InCamera)
 {
-	PendingFitBounds.Reset();
+	FitBounds.Reset();
 	SetCameraInternal(InCamera);
 }
 
-void SRpgSkillTreeMapPanel::RequestFit(const FBox2D& Bounds)
+void SRpgSkillTreeMapPanel::RequestFit(const FBox2D& Bounds, const bool bGlide)
 {
-	if (ViewportSize.X > 0.0 && ViewportSize.Y > 0.0)
+	FitBounds = Bounds;
+	FittedViewportSize = FVector2D::ZeroVector;
+	bGlideNextFit = bGlide;
+	ApplyFitForViewport();
+}
+
+void SRpgSkillTreeMapPanel::ApplyFitForViewport()
+{
+	if (!FitBounds.IsSet() || ViewportSize.X <= 0.0 || ViewportSize.Y <= 0.0 || ViewportSize.Equals(FittedViewportSize))
 	{
-		SetCamera(FRpgSkillTreeMapCamera::MakeFit(Bounds, ViewportSize, Settings.FitPadding, Settings.MinZoom, Settings.MaxZoom));
+		return;
 	}
-	else
-	{
-		PendingFitBounds = Bounds;
-	}
+	// Only a requested fit glides; framing an opening screen or a settling layout jumps.
+	const bool bGlide = bGlideNextFit;
+	bGlideNextFit = false;
+	FittedViewportSize = ViewportSize;
+	SetCameraInternal(
+		FRpgSkillTreeMapCamera::MakeFit(FitBounds.GetValue(), ViewportSize, Settings.FitPadding, Settings.MinZoom, Settings.MaxZoom),
+		bGlide);
 }
 
 void SRpgSkillTreeMapPanel::ZoomBySteps(const double Steps)
@@ -309,14 +321,17 @@ void SRpgSkillTreeMapPanel::ZoomBySteps(const double Steps)
 
 void SRpgSkillTreeMapPanel::ZoomAtLocal(const FVector2D& LocalAnchor, const double NewZoom)
 {
-	FRpgSkillTreeMapCamera NewCamera = Camera;
+	// Anchor on what the player sees, so the point under the cursor stays put even in the middle of a glide.
+	FRpgSkillTreeMapCamera NewCamera = ShownCamera;
 	NewCamera.ZoomAt(LocalAnchor, NewZoom, Settings.MinZoom, Settings.MaxZoom, ViewportSize);
-	SetCamera(NewCamera);
+	FitBounds.Reset();
+	SetCameraInternal(NewCamera, true, &LocalAnchor);
 }
 
 void SRpgSkillTreeMapPanel::PanByLocal(const FVector2D& LocalDelta)
 {
-	FRpgSkillTreeMapCamera NewCamera = Camera;
+	// A pan grabs the map where it is shown and stops any glide there.
+	FRpgSkillTreeMapCamera NewCamera = ShownCamera;
 	NewCamera.PanByLocal(LocalDelta);
 	SetCamera(NewCamera);
 }
@@ -330,10 +345,11 @@ void SRpgSkillTreeMapPanel::BringNodeIntoView(const int32 NodeIndex)
 	}
 
 	FRpgSkillTreeMapCamera NewCamera = Camera;
-	const FVector2D EntrySize = GetEntrySize(NodeIndex) * GetEntryScale();
+	const FVector2D EntrySize = GetEntrySize(NodeIndex) * FMath::Clamp(Camera.Zoom, Settings.MinEntryScale, Settings.MaxEntryScale);
 	if (NewCamera.BringIntoView(Children[NodeIndex].Position, EntrySize, Settings.FocusMargin, ViewportSize))
 	{
-		SetCamera(NewCamera);
+		FitBounds.Reset();
+		SetCameraInternal(NewCamera, true);
 	}
 }
 
@@ -343,7 +359,8 @@ void SRpgSkillTreeMapPanel::CenterOnNode(const int32 NodeIndex)
 	{
 		FRpgSkillTreeMapCamera NewCamera = Camera;
 		NewCamera.Center = Children[NodeIndex].Position;
-		SetCamera(NewCamera);
+		FitBounds.Reset();
+		SetCameraInternal(NewCamera, true);
 	}
 }
 
@@ -370,7 +387,7 @@ void SRpgSkillTreeMapPanel::CancelGesture()
 
 double SRpgSkillTreeMapPanel::GetEntryScale() const
 {
-	return FMath::Clamp(Camera.Zoom, Settings.MinEntryScale, Settings.MaxEntryScale);
+	return FMath::Clamp(ShownCamera.Zoom, Settings.MinEntryScale, Settings.MaxEntryScale);
 }
 
 FSlateRect SRpgSkillTreeMapPanel::GetNodeLocalRect(const int32 NodeIndex) const
@@ -379,7 +396,7 @@ FSlateRect SRpgSkillTreeMapPanel::GetNodeLocalRect(const int32 NodeIndex) const
 	{
 		return FSlateRect();
 	}
-	const FVector2D Center = Camera.MapToLocal(Children[NodeIndex].Position, ViewportSize);
+	const FVector2D Center = ShownCamera.MapToLocal(Children[NodeIndex].Position, ViewportSize);
 	const FVector2D HalfSize = GetEntrySize(NodeIndex) * GetEntryScale() * 0.5;
 	return FSlateRect(Center - HalfSize, Center + HalfSize);
 }
@@ -391,7 +408,7 @@ int32 SRpgSkillTreeMapPanel::HitTestNode(const FVector2D& LocalPoint) const
 	double BestDistance = TNumericLimits<double>::Max();
 	for (int32 Index = 0; Index < Children.Num(); ++Index)
 	{
-		const FVector2D Center = Camera.MapToLocal(Children[Index].Position, ViewportSize);
+		const FVector2D Center = ShownCamera.MapToLocal(Children[Index].Position, ViewportSize);
 		const FVector2D EntryHalf = GetEntrySize(Index) * GetEntryScale() * 0.5;
 		const FVector2D Half(FMath::Max(EntryHalf.X, MinHalf), FMath::Max(EntryHalf.Y, MinHalf));
 		const FVector2D Delta = LocalPoint - Center;
@@ -423,7 +440,7 @@ void SRpgSkillTreeMapPanel::OnArrangeChildren(const FGeometry& AllottedGeometry,
 		}
 
 		const FVector2D EntryDesiredSize = Widget->GetDesiredSize();
-		const FVector2D TopLeft = Camera.MapToLocal(Slot.Position, Size) - EntryDesiredSize * Scale * 0.5;
+		const FVector2D TopLeft = ShownCamera.MapToLocal(Slot.Position, Size) - EntryDesiredSize * Scale * 0.5;
 		ArrangedChildren.AddWidget(AllottedGeometry.MakeChild(Widget, EntryDesiredSize, FSlateLayoutTransform(Scale, TopLeft)));
 	}
 }
@@ -445,6 +462,26 @@ int32 SRpgSkillTreeMapPanel::OnPaint(
 	const FVector2D Size = AllottedGeometry.GetLocalSize();
 	const FLinearColor Tint = InWidgetStyle.GetColorAndOpacityTint();
 
+	// The background belongs to the map: it pans and zooms with the nodes instead of hanging behind the screen.
+	if (const FSlateBrush* BackgroundBrush = Settings.BackgroundBrush;
+		BackgroundBrush && BackgroundBrush->DrawAs != ESlateBrushDrawType::NoDrawType && ContentBounds.bIsValid)
+	{
+		const FVector2D BoundsSize = ContentBounds.GetSize();
+		const double Side = FMath::Max(BoundsSize.X, BoundsSize.Y) * Settings.BackgroundScale;
+		if (Side > 0.0)
+		{
+			const FVector2D Min = ShownCamera.MapToLocal(ContentBounds.GetCenter() - FVector2D(Side * 0.5), Size);
+			const FVector2D Max = ShownCamera.MapToLocal(ContentBounds.GetCenter() + FVector2D(Side * 0.5), Size);
+			FSlateDrawElement::MakeBox(
+				OutDrawElements,
+				LayerId,
+				AllottedGeometry.ToPaintGeometry(FVector2f(Max - Min), FSlateLayoutTransform(1.0f, FVector2f(Min))),
+				BackgroundBrush,
+				ESlateDrawEffect::None,
+				BackgroundBrush->GetTint(InWidgetStyle) * Tint);
+		}
+	}
+
 	if (const FSlateBrush* RegionBrush = Settings.RegionBrush; RegionBrush && RegionBrush->DrawAs != ESlateBrushDrawType::NoDrawType)
 	{
 		for (const FBox2D& Region : Regions)
@@ -453,8 +490,8 @@ int32 SRpgSkillTreeMapPanel::OnPaint(
 			{
 				continue;
 			}
-			const FVector2D Min = Camera.MapToLocal(Region.Min, Size);
-			const FVector2D Max = Camera.MapToLocal(Region.Max, Size);
+			const FVector2D Min = ShownCamera.MapToLocal(Region.Min, Size);
+			const FVector2D Max = ShownCamera.MapToLocal(Region.Max, Size);
 			FSlateDrawElement::MakeBox(
 				OutDrawElements,
 				LayerId,
@@ -469,8 +506,8 @@ int32 SRpgSkillTreeMapPanel::OnPaint(
 	Points.SetNumUninitialized(2);
 	for (const FLink& Link : Links)
 	{
-		Points[0] = FVector2f(Camera.MapToLocal(Link.From, Size));
-		Points[1] = FVector2f(Camera.MapToLocal(Link.To, Size));
+		Points[0] = FVector2f(ShownCamera.MapToLocal(Link.From, Size));
+		Points[1] = FVector2f(ShownCamera.MapToLocal(Link.To, Size));
 		FSlateDrawElement::MakeLines(
 			OutDrawElements,
 			LayerId + 1,
@@ -488,7 +525,7 @@ int32 SRpgSkillTreeMapPanel::OnPaint(
 	if (bShowFocusBrush && Children.IsValidIndex(SelectedIndex) && FocusBrush &&
 		FocusBrush->DrawAs != ESlateBrushDrawType::NoDrawType && HasAnyUserFocus().IsSet())
 	{
-		const FVector2D Center = Camera.MapToLocal(Children[SelectedIndex].Position, Size);
+		const FVector2D Center = ShownCamera.MapToLocal(Children[SelectedIndex].Position, Size);
 		const FVector2D HalfSize = GetEntrySize(SelectedIndex) * GetEntryScale() * 0.5 + FVector2D(Settings.FocusPadding);
 		++MaxLayerId;
 		FSlateDrawElement::MakeBox(
@@ -506,13 +543,10 @@ void SRpgSkillTreeMapPanel::Tick(const FGeometry& AllottedGeometry, const double
 {
 	SPanel::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
 
-	// The camera keeps its center on resize and DPI changes, so only a pending fit needs the new size.
+	// A moved camera keeps its center on resize and DPI changes; an untouched fit frames its bounds again.
 	ViewportSize = AllottedGeometry.GetLocalSize();
-	if (PendingFitBounds.IsSet() && ViewportSize.X > 0.0 && ViewportSize.Y > 0.0)
-	{
-		const FBox2D FitBounds = PendingFitBounds.GetValue();
-		RequestFit(FitBounds);
-	}
+	ApplyFitForViewport();
+	AdvanceGlide(InDeltaTime);
 }
 
 FReply SRpgSkillTreeMapPanel::OnPreviewMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
@@ -683,7 +717,10 @@ FReply SRpgSkillTreeMapPanel::OnFocusReceived(const FGeometry& MyGeometry, const
 	{
 		bShowFocusBrush = true;
 		ViewportSize = MyGeometry.GetLocalSize();
-		if (!Children.IsValidIndex(SelectedIndex) && Children.Num() > 0)
+
+		// Navigating into the map picks a node, so the next press starts somewhere visible. Focus set directly, for
+		// example by a screen that opens, leaves the selection to the player.
+		if (InFocusEvent.GetCause() == EFocusCause::Navigation && !Children.IsValidIndex(SelectedIndex) && Children.Num() > 0)
 		{
 			NavigateTo(RpgSkillTreeMapNavigation::FindNearest(GetNodePositions(), Camera.Center));
 		}
@@ -698,7 +735,10 @@ FVector2D SRpgSkillTreeMapPanel::ComputeDesiredSize(float LayoutScaleMultiplier)
 	return FVector2D::ZeroVector;
 }
 
-void SRpgSkillTreeMapPanel::SetCameraInternal(const FRpgSkillTreeMapCamera& NewCamera)
+void SRpgSkillTreeMapPanel::SetCameraInternal(
+	const FRpgSkillTreeMapCamera& NewCamera,
+	const bool bGlide,
+	const FVector2D* ZoomAnchor)
 {
 	FRpgSkillTreeMapCamera Clamped = NewCamera;
 	if (!FMath::IsFinite(Clamped.Zoom) || Clamped.Zoom <= 0.0)
@@ -714,11 +754,73 @@ void SRpgSkillTreeMapPanel::SetCameraInternal(const FRpgSkillTreeMapCamera& NewC
 
 	if (Clamped == Camera)
 	{
+		// An unchanged camera keeps a running glide, unless the caller wants the view to jump.
+		if (!bGlide && !(ShownCamera == Camera))
+		{
+			ShownCamera = Camera;
+			GlideProgress = 1.0;
+			GlideAnchorLocal.Reset();
+			Invalidate(EInvalidateWidgetReason::Layout);
+		}
 		return;
 	}
+
 	Camera = Clamped;
+	if (bGlide && Settings.CameraBlendTime > 0.0)
+	{
+		GlideStart = ShownCamera;
+		GlideProgress = 0.0;
+		GlideAnchorLocal.Reset();
+		if (ZoomAnchor)
+		{
+			GlideAnchorLocal = *ZoomAnchor;
+			GlideAnchorMap = ShownCamera.LocalToMap(*ZoomAnchor, ViewportSize);
+		}
+	}
+	else
+	{
+		ShownCamera = Camera;
+		GlideProgress = 1.0;
+		GlideAnchorLocal.Reset();
+	}
 	Invalidate(EInvalidateWidgetReason::Layout);
 	OnViewChanged.ExecuteIfBound();
+}
+
+void SRpgSkillTreeMapPanel::AdvanceGlide(const double DeltaTime)
+{
+	if (GlideProgress >= 1.0 || DeltaTime <= 0.0)
+	{
+		return;
+	}
+
+	// Exponential approach: quick at first, settling gently, independent of the frame rate.
+	const double Alpha = Settings.CameraBlendTime > 0.0 ? 1.0 - FMath::Exp(-DeltaTime / Settings.CameraBlendTime) : 1.0;
+	GlideProgress += (1.0 - GlideProgress) * Alpha;
+	if (GlideProgress >= 0.995)
+	{
+		ShownCamera = Camera;
+		GlideProgress = 1.0;
+		GlideAnchorLocal.Reset();
+	}
+	else
+	{
+		// Zoom moves on a log scale, so every zoom step feels the same.
+		ShownCamera.Zoom = FMath::Exp(FMath::Lerp(FMath::Loge(GlideStart.Zoom), FMath::Loge(Camera.Zoom), GlideProgress));
+		if (GlideAnchorLocal.IsSet())
+		{
+			// Keep the anchored map point under the anchor; blend in any clamping of the target center on the way.
+			const FVector2D AnchorOffset = GlideAnchorLocal.GetValue() - ViewportSize * 0.5;
+			const FVector2D TargetAnchoredCenter = GlideAnchorMap - AnchorOffset / Camera.Zoom;
+			ShownCamera.Center =
+				GlideAnchorMap - AnchorOffset / ShownCamera.Zoom + (Camera.Center - TargetAnchoredCenter) * GlideProgress;
+		}
+		else
+		{
+			ShownCamera.Center = FMath::Lerp(GlideStart.Center, Camera.Center, GlideProgress);
+		}
+	}
+	Invalidate(EInvalidateWidgetReason::Layout);
 }
 
 void SRpgSkillTreeMapPanel::NavigateTo(const int32 NodeIndex)

@@ -31,7 +31,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRpgSkillTreeMapDetailChanged, ERpgS
  * Zoomable, pannable mastery map of one skill tree. Places one NodeEntryClass widget per node at its map position,
  * draws regions and prerequisite links behind them, and owns every pointer gesture on the map.
  *
- * - The mouse wheel zooms around the cursor; a drag with any button pans once it passes DragThreshold.
+ * - The mouse wheel zooms around the cursor; a drag with any button pans once it passes DragThreshold. Zoom, fit
+ *   and focus glide over CameraBlendTime; a drag follows the pointer directly.
  * - A left click without a drag selects the node under the cursor. Nothing on the map learns or refunds; those are
  *   explicit commands of the detail panel.
  * - Keyboard and gamepad navigation moves the selection spatially and brings the node into view; at the map's edge
@@ -161,6 +162,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill Tree|Map|Input", meta = (ClampMin = "0", UIMin = "2", UIMax = "24"))
 	float DragThreshold = 6.0f;
 
+	/** Time constant in seconds with which the view glides to a new zoom, fit or focus; zero jumps. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill Tree|Map|Camera", meta = (ClampMin = "0", UIMin = "0", UIMax = "0.5"))
+	float CameraBlendTime = 0.12f;
+
 	/** Free space in slate units around a framed tree or region. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill Tree|Map|Camera", meta = (ClampMin = "0", UIMin = "0", UIMax = "200"))
 	float FitPadding = 64.0f;
@@ -193,6 +198,17 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill Tree|Map|Style")
 	FSlateBrush RegionBrush;
 
+	/**
+	 * Map art drawn behind the whole tree, centered on it, that pans and zooms with the nodes. No Draw Type hides it.
+	 * Presentation only.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill Tree|Map|Style")
+	FSlateBrush BackgroundBrush;
+
+	/** Side of the square BackgroundBrush as a multiple of the tree's larger side. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill Tree|Map|Style", meta = (ClampMin = "0.1", UIMin = "0.5", UIMax = "3"))
+	float BackgroundScale = 1.2f;
+
 	/** Thickness of the prerequisite links in slate units. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill Tree|Map|Style", meta = (ClampMin = "0.5", UIMin = "0.5", UIMax = "12"))
 	float LinkThickness = 3.0f;
@@ -216,6 +232,7 @@ protected:
 private:
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FRpgSkillTreeMapWidgetLifecycleTest;
+	friend class FRpgSkillTreeMapSkillScreenContractTest;
 #endif
 
 	UFUNCTION()
@@ -259,6 +276,9 @@ private:
 	FGameplayTag LastSelectedTag;
 	ERpgSkillTreeMapDetail DetailLevel = ERpgSkillTreeMapDetail::Overview;
 	bool bViewInitialized = false;
+
+	/** True while the map itself selects a node; the clicked or navigated node is already where the player looks. */
+	bool bSelectingFromMap = false;
 
 #if WITH_DEV_AUTOMATION_TESTS
 	/** View cache used instead of the owning local player's, for tests without a local player. */

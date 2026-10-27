@@ -23,6 +23,8 @@ Recipes and pitfalls observed in this project's UE 5.8 editor sessions. Read it 
 
 ## Widget tree
 
+- `UMGToolSet.AddWidget` and `RemoveWidget` need full object paths (`<Widget Blueprint>:WidgetTree.<Name>`), not bare widget names. `AddWidget` returns the new slot object for `ObjectTools.set_properties`.
+- `ObjectTools.set_properties` takes localizable text as `'NSLOCTEXT("Ns", "Key", "Text")'` strings, and `GetWidgetDescription` shows the result.
 - `UMGToolSet.AddWidget` cannot add a second child to a SizeBox or Border. Wrap the existing child with `WrapWidgets`, which returns a list (rename `r[0]["widgetName"]`). The wrapper can be a project widget class; add a Widget Blueprint child class by its generated class path (`<package path>.CUI_X_C`).
 - `MoveWidget` applies child indices after the removal and keeps the old slot's size rule, so a Fill button moved into a VerticalBox fills vertically. Move to `-1` (the end) step by step, read the order back with `GetWidgets`, and reset the slot size.
 - In Python, setting a SizeBox's `width_override` alone does not set its override flag. Set `bOverride_WidthOverride` (and the height flag) through `ObjectTools.set_properties`.
@@ -64,6 +66,7 @@ Recipes and pitfalls observed in this project's UE 5.8 editor sessions. Read it 
 
 ## Driving UI in PIE
 
+- Without Python in PIE (MST-02): `SceneTools.find_actors` with `actor_type` `/Script/Engine.PlayerController` searches the running PIE world and returns the local controller's path. `AssetContractTools.set_pie_input_key` with that path and `H` opens the game menu on its Skills tab. While the menu has UI input, game keys no longer arrive; close it with a Slate `Click` on its Back action. Slate `PressKey Escape` ends the whole PIE session, as the editor's stop key. Slate `Click`, `Drag` and `Screenshot` on the PIE window then cover the screen.
 - Open screens with `RpgUIScreenBlueprintLibrary.open_ui_screen`; the game menu tag is `UI.Screen.GameMenu`. Close menus with `deactivate_widget()`, because `set_pie_input_key` does not reach CommonUI back actions.
 - Find runtime widgets with `unreal.ObjectIterator(cls)`; Python has no WidgetBlueprintLibrary lookup. HUD and menu widgets live under the GameInstance, so their paths lack `UEDPIE_`; filter out `/Game/`, `/Script/`, and `Default__` instead. Click a button with `widget.get_editor_property("Button").on_clicked.broadcast()`.
 - Real mouse input goes through `SlateInspectorToolset.SlateInspectorToolset`: `Windows` with action `select`, then `Observe` and `Snapshot` on the window ref give button refs. `Click` takes `button: right`, `Snapshot` with `maxDepth: 80` also lists grid item images, and `Drag(startRef, endRef)` moves items like a mouse. Take a new snapshot after anything that changes grid refs. Slate clicks switch CommonInput back to mouse, which hides gamepad-only tabs, and `Hover` sets hover state but never opens Slate tooltips.

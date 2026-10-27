@@ -100,6 +100,18 @@ struct FRpgSkillTreeMapSettings
 
 	/** Space between the selected entry and the focus brush. */
 	double FocusPadding = 6.0;
+
+	/**
+	 * Time constant in seconds with which the shown camera glides to a new zoom, fit or focus. Zero jumps. Drags
+	 * always follow the pointer directly.
+	 */
+	double CameraBlendTime = 0.0;
+
+	/** Drawn behind everything, centered on the map and moving and scaling with it; null or NoDrawType draws nothing. */
+	const FSlateBrush* BackgroundBrush = nullptr;
+
+	/** Side of the square background as a multiple of the map's larger side. */
+	double BackgroundScale = 1.2;
 };
 
 /**
@@ -162,14 +174,24 @@ public:
 	int32 GetNodeCount() const { return Children.Num(); }
 	FVector2D GetNodePosition(int32 NodeIndex) const;
 
+	/** Camera the view is at or gliding to. Gameplay-facing queries, the view cache and commands use it. */
 	const FRpgSkillTreeMapCamera& GetCamera() const { return Camera; }
 
-	/** Applies InCamera with its zoom and center clamped and drops a pending fit. */
+	/** Camera drawn this frame; it differs from GetCamera only while gliding. Hit tests use it. */
+	const FRpgSkillTreeMapCamera& GetShownCamera() const { return ShownCamera; }
+
+	/** Applies InCamera at once, with its zoom and center clamped, and ends a requested fit. */
 	void SetCamera(const FRpgSkillTreeMapCamera& InCamera);
 
-	/** Frames Bounds now, or once the panel knows its size. */
-	void RequestFit(const FBox2D& Bounds);
-	bool HasPendingFit() const { return PendingFitBounds.IsSet(); }
+	/**
+	 * Frames Bounds as soon as the panel knows its size, and again whenever that size changes, until anything else
+	 * moves the camera. A screen's layout can settle over several frames; the fit follows it. bGlide glides to the
+	 * first framing when the size is already known, for example for a Fit button.
+	 */
+	void RequestFit(const FBox2D& Bounds, bool bGlide = false);
+
+	/** True while a requested fit has not met a viewport size yet, so the camera still shows its default. */
+	bool HasPendingFit() const { return FitBounds.IsSet() && FittedViewportSize.IsZero(); }
 
 	/** Zooms by Steps wheel notches around the viewport center; negative steps zoom out. */
 	void ZoomBySteps(double Steps);
@@ -179,10 +201,10 @@ public:
 
 	void PanByLocal(const FVector2D& LocalDelta);
 
-	/** Pans so the node's entry lies inside the viewport with the focus margin. */
+	/** Glides so the node's entry lies inside the viewport with the focus margin. */
 	void BringNodeIntoView(int32 NodeIndex);
 
-	/** Pans so the node sits at the viewport center. */
+	/** Glides so the node sits at the viewport center. */
 	void CenterOnNode(int32 NodeIndex);
 
 	/** Ends a press or drag without a click and releases nothing else. Safe to call at any time. */
@@ -232,7 +254,14 @@ protected:
 
 private:
 	FReply BeginPress(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent);
-	void SetCameraInternal(const FRpgSkillTreeMapCamera& NewCamera);
+
+	/**
+	 * Clamps NewCamera and makes it the camera. Without bGlide, or without a blend time, the shown camera jumps there;
+	 * otherwise it glides, keeping the map point under ZoomAnchor in place when one is given.
+	 */
+	void SetCameraInternal(const FRpgSkillTreeMapCamera& NewCamera, bool bGlide = false, const FVector2D* ZoomAnchor = nullptr);
+	void ApplyFitForViewport();
+	void AdvanceGlide(double DeltaTime);
 	void NavigateTo(int32 NodeIndex);
 	TArray<FVector2D> GetNodePositions() const;
 	FVector2D GetEntrySize(int32 NodeIndex) const;
@@ -240,7 +269,17 @@ private:
 	TPanelChildren<FSlot> Children;
 	FRpgSkillTreeMapSettings Settings;
 	FRpgSkillTreeMapCamera Camera;
-	TOptional<FBox2D> PendingFitBounds;
+	FRpgSkillTreeMapCamera ShownCamera;
+
+	/** Glide from GlideStart to Camera: progress in [0, 1] and an optional viewport point that stays on its map point. */
+	FRpgSkillTreeMapCamera GlideStart;
+	double GlideProgress = 1.0;
+	TOptional<FVector2D> GlideAnchorLocal;
+	FVector2D GlideAnchorMap = FVector2D::ZeroVector;
+	bool bGlideNextFit = false;
+	/** Bounds the camera keeps framing until it is moved otherwise, and the viewport size it last framed them for. */
+	TOptional<FBox2D> FitBounds;
+	FVector2D FittedViewportSize = FVector2D::ZeroVector;
 	FBox2D ContentBounds = FBox2D(ForceInit);
 	TArray<FLink> Links;
 	TArray<FBox2D> Regions;
