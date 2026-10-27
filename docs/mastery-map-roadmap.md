@@ -1,6 +1,6 @@
 # Mastery map roadmap
 
-Updated: 2026-10-26. Status: **Deferred until CMB is complete**.
+Updated: 2026-10-27. Status: **In progress**; MST-01 is in review.
 
 This is the execution roadmap for the [mastery map implementation plan](mastery-map-implementation-plan.md): a zoomable shared harvesting mastery map, meaningful talent choices, and the rune loot/crafting/upgrade loop. The plan owns design, architecture, and detailed acceptance contracts; this roadmap owns task status, order, and the current handoff.
 
@@ -8,7 +8,7 @@ This is the execution roadmap for the [mastery map implementation plan](mastery-
 
 The user's order is **finish CMB first, then start MST** (2026-10-26). The [combat roadmap](combat-roadmap.md) remains a separate workstream with its own task IDs, scope, status, and acceptance. Merging the two MST documents records future work; it does not start MST or change CMB priorities.
 
-Every task below is deferred while CMB is in progress, including UI work that is technically independent. The end of the CMB phase is determined from that roadmap and its accepted completion, not from a copied snapshot here. Completing one CMB task does not release MST early. No MST implementation task is active or ready in this handoff.
+On 2026-10-27, after CMB-01 to CMB-07 had merged, the user started MST with this plan. The CMB gate is open; the remaining tasks are Planned and follow the order below.
 
 ## Outcome and milestones
 
@@ -36,19 +36,19 @@ All dependencies below are within MST; every row also has the CMB scheduling gat
 
 | ID | Scope | Dependencies | Status | Report / PR |
 | --- | --- | --- | --- | --- |
-| MST-01 | Free-position node/link schema, reusable native map geometry/input, LocalPlayer camera/selection cache; prove the surface with existing data | Post-CMB baseline refresh | Deferred | — |
-| MST-02 | Integrate `CUI_Skills`, node/details WBPs and existing MVVM/style; explicit learn/refund actions, focus, semantic zoom and close/reopen behavior | MST-01 | Deferred | — |
-| MST-03a | Quantized harvesting work, residual progress, true overkill and proc provenance through existing stock/reward commits; actor/instance replication and saves | Post-CMB baseline refresh; technically independent of MST-01/02 | Deferred | — |
-| MST-03b | Shared harvesting mastery/XP/tree/tool references, functional three-node Wucht branch, old-save migration and retirement of legacy harvesting allocations | MST-02, MST-03a | Deferred | — |
-| MST-04 | Atomic replacement of exclusive choices, owner request/result feedback, grant reconciliation and VM updates | MST-03b | Deferred | — |
-| MST-05 | Extend the delivered rune/item foundation with physical instances, ranks and three harvesting-tool sockets; validated moves, grants, replication and persistence | MST-04; CMB-07 contract re-inspection | Deferred | — |
-| MST-06 | Source-tool activation evaluator, rune context/highlights and learned-but-inactive UI; Brand and the first implemented rune-dependent talent path | MST-05 | Deferred | — |
-| MST-07 | Rune drops, guaranteed claims, persistent base-recipe knowledge and rank-I crafting through existing loot/station paths | MST-06 | Deferred | — |
-| MST-08 | In-place rank II/III upgrades, salvage and Runenschrein presentation; atomic costs and safe equipped-rune refresh | MST-07 | Deferred | — |
-| MST-09a | Harvesting Echo, Kraftuebertrag and Runenfluss; bounded own-hit triggers and actual-overkill transfer | MST-08 | Deferred | — |
-| MST-09b | Erntesprung, Durchschlag, Ausbreitung and remaining Nachwirkung choices; finite propagation and no duplicated work | MST-09a | Deferred | — |
-| MST-09c | Totenarbeiter and Helfer; temporary workers, correct beneficiary/reward attribution, lifecycle and bounded triggers | MST-09b | Deferred | — |
-| MST-09d | Full catalog/cutover acceptance, legacy cleanup, input/performance/network regression and cook reachability | MST-09c | Deferred | — |
+| MST-01 | Free-position node/link schema, reusable native map geometry/input, LocalPlayer camera/selection cache; prove the surface with existing data | Post-CMB baseline refresh | In review | [mastery-map-foundation.md](mastery-map-foundation.md), [PR #302](https://github.com/Athurito/SurvivalRpg/pull/302) |
+| MST-02 | Integrate `CUI_Skills`, node/details WBPs and existing MVVM/style; explicit learn/refund actions, focus, semantic zoom and close/reopen behavior | MST-01 | Planned | — |
+| MST-03a | Quantized harvesting work, residual progress, true overkill and proc provenance through existing stock/reward commits; actor/instance replication and saves | Post-CMB baseline refresh; technically independent of MST-01/02 | Planned | — |
+| MST-03b | Shared harvesting mastery/XP/tree/tool references, functional three-node Wucht branch, old-save migration and retirement of legacy harvesting allocations | MST-02, MST-03a | Planned | — |
+| MST-04 | Atomic replacement of exclusive choices, owner request/result feedback, grant reconciliation and VM updates | MST-03b | Planned | — |
+| MST-05 | Extend the delivered rune/item foundation with physical instances, ranks and three harvesting-tool sockets; validated moves, grants, replication and persistence | MST-04; CMB-07 contract re-inspection | Planned | — |
+| MST-06 | Source-tool activation evaluator, rune context/highlights and learned-but-inactive UI; Brand and the first implemented rune-dependent talent path | MST-05 | Planned | — |
+| MST-07 | Rune drops, guaranteed claims, persistent base-recipe knowledge and rank-I crafting through existing loot/station paths | MST-06 | Planned | — |
+| MST-08 | In-place rank II/III upgrades, salvage and Runenschrein presentation; atomic costs and safe equipped-rune refresh | MST-07 | Planned | — |
+| MST-09a | Harvesting Echo, Kraftuebertrag and Runenfluss; bounded own-hit triggers and actual-overkill transfer | MST-08 | Planned | — |
+| MST-09b | Erntesprung, Durchschlag, Ausbreitung and remaining Nachwirkung choices; finite propagation and no duplicated work | MST-09a | Planned | — |
+| MST-09c | Totenarbeiter and Helfer; temporary workers, correct beneficiary/reward attribution, lifecycle and bounded triggers | MST-09b | Planned | — |
+| MST-09d | Full catalog/cutover acceptance, legacy cleanup, input/performance/network regression and cook reachability | MST-09c | Planned | — |
 
 Default implementation order follows the table after CMB. MST-03a's technical independence documents an ownership boundary; it does not schedule concurrent work during CMB. Only expose purchasable talents once their gameplay exists. The Brand transfer choice therefore waits for Erntesprung in MST-09b.
 
@@ -74,9 +74,13 @@ Each task uses the detailed contracts in the implementation plan. Run relevant c
 
 ## Current handoff
 
-- **Active phase:** CMB, as requested by the user. Its authoritative status remains in the combat roadmap.
-- **MST active task / branch / PR:** none. This documentation delivery is not MST-01.
-- **Current delivery:** the implementation plan and this separate roadmap only; no runtime code, assets, editor changes, or save migration.
-- **Next MST action:** after CMB is complete and this workstream starts, perform the baseline refresh and take MST-01.
-- **Later content decisions:** production XP/cost curves and starter/guaranteed-reward pacing remain authored tuning. Shared-world rune recipe knowledge is the plan's proposed co-op default and must be settled before MST-07.
-- **Checks at documentation delivery:** document consistency/link checks and independent review; repository CI is recorded in the documentation PR. No UE build, runtime test or cook is implied.
+- **Active phase:** MST, started by the user on 2026-10-27 after CMB-01 to CMB-07 merged.
+- **Active task:** MST-01, branch `claude/mst-01-map-foundation`, [PR #302](https://github.com/Athurito/SurvivalRpg/pull/302); the report is [mastery-map-foundation.md](mastery-map-foundation.md), which records the baseline refresh at `29b4dae3`.
+- **Delivered in MST-01:**
+  - The layout schema (grid fallback, free positions, regions, default region) and the map read models.
+  - `URpgSkillTreeMapWidget` with its Slate panel.
+  - The LocalPlayer view cache in `URpgUIScreenSubsystem`.
+  - No screen, asset or save change; `CUI_Skills` still shows the grid.
+- **Next MST action:** after MST-01 merges, take MST-02: integrate the map into `CUI_Skills` through Unreal MCP. The editor and the `unreal-mcp` server must be running for that.
+- **Rune contract for MST-05:** CMB-07 delivered `URpgWeaponRuneDefinition` and `URpgInventoryFragment_WeaponRunes`, with runes engraved on item definitions and no sockets yet. Recheck them before MST-05.
+- **Later content decisions:** production XP and cost curves and the starter and guaranteed-reward pacing remain authored tuning. Shared-world rune recipe knowledge is the plan's proposed co-op default and must be settled before MST-07.

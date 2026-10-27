@@ -1,6 +1,6 @@
 # Mastery map implementation plan
 
-Date: 2026-10-26. Status: documented design; implementation deferred until the CMB work is complete. No runtime or asset changes in this planning task.
+Date: 2026-10-26. Status: documented design; implementation started on 2026-10-27 with MST-01, after CMB-01 to CMB-07 merged.
 
 Scheduling, task status, and the next implementation step live in the separate [mastery map roadmap](mastery-map-roadmap.md). User decision, 2026-10-26: finish CMB first, then start this system. Publishing these documents does not start implementation or change the [combat roadmap](combat-roadmap.md).
 
@@ -30,7 +30,7 @@ This plan does not redesign combat skills, replace the inventory, change GASP mo
 
 ## Observed project baseline
 
-Original inspection baseline: `65c8f8fb` on `claude/vfx-08-tornado`; it was clean at the start of the planning task. This is a dated source snapshot, not the expected post-CMB implementation baseline. Before MST starts, inspect the completed CMB work, current source/save schemas, branch, concurrent ownership, and editor state, and refresh the affected assumptions below. In particular, CMB-07 may already supply the item-instance rune foundation. Each implementation step gets its own bounded `codex/mst-<id>-<slug>` branch/PR; do not mix it into a CMB or VFX branch.
+Original inspection baseline: `65c8f8fb` on `claude/vfx-08-tornado`; it was clean at the start of the planning task. MST-01 refreshed it on `29b4dae3`; [mastery-map-foundation.md](mastery-map-foundation.md) records what changed. This is a dated source snapshot, not the expected post-CMB implementation baseline. Before MST starts, inspect the completed CMB work, current source/save schemas, branch, concurrent ownership, and editor state, and refresh the affected assumptions below. In particular, CMB-07 may already supply the item-instance rune foundation. Each implementation step gets its own bounded `codex/mst-<id>-<slug>` branch/PR; do not mix it into a CMB or VFX branch.
 
 | Existing seam | Observed behavior and consequence |
 | --- | --- |
@@ -47,7 +47,7 @@ Original inspection baseline: `65c8f8fb` on `claude/vfx-08-tornado`; it was clea
 | `GF_Harvesting_Magic/.../Harvesting/RpgHarvestStockRules.cpp`, `RpgHarvestProfile.h`, `RpgGameplayAbility_Harvest.h` | Stock consumption uses integer requested/weak-point sections. Existing `HarvestPower` scales yield-sensitive loot, not depletion work. Percentage work, fractional burn/echo work, and actual overkill are additional mechanics. |
 | `Core/Game/RpgPlayerSaveData.h`, `RpgGameModeBase.cpp` | Player schema is 4, independently of world schema 5. Trade skills restore before skill-tree purchases. Unknown/unregistered tree states can survive a load and need explicit migration handling. |
 | `Inventory/RpgInventoryItemInstance.*`, `RpgInventoryItemDefinition.h`, `RpgInventoryFragment_ItemContainer.*` | Persistent item IDs, item-owned containers, authoritative graph mutations, and versioned fragment state already exist. Reuse these for physical runes and sockets. |
-| `GF_Runes_Core` | Plugin/content and rune VFX exist. Source inspection did not find a complete rune socket/rank transaction system. VFX presence is not proof of rune gameplay. |
+| `GF_Runes_Core` | Plugin/content and rune VFX exist. Since CMB-07, `URpgWeaponRuneDefinition` and `URpgInventoryFragment_WeaponRunes` engrave runes on item definitions, which drives the combat Echo. There are still no rune item instances, ranks, sockets or rune transactions. |
 | `Crafting/RpgRecipeUnlockComponent.*`, `RpgCraftingRecipeDefinition.*` | Existing recipe unlocks are GameState-wide/session-replicated. Station recipes use connected physical storage and output chests. Persistent rune recipe knowledge and in-place instance upgrades need explicit integration. |
 
 ## C++ boundary decision
