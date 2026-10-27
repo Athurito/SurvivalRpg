@@ -45,7 +45,7 @@ All dependencies below are within MST; every row also has the CMB scheduling gat
 | MST-03b | Shared harvesting mastery/XP/tree/tool references, functional three-node Wucht branch, old-save migration and retirement of legacy harvesting allocations | MST-02, MST-03a | Merged (2026-10-27, `d92bc04b`) | [mastery-map-shared-harvesting.md](mastery-map-shared-harvesting.md), [PR #308](https://github.com/Athurito/SurvivalRpg/pull/308) |
 | MST-03c | Single-map skill screen: full-tab map, points per budget and zoom/region controls on top, node-anchored detail card with Learn/Refund; remove the profession/tree lists, the Q/E/R bar and the detail column | MST-03b | Merged (2026-10-27, `5d45019e`) | [mastery-map-single-map.md](mastery-map-single-map.md), [PR #310](https://github.com/Athurito/SurvivalRpg/pull/310) |
 | MST-04 | Atomic replacement of exclusive choices, owner request/result feedback on the detail card, grant reconciliation and VM updates | MST-03c | Merged (2026-10-27, `08285c1e`) | [mastery-map-choice-swap.md](mastery-map-choice-swap.md), [PR #313](https://github.com/Athurito/SurvivalRpg/pull/313) |
-| MST-05 | Extend the delivered rune/item foundation with physical instances, ranks and three harvesting-tool sockets; validated moves, grants, replication and persistence | MST-04; CMB-07 contract re-inspection | In review | [mastery-map-rune-sockets.md](mastery-map-rune-sockets.md) |
+| MST-05 | Extend the delivered rune/item foundation with physical instances, ranks and three harvesting-tool sockets; validated moves, grants, replication and persistence | MST-04; CMB-07 contract re-inspection | In review | [mastery-map-rune-sockets.md](mastery-map-rune-sockets.md), [PR #314](https://github.com/Athurito/SurvivalRpg/pull/314) |
 | MST-06 | Source-tool activation evaluator, rune context/highlights and learned-but-inactive UI; Brand and the first implemented rune-dependent talent path | MST-05 | Planned | — |
 | MST-07 | Rune drops, guaranteed claims, persistent base-recipe knowledge and rank-I crafting through existing loot/station paths | MST-06 | Planned | — |
 | MST-08 | In-place rank II/III upgrades, salvage and Runenschrein presentation; atomic costs and safe equipped-rune refresh | MST-07 | Planned | — |
@@ -96,7 +96,7 @@ Playtests of merged MST steps that wait for the user's batch test. Remove a row 
 ## Current handoff
 
 - **Active phase:** MST, started by the user on 2026-10-27 after CMB-01 to CMB-07 merged.
-- **Active task:** MST-05, branch `claude/mst-05-rune-sockets`; the report is [mastery-map-rune-sockets.md](mastery-map-rune-sockets.md).
+- **Active task:** MST-05, branch `claude/mst-05-rune-sockets`, [PR #314](https://github.com/Athurito/SurvivalRpg/pull/314); the report is [mastery-map-rune-sockets.md](mastery-map-rune-sockets.md).
   - `URpgInventoryFragment_Rune` makes runes non-stackable items with a saved, replicated rank I to III; `bSocketGrid` makes an item-owned grid sockets with one rune of each kind.
   - Axe and pickaxe have three sockets; the equipment manager grants socketed runes while their tool is equipped. A temporary starter gives every player one Brand rune.
 - **Previous task:** MST-04, merged on 2026-10-27 as `08285c1e` ([PR #313](https://github.com/Athurito/SurvivalRpg/pull/313)); the report is [mastery-map-choice-swap.md](mastery-map-choice-swap.md).
