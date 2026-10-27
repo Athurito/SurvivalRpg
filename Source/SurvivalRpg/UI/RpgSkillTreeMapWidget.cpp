@@ -40,9 +40,14 @@ namespace
 URpgSkillTreeMapWidget::URpgSkillTreeMapWidget(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
+	// UWidget pushes its Clipping onto the Slate panel, so the map must default to clipping or entries spill over
+	// neighboring panels.
+	SetClipping(EWidgetClipping::ClipToBounds);
+
 	// Every focusable control needs a visible focus state; regions draw nothing until a screen styles them.
 	FocusBrush = FSlateRoundedBoxBrush(FLinearColor::Transparent, 8.0f, FLinearColor(0.95f, 0.8f, 0.45f, 1.0f), 2.0f);
 	RegionBrush.DrawAs = ESlateBrushDrawType::NoDrawType;
+	BackgroundBrush.DrawAs = ESlateBrushDrawType::NoDrawType;
 }
 
 void URpgSkillTreeMapWidget::SetSkillTree(URpgSkillTreeViewModel* InSkillTree)
@@ -107,7 +112,7 @@ void URpgSkillTreeMapWidget::FitTree()
 {
 	if (MyPanel && SkillTree)
 	{
-		MyPanel->RequestFit(SkillTree->GetMapBounds());
+		MyPanel->RequestFit(SkillTree->GetMapBounds(), true);
 	}
 }
 
@@ -120,7 +125,7 @@ bool URpgSkillTreeMapWidget::FocusRegion(const FName RegionId)
 	}
 	if (MyPanel)
 	{
-		MyPanel->RequestFit(Region->Bounds);
+		MyPanel->RequestFit(Region->Bounds, true);
 	}
 	return true;
 }
@@ -393,7 +398,10 @@ void URpgSkillTreeMapWidget::PushSelection()
 	if (SelectedTag != LastSelectedTag)
 	{
 		LastSelectedTag = SelectedTag;
-		MyPanel->BringNodeIntoView(SelectedIndex);
+		if (!bSelectingFromMap)
+		{
+			MyPanel->BringNodeIntoView(SelectedIndex);
+		}
 		SaveViewState();
 	}
 }
@@ -479,7 +487,9 @@ void URpgSkillTreeMapWidget::SelectNodeAt(const int32 NodeIndex)
 		return;
 	}
 
-	// Selecting refreshes the tree view model, which calls SyncEntries; push again for an unchanged selection.
+	// Selecting refreshes the tree view model, which calls SyncEntries; push again for an unchanged selection. A click
+	// never moves the camera, and navigation already brought the node into view.
+	TGuardValue<bool> SelectingGuard(bSelectingFromMap, true);
 	Node->Select();
 	PushSelection();
 	OnNodeSelected.Broadcast(Node);
@@ -501,6 +511,9 @@ FRpgSkillTreeMapSettings URpgSkillTreeMapWidget::MakeSettings() const
 	Settings.RegionBrush = &RegionBrush;
 	Settings.FocusBrush = &FocusBrush;
 	Settings.FocusPadding = FocusPadding;
+	Settings.CameraBlendTime = CameraBlendTime;
+	Settings.BackgroundBrush = &BackgroundBrush;
+	Settings.BackgroundScale = BackgroundScale;
 	return Settings;
 }
 
