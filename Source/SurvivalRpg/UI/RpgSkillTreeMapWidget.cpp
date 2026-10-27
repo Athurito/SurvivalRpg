@@ -231,7 +231,8 @@ TSharedRef<SWidget> URpgSkillTreeMapWidget::RebuildWidget()
 	MyPanel = SNew(SRpgSkillTreeMapPanel)
 		.OnNodeClicked_UObject(this, &ThisClass::HandlePanelNodeClicked)
 		.OnNodeNavigated_UObject(this, &ThisClass::HandlePanelNodeNavigated)
-		.OnViewChanged_UObject(this, &ThisClass::HandlePanelViewChanged);
+		.OnViewChanged_UObject(this, &ThisClass::HandlePanelViewChanged)
+		.OnSelectedNodeMoved_UObject(this, &ThisClass::HandlePanelSelectedNodeMoved);
 	MyPanel->SetSettings(MakeSettings());
 
 	// A new panel starts with a default camera: restore the remembered view or frame the tree again.
@@ -262,6 +263,14 @@ void URpgSkillTreeMapWidget::HandlePanelViewChanged()
 {
 	UpdateDetailLevel();
 	SaveViewState();
+}
+
+void URpgSkillTreeMapWidget::HandlePanelSelectedNodeMoved(
+	const bool bHasSelection,
+	const FSlateRect& LocalBox,
+	const FVector2D& ViewportSize)
+{
+	OnSelectedNodeMoved.Broadcast(bHasSelection, LocalBox.GetTopLeft(), LocalBox.GetSize(), ViewportSize);
 }
 
 void URpgSkillTreeMapWidget::SyncEntries()

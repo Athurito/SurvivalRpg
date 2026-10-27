@@ -35,6 +35,30 @@ public:
 	int32 Broadcasts = 0;
 };
 
+/** Records the skill tree map's selected-node box reports. Test-only. */
+UCLASS(NotBlueprintable, Transient)
+class URpgSkillTreeAutomationTestMapListener final : public UObject
+{
+	GENERATED_BODY()
+
+public:
+	UFUNCTION()
+	void HandleSelectedNodeMoved(bool bHasSelection, FVector2D NodePosition, FVector2D NodeSize, FVector2D MapSize)
+	{
+		++Broadcasts;
+		bLastHasSelection = bHasSelection;
+		LastPosition = NodePosition;
+		LastSize = NodeSize;
+		LastMapSize = MapSize;
+	}
+
+	int32 Broadcasts = 0;
+	bool bLastHasSelection = false;
+	FVector2D LastPosition = FVector2D::ZeroVector;
+	FVector2D LastSize = FVector2D::ZeroVector;
+	FVector2D LastMapSize = FVector2D::ZeroVector;
+};
+
 /** Native skill tree map entry without authored layout; its entry item is the node view model it shows. Test-only. */
 UCLASS(NotBlueprintable, Transient)
 class URpgSkillTreeAutomationTestMapEntry final : public URpgMvvmListEntryWidget

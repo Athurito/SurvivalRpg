@@ -139,6 +139,7 @@ public:
 	};
 
 	DECLARE_DELEGATE_OneParam(FOnNodeEvent, int32 /*NodeIndex*/);
+	DECLARE_DELEGATE_ThreeParams(FOnSelectedNodeMoved, bool /*bHasSelection*/, const FSlateRect& /*LocalBox*/, const FVector2D& /*ViewportSize*/);
 
 	SLATE_BEGIN_ARGS(SRpgSkillTreeMapPanel) {}
 		/** A node was pressed and released with the left button without a drag. */
@@ -147,6 +148,11 @@ public:
 		SLATE_EVENT(FOnNodeEvent, OnNodeNavigated)
 		/** The camera moved or zoomed. */
 		SLATE_EVENT(FSimpleDelegate, OnViewChanged)
+		/**
+		 * The selected node's shown box changed in viewport-local space: on every glide frame, pan, zoom and resize,
+		 * and when the selection changes or clears. Reported once per tick at most, and only on a change.
+		 */
+		SLATE_EVENT(FOnSelectedNodeMoved, OnSelectedNodeMoved)
 	SLATE_END_ARGS()
 
 	SRpgSkillTreeMapPanel();
@@ -263,6 +269,9 @@ private:
 	void ApplyFitForViewport();
 	void AdvanceGlide(double DeltaTime);
 	void NavigateTo(int32 NodeIndex);
+
+	/** Reports the selected node's shown box through OnSelectedNodeMoved when it differs from the last report. */
+	void ReportSelectedNodeBox();
 	TArray<FVector2D> GetNodePositions() const;
 	FVector2D GetEntrySize(int32 NodeIndex) const;
 
@@ -299,4 +308,10 @@ private:
 	FOnNodeEvent OnNodeClicked;
 	FOnNodeEvent OnNodeNavigated;
 	FSimpleDelegate OnViewChanged;
+	FOnSelectedNodeMoved OnSelectedNodeMoved;
+
+	/** Last selected-node box sent through OnSelectedNodeMoved, so unchanged frames send nothing. */
+	bool bReportedSelection = false;
+	FSlateRect ReportedSelectedBox = FSlateRect(0.0f, 0.0f, 0.0f, 0.0f);
+	FVector2D ReportedViewportSize = FVector2D::ZeroVector;
 };

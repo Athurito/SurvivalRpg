@@ -45,6 +45,7 @@ Behavior observed in this project's UE 5.8 editor sessions on the primary workst
 ## Dirty packages and modals
 
 - Read-only inspection of graphs or component defaults can mark Blueprints dirty. Discard that with `EditorLoadingAndSavingUtils.reload_packages(pkgs, unreal.ReloadPackagesInteractionMode.ASSUME_POSITIVE)`; the interactive mode opens a modal that hangs MCP. The same call drops an in-memory A/B change before measuring the saved state.
+- `AssetContractTools.reload_assets` refuses dirty targets. Without Python, undo an in-memory test edit by setting the original values back with `ObjectTools.set_properties`; before closing, save the dirty packages and `git checkout` the ones that only were read or tested (MST-03c).
 - Quit with `unreal.SystemLibrary.quit_editor()` after checking the dirty packages. A hard kill with dirty packages blocks the next start at the Restore Packages dialog; if that happened, rename `Saved/Autosaves/PackageRestoreData.json` before relaunching.
 - `StartPIE` hangs on the "Blueprints have compile errors" modal; compile the involved Blueprints and check their status first. After a folder move, restart the editor if an AnimBP reports a stale compile failure.
 - `migrate_packages` opens a modal save prompt when any package is dirty, and `EditorLoadingAndSavingUtils.load_map` on a plugin map path opens a blocking "Map load failed" dialog. Check the dirty lists first, and load maps with `LevelEditorSubsystem.load_level` after PIE has stopped.

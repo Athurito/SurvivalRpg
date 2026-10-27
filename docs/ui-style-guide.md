@@ -280,6 +280,14 @@ Rules:
     when the action has no display name.
   - Action bar buttons (`CUI_ActionButtonBase`, "Esc Back") keep their keys on
     every device.
+  - Compact buttons on a screen's own panels, such as the skill screen's top
+    bar and node card, are `CUI_ApplyButtonBase` with `CUI_SkillButtonStyle`:
+    the `MI_UI_Frame_Button_*` frames. They hide their glyph
+    (`bHideInputAction`), which would cover a short label; the action bar or
+    a hint row shows the key instead (MST-03c).
+  - The action bar also lists a data-table action on mouse and keyboard when
+    the row has no keyboard key, as a bare label. Turn `bDisplayInActionBar`
+    off for gamepad-only actions and show their keys in a hint row.
 - **Glyph size:** to show a glyph at a set height, put the
   `CommonActionWidget` in a `ScaleBox` (`ScaleToFitY`) inside a `SizeBox`
   with only a height override. The width then follows each glyph's aspect

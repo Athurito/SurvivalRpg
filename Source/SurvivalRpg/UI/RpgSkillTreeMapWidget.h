@@ -26,6 +26,8 @@ enum class ERpgSkillTreeMapDetail : uint8
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRpgSkillTreeMapNodeSelected, URpgSkillTreeNodeViewModel*, Node);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRpgSkillTreeMapDetailChanged, ERpgSkillTreeMapDetail, Detail);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(
+	FRpgSkillTreeMapSelectedNodeMoved, bool, bHasSelection, FVector2D, NodePosition, FVector2D, NodeSize, FVector2D, MapSize);
 
 /**
  * Zoomable, pannable mastery map of one skill tree. Places one NodeEntryClass widget per node at its map position,
@@ -123,6 +125,16 @@ public:
 	/** Fired when zooming crosses DetailZoom, so the screen or its entries can show or hide names and costs. */
 	UPROPERTY(BlueprintAssignable, Category = "Skill Tree|Map")
 	FRpgSkillTreeMapDetailChanged OnDetailLevelChanged;
+
+	/**
+	 * Fired when the selected node's drawn box moves in the map's local space: on every frame of a pan, zoom or glide,
+	 * when the map is resized, and when the selection changes or clears. NodePosition is the box's top-left corner and
+	 * NodeSize its size, in slate units; MapSize is the map's own size. Without a selection, bHasSelection is false and
+	 * the box is zero. Sent at most once per frame and only on a change, so a detail card can follow its node without a
+	 * tick. Local presentation only.
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "Skill Tree|Map")
+	FRpgSkillTreeMapSelectedNodeMoved OnSelectedNodeMoved;
 
 	//~ UWidget interface
 	virtual void SynchronizeProperties() override;
@@ -241,6 +253,7 @@ private:
 	void HandlePanelNodeClicked(int32 NodeIndex);
 	void HandlePanelNodeNavigated(int32 NodeIndex);
 	void HandlePanelViewChanged();
+	void HandlePanelSelectedNodeMoved(bool bHasSelection, const FSlateRect& LocalBox, const FVector2D& ViewportSize);
 
 	/** Reuses entries by node tag, creates missing ones, and refreshes positions, links and selection. */
 	void SyncEntries();
