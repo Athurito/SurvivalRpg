@@ -74,7 +74,7 @@ The menu's `TabScreenTags` map such tags to its tabs.
 The Skills tab is one mastery map that fills the tab (MST-03c, [single-map skill screen](mastery-map-single-map.md);
 the map itself is MST-02, [skill screen on the map](mastery-map-skill-screen.md)). Character level and professions
 are on the Character tab.
-- **Top bar:** the tree's name and mastery level, available and spent points with **Reset tree**, region shortcuts once a tree has more than one region, input hints for the current device, and zoom out, zoom in and fit.
+- **Top bar:** a compact budget entry per tree (name, level, free and spent points) with **Reset tree**, region shortcuts once a tree has more than one region, input hints for the current device, and zoom out, zoom in and fit.
 - **Card:** clicking a node only selects it and opens one fixed-size card beside it, which follows the node while the map moves and stays inside the map. **Learn** and **Refund** on the card send the node view model's `RequestUnlock` and `RequestRefund`.
 - **Bound actions:** `DT_RpgUIActions_SkillTree`. Learn is F or the left face button and Refund R or the top face button; they work while focus stays on the map, and the menu's action bar lists each while it is available. Zoom and fit add gamepad bindings: the triggers and the right stick press.
 - **Q/E/R:** the screen has no Q/E/R bar. Assigning a learned active ability belongs on its card once a tree has active abilities; the assignment rules are unchanged.

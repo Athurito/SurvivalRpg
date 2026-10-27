@@ -52,11 +52,11 @@ All dependencies below are within MST; every row also has the CMB scheduling gat
 | MST-09b | Erntesprung, Durchschlag, Ausbreitung and remaining Nachwirkung choices; finite propagation and no duplicated work | MST-09a | Planned | — |
 | MST-09c | Totenarbeiter and Helfer; temporary workers, correct beneficiary/reward attribution, lifecycle and bounded triggers | MST-09b | Planned | — |
 | MST-09d | Full catalog/cutover acceptance, legacy cleanup, input/performance/network regression and cook reachability | MST-09c | Planned | — |
-| MST-10 | Several skill trees with their own budgets as regions of the one map, Path of Exile style; tree-qualified node identity, screen-level view cache, fit and shortcuts across trees | MST-03c; a second skill tree with its own budget (outside MST) | Planned | — |
+| MST-10 | Several skill trees with their own budgets as regions of the one map, Path of Exile style; tree-qualified node identity, screen-level view cache, fit and shortcuts across trees, a point counter at each cluster | MST-03c; a second skill tree with its own budget: Combat (user decision 2026-10-27) | Planned | — |
 
 Default implementation order follows the table after CMB. MST-03a's technical independence documents an ownership boundary; it does not schedule concurrent work during CMB. Only expose purchasable talents once their gameplay exists. The Brand transfer choice therefore waits for Erntesprung in MST-09b.
 
-The user decided on 2026-10-27 to make the skill screen one map for every tree. MST-03c comes before MST-04, so that MST-04 builds its feedback into the new detail card instead of the old panel. MST-10 waits for a second skill tree; until then the Harvesting tree fills the map alone.
+The user decided on 2026-10-27 to make the skill screen one map for every tree. MST-03c comes before MST-04, so that MST-04 builds its feedback into the new detail card instead of the old panel. After reviewing MST-03c, the user moved MST-10 ahead of MST-04 the same day, with a Combat tree as the second cluster; its talents are proposed to the user before they are built.
 
 ## Post-CMB baseline refresh
 
@@ -94,7 +94,7 @@ Playtests of merged MST steps that wait for the user's batch test. Remove a row 
 - **Active phase:** MST, started by the user on 2026-10-27 after CMB-01 to CMB-07 merged.
 - **Active task:** MST-03c, branch `claude/mst-03c-single-map`, [PR #310](https://github.com/Athurito/SurvivalRpg/pull/310); the report is [mastery-map-single-map.md](mastery-map-single-map.md). The Skills tab is one map under a top bar with points, Reset tree, region shortcuts, device hints and zoom/fit; one card at the selected node carries Learn and Refund as bound actions. The map widget gained `OnSelectedNodeMoved` so the card follows its node without a tick.
 - **Previous task:** MST-03b, merged on 2026-10-27 as `d92bc04b` ([PR #308](https://github.com/Athurito/SurvivalRpg/pull/308)).
-- **User decisions (2026-10-27):** one map for every tree (MST-03c before MST-04, MST-10 for further trees); for MST-03b, the retired tool trees and powers and the Impact talents as recorded in its report.
-- **Next MST action:** after MST-03c merges, take MST-04 (atomic replacement of exclusive choices), which shows its pending and rejection feedback on the MST-03c card.
+- **User decisions (2026-10-27):** one map for every tree (MST-03c before MST-04); after the MST-03c review, MST-10 comes next with a Combat tree as the second cluster, and the game window has a minimum size of 1280 x 720. For MST-03b, the retired tool trees and powers and the Impact talents as recorded in its report.
+- **Next MST action:** after MST-03c merges, propose the Combat tree's points source and talents to the user, then take MST-10. MST-04 (atomic replacement of exclusive choices) follows and shows its feedback on the MST-03c card.
 - **Rune contract for MST-05:** CMB-07 delivered `URpgWeaponRuneDefinition` and `URpgInventoryFragment_WeaponRunes`, with runes engraved on item definitions and no sockets yet. Recheck them before MST-05.
 - **Later content decisions:** production XP and cost curves and the starter and guaranteed-reward pacing remain authored tuning. Shared-world rune recipe knowledge is the plan's proposed co-op default and must be settled before MST-07.

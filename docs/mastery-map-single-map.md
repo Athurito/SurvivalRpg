@@ -2,6 +2,13 @@
 
 Task report for MST-03c in the [mastery map roadmap](mastery-map-roadmap.md); design and acceptance contracts are in the [implementation plan](mastery-map-implementation-plan.md), section "One screen for every tree". It builds on [MST-02](mastery-map-skill-screen.md) and [MST-03b](mastery-map-shared-harvesting.md).
 
+## User feedback (2026-10-27)
+
+After the first look in the editor the user found that the screen read as a harvesting screen, while combat and other skill groups should share it, like the clusters of Path of Exile's atlas.
+- **Decision:** keep MST-03c neutral, then take MST-10 next, before MST-04, with a **Combat** tree as the second cluster. Its talents are proposed to the user before they are built.
+- **In this PR:** the top bar no longer carries the tree's name as the screen title. It shows one compact budget entry: tree name, level, free and spent points, and Reset tree. MST-10 repeats that entry per tree and adds a point counter at each cluster on the map, which needs the map to place one widget per tree.
+- **Window size:** the user asked to limit how small the window can get. `Config/DefaultGame.ini` now sets `MinWindowWidth=1280` and `MinWindowHeight=720` for the game window.
+
 ## C++ boundary decision
 
 - **Classification:** designer content on the MST-01/02 map, plus the one native event the plan allows. No new class.
@@ -22,6 +29,7 @@ Task report for MST-03c in the [mastery map roadmap](mastery-map-roadmap.md); de
     - Zoom out, zoom in and fit: left trigger, right trigger and right stick press, gamepad only.
   - `CUI_SkillButtonStyle` (new): a CommonButton style with the shared `MI_UI_Frame_Button_*` frames. The main menu style drew the buttons as white boxes on this screen.
   - `CUI_SkillTreeListEntry` was deleted: only the removed tree list used it. `CUI_TradeSkillEntry` stays for the Character tab's professions.
+- **Config:** `MinWindowWidth=1280` and `MinWindowHeight=720` under `GeneralProjectSettings` in `Config/DefaultGame.ini`. The engine reads them when it creates a standalone or packaged game window; the default was 640 x 480. PIE windows keep the editor's own size.
 - **Character tab:** `CUI_Character` already shows the character values and the professions list, so it needed no change.
 
 ## Behavior
@@ -34,7 +42,7 @@ The Skills tab split the screen into three columns: professions and trees on the
 
 - **One map:** the map fills the tab below the menu's tab bar.
 - **Top bar:**
-  - **Budget:** the tree's name and its mastery level, the points available and spent, and Reset tree beside them.
+  - **Budget:** one compact entry per tree rather than a screen title: the tree's name, its level, the points free and spent, and Reset tree beside them.
   - **Region shortcuts:** shown once the tree has more than one region; each frames its region.
   - **Hints:** on mouse and keyboard, left button Select, right button Drag to move, and wheel Zoom. On a gamepad they become LT RT Zoom and RS Fit. The row switches with the input device.
   - **Zoom and fit:** the `-`, `+` and Fit buttons, moved out of the map's corner where they could cover a label.
@@ -73,6 +81,7 @@ Run on 2026-10-27 in this worktree:
     - The card switched to Learnable, and the action bar showed "F Learn".
     - F learned Cleaving Force with focus on the map: 3 points available and 1 spent, Reset tree enabled, and "R Refund" in the action bar.
     - In a new session, the gamepad's X learned it and Y refunded it. The hints and the action bar switched to gamepad glyphs.
+  - **Neutral top bar:** after the user's feedback, the budget entry reads "Harvesting, Level 6, 5 free, 0 spent" with Reset tree, in the editor's default map `Lvl_ThirdPerson` and its dev save.
   - **Region shortcuts:** with a second region added in memory and never saved, Impact and Choices appeared, and Choices framed Shatter and Follow Through. The tree was restored afterwards and its file reverted with `git checkout`.
   - **Listen server with two players in one process:**
     - The client opened Skills, received the XP and learned Cleaving Force with F.
@@ -97,7 +106,7 @@ Run on 2026-10-27 in this worktree:
 
 ## Limits
 
-- **Small windows:** in a 640-unit-wide PIE client window, the top bar runs past the right edge. 1600 x 900 fits; 1440p, ultrawide and other DPI scales were not checked.
+- **Small windows:** in a 640-unit-wide PIE client window, the top bar runs past the right edge. The game window can no longer get that small (minimum 1280 x 720, not tested in a packaged build); PIE windows still can. 1600 x 900 fits; 1440p, ultrawide and other DPI scales were not checked.
 - **Card coverage:** at the fitted overview the card can cover a neighboring node, for example Follow Through. When its node leaves the view, the card waits at the map's edge.
 - **No way to clear the selection** on the map: the card stays open until another node is selected.
 - **No keyboard zoom or fit keys:** the wheel and the top bar's buttons cover mouse and keyboard.
@@ -108,4 +117,4 @@ Run on 2026-10-27 in this worktree:
 
 ## Next
 
-MST-04: atomic replacement of exclusive choices, with its pending and rejection feedback on this card.
+MST-10, by the user's decision: several trees with their own budgets on the one map, with a Combat tree as the second cluster and a point counter at each cluster. MST-04 follows.
