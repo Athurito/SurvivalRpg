@@ -53,7 +53,7 @@ All dependencies below are within MST; every row also has the CMB scheduling gat
 | MST-09b | Erntesprung, Durchschlag, Ausbreitung and remaining Nachwirkung choices; finite propagation and no duplicated work | MST-09a | Planned | — |
 | MST-09c | Totenarbeiter and Helfer; temporary workers, correct beneficiary/reward attribution, lifecycle and bounded triggers | MST-09b | Planned | — |
 | MST-09d | Full catalog/cutover acceptance, legacy cleanup, input/performance/network regression and cook reachability | MST-09c | Planned | — |
-| MST-10a | Several skill trees with their own budgets as regions of the one map, Path of Exile style: tree placement as authored data, tree-qualified node identity, screen-level view cache, fit and shortcuts across trees, a budget entry per tree in the top bar and a point counter at each cluster; proven with the Harvesting tree and a synthetic second tree in automation | MST-03c | In review | [mastery-map-several-trees.md](mastery-map-several-trees.md) |
+| MST-10a | Several skill trees with their own budgets as regions of the one map, Path of Exile style: tree placement as authored data, tree-qualified node identity, screen-level view cache, fit and shortcuts across trees, a budget entry per tree in the top bar and a point counter at each cluster; proven with the Harvesting tree and a synthetic second tree in automation | MST-03c | In review | [mastery-map-several-trees.md](mastery-map-several-trees.md), [PR #311](https://github.com/Athurito/SurvivalRpg/pull/311) |
 | MST-10b | Combat tree: core mastery `Skill.Mastery.Combat` earned by kills through the existing kill XP action; one `DA_SkillTree_Combat` carried by the melee weapons, with Kampfrhythmus (1 point, +10 % base damage) forking into the exclusive Konter (3 points, perfect block +50 % stagger damage and more stamina back) and Bollwerk (3 points, blocking costs 25 % less stamina and stops 15 % more damage) as granted GameplayEffects | MST-10a | Planned | — |
 
 Default implementation order follows the table after CMB. MST-03a's technical independence documents an ownership boundary; it does not schedule concurrent work during CMB. Only expose purchasable talents once their gameplay exists. The Brand transfer choice therefore waits for Erntesprung in MST-09b.
@@ -95,7 +95,7 @@ Playtests of merged MST steps that wait for the user's batch test. Remove a row 
 ## Current handoff
 
 - **Active phase:** MST, started by the user on 2026-10-27 after CMB-01 to CMB-07 merged.
-- **Active task:** MST-10a, branch `claude/mst-10a-multi-tree-map`; the report is [mastery-map-several-trees.md](mastery-map-several-trees.md).
+- **Active task:** MST-10a, branch `claude/mst-10a-multi-tree-map`, [PR #311](https://github.com/Athurito/SurvivalRpg/pull/311); the report is [mastery-map-several-trees.md](mastery-map-several-trees.md).
   - Every known tree is a cluster of the one map at its `MapOrigin`, with a budget entry in the top bar and a label below its nodes.
   - The map keeps one selection across the trees, and the view is remembered per set of trees.
   - Proven with a synthetic second tree in automation and a temporary copy in PIE; only Harvesting ships.

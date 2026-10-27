@@ -1,6 +1,6 @@
 # MST-10a: Several trees on one map
 
-Task report for MST-10a in the [mastery map roadmap](mastery-map-roadmap.md); the design is in the [implementation plan](mastery-map-implementation-plan.md), section "One screen for every tree". It builds on [MST-03c](mastery-map-single-map.md).
+Task report for MST-10a in the [mastery map roadmap](mastery-map-roadmap.md), [PR #311](https://github.com/Athurito/SurvivalRpg/pull/311); the design is in the [implementation plan](mastery-map-implementation-plan.md), section "One screen for every tree". It builds on [MST-03c](mastery-map-single-map.md).
 
 ## User decision (2026-10-27)
 
