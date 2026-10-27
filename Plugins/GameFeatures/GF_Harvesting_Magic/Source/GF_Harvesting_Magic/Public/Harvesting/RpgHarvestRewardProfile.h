@@ -37,6 +37,20 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Harvesting|Progression", meta = (ClampMin = "0", UIMin = "0"))
 	int32 SkillExperience = 0;
 
+	/**
+	 * Shared mastery that harvesting this resource also advances, for example Skill.Mastery.Harvesting, whose level
+	 * earns the points of the shared harvesting tree. Empty awards no mastery XP. Designer-tuned static data.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Harvesting|Progression", meta = (Categories = "Skill.Mastery"))
+	FGameplayTag MasterySkillTag;
+
+	/**
+	 * Mastery XP per harvested stock section, awarded once together with SkillExperience after the complete reward
+	 * was delivered. Zero awards none. Designer-tuned static data.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Harvesting|Progression", meta = (ClampMin = "0", UIMin = "0"))
+	int32 MasteryExperience = 0;
+
 	/** Semantic source tags copied into the server-authored loot context. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Harvesting|Context")
 	FGameplayTagContainer SourceTags;

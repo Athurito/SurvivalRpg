@@ -375,7 +375,7 @@ void URpgGameplayAbility_Harvest::ExecuteAuthorityCommit()
 	{
 		FRpgHarvestRewardBatch RewardBatch(RequestTemplate.Harvester);
 		RewardBatch.SetYieldConversions(RequestTemplate.YieldConversions);
-		FirstHarvested = CommitSelection(Selection, RequestTemplate);
+		FirstHarvested = CommitSelection(Selection, RequestTemplate, Values);
 
 		// A single target drops overflow where it was struck; an area drops it at the harvester's feet.
 		FTransform DropTransform = RequestTemplate.Harvester ? RequestTemplate.Harvester->GetActorTransform() : FTransform::Identity;
@@ -411,8 +411,11 @@ void URpgGameplayAbility_Harvest::ExecuteAuthorityCommit()
 
 const FRpgHarvestTargetEvaluation* URpgGameplayAbility_Harvest::CommitSelection(
 	FRpgHarvestPreview& Selection,
-	const FRpgHarvestRequest& RequestTemplate) const
+	const FRpgHarvestRequest& RequestTemplate,
+	const FRpgHarvestTunedValues& Values)
 {
+	const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+
 	// The presentation wave starts at the harvested target nearest to the harvester and travels outward.
 	const FVector WaveOrigin = RequestTemplate.Harvester ? RequestTemplate.Harvester->GetActorLocation() : FVector::ZeroVector;
 	double NearestTargetDistance = 0.0;
@@ -458,10 +461,29 @@ const FRpgHarvestTargetEvaluation* URpgGameplayAbility_Harvest::CommitSelection(
 				static_cast<double>(URpgHarvestInstanceStockComponent::MaxPresentationDelaySeconds)));
 		}
 		PresentationDelays[TargetIndex] = Request.PresentationDelaySeconds;
+
+		// A weak-point hit earlier armed a follow-up on this target; the next hit on it does more work.
+		const bool bFollowUp = Values.FollowUpSeconds > 0.0f && FollowUpDeadline >= Now &&
+			FollowUpReceiver.Get() == Receiver && FollowUpItem == Target.Hit.Item;
+		if (bFollowUp)
+		{
+			Request.WorkScale = FMath::Min(Request.WorkScale * Values.FollowUpWorkScale, RpgHarvestWork::MaxWorkScale);
+		}
 		Target.Result = IRpgHarvestableTarget::Execute_CommitHarvest(Receiver, Request);
 		if (!Target.Result.IsSuccess())
 		{
 			continue;
+		}
+		if (bFollowUp)
+		{
+			FollowUpDeadline = -1.0;
+			FollowUpReceiver.Reset();
+		}
+		if (Target.Result.bWeakPointHit && Values.FollowUpSeconds > 0.0f)
+		{
+			FollowUpReceiver = Receiver;
+			FollowUpItem = Target.Hit.Item;
+			FollowUpDeadline = Now + Values.FollowUpSeconds;
 		}
 		if (FirstHarvestedIndex == INDEX_NONE)
 		{
@@ -573,7 +595,7 @@ void URpgGameplayAbility_Harvest::PulseStride()
 		Selection.Targets);
 
 	const bool bBatchOpen = StrideRewardBatch && StrideRewardBatch->Open();
-	const FRpgHarvestTargetEvaluation* FirstHarvested = CommitSelection(Selection, StrideRequestTemplate);
+	const FRpgHarvestTargetEvaluation* FirstHarvested = CommitSelection(Selection, StrideRequestTemplate, StrideValues);
 	if (bBatchOpen)
 	{
 		StrideRewardBatch->Close();
@@ -802,6 +824,10 @@ void URpgGameplayAbility_Harvest::ResolveTunedValues(
 		OutValues.Targeting.MaxTargets = TuneCount(Ability_Tuning_Harvest_MaxTargets, Targeting.MaxTargets, 1, 64);
 	}
 	OutValues.SectionsPerTarget = TuneCount(Ability_Tuning_Harvest_Sections, FMath::Max(1, SectionsPerTarget), 1, 64);
+	OutValues.WorkScale = FMath::Clamp(Tune(Ability_Tuning_Harvest_Work, 1.0f), 0.01f, RpgHarvestWork::MaxWorkScale);
+	OutValues.WeakPointWorkScale = FMath::Clamp(Tune(Ability_Tuning_Harvest_WeakPointWork, 1.0f), 0.0f, RpgHarvestWork::MaxWorkScale);
+	OutValues.FollowUpWorkScale = FMath::Clamp(Tune(Ability_Tuning_Harvest_FollowUpWork, 1.0f), 0.01f, RpgHarvestWork::MaxWorkScale);
+	OutValues.FollowUpSeconds = FMath::Max(0.0f, Tune(Ability_Tuning_Harvest_FollowUpWindow, 0.0f));
 
 	OutValues.Swarm = Swarm;
 	if (SummonsSwarm())
@@ -993,6 +1019,8 @@ void URpgGameplayAbility_Harvest::BuildRequestTemplate(
 	OutRequest.Harvester = ActorInfo.AvatarActor.Get();
 	OutRequest.AbilityId = HarvestAbilityId;
 	OutRequest.RequestedSections = FMath::Max(1, Values.SectionsPerTarget);
+	OutRequest.WorkScale = Values.WorkScale;
+	OutRequest.WeakPointWorkScale = Values.WeakPointWorkScale;
 	OutRequest.YieldConversions = Values.YieldConversions;
 	OutRequest.bCanHitWeakPoint = bCanHitWeakPoints && Targeting.Shape == ERpgHarvestTargetShape::SingleTarget;
 	OutRequest.bAreaHarvest = HarvestsArea();

@@ -68,7 +68,7 @@ struct SURVIVALRPG_API FRpgSkillTreeAbilityTuning
 	GENERATED_BODY()
 
 	/**
-	 * Stable ability id the entry applies to, for example Ability.Harvesting.GraveSwarm. Empty applies it to every
+	 * Stable ability id the entry applies to, for example Ability.Harvesting.PickaxeStrike. Empty applies it to every
 	 * ability the weapon of this tree grants.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|Tuning", meta = (Categories = "Ability"))
@@ -96,7 +96,7 @@ struct SURVIVALRPG_API FRpgSkillTreeNode
 {
 	GENERATED_BODY()
 
-	/** Stable node identity used by saves, prerequisites and UI, for example SkillTree.Node.Axe.DeathWave. */
+	/** Stable node identity used by saves, prerequisites and UI, for example SkillTree.Node.Harvesting.CleavingForce. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|Node", meta = (Categories = "SkillTree.Node"))
 	FGameplayTag NodeTag;
 
@@ -184,7 +184,7 @@ class SURVIVALRPG_API URpgSkillTreeDefinition : public UPrimaryDataAsset
 	GENERATED_BODY()
 
 public:
-	/** Stable tree identity used by saves and requests, for example SkillTree.Tree.Axe. */
+	/** Stable tree identity used by saves and requests, for example SkillTree.Tree.Harvesting. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree", meta = (Categories = "SkillTree.Tree"))
 	FGameplayTag TreeTag;
 
@@ -204,7 +204,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|Display")
 	TArray<FText> BranchNames;
 
-	/** Skill whose level earns this tree's points, for example Skill.Gathering.Logging. */
+	/** Skill whose level earns this tree's points, for example Skill.Mastery.Harvesting. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|Points", meta = (Categories = "Skill"))
 	FGameplayTag MasterySkillTag;
 

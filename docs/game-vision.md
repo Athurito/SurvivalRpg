@@ -368,13 +368,11 @@ Für den First Playable reichen reduzierte Gruppen:
 
 ### Magical Harvesting
 
-Erntewerkzeuge tragen einen Skilltree wie in New World (`docs/skill-trees.md`). Ab Stufe 2 der Werkzeug-Fertigkeit gibt es einen Punkt pro Stufe; gelernte Kräfte werden im Baum auf Q/E/R gelegt, Zurücksetzen ist kostenlos.
+Axt und Spitzhacke teilen sich seit MST-03b einen gemeinsamen Ernte-Baum (`docs/skill-trees.md`, `docs/mastery-map-implementation-plan.md`). Seine Punkte kommen aus der gemeinsamen Ernte-Meisterschaft, die jeder geerntete Abschnitt mit einem Werkzeug voranbringt; Holzfällen und Bergbau bleiben eigene Berufe. Die Talente sind passiv und werden später von Runen am Werkzeug geprägt.
 
-- Bergbau 2: erster Punkt der Spitzhacke, zum Beispiel Rissgriff
-- Holzfällen 2: erster Punkt der Axt, Totenwelle oder Grabschwarm
-- Weitere Punkte: Formen der Kräfte und als Ultimate die Schreitende Welle (ab 4 Punkten im Baum): 6 Sekunden lang fallen die toten Bäume im Umkreis von 6 m um den laufenden Spieler
-  - Axt: Weite Welle (größerer Ring) oder Aschenwelle (Holz kommt als Kohle an, 2:1) und Lange Reichweite für die Totenwelle; Schwarmbrut (viele schwache Wesen) oder Grabdetonation (wenige Wesen, deren Einschläge die Nachbarbäume mitnehmen) für den Grabschwarm
-  - Spitzhacke: Weiter Riss (größerer Bereich) oder Tiefer Griff (mehr Abschnitte pro Ader) für den Rissgriff
+- Erster Zweig Wucht: Spaltkraft (jeder Treffer leistet mehr Arbeit), dann die Wahl zwischen Zertrümmern (Schwachpunkt-Treffer doppelt so stark) und Nachsetzen (der nächste Treffer nach einem Schwachpunkt-Treffer leistet mehr)
+- Weitere Zweige: Nachwirkung, Ausbreitung, Helfer und Runenfluss, je mit Rune als Kontext
+- Die früheren aktiven Werkzeugkräfte (Rissgriff, Totenwelle, Grabschwarm, ihre Formen und die Schreitende Welle) wurden mit MST-03b auf Entscheidung des Nutzers entfernt (27.10.2026). Bis die erste Rune Abbau verändert (MST-06), gibt es keine aktive magische Abbau-Kraft.
 - Später: Astral Axe
 - Level 5: Wahl zwischen mehr Ertrag, schnellerem Harvesting oder selteneren Materialien
 - Level 10: Miner, Forager oder Arcane Lumberjack

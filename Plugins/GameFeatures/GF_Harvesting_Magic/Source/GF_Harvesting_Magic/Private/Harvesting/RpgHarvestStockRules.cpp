@@ -67,6 +67,9 @@ FRpgHarvestResult FRpgHarvestStockRules::Evaluate(
 		!FMath::IsFinite(Request.HarvestPower) ||
 		Request.HarvestPower <= 0.0f ||
 		RequestedWork < 1 ||
+		!FMath::IsFinite(Request.WeakPointWorkScale) ||
+		Request.WeakPointWorkScale < 0.0f ||
+		Request.WeakPointWorkScale > RpgHarvestWork::MaxWorkScale ||
 		!Request.AbilityId.MatchesTag(RpgHarvestingMagicGameplayTags::Ability_Harvesting))
 	{
 		return Reject(ERpgHarvestOutcome::Invalid);
@@ -111,7 +114,8 @@ FRpgHarvestResult FRpgHarvestStockRules::Evaluate(
 	{
 		// The bonus only speeds extraction up; it comes from the same stock and is clamped below.
 		Result.bWeakPointHit = true;
-		Work += WeakPointBonus * RpgHarvestWork::UnitsPerSection;
+		Work += FMath::RoundToInt32(
+			static_cast<double>(WeakPointBonus) * RpgHarvestWork::UnitsPerSection * Request.WeakPointWorkScale);
 	}
 
 	Result.WorkApplied = FMath::Min(Work, RemainingWork);

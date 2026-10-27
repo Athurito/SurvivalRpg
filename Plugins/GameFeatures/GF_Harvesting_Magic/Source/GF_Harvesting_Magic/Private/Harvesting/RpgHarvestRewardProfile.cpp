@@ -44,6 +44,15 @@ EDataValidationResult URpgHarvestRewardProfile::IsDataValid(FDataValidationConte
 	{
 		MarkInvalid(NSLOCTEXT("RpgHarvestRewardProfile", "NegativeSkillExperience", "SkillExperience cannot be negative."));
 	}
+	const FGameplayTag MasteryRoot = FGameplayTag::RequestGameplayTag(TEXT("Skill.Mastery"), false);
+	if (MasterySkillTag.IsValid() && (!MasteryRoot.IsValid() || !MasterySkillTag.MatchesTag(MasteryRoot)))
+	{
+		MarkInvalid(NSLOCTEXT("RpgHarvestRewardProfile", "InvalidMasterySkillTag", "MasterySkillTag must be empty or a registered Skill.Mastery.* tag."));
+	}
+	if (MasteryExperience < 0 || (MasteryExperience > 0 && !MasterySkillTag.IsValid()))
+	{
+		MarkInvalid(NSLOCTEXT("RpgHarvestRewardProfile", "InvalidMasteryExperience", "MasteryExperience cannot be negative and needs a MasterySkillTag."));
+	}
 	if (!OverflowDropClass)
 	{
 		Context.AddWarning(NSLOCTEXT("RpgHarvestRewardProfile", "MissingOverflowDrop", "No overflow drop class is set; the native dropped-inventory actor will be used."));

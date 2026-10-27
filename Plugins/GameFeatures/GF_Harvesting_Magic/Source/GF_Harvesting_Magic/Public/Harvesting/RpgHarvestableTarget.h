@@ -104,7 +104,7 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestYieldConversion
 {
 	GENERATED_BODY()
 
-	/** Owner tag that activates the conversion, for example Harvest.Form.AshWave. Empty keeps it always active. */
+	/** Owner tag that activates the conversion, for example a Harvest.Form.* tag a learned node grants. Empty keeps it always active. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Harvesting|Yield")
 	FGameplayTag RequiredOwnerTag;
 
@@ -193,6 +193,13 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestRequest
 	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Harvesting", meta = (ClampMin = "0.01", ClampMax = "16.0"))
 	float WorkScale = 1.0f;
+
+	/**
+	 * Multiplier on the bonus work of a weak-point hit, from 0 to RpgHarvestWork::MaxWorkScale; for example 2 for a
+	 * talent that doubles it. One keeps the profile's WeakPointBonusSections. Server-side.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Harvesting", meta = (ClampMin = "0.0", ClampMax = "16.0"))
+	float WeakPointWorkScale = 1.0f;
 
 	/**
 	 * True for requests that complete whatever stock is left, such as a felled root grove taking its other trees along.

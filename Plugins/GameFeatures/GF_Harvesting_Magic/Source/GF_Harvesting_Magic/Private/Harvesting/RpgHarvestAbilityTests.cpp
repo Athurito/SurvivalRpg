@@ -45,6 +45,10 @@ UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestTuningTest_Reach, "SkillTree.Node.Harve
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestTuningTest_Brood, "SkillTree.Node.HarvestTuningTest.Brood");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestTuningTest_Blast, "SkillTree.Node.HarvestTuningTest.Blast");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestTuningTest_Cooldown, "Cooldown.HarvestTuningTest");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestWorkTest_Tree, "SkillTree.Tree.HarvestWorkTest");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestWorkTest_Cleave, "SkillTree.Node.HarvestWorkTest.Cleave");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestWorkTest_Shatter, "SkillTree.Node.HarvestWorkTest.Shatter");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestWorkTest_FollowUp, "SkillTree.Node.HarvestWorkTest.FollowUp");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestYieldTest_Form, "Harvest.Form.AutomationTest");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestStrideTest_Cue, "GameplayCue.HarvestStrideTest");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestFormCueTest_Plain, "GameplayCue.HarvestFormCueTest.Plain");
@@ -3329,6 +3333,137 @@ bool FRpgHarvestChainSwarmTest::RunTest(const FString& Parameters)
 		TEXT("The summoner receives the wood of the whole grove"),
 		CountMaterial(Harvester.PlayerState),
 		3 * 4 * YieldPerSection);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestWorkTalentTest,
+	"SurvivalRpg.Harvesting.Tuning.WorkTalentsShapeOwnHits",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestWorkTalentTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestTuningTests;
+	using namespace RpgHarvestingMagicGameplayTags;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+
+	// Talents of the Impact branch, as one-node tunings of every ability of the tool.
+	URpgSkillTreeDefinition* Tree = NewObject<URpgSkillTreeDefinition>(GetTransientPackage(), NAME_None, RF_Transient);
+	Tree->TreeTag = TAG_HarvestWorkTest_Tree;
+	Tree->MasterySkillTag = RpgTradeSkillGameplayTags::Skill_Gathering_Mining;
+	Tree->MaxPoints = 10;
+	FRpgSkillTreeNode& Cleave = Tree->Nodes.AddDefaulted_GetRef();
+	Cleave.NodeTag = TAG_HarvestWorkTest_Cleave;
+	Cleave.AbilityTunings = {MakeTuning(Ability_Tuning_Harvest_Work, ERpgSkillTreeTuningOperation::Multiply, 1.25f)};
+	FRpgSkillTreeNode& Shatter = Tree->Nodes.AddDefaulted_GetRef();
+	Shatter.NodeTag = TAG_HarvestWorkTest_Shatter;
+	Shatter.Column = 1;
+	Shatter.Cost = 3;
+	Shatter.ExclusiveGroup = TEXT("Choice");
+	Shatter.AbilityTunings = {MakeTuning(Ability_Tuning_Harvest_WeakPointWork, ERpgSkillTreeTuningOperation::Multiply, 2.0f)};
+	FRpgSkillTreeNode& FollowUp = Tree->Nodes.AddDefaulted_GetRef();
+	FollowUp.NodeTag = TAG_HarvestWorkTest_FollowUp;
+	FollowUp.Column = 2;
+	FollowUp.Cost = 3;
+	FollowUp.ExclusiveGroup = TEXT("Choice");
+	FollowUp.AbilityTunings = {
+		MakeTuning(Ability_Tuning_Harvest_FollowUpWork, ERpgSkillTreeTuningOperation::Multiply, 1.5f),
+		MakeTuning(Ability_Tuning_Harvest_FollowUpWindow, ERpgSkillTreeTuningOperation::Add, 3.0f)};
+
+	FScopedTreeTool TreeTool(Tree);
+	URpgSkillTreeComponent* SkillTrees = PrepareSkillTree(Harvester, Tree);
+	URpgEquipmentInstance* Equipment = MakeTreeToolEquipment(Harvester);
+	URpgHarvestProfile* Profile = MakeProfile(World, 16);
+	Profile->WeakPointBonusSections = 1;
+	ARpgHarvestAutomationCollidableNodeActor* Node =
+		SpawnNode(World, FVector(150.0, 0.0, Harvester.Pawn->BaseEyeHeight), Profile);
+	const FGrantedAbility Swing = GrantAbility(Harvester.AbilitySystem, Equipment);
+	URpgHarvestAutomationHarvestedListener* Harvested = NewObject<URpgHarvestAutomationHarvestedListener>();
+	// The view ray strikes the front face at its center; the weak point there is active at 0, 3, 6, ... sections.
+	if (!TestNotNull(TEXT("Skill trees are prepared"), SkillTrees) ||
+		!TestNotNull(TEXT("Tree tool equipment exists"), Equipment) ||
+		!TestNotNull(TEXT("Node exists"), Node) ||
+		!TestNotNull(TEXT("Swing exists"), Swing.Instance) ||
+		!TestTrue(
+			TEXT("Weak points are configured"),
+			RpgHarvestAutomation::ConfigureWeakPoints(
+				Node->HarvestableNode,
+				{FVector(-40.0, 0.0, 0.0), FVector(-40.0, 0.0, 60.0), FVector(-40.0, 0.0, -60.0)},
+				20.0f)))
+	{
+		return false;
+	}
+	FRpgHarvestTargetingParams Single;
+	Single.MaxAimDistance = 1000.0f;
+	Single.MaxReachFromAvatar = 250.0f;
+	Swing.Instance->ConfigureTargeting(Single);
+	Swing.Instance->ConfigureWeakPointHits(true);
+	Node->HarvestableNode->OnHarvested.AddDynamic(Harvested, &URpgHarvestAutomationHarvestedListener::HandleHarvested);
+	TestWorld.PrimeTimerManager();
+
+	auto SwingOnce = [this, &Harvester, &Swing, Harvested](const TCHAR* What) -> FRpgHarvestResult
+	{
+		const int32 Before = Harvested->Results.Num();
+		TestTrue(*FString::Printf(TEXT("%s: the swing activates"), What), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+		const bool bCommitted = Harvested->Results.Num() == Before + 1;
+		TestTrue(*FString::Printf(TEXT("%s: the swing commits once"), What), bCommitted);
+		return bCommitted ? Harvested->Results.Last() : FRpgHarvestResult();
+	};
+
+	TestEqual(
+		TEXT("Cleave is learned"),
+		SkillTrees->UnlockNode(TAG_HarvestWorkTest_Tree, TAG_HarvestWorkTest_Cleave),
+		ERpgSkillTreeUnlockResult::Unlockable);
+	const FRpgHarvestPreview Preview = Evaluate(Harvester.AbilitySystem, Swing);
+	TestTrue(
+		TEXT("The preview shows the tuned work"),
+		Preview.Targets.Num() == 1 && Preview.Targets[0].Result.WorkApplied == 225 && Preview.Targets[0].Result.bWeakPointHit);
+	FRpgHarvestResult Result = SwingOnce(TEXT("Weak point with Cleave"));
+	TestTrue(TEXT("Cleave adds a quarter to the swing, and the weak point a section"), Result.WorkApplied == 225 && Result.bWeakPointHit);
+	Result = SwingOnce(TEXT("Plain swing with Cleave"));
+	TestTrue(TEXT("A plain swing does a quarter more work"), Result.WorkApplied == 125 && !Result.bWeakPointHit);
+
+	TestEqual(
+		TEXT("Shatter is learned"),
+		SkillTrees->UnlockNode(TAG_HarvestWorkTest_Tree, TAG_HarvestWorkTest_Shatter),
+		ERpgSkillTreeUnlockResult::Unlockable);
+	Result = SwingOnce(TEXT("Weak point with Shatter"));
+	TestTrue(TEXT("Shatter doubles the weak point's bonus work"), Result.WorkApplied == 125 + 200 && Result.bWeakPointHit);
+
+	TestEqual(
+		TEXT("Shatter is refunded"),
+		SkillTrees->RefundNode(TAG_HarvestWorkTest_Tree, TAG_HarvestWorkTest_Shatter),
+		ERpgSkillTreeRefundResult::Refundable);
+	TestEqual(
+		TEXT("Follow Up is learned"),
+		SkillTrees->UnlockNode(TAG_HarvestWorkTest_Tree, TAG_HarvestWorkTest_FollowUp),
+		ERpgSkillTreeUnlockResult::Unlockable);
+	Result = SwingOnce(TEXT("Weak point with Follow Up"));
+	TestTrue(TEXT("Without Shatter the weak point adds one section"), Result.WorkApplied == 225 && Result.bWeakPointHit);
+	Swing.Instance->ConfigureWeakPointHits(false);
+	Result = SwingOnce(TEXT("Follow-up swing"));
+	TestEqual(TEXT("The next hit on the same target does half again as much work"), Result.WorkApplied, 188);
+	Result = SwingOnce(TEXT("Swing after the follow-up"));
+	TestEqual(TEXT("The follow-up is used up"), Result.WorkApplied, 125);
+
+	Swing.Instance->ConfigureWeakPointHits(true);
+	Result = SwingOnce(TEXT("Weak point before a pause"));
+	TestTrue(TEXT("Another weak-point hit arms the follow-up again"), Result.bWeakPointHit);
+	TestWorld.AdvanceTimers(4.0f);
+	Swing.Instance->ConfigureWeakPointHits(false);
+	Result = SwingOnce(TEXT("Swing after the window"));
+	TestEqual(TEXT("A follow-up expires after its window"), Result.WorkApplied, 125);
+	TestFalse(
+		TEXT("Every swing is the harvester's own accepted hit"),
+		Harvested->Results.ContainsByPredicate([](const FRpgHarvestResult& Committed) { return !Committed.IsAcceptedDirectHit(); }));
 	return true;
 }
 

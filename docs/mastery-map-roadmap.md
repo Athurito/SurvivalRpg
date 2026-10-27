@@ -1,6 +1,6 @@
 # Mastery map roadmap
 
-Updated: 2026-10-27. Status: **In progress**; MST-03a is merged, MST-03b is next.
+Updated: 2026-10-27. Status: **In progress**; MST-03b is in review.
 
 This is the execution roadmap for the [mastery map implementation plan](mastery-map-implementation-plan.md): a zoomable shared harvesting mastery map, meaningful talent choices, and the rune loot/crafting/upgrade loop. The plan owns design, architecture, and detailed acceptance contracts; this roadmap owns task status, order, and the current handoff.
 
@@ -40,7 +40,7 @@ All dependencies below are within MST; every row also has the CMB scheduling gat
 | MST-01 | Free-position node/link schema, reusable native map geometry/input, LocalPlayer camera/selection cache; prove the surface with existing data | Post-CMB baseline refresh | Merged (2026-10-27, `293fce4f`) | [mastery-map-foundation.md](mastery-map-foundation.md), [PR #302](https://github.com/Athurito/SurvivalRpg/pull/302) |
 | MST-02 | Integrate `CUI_Skills`, node/details WBPs and existing MVVM/style; explicit learn/refund actions, focus, semantic zoom and close/reopen behavior | MST-01 | Merged (2026-10-27, `a888a078`) | [mastery-map-skill-screen.md](mastery-map-skill-screen.md), [PR #304](https://github.com/Athurito/SurvivalRpg/pull/304) |
 | MST-03a | Quantized harvesting work, residual progress, true overkill and proc provenance through existing stock/reward commits; actor/instance replication and saves | Post-CMB baseline refresh; technically independent of MST-01/02 | Merged (2026-10-27, `2554bb6c`) | [mastery-map-harvest-work.md](mastery-map-harvest-work.md), [PR #306](https://github.com/Athurito/SurvivalRpg/pull/306) |
-| MST-03b | Shared harvesting mastery/XP/tree/tool references, functional three-node Wucht branch, old-save migration and retirement of legacy harvesting allocations | MST-02, MST-03a | Ready | — |
+| MST-03b | Shared harvesting mastery/XP/tree/tool references, functional three-node Wucht branch, old-save migration and retirement of legacy harvesting allocations | MST-02, MST-03a | In review | [mastery-map-shared-harvesting.md](mastery-map-shared-harvesting.md), [PR #308](https://github.com/Athurito/SurvivalRpg/pull/308) |
 | MST-04 | Atomic replacement of exclusive choices, owner request/result feedback, grant reconciliation and VM updates | MST-03b | Planned | — |
 | MST-05 | Extend the delivered rune/item foundation with physical instances, ranks and three harvesting-tool sockets; validated moves, grants, replication and persistence | MST-04; CMB-07 contract re-inspection | Planned | — |
 | MST-06 | Source-tool activation evaluator, rune context/highlights and learned-but-inactive UI; Brand and the first implemented rune-dependent talent path | MST-05 | Planned | — |
@@ -81,11 +81,14 @@ Playtests of merged MST steps that wait for the user's batch test. Remove a row 
 | --- | --- | --- |
 | MST-02 | [Playtest](mastery-map-skill-screen.md#playtest): H, wheel and drag, select, Learn/Refund with points, zoom levels, reopen, keyboard/gamepad, two players | Waiting for the user |
 | MST-03a | [Playtest](mastery-map-harvest-work.md#playtest): regression only, harvesting unchanged; pickaxe, axe, groves, swarm, two players on one vein | Waiting for the user |
+| MST-03b | [Playtest](mastery-map-shared-harvesting.md#playtest): one Harvesting tree for axe and pickaxe, mastery XP, Cleaving Force, Shatter or Follow Through, no Q/E/R powers, two players | Waiting for the user |
 
 ## Current handoff
 
 - **Active phase:** MST, started by the user on 2026-10-27 after CMB-01 to CMB-07 merged.
-- **Last task:** MST-03a, merged on 2026-10-27 as `2554bb6c` ([PR #306](https://github.com/Athurito/SurvivalRpg/pull/306)); the report is [mastery-map-harvest-work.md](mastery-map-harvest-work.md). Its regression playtest waits in the backlog.
-- **Next MST action:** MST-03b (shared harvesting mastery and the first Wucht nodes) is Ready.
+- **Active task:** MST-03b, branch `claude/mst-03b-shared-harvesting`, [PR #308](https://github.com/Athurito/SurvivalRpg/pull/308); the report is [mastery-map-shared-harvesting.md](mastery-map-shared-harvesting.md). Axe and pickaxe share `DA_SkillTree_Harvesting` with points from `Skill.Mastery.Harvesting` and the three Impact talents; the tool trees and their active powers are retired.
+- **User decisions (2026-10-27):** retire the tool trees and active powers as the plan says, with no active magical harvesting power until MST-06; the Impact talents Cleaving Force (+25 % work), Shatter (weak-point bonus work x2) and Follow Through (+50 % work on the next hit on the same resource within 3 s after a weak-point hit). No save migration, per the standing preference of 2026-10-26.
+- **Previous task:** MST-03a, merged on 2026-10-27 as `2554bb6c` ([PR #306](https://github.com/Athurito/SurvivalRpg/pull/306)).
+- **Next MST action:** after MST-03b merges, take MST-04 (atomic replacement of exclusive choices).
 - **Rune contract for MST-05:** CMB-07 delivered `URpgWeaponRuneDefinition` and `URpgInventoryFragment_WeaponRunes`, with runes engraved on item definitions and no sockets yet. Recheck them before MST-05.
 - **Later content decisions:** production XP and cost curves and the starter and guaranteed-reward pacing remain authored tuning. Shared-world rune recipe knowledge is the plan's proposed co-op default and must be settled before MST-07.
