@@ -124,30 +124,34 @@ FRpgHarvestResult URpgHarvestableComponent::CommitHarvest_Implementation(const F
 	}
 	TGuardValue<bool> CommitGuard(bCommitInProgress, true);
 
-	FTransform DeliveryTransform = OwningActor->GetActorTransform();
-	if (!Request.Hit.ImpactPoint.IsNearlyZero())
+	// Work that completes no section only advances the residual work; it has no reward to deliver.
+	ERpgHarvestRewardDeliveryResult DeliveryResult = ERpgHarvestRewardDeliveryResult::Empty;
+	if (Result.SectionsTaken > 0)
 	{
-		DeliveryTransform.SetLocation(Request.Hit.ImpactPoint);
-	}
+		FTransform DeliveryTransform = OwningActor->GetActorTransform();
+		if (!Request.Hit.ImpactPoint.IsNearlyZero())
+		{
+			DeliveryTransform.SetLocation(Request.Hit.ImpactPoint);
+		}
 
-	FRpgHarvestRewardRequest RewardRequest;
-	RewardRequest.SourceActor = OwningActor;
-	RewardRequest.Harvester = Request.Harvester;
-	RewardRequest.DeliveryTransform = DeliveryTransform;
-	RewardRequest.HarvestPower = Request.HarvestPower;
-	RewardRequest.RollCount = Result.SectionsTaken;
-	RewardRequest.SeedSalt = HashCombine(
-		GetTypeHash(HarvestState.Revision),
-		GetTypeHash(HarvestState.HarvestedSections));
-	const ERpgHarvestRewardDeliveryResult DeliveryResult =
-		FRpgHarvestRewardService::DeliverReward(HarvestProfile, RewardRequest);
-	if (DeliveryResult == ERpgHarvestRewardDeliveryResult::Failed)
-	{
-		// Nothing was granted, so the stock stays untouched and the request may be retried.
-		return FRpgHarvestResult::MakeRejected(
-			ERpgHarvestOutcome::DeliveryFailed,
-			GetRemainingSections(),
-			GetSectionCount());
+		FRpgHarvestRewardRequest RewardRequest;
+		RewardRequest.SourceActor = OwningActor;
+		RewardRequest.Harvester = Request.Harvester;
+		RewardRequest.DeliveryTransform = DeliveryTransform;
+		RewardRequest.HarvestPower = Request.HarvestPower;
+		RewardRequest.RollCount = Result.SectionsTaken;
+		RewardRequest.SeedSalt = HashCombine(
+			GetTypeHash(HarvestState.Revision),
+			GetTypeHash(HarvestState.HarvestedSections));
+		DeliveryResult = FRpgHarvestRewardService::DeliverReward(HarvestProfile, RewardRequest);
+		if (DeliveryResult == ERpgHarvestRewardDeliveryResult::Failed)
+		{
+			// Nothing was granted, so the stock and its residual work stay untouched and the request may be retried.
+			return FRpgHarvestResult::MakeRejected(
+				ERpgHarvestOutcome::DeliveryFailed,
+				GetRemainingSections(),
+				GetSectionCount());
+		}
 	}
 
 	FRpgHarvestNodeState NewState = HarvestState;
@@ -155,6 +159,7 @@ FRpgHarvestResult URpgHarvestableComponent::CommitHarvest_Implementation(const F
 		static_cast<int32>(HarvestState.HarvestedSections) + Result.SectionsTaken,
 		0,
 		URpgHarvestProfile::MaxSectionCount));
+	NewState.SectionWork = static_cast<uint8>(FMath::Clamp(Result.SectionWork, 0, RpgHarvestWork::UnitsPerSection - 1));
 	Result.bDepleted = Result.RemainingSections <= 0;
 	if (Result.bDepleted)
 	{
@@ -218,7 +223,8 @@ bool URpgHarvestableComponent::GetActiveWeakPoint(FVector& OutWorldLocation, flo
 bool URpgHarvestableComponent::RestoreHarvestStock()
 {
 	const AActor* OwningActor = GetOwner();
-	if (!OwningActor || !OwningActor->HasAuthority() || (HarvestState.bActive && HarvestState.HarvestedSections == 0))
+	if (!OwningActor || !OwningActor->HasAuthority() ||
+		(HarvestState.bActive && HarvestState.HarvestedSections == 0 && HarvestState.SectionWork == 0))
 	{
 		return false;
 	}
@@ -235,6 +241,7 @@ bool URpgHarvestableComponent::RestoreHarvestStock()
 	}
 	NewState.bActive = true;
 	NewState.HarvestedSections = 0;
+	NewState.SectionWork = 0;
 	SetAuthoritativeState(NewState);
 	ReportStockToPersistence();
 	return true;
@@ -245,6 +252,7 @@ FRpgHarvestSavedStock URpgHarvestableComponent::ExportSavedStock() const
 	FRpgHarvestSavedStock Saved;
 	Saved.Revision = HarvestState.Revision;
 	Saved.HarvestedSections = HarvestState.HarvestedSections;
+	Saved.SectionWork = HarvestState.SectionWork;
 	Saved.bActive = HarvestState.bActive;
 	const UWorld* World = GetWorld();
 	if (World && World->GetTimerManager().IsTimerActive(RespawnTimerHandle))
@@ -268,11 +276,15 @@ bool URpgHarvestableComponent::ApplySavedStock(const FRpgHarvestSavedStock& Save
 	NewState.Revision = FMath::Max(0, SavedStock.Revision);
 	NewState.bActive = SavedStock.bActive;
 	NewState.HarvestedSections = static_cast<uint8>(FMath::Clamp(SavedStock.HarvestedSections, 0, GetSectionCount()));
+	NewState.SectionWork = NewState.bActive
+		? static_cast<uint8>(FMath::Clamp(SavedStock.SectionWork, 0, RpgHarvestWork::UnitsPerSection - 1))
+		: 0;
 	// A profile that lost sections since the save may leave nothing to harvest; deplete it the way a harvest would.
 	const bool bExhausted = NewState.bActive && NewState.HarvestedSections >= GetSectionCount();
 	if (bExhausted)
 	{
 		NewState.bActive = false;
+		NewState.SectionWork = 0;
 		NewState.Revision = FMath::Max(1, NewState.Revision + 1);
 	}
 
@@ -306,6 +318,7 @@ FRpgHarvestStockSnapshot URpgHarvestableComponent::MakeStockSnapshot() const
 	Stock.Revision = HarvestState.Revision;
 	Stock.SectionCount = GetSectionCount();
 	Stock.HarvestedSections = HarvestState.HarvestedSections;
+	Stock.SectionWork = HarvestState.SectionWork;
 	Stock.bActive = HarvestState.bActive;
 	return Stock;
 }
@@ -389,6 +402,7 @@ void URpgHarvestableComponent::HandleRespawnTimer()
 	FRpgHarvestNodeState NewState = HarvestState;
 	NewState.Revision = FMath::Max(1, HarvestState.Revision + 1);
 	NewState.HarvestedSections = 0;
+	NewState.SectionWork = 0;
 	NewState.bActive = true;
 	SetAuthoritativeState(NewState);
 	ReportStockToPersistence();

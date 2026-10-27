@@ -87,28 +87,32 @@ FRpgHarvestResult URpgHarvestableInstancesComponent::CommitHarvest_Implementatio
 	FTransform InstanceTransform;
 	GetAuthoredInstanceTransform(InstanceIndex, InstanceTransform, true);
 
-	FRpgHarvestRewardRequest RewardRequest;
-	// Rewarded item instances must not be outered to an instance owner that can stream out, so the GameState is
-	// the loot source.
-	RewardRequest.SourceActor = Stock->GetOwner();
-	RewardRequest.Harvester = Request.Harvester;
-	RewardRequest.DeliveryTransform = FTransform(
-		InstanceTransform.GetRotation(),
-		Request.Hit.ImpactPoint.IsNearlyZero() ? InstanceTransform.GetLocation() : FVector(Request.Hit.ImpactPoint));
-	RewardRequest.HarvestPower = Request.HarvestPower;
-	RewardRequest.RollCount = Result.SectionsTaken;
-	RewardRequest.SeedSalt = HashCombine(
-		GetTypeHash(Key),
-		HashCombine(GetTypeHash(Before.Revision), GetTypeHash(Before.HarvestedSections)));
-	const ERpgHarvestRewardDeliveryResult DeliveryResult =
-		FRpgHarvestRewardService::DeliverReward(HarvestProfile, RewardRequest);
-	if (DeliveryResult == ERpgHarvestRewardDeliveryResult::Failed)
+	// Work that completes no section only advances the residual work; it has no reward to deliver.
+	ERpgHarvestRewardDeliveryResult DeliveryResult = ERpgHarvestRewardDeliveryResult::Empty;
+	if (Result.SectionsTaken > 0)
 	{
-		// Nothing was granted, so the stock stays untouched and the request may be retried.
-		return FRpgHarvestResult::MakeRejected(
-			ERpgHarvestOutcome::DeliveryFailed,
-			Before.GetRemainingSections(),
-			Before.SectionCount);
+		FRpgHarvestRewardRequest RewardRequest;
+		// Rewarded item instances must not be outered to an instance owner that can stream out, so the GameState is
+		// the loot source.
+		RewardRequest.SourceActor = Stock->GetOwner();
+		RewardRequest.Harvester = Request.Harvester;
+		RewardRequest.DeliveryTransform = FTransform(
+			InstanceTransform.GetRotation(),
+			Request.Hit.ImpactPoint.IsNearlyZero() ? InstanceTransform.GetLocation() : FVector(Request.Hit.ImpactPoint));
+		RewardRequest.HarvestPower = Request.HarvestPower;
+		RewardRequest.RollCount = Result.SectionsTaken;
+		RewardRequest.SeedSalt = HashCombine(
+			GetTypeHash(Key),
+			HashCombine(GetTypeHash(Before.Revision), GetTypeHash(Before.HarvestedSections)));
+		DeliveryResult = FRpgHarvestRewardService::DeliverReward(HarvestProfile, RewardRequest);
+		if (DeliveryResult == ERpgHarvestRewardDeliveryResult::Failed)
+		{
+			// Nothing was granted, so the stock and its residual work stay untouched and the request may be retried.
+			return FRpgHarvestResult::MakeRejected(
+				ERpgHarvestOutcome::DeliveryFailed,
+				Before.GetRemainingSections(),
+				Before.SectionCount);
+		}
 	}
 
 	Result.bDepleted = Result.RemainingSections <= 0;
@@ -124,10 +128,11 @@ FRpgHarvestResult URpgHarvestableInstancesComponent::CommitHarvest_Implementatio
 	FVector AwayFromHarvester = InstanceTransform.GetLocation() - (StrikingActor ? StrikingActor->GetActorLocation() : Request.TraceOrigin);
 	AwayFromHarvester.Z = 0.0;
 	const float HarvestYawDegrees = AwayFromHarvester.IsNearlyZero() ? 0.0f : static_cast<float>(AwayFromHarvester.Rotation().Yaw);
-	Stock->ExtractSections(
+	Stock->CommitWork(
 		Key,
 		SectionCount,
 		Result.SectionsTaken,
+		Result.SectionWork,
 		RespawnDelaySeconds,
 		Request.PresentationDelaySeconds,
 		HarvestYawDegrees);

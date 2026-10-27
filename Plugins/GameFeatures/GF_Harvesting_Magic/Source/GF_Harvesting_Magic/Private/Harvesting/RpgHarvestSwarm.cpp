@@ -152,6 +152,8 @@ bool ARpgHarvestSwarm::StartSwarm(
 	RequestTemplate.Harvester = Beneficiary;
 	RequestTemplate.PhysicalHarvester = this;
 	RequestTemplate.RequestedSections = FMath::Max(1, InRequestTemplate.RequestedSections);
+	// The creatures' strikes are follow-up work of the summoning action, never the harvester's own hits.
+	RequestTemplate.Provenance = InRequestTemplate.Provenance.MakeSecondary();
 	RequestTemplate.bAreaHarvest = true;
 	RequestTemplate.bCanHitWeakPoint = false;
 	RequestTemplate.PresentationDelaySeconds = 0.0f;

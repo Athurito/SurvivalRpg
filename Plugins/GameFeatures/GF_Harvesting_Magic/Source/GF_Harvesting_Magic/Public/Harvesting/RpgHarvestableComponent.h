@@ -27,6 +27,13 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestNodeState
 	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
 	uint8 HarvestedSections = 0;
 
+	/**
+	 * Residual work on the next section in RpgHarvestWork units, from 0 to 99: work that did not yet complete a section.
+	 * Zero once depleted or respawned.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
+	uint8 SectionWork = 0;
+
 	/** Whether the resource is available; false while depleted and waiting for respawn. */
 	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
 	bool bActive = true;

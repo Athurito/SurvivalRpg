@@ -12,6 +12,14 @@
 
 DEFINE_LOG_CATEGORY(LogRpgHarvesting);
 
+int32 FRpgHarvestProvenance::MakeRootActionId()
+{
+	check(IsInGameThread());
+	static int32 LastRootActionId = 0;
+	LastRootActionId = LastRootActionId >= MAX_int32 ? 1 : LastRootActionId + 1;
+	return LastRootActionId;
+}
+
 bool FRpgHarvestWeakPoint::IsStruckBy(const FHitResult& Hit) const
 {
 	if (Radius <= 0.0f)
@@ -54,10 +62,11 @@ FRpgHarvestResult FRpgHarvestStockRules::Evaluate(
 		return FRpgHarvestResult::MakeRejected(Outcome, RemainingSections, SectionCount);
 	};
 
+	const int32 RequestedWork = Request.GetRequestedWork();
 	if (!Request.Harvester ||
 		!FMath::IsFinite(Request.HarvestPower) ||
 		Request.HarvestPower <= 0.0f ||
-		Request.RequestedSections < 1 ||
+		RequestedWork < 1 ||
 		!Request.AbilityId.MatchesTag(RpgHarvestingMagicGameplayTags::Ability_Harvesting))
 	{
 		return Reject(ERpgHarvestOutcome::Invalid);
@@ -88,16 +97,30 @@ FRpgHarvestResult FRpgHarvestStockRules::Evaluate(
 	FRpgHarvestResult Result;
 	Result.Outcome = ERpgHarvestOutcome::Harvested;
 	Result.SectionCount = SectionCount;
-	int32 SectionsToTake = Request.RequestedSections;
+	Result.Provenance = Request.Provenance;
+	const int32 SectionWork = FMath::Clamp(Stock.SectionWork, 0, RpgHarvestWork::UnitsPerSection - 1);
+	const int32 RemainingWork = RemainingSections * RpgHarvestWork::UnitsPerSection - SectionWork;
+	int32 Work = RequestedWork;
 	const int32 WeakPointBonus = Profile ? Profile->GetClampedWeakPointBonusSections() : 0;
-	if (Request.bCanHitWeakPoint && ActiveWeakPoint && WeakPointBonus > 0 && ActiveWeakPoint->IsStruckBy(Request.Hit))
+	if (Request.bFinishResource)
+	{
+		// Finishing takes exactly what is left, so it never manufactures overkill.
+		Work = RemainingWork;
+	}
+	else if (Request.bCanHitWeakPoint && ActiveWeakPoint && WeakPointBonus > 0 && ActiveWeakPoint->IsStruckBy(Request.Hit))
 	{
 		// The bonus only speeds extraction up; it comes from the same stock and is clamped below.
 		Result.bWeakPointHit = true;
-		SectionsToTake += WeakPointBonus;
+		Work += WeakPointBonus * RpgHarvestWork::UnitsPerSection;
 	}
-	Result.SectionsTaken = FMath::Min(SectionsToTake, RemainingSections);
+
+	Result.WorkApplied = FMath::Min(Work, RemainingWork);
+	Result.OverkillWork = Work - Result.WorkApplied;
+	Result.RemainingWork = RemainingWork - Result.WorkApplied;
+	const int32 WorkedTotal = SectionWork + Result.WorkApplied;
+	Result.SectionsTaken = WorkedTotal / RpgHarvestWork::UnitsPerSection;
 	Result.RemainingSections = RemainingSections - Result.SectionsTaken;
+	Result.SectionWork = Result.RemainingSections > 0 ? WorkedTotal % RpgHarvestWork::UnitsPerSection : 0;
 	return Result;
 }
 

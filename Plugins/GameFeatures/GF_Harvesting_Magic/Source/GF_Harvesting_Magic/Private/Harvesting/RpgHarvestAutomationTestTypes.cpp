@@ -176,6 +176,14 @@ void URpgHarvestAutomationNodeStateListener::HandleStateChanged(
 	bLastInitialState = bInitialState;
 }
 
+void URpgHarvestAutomationHarvestedListener::HandleHarvested(
+	const FRpgHarvestRequest& Request,
+	const FRpgHarvestResult& Result)
+{
+	(void)Request;
+	Results.Add(Result);
+}
+
 ARpgHarvestAutomationCollidableNodeActor::ARpgHarvestAutomationCollidableNodeActor(
 	const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)

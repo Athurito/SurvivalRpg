@@ -377,6 +377,8 @@ bool FRpgHarvestAbilityCommitLifecycleTest::RunTest(const FString& Parameters)
 		return false;
 	}
 	Granted.Instance->ConfigureCommitDelay(0.5f);
+	URpgHarvestAutomationHarvestedListener* Harvested = NewObject<URpgHarvestAutomationHarvestedListener>();
+	Node->HarvestableNode->OnHarvested.AddDynamic(Harvested, &URpgHarvestAutomationHarvestedListener::HandleHarvested);
 	TestWorld.PrimeTimerManager();
 
 	TestTrue(TEXT("The delayed harvest activates"), Harvester.AbilitySystem->TryActivateAbility(Granted.Handle));
@@ -402,6 +404,19 @@ bool FRpgHarvestAbilityCommitLifecycleTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("The immediate harvest ends at once"), Granted.Instance->IsActive());
 	TestFalse(TEXT("The request takes the remaining sections and depletes the node"), Node->HarvestableNode->IsHarvestable());
 	TestEqual(TEXT("The total yield equals the defined stock"), CountMaterial(Harvester.PlayerState), 4 * YieldPerSection);
+	if (TestEqual(TEXT("Both commits report their results"), Harvested->Results.Num(), 2))
+	{
+		const FRpgHarvestResult& First = Harvested->Results[0];
+		const FRpgHarvestResult& Last = Harvested->Results[1];
+		TestTrue(TEXT("A swing is the harvester's own accepted hit"), First.IsAcceptedDirectHit() && Last.IsAcceptedDirectHit());
+		TestTrue(
+			TEXT("Every execution gets its own root action"),
+			First.Provenance.RootActionId > 0 && Last.Provenance.RootActionId > 0 &&
+				First.Provenance.RootActionId != Last.Provenance.RootActionId);
+		TestTrue(
+			TEXT("The last swing applies exactly the remaining work"),
+			Last.WorkApplied == 3 * RpgHarvestWork::UnitsPerSection && Last.OverkillWork == 0 && Last.RemainingWork == 0);
+	}
 
 	TestTrue(TEXT("An activation on the empty node still activates"), Harvester.AbilitySystem->TryActivateAbility(Granted.Handle));
 	TestEqual(TEXT("A swing on an empty node grants nothing"), CountMaterial(Harvester.PlayerState), 4 * YieldPerSection);
@@ -3194,7 +3209,8 @@ bool FRpgHarvestChainRulesTest::RunTest(const FString& Parameters)
 
 	TSet<TObjectKey<URpgHarvestChainComponent>> ChainedBoxes;
 	TArray<FRpgHarvestTargetEvaluation> Chained;
-	const FRpgHarvestRequest Request = RpgHarvestAutomation::MakeInstanceRequest(Trees, 0, Harvester.Pawn);
+	FRpgHarvestRequest Request = RpgHarvestAutomation::MakeInstanceRequest(Trees, 0, Harvester.Pawn);
+	Request.Provenance.RootActionId = 42;
 	FRpgHarvestResult Partial;
 	Partial.Outcome = ERpgHarvestOutcome::Harvested;
 	Partial.SectionsTaken = 1;
@@ -3216,6 +3232,16 @@ bool FRpgHarvestChainRulesTest::RunTest(const FString& Parameters)
 	TestFalse(
 		TEXT("Every chained result is marked"),
 		Chained.ContainsByPredicate([](const FRpgHarvestTargetEvaluation& Target) { return !Target.bChained; }));
+	TestFalse(
+		TEXT("Chained work is follow-up work of the trigger's action, never a direct hit"),
+		Chained.ContainsByPredicate([](const FRpgHarvestTargetEvaluation& Target)
+		{
+			return Target.Result.Provenance.IsDirect() || Target.Result.Provenance.RootActionId != 42 ||
+				Target.Result.IsAcceptedDirectHit();
+		}));
+	TestFalse(
+		TEXT("Finishing a chained tree reports no overkill"),
+		Chained.ContainsByPredicate([](const FRpgHarvestTargetEvaluation& Target) { return Target.Result.OverkillWork != 0; }));
 	TestEqual(TEXT("The nearest tree falls"), Trees->GetRemainingSections(1), 0);
 	TestEqual(TEXT("A protected tree is skipped"), Trees->GetRemainingSections(2), 1);
 	TestEqual(TEXT("The chain continues past it"), Trees->GetRemainingSections(3), 0);

@@ -188,6 +188,19 @@ public:
 	bool bLastInitialState = false;
 };
 
+/** Records a harvest node's server-side commit telemetry so tests can inspect committed results. */
+UCLASS(Transient)
+class URpgHarvestAutomationHarvestedListener final : public UObject
+{
+	GENERATED_BODY()
+
+public:
+	UFUNCTION()
+	void HandleHarvested(const FRpgHarvestRequest& Request, const FRpgHarvestResult& Result);
+
+	TArray<FRpgHarvestResult> Results;
+};
+
 /** Resource fixture with a blocking collision box so harvest targeting queries can select it. */
 UCLASS(NotBlueprintable, Transient)
 class ARpgHarvestAutomationCollidableNodeActor final : public AActor
