@@ -434,7 +434,10 @@ enum class ERpgInventoryMutationResultCode : uint8
 	InternalError,
 
 	/** Two runtime rows reused the same inventory-local FastArray entry identity. Appended to preserve serialized ordinals. */
-	DuplicateEntryId
+	DuplicateEntryId,
+
+	/** A socket grid already holds an item of the same definition, such as a second rune of one kind on a tool. */
+	DuplicateSocketedItem
 };
 
 /** Kind of authoritative state change represented by one transaction delta. */

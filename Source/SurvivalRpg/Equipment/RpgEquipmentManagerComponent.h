@@ -7,12 +7,14 @@
 #include "Net/Serialization/FastArraySerializer.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
 #include "SurvivalRpg/Inventory/Itemization/RpgItemizationTypes.h"
+#include "SurvivalRpg/Inventory/RpgInventoryGraphTypes.h"
 #include "RpgEquipmentDefinition.h"
 #include "RpgEquipmentManagerComponent.generated.h"
 
 class URpgAbilitySystemComponent;
 class URpgEquipmentDefinition;
 class URpgEquipmentInstance;
+class URpgInventoryManagerComponent;
 class URpgPawnExtensionComponent;
 class UAnimInstance;
 class USkeletalMeshComponent;
@@ -37,11 +39,11 @@ struct SURVIVALRPG_API FRpgAppliedEquipmentAbilityGrant
 };
 
 /**
- * Runtime grants of one learned skill tree node while the equipped item that carries the tree is in use.
- * Server only; rebuilt whenever equipment or the player's skill tree changes.
+ * Runtime grants of one learned skill tree node, or of one rune socketed into the item, while the equipped item is in
+ * use. Server only; rebuilt whenever equipment, the player's skill tree or the item's sockets change.
  */
 USTRUCT()
-struct SURVIVALRPG_API FRpgAppliedSkillNodeGrant
+struct SURVIVALRPG_API FRpgAppliedItemGrant
 {
 	GENERATED_BODY()
 
@@ -51,7 +53,7 @@ struct SURVIVALRPG_API FRpgAppliedSkillNodeGrant
 	UPROPERTY()
 	FRpgAbilitySet_GrantedHandles GrantedHandles;
 
-	/** Loose replicated tags added for the node; removed with the same count. */
+	/** Loose replicated tags added for the node or rune; removed with the same count. */
 	UPROPERTY()
 	FGameplayTagContainer GrantedTags;
 };
@@ -81,7 +83,11 @@ private:
 
 	/** Server-only grants of the learned nodes of the item's skill tree, keyed by node tag. */
 	UPROPERTY(NotReplicated)
-	TMap<FGameplayTag, FRpgAppliedSkillNodeGrant> SkillNodeGrants;
+	TMap<FGameplayTag, FRpgAppliedItemGrant> SkillNodeGrants;
+
+	/** Server-only grants of the runes socketed into the item, keyed by the rune item's persistent id. */
+	UPROPERTY(NotReplicated)
+	TMap<FRpgInventoryItemId, FRpgAppliedItemGrant> SocketGrants;
 
 	/** Server-only handle for the concrete inventory item's generated global-stat effect. */
 	FActiveGameplayEffectHandle ItemizationEffectHandle;
@@ -265,6 +271,14 @@ private:
 	void RefreshEquipmentItemizationEffect(FRpgAppliedEquipmentEntry& Entry);
 	void RebuildEquipmentItemizationEffects();
 	void RebuildEquipmentAbilityGrants();
+
+	/** Authority: follows the commits of exactly the inventories that hold equipped items, so socket changes regrant. */
+	void WatchSourceInventories(const TArray<URpgInventoryManagerComponent*>& SourceInventories);
+	void StopWatchingSourceInventories();
+	void HandleWatchedInventoryCommitted(URpgInventoryManagerComponent* Inventory);
+
+	/** Inventories whose commits rebuild the grants; server only, never replicated or saved. */
+	TArray<TWeakObjectPtr<URpgInventoryManagerComponent>> WatchedInventories;
 
 	/** Re-resolves the owning controller's runtime ability bindings on the next tick after equipment grants changed. Authority only. */
 	void RefreshOwnerAbilityBindings() const;

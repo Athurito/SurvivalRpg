@@ -23,9 +23,11 @@ namespace RpgInventoryManagerRulesPlannerPrivate
 		const URpgInventoryItemDefinition* ItemCDO = ItemDefinition
 			? GetDefault<URpgInventoryItemDefinition>(ItemDefinition)
 			: nullptr;
-		const bool bProvidesContainer = ItemCDO &&
-			ItemCDO->FindFragmentByClass(
-				URpgInventoryFragment_ItemContainer::StaticClass()) != nullptr;
+		const URpgInventoryFragment_ItemContainer* ProvidedContainers = ItemCDO
+			? Cast<URpgInventoryFragment_ItemContainer>(ItemCDO->FindFragmentByClass(
+				URpgInventoryFragment_ItemContainer::StaticClass()))
+			: nullptr;
+		const bool bProvidesContainer = ProvidedContainers && ProvidedContainers->ProvidesStorageContainers();
 		if (bProvidesContainer &&
 			!ContainerDefinition.bAllowNestedContainers)
 		{
@@ -604,6 +606,7 @@ bool URpgInventoryManagerComponent::ValidateInventoryGraph(
 
 	TMap<FRpgInventoryContainerHandle, TArray<FRpgInventoryGridPlacement>>
 		OccupancyByContainer;
+	TMap<FRpgInventoryContainerHandle, TArray<UClass*>> SocketedDefinitionsByContainer;
 	for (int32 EntryIndex = 0; EntryIndex < EntryCount; ++EntryIndex)
 	{
 		const FRpgInventoryEntry& Entry = Entries[EntryIndex];
@@ -638,6 +641,16 @@ bool URpgInventoryManagerComponent::ValidateInventoryGraph(
 					Entry.Instance->GetItemDef(),
 					Handle.Depth);
 				return false;
+			}
+			if (Definition.bSocketGrid)
+			{
+				TArray<UClass*>& SocketedDefinitions = SocketedDefinitionsByContainer.FindOrAdd(Handle);
+				if (SocketedDefinitions.Contains(Entry.Instance->GetItemDef().Get()))
+				{
+					OutCode = ERpgInventoryMutationResultCode::DuplicateSocketedItem;
+					return false;
+				}
+				SocketedDefinitions.Add(Entry.Instance->GetItemDef().Get());
 			}
 		}
 		else if (const URpgPlayerInventoryLayoutComponent* Layout =
@@ -829,6 +842,12 @@ bool URpgInventoryManagerComponent::ValidatePlacementGraphRules(
 		return false;
 	}
 
+	if (Definition.bSocketGrid && HasSocketedDuplicate(Placement, Entry.Instance->GetItemDef(), Entry.Instance))
+	{
+		OutCode = ERpgInventoryMutationResultCode::DuplicateSocketedItem;
+		return false;
+	}
+
 	const uint8 CurrentDepth = Entry.Placement.GetContainerHandle().Depth;
 	uint8 DeepestRelativeDepth = 0;
 	for (const FRpgInventoryEntry& Candidate : InventoryList.Entries)
@@ -862,6 +881,23 @@ bool URpgInventoryManagerComponent::ValidatePlacementGraphRules(
 	}
 
 	return true;
+}
+
+bool URpgInventoryManagerComponent::HasSocketedDuplicate(
+	const FRpgInventoryGridPlacement& Placement,
+	TSubclassOf<URpgInventoryItemDefinition> ItemDefinition,
+	const URpgInventoryItemInstance* Ignored) const
+{
+	const FRpgInventoryContainerHandle Handle = Placement.GetContainerHandle();
+	for (const FRpgInventoryEntry& Other : InventoryList.Entries)
+	{
+		if (Other.Instance && Other.Instance != Ignored && Other.Instance->GetItemDef() == ItemDefinition &&
+			Other.Placement.GetContainerHandle() == Handle && !Other.Placement.Overlaps(Placement))
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 bool URpgInventoryManagerComponent::WouldCreateContainerCycle(
@@ -1296,6 +1332,13 @@ FRpgInventoryPlacementPlan URpgInventoryManagerComponent::EvaluatePlacementInter
 					Definition,
 					Subject.ItemDefinition,
 					Placement.GetContainerHandle().Depth);
+				return false;
+			}
+			// Instances get the same check from ValidatePlacementGraphRules below.
+			if (Definition.bSocketGrid && !Subject.ItemInstance &&
+				HasSocketedDuplicate(Placement, Subject.ItemDefinition, nullptr))
+			{
+				OutCode = ERpgInventoryMutationResultCode::DuplicateSocketedItem;
 				return false;
 			}
 		}

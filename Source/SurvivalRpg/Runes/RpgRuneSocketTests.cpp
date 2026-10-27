@@ -1,0 +1,559 @@
+#include "RpgRuneAutomationTestTypes.h"
+
+#if WITH_DEV_AUTOMATION_TESTS
+
+#include "Engine/Engine.h"
+#include "Engine/GameInstance.h"
+#include "Engine/World.h"
+#include "GameFramework/Actor.h"
+#include "Misc/AutomationTest.h"
+#include "NativeGameplayTags.h"
+#include "RpgInventoryFragment_Rune.h"
+#include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
+#include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentAutomationTestTypes.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
+#include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
+#include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemContainer.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
+#include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
+
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_RuneSocketTest_RankAbility, "Ability.AutomationRune.RankII");
+
+namespace RpgRuneSocketTests
+{
+	const FName StorageId(TEXT("Storage"));
+
+	class FScopedTestWorld
+	{
+	public:
+		FScopedTestWorld()
+		{
+			GameInstance = NewObject<UGameInstance>(GEngine, NAME_None, RF_Transient);
+			if (!GameInstance)
+			{
+				return;
+			}
+
+			GameInstance->AddToRoot();
+			GameInstance->InitializeStandalone();
+			World = GameInstance->GetWorld();
+		}
+
+		~FScopedTestWorld()
+		{
+			UWorld* WorldToDestroy = World;
+			if (GameInstance)
+			{
+				GameInstance->Shutdown();
+			}
+			if (WorldToDestroy)
+			{
+				GEngine->DestroyWorldContext(WorldToDestroy);
+				WorldToDestroy->DestroyWorld(false);
+			}
+			if (GameInstance)
+			{
+				GameInstance->RemoveFromRoot();
+			}
+		}
+
+		UWorld* GetWorld() const { return World; }
+
+		/** An actor-owned inventory with a 6x3 storage grid; its items are outered to the actor. */
+		URpgInventoryManagerComponent* CreateInventory(const TCHAR* DebugName) const
+		{
+			FActorSpawnParameters SpawnParameters;
+			SpawnParameters.Name = MakeUniqueObjectName(World, AActor::StaticClass(), FName(DebugName));
+			SpawnParameters.ObjectFlags = RF_Transient;
+			AActor* OwnerActor = World ? World->SpawnActor<AActor>(SpawnParameters) : nullptr;
+			if (!OwnerActor)
+			{
+				return nullptr;
+			}
+
+			URpgInventoryManagerComponent* Inventory = NewObject<URpgInventoryManagerComponent>(
+				OwnerActor,
+				MakeUniqueObjectName(OwnerActor, URpgInventoryManagerComponent::StaticClass(), TEXT("Inventory")),
+				RF_Transient);
+			OwnerActor->AddInstanceComponent(Inventory);
+			Inventory->RegisterComponent();
+			FRpgInventoryGridSize GridSize;
+			GridSize.Width = 6;
+			GridSize.Height = 3;
+			Inventory->SetDefaultGridSize(GridSize);
+			return Inventory;
+		}
+
+	private:
+		TObjectPtr<UGameInstance> GameInstance = nullptr;
+		TObjectPtr<UWorld> World = nullptr;
+	};
+
+	FRpgInventoryGridPlacement MakePlacement(const FRpgInventoryContainerHandle& Container, const int32 X, const int32 Y)
+	{
+		FRpgInventoryGridPlacement Placement;
+		Placement.SetContainerHandle(Container);
+		Placement.X = X;
+		Placement.Y = Y;
+		return Placement;
+	}
+
+	FRpgInventoryGridPlacement Storage(const int32 X, const int32 Y)
+	{
+		return MakePlacement(FRpgInventoryContainerHandle::MakeRoot(StorageId), X, Y);
+	}
+
+	/** Socket X of the item ToolItem, wherever the tool sits. */
+	FRpgInventoryGridPlacement Socket(
+		const URpgInventoryManagerComponent& Inventory,
+		URpgInventoryItemInstance* ToolItem,
+		const int32 X)
+	{
+		FRpgInventoryGridPlacement ToolPlacement;
+		Inventory.GetItemPlacement(ToolItem, ToolPlacement);
+		return MakePlacement(
+			FRpgInventoryContainerHandle::MakeItemOwned(
+				ToolItem->GetItemId(),
+				RpgRuneAutomationTestSocketGridId,
+				ToolPlacement.GetContainerHandle().GetDirectChildDepth()),
+			X,
+			0);
+	}
+
+	bool FindEntry(const URpgInventoryManagerComponent& Inventory, const URpgInventoryItemInstance* Item, FRpgInventoryEntryView& OutEntry)
+	{
+		for (const FRpgInventoryEntryView& Entry : Inventory.GetAllEntries())
+		{
+			if (Item && Entry.ItemId == Item->GetItemId())
+			{
+				OutEntry = Entry;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Moves Item's whole entry to Target through the production intent, as the inventory UI does. */
+	ERpgInventoryMutationResultCode Move(
+		URpgInventoryManagerComponent& Inventory,
+		URpgInventoryItemInstance* Item,
+		const FRpgInventoryGridPlacement& Target)
+	{
+		FRpgInventoryEntryView Entry;
+		if (!FindEntry(Inventory, Item, Entry))
+		{
+			return ERpgInventoryMutationResultCode::ItemNotFound;
+		}
+
+		FRpgInventoryMoveIntent Intent;
+		Intent.EnsureRequestId();
+		Intent.ItemId = Entry.ItemId;
+		Intent.ExpectedEntryId = Entry.EntryId;
+		Intent.ExpectedSourcePlacement = Entry.Placement;
+		Intent.ExpectedQuantity = Entry.StackCount;
+		Intent.TargetPlacement = Target;
+		return Inventory.MoveItem(Intent).Code;
+	}
+
+	/** Transfers Item's whole entry, with its subtree, from Source to Target in Destination. */
+	ERpgInventoryMutationResultCode Transfer(
+		URpgInventoryManagerComponent& Source,
+		URpgInventoryManagerComponent& Destination,
+		URpgInventoryItemInstance* Item,
+		const FRpgInventoryGridPlacement& Target)
+	{
+		FRpgInventoryEntryView Entry;
+		if (!FindEntry(Source, Item, Entry))
+		{
+			return ERpgInventoryMutationResultCode::ItemNotFound;
+		}
+
+		FRpgInventoryTransferIntent Intent;
+		Intent.EnsureRequestId();
+		Intent.ItemId = Entry.ItemId;
+		Intent.ExpectedEntryId = Entry.EntryId;
+		Intent.ExpectedSourcePlacement = Entry.Placement;
+		Intent.ExpectedSourceQuantity = Entry.StackCount;
+		Intent.Quantity = Entry.StackCount;
+		Intent.TargetContainer = Target.GetContainerHandle();
+		Intent.TargetPlacement = Target;
+		return Source.TransferItem(&Destination, Intent).Code;
+	}
+
+	bool IsAt(const URpgInventoryManagerComponent& Inventory, const URpgInventoryItemInstance* Item, const FRpgInventoryGridPlacement& Placement)
+	{
+		FRpgInventoryEntryView Entry;
+		return FindEntry(Inventory, Item, Entry) && Entry.Placement.GetContainerHandle() == Placement.GetContainerHandle() &&
+			Entry.Placement.X == Placement.X && Entry.Placement.Y == Placement.Y;
+	}
+
+	TArray<FRpgInventoryItemId> SocketedIds(const URpgInventoryManagerComponent& Inventory, const URpgInventoryItemInstance* Tool)
+	{
+		TArray<FRpgInventoryItemId> Ids;
+		for (const URpgInventoryItemInstance* Item : Inventory.GetSocketedItems(Tool))
+		{
+			Ids.Add(Item->GetItemId());
+		}
+		return Ids;
+	}
+
+	struct FSocketFixture
+	{
+		URpgInventoryManagerComponent* Inventory = nullptr;
+		URpgInventoryItemInstance* Tool = nullptr;
+		URpgInventoryItemInstance* RuneA = nullptr;
+		URpgInventoryItemInstance* SecondRuneA = nullptr;
+		URpgInventoryItemInstance* RuneB = nullptr;
+		URpgInventoryItemInstance* Plain = nullptr;
+	};
+
+	/** Tool at 0/0, rune A at 1/0, a second rune A at 2/0, rune B at 3/0 and a plain item at 4/0 of storage. */
+	bool MakeSocketFixture(FAutomationTestBase& Test, const FScopedTestWorld& TestWorld, FSocketFixture& Out)
+	{
+		ConfigureRuneAutomationTestDefinitions();
+		Out.Inventory = TestWorld.CreateInventory(TEXT("RuneOwner"));
+		if (!Test.TestNotNull(TEXT("The inventory exists"), Out.Inventory))
+		{
+			return false;
+		}
+
+		Out.Tool = Out.Inventory->AddItemDefinitionToPlacement(URpgRuneAutomationTestToolDefinition::StaticClass(), 1, Storage(0, 0));
+		Out.RuneA = Out.Inventory->AddItemDefinitionToPlacement(URpgRuneAutomationTestRuneDefinition::StaticClass(), 1, Storage(1, 0));
+		Out.SecondRuneA = Out.Inventory->AddItemDefinitionToPlacement(URpgRuneAutomationTestRuneDefinition::StaticClass(), 1, Storage(2, 0));
+		Out.RuneB = Out.Inventory->AddItemDefinitionToPlacement(URpgRuneAutomationTestOtherRuneDefinition::StaticClass(), 1, Storage(3, 0));
+		Out.Plain = Out.Inventory->AddItemDefinitionToPlacement(URpgInventoryAutomationTestUnitItemDefinition::StaticClass(), 1, Storage(4, 0));
+		return Test.TestNotNull(TEXT("The tool is granted"), Out.Tool) &&
+			Test.TestNotNull(TEXT("Rune A is granted"), Out.RuneA) &&
+			Test.TestNotNull(TEXT("A second rune A is granted"), Out.SecondRuneA) &&
+			Test.TestNotNull(TEXT("Rune B is granted"), Out.RuneB) &&
+			Test.TestNotNull(TEXT("A plain item is granted"), Out.Plain);
+	}
+
+	URpgAbilitySet* MakeAbilitySet(const FGameplayTag AbilityId)
+	{
+		URpgAbilitySet* AbilitySet = NewObject<URpgAbilitySet>(GetTransientPackage(), NAME_None, RF_Transient);
+		AbilitySet->AddGrantedGameplayAbility(URpgInventoryAutomationTestUseAbility::StaticClass(), 1, FGameplayTag(), AbilityId);
+		return AbilitySet;
+	}
+
+	int32 CountSpecsWithId(const URpgAbilitySystemComponent& AbilitySystem, const FGameplayTag AbilityId)
+	{
+		int32 Count = 0;
+		for (const FGameplayAbilitySpec& Spec : AbilitySystem.GetActivatableAbilities())
+		{
+			Count += Spec.GetDynamicSpecSourceTags().HasTagExact(AbilityId) ? 1 : 0;
+		}
+		return Count;
+	}
+
+	/** Restores the rank II ability set of the test rune when a test ends. */
+	struct FScopedRankAbilitySet
+	{
+		explicit FScopedRankAbilitySet(const URpgAbilitySet* AbilitySet)
+		{
+			URpgRuneAutomationTestRuneDefinition::SetRankAbilitySet(2, AbilitySet);
+		}
+
+		~FScopedRankAbilitySet()
+		{
+			URpgRuneAutomationTestRuneDefinition::SetRankAbilitySet(2, nullptr);
+		}
+	};
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgRuneSocketPlacementRulesTest,
+	"SurvivalRpg.Runes.Sockets.PlacementRules",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgRuneSocketPlacementRulesTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgRuneSocketTests;
+
+	FScopedTestWorld TestWorld;
+	FSocketFixture Fixture;
+	if (!MakeSocketFixture(*this, TestWorld, Fixture))
+	{
+		return false;
+	}
+	URpgInventoryManagerComponent& Inventory = *Fixture.Inventory;
+	URpgInventoryItemInstance* Tool = Fixture.Tool;
+
+	TestEqual(TEXT("A rune goes into a free socket"),
+		Move(Inventory, Fixture.RuneA, Socket(Inventory, Tool, 0)), ERpgInventoryMutationResultCode::Success);
+	TestTrue(TEXT("The tool reports the socketed rune"),
+		SocketedIds(Inventory, Tool) == TArray<FRpgInventoryItemId>{Fixture.RuneA->GetItemId()});
+
+	TestEqual(TEXT("A second rune of the same kind is rejected"),
+		Move(Inventory, Fixture.SecondRuneA, Socket(Inventory, Tool, 1)),
+		ERpgInventoryMutationResultCode::DuplicateSocketedItem);
+	TestTrue(TEXT("The rejected rune stays where it was"), IsAt(Inventory, Fixture.SecondRuneA, Storage(2, 0)));
+
+	TestEqual(TEXT("A rune of another kind takes the next socket"),
+		Move(Inventory, Fixture.RuneB, Socket(Inventory, Tool, 1)), ERpgInventoryMutationResultCode::Success);
+	TestEqual(TEXT("An item that is no rune is rejected"),
+		Move(Inventory, Fixture.Plain, Socket(Inventory, Tool, 2)), ERpgInventoryMutationResultCode::ItemNotAllowed);
+
+	TestEqual(TEXT("A rune dropped on the socketed rune of its kind swaps with it"),
+		Move(Inventory, Fixture.SecondRuneA, Socket(Inventory, Tool, 0)), ERpgInventoryMutationResultCode::Success);
+	TestTrue(TEXT("The new rune sits in the socket"), IsAt(Inventory, Fixture.SecondRuneA, Socket(Inventory, Tool, 0)));
+	TestTrue(TEXT("The replaced rune takes the new rune's place"), IsAt(Inventory, Fixture.RuneA, Storage(2, 0)));
+
+	TestEqual(TEXT("A socketed rune moves to another socket of its tool"),
+		Move(Inventory, Fixture.SecondRuneA, Socket(Inventory, Tool, 2)), ERpgInventoryMutationResultCode::Success);
+	TestTrue(TEXT("The sockets list the runes in socket order"),
+		SocketedIds(Inventory, Tool) == TArray<FRpgInventoryItemId>{Fixture.RuneB->GetItemId(), Fixture.SecondRuneA->GetItemId()});
+
+	URpgInventoryItemInstance* Bag =
+		Inventory.AddItemDefinitionToPlacement(URpgRuneAutomationTestBagDefinition::StaticClass(), 1, Storage(0, 1));
+	if (!TestNotNull(TEXT("A bag that refuses nested containers is granted"), Bag))
+	{
+		return false;
+	}
+	const FRpgInventoryContainerHandle BagHandle = FRpgInventoryContainerHandle::MakeItemOwned(Bag->GetItemId(), TEXT("Main"), 1);
+	TestEqual(TEXT("A socketed tool is no nested container, so the bag takes it"),
+		Move(Inventory, Tool, MakePlacement(BagHandle, 0, 0)), ERpgInventoryMutationResultCode::Success);
+	TestTrue(TEXT("The runes move with the tool"),
+		SocketedIds(Inventory, Tool) == TArray<FRpgInventoryItemId>{Fixture.RuneB->GetItemId(), Fixture.SecondRuneA->GetItemId()});
+	TestEqual(TEXT("The socket rule still holds inside the bag"),
+		Move(Inventory, Fixture.RuneA, Socket(Inventory, Tool, 0)), ERpgInventoryMutationResultCode::DuplicateSocketedItem);
+
+	URpgInventoryFragment_ItemContainer* InvalidSockets = NewObject<URpgInventoryFragment_ItemContainer>();
+	FRpgInventoryItemContainerDefinition& InvalidGrid = InvalidSockets->ProvidedContainers.AddDefaulted_GetRef();
+	InvalidGrid.ContainerId = TEXT("Sockets");
+	InvalidGrid.GridSize.Width = 3;
+	InvalidGrid.GridSize.Height = 1;
+	InvalidGrid.bSocketGrid = true;
+	InvalidGrid.bAllowNestedContainers = true;
+	TestFalse(TEXT("A socket grid that allows nested containers is invalid"),
+		InvalidSockets->HasStructurallyValidProvidedContainers());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgRuneSocketTransferTest,
+	"SurvivalRpg.Runes.Sockets.TransferKeepsRunesOnce",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgRuneSocketTransferTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgRuneSocketTests;
+
+	FScopedTestWorld TestWorld;
+	FSocketFixture Fixture;
+	if (!MakeSocketFixture(*this, TestWorld, Fixture))
+	{
+		return false;
+	}
+	URpgInventoryManagerComponent& Player = *Fixture.Inventory;
+	URpgInventoryManagerComponent* Chest = TestWorld.CreateInventory(TEXT("RuneChest"));
+	if (!TestNotNull(TEXT("The chest exists"), Chest))
+	{
+		return false;
+	}
+
+	TestEqual(TEXT("Rune A goes into the tool"),
+		Move(Player, Fixture.RuneA, Socket(Player, Fixture.Tool, 0)), ERpgInventoryMutationResultCode::Success);
+	TestEqual(TEXT("The second rune A goes into the chest"),
+		Transfer(Player, *Chest, Fixture.SecondRuneA, Storage(0, 0)), ERpgInventoryMutationResultCode::Success);
+	TestEqual(TEXT("Rune B goes into the chest"),
+		Transfer(Player, *Chest, Fixture.RuneB, Storage(1, 0)), ERpgInventoryMutationResultCode::Success);
+
+	TestEqual(TEXT("A rune of a socketed kind cannot be transferred into the tool"),
+		Transfer(*Chest, Player, Fixture.SecondRuneA, Socket(Player, Fixture.Tool, 1)),
+		ERpgInventoryMutationResultCode::DuplicateSocketedItem);
+	// A transfer rebuilds the item in its new inventory, so the chest holds new instances under the same ids.
+	TestNotNull(TEXT("The chest keeps the rejected rune"), Chest->FindItemById(Fixture.SecondRuneA->GetItemId()));
+	TestEqual(TEXT("A rune of another kind is transferred into a socket"),
+		Transfer(*Chest, Player, Fixture.RuneB, Socket(Player, Fixture.Tool, 1)), ERpgInventoryMutationResultCode::Success);
+	TestEqual(TEXT("The tool holds rune A and rune B"), Player.GetSocketedItems(Fixture.Tool).Num(), 2);
+
+	const FRpgInventoryItemId ToolId = Fixture.Tool->GetItemId();
+	const FRpgInventoryItemId RuneAId = Fixture.RuneA->GetItemId();
+	const FRpgInventoryItemId RuneBId = Fixture.RuneB->GetItemId();
+	TestEqual(TEXT("The socketed tool moves into the chest as a whole"),
+		Transfer(Player, *Chest, Fixture.Tool, Storage(2, 0)), ERpgInventoryMutationResultCode::Success);
+	URpgInventoryItemInstance* ChestTool = Chest->FindItemById(ToolId);
+	if (!TestNotNull(TEXT("The chest holds the tool under its id"), ChestTool))
+	{
+		return false;
+	}
+	TestTrue(TEXT("The runes travel in the tool's sockets"),
+		SocketedIds(*Chest, ChestTool) == TArray<FRpgInventoryItemId>{RuneAId, RuneBId});
+	TestNull(TEXT("The player keeps no copy of the tool"), Player.FindItemById(ToolId));
+	TestNull(TEXT("The player keeps no copy of rune A"), Player.FindItemById(RuneAId));
+	TestNull(TEXT("The player keeps no copy of rune B"), Player.FindItemById(RuneBId));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgRuneRankPersistenceTest,
+	"SurvivalRpg.Runes.RankPersistence",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgRuneRankPersistenceTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgRuneSocketTests;
+
+	FScopedTestWorld TestWorld;
+	FSocketFixture Fixture;
+	if (!MakeSocketFixture(*this, TestWorld, Fixture))
+	{
+		return false;
+	}
+	URpgInventoryManagerComponent& Inventory = *Fixture.Inventory;
+
+	TestEqual(TEXT("A new rune starts at rank I"), Fixture.RuneA->GetRuneRank(), 1);
+	TestTrue(TEXT("Rank III is accepted"), Fixture.RuneA->SetRuneRank(3));
+	TestFalse(TEXT("Rank IV does not exist"), Fixture.RuneA->SetRuneRank(4));
+	TestFalse(TEXT("Rank 0 does not exist"), Fixture.RuneA->SetRuneRank(0));
+	TestEqual(TEXT("A rejected rank changes nothing"), Fixture.RuneA->GetRuneRank(), 3);
+	TestFalse(TEXT("A rune with one rank cannot reach rank II"), Fixture.RuneB->SetRuneRank(2));
+	TestEqual(TEXT("An item that is no rune has no rank"), Fixture.Plain->GetRuneRank(), 0);
+	TestFalse(TEXT("An item that is no rune takes no rank"), Fixture.Plain->SetRuneRank(1));
+
+	TestEqual(TEXT("Rune A goes into the tool"),
+		Move(Inventory, Fixture.RuneA, Socket(Inventory, Fixture.Tool, 0)), ERpgInventoryMutationResultCode::Success);
+	TestEqual(TEXT("Rune B goes into the tool"),
+		Move(Inventory, Fixture.RuneB, Socket(Inventory, Fixture.Tool, 2)), ERpgInventoryMutationResultCode::Success);
+
+	const FRpgInventoryGraphSaveData SaveData = Inventory.ExportInventoryGraph();
+	URpgInventoryManagerComponent* Loaded = TestWorld.CreateInventory(TEXT("RuneLoaded"));
+	FRpgInventoryMutationResult LoadResult;
+	if (!TestNotNull(TEXT("The loading inventory exists"), Loaded) ||
+		!TestTrue(TEXT("The saved graph loads"), Loaded->RestoreInventoryGraph(SaveData, LoadResult)))
+	{
+		return false;
+	}
+
+	URpgInventoryItemInstance* LoadedTool = Loaded->FindItemById(Fixture.Tool->GetItemId());
+	URpgInventoryItemInstance* LoadedRuneA = Loaded->FindItemById(Fixture.RuneA->GetItemId());
+	if (!TestNotNull(TEXT("The tool loads under its id"), LoadedTool) ||
+		!TestNotNull(TEXT("Rune A loads under its id"), LoadedRuneA))
+	{
+		return false;
+	}
+	TestTrue(TEXT("The runes load in their sockets"),
+		SocketedIds(*Loaded, LoadedTool) == TArray<FRpgInventoryItemId>{Fixture.RuneA->GetItemId(), Fixture.RuneB->GetItemId()});
+	TestEqual(TEXT("The rank follows the rune through the save"), LoadedRuneA->GetRuneRank(), 3);
+	TestTrue(TEXT("Rune A keeps its socket"), IsAt(*Loaded, LoadedRuneA, Socket(*Loaded, LoadedTool, 0)));
+
+	const FRpgInventorySavedItem* SavedRuneA = SaveData.Items.FindByPredicate(
+		[&Fixture](const FRpgInventorySavedItem& Item)
+		{
+			return Item.ItemId == Fixture.RuneA->GetItemId();
+		});
+	if (!TestNotNull(TEXT("The save holds rune A"), SavedRuneA))
+	{
+		return false;
+	}
+
+	FRpgInventoryGraphSaveData DuplicateKind = SaveData;
+	FRpgInventorySavedItem& Copy = DuplicateKind.Items.Add_GetRef(*SavedRuneA);
+	Copy.ItemId = FRpgInventoryItemId::NewId();
+	Copy.Placement.X = 1;
+	URpgInventoryManagerComponent* Rejecting = TestWorld.CreateInventory(TEXT("RuneRejecting"));
+	FRpgInventoryMutationResult RejectResult;
+	TestFalse(TEXT("A save with two runes of one kind in a tool does not load"),
+		Rejecting->RestoreInventoryGraph(DuplicateKind, RejectResult));
+	TestTrue(TEXT("The rejected load changes nothing"), Rejecting->GetAllEntries().IsEmpty());
+
+	FRpgInventoryGraphSaveData InvalidRank = SaveData;
+	for (FRpgInventorySavedItem& Item : InvalidRank.Items)
+	{
+		for (FRpgInventoryFragmentStatePayload& Payload : Item.RuntimeState)
+		{
+			if (Item.ItemId == Fixture.RuneA->GetItemId() && Payload.FragmentId == TEXT("Inventory.Rune.Rank") &&
+				Payload.Payload.Num() == 1)
+			{
+				Payload.Payload[0] = 4;
+			}
+		}
+	}
+	URpgInventoryManagerComponent* RankRejecting = TestWorld.CreateInventory(TEXT("RuneRankRejecting"));
+	FRpgInventoryMutationResult RankResult;
+	TestFalse(TEXT("A save with a rank above the rune's highest does not load"),
+		RankRejecting->RestoreInventoryGraph(InvalidRank, RankResult));
+	TestTrue(TEXT("The rejected rank changes nothing"), RankRejecting->GetAllEntries().IsEmpty());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgRuneSocketEquippedGrantsTest,
+	"SurvivalRpg.Runes.Sockets.EquippedToolGrants",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgRuneSocketEquippedGrantsTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgRuneSocketTests;
+
+	FScopedTestWorld TestWorld;
+	FSocketFixture Fixture;
+	if (!MakeSocketFixture(*this, TestWorld, Fixture))
+	{
+		return false;
+	}
+	URpgInventoryManagerComponent& Inventory = *Fixture.Inventory;
+	ARpgEquipmentAutomationTestPawn* Pawn = TestWorld.GetWorld()->SpawnActor<ARpgEquipmentAutomationTestPawn>();
+	URpgAbilitySystemComponent* AbilitySystem = Pawn ? Pawn->GetRpgAbilitySystemComponent() : nullptr;
+	URpgEquipmentManagerComponent* Equipment = Pawn ? Pawn->GetEquipmentManagerComponent() : nullptr;
+	if (!TestNotNull(TEXT("The pawn has an ability system"), AbilitySystem) ||
+		!TestNotNull(TEXT("The pawn has an equipment manager"), Equipment))
+	{
+		return false;
+	}
+	AbilitySystem->InitAbilityActorInfo(Pawn, Pawn);
+	AbilitySystem->SetForceGrantAuthorityForTests(true);
+	FScopedRankAbilitySet RankAbility(MakeAbilitySet(TAG_RuneSocketTest_RankAbility));
+
+	const FGameplayTag RuneTagA = FGameplayTag::RequestGameplayTag(TEXT("Rune.AutomationTest.A"));
+	const FGameplayTag RuneTagB = FGameplayTag::RequestGameplayTag(TEXT("Rune.AutomationTest.B"));
+	const FGameplayTag RankI = FGameplayTag::RequestGameplayTag(TEXT("Rune.AutomationTest.Rank.I"));
+	const FGameplayTag RankII = FGameplayTag::RequestGameplayTag(TEXT("Rune.AutomationTest.Rank.II"));
+
+	URpgEquipmentInstance* MainHand = Equipment->EquipItemInSlotWithInstigator(
+		URpgEquipmentAutomationTestSwordDefinition::StaticClass(), ERpgEquipmentSlot::MainHand, Fixture.Tool);
+	if (!TestNotNull(TEXT("The tool equips"), MainHand))
+	{
+		return false;
+	}
+	TestEqual(TEXT("A tool without runes grants no rune"), AbilitySystem->GetTagCount(RuneTagA), 0);
+
+	TestEqual(TEXT("Rune A goes into the equipped tool"),
+		Move(Inventory, Fixture.RuneA, Socket(Inventory, Fixture.Tool, 0)), ERpgInventoryMutationResultCode::Success);
+	TestEqual(TEXT("The wielder carries rune A"), AbilitySystem->GetTagCount(RuneTagA), 1);
+	TestEqual(TEXT("Rank I grants its tag"), AbilitySystem->GetTagCount(RankI), 1);
+
+	TestEqual(TEXT("Rune A moves to another socket"),
+		Move(Inventory, Fixture.RuneA, Socket(Inventory, Fixture.Tool, 1)), ERpgInventoryMutationResultCode::Success);
+	TestEqual(TEXT("Moving between sockets grants nothing twice"), AbilitySystem->GetTagCount(RuneTagA), 1);
+	TestEqual(TEXT("A plain move elsewhere changes no grant"),
+		Move(Inventory, Fixture.Plain, Storage(5, 2)), ERpgInventoryMutationResultCode::Success);
+	TestEqual(TEXT("Rank I is still granted once"), AbilitySystem->GetTagCount(RankI), 1);
+
+	TestTrue(TEXT("Rune A reaches rank II"), Fixture.RuneA->SetRuneRank(2));
+	TestEqual(TEXT("Rune B goes into the tool"),
+		Move(Inventory, Fixture.RuneB, Socket(Inventory, Fixture.Tool, 2)), ERpgInventoryMutationResultCode::Success);
+	TestEqual(TEXT("Rune B is granted"), AbilitySystem->GetTagCount(RuneTagB), 1);
+	TestEqual(TEXT("Rank I left with the old rank"), AbilitySystem->GetTagCount(RankI), 0);
+	TestEqual(TEXT("Rank II arrived"), AbilitySystem->GetTagCount(RankII), 1);
+	TestEqual(TEXT("Rank II's ability is granted once"), CountSpecsWithId(*AbilitySystem, TAG_RuneSocketTest_RankAbility), 1);
+	TestEqual(TEXT("Rune A is still granted once"), AbilitySystem->GetTagCount(RuneTagA), 1);
+
+	TestEqual(TEXT("Rune A leaves the tool"),
+		Move(Inventory, Fixture.RuneA, Storage(1, 0)), ERpgInventoryMutationResultCode::Success);
+	TestEqual(TEXT("Rune A's grants leave with it"), AbilitySystem->GetTagCount(RuneTagA), 0);
+	TestEqual(TEXT("Rank II leaves with rune A"), AbilitySystem->GetTagCount(RankII), 0);
+	TestEqual(TEXT("Rank II's ability leaves with rune A"), CountSpecsWithId(*AbilitySystem, TAG_RuneSocketTest_RankAbility), 0);
+	TestEqual(TEXT("Rune B stays"), AbilitySystem->GetTagCount(RuneTagB), 1);
+
+	Equipment->UnequipItem(MainHand);
+	TestEqual(TEXT("Unequipping the tool removes its runes"), AbilitySystem->GetTagCount(RuneTagB), 0);
+	TestEqual(TEXT("Rune A goes back into the unequipped tool"),
+		Move(Inventory, Fixture.RuneA, Socket(Inventory, Fixture.Tool, 0)), ERpgInventoryMutationResultCode::Success);
+	TestEqual(TEXT("An unequipped tool grants nothing"), AbilitySystem->GetTagCount(RuneTagA), 0);
+	return true;
+}
+
+#endif // WITH_DEV_AUTOMATION_TESTS

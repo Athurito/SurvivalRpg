@@ -703,6 +703,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = Inventory, BlueprintPure)
 	URpgInventoryItemInstance* FindItemById(FRpgInventoryItemId ItemId) const;
 
+	/**
+	 * Items placed directly in the socket grids of OwnerItem, such as the runes on a tool, ordered by grid and cell.
+	 * Read-only; valid on authority and on clients that receive this inventory.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Sockets", BlueprintPure)
+	TArray<URpgInventoryItemInstance*> GetSocketedItems(const URpgInventoryItemInstance* OwnerItem) const;
+
+	/** The inventory on the item's outer actor that manages ItemInstance, or null. */
+	static URpgInventoryManagerComponent* FindInventoryOfItem(const URpgInventoryItemInstance* ItemInstance);
+
 	UFUNCTION(BlueprintCallable, Category=Inventory, BlueprintPure)
 	URpgInventoryItemInstance* FindFirstItemStackByDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef) const;
 
@@ -897,6 +907,15 @@ private:
 	bool GetItemContainerDefinition(const FRpgInventoryContainerHandle& ContainerHandle, struct FRpgInventoryItemContainerDefinition& OutDefinition) const;
 	bool ValidatePlacementGraphRules(const FRpgInventoryEntry& Entry, const FRpgInventoryGridPlacement& Placement, ERpgInventoryMutationResultCode& OutCode) const;
 	bool WouldCreateContainerCycle(const FRpgInventoryItemId& MovingItemId, const FRpgInventoryContainerHandle& TargetContainer) const;
+
+	/**
+	 * Whether another item of ItemDefinition already sits in the socket grid of Placement. Ignored is the item being
+	 * placed; items under Placement are skipped, because the placement either displaces them or fails as occupied.
+	 */
+	bool HasSocketedDuplicate(
+		const FRpgInventoryGridPlacement& Placement,
+		TSubclassOf<URpgInventoryItemDefinition> ItemDefinition,
+		const URpgInventoryItemInstance* Ignored) const;
 	bool AddOwnedItemInstance(
 		URpgInventoryItemInstance* ItemInstance,
 		int32 StackCount,

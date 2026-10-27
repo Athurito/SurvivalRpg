@@ -39,6 +39,11 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 	ERpgInventoryContainmentState,
 	NewState);
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FRpgInventoryRuneRankChanged,
+	int32,
+	NewRank);
+
 /**
  * Canonical, non-persisted value used for every stack-compatibility decision.
  *
@@ -142,6 +147,18 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Inventory|Containment")
 	FRpgInventoryContainmentStateChanged OnContainmentStateChanged;
 
+	/** Rank of this rune (1 to 3), or 0 when the item's definition has no Rune fragment. Replicated and saved. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Rune")
+	int32 GetRuneRank() const;
+
+	/** Changes the rank on authority; accepted only for runes and ranks within 1 to the rune's highest rank. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Rune")
+	bool SetRuneRank(int32 NewRank);
+
+	/** Fired locally on authority mutation and on clients after a replicated rank change. */
+	UPROPERTY(BlueprintAssignable, Category = "Inventory|Rune")
+	FRpgInventoryRuneRankChanged OnRuneRankChanged;
+
 	/** Returns the persistent item identity used by graph handles, transactions, saves, and quick-access bindings. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Identity")
 	FRpgInventoryItemId GetItemId() const { return ItemId; }
@@ -206,6 +223,9 @@ private:
 	UFUNCTION()
 	void OnRep_ContainmentState();
 
+	UFUNCTION()
+	void OnRep_RuneRank();
+
 	/** Restores an already validated historical roll without comparing it to rebalanced generation ranges. */
 	bool RestorePersistedItemizationState(const FRpgItemizationState& NewState);
 	bool CommitItemizationState(const FRpgItemizationState& NewState);
@@ -237,6 +257,13 @@ private:
 	UPROPERTY(ReplicatedUsing = OnRep_ContainmentState)
 	ERpgInventoryContainmentState ContainmentState =
 		ERpgInventoryContainmentState::Unstable;
+
+	/**
+	 * Concrete rank of a rune item, starting at rank I. Replicated with the item and serialized by the Rune fragment's
+	 * runtime payload, so moves, transfers and loads keep it; meaningless for items without a Rune fragment.
+	 */
+	UPROPERTY(ReplicatedUsing = OnRep_RuneRank)
+	uint8 RuneRank = 1;
 
 	/** Static fragment-composed definition shared by every instance of this item type. */
 	UPROPERTY(Replicated)

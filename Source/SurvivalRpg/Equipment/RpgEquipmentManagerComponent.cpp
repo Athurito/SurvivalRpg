@@ -21,16 +21,18 @@
 #include "SurvivalRpg/Inventory/Itemization/RpgItemizationGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_SkillTree.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
+#include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeComponent.h"
 #include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeDefinition.h"
+#include "SurvivalRpg/Runes/RpgInventoryFragment_Rune.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgEquipmentManagerComponent)
 
-namespace RpgEquipmentSkillTrees
+namespace RpgEquipmentItemGrants
 {
-	void GiveSkillNodeGrant(
+	void GiveItemGrant(
 		URpgAbilitySystemComponent& AbilitySystem,
-		FRpgAppliedSkillNodeGrant& Grant,
+		FRpgAppliedItemGrant& Grant,
 		URpgEquipmentInstance* SourceEquipment)
 	{
 		if (Grant.AbilitySet)
@@ -43,7 +45,7 @@ namespace RpgEquipmentSkillTrees
 		}
 	}
 
-	void TakeSkillNodeGrant(URpgAbilitySystemComponent& AbilitySystem, FRpgAppliedSkillNodeGrant& Grant)
+	void TakeItemGrant(URpgAbilitySystemComponent& AbilitySystem, FRpgAppliedItemGrant& Grant)
 	{
 		Grant.GrantedHandles.TakeFromAbilitySystem(&AbilitySystem);
 		if (!Grant.GrantedTags.IsEmpty())
@@ -160,13 +162,18 @@ void FRpgEquipmentList::RemoveEntry(URpgEquipmentInstance* Instance)
 			{
 				GrantPair.Value.GrantedHandles.TakeFromAbilitySystem(AbilitySystemComponent);
 			}
-			for (TPair<FGameplayTag, FRpgAppliedSkillNodeGrant>& NodeGrantPair : Entry.SkillNodeGrants)
+			for (TPair<FGameplayTag, FRpgAppliedItemGrant>& NodeGrantPair : Entry.SkillNodeGrants)
 			{
-				RpgEquipmentSkillTrees::TakeSkillNodeGrant(*AbilitySystemComponent, NodeGrantPair.Value);
+				RpgEquipmentItemGrants::TakeItemGrant(*AbilitySystemComponent, NodeGrantPair.Value);
+			}
+			for (TPair<FRpgInventoryItemId, FRpgAppliedItemGrant>& SocketGrantPair : Entry.SocketGrants)
+			{
+				RpgEquipmentItemGrants::TakeItemGrant(*AbilitySystemComponent, SocketGrantPair.Value);
 			}
 		}
 		Entry.AbilitySetGrants.Reset();
 		Entry.SkillNodeGrants.Reset();
+		Entry.SocketGrants.Reset();
 
 		Instance->DestroyEquipmentActors();
 		Instance->RemoveCharacterParts();
@@ -424,6 +431,7 @@ void URpgEquipmentManagerComponent::InitializeComponent()
 
 void URpgEquipmentManagerComponent::UninitializeComponent()
 {
+	StopWatchingSourceInventories();
 	bBlockLayerShuttingDown = true;
 	ClearBlockLocomotionLayer();
 	ClearWeaponHoldLayers();
@@ -456,6 +464,7 @@ void URpgEquipmentManagerComponent::BeginPlay()
 
 void URpgEquipmentManagerComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	StopWatchingSourceInventories();
 	bBlockLayerShuttingDown = true;
 	SetComponentTickEnabled(false);
 	if (URpgPawnExtensionComponent* Extension = BlockPawnExtension.Get())
@@ -865,6 +874,7 @@ void URpgEquipmentManagerComponent::RebuildEquipmentAbilityGrants()
 	bool bGrantsChanged = false;
 	URpgSkillTreeComponent* SkillTrees = URpgSkillTreeComponent::FindForActor(GetOwner());
 	const bool bHasAuthority = GetOwner() && GetOwner()->HasAuthority();
+	TArray<URpgInventoryManagerComponent*> SourceInventories;
 
 	for (FRpgAppliedEquipmentEntry& Entry : EquipmentList.Entries)
 	{
@@ -939,7 +949,7 @@ void URpgEquipmentManagerComponent::RebuildEquipmentAbilityGrants()
 				NodeGrantIt.Value().AbilitySet != (*DesiredNode)->AbilitySet ||
 				NodeGrantIt.Value().GrantedTags != (*DesiredNode)->GrantedTags)
 			{
-				RpgEquipmentSkillTrees::TakeSkillNodeGrant(*AbilitySystemComponent, NodeGrantIt.Value());
+				RpgEquipmentItemGrants::TakeItemGrant(*AbilitySystemComponent, NodeGrantIt.Value());
 				NodeGrantIt.RemoveCurrent();
 				bGrantsChanged = true;
 			}
@@ -949,13 +959,64 @@ void URpgEquipmentManagerComponent::RebuildEquipmentAbilityGrants()
 		{
 			if (!Entry.SkillNodeGrants.Contains(DesiredNode.Key))
 			{
-				FRpgAppliedSkillNodeGrant& NewGrant = Entry.SkillNodeGrants.Add(DesiredNode.Key);
+				FRpgAppliedItemGrant& NewGrant = Entry.SkillNodeGrants.Add(DesiredNode.Key);
 				NewGrant.AbilitySet = DesiredNode.Value->AbilitySet;
 				NewGrant.GrantedTags = DesiredNode.Value->GrantedTags;
-				RpgEquipmentSkillTrees::GiveSkillNodeGrant(*AbilitySystemComponent, NewGrant, Entry.Instance);
+				RpgEquipmentItemGrants::GiveItemGrant(*AbilitySystemComponent, NewGrant, Entry.Instance);
 				bGrantsChanged = true;
 			}
 		}
+
+		// Runes socketed into the item grant their RuneTag and their current rank while the item is equipped, sourced
+		// from its equipment. Keyed by rune item, so a rune moving between sockets of the item keeps its grant.
+		TMap<FRpgInventoryItemId, FRpgAppliedItemGrant> DesiredRunes;
+		const URpgInventoryItemInstance* SourceItem = Entry.Instance && bHasAuthority
+			? Cast<URpgInventoryItemInstance>(Entry.Instance->GetInstigator())
+			: nullptr;
+		if (URpgInventoryManagerComponent* SourceInventory = URpgInventoryManagerComponent::FindInventoryOfItem(SourceItem))
+		{
+			SourceInventories.AddUnique(SourceInventory);
+			for (const URpgInventoryItemInstance* SocketedItem : SourceInventory->GetSocketedItems(SourceItem))
+			{
+				const URpgInventoryFragment_Rune* Rune = URpgInventoryFragment_Rune::FindRuneOfItem(SocketedItem);
+				const FRpgRuneRank* Rank = Rune ? Rune->FindRank(SocketedItem->GetRuneRank()) : nullptr;
+				if (Rank)
+				{
+					FRpgAppliedItemGrant& Desired = DesiredRunes.Add(SocketedItem->GetItemId());
+					Desired.AbilitySet = Rank->AbilitySet;
+					Desired.GrantedTags = Rank->GrantedTags;
+					Desired.GrantedTags.AddTag(Rune->RuneTag);
+				}
+			}
+		}
+
+		for (auto SocketGrantIt = Entry.SocketGrants.CreateIterator(); SocketGrantIt; ++SocketGrantIt)
+		{
+			const FRpgAppliedItemGrant* Desired = DesiredRunes.Find(SocketGrantIt.Key());
+			if (!Desired ||
+				SocketGrantIt.Value().AbilitySet != Desired->AbilitySet ||
+				SocketGrantIt.Value().GrantedTags != Desired->GrantedTags)
+			{
+				RpgEquipmentItemGrants::TakeItemGrant(*AbilitySystemComponent, SocketGrantIt.Value());
+				SocketGrantIt.RemoveCurrent();
+				bGrantsChanged = true;
+			}
+		}
+
+		for (TPair<FRpgInventoryItemId, FRpgAppliedItemGrant>& Desired : DesiredRunes)
+		{
+			if (!Entry.SocketGrants.Contains(Desired.Key))
+			{
+				FRpgAppliedItemGrant& NewGrant = Entry.SocketGrants.Add(Desired.Key, MoveTemp(Desired.Value));
+				RpgEquipmentItemGrants::GiveItemGrant(*AbilitySystemComponent, NewGrant, Entry.Instance);
+				bGrantsChanged = true;
+			}
+		}
+	}
+
+	if (bHasAuthority)
+	{
+		WatchSourceInventories(SourceInventories);
 	}
 
 	// Q/E/R and quick-access bindings resolve against the granted specs, whichever equip path changed them.
@@ -963,6 +1024,50 @@ void URpgEquipmentManagerComponent::RebuildEquipmentAbilityGrants()
 	{
 		RefreshOwnerAbilityBindings();
 	}
+}
+
+void URpgEquipmentManagerComponent::WatchSourceInventories(const TArray<URpgInventoryManagerComponent*>& SourceInventories)
+{
+	for (auto WatchedIt = WatchedInventories.CreateIterator(); WatchedIt; ++WatchedIt)
+	{
+		URpgInventoryManagerComponent* Watched = WatchedIt->Get();
+		if (!Watched || !SourceInventories.Contains(Watched))
+		{
+			if (Watched)
+			{
+				Watched->OnInventoryPostCommit.RemoveAll(this);
+			}
+			WatchedIt.RemoveCurrent();
+		}
+	}
+
+	for (URpgInventoryManagerComponent* SourceInventory : SourceInventories)
+	{
+		if (!WatchedInventories.Contains(SourceInventory))
+		{
+			SourceInventory->OnInventoryPostCommit.AddUObject(this, &ThisClass::HandleWatchedInventoryCommitted);
+			WatchedInventories.Add(SourceInventory);
+		}
+	}
+}
+
+void URpgEquipmentManagerComponent::StopWatchingSourceInventories()
+{
+	for (const TWeakObjectPtr<URpgInventoryManagerComponent>& Watched : WatchedInventories)
+	{
+		if (URpgInventoryManagerComponent* Inventory = Watched.Get())
+		{
+			Inventory->OnInventoryPostCommit.RemoveAll(this);
+		}
+	}
+	WatchedInventories.Reset();
+}
+
+void URpgEquipmentManagerComponent::HandleWatchedInventoryCommitted(URpgInventoryManagerComponent* Inventory)
+{
+	// Grants are keyed and diffed, so a commit that moved nothing socketed changes nothing.
+	(void)Inventory;
+	RebuildEquipmentAbilityGrants();
 }
 
 void URpgEquipmentManagerComponent::RefreshSkillTreeGrants()
