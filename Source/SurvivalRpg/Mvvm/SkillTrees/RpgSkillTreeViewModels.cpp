@@ -522,7 +522,7 @@ void URpgSkillProgressionViewModel::BeginDestroy()
 {
 	RefreshQueue.Cancel();
 	Unsubscribe();
-	ObserveSelectedTree(nullptr);
+	ObserveTrees(TConstArrayView<TObjectPtr<URpgSkillTreeViewModel>>());
 	Super::BeginDestroy();
 }
 
@@ -598,26 +598,80 @@ void URpgSkillProgressionViewModel::HandleCharacterXPChanged(float CurrentXP, fl
 	QueueRefresh();
 }
 
-void URpgSkillProgressionViewModel::HandleSelectedTreeChanged()
+void URpgSkillProgressionViewModel::HandleTreeViewChanged()
 {
+	UpdateSelection();
 	OnProgressionChanged.Broadcast();
 }
 
-void URpgSkillProgressionViewModel::ObserveSelectedTree(URpgSkillTreeViewModel* TreeViewModel)
+void URpgSkillProgressionViewModel::ObserveTrees(const TConstArrayView<TObjectPtr<URpgSkillTreeViewModel>> Trees)
 {
-	if (ObservedSelectedTree.Get() == TreeViewModel)
+	for (const TWeakObjectPtr<URpgSkillTreeViewModel>& ObservedTree : ObservedTrees)
 	{
-		return;
+		if (URpgSkillTreeViewModel* Tree = ObservedTree.Get(); Tree && !Trees.Contains(Tree))
+		{
+			Tree->OnTreeChanged.RemoveDynamic(this, &ThisClass::HandleTreeViewChanged);
+		}
 	}
-	if (URpgSkillTreeViewModel* PreviousTree = ObservedSelectedTree.Get())
+	ObservedTrees.Reset(Trees.Num());
+	for (URpgSkillTreeViewModel* Tree : Trees)
 	{
-		PreviousTree->OnTreeChanged.RemoveDynamic(this, &ThisClass::HandleSelectedTreeChanged);
+		if (Tree)
+		{
+			Tree->OnTreeChanged.AddUniqueDynamic(this, &ThisClass::HandleTreeViewChanged);
+			ObservedTrees.Add(Tree);
+		}
 	}
-	ObservedSelectedTree = TreeViewModel;
-	if (TreeViewModel)
+}
+
+void URpgSkillProgressionViewModel::UpdateSelection()
+{
+	// A selection in another tree than the current one is the newer one.
+	URpgSkillTreeNodeViewModel* NewSelectedNode = nullptr;
+	for (URpgSkillTreeViewModel* TreeViewModel : SkillTrees)
 	{
-		TreeViewModel->OnTreeChanged.AddUniqueDynamic(this, &ThisClass::HandleSelectedTreeChanged);
+		URpgSkillTreeNodeViewModel* Node = TreeViewModel ? TreeViewModel->GetSelectedNode() : nullptr;
+		if (Node && (!NewSelectedNode || !SelectedNode || Node->GetTree() != SelectedNode->GetTree()))
+		{
+			NewSelectedNode = Node;
+		}
 	}
+	UE_MVVM_SET_PROPERTY_VALUE(SelectedNode, NewSelectedNode);
+
+	// Selection: the selected node's tree, else the player's pick, else the current one, else the main-hand weapon's
+	// tree, else the first.
+	const auto FindTree = [this](const FGameplayTag TreeTag) -> URpgSkillTreeViewModel*
+	{
+		for (URpgSkillTreeViewModel* TreeViewModel : SkillTrees)
+		{
+			if (TreeViewModel && TreeTag.IsValid() && TreeViewModel->GetTreeTag() == TreeTag)
+			{
+				return TreeViewModel;
+			}
+		}
+		return nullptr;
+	};
+	URpgSkillTreeViewModel* NewSelectedTree = NewSelectedNode ? NewSelectedNode->GetTree() : nullptr;
+	if (!NewSelectedTree)
+	{
+		NewSelectedTree = FindTree(RequestedTreeTag);
+	}
+	if (!NewSelectedTree && SelectedSkillTree)
+	{
+		NewSelectedTree = FindTree(SelectedSkillTree->GetTreeTag());
+	}
+	if (!NewSelectedTree)
+	{
+		const APlayerState* PlayerState = ObservedPlayerState.Get();
+		const URpgSkillTreeDefinition* WeaponTree =
+			PlayerState ? URpgSkillTreeComponent::FindActiveWeaponSkillTree(PlayerState->GetPawn()) : nullptr;
+		NewSelectedTree = WeaponTree ? FindTree(WeaponTree->TreeTag) : nullptr;
+	}
+	if (!NewSelectedTree && !SkillTrees.IsEmpty())
+	{
+		NewSelectedTree = SkillTrees[0];
+	}
+	UE_MVVM_SET_PROPERTY_VALUE(SelectedSkillTree, NewSelectedTree);
 }
 
 void URpgSkillProgressionViewModel::Subscribe()
@@ -764,36 +818,8 @@ void URpgSkillProgressionViewModel::Rebuild()
 	}
 	UE_MVVM_SET_PROPERTY_VALUE(TotalAvailablePoints, NewTotalAvailablePoints);
 
-	// Selection: the player's pick, else the current one, else the main-hand weapon's tree, else the first.
-	const auto FindTree = [this](const FGameplayTag TreeTag) -> URpgSkillTreeViewModel*
-	{
-		for (URpgSkillTreeViewModel* TreeViewModel : SkillTrees)
-		{
-			if (TreeViewModel && TreeTag.IsValid() && TreeViewModel->GetTreeTag() == TreeTag)
-			{
-				return TreeViewModel;
-			}
-		}
-		return nullptr;
-	};
-	URpgSkillTreeViewModel* NewSelectedTree = FindTree(RequestedTreeTag);
-	if (!NewSelectedTree && SelectedSkillTree)
-	{
-		NewSelectedTree = FindTree(SelectedSkillTree->GetTreeTag());
-	}
-	if (!NewSelectedTree)
-	{
-		const APlayerState* PlayerState = ObservedPlayerState.Get();
-		const URpgSkillTreeDefinition* WeaponTree =
-			PlayerState ? URpgSkillTreeComponent::FindActiveWeaponSkillTree(PlayerState->GetPawn()) : nullptr;
-		NewSelectedTree = WeaponTree ? FindTree(WeaponTree->TreeTag) : nullptr;
-	}
-	if (!NewSelectedTree && !SkillTrees.IsEmpty())
-	{
-		NewSelectedTree = SkillTrees[0];
-	}
-	UE_MVVM_SET_PROPERTY_VALUE(SelectedSkillTree, NewSelectedTree);
-	ObserveSelectedTree(NewSelectedTree);
+	ObserveTrees(SkillTrees);
+	UpdateSelection();
 
 	OnProgressionChanged.Broadcast();
 }

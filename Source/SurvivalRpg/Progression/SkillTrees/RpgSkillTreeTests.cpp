@@ -31,6 +31,7 @@
 
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_SkillTreeTest_Tree, "SkillTree.Tree.AutomationTest");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_SkillTreeTest_UnregisteredTree, "SkillTree.Tree.AutomationTestUnregistered");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_SkillTreeTest_SecondTree, "SkillTree.Tree.AutomationTestSecond");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_SkillTreeTest_Root, "SkillTree.Node.AutomationTest.Root");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_SkillTreeTest_Second, "SkillTree.Node.AutomationTest.Second");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_SkillTreeTest_FormA, "SkillTree.Node.AutomationTest.FormA");
@@ -388,6 +389,23 @@ bool FRpgSkillTreeDefinitionMapLayoutTest::RunTest(const FString& Parameters)
 		MapBounds.Min.Equals(FVector2D(-170.0, -40.0)) && MapBounds.Max.Equals(FVector2D(500.0, 450.0)));
 	TestNotNull(TEXT("FindRegion finds an authored region"), MapTree->FindRegion(TEXT("Forms")));
 
+	// MapOrigin places the whole cluster on the shared map: positions, regions and bounds move together.
+	const FVector2D Origin(2000.0, -500.0);
+	URpgSkillTreeDefinition* MovedTree = MakeMapTree();
+	MovedTree->MapOrigin = Origin;
+	TestTrue(TEXT("The map origin moves a free node"),
+		MovedTree->GetNodeMapPosition(MovedTree->Nodes[2]).Equals(FVector2D(-120.0, 220.0) + Origin));
+	const FBox2D MovedCore = MovedTree->GetRegionBounds(TEXT("Core"));
+	TestTrue(TEXT("The map origin moves a region"),
+		MovedCore.bIsValid && MovedCore.Min.Equals(Core.Min + Origin) && MovedCore.Max.Equals(Core.Max + Origin));
+	const FBox2D MovedBounds = MovedTree->GetMapBounds();
+	TestTrue(TEXT("The map origin moves the tree's bounds"),
+		MovedBounds.Min.Equals(MapBounds.Min + Origin) && MovedBounds.Max.Equals(MapBounds.Max + Origin));
+	URpgSkillTreeDefinition* MovedGrid = MakeTree();
+	MovedGrid->MapOrigin = Origin;
+	TestTrue(TEXT("The map origin moves grid cells"),
+		MovedGrid->GetNodeMapPosition(MovedGrid->Nodes[3]).Equals(FVector2D(160.0, 160.0) + Origin));
+
 	auto ExpectInvalid = [this](const TCHAR* What, URpgSkillTreeDefinition* Tree)
 	{
 		TArray<FText> CaseErrors;
@@ -435,6 +453,10 @@ bool FRpgSkillTreeDefinitionMapLayoutTest::RunTest(const FString& Parameters)
 	URpgSkillTreeDefinition* FlatGrid = MakeTree();
 	FlatGrid->GridSpacing.Y = 0.0;
 	ExpectInvalid(TEXT("A grid without vertical spacing is rejected"), FlatGrid);
+
+	URpgSkillTreeDefinition* NonFiniteOrigin = MakeMapTree();
+	NonFiniteOrigin->MapOrigin.Y = std::numeric_limits<double>::infinity();
+	ExpectInvalid(TEXT("A non-finite map origin is rejected"), NonFiniteOrigin);
 	return true;
 }
 
@@ -1223,21 +1245,44 @@ bool FRpgSkillProgressionViewModelTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Learning spends a free point"), Progression->GetTotalAvailablePoints(), PointsBefore - 1);
 	TestTrue(TEXT("The selected tree survives a refresh"), Progression->GetSelectedSkillTree() == TestTreeViewModel);
 
-	// A screen refreshes from one event, also when only the selected tree changed.
+	// A screen refreshes from one event; one map shows every tree, so every tree notifies it.
 	URpgSkillTreeAutomationTestListener* Listener =
 		NewObject<URpgSkillTreeAutomationTestListener>(GetTransientPackage(), NAME_None, RF_Transient);
 	Progression->OnProgressionChanged.AddDynamic(Listener, &URpgSkillTreeAutomationTestListener::HandleChanged);
 	TestTreeViewModel->SelectNode(TAG_SkillTreeTest_Root);
-	TestEqual(TEXT("Selecting a node of the selected tree notifies the overview"), Listener->Broadcasts, 1);
-	if (URpgSkillTreeViewModel* const* OtherTree = Trees.FindByPredicate([TestTreeViewModel](const URpgSkillTreeViewModel* Tree)
+	TestEqual(TEXT("Selecting a node notifies the overview"), Listener->Broadcasts, 1);
+	TestTrue(TEXT("The overview reports the selected node"),
+		Progression->GetSelectedNode() && Progression->GetSelectedNode() == TestTreeViewModel->FindNode(TAG_SkillTreeTest_Root));
+
+	URpgSkillTreeDefinition* SecondTree = MakeTree();
+	SecondTree->TreeTag = TAG_SkillTreeTest_SecondTree;
+	SecondTree->MasterySkillTag = RpgTradeSkillGameplayTags::Skill_Gathering_Mining;
+	SkillTrees->RegisterSkillTree(SecondTree);
+	Progression->Refresh();
+	const TArray<URpgSkillTreeViewModel*> TreesWithSecond = Progression->GetSkillTrees();
+	URpgSkillTreeViewModel* const* OtherTree = TreesWithSecond.FindByPredicate([](const URpgSkillTreeViewModel* Tree)
 	{
-		return Tree && Tree != TestTreeViewModel;
-	}))
+		return Tree && Tree->GetTreeTag() == TAG_SkillTreeTest_SecondTree;
+	});
+	if (TestNotNull(TEXT("The overview lists a second tree"), OtherTree))
 	{
 		const int32 BroadcastsBefore = Listener->Broadcasts;
 		(*OtherTree)->Refresh();
-		TestEqual(TEXT("Trees that are not selected do not notify the overview"), Listener->Broadcasts, BroadcastsBefore);
+		TestTrue(TEXT("Every tree notifies the overview"), Listener->Broadcasts > BroadcastsBefore);
+		TestEqual(TEXT("The second tree has its own points"), (*OtherTree)->GetSpentPoints(), 0);
+
+		(*OtherTree)->SelectNode(TAG_SkillTreeTest_Second);
+		TestTrue(TEXT("A selection in another tree is the newer one"),
+			Progression->GetSelectedNode() == (*OtherTree)->FindNode(TAG_SkillTreeTest_Second) &&
+				Progression->GetSelectedSkillTree() == *OtherTree);
+		(*OtherTree)->SelectNode(FGameplayTag());
+		TestTrue(TEXT("Clearing it shows the selection that remains"),
+			Progression->GetSelectedNode() == TestTreeViewModel->FindNode(TAG_SkillTreeTest_Root) &&
+				Progression->GetSelectedSkillTree() == TestTreeViewModel);
 	}
+	TestTreeViewModel->SelectNode(FGameplayTag());
+	TestNull(TEXT("Without a selection the overview reports no node"), Progression->GetSelectedNode());
+	TestTrue(TEXT("Without a selection the picked tree stays selected"), Progression->GetSelectedSkillTree() == TestTreeViewModel);
 
 	Progression->Unbind();
 	TestTrue(TEXT("Unbinding clears the trees"), Progression->GetSkillTrees().IsEmpty());

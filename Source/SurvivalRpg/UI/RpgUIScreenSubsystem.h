@@ -29,6 +29,12 @@ struct FRpgUIMapViewState
 
 	/** Selected entry of the map, for example a skill tree node, or empty. */
 	FGameplayTag SelectedTag;
+
+	/**
+	 * Group SelectedTag belongs to when entry tags are only unique per group, for example the skill tree of a node on
+	 * a map of several trees, or empty.
+	 */
+	FGameplayTag SelectedGroupTag;
 };
 
 /**
@@ -73,11 +79,14 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "UI|Screens", meta = (Categories = "UI.Screen"))
 	bool IsScreenOpenOrPending(FGameplayTag ScreenTag) const;
 
-	/** Remembers the view of the map MapId, for example a skill tree tag, until the local player goes away. */
-	void SetMapViewState(FGameplayTag MapId, const FRpgUIMapViewState& State);
+	/**
+	 * Remembers the view of the map MapId until the local player goes away. MapId names what the map shows, for example
+	 * the skill trees on it.
+	 */
+	void SetMapViewState(FName MapId, const FRpgUIMapViewState& State);
 
 	/** Returns the remembered view of MapId, or null. Closing screens keeps it; Deinitialize clears it. */
-	const FRpgUIMapViewState* FindMapViewState(FGameplayTag MapId) const;
+	const FRpgUIMapViewState* FindMapViewState(FName MapId) const;
 
 protected:
 	UPrimaryGameLayout* GetPrimaryGameLayout() const;
@@ -151,7 +160,7 @@ private:
 	TSet<FGameplayTag> CanceledPendingScreenTags;
 
 	/** Map views remembered across screen close and reopen, keyed by map identity. Session-only presentation state. */
-	TMap<FGameplayTag, FRpgUIMapViewState> MapViewStates;
+	TMap<FName, FRpgUIMapViewState> MapViewStates;
 
 	uint64 NextScreenCheckoutId = 0;
 	/** Async callbacks from an earlier drain must never mutate a subsequent screen request. */

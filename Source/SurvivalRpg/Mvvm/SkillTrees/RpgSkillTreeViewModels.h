@@ -371,6 +371,7 @@ public:
 	const TArray<FRpgSkillTreeLinkView>& GetLinks() const { return Links; }
 	const TArray<FRpgSkillTreeSlotView>& GetSlots() const { return Slots; }
 	bool CanResetTree() const { return bCanResetTree; }
+	URpgSkillTreeNodeViewModel* GetSelectedNode() const { return SelectedNode; }
 	ERpgSkillTreeLayoutMode GetLayoutMode() const { return LayoutMode; }
 	const FBox2D& GetMapBounds() const { return MapBounds; }
 	const TArray<FRpgSkillTreeRegionView>& GetRegions() const { return Regions; }
@@ -456,7 +457,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Map", meta = (AllowPrivateAccess = "true"))
 	ERpgSkillTreeLayoutMode LayoutMode = ERpgSkillTreeLayoutMode::Grid;
 
-	/** Map area around every node and region in map units; invalid without nodes. */
+	/** Map area around every node and region in map units, at the tree's place on the shared map; invalid without nodes. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Map", meta = (AllowPrivateAccess = "true"))
 	FBox2D MapBounds = FBox2D(ForceInit);
 
@@ -561,7 +562,8 @@ protected:
 
 /**
  * Progression overview of the local player: character level, every trade skill with its XP bar and every skill tree
- * with its free points. Owns one URpgSkillTreeViewModel per known tree and the screen's tree selection.
+ * with its free points. Owns one URpgSkillTreeViewModel per known tree, the node selected on the mastery map across
+ * all trees, and the tree that selection belongs to.
  *
  * Bind it to the owning player controller when the screen opens. It observes the player state's progression
  * components and rebuilds at most once per frame. UI read-only apart from the tree commands it forwards.
@@ -590,7 +592,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Skill Tree|ViewModel")
 	void Refresh();
 
-	/** Shows TreeTag in the tree view. Local UI state only. */
+	/** Makes TreeTag the selected tree while no node is selected. Local UI state only. */
 	UFUNCTION(BlueprintCallable, Category = "Skill Tree|ViewModel")
 	void SelectSkillTree(FGameplayTag TreeTag);
 
@@ -603,12 +605,13 @@ public:
 	TArray<URpgSkillTreeViewModel*> GetSkillTrees() const;
 
 	URpgSkillTreeViewModel* GetSelectedSkillTree() const { return SelectedSkillTree; }
+	URpgSkillTreeNodeViewModel* GetSelectedNode() const { return SelectedNode; }
 	int32 GetCharacterLevel() const { return CharacterLevel; }
 	int32 GetTotalAvailablePoints() const { return TotalAvailablePoints; }
 
 	/**
-	 * Fired after every rebuild and whenever the selected tree view model changes, for example when a node is selected,
-	 * so a screen can refresh everything from one event.
+	 * Fired after every rebuild and whenever any tree view model changes, for example when a node is selected or its
+	 * points change, so a screen can refresh everything from one event.
 	 */
 	UPROPERTY(BlueprintAssignable, Category = "Skill Tree|ViewModel")
 	FRpgSkillTreeViewModelChanged OnProgressionChanged;
@@ -638,9 +641,19 @@ protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Trees", meta = (AllowPrivateAccess = "true"))
 	TArray<TObjectPtr<URpgSkillTreeViewModel>> SkillTrees;
 
-	/** Tree shown in the tree view: the one picked by SelectSkillTree, else the main-hand weapon's, else the first. */
+	/**
+	 * Tree of SelectedNode; without a selection the one picked by SelectSkillTree, else the main-hand weapon's, else
+	 * the first.
+	 */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Trees", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgSkillTreeViewModel> SelectedSkillTree = nullptr;
+
+	/**
+	 * Node selected in any tree, for the detail card of a map that shows every tree, or null. A map keeps one selection;
+	 * if several trees hold one anyway, the most recently selected wins.
+	 */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Trees", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgSkillTreeNodeViewModel> SelectedNode = nullptr;
 
 	/** Free points over every tree, for a badge on the menu tab. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Trees", meta = (AllowPrivateAccess = "true"))
@@ -660,9 +673,13 @@ private:
 	void HandleCharacterXPChanged(float CurrentXP, float XPToNextLevel);
 
 	UFUNCTION()
-	void HandleSelectedTreeChanged();
+	void HandleTreeViewChanged();
 
-	void ObserveSelectedTree(URpgSkillTreeViewModel* TreeViewModel);
+	/** Follows the OnTreeChanged of exactly Trees. */
+	void ObserveTrees(TConstArrayView<TObjectPtr<URpgSkillTreeViewModel>> Trees);
+
+	/** Updates SelectedNode and SelectedSkillTree from the trees' selections. */
+	void UpdateSelection();
 
 	void Subscribe();
 	void Unsubscribe();
@@ -674,7 +691,7 @@ private:
 	TWeakObjectPtr<URpgSkillTreeComponent> ObservedSkillTrees;
 	TWeakObjectPtr<URpgTradeSkillProgressionComponent> ObservedTradeSkills;
 	TWeakObjectPtr<URpgPlayerProgressionComponent> ObservedCharacter;
-	TWeakObjectPtr<URpgSkillTreeViewModel> ObservedSelectedTree;
+	TArray<TWeakObjectPtr<URpgSkillTreeViewModel>> ObservedTrees;
 	FGameplayTag RequestedTreeTag;
 	FRpgViewModelInvalidationQueue RefreshQueue;
 };

@@ -19,20 +19,20 @@
 
 namespace
 {
-	/** Hands Node to Entry the way URpgViewModelEntryBox does, so MVVM entry rows and plain list entries both work. */
-	void SetEntryNode(UUserWidget& Entry, URpgSkillTreeNodeViewModel* Node)
+	/** Hands Item to Entry the way URpgViewModelEntryBox does, so MVVM entry rows and plain list entries both work. */
+	void AssignEntryItem(UUserWidget& Entry, UObject* Item)
 	{
 		if (URpgMvvmListEntryWidget* MvvmEntry = Cast<URpgMvvmListEntryWidget>(&Entry))
 		{
-			MvvmEntry->SetEntryItem(Node);
+			MvvmEntry->SetEntryItem(Item);
 		}
 		else if (URpgMvvmListEntryButton* MvvmButton = Cast<URpgMvvmListEntryButton>(&Entry))
 		{
-			MvvmButton->SetEntryItem(Node);
+			MvvmButton->SetEntryItem(Item);
 		}
 		else if (Entry.Implements<UUserObjectListEntry>())
 		{
-			IUserObjectListEntry::Execute_OnListItemObjectSet(&Entry, Node);
+			IUserObjectListEntry::Execute_OnListItemObjectSet(&Entry, Item);
 		}
 	}
 }
@@ -50,21 +50,61 @@ URpgSkillTreeMapWidget::URpgSkillTreeMapWidget(const FObjectInitializer& ObjectI
 	BackgroundBrush.DrawAs = ESlateBrushDrawType::NoDrawType;
 }
 
-void URpgSkillTreeMapWidget::SetSkillTree(URpgSkillTreeViewModel* InSkillTree)
+void URpgSkillTreeMapWidget::SetSkillTrees(const TArray<URpgSkillTreeViewModel*>& InSkillTrees)
 {
-	if (SkillTree != InSkillTree)
+	TArray<TObjectPtr<URpgSkillTreeViewModel>> NewTrees;
+	for (URpgSkillTreeViewModel* Tree : InSkillTrees)
 	{
-		if (SkillTree)
+		if (Tree && !NewTrees.Contains(Tree))
 		{
-			SkillTree->OnTreeChanged.RemoveDynamic(this, &ThisClass::HandleSkillTreeChanged);
-		}
-		SkillTree = InSkillTree;
-		if (SkillTree)
-		{
-			SkillTree->OnTreeChanged.AddUniqueDynamic(this, &ThisClass::HandleSkillTreeChanged);
+			NewTrees.Add(Tree);
 		}
 	}
+
+	for (URpgSkillTreeViewModel* OldTree : SkillTrees)
+	{
+		if (OldTree && !NewTrees.Contains(OldTree))
+		{
+			OldTree->OnTreeChanged.RemoveDynamic(this, &ThisClass::HandleSkillTreeChanged);
+		}
+	}
+	for (URpgSkillTreeViewModel* NewTree : NewTrees)
+	{
+		NewTree->OnTreeChanged.AddUniqueDynamic(this, &ThisClass::HandleSkillTreeChanged);
+	}
+	SkillTrees = MoveTemp(NewTrees);
 	SyncEntries();
+}
+
+void URpgSkillTreeMapWidget::SetSkillTree(URpgSkillTreeViewModel* InSkillTree)
+{
+	TArray<URpgSkillTreeViewModel*> Trees;
+	if (InSkillTree)
+	{
+		Trees.Add(InSkillTree);
+	}
+	SetSkillTrees(Trees);
+}
+
+TArray<URpgSkillTreeViewModel*> URpgSkillTreeMapWidget::GetSkillTrees() const
+{
+	TArray<URpgSkillTreeViewModel*> Result;
+	Result.Reserve(SkillTrees.Num());
+	for (URpgSkillTreeViewModel* Tree : SkillTrees)
+	{
+		Result.Add(Tree);
+	}
+	return Result;
+}
+
+URpgSkillTreeViewModel* URpgSkillTreeMapWidget::GetSkillTree() const
+{
+	return SkillTrees.IsEmpty() ? nullptr : SkillTrees[0].Get();
+}
+
+URpgSkillTreeNodeViewModel* URpgSkillTreeMapWidget::GetSelectedNode() const
+{
+	return FindNodeViewModel(GetSelectedKey());
 }
 
 TArray<UUserWidget*> URpgSkillTreeMapWidget::GetNodeEntries() const
@@ -80,8 +120,19 @@ TArray<UUserWidget*> URpgSkillTreeMapWidget::GetNodeEntries() const
 
 UUserWidget* URpgSkillTreeMapWidget::GetNodeEntry(const FGameplayTag NodeTag) const
 {
-	const int32 Index = EntryNodeTags.IndexOfByKey(NodeTag);
+	return GetTreeNodeEntry(FGameplayTag(), NodeTag);
+}
+
+UUserWidget* URpgSkillTreeMapWidget::GetTreeNodeEntry(const FGameplayTag TreeTag, const FGameplayTag NodeTag) const
+{
+	const int32 Index = FindEntryIndex({TreeTag, NodeTag});
 	return NodeEntries.IsValidIndex(Index) ? NodeEntries[Index].Get() : nullptr;
+}
+
+UUserWidget* URpgSkillTreeMapWidget::GetTreeEntry(const FGameplayTag TreeTag) const
+{
+	const int32 Index = TreeTag.IsValid() ? TreeEntryTags.IndexOfByKey(TreeTag) : INDEX_NONE;
+	return TreeEntries.IsValidIndex(Index) ? TreeEntries[Index].Get() : nullptr;
 }
 
 void URpgSkillTreeMapWidget::ZoomIn()
@@ -110,15 +161,42 @@ void URpgSkillTreeMapWidget::SetZoom(const float NewZoom)
 
 void URpgSkillTreeMapWidget::FitTree()
 {
-	if (MyPanel && SkillTree)
+	if (const FBox2D Bounds = GetCombinedBounds(); MyPanel && Bounds.bIsValid)
 	{
-		MyPanel->RequestFit(SkillTree->GetMapBounds(), true);
+		MyPanel->RequestFit(Bounds, true);
 	}
+}
+
+bool URpgSkillTreeMapWidget::FocusTree(const FGameplayTag TreeTag)
+{
+	const URpgSkillTreeViewModel* Tree = FindTree(TreeTag);
+	if (!Tree || !Tree->GetMapBounds().bIsValid)
+	{
+		return false;
+	}
+	if (MyPanel)
+	{
+		MyPanel->RequestFit(Tree->GetMapBounds(), true);
+	}
+	return true;
 }
 
 bool URpgSkillTreeMapWidget::FocusRegion(const FName RegionId)
 {
-	const FRpgSkillTreeRegionView* Region = SkillTree ? SkillTree->FindRegion(RegionId) : nullptr;
+	for (const URpgSkillTreeViewModel* Tree : SkillTrees)
+	{
+		if (Tree && FocusTreeRegion(Tree->GetTreeTag(), RegionId))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+bool URpgSkillTreeMapWidget::FocusTreeRegion(const FGameplayTag TreeTag, const FName RegionId)
+{
+	const URpgSkillTreeViewModel* Tree = FindTree(TreeTag);
+	const FRpgSkillTreeRegionView* Region = Tree ? Tree->FindRegion(RegionId) : nullptr;
 	if (!Region || !Region->Bounds.bIsValid)
 	{
 		return false;
@@ -132,7 +210,12 @@ bool URpgSkillTreeMapWidget::FocusRegion(const FName RegionId)
 
 bool URpgSkillTreeMapWidget::FocusNode(const FGameplayTag NodeTag)
 {
-	const int32 Index = EntryNodeTags.IndexOfByKey(NodeTag);
+	return FocusTreeNode(FGameplayTag(), NodeTag);
+}
+
+bool URpgSkillTreeMapWidget::FocusTreeNode(const FGameplayTag TreeTag, const FGameplayTag NodeTag)
+{
+	const int32 Index = FindEntryIndex({TreeTag, NodeTag});
 	if (Index == INDEX_NONE)
 	{
 		return false;
@@ -203,6 +286,13 @@ void URpgSkillTreeMapWidget::ReleaseSlateResources(const bool bReleaseChildren)
 				Entry->ReleaseSlateResources(true);
 			}
 		}
+		for (UUserWidget* Entry : TreeEntries)
+		{
+			if (Entry)
+			{
+				Entry->ReleaseSlateResources(true);
+			}
+		}
 	}
 	MyPanel.Reset();
 	bViewInitialized = false;
@@ -235,9 +325,10 @@ TSharedRef<SWidget> URpgSkillTreeMapWidget::RebuildWidget()
 		.OnSelectedNodeMoved_UObject(this, &ThisClass::HandlePanelSelectedNodeMoved);
 	MyPanel->SetSettings(MakeSettings());
 
-	// A new panel starts with a default camera: restore the remembered view or frame the tree again.
+	// A new panel starts with a default camera: restore the remembered view or frame the trees again.
 	bViewInitialized = false;
 	PushNodes();
+	PushTreeEntries();
 	PushLinksAndRegions();
 	InitializeView();
 	PushSelection();
@@ -275,41 +366,79 @@ void URpgSkillTreeMapWidget::HandlePanelSelectedNodeMoved(
 
 void URpgSkillTreeMapWidget::SyncEntries()
 {
-	const TArray<URpgSkillTreeNodeViewModel*> Nodes = SkillTree ? SkillTree->GetNodes() : TArray<URpgSkillTreeNodeViewModel*>();
+	KeepSingleSelection();
 
-	// The old tree's view is already remembered. Pushing the new tree's bounds clamps the camera, which must not be
-	// saved under the old tree; InitializeView then restores or frames the new one.
-	if (bViewInitialized && (SkillTree ? SkillTree->GetTreeTag() : FGameplayTag()) != ViewTreeTag)
+	// The old trees' view is already remembered. Pushing the new trees' bounds clamps the camera, which must not be
+	// saved under the old set; InitializeView then restores or frames the new one.
+	if (bViewInitialized && MakeViewMapId() != ViewMapId)
 	{
 		bViewInitialized = false;
 	}
 
-	// Entries stay the same widgets per node tag, so their presentation state survives every refresh.
-	TMap<FGameplayTag, UUserWidget*> PreviousEntries;
-	for (int32 Index = 0; Index < NodeEntries.Num() && Index < EntryNodeTags.Num(); ++Index)
+	// Entries stay the same widgets per node, so their presentation state survives every refresh.
+	TMap<FGameplayTag, TMap<FGameplayTag, UUserWidget*>> PreviousEntries;
+	for (int32 Index = 0; Index < NodeEntries.Num() && Index < EntryKeys.Num(); ++Index)
 	{
-		PreviousEntries.Add(EntryNodeTags[Index], NodeEntries[Index]);
+		PreviousEntries.FindOrAdd(EntryKeys[Index].TreeTag).Add(EntryKeys[Index].NodeTag, NodeEntries[Index]);
+	}
+	TMap<FGameplayTag, UUserWidget*> PreviousTreeEntries;
+	for (int32 Index = 0; Index < TreeEntries.Num() && Index < TreeEntryTags.Num(); ++Index)
+	{
+		PreviousTreeEntries.Add(TreeEntryTags[Index], TreeEntries[Index]);
 	}
 
 	TArray<TObjectPtr<UUserWidget>> NewEntries;
-	TArray<FGameplayTag> NewTags;
+	TArray<FNodeKey> NewKeys;
 	TArray<FVector2D> NewPositions;
-	if (NodeEntryClass)
+	TArray<TObjectPtr<UUserWidget>> NewTreeEntries;
+	TArray<FGameplayTag> NewTreeTags;
+	TArray<SRpgSkillTreeMapPanel::FTreeLabelPlacement> NewPlacements;
+	for (URpgSkillTreeViewModel* Tree : SkillTrees)
 	{
-		for (URpgSkillTreeNodeViewModel* Node : Nodes)
+		const FGameplayTag TreeTag = Tree ? Tree->GetTreeTag() : FGameplayTag();
+		if (!TreeTag.IsValid())
 		{
-			UUserWidget* Entry = PreviousEntries.FindRef(Node->GetNodeTag());
-			if (!Entry || Entry->GetClass() != NodeEntryClass)
+			continue;
+		}
+
+		const int32 FirstNode = NewEntries.Num();
+		const TMap<FGameplayTag, UUserWidget*>* PreviousTreeNodes = PreviousEntries.Find(TreeTag);
+		if (NodeEntryClass)
+		{
+			for (URpgSkillTreeNodeViewModel* Node : Tree->GetNodes())
 			{
-				Entry = CreateWidget<UUserWidget>(this, NodeEntryClass);
+				UUserWidget* Entry = PreviousTreeNodes ? PreviousTreeNodes->FindRef(Node->GetNodeTag()) : nullptr;
+				if (!Entry || Entry->GetClass() != NodeEntryClass)
+				{
+					Entry = CreateWidget<UUserWidget>(this, NodeEntryClass);
+				}
+				if (!Entry)
+				{
+					continue;
+				}
+				NewEntries.Add(Entry);
+				NewKeys.Add({TreeTag, Node->GetNodeTag()});
+				NewPositions.Add(Node->GetMapPosition());
 			}
-			if (!Entry)
+		}
+
+		if (TreeEntryClass)
+		{
+			UUserWidget* TreeEntry = PreviousTreeEntries.FindRef(TreeTag);
+			if (!TreeEntry || TreeEntry->GetClass() != TreeEntryClass)
 			{
-				continue;
+				TreeEntry = CreateWidget<UUserWidget>(this, TreeEntryClass);
 			}
-			NewEntries.Add(Entry);
-			NewTags.Add(Node->GetNodeTag());
-			NewPositions.Add(Node->GetMapPosition());
+			if (TreeEntry)
+			{
+				const FBox2D& Bounds = Tree->GetMapBounds();
+				SRpgSkillTreeMapPanel::FTreeLabelPlacement& Placement = NewPlacements.AddDefaulted_GetRef();
+				Placement.Anchor = Bounds.bIsValid ? FVector2D(Bounds.GetCenter().X, Bounds.Max.Y) : FVector2D::ZeroVector;
+				Placement.FirstNode = FirstNode;
+				Placement.NodeCount = NewEntries.Num() - FirstNode;
+				NewTreeEntries.Add(TreeEntry);
+				NewTreeTags.Add(TreeTag);
+			}
 		}
 	}
 
@@ -318,10 +447,19 @@ void URpgSkillTreeMapWidget::SyncEntries()
 	{
 		bEntriesChanged = NewEntries[Index] != NodeEntries[Index];
 	}
+	bool bTreeEntriesChanged = NewTreeEntries.Num() != TreeEntries.Num();
+	for (int32 Index = 0; !bTreeEntriesChanged && Index < NewTreeEntries.Num(); ++Index)
+	{
+		bTreeEntriesChanged = NewTreeEntries[Index] != TreeEntries[Index];
+	}
 	const bool bPositionsChanged = NewPositions != EntryPositions;
+	const bool bPlacementsChanged = NewPlacements != TreeEntryPlacements;
 	NodeEntries = MoveTemp(NewEntries);
-	EntryNodeTags = MoveTemp(NewTags);
+	EntryKeys = MoveTemp(NewKeys);
 	EntryPositions = MoveTemp(NewPositions);
+	TreeEntries = MoveTemp(NewTreeEntries);
+	TreeEntryTags = MoveTemp(NewTreeTags);
+	TreeEntryPlacements = MoveTemp(NewPlacements);
 	if (MyPanel)
 	{
 		if (bEntriesChanged)
@@ -332,14 +470,29 @@ void URpgSkillTreeMapWidget::SyncEntries()
 		{
 			MyPanel->SetNodePositions(EntryPositions);
 		}
+		if (bTreeEntriesChanged)
+		{
+			PushTreeEntries();
+		}
+		else if (bPlacementsChanged)
+		{
+			MyPanel->SetTreeLabelPlacements(TreeEntryPlacements);
+		}
 	}
 
-	// Entries restyle themselves from their node view model on every change.
+	// Entries restyle themselves from their view model on every change.
 	for (int32 Index = 0; Index < NodeEntries.Num(); ++Index)
 	{
 		if (UUserWidget* Entry = NodeEntries[Index])
 		{
-			SetEntryNode(*Entry, SkillTree ? SkillTree->FindNode(EntryNodeTags[Index]) : nullptr);
+			AssignEntryItem(*Entry, FindNodeViewModel(EntryKeys[Index]));
+		}
+	}
+	for (int32 Index = 0; Index < TreeEntries.Num(); ++Index)
+	{
+		if (UUserWidget* Entry = TreeEntries[Index])
+		{
+			AssignEntryItem(*Entry, FindTree(TreeEntryTags[Index]));
 		}
 	}
 
@@ -364,6 +517,22 @@ void URpgSkillTreeMapWidget::PushNodes()
 	MyPanel->SetNodes(Widgets, EntryPositions);
 }
 
+void URpgSkillTreeMapWidget::PushTreeEntries()
+{
+	if (!MyPanel)
+	{
+		return;
+	}
+
+	TArray<TSharedRef<SWidget>> Widgets;
+	Widgets.Reserve(TreeEntries.Num());
+	for (UUserWidget* Entry : TreeEntries)
+	{
+		Widgets.Add(Entry->TakeWidget());
+	}
+	MyPanel->SetTreeLabels(Widgets, TreeEntryPlacements);
+}
+
 void URpgSkillTreeMapWidget::PushLinksAndRegions()
 {
 	if (!MyPanel)
@@ -373,9 +542,13 @@ void URpgSkillTreeMapWidget::PushLinksAndRegions()
 
 	TArray<SRpgSkillTreeMapPanel::FLink> Links;
 	TArray<FBox2D> Regions;
-	if (SkillTree)
+	for (const URpgSkillTreeViewModel* Tree : SkillTrees)
 	{
-		for (const FRpgSkillTreeLinkView& LinkView : SkillTree->GetLinks())
+		if (!Tree)
+		{
+			continue;
+		}
+		for (const FRpgSkillTreeLinkView& LinkView : Tree->GetLinks())
 		{
 			SRpgSkillTreeMapPanel::FLink& Link = Links.AddDefaulted_GetRef();
 			Link.From = LinkView.FromPosition;
@@ -384,14 +557,14 @@ void URpgSkillTreeMapWidget::PushLinksAndRegions()
 				? LearnedLinkColor
 				: LinkView.bFromUnlocked ? AvailableLinkColor : LockedLinkColor;
 		}
-		for (const FRpgSkillTreeRegionView& Region : SkillTree->GetRegions())
+		for (const FRpgSkillTreeRegionView& Region : Tree->GetRegions())
 		{
 			Regions.Add(Region.Bounds);
 		}
 	}
 	MyPanel->SetLinks(MoveTemp(Links));
 	MyPanel->SetRegions(MoveTemp(Regions));
-	MyPanel->SetContentBounds(SkillTree ? SkillTree->GetMapBounds() : FBox2D(ForceInit));
+	MyPanel->SetContentBounds(GetCombinedBounds());
 }
 
 void URpgSkillTreeMapWidget::PushSelection()
@@ -401,12 +574,12 @@ void URpgSkillTreeMapWidget::PushSelection()
 		return;
 	}
 
-	const FGameplayTag SelectedTag = GetSelectedNodeTag();
-	const int32 SelectedIndex = EntryNodeTags.IndexOfByKey(SelectedTag);
+	const FNodeKey SelectedKey = GetSelectedKey();
+	const int32 SelectedIndex = SelectedKey.IsValid() ? FindEntryIndex(SelectedKey) : INDEX_NONE;
 	MyPanel->SetSelectedIndex(SelectedIndex);
-	if (SelectedTag != LastSelectedTag)
+	if (!(SelectedKey == LastSelected))
 	{
-		LastSelectedTag = SelectedTag;
+		LastSelected = SelectedKey;
 		if (!bSelectingFromMap)
 		{
 			MyPanel->BringNodeIntoView(SelectedIndex);
@@ -415,30 +588,68 @@ void URpgSkillTreeMapWidget::PushSelection()
 	}
 }
 
+void URpgSkillTreeMapWidget::ClearSelectionExcept(const URpgSkillTreeViewModel* KeepTree)
+{
+	// Copy first: a cleared tree refreshes and syncs the map, which may change the list.
+	const TArray<TObjectPtr<URpgSkillTreeViewModel>> Trees = SkillTrees;
+	for (URpgSkillTreeViewModel* Tree : Trees)
+	{
+		if (Tree && Tree != KeepTree && Tree->GetSelectedNode())
+		{
+			Tree->SelectNode(FGameplayTag());
+		}
+	}
+}
+
+void URpgSkillTreeMapWidget::KeepSingleSelection()
+{
+	const URpgSkillTreeViewModel* NewestTree = nullptr;
+	int32 SelectedTrees = 0;
+	for (const URpgSkillTreeViewModel* Tree : SkillTrees)
+	{
+		const URpgSkillTreeNodeViewModel* Node = Tree ? Tree->GetSelectedNode() : nullptr;
+		if (!Node)
+		{
+			continue;
+		}
+		++SelectedTrees;
+		const FNodeKey Key{Tree->GetTreeTag(), Node->GetNodeTag()};
+		if (!NewestTree || !(Key == LastSelected))
+		{
+			NewestTree = Tree;
+		}
+	}
+	if (SelectedTrees > 1)
+	{
+		ClearSelectionExcept(NewestTree);
+	}
+}
+
 void URpgSkillTreeMapWidget::InitializeView()
 {
-	const FGameplayTag TreeTag = SkillTree ? SkillTree->GetTreeTag() : FGameplayTag();
-	if (!MyPanel || !TreeTag.IsValid() || (bViewInitialized && TreeTag == ViewTreeTag))
+	const FName MapId = MakeViewMapId();
+	if (!MyPanel || MapId.IsNone() || (bViewInitialized && MapId == ViewMapId))
 	{
 		return;
 	}
 
-	ViewTreeTag = TreeTag;
+	ViewMapId = MapId;
 	bViewInitialized = true;
-	LastSelectedTag = GetSelectedNodeTag();
+	LastSelected = GetSelectedKey();
 
 	const URpgUIScreenSubsystem* Cache = bRememberView ? GetViewStateCache() : nullptr;
-	if (const FRpgUIMapViewState* RememberedState = Cache ? Cache->FindMapViewState(TreeTag) : nullptr)
+	if (const FRpgUIMapViewState* RememberedState = Cache ? Cache->FindMapViewState(MapId) : nullptr)
 	{
 		// Copy first: applying the camera saves the view again and overwrites the cached entry.
 		const FRpgUIMapViewState State = *RememberedState;
 
 		// A pooled screen may still hold its selection; otherwise the remembered one comes back.
-		const bool bRestoreSelection =
-			!LastSelectedTag.IsValid() && State.SelectedTag.IsValid() && SkillTree->FindNode(State.SelectedTag);
+		const int32 RememberedIndex = FindEntryIndex({State.SelectedGroupTag, State.SelectedTag});
+		URpgSkillTreeViewModel* RememberedTree = EntryKeys.IsValidIndex(RememberedIndex) ? FindTree(EntryKeys[RememberedIndex].TreeTag) : nullptr;
+		const bool bRestoreSelection = !LastSelected.IsValid() && State.SelectedTag.IsValid() && RememberedTree;
 		if (bRestoreSelection)
 		{
-			LastSelectedTag = State.SelectedTag;
+			LastSelected = EntryKeys[RememberedIndex];
 		}
 
 		FRpgSkillTreeMapCamera Camera;
@@ -448,20 +659,22 @@ void URpgSkillTreeMapWidget::InitializeView()
 		UpdateDetailLevel();
 		if (bRestoreSelection)
 		{
-			SkillTree->SelectNode(State.SelectedTag);
+			RememberedTree->SelectNode(State.SelectedTag);
 		}
 		return;
 	}
 
-	const FRpgSkillTreeRegionView* DefaultRegion = SkillTree->FindRegion(SkillTree->GetDefaultRegionId());
-	MyPanel->RequestFit(DefaultRegion && DefaultRegion->Bounds.bIsValid ? DefaultRegion->Bounds : SkillTree->GetMapBounds());
+	// One tree opens on its default region; several open on the whole map, so every cluster is in sight.
+	const URpgSkillTreeViewModel* OnlyTree = SkillTrees.Num() == 1 ? SkillTrees[0].Get() : nullptr;
+	const FRpgSkillTreeRegionView* DefaultRegion = OnlyTree ? OnlyTree->FindRegion(OnlyTree->GetDefaultRegionId()) : nullptr;
+	MyPanel->RequestFit(DefaultRegion && DefaultRegion->Bounds.bIsValid ? DefaultRegion->Bounds : GetCombinedBounds());
 	UpdateDetailLevel();
 }
 
 void URpgSkillTreeMapWidget::SaveViewState() const
 {
 	// A pending fit still shows the default camera; the fit itself reports the view worth remembering.
-	if (!bRememberView || !bViewInitialized || !ViewTreeTag.IsValid() || !MyPanel || MyPanel->HasPendingFit())
+	if (!bRememberView || !bViewInitialized || ViewMapId.IsNone() || !MyPanel || MyPanel->HasPendingFit())
 	{
 		return;
 	}
@@ -471,8 +684,9 @@ void URpgSkillTreeMapWidget::SaveViewState() const
 		FRpgUIMapViewState State;
 		State.Center = MyPanel->GetCamera().Center;
 		State.Zoom = MyPanel->GetCamera().Zoom;
-		State.SelectedTag = LastSelectedTag;
-		Cache->SetMapViewState(ViewTreeTag, State);
+		State.SelectedTag = LastSelected.NodeTag;
+		State.SelectedGroupTag = LastSelected.TreeTag;
+		Cache->SetMapViewState(ViewMapId, State);
 	}
 }
 
@@ -488,17 +702,17 @@ void URpgSkillTreeMapWidget::UpdateDetailLevel()
 
 void URpgSkillTreeMapWidget::SelectNodeAt(const int32 NodeIndex)
 {
-	URpgSkillTreeNodeViewModel* Node = SkillTree && EntryNodeTags.IsValidIndex(NodeIndex)
-		? SkillTree->FindNode(EntryNodeTags[NodeIndex])
-		: nullptr;
+	URpgSkillTreeNodeViewModel* Node = EntryKeys.IsValidIndex(NodeIndex) ? FindNodeViewModel(EntryKeys[NodeIndex]) : nullptr;
 	if (!Node)
 	{
 		return;
 	}
 
-	// Selecting refreshes the tree view model, which calls SyncEntries; push again for an unchanged selection. A click
-	// never moves the camera, and navigation already brought the node into view.
+	// Selecting refreshes the tree view models, which call SyncEntries; push again for an unchanged selection. A click
+	// never moves the camera, and navigation already brought the node into view. Clearing the other trees first keeps
+	// the map from showing two selections in between.
 	TGuardValue<bool> SelectingGuard(bSelectingFromMap, true);
+	ClearSelectionExcept(Node->GetTree());
 	Node->Select();
 	PushSelection();
 	OnNodeSelected.Broadcast(Node);
@@ -520,6 +734,7 @@ FRpgSkillTreeMapSettings URpgSkillTreeMapWidget::MakeSettings() const
 	Settings.RegionBrush = &RegionBrush;
 	Settings.FocusBrush = &FocusBrush;
 	Settings.FocusPadding = FocusPadding;
+	Settings.TreeLabelGap = TreeEntryGap;
 	Settings.CameraBlendTime = CameraBlendTime;
 	Settings.BackgroundBrush = &BackgroundBrush;
 	Settings.BackgroundScale = BackgroundScale;
@@ -538,19 +753,81 @@ URpgUIScreenSubsystem* URpgSkillTreeMapWidget::GetViewStateCache() const
 	return LocalPlayer ? LocalPlayer->GetSubsystem<URpgUIScreenSubsystem>() : nullptr;
 }
 
-FGameplayTag URpgSkillTreeMapWidget::GetSelectedNodeTag() const
+FName URpgSkillTreeMapWidget::MakeViewMapId() const
 {
-	if (SkillTree)
+	TStringBuilder<256> MapId;
+	for (const URpgSkillTreeViewModel* Tree : SkillTrees)
 	{
-		for (const URpgSkillTreeNodeViewModel* Node : SkillTree->GetNodes())
+		if (Tree && Tree->GetTreeTag().IsValid())
 		{
-			if (Node && Node->IsSelected())
+			if (MapId.Len() > 0)
 			{
-				return Node->GetNodeTag();
+				MapId << TEXT('+');
 			}
+			MapId << Tree->GetTreeTag().GetTagName();
 		}
 	}
-	return FGameplayTag();
+	return MapId.Len() > 0 ? FName(MapId.ToView()) : NAME_None;
+}
+
+FBox2D URpgSkillTreeMapWidget::GetCombinedBounds() const
+{
+	FBox2D Bounds(ForceInit);
+	for (const URpgSkillTreeViewModel* Tree : SkillTrees)
+	{
+		if (Tree && Tree->GetMapBounds().bIsValid)
+		{
+			Bounds += Tree->GetMapBounds();
+		}
+	}
+	return Bounds;
+}
+
+URpgSkillTreeMapWidget::FNodeKey URpgSkillTreeMapWidget::GetSelectedKey() const
+{
+	// KeepSingleSelection leaves at most one tree with a selection; the first one wins in between.
+	for (const URpgSkillTreeViewModel* Tree : SkillTrees)
+	{
+		if (const URpgSkillTreeNodeViewModel* Node = Tree ? Tree->GetSelectedNode() : nullptr)
+		{
+			return {Tree->GetTreeTag(), Node->GetNodeTag()};
+		}
+	}
+	return FNodeKey();
+}
+
+URpgSkillTreeViewModel* URpgSkillTreeMapWidget::FindTree(const FGameplayTag TreeTag) const
+{
+	if (!TreeTag.IsValid())
+	{
+		return nullptr;
+	}
+	for (URpgSkillTreeViewModel* Tree : SkillTrees)
+	{
+		if (Tree && Tree->GetTreeTag() == TreeTag)
+		{
+			return Tree;
+		}
+	}
+	return nullptr;
+}
+
+URpgSkillTreeNodeViewModel* URpgSkillTreeMapWidget::FindNodeViewModel(const FNodeKey& Key) const
+{
+	const URpgSkillTreeViewModel* Tree = Key.IsValid() ? FindTree(Key.TreeTag) : nullptr;
+	return Tree ? Tree->FindNode(Key.NodeTag) : nullptr;
+}
+
+int32 URpgSkillTreeMapWidget::FindEntryIndex(const FNodeKey& Key) const
+{
+	if (!Key.IsValid())
+	{
+		return INDEX_NONE;
+	}
+	return EntryKeys.IndexOfByPredicate([&Key](const FNodeKey& EntryKey)
+	{
+		return EntryKey.NodeTag == Key.NodeTag && (!Key.TreeTag.IsValid() || EntryKey.TreeTag == Key.TreeTag);
+	});
 }
 
 #undef LOCTEXT_NAMESPACE
