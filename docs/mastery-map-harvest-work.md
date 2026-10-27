@@ -99,7 +99,9 @@ Run on 2026-10-27 in this worktree:
   - `SurvivalRpg.Harvesting.Ability.CommitOnceAndCancelYieldsNothing`: each ability execution commits as a direct hit with its own root id.
   - `SurvivalRpg.Harvesting.Chain.ChainFollowsAreaHarvestRules`: chained trees are secondary work of the trigger's root and report no overkill.
   - The network PIE tests `ActorNodeSectionsReplicateAndLateJoin` and `InstanceStockReplicatesThroughGameStateAndLateJoins`: residual work reaches the first client and a late joiner. For the actor node, the depleting hit reports its overkill and both clients see the residual work cleared.
-- Network PIE: see the PR for the run of `SurvivalRpg.Network.LootHarvestPIE`.
+- `python Build/Tools/Unreal/ue.py test SurvivalRpg.Network.LootHarvestPIE`: **8 of 8 passed**. It covers actor nodes, instance stock, the swarm, the stride and co-op load, each with a late joiner. Its warnings are the usual net GUID notes of the temporary PIE map.
+- `python Build/Tools/Unreal/ue.py test SurvivalRpg.Network.HarvestCuePIE`: **2 of 2 passed**. A predicted harvest commit still reaches the harvester and its peers, and target cues reach every machine.
+- **Own PIE check:** not run interactively. In `Lvl_HarvestPickaxe` the player must pick up and equip the pickaxe and aim at a vein. The available editor tools cannot drive that reliably without the scripted Python tool that was refused in MST-02. The editor was started for it and closed again without changes. The network PIE tests above run the real harvest abilities with clients and late joiners instead.
 
 ## Playtest
 
@@ -117,6 +119,7 @@ No content uses fractional work yet, so there is nothing new to see. Harvesting 
 - **Threshold talents:** a finishing talent such as Zertruemmern can use `bFinishResource`, but none exists yet.
 - **Corpses:** skinning corpses keep their own reservation flow outside the section stock and have no work model.
 - **Legacy instances** keep residual work only for the session, like the rest of their state.
+- **No manual PIE session:** harvesting in the real test map with two players is left to the user's batch playtest. That playtest has no new behavior to see; it checks for regressions.
 
 ## Next
 
