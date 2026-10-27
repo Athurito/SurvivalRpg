@@ -130,120 +130,19 @@ namespace RpgHarvestContentContractTests
 		return Tree;
 	}
 
-	/** Returns the node of Tree whose ability set grants AbilityId, or null. */
-	const FRpgSkillTreeNode* FindNodeTeaching(const URpgSkillTreeDefinition& Tree, const FGameplayTag AbilityId)
-	{
-		return Tree.Nodes.FindByPredicate([AbilityId](const FRpgSkillTreeNode& Candidate)
-		{
-			TArray<FGameplayTag> AbilityIds;
-			Candidate.GetGrantedAbilityIds(AbilityIds);
-			return AbilityIds.Contains(AbilityId);
-		});
-	}
-
-	/**
-	 * Expects Node's own ability set to grant AbilityId without an input tag, so the tree places it on Q/E/R, from the
-	 * harvest ability base with its own id, a cooldown and no skill-level gate of its own.
-	 */
-	const URpgGameplayAbility_Harvest* ExpectNodeGrantsAbility(
-		FAutomationTestBase& Test,
-		const FRpgSkillTreeNode& Node,
-		URpgAbilitySystemComponent& AbilitySystem,
-		const FGameplayTag AbilityId)
-	{
-		const FString Name = AbilityId.ToString();
-		for (const FRpgAbilitySet_GameplayAbility& Entry : Node.AbilitySet->GetGrantedGameplayAbilities())
-		{
-			if (Entry.AbilityIdTag == AbilityId)
-			{
-				Test.TestFalse(*FString::Printf(TEXT("%s has no input tag; the tree places it"), *Name), Entry.InputTag.IsValid());
-			}
-		}
-
-		FRpgAbilitySet_GrantedHandles Granted;
-		Node.AbilitySet->GiveToAbilitySystem(&AbilitySystem, &Granted);
-		const FGameplayAbilitySpec* Spec = FindSpecWithId(AbilitySystem, AbilityId);
-		const URpgGameplayAbility_Harvest* Ability = Spec ? Cast<URpgGameplayAbility_Harvest>(Spec->Ability) : nullptr;
-		if (!Test.TestNotNull(*FString::Printf(TEXT("The node grants %s from the harvest ability base"), *Name), Ability))
-		{
-			return nullptr;
-		}
-		Test.TestTrue(
-			*FString::Printf(TEXT("The %s id resolves to exactly one granted spec"), *Name),
-			FRpgAbilityBindingResolver::ResolveUniqueAbilityId(&AbilitySystem, AbilityId).Result ==
-				ERpgAbilityBindingResolveResult::Unique);
-		Test.TestTrue(*FString::Printf(TEXT("%s sends its own ability id"), *Name), Ability->GetHarvestAbilityId() == AbilityId);
-		Test.TestTrue(*FString::Printf(TEXT("%s has a cooldown"), *Name), Ability->GetCooldownGameplayEffect() != nullptr);
-		const FStructProperty* GateProperty =
-			FindFProperty<FStructProperty>(URpgGameplayAbility_Harvest::StaticClass(), TEXT("RequiredSkillTag"));
-		const FGameplayTag* Gate = GateProperty ? GateProperty->ContainerPtrToValuePtr<FGameplayTag>(Ability) : nullptr;
-		Test.TestTrue(*FString::Printf(TEXT("The tree, not a skill level, unlocks %s"), *Name), Gate && !Gate->IsValid());
-		return Ability;
-	}
-
-	/**
-	 * Expects a node of Tree that teaches AbilityId with the first point (skill level 2): its own ability set grants the
-	 * ability without an input tag, so the tree places it on Q/E/R, and the ability has no skill-level gate of its own.
-	 */
-	const URpgGameplayAbility_Harvest* ExpectFirstPointActive(
-		FAutomationTestBase& Test,
-		const URpgSkillTreeDefinition& Tree,
-		URpgAbilitySystemComponent& AbilitySystem,
-		const FGameplayTag AbilityId)
-	{
-		const FRpgSkillTreeNode* Node = FindNodeTeaching(Tree, AbilityId);
-		const FString Name = AbilityId.ToString();
-		if (!Test.TestNotNull(*FString::Printf(TEXT("A node teaches %s"), *Name), Node))
-		{
-			return nullptr;
-		}
-		Test.TestTrue(
-			*FString::Printf(TEXT("%s is learnable with the first point"), *Name),
-			Node->Prerequisites.IsEmpty() && Node->RequiredPointsInTree == 0 && Node->Cost <= Tree.GetEarnedPointsForLevel(2));
-		Test.TestTrue(
-			*FString::Printf(TEXT("%s presents as an active node"), *Name),
-			Node->KindTag.MatchesTagExact(FGameplayTag::RequestGameplayTag(TEXT("SkillTree.NodeKind.Active"))));
-		return ExpectNodeGrantsAbility(Test, *Node, AbilitySystem, AbilityId);
-	}
-
-	/**
-	 * Expects the ultimate node of Tree that teaches AbilityId: it presents as an ultimate and keeps a point gate, which
-	 * the tree's other nodes can fill, and its ability set grants the ability like any active node.
-	 */
-	const URpgGameplayAbility_Harvest* ExpectUltimate(
-		FAutomationTestBase& Test,
-		const URpgSkillTreeDefinition& Tree,
-		URpgAbilitySystemComponent& AbilitySystem,
-		const FGameplayTag AbilityId)
-	{
-		const FRpgSkillTreeNode* Node = FindNodeTeaching(Tree, AbilityId);
-		const FString Name = AbilityId.ToString();
-		if (!Test.TestNotNull(*FString::Printf(TEXT("A node teaches %s"), *Name), Node))
-		{
-			return nullptr;
-		}
-		Test.TestTrue(
-			*FString::Printf(TEXT("%s presents as an ultimate"), *Name),
-			Node->KindTag.MatchesTagExact(FGameplayTag::RequestGameplayTag(TEXT("SkillTree.NodeKind.Ultimate"))));
-		int32 OtherNodeCosts = 0;
-		for (const FRpgSkillTreeNode& Other : Tree.Nodes)
-		{
-			OtherNodeCosts += &Other != Node ? Other.Cost : 0;
-		}
-		Test.TestTrue(
-			*FString::Printf(TEXT("%s keeps a point gate the other nodes can fill"), *Name),
-			Node->RequiredPointsInTree > 0 && Node->RequiredPointsInTree <= OtherNodeCosts &&
-				Node->RequiredPointsInTree + Node->Cost <= Tree.MaxPoints);
-		return ExpectNodeGrantsAbility(Test, *Node, AbilitySystem, AbilityId);
-	}
+	/** Paths of the profiles of the resources harvesting tools take; each advances the shared harvesting mastery. */
+	const TCHAR* ToolResourceProfilePaths[] = {
+		TEXT("/GF_Harvesting_Magic/Harvesting/Profiles/HP_IronVein.HP_IronVein"),
+		TEXT("/GF_Harvesting_Magic/Harvesting/Profiles/HP_MiningNode.HP_MiningNode"),
+		TEXT("/GF_Harvesting_Magic/Harvesting/Profiles/HP_DeadPine.HP_DeadPine")};
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FRpgHarvestPickaxeSkillTreeContractTest,
-	"SurvivalRpg.Harvesting.Content.PickaxeSkillTreeContract",
+	FRpgHarvestPickaxeToolContractTest,
+	"SurvivalRpg.Harvesting.Content.PickaxeToolContract",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FRpgHarvestPickaxeSkillTreeContractTest::RunTest(const FString& Parameters)
+bool FRpgHarvestPickaxeToolContractTest::RunTest(const FString& Parameters)
 {
 	(void)Parameters;
 	using namespace RpgHarvestContentContractTests;
@@ -261,20 +160,87 @@ bool FRpgHarvestPickaxeSkillTreeContractTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Pickaxe Strike executes on press"), Strike && !Strike->IsAimWhileInputHeld());
 	TestTrue(TEXT("Pickaxe Strike can strike weak points"), Strike && Strike->CanHitWeakPoints());
 
-	// Rift Grip: the awakened hold-to-aim ability, learned in the pickaxe tree with Mining points.
-	const URpgSkillTreeDefinition* Tree = LoadToolSkillTree(
-		*this,
-		PickaxeItemClassPath,
-		FGameplayTag::RequestGameplayTag(TEXT("SkillTree.Tree.Pickaxe")),
-		RpgTradeSkillGameplayTags::Skill_Gathering_Mining);
-	if (!Tree)
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestSharedTreeContractTest,
+	"SurvivalRpg.Harvesting.Content.SharedHarvestingTreeContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestSharedTreeContractTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestContentContractTests;
+
+	// Axe and pickaxe carry one tree, so they share its learned talents and its budget of shared mastery points.
+	const FGameplayTag TreeTag = FGameplayTag::RequestGameplayTag(TEXT("SkillTree.Tree.Harvesting"));
+	const FGameplayTag Mastery = RpgTradeSkillGameplayTags::Skill_Mastery_Harvesting;
+	const URpgSkillTreeDefinition* PickaxeTree = LoadToolSkillTree(*this, PickaxeItemClassPath, TreeTag, Mastery);
+	const URpgSkillTreeDefinition* AxeTree = LoadToolSkillTree(*this, AxeItemClassPath, TreeTag, Mastery);
+	if (!PickaxeTree || !AxeTree)
 	{
 		return false;
 	}
-	const URpgGameplayAbility_Harvest* RiftGrip = ExpectFirstPointActive(
-		*this, *Tree, *AbilitySystem, FGameplayTag::RequestGameplayTag(TEXT("Ability.Harvesting.RiftGrip")));
-	TestTrue(TEXT("Rift Grip aims while its input is held"), RiftGrip && RiftGrip->IsAimWhileInputHeld());
-	TestFalse(TEXT("Rift Grip never strikes weak points"), RiftGrip && RiftGrip->CanHitWeakPoints());
+	TestTrue(TEXT("Axe and pickaxe carry the same tree asset"), PickaxeTree == AxeTree);
+	const URpgSkillTreeDefinition& Tree = *PickaxeTree;
+	TestTrue(TEXT("The shared tree is a free-position map"), Tree.LayoutMode == ERpgSkillTreeLayoutMode::FreePosition);
+	TestTrue(TEXT("The shared tree frames a default region"), Tree.FindRegion(Tree.DefaultRegionId) != nullptr);
+
+	// Talents are passive tunings; nothing occupies the tool's Q/E/R anymore.
+	const FRpgSkillTreeNode* Entry = nullptr;
+	TSet<FName> ChoiceGroups;
+	for (const FRpgSkillTreeNode& Node : Tree.Nodes)
+	{
+		const FString Name = Node.NodeTag.ToString();
+		TestTrue(*FString::Printf(TEXT("%s grants no ability"), *Name), Node.AbilitySet == nullptr);
+		TestFalse(*FString::Printf(TEXT("%s changes harvesting through tunings"), *Name), Node.AbilityTunings.IsEmpty());
+		if (Node.Prerequisites.IsEmpty())
+		{
+			TestTrue(TEXT("Only one entry talent has no prerequisite"), Entry == nullptr);
+			Entry = &Node;
+		}
+		else if (!Node.ExclusiveGroup.IsNone())
+		{
+			ChoiceGroups.Add(Node.ExclusiveGroup);
+		}
+	}
+	if (!TestNotNull(TEXT("The tree has an entry talent"), Entry))
+	{
+		return false;
+	}
+	TestTrue(TEXT("The entry talent is learnable with the first point"), Entry->Cost <= Tree.GetEarnedPointsForLevel(2));
+	for (const FName Group : ChoiceGroups)
+	{
+		int32 Members = 0;
+		for (const FRpgSkillTreeNode& Node : Tree.Nodes)
+		{
+			if (Node.ExclusiveGroup == Group)
+			{
+				++Members;
+				TestTrue(
+					*FString::Printf(TEXT("%s builds on the entry talent"), *Node.NodeTag.ToString()),
+					Node.Prerequisites.Contains(Entry->NodeTag));
+			}
+		}
+		TestTrue(*FString::Printf(TEXT("Choice %s offers alternatives"), *Group.ToString()), Members >= 2);
+	}
+	TestFalse(TEXT("The tree offers an exclusive choice"), ChoiceGroups.IsEmpty());
+
+	// Every resource of a harvesting tool advances the shared mastery once per section.
+	for (const TCHAR* ProfilePath : ToolResourceProfilePaths)
+	{
+		const URpgHarvestProfile* Profile = LoadObject<URpgHarvestProfile>(nullptr, ProfilePath);
+		if (TestNotNull(*FString::Printf(TEXT("%s loads"), ProfilePath), Profile))
+		{
+			TestTrue(
+				*FString::Printf(TEXT("%s requires a harvesting tool"), *GetNameSafe(Profile)),
+				Profile->RequiredToolTag.IsValid());
+			TestTrue(
+				*FString::Printf(TEXT("%s awards shared mastery XP"), *GetNameSafe(Profile)),
+				Profile->MasterySkillTag == Mastery && Profile->MasteryExperience > 0);
+		}
+	}
 	return true;
 }
 
@@ -387,11 +353,11 @@ bool FRpgHarvestPcgIronVeinContractTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FRpgHarvestAxeSkillTreeContractTest,
-	"SurvivalRpg.Harvesting.Content.AxeSkillTreeContract",
+	FRpgHarvestAxeToolContractTest,
+	"SurvivalRpg.Harvesting.Content.AxeToolContract",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FRpgHarvestAxeSkillTreeContractTest::RunTest(const FString& Parameters)
+bool FRpgHarvestAxeToolContractTest::RunTest(const FString& Parameters)
 {
 	(void)Parameters;
 	using namespace RpgHarvestContentContractTests;
@@ -408,31 +374,6 @@ bool FRpgHarvestAxeSkillTreeContractTest::RunTest(const FString& Parameters)
 	const URpgGameplayAbility_Harvest* Chop = ExpectToolSwing(*this, *AbilitySystem, AxeAbilitySetPath, ChopId);
 	TestTrue(TEXT("Axe Chop executes on press"), Chop && !Chop->IsAimWhileInputHeld());
 	TestTrue(TEXT("Axe Chop sends its own ability id"), Chop && Chop->GetHarvestAbilityId() == ChopId);
-
-	// Death Wave and Grave Swarm: the awakened powers, learned in the axe tree with Logging points.
-	const URpgSkillTreeDefinition* Tree = LoadToolSkillTree(
-		*this,
-		AxeItemClassPath,
-		FGameplayTag::RequestGameplayTag(TEXT("SkillTree.Tree.Axe")),
-		RpgTradeSkillGameplayTags::Skill_Gathering_Logging);
-	if (!Tree)
-	{
-		return false;
-	}
-	const URpgGameplayAbility_Harvest* DeathWave = ExpectFirstPointActive(
-		*this, *Tree, *AbilitySystem, FGameplayTag::RequestGameplayTag(TEXT("Ability.Harvesting.DeathWave")));
-	TestTrue(TEXT("Death Wave aims while its input is held"), DeathWave && DeathWave->IsAimWhileInputHeld());
-	TestTrue(TEXT("Death Wave harvests an area"), DeathWave && DeathWave->HarvestsArea());
-	const URpgGameplayAbility_Harvest* GraveSwarm = ExpectFirstPointActive(
-		*this, *Tree, *AbilitySystem, FGameplayTag::RequestGameplayTag(TEXT("Ability.Harvesting.GraveSwarm")));
-	TestTrue(TEXT("Grave Swarm aims while its input is held"), GraveSwarm && GraveSwarm->IsAimWhileInputHeld());
-	TestTrue(TEXT("Grave Swarm summons a swarm"), GraveSwarm && GraveSwarm->SummonsSwarm());
-
-	// Striding Wave: the ultimate, which harvests around the walking player for a while without aiming.
-	const URpgGameplayAbility_Harvest* StridingWave = ExpectUltimate(
-		*this, *Tree, *AbilitySystem, FGameplayTag::RequestGameplayTag(TEXT("Ability.Harvesting.StridingWave")));
-	TestTrue(TEXT("Striding Wave executes on press"), StridingWave && !StridingWave->IsAimWhileInputHeld());
-	TestTrue(TEXT("Striding Wave strides with the player"), StridingWave && StridingWave->HasStride());
 
 	// The axe item supplies the tool category that dead pines require.
 	const UClass* AxeClass = LoadClass<URpgInventoryItemDefinition>(nullptr, AxeItemClassPath);

@@ -96,4 +96,24 @@ namespace RpgHarvestingMagicGameplayTags
 		Ability_Tuning_Harvest_Cooldown,
 		"Ability.Tuning.Harvest.Cooldown",
 		"Duration in seconds of a harvest ability's cooldown effect.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_Work,
+		"Ability.Tuning.Harvest.Work",
+		"Work multiplier of every hit of a harvest ability, base 1; 1.25 adds a quarter section per section of work.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_WeakPointWork,
+		"Ability.Tuning.Harvest.WeakPointWork",
+		"Multiplier on the bonus work of a weak-point hit, base 1.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_FollowUpWork,
+		"Ability.Tuning.Harvest.FollowUpWork",
+		"Work multiplier of the next hit on a target after a weak-point hit on it, base 1.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_FollowUpWindow,
+		"Ability.Tuning.Harvest.FollowUpWindow",
+		"Seconds after a weak-point hit during which the next hit on the same target gets the follow-up work; base 0 is off.");
 }

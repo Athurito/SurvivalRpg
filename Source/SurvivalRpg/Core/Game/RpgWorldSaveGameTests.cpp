@@ -73,7 +73,7 @@ bool FRpgWorldSaveGameMemoryRoundTripTest::RunTest(const FString& Parameters)
 	FRpgSkillTreeState& SavedTree = Player.SkillTreeStates.AddDefaulted_GetRef();
 	SavedTree.TreeTag = FGameplayTag::RequestGameplayTag(TEXT("SkillTree.Tree"));
 	SavedTree.UnlockedNodes.Add(FGameplayTag::RequestGameplayTag(TEXT("SkillTree.Node")));
-	SavedTree.SlotAbilityIds = {FGameplayTag::RequestGameplayTag(TEXT("Ability.Harvesting.DeathWave")), FGameplayTag(), FGameplayTag()};
+	SavedTree.SlotAbilityIds = {FGameplayTag::RequestGameplayTag(TEXT("Ability.Harvesting.AxeChop")), FGameplayTag(), FGameplayTag()};
 
 	const FRpgInventoryContainerHandle CarryContainer =
 		FRpgInventoryContainerHandle::MakeRoot(TEXT("Carry.Weapon1"));

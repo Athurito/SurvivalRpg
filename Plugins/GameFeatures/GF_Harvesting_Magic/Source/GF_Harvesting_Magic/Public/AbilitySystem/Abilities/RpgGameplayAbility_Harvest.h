@@ -44,7 +44,7 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestFormGameplayCue
 {
 	GENERATED_BODY()
 
-	/** Owner tag that selects the cue, for example Harvest.Form.AshWave. Entries without a tag are ignored. */
+	/** Owner tag that selects the cue, for example a Harvest.Form.* tag a learned node grants. Entries without a tag are ignored. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Feedback")
 	FGameplayTag RequiredOwnerTag;
 
@@ -64,6 +64,19 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestTunedValues
 
 	/** Stock sections per target, or per creature strike of a swarm. */
 	int32 SectionsPerTarget = 1;
+
+	/** Work multiplier of every hit (Ability.Tuning.Harvest.Work), above 0 and at most RpgHarvestWork::MaxWorkScale. */
+	float WorkScale = 1.0f;
+
+	/** Multiplier on a weak-point hit's bonus work (Ability.Tuning.Harvest.WeakPointWork), 0 to MaxWorkScale. */
+	float WeakPointWorkScale = 1.0f;
+
+	/**
+	 * Work multiplier of the next hit on a target after a weak-point hit on it (Ability.Tuning.Harvest.FollowUpWork),
+	 * and the seconds it waits for that hit (Ability.Tuning.Harvest.FollowUpWindow); zero seconds turn it off.
+	 */
+	float FollowUpWorkScale = 1.0f;
+	float FollowUpSeconds = 0.0f;
 
 	/** Swarm with tuned creature count, rest and strike radius. */
 	FRpgHarvestSwarmParams Swarm;
@@ -393,10 +406,14 @@ private:
 
 	/**
 	 * Server: commits every target of Selection that would be harvested, with the presentation wave from the harvester,
-	 * then the chains of the targets it depleted, whose results it appends to Selection. An open reward batch collects
-	 * the rewards. Returns the first target that was harvested, or null.
+	 * then the chains of the targets it depleted, whose results it appends to Selection. A pending follow-up of Values
+	 * on a target raises that hit's work, and a weak-point hit arms the next one. An open reward batch collects the
+	 * rewards. Returns the first target that was harvested, or null.
 	 */
-	const FRpgHarvestTargetEvaluation* CommitSelection(FRpgHarvestPreview& Selection, const FRpgHarvestRequest& RequestTemplate) const;
+	const FRpgHarvestTargetEvaluation* CommitSelection(
+		FRpgHarvestPreview& Selection,
+		const FRpgHarvestRequest& RequestTemplate,
+		const FRpgHarvestTunedValues& Values);
 
 	/** Server: starts the stride of the current activation with the values captured when execution started. */
 	void StartStride(const FRpgHarvestRequest& RequestTemplate, const FRpgHarvestTunedValues& Values);
@@ -445,6 +462,14 @@ private:
 	/** Authority-only tuned values captured when execution starts, so learning a node mid-swing changes nothing. */
 	FRpgHarvestTunedValues CommitValues;
 	bool bHasCommitValues = false;
+
+	/**
+	 * Server-only follow-up armed by the last weak-point hit: the struck target, its instance index, and the world time
+	 * until which the next hit on it does follow-up work. A deadline below zero means none is armed.
+	 */
+	TWeakObjectPtr<UObject> FollowUpReceiver;
+	int32 FollowUpItem = INDEX_NONE;
+	double FollowUpDeadline = -1.0;
 
 	/** Server-only state of the running stride: its pulse and end timers, captured values and pending rewards. */
 	FTimerHandle StridePulseTimerHandle;

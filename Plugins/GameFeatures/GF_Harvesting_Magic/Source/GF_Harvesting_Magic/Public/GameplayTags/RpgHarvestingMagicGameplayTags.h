@@ -60,4 +60,16 @@ namespace RpgHarvestingMagicGameplayTags
 
 	/** Skill tree tuning of a harvest ability's cooldown duration, in seconds. */
 	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_Cooldown);
+
+	/** Skill tree tuning of the work multiplier of every hit of a harvest ability; base 1. */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_Work);
+
+	/** Skill tree tuning of the multiplier on a weak-point hit's bonus work; base 1. */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_WeakPointWork);
+
+	/** Skill tree tuning of the work multiplier of the next hit on a target after a weak-point hit on it; base 1. */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_FollowUpWork);
+
+	/** Skill tree tuning of how long, in seconds, that follow-up waits for the next hit; base 0 turns it off. */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_FollowUpWindow);
 }

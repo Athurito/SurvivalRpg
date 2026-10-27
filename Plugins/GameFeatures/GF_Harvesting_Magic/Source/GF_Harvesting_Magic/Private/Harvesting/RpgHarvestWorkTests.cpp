@@ -278,6 +278,14 @@ bool FRpgHarvestWorkStockRulesTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("A weak-point hit adds one section of work"),
 		Result.bWeakPointHit && Result.WorkApplied == 150 && Result.SectionsTaken == 1 && Result.SectionWork == 50);
+	Request.WeakPointWorkScale = 2.0f;
+	Result = FRpgHarvestStockRules::Evaluate(Profile, Request, MakeStock(4, 0, 0), &WeakPoint);
+	TestTrue(TEXT("A weak-point work scale multiplies the bonus work"), Result.bWeakPointHit && Result.WorkApplied == 250);
+	Request.WeakPointWorkScale = -1.0f;
+	TestTrue(
+		TEXT("A negative weak-point work scale is invalid"),
+		FRpgHarvestStockRules::Evaluate(Profile, Request, MakeStock(4, 0, 0), &WeakPoint).Outcome == ERpgHarvestOutcome::Invalid);
+	Request.WeakPointWorkScale = 1.0f;
 	Request.bFinishResource = true;
 	Result = FRpgHarvestStockRules::Evaluate(Profile, Request, MakeStock(4, 3, 0), &WeakPoint);
 	TestTrue(TEXT("Finishing never strikes a weak point"), !Result.bWeakPointHit && Result.WorkApplied == Unit);
@@ -392,6 +400,48 @@ bool FRpgHarvestWorkNodeYieldTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("A node with only residual work can be restored"), Stock->RestoreHarvestStock());
 	TestEqual(TEXT("Restoring drops the residual work"), static_cast<int32>(Stock->GetHarvestState().SectionWork), 0);
 	TestFalse(TEXT("A pristine node has nothing to restore"), Stock->RestoreHarvestStock());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestWorkMasteryTest,
+	"SurvivalRpg.Harvesting.Work.SharedMasteryXPOncePerSection",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestWorkMasteryTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestWorkTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	URpgHarvestProfile* Profile = MakeProfile(World, 4);
+	Profile->MasterySkillTag = RpgTradeSkillGameplayTags::Skill_Mastery_Harvesting;
+	Profile->MasteryExperience = 7;
+	ARpgHarvestAutomationNodeActor* Node = SpawnNode(World, Profile);
+	ARpgHarvestAutomationTestPlayerState* Harvester = SpawnHarvester(World);
+	const URpgTradeSkillProgressionComponent* TradeSkills = Harvester ? Harvester->GetTradeSkillProgressionComponent() : nullptr;
+	if (!TestNotNull(TEXT("Node exists"), Node) || !TestNotNull(TEXT("Harvester has trade skills"), TradeSkills))
+	{
+		return false;
+	}
+	const FGameplayTag Mastery = RpgTradeSkillGameplayTags::Skill_Mastery_Harvesting;
+	URpgHarvestableComponent* Stock = Node->HarvestableNode;
+
+	TestTrue(TEXT("Partial work is accepted"), Stock->CommitHarvest_Implementation(MakeNodeRequest(Node, Harvester, 0.5f)).IsSuccess());
+	TestTrue(TEXT("Work without a completed section awards no mastery XP"), FMath::IsNearlyZero(TradeSkills->GetSkillXPByTag(Mastery)));
+	TestTrue(TEXT("The completing work is accepted"), Stock->CommitHarvest_Implementation(MakeNodeRequest(Node, Harvester, 0.5f)).IsSuccess());
+	TestTrue(TEXT("A completed section awards mastery XP once"), FMath::IsNearlyEqual(TradeSkills->GetSkillXPByTag(Mastery), 7.0f));
+	TestTrue(TEXT("Two more sections are harvested"), Stock->CommitHarvest_Implementation(MakeNodeRequest(Node, Harvester, 2.0f)).SectionsTaken == 2);
+	TestTrue(TEXT("Mastery XP follows the completed sections"), FMath::IsNearlyEqual(TradeSkills->GetSkillXPByTag(Mastery), 21.0f));
+	TestTrue(
+		TEXT("The profession keeps its own XP"),
+		FMath::IsNearlyEqual(GetMiningXP(Harvester), static_cast<float>(3 * ExperiencePerSection)));
+
+	FRpgHarvestRequest Stale = MakeNodeRequest(Node, Harvester, 1.0f);
+	Stale.ExpectedRevision = 5;
+	TestFalse(TEXT("A stale request is rejected"), Stock->CommitHarvest_Implementation(Stale).IsSuccess());
+	TestTrue(TEXT("A rejected request awards no mastery XP"), FMath::IsNearlyEqual(TradeSkills->GetSkillXPByTag(Mastery), 21.0f));
 	return true;
 }
 
