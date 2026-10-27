@@ -4,6 +4,7 @@
 #include "AbilitySystemInterface.h"
 #include "Engine/ActorChannel.h"
 #include "Engine/World.h"
+#include "RpgInventoryFragment_ItemContainer.h"
 #include "RpgInventoryItemDefinition.h"
 #include "RpgInventoryItemInstance.h"
 #include "RpgInventoryManagerMessageTags.h"
@@ -294,6 +295,65 @@ URpgInventoryItemInstance* URpgInventoryManagerComponent::FindItemById(FRpgInven
 {
 	const FRpgInventoryEntry* Entry = InventoryList.FindEntryByItemId(ItemId);
 	return Entry ? Entry->Instance.Get() : nullptr;
+}
+
+TArray<URpgInventoryItemInstance*> URpgInventoryManagerComponent::GetSocketedItems(
+	const URpgInventoryItemInstance* OwnerItem) const
+{
+	TArray<const FRpgInventoryEntry*> SocketedEntries;
+	const FRpgInventoryItemId OwnerId = OwnerItem ? OwnerItem->GetItemId() : FRpgInventoryItemId();
+	if (OwnerId.IsValid() && InventoryList.FindEntryByItemId(OwnerId))
+	{
+		for (const FRpgInventoryEntry& Entry : InventoryList.Entries)
+		{
+			const FRpgInventoryContainerHandle Handle = Entry.Placement.GetContainerHandle();
+			FRpgInventoryItemContainerDefinition Definition;
+			if (Entry.Instance && Handle.IsItemOwned() && Handle.ItemOwnerId == OwnerId &&
+				GetItemContainerDefinition(Handle, Definition) && Definition.bSocketGrid)
+			{
+				SocketedEntries.Add(&Entry);
+			}
+		}
+	}
+
+	SocketedEntries.Sort([](const FRpgInventoryEntry& A, const FRpgInventoryEntry& B)
+	{
+		const FName AContainer = A.Placement.GetContainerHandle().ContainerId;
+		const FName BContainer = B.Placement.GetContainerHandle().ContainerId;
+		if (AContainer != BContainer)
+		{
+			return AContainer.LexicalLess(BContainer);
+		}
+		return A.Placement.Y != B.Placement.Y ? A.Placement.Y < B.Placement.Y : A.Placement.X < B.Placement.X;
+	});
+
+	TArray<URpgInventoryItemInstance*> Items;
+	for (const FRpgInventoryEntry* Entry : SocketedEntries)
+	{
+		Items.Add(Entry->Instance);
+	}
+	return Items;
+}
+
+URpgInventoryManagerComponent* URpgInventoryManagerComponent::FindInventoryOfItem(
+	const URpgInventoryItemInstance* ItemInstance)
+{
+	AActor* ItemOwner = ItemInstance ? ItemInstance->GetTypedOuter<AActor>() : nullptr;
+	if (!ItemOwner)
+	{
+		return nullptr;
+	}
+
+	TArray<URpgInventoryManagerComponent*> Inventories;
+	ItemOwner->GetComponents(Inventories);
+	for (URpgInventoryManagerComponent* Inventory : Inventories)
+	{
+		if (Inventory && Inventory->ContainsItemInstance(const_cast<URpgInventoryItemInstance*>(ItemInstance)))
+		{
+			return Inventory;
+		}
+	}
+	return nullptr;
 }
 
 int32 URpgInventoryManagerComponent::GetItemStackCount(URpgInventoryItemInstance* ItemInstance) const

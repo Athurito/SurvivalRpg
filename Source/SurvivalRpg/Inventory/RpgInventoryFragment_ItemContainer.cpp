@@ -36,8 +36,10 @@ bool FRpgInventoryItemContainerDefinition::AllowsItemDefinition(
 		return false;
 	}
 
-	const bool bProvidesNestedContainer =
-		ItemCDO->FindFragmentByClass(URpgInventoryFragment_ItemContainer::StaticClass()) != nullptr;
+	// Socket grids are no storage, so an item that only provides sockets, such as a socketed tool, is no nested container.
+	const URpgInventoryFragment_ItemContainer* ProvidedContainers = Cast<URpgInventoryFragment_ItemContainer>(
+		ItemCDO->FindFragmentByClass(URpgInventoryFragment_ItemContainer::StaticClass()));
+	const bool bProvidesNestedContainer = ProvidedContainers && ProvidedContainers->ProvidesStorageContainers();
 	if (bProvidesNestedContainer &&
 		(!bAllowNestedContainers || TargetDepth >= GetEffectiveMaxNestingDepth()))
 	{
@@ -64,7 +66,8 @@ bool URpgInventoryFragment_ItemContainer::
 		ContainerDefinitions)
 	{
 		if (!Definition.IsValid() ||
-			UniqueContainerIds.Contains(Definition.ContainerId))
+			UniqueContainerIds.Contains(Definition.ContainerId) ||
+			(Definition.bSocketGrid && (Definition.bAllowNestedContainers || Definition.bQuickAccessEligible)))
 		{
 			return false;
 		}
@@ -82,5 +85,16 @@ const FRpgInventoryItemContainerDefinition* URpgInventoryFragment_ItemContainer:
 		[ContainerId](const FRpgInventoryItemContainerDefinition& Definition)
 		{
 			return Definition.ContainerId == ContainerId;
+		});
+}
+
+bool URpgInventoryFragment_ItemContainer::ProvidesStorageContainers() const
+{
+	TArray<FRpgInventoryItemContainerDefinition> Definitions;
+	GetProvidedContainers(Definitions);
+	return Definitions.ContainsByPredicate(
+		[](const FRpgInventoryItemContainerDefinition& Definition)
+		{
+			return !Definition.bSocketGrid;
 		});
 }

@@ -22,10 +22,12 @@
 #include "SurvivalRpg/Equipment/RpgAbilityBindingResolver.h"
 #include "SurvivalRpg/Equipment/RpgWeaponAbilityLoadoutComponent.h"
 #include "SurvivalRpg/GameFeatures/RpgGameFeatureAction_AddComponents.h"
+#include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemContainer.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_SkillTree.h"
 #include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeComponent.h"
 #include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeDefinition.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillGameplayTags.h"
+#include "SurvivalRpg/Runes/RpgInventoryFragment_Rune.h"
 
 namespace RpgHarvestContentContractTests
 {
@@ -42,6 +44,7 @@ namespace RpgHarvestContentContractTests
 	const TCHAR* RootGroveClassPath = TEXT("/GF_Harvesting_Magic/Harvesting/Chains/BP_HarvestRootGrove.BP_HarvestRootGrove_C");
 	const TCHAR* DeadPineInstancesClassPath =
 		TEXT("/GF_Harvesting_Magic/Harvesting/Instances/BPC_HarvestInstances_DeadPine.BPC_HarvestInstances_DeadPine_C");
+	const TCHAR* BrandRuneClassPath = TEXT("/GF_Harvesting_Magic/Items/Runes/ID_Rune_Brand.ID_Rune_Brand_C");
 
 	const FGameplayAbilitySpec* FindSpecWithId(const URpgAbilitySystemComponent& AbilitySystem, const FGameplayTag AbilityId)
 	{
@@ -450,6 +453,56 @@ bool FRpgHarvestRootGroveContractTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("The chain takes resources"), Chains[0]->GetMaxChainedTargets() >= 1);
 	TestTrue(TEXT("The grove falls tree by tree"), Chains[0]->GetChainSpeed() > 0.0f);
 	TestTrue(TEXT("The chain box has a size"), !Chains[0]->GetUnscaledBoxExtent().IsNearlyZero());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestRuneSocketContractTest,
+	"SurvivalRpg.Harvesting.Content.RuneSocketContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestRuneSocketContractTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestContentContractTests;
+
+	// A harvesting rune is a rank I to III item instance; Brand is the first one.
+	UClass* BrandClass = LoadClass<URpgInventoryItemDefinition>(nullptr, BrandRuneClassPath);
+	const URpgInventoryFragment_Rune* Brand = BrandClass
+		? Cast<URpgInventoryFragment_Rune>(GetDefault<URpgInventoryItemDefinition>(BrandClass)->FindFragmentByClass(
+			URpgInventoryFragment_Rune::StaticClass()))
+		: nullptr;
+	if (!TestNotNull(TEXT("Brand is a rune item"), Brand))
+	{
+		return false;
+	}
+	TestTrue(TEXT("Brand has its rune identity"), Brand->RuneTag.IsValid());
+	TestEqual(TEXT("Brand reaches rank III"), Brand->GetMaxRank(), RpgRuneMaxRank);
+
+	// Axe and pickaxe each carry three equal sockets that take harvesting runes and store nothing else.
+	for (const TCHAR* ToolPath : {AxeItemClassPath, PickaxeItemClassPath})
+	{
+		UClass* ToolClass = LoadClass<URpgInventoryItemDefinition>(nullptr, ToolPath);
+		const URpgInventoryFragment_ItemContainer* Containers = ToolClass
+			? Cast<URpgInventoryFragment_ItemContainer>(GetDefault<URpgInventoryItemDefinition>(ToolClass)->FindFragmentByClass(
+				URpgInventoryFragment_ItemContainer::StaticClass()))
+			: nullptr;
+		if (!TestNotNull(*FString::Printf(TEXT("%s provides item-owned grids"), ToolPath), Containers))
+		{
+			continue;
+		}
+		TArray<FRpgInventoryItemContainerDefinition> Grids;
+		Containers->GetProvidedContainers(Grids);
+		TestTrue(*FString::Printf(TEXT("%s is no storage container"), ToolPath), !Containers->ProvidesStorageContainers());
+		TestEqual(*FString::Printf(TEXT("%s has one socket grid"), ToolPath), Grids.Num(), 1);
+		if (Grids.Num() == 1)
+		{
+			const FRpgInventoryItemContainerDefinition& Sockets = Grids[0];
+			TestTrue(*FString::Printf(TEXT("%s sockets are a socket grid"), ToolPath), Sockets.bSocketGrid);
+			TestEqual(*FString::Printf(TEXT("%s has three sockets"), ToolPath), Sockets.GridSize.Width * Sockets.GridSize.Height, 3);
+			TestTrue(*FString::Printf(TEXT("%s sockets take Brand"), ToolPath), Sockets.AllowsItemDefinition(BrandClass, 1));
+		}
+	}
 	return true;
 }
 

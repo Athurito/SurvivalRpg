@@ -6,6 +6,7 @@
 #include "RpgInventoryFragment_ItemContainer.h"
 #include "RpgInventoryItemDefinition.h"
 #include "RpgInventoryManagerComponent.h"
+#include "SurvivalRpg/Runes/RpgInventoryFragment_Rune.h"
 #include "GameFramework/Actor.h"
 #include "Net/UnrealNetwork.h"
 #include "Serialization/MemoryReader.h"
@@ -89,6 +90,7 @@ void URpgInventoryItemInstance::GetLifetimeReplicatedProps(TArray<FLifetimePrope
 	DOREPLIFETIME(ThisClass, StatTags);
 	DOREPLIFETIME(ThisClass, ItemizationState);
 	DOREPLIFETIME(ThisClass, ContainmentState);
+	DOREPLIFETIME(ThisClass, RuneRank);
 	DOREPLIFETIME(ThisClass, ItemDef);
 }
 
@@ -199,6 +201,34 @@ bool URpgInventoryItemInstance::SetContainmentState(
 void URpgInventoryItemInstance::OnRep_ContainmentState()
 {
 	OnContainmentStateChanged.Broadcast(ContainmentState);
+}
+
+int32 URpgInventoryItemInstance::GetRuneRank() const
+{
+	return FindFragmentByClass<URpgInventoryFragment_Rune>() ? RuneRank : 0;
+}
+
+bool URpgInventoryItemInstance::SetRuneRank(const int32 NewRank)
+{
+	const URpgInventoryFragment_Rune* Rune = FindFragmentByClass<URpgInventoryFragment_Rune>();
+	if (!HasAuthorityForMutation() || !Rune || NewRank < 1 || NewRank > Rune->GetMaxRank())
+	{
+		return false;
+	}
+
+	if (RuneRank == NewRank)
+	{
+		return true;
+	}
+
+	RuneRank = static_cast<uint8>(NewRank);
+	OnRuneRankChanged.Broadcast(RuneRank);
+	return true;
+}
+
+void URpgInventoryItemInstance::OnRep_RuneRank()
+{
+	OnRuneRankChanged.Broadcast(RuneRank);
 }
 
 bool URpgInventoryItemInstance::InitializePersistentId()

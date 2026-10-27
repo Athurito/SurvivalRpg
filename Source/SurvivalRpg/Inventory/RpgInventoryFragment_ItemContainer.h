@@ -61,6 +61,17 @@ struct SURVIVALRPG_API FRpgInventoryItemContainerDefinition
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Container|Quick Access")
 	bool bQuickAccessEligible = false;
 
+	/**
+	 * Makes the grid sockets of its owning item, such as the three rune sockets of a harvesting tool. Static definition
+	 * data the server planner enforces on every insertion path:
+	 * - The grid holds at most one item of each item definition, so a tool carries one rune of each kind.
+	 * - It is no storage: the owning item does not count as a nested container for other grids' nesting rules, and the
+	 *   grid may neither allow nested containers nor quick access.
+	 * - While the owning item is equipped, the server's equipment manager applies the socketed runes' grants.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Container|Sockets")
+	bool bSocketGrid = false;
+
 	/** Returns whether the static definition is usable by the runtime graph. */
 	bool IsValid() const
 	{
@@ -108,4 +119,7 @@ public:
 
 	/** Finds one native container definition by its definition-local id. */
 	const FRpgInventoryItemContainerDefinition* FindProvidedContainer(FName ContainerId) const;
+
+	/** Whether any provided grid stores items, that is any grid that is not a socket grid. */
+	bool ProvidesStorageContainers() const;
 };

@@ -1,6 +1,6 @@
 # Mastery map roadmap
 
-Updated: 2026-10-27. Status: **In progress**; MST-10b is merged, MST-04 is in review.
+Updated: 2026-10-27. Status: **In progress**; MST-04 is merged, MST-05 is in review.
 
 This is the execution roadmap for the [mastery map implementation plan](mastery-map-implementation-plan.md): a zoomable shared harvesting mastery map, meaningful talent choices, and the rune loot/crafting/upgrade loop. The plan owns design, architecture, and detailed acceptance contracts; this roadmap owns task status, order, and the current handoff.
 
@@ -44,8 +44,8 @@ All dependencies below are within MST; every row also has the CMB scheduling gat
 | MST-03a | Quantized harvesting work, residual progress, true overkill and proc provenance through existing stock/reward commits; actor/instance replication and saves | Post-CMB baseline refresh; technically independent of MST-01/02 | Merged (2026-10-27, `2554bb6c`) | [mastery-map-harvest-work.md](mastery-map-harvest-work.md), [PR #306](https://github.com/Athurito/SurvivalRpg/pull/306) |
 | MST-03b | Shared harvesting mastery/XP/tree/tool references, functional three-node Wucht branch, old-save migration and retirement of legacy harvesting allocations | MST-02, MST-03a | Merged (2026-10-27, `d92bc04b`) | [mastery-map-shared-harvesting.md](mastery-map-shared-harvesting.md), [PR #308](https://github.com/Athurito/SurvivalRpg/pull/308) |
 | MST-03c | Single-map skill screen: full-tab map, points per budget and zoom/region controls on top, node-anchored detail card with Learn/Refund; remove the profession/tree lists, the Q/E/R bar and the detail column | MST-03b | Merged (2026-10-27, `5d45019e`) | [mastery-map-single-map.md](mastery-map-single-map.md), [PR #310](https://github.com/Athurito/SurvivalRpg/pull/310) |
-| MST-04 | Atomic replacement of exclusive choices, owner request/result feedback on the detail card, grant reconciliation and VM updates | MST-03c | In review | [mastery-map-choice-swap.md](mastery-map-choice-swap.md), [PR #313](https://github.com/Athurito/SurvivalRpg/pull/313) |
-| MST-05 | Extend the delivered rune/item foundation with physical instances, ranks and three harvesting-tool sockets; validated moves, grants, replication and persistence | MST-04; CMB-07 contract re-inspection | Planned | — |
+| MST-04 | Atomic replacement of exclusive choices, owner request/result feedback on the detail card, grant reconciliation and VM updates | MST-03c | Merged (2026-10-27, `08285c1e`) | [mastery-map-choice-swap.md](mastery-map-choice-swap.md), [PR #313](https://github.com/Athurito/SurvivalRpg/pull/313) |
+| MST-05 | Extend the delivered rune/item foundation with physical instances, ranks and three harvesting-tool sockets; validated moves, grants, replication and persistence | MST-04; CMB-07 contract re-inspection | In review | [mastery-map-rune-sockets.md](mastery-map-rune-sockets.md), [PR #314](https://github.com/Athurito/SurvivalRpg/pull/314) |
 | MST-06 | Source-tool activation evaluator, rune context/highlights and learned-but-inactive UI; Brand and the first implemented rune-dependent talent path | MST-05 | Planned | — |
 | MST-07 | Rune drops, guaranteed claims, persistent base-recipe knowledge and rank-I crafting through existing loot/station paths | MST-06 | Planned | — |
 | MST-08 | In-place rank II/III upgrades, salvage and Runenschrein presentation; atomic costs and safe equipped-rune refresh | MST-07 | Planned | — |
@@ -91,18 +91,19 @@ Playtests of merged MST steps that wait for the user's batch test. Remove a row 
 | MST-03b | [Playtest](mastery-map-shared-harvesting.md#playtest): one Harvesting tree for axe and pickaxe, mastery XP, Cleaving Force, Shatter or Follow Through, no Q/E/R powers, two players | Waiting for the user |
 | MST-03c | [Playtest](mastery-map-single-map.md#playtest): full-tab map and top bar, node card that follows its node, F/R and X/Y learn and refund, gamepad zoom, reopen, two players | Waiting for the user |
 | MST-04 | [Playtest](mastery-map-choice-swap.md#playtest): Switch from Bulwark to Riposte with no free point, blocking follows, Shatter and Follow Through, two players | Waiting for the user |
+| MST-05 | [Playtest](mastery-map-rune-sockets.md#playtest): a Brand rune in the pockets, axe and pickaxe unchanged in pockets, backpack and chests, two players; socketing comes with MST-06 | Waiting for the user |
 
 ## Current handoff
 
 - **Active phase:** MST, started by the user on 2026-10-27 after CMB-01 to CMB-07 merged.
-- **Active task:** MST-04, branch `claude/mst-04-choice-swap`, [PR #313](https://github.com/Athurito/SurvivalRpg/pull/313); the report is [mastery-map-choice-swap.md](mastery-map-choice-swap.md).
-  - `SwapNode` and `RequestSwapNode` replace the learned choice of an exclusive group in one server step, also with no free point, and reject swaps that other learned talents depend on (`ChoiceStillNeeded`).
-  - Rejected unlock, swap and refund requests reach the owner through `OnRequestRejected`; the card shows Switch, waiting and rejection feedback.
-- **Previous task:** MST-10b, merged on 2026-10-27 as `a8ebbfe3` ([PR #312](https://github.com/Athurito/SurvivalRpg/pull/312)); the report is [mastery-map-combat-tree.md](mastery-map-combat-tree.md). The user played MST-10a and MST-10b on 2026-10-27 without findings.
+- **Active task:** MST-05, branch `claude/mst-05-rune-sockets`, [PR #314](https://github.com/Athurito/SurvivalRpg/pull/314); the report is [mastery-map-rune-sockets.md](mastery-map-rune-sockets.md).
+  - `URpgInventoryFragment_Rune` makes runes non-stackable items with a saved, replicated rank I to III; `bSocketGrid` makes an item-owned grid sockets with one rune of each kind.
+  - Axe and pickaxe have three sockets; the equipment manager grants socketed runes while their tool is equipped. A temporary starter gives every player one Brand rune.
+- **Previous task:** MST-04, merged on 2026-10-27 as `08285c1e` ([PR #313](https://github.com/Athurito/SurvivalRpg/pull/313)); the report is [mastery-map-choice-swap.md](mastery-map-choice-swap.md).
 - **User decisions (2026-10-27):**
   - One map for every tree. After the MST-03c review, MST-10a and MST-10b come before MST-04, with Combat as the second cluster, and the game window has a minimum size of 1280 x 720.
   - Combat talents as proposed: Kampfrhythmus (+10 % base damage), then Konter (perfect block +50 % stagger damage, more stamina back) or Bollwerk (block 25 % less stamina, 15 % more damage stopped). Combat mastery XP comes from kills.
   - For MST-03b, the retired tool trees and powers and the Impact talents as recorded in its report.
-- **Next MST action:** after MST-04 merges, MST-05 (physical rune instances with ranks and three sockets on harvesting tools), after rechecking the rune contract below.
-- **Rune contract for MST-05:** CMB-07 delivered `URpgWeaponRuneDefinition` and `URpgInventoryFragment_WeaponRunes`, with runes engraved on item definitions and no sockets yet. Recheck them before MST-05.
+- **Next MST action:** after MST-05 merges, MST-06. It starts by making tool sockets reachable in the inventory UI, which no screen opens yet: show the socket grids of the tools in the carry slots, outside first-fit placement and quick transfers.
+- **Rune contract:** rechecked for MST-05. CMB-07's engraved weapon runes and the combat Echo stay unchanged; harvesting runes are separate rune items in `GF_Harvesting_Magic`.
 - **Later content decisions:** production XP and cost curves and the starter and guaranteed-reward pacing remain authored tuning. Shared-world rune recipe knowledge is the plan's proposed co-op default and must be settled before MST-07.

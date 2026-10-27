@@ -95,4 +95,9 @@ Recipes and pitfalls observed in this project's UE 5.8 editor sessions. Read it 
 - `BlueprintReadOnly` struct fields can be filled with `import_text`, for example an `FRpgInventoryActionFeedbackMessage` from `(Result=InventoryFull)` for the inventory toast's `show_inventory_action_feedback`. The HUD toast is `URpgAbilityFailureToastWidget` with `show_ability_failure(Text)`. To show a toast without a real failure, map a message on the toast CDO temporarily, then revert it, save again, and check `git status`.
 - Select a settings tab with `CommonTabListWidgetBase.select_tab_by_id("Controller")` on the instance whose path contains `Transient`.
 - Crafting screen: teleport the pawn into the station's access radius, then `pc.call_method("ClientOpenCraftingInteraction", (station,))`.
+- World pickups without Python (MST-05):
+  - The interact key is F (`IMC_Movement`). A pickup needs the camera aimed at it, and `set_pie_input_key` sends only digital keys.
+  - `ObjectTools` can neither read nor set a controller's `ControlRotation` or `Pawn`, nor an inventory's `InventoryList`.
+  - Setting a PIE actor's root `RelativeLocation` through `ObjectTools` stores the value but does not move the actor.
+  - Walk with timed W, A, S and D holds and read the character's `CollisionCylinder.RelativeLocation`. Leave aimed pickups to the playtest, or check in a map where the item is already in the inventory.
 - PIE window size: set `NewWindowWidth` and `NewWindowHeight` on `/Script/UnrealEd.Default__LevelEditorPlaySettings` through `ObjectTools.set_properties`; Python does not expose them.
