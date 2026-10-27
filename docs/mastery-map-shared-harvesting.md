@@ -68,7 +68,7 @@ Run on 2026-10-27 in this worktree:
 - `python Build/Tools/Unreal/ue.py test SurvivalRpg.Harvesting SurvivalRpg.Interaction.Harvesting SurvivalRpg.Progression SurvivalRpg.UI SurvivalRpg.Save --null-rhi`: **167 of 167 passed**. The one warning is the existing `CUI_RespawnScreen` "may require a native tick".
   - **First run:** one failure, because the test binary predated a test edit that removed `HP_Tree` from the tool profiles. It passed after a rebuild.
 - `python Build/Tools/Unreal/ue.py test SurvivalRpg.Network.SkillTreePIE SurvivalRpg.Network.LootHarvestPIE SurvivalRpg.Network.HarvestCuePIE`: **11 of 11 passed**. The warnings are the usual net GUID notes of the temporary PIE map.
-- `python Build/Tools/Unreal/ue.py cook Lvl_HarvestPickaxe`: see the PR.
+- `python Build/Tools/Unreal/ue.py cook Lvl_HarvestPickaxe`: passed, 0 errors, 3 known warnings (Steam disabled, no GameplayCueNotifyPaths, `CUI_RespawnScreen` tick). The cook log names none of the deleted assets.
 - New and changed tests:
   - `SurvivalRpg.Harvesting.Tuning.WorkTalentsShapeOwnHits`: a test tree with the three tunings on a real swing and weak points.
     - Cleaving Force makes 125 work, or 225 on a weak point.
