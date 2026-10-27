@@ -91,8 +91,8 @@ Each tree shows its budget twice: an entry in the top bar (name, level, free and
 **Combat cluster (MST-10b, user decision 2026-10-27):**
 - **Points:** a core mastery `Skill.Mastery.Combat`, earned by kills through the existing kill XP feature action, next to character XP. No XP per hit, so training targets cannot be farmed.
 - **Tree:** one `DA_SkillTree_Combat` carried by the melee weapons, so switching weapons keeps the learned talents.
-- **Talents:** granted GameplayEffects on attributes the combat code already reads; values are tunable in the asset.
-  - **Kampfrhythmus (Battle Rhythm), 1 point:** +10 % base damage.
+- **Talents:** granted GameplayEffects on attributes the combat code already reads, or a tuning the attack reads; values are tunable in the asset.
+  - **Kampfrhythmus (Battle Rhythm), 1 point:** +10 % attack damage through the tuning tag `Ability.Tuning.Attack.Damage`. The player's `BaseDamage` attribute is a flat bonus of 0, so a percentage on it would do nothing (MST-10b, [report](mastery-map-combat-tree.md)).
   - **Konter (Riposte), 3 points:** a perfect block deals +50 % stagger damage and restores more stamina.
   - **Bollwerk (Bulwark), 3 points:** blocking costs 25 % less stamina and stops 15 % more damage.
   - Konter and Bollwerk exclude each other.

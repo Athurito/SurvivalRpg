@@ -19,6 +19,8 @@
 #include "SurvivalRpg/GameFeatures/RpgGameFeatureAction_AwardKillXP.h"
 #include "SurvivalRpg/Progression/Player/Data/RpgPlayerProgressionData.h"
 #include "SurvivalRpg/Progression/Player/RpgPlayerProgressionComponent.h"
+#include "SurvivalRpg/Progression/Skills/RpgTradeSkillGameplayTags.h"
+#include "SurvivalRpg/Progression/Skills/RpgTradeSkillProgressionComponent.h"
 #include "UObject/StrongObjectPtr.h"
 
 #if ENABLE_PIE_NETWORK_TEST
@@ -158,6 +160,7 @@ NETWORK_TEST_CLASS(KillXPCuePIE, "SurvivalRpg.Network")
 	FDelegateHandle CueRoutedHandle;
 	int32 KillerPlayerId = INDEX_NONE;
 	float AwardedXP = 0.0f;
+	float CombatMasteryScale = 0.0f;
 
 	BEFORE_EACH()
 	{
@@ -249,6 +252,16 @@ NETWORK_TEST_CLASS(KillXPCuePIE, "SurvivalRpg.Network")
 					CueTag = ConfiguredAction->XPAwardGameplayCueTag;
 					ASSERT_THAT(IsTrue(CueTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("GameplayCue")))));
 
+					// Kills earn the combat tree's points: the action also advances the combat mastery.
+					for (const FRpgKillSkillXPReward& SkillReward : ConfiguredAction->SkillXPRewards)
+					{
+						if (SkillReward.SkillTag == RpgTradeSkillGameplayTags::Skill_Mastery_Combat)
+						{
+							CombatMasteryScale = SkillReward.XPScale;
+						}
+					}
+					ASSERT_THAT(IsTrue(CombatMasteryScale > 0.0f));
+
 					// The plain test game mode loads no Experience. Unless GF_Progression is already active, a copy of
 					// its action listens in the server world only.
 					if (!UGameFeaturesSubsystem::Get().IsGameFeaturePluginActiveByName(TEXT("GF_Progression")))
@@ -271,6 +284,10 @@ NETWORK_TEST_CLASS(KillXPCuePIE, "SurvivalRpg.Network")
 					{
 						URpgPlayerProgressionComponent* Progression = PlayerState->GetPlayerProgressionComponent();
 						ASSERT_THAT(IsNotNull(Progression));
+						const URpgTradeSkillProgressionComponent* TradeSkills = PlayerState->GetTradeSkillProgressionComponent();
+						ASSERT_THAT(IsNotNull(TradeSkills));
+						ASSERT_THAT(IsTrue(TradeSkills->GetSkillLevelByTag(RpgTradeSkillGameplayTags::Skill_Mastery_Combat) == 1 &&
+							TradeSkills->GetSkillXPByTag(RpgTradeSkillGameplayTags::Skill_Mastery_Combat) == 0.0f));
 						// Without a level curve the XP only accumulates, which keeps the award readable.
 						Progression->ConfigData = NewObject<URpgPlayerProgressionData>(PlayerState);
 						ASSERT_THAT(IsTrue(Progression->GetXP() == 0.0f));
@@ -313,13 +330,20 @@ NETWORK_TEST_CLASS(KillXPCuePIE, "SurvivalRpg.Network")
 				},
 				NetworkTimeout())
 			.ThenServer(
-				TEXT("Only the killer earned XP, and the dedicated server played no cue"),
+				TEXT("Only the killer earned XP and combat mastery, and the dedicated server played no cue"),
 				[this](FNetworkState& State)
 				{
 					for (const ARpgNetworkAutomationKillerState* PlayerState : GetPlayerStates(State))
 					{
 						const float XP = PlayerState->GetPlayerProgressionComponent()->GetXP();
 						ASSERT_THAT(IsTrue(PlayerState->GetPlayerId() == KillerPlayerId ? XP == AwardedXP : XP == 0.0f));
+
+						// The mastery curve may turn the award into levels; either way it moved once, for the killer only.
+						const URpgTradeSkillProgressionComponent* TradeSkills = PlayerState->GetTradeSkillProgressionComponent();
+						const bool bMasteryAdvanced =
+							TradeSkills->GetSkillLevelByTag(RpgTradeSkillGameplayTags::Skill_Mastery_Combat) > 1 ||
+							TradeSkills->GetSkillXPByTag(RpgTradeSkillGameplayTags::Skill_Mastery_Combat) > 0.0f;
+						ASSERT_THAT(IsTrue(bMasteryAdvanced == (PlayerState->GetPlayerId() == KillerPlayerId)));
 					}
 					ASSERT_THAT(IsTrue(CountKillerCues(State.World) == 0));
 				})

@@ -7,12 +7,14 @@
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "GameplayEffect.h"
 #include "NativeGameplayTags.h"
 #include "RpgSkillTreeAutomationTestTypes.h"
 #include "RpgSkillTreeComponent.h"
 #include "RpgSkillTreeDefinition.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/AbilitySystem/Attributes/RpgDefenseSet.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility.h"
 #include "SurvivalRpg/Core/Game/RpgPlayerSaveData.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentAutomationTestTypes.h"
@@ -20,6 +22,9 @@
 #include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
 #include "SurvivalRpg/Equipment/RpgWeaponAbilityLoadoutComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Inventory/RpgInventoryFragment_SkillTree.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Mvvm/SkillTrees/RpgSkillTreeViewModels.h"
 #include "SurvivalRpg/Progression/Skills/Data/RpgTradeSkillConfigData.h"
@@ -975,6 +980,92 @@ bool FRpgSkillTreeContentTest::RunTest(const FString& Parameters)
 	}
 
 	AddInfo(FString::Printf(TEXT("Validated %d skill tree assets."), TreeAssets.Num()));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCombatSkillTreeContentTest,
+	"SurvivalRpg.Progression.SkillTrees.Content.CombatTree",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCombatSkillTreeContentTest::RunTest(const FString& Parameters)
+{
+	// The combat cluster: kills earn its points, every melee weapon carries it, and its talents change attack damage and
+	// blocking in the intended direction. Exact values stay tuning.
+	const URpgSkillTreeDefinition* Tree = LoadObject<URpgSkillTreeDefinition>(
+		nullptr, TEXT("/GF_Combat_Core/Progression/SkillTrees/DA_SkillTree_Combat.DA_SkillTree_Combat"));
+	if (!TestNotNull(TEXT("The combat tree loads"), Tree))
+	{
+		return false;
+	}
+	TestEqual(TEXT("The combat tree has its stable tag"), Tree->TreeTag, FGameplayTag::RequestGameplayTag(TEXT("SkillTree.Tree.Combat")));
+	TestEqual(TEXT("Combat mastery earns the points"), Tree->MasterySkillTag, RpgTradeSkillGameplayTags::Skill_Mastery_Combat.GetTag());
+
+	for (const TCHAR* ItemPath : {
+		TEXT("/GF_Combat_Core/Items/Weapons/ID_BasicSword.ID_BasicSword_C"),
+		TEXT("/GF_Combat_Core/Items/Weapons/ID_BasicTwoHandedSword.ID_BasicTwoHandedSword_C")})
+	{
+		const UClass* ItemClass = LoadClass<URpgInventoryItemDefinition>(nullptr, ItemPath);
+		const URpgInventoryItemDefinition* Item = ItemClass ? GetDefault<URpgInventoryItemDefinition>(ItemClass) : nullptr;
+		const URpgInventoryFragment_SkillTree* Fragment = Item
+			? Cast<URpgInventoryFragment_SkillTree>(Item->FindFragmentByClass(URpgInventoryFragment_SkillTree::StaticClass()))
+			: nullptr;
+		TestTrue(*FString::Printf(TEXT("%s carries the combat tree in the main hand"), ItemPath),
+			Fragment && Fragment->SkillTree == Tree && Fragment->IsActiveInSlot(ERpgEquipmentSlot::MainHand));
+	}
+
+	// Raises: a multiplier above one, or a positive addition.
+	auto RaisesBy = [](const EGameplayModOp::Type Op, const float Magnitude)
+	{
+		return Op == EGameplayModOp::MultiplyAdditive || Op == EGameplayModOp::MultiplyCompound
+			? Magnitude > 1.0f
+			: Magnitude > 0.0f;
+	};
+	auto ChangesAttribute = [&RaisesBy](const FRpgSkillTreeNode& Node, const FGameplayAttribute& Attribute, const bool bRaise)
+	{
+		for (const FRpgAbilitySet_GameplayEffect& Granted : Node.AbilitySet ? Node.AbilitySet->GetGrantedGameplayEffects() : TArray<FRpgAbilitySet_GameplayEffect>())
+		{
+			const UGameplayEffect* Effect = Granted.GameplayEffect ? Granted.GameplayEffect->GetDefaultObject<UGameplayEffect>() : nullptr;
+			if (!Effect || Effect->DurationPolicy != EGameplayEffectDurationType::Infinite)
+			{
+				continue;
+			}
+			for (const FGameplayModifierInfo& Modifier : Effect->Modifiers)
+			{
+				float Magnitude = 0.0f;
+				if (Modifier.Attribute == Attribute && Modifier.ModifierMagnitude.GetStaticMagnitudeIfPossible(1.0f, Magnitude) &&
+					RaisesBy(Modifier.ModifierOp, Magnitude) == bRaise)
+				{
+					return true;
+				}
+			}
+		}
+		return false;
+	};
+
+	const FRpgSkillTreeNode* Rhythm = Tree->FindNode(FGameplayTag::RequestGameplayTag(TEXT("SkillTree.Node.Combat.BattleRhythm")));
+	const FRpgSkillTreeNode* Riposte = Tree->FindNode(FGameplayTag::RequestGameplayTag(TEXT("SkillTree.Node.Combat.Riposte")));
+	const FRpgSkillTreeNode* Bulwark = Tree->FindNode(FGameplayTag::RequestGameplayTag(TEXT("SkillTree.Node.Combat.Bulwark")));
+	if (!TestTrue(TEXT("The combat tree has Battle Rhythm, Riposte and Bulwark"), Rhythm && Riposte && Bulwark))
+	{
+		return false;
+	}
+	TestTrue(TEXT("Battle Rhythm is the entry and raises attack damage"),
+		Rhythm->Prerequisites.IsEmpty() && Rhythm->AbilityTunings.ContainsByPredicate([](const FRpgSkillTreeAbilityTuning& Tuning)
+		{
+			return Tuning.TuningTag == RpgGameplayTags::Ability_Tuning_Attack_Damage &&
+				(Tuning.Operation == ERpgSkillTreeTuningOperation::Multiply ? Tuning.Value > 1.0f
+					: Tuning.Operation == ERpgSkillTreeTuningOperation::Add && Tuning.Value > 0.0f);
+		}));
+	TestTrue(TEXT("Riposte and Bulwark follow Battle Rhythm and exclude each other"),
+		Riposte->Prerequisites.Contains(Rhythm->NodeTag) && Bulwark->Prerequisites.Contains(Rhythm->NodeTag) &&
+			!Riposte->ExclusiveGroup.IsNone() && Riposte->ExclusiveGroup == Bulwark->ExclusiveGroup);
+	TestTrue(TEXT("Riposte raises a perfect block's stagger damage and stamina"),
+		ChangesAttribute(*Riposte, URpgDefenseSet::GetPerfectBlockStaggerDamageAttribute(), true) &&
+			ChangesAttribute(*Riposte, URpgDefenseSet::GetPerfectBlockStaminaRestoreAttribute(), true));
+	TestTrue(TEXT("Bulwark lowers the block's stamina cost and raises its damage reduction"),
+		ChangesAttribute(*Bulwark, URpgDefenseSet::GetBlockStaminaCostAttribute(), false) &&
+			ChangesAttribute(*Bulwark, URpgDefenseSet::GetBlockDamageReductionAttribute(), true));
 	return true;
 }
 

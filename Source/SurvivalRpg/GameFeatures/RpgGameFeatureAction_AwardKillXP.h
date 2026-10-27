@@ -10,8 +10,24 @@ class UCurveTable;
 class URpgExperienceRewardComponent;
 struct FRpgCombatActorKilledMessage;
 
+/** One skill a kill advances besides character XP, for example a combat mastery. Designer-tuned static data. */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgKillSkillXPReward
+{
+	GENERATED_BODY()
+
+	/** Trade skill that earns XP from kills, for example Skill.Mastery.Combat. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "XP", meta = (Categories = "Skill"))
+	FGameplayTag SkillTag;
+
+	/** Skill XP per point of the kill's character XP; 1 awards the same amount. Zero awards nothing. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "XP", meta = (ClampMin = "0", UIMin = "0", UIMax = "5"))
+	float XPScale = 1.0f;
+};
+
 /**
- * Progression feature action that listens to combat kill messages and awards XP.
+ * Progression feature action that listens to combat kill messages and awards the killer character XP and the
+ * configured skill XP.
  */
 UCLASS(meta = (DisplayName = "Award Rpg Kill XP"))
 class SURVIVALRPG_API URpgGameFeatureAction_AwardKillXP final : public URpgGameFeatureAction_WorldActionBase
@@ -25,6 +41,13 @@ public:
 	/** Designer-authored XP per enemy level, one curve per reward row of URpgExperienceRewardComponent. Server only. */
 	UPROPERTY(EditAnywhere, Category = "XP", meta = (AssetBundles = "Server"))
 	TSoftObjectPtr<UCurveTable> EnemyXPRewardCurveTable;
+
+	/**
+	 * Trade skills every rewarded kill also advances, scaled from the kill's character XP. The server adds the XP to the
+	 * killer once per kill, together with the character XP; kills that award no character XP award none either.
+	 */
+	UPROPERTY(EditAnywhere, Category = "XP", meta = (TitleProperty = "SkillTag"))
+	TArray<FRpgKillSkillXPReward> SkillXPRewards;
 
 	/**
 	 * Cosmetic GameplayCue the server executes on the killer's ability system when a kill awards XP. The cue

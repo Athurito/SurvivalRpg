@@ -135,6 +135,12 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_Damage);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_Heal);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_StaggerDamage);
+
+	/**
+	 * Tuning tag weapon attacks read for their damage: learned skill tree nodes of the attacking weapon's tree change
+	 * the attack definition's Damage through it, for example Multiply 1.1 for +10 %.
+	 */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Attack_Damage);
 	
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cheat_GodMode);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cheat_UnlimitedHealth);

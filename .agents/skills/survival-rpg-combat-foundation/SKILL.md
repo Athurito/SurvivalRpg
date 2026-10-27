@@ -138,6 +138,8 @@ Use the hybrid model from `docs/game-vision.md` section 9 and `docs/combat-maste
 
 Skill unlocks grant or modify AbilitySets (preferred for active skills), GameplayEffects (persistent passives), GameplayTags (ability upgrades checked at runtime), input bindings, and passive bonuses.
 
+Current combat mastery: kills award `Skill.Mastery.Combat` through the kill XP action's `SkillXPRewards`, and its points buy the talents of `DA_SkillTree_Combat`, which every melee weapon carries. Weapon attacks read their damage through the tuning tag `Ability.Tuning.Attack.Damage`; block and perfect-block talents are infinite effects on `URpgDefenseSet`, whose current values the damage execution reads (`docs/mastery-map-combat-tree.md`).
+
 ## Combat MVP priority
 
 When in doubt, finish the smallest playable loop before building broad systems: equip a test weapon, trigger a basic attack ability, play the montage, detect the hit, apply `GE_Damage_Instant` or equivalent, play hit reaction or cue, kill the enemy, and grant XP or mastery progress through the progression seam. That loop must leave room for runes, magic, ranged weapons, portal monsters, Dungeonbreak modifiers, skill-tree unlocks, and item-instance modifiers.

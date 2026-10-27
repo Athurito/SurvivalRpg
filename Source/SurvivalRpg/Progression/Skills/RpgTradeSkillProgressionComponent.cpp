@@ -27,6 +27,7 @@ void AddCoreSkillTags(TSet<FGameplayTag>& OutTags)
 	OutTags.Add(RpgTradeSkillGameplayTags::Skill_Crafting_Woodworking);
 	OutTags.Add(RpgTradeSkillGameplayTags::Skill_Crafting_Blacksmithing);
 	OutTags.Add(RpgTradeSkillGameplayTags::Skill_Mastery_Harvesting);
+	OutTags.Add(RpgTradeSkillGameplayTags::Skill_Mastery_Combat);
 }
 }
 

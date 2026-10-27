@@ -57,7 +57,7 @@ bool FRpgTradeSkillAuthorityAndLevelUpTest::RunTest(const FString& Parameters)
 		NewObject<URpgTradeSkillProgressionComponent>(Owner);
 	Component->ResetSkillStatesToDefaults();
 
-	TestEqual(TEXT("All seven core skills receive default states"), Component->SkillStates.Num(), 7);
+	TestEqual(TEXT("All eight core skills, the combat mastery included, receive default states"), Component->SkillStates.Num(), 8);
 	TestTrue(
 		TEXT("A server-owned skill accepts positive XP"),
 		Component->AddSkillXPByTag(RpgTradeSkillGameplayTags::Skill_Gathering_Foraging, 100.0f));
@@ -219,9 +219,9 @@ bool FRpgTradeSkillRestoreReconnectTest::RunTest(const FString& Parameters)
 			RpgTradeSkillGameplayTags::Skill_Gathering_Mining),
 		34.0f);
 	TestEqual(
-		TEXT("Reconnect retains exactly the seven core skill identities"),
+		TEXT("Reconnect retains exactly the eight core skill identities"),
 		ReconnectSnapshot.Num(),
-		7);
+		8);
 	return true;
 }
 

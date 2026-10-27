@@ -13,7 +13,8 @@ class UAbilitySystemComponent;
  * Basic, data-driven weapon attack.
  *
  * The equipped URpgWeaponInstance supplies montage, damage GE, SetByCaller damage,
- * trace shape, and optional camera mode. Damage is applied only on authority.
+ * trace shape, and optional camera mode. Damage is applied only on authority. Learned skill tree nodes of the weapon's
+ * tree tune the attack definition's Damage through Ability.Tuning.Attack.Damage.
  *
  * An attack definition with ComboNextAttack chains into that attack within the same activation: the owner buffers the
  * input, starts the next step in a new prediction window inside the montage's Combo Window and asks the server, which
