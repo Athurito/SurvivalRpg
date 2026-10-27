@@ -36,7 +36,7 @@ All dependencies below are within MST; every row also has the CMB scheduling gat
 
 | ID | Scope | Dependencies | Status | Report / PR |
 | --- | --- | --- | --- | --- |
-| MST-01 | Free-position node/link schema, reusable native map geometry/input, LocalPlayer camera/selection cache; prove the surface with existing data | Post-CMB baseline refresh | In review | [mastery-map-foundation.md](mastery-map-foundation.md), PR pending |
+| MST-01 | Free-position node/link schema, reusable native map geometry/input, LocalPlayer camera/selection cache; prove the surface with existing data | Post-CMB baseline refresh | In review | [mastery-map-foundation.md](mastery-map-foundation.md), [PR #302](https://github.com/Athurito/SurvivalRpg/pull/302) |
 | MST-02 | Integrate `CUI_Skills`, node/details WBPs and existing MVVM/style; explicit learn/refund actions, focus, semantic zoom and close/reopen behavior | MST-01 | Planned | — |
 | MST-03a | Quantized harvesting work, residual progress, true overkill and proc provenance through existing stock/reward commits; actor/instance replication and saves | Post-CMB baseline refresh; technically independent of MST-01/02 | Planned | — |
 | MST-03b | Shared harvesting mastery/XP/tree/tool references, functional three-node Wucht branch, old-save migration and retirement of legacy harvesting allocations | MST-02, MST-03a | Planned | — |
@@ -75,7 +75,7 @@ Each task uses the detailed contracts in the implementation plan. Run relevant c
 ## Current handoff
 
 - **Active phase:** MST, started by the user on 2026-10-27 after CMB-01 to CMB-07 merged.
-- **Active task:** MST-01, branch `claude/mst-01-map-foundation`; the report is [mastery-map-foundation.md](mastery-map-foundation.md), which records the baseline refresh at `29b4dae3`.
+- **Active task:** MST-01, branch `claude/mst-01-map-foundation`, [PR #302](https://github.com/Athurito/SurvivalRpg/pull/302); the report is [mastery-map-foundation.md](mastery-map-foundation.md), which records the baseline refresh at `29b4dae3`.
 - **Delivered in MST-01:**
   - The layout schema (grid fallback, free positions, regions, default region) and the map read models.
   - `URpgSkillTreeMapWidget` with its Slate panel.
