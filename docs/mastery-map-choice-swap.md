@@ -1,6 +1,6 @@
 # MST-04: Atomic choice swap
 
-Task report for MST-04 in the [mastery map roadmap](mastery-map-roadmap.md); the design is in the [implementation plan](mastery-map-implementation-plan.md), section "Shared harvesting progression" (one server request for replacing an exclusive choice) and the detail card contract. It builds on the single-map card of [MST-03c](mastery-map-single-map.md) and the trees of [MST-10a](mastery-map-several-trees.md) and [MST-10b](mastery-map-combat-tree.md).
+Task report for MST-04 in the [mastery map roadmap](mastery-map-roadmap.md), [PR #313](https://github.com/Athurito/SurvivalRpg/pull/313); the design is in the [implementation plan](mastery-map-implementation-plan.md), section "Shared harvesting progression" (one server request for replacing an exclusive choice) and the detail card contract. It builds on the single-map card of [MST-03c](mastery-map-single-map.md) and the trees of [MST-10a](mastery-map-several-trees.md) and [MST-10b](mastery-map-combat-tree.md).
 
 ## C++ boundary decision
 

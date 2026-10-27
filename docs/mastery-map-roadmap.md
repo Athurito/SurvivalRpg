@@ -44,7 +44,7 @@ All dependencies below are within MST; every row also has the CMB scheduling gat
 | MST-03a | Quantized harvesting work, residual progress, true overkill and proc provenance through existing stock/reward commits; actor/instance replication and saves | Post-CMB baseline refresh; technically independent of MST-01/02 | Merged (2026-10-27, `2554bb6c`) | [mastery-map-harvest-work.md](mastery-map-harvest-work.md), [PR #306](https://github.com/Athurito/SurvivalRpg/pull/306) |
 | MST-03b | Shared harvesting mastery/XP/tree/tool references, functional three-node Wucht branch, old-save migration and retirement of legacy harvesting allocations | MST-02, MST-03a | Merged (2026-10-27, `d92bc04b`) | [mastery-map-shared-harvesting.md](mastery-map-shared-harvesting.md), [PR #308](https://github.com/Athurito/SurvivalRpg/pull/308) |
 | MST-03c | Single-map skill screen: full-tab map, points per budget and zoom/region controls on top, node-anchored detail card with Learn/Refund; remove the profession/tree lists, the Q/E/R bar and the detail column | MST-03b | Merged (2026-10-27, `5d45019e`) | [mastery-map-single-map.md](mastery-map-single-map.md), [PR #310](https://github.com/Athurito/SurvivalRpg/pull/310) |
-| MST-04 | Atomic replacement of exclusive choices, owner request/result feedback on the detail card, grant reconciliation and VM updates | MST-03c | In review | [mastery-map-choice-swap.md](mastery-map-choice-swap.md) |
+| MST-04 | Atomic replacement of exclusive choices, owner request/result feedback on the detail card, grant reconciliation and VM updates | MST-03c | In review | [mastery-map-choice-swap.md](mastery-map-choice-swap.md), [PR #313](https://github.com/Athurito/SurvivalRpg/pull/313) |
 | MST-05 | Extend the delivered rune/item foundation with physical instances, ranks and three harvesting-tool sockets; validated moves, grants, replication and persistence | MST-04; CMB-07 contract re-inspection | Planned | — |
 | MST-06 | Source-tool activation evaluator, rune context/highlights and learned-but-inactive UI; Brand and the first implemented rune-dependent talent path | MST-05 | Planned | — |
 | MST-07 | Rune drops, guaranteed claims, persistent base-recipe knowledge and rank-I crafting through existing loot/station paths | MST-06 | Planned | — |
@@ -95,7 +95,7 @@ Playtests of merged MST steps that wait for the user's batch test. Remove a row 
 ## Current handoff
 
 - **Active phase:** MST, started by the user on 2026-10-27 after CMB-01 to CMB-07 merged.
-- **Active task:** MST-04, branch `claude/mst-04-choice-swap`; the report is [mastery-map-choice-swap.md](mastery-map-choice-swap.md).
+- **Active task:** MST-04, branch `claude/mst-04-choice-swap`, [PR #313](https://github.com/Athurito/SurvivalRpg/pull/313); the report is [mastery-map-choice-swap.md](mastery-map-choice-swap.md).
   - `SwapNode` and `RequestSwapNode` replace the learned choice of an exclusive group in one server step, also with no free point, and reject swaps that other learned talents depend on (`ChoiceStillNeeded`).
   - Rejected unlock, swap and refund requests reach the owner through `OnRequestRejected`; the card shows Switch, waiting and rejection feedback.
 - **Previous task:** MST-10b, merged on 2026-10-27 as `a8ebbfe3` ([PR #312](https://github.com/Athurito/SurvivalRpg/pull/312)); the report is [mastery-map-combat-tree.md](mastery-map-combat-tree.md). The user played MST-10a and MST-10b on 2026-10-27 without findings.
