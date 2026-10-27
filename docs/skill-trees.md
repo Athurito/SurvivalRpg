@@ -39,7 +39,13 @@ are data. Code is only needed when an ability gains a new tunable value.
   - Every prerequisite is learned.
   - At least `RequiredPointsInTree` points are already spent in the tree.
   - Enough points are available for its `Cost`.
-- **Requests:** clients call `RequestUnlockNode`, `RequestRefundNode`, `RequestResetTree` and `RequestAssignSlot`. The server validates them exactly like its own calls; a rejected request changes nothing.
+- **Requests:** clients call `RequestUnlockNode`, `RequestSwapNode`, `RequestRefundNode`, `RequestResetTree` and `RequestAssignSlot`. The server validates them exactly like its own calls; a rejected request changes nothing.
+  - A rejected unlock, swap or refund reaches the owner through `OnRequestRejected` with its node and an `ERpgSkillTreeRequestRejection` reason (MST-04).
+- **Swap:** `SwapNode` replaces the learned node of a node's `ExclusiveGroup` with that node in one change, so grants, slots, replication and the save never see both or neither ([choice swap](mastery-map-choice-swap.md)).
+  - The replaced node's points count as free, so a swap works with no free point.
+  - The other purchases keep their order, and the new node joins the end.
+  - It is rejected while another learned purchase would no longer be learnable without the replaced node (`ChoiceStillNeeded`), or when the new node does not fit the freed and free points.
+  - Without a learned alternative a swap is an unlock. `EvaluateSwap` reports the result and the replaced node without changing anything.
 - **Q/E/R slots:**
   - A newly learned node places its abilities on the first free slot of its tree.
   - Assigning an ability that already occupies another slot swaps the two slots.
@@ -79,14 +85,16 @@ that map at its `MapOrigin`, with its own points, as in Path of Exile's atlas (M
   - **Shortcuts:** one per tree, which frames its cluster, followed by the regions of every tree that has more than one. They show from the second shortcut on.
 - **Clusters:** below each tree's lowest node the map shows `CUI_SkillTreeClusterLabel` with the tree's name, level and free points. Fit frames every tree.
 - **Card:** clicking a node only selects it and opens one fixed-size card beside it, which follows the node while the map moves and stays inside the map. The map has one selection over all trees. **Learn** and **Refund** on the card send the node view model's `RequestUnlock` and `RequestRefund`, so they spend the points of the node's own tree.
+  - For an excluded node that can replace its learned alternative, the card says "Switch possible" and names that alternative, and Learn reads **Switch** and sends `RequestSwap`.
+  - While a request waits for the server, the card's commands are disabled and it says so. A rejection shows "Not changed" with its reason until the selection moves or the node gets a new request.
 - **Bound actions:** `DT_RpgUIActions_SkillTree`. Learn is F or the left face button and Refund R or the top face button; they work while focus stays on the map, and the menu's action bar lists each while it is available. Zoom and fit add gamepad bindings: the triggers and the right stick press.
 - **Q/E/R:** the screen has no Q/E/R bar. Assigning a learned active ability belongs on its card once a tree has active abilities; the assignment rules are unchanged.
 
 | Part | Role |
 | --- | --- |
 | `URpgSkillProgressionViewModel` | Character level, trade skills with XP, one tree view model per known tree, the node selected in any tree with its tree, free points. `OnProgressionChanged` also fires when any tree view model changes, so a screen refreshes from one event. |
-| `URpgSkillTreeViewModel` | Points, rows with their gates, prerequisite links, Q/E/R slots, the selected node, and the commands learn, reset, select and assign. |
-| `URpgSkillTreeNodeViewModel` | One node: name, text, icon, kind, cell, cost, state (`Unlocked`, `Unlockable`, `Unaffordable`, `Locked`, `Excluded`), slot, and `bCanRefund` with the commands learn, refund and select. |
+| `URpgSkillTreeViewModel` | Points, rows with their gates, prerequisite links, Q/E/R slots, the selected node, the open requests and the owner's rejections, and the commands learn, swap, reset, select and assign. |
+| `URpgSkillTreeNodeViewModel` | One node: name, text, icon, kind, cell, cost, state (`Unlocked`, `Unlockable`, `Unaffordable`, `Locked`, `Excluded`), slot, `bCanRefund`, `bCanSwap` with the node it replaces, and `RequestStatus` (`Idle`, `Pending`, `Rejected`) with its `Rejection`; commands learn, swap, refund and select. |
 | `URpgSkillTreeGridWidget` | Places one entry per node from `Row` and `Column`, draws the links and darkens locked rows. Entries implement User Object List Entry. No screen uses it since MST-02. |
 | `URpgSkillTreeMapWidget` | Zoomable, pannable map ([below](#mastery-map)) that `CUI_Skills` shows every tree on. |
 | `CUI_Skills`, `CUI_SkillTreeNode`, `CUI_SkillTreeBudgetEntry`, `CUI_SkillTreeClusterLabel`, `CUI_SkillButtonStyle` | Layout and style in `/Game/SurvivalRpg/UI/Menus/GameMenu/GameMenu/Skills`. `CUI_TradeSkillEntry` there lists the professions on the Character tab. |
@@ -172,12 +180,13 @@ Add an entry to `Nodes`:
 - points
 - unlock rules
 - refunds of single nodes, reset and slots
+- swaps of exclusive choices with their grants, and the owner's rejection reports
 - weapon grants
 - tunings
 - Q/E/R through the weapon loadout
 - save and restore
 
-- the view models: projection, commands, coalesced refresh and the overview
+- the view models: projection, commands, coalesced refresh, the overview, and swap and rejection feedback
 - the map layout: grid fallback, free positions, regions and their projection
 
 `SurvivalRpg.UI.SkillTreeMap.*` covers the map's camera, spatial navigation, pointer gestures, widget lifecycle with

@@ -38,6 +38,36 @@ enum class ERpgSkillTreeNodeState : uint8
 	Excluded
 };
 
+/** Whether a request for a node waits for the server or was rejected. Local UI state; UI read-only. */
+UENUM(BlueprintType)
+enum class ERpgSkillTreeRequestStatus : uint8
+{
+	/** No request for the node is open. */
+	Idle,
+
+	/** A request was sent and neither its result nor a state change has arrived yet. */
+	Pending,
+
+	/** The server rejected the last request; the node's Rejection says why. */
+	Rejected
+};
+
+/** Swap option and request feedback a tree view model hands one node view model. Not reflected. */
+struct FRpgSkillTreeNodeInteraction
+{
+	/** The node is excluded by a learned alternative that a swap can replace now. */
+	bool bCanSwap = false;
+
+	/** The learned alternative a swap would refund, or empty. */
+	FGameplayTag SwapReplacesNodeTag;
+
+	/** Player-facing name of SwapReplacesNodeTag, or empty. */
+	FText SwapReplacesName;
+
+	ERpgSkillTreeRequestStatus RequestStatus = ERpgSkillTreeRequestStatus::Idle;
+	ERpgSkillTreeRequestRejection Rejection = ERpgSkillTreeRequestRejection::None;
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FRpgSkillTreeViewModelChanged);
 
 /** One grid row of a skill tree with its point gate. UI read-only. */
@@ -179,7 +209,8 @@ public:
 		int32 InAssignedSlotIndex,
 		bool bInSelected,
 		bool bInRowUnlocked,
-		bool bInCanRefund);
+		bool bInCanRefund,
+		const FRpgSkillTreeNodeInteraction& Interaction);
 
 	/** Tree view model that owns this node. */
 	UFUNCTION(BlueprintPure, Category = "Skill Tree|ViewModel")
@@ -196,6 +227,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Skill Tree|ViewModel")
 	void RequestRefund();
 
+	/**
+	 * Asks the server to learn this excluded node and refund its learned alternative in one step. The server validates
+	 * it; the UI updates when the result replicates.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Skill Tree|ViewModel")
+	void RequestSwap();
+
 	/** Selects this node in its tree, for example before placing its ability on Q/E/R. Local UI state only. */
 	UFUNCTION(BlueprintCallable, Category = "Skill Tree|ViewModel")
 	void Select();
@@ -210,6 +248,10 @@ public:
 	int32 GetAssignedSlotIndex() const { return AssignedSlotIndex; }
 	bool IsSelected() const { return bIsSelected; }
 	bool CanRefund() const { return bCanRefund; }
+	bool CanSwap() const { return bCanSwap; }
+	FGameplayTag GetSwapReplacesNodeTag() const { return SwapReplacesNodeTag; }
+	ERpgSkillTreeRequestStatus GetRequestStatus() const { return RequestStatus; }
+	ERpgSkillTreeRequestRejection GetRejection() const { return Rejection; }
 
 protected:
 	/** Stable node identity. */
@@ -296,6 +338,33 @@ protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Node", meta = (AllowPrivateAccess = "true"))
 	bool bIsSelected = false;
 
+	/**
+	 * True when RequestSwap would succeed now: a learned alternative of the node's exclusive group excludes it, and
+	 * replacing that alternative keeps every other learned node valid. Works without free points.
+	 */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Node", meta = (AllowPrivateAccess = "true"))
+	bool bCanSwap = false;
+
+	/** The learned alternative a swap would refund, or empty. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Node", meta = (AllowPrivateAccess = "true"))
+	FGameplayTag SwapReplacesNodeTag;
+
+	/** Player-facing name of the alternative a swap would refund, or empty. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Node", meta = (AllowPrivateAccess = "true"))
+	FText SwapReplacesName;
+
+	/** Whether a learn, refund or swap request for this node waits for the server or was rejected. Local UI state. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Node", meta = (AllowPrivateAccess = "true"))
+	ERpgSkillTreeRequestStatus RequestStatus = ERpgSkillTreeRequestStatus::Idle;
+
+	/** True while RequestStatus is Pending, so a card can hold its commands without comparing enums. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Node", meta = (AllowPrivateAccess = "true"))
+	bool bIsRequestPending = false;
+
+	/** Why the server rejected the last request, while RequestStatus is Rejected; None otherwise. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Node", meta = (AllowPrivateAccess = "true"))
+	ERpgSkillTreeRequestRejection Rejection = ERpgSkillTreeRequestRejection::None;
+
 private:
 	TWeakObjectPtr<URpgSkillTreeViewModel> Tree;
 };
@@ -334,6 +403,10 @@ public:
 	/** Asks the server to refund the point of the learned NodeTag. */
 	UFUNCTION(BlueprintCallable, Category = "Skill Tree|ViewModel")
 	void RequestRefundNode(FGameplayTag NodeTag);
+
+	/** Asks the server to learn NodeTag and refund the learned alternative of its exclusive group in one step. */
+	UFUNCTION(BlueprintCallable, Category = "Skill Tree|ViewModel")
+	void RequestSwapNode(FGameplayTag NodeTag);
 
 	/** Asks the server to refund every point of the tree for free. */
 	UFUNCTION(BlueprintCallable, Category = "Skill Tree|ViewModel")
@@ -492,6 +565,12 @@ private:
 	UFUNCTION()
 	void HandleTradeSkillChanged(FGameplayTag SkillTag, const FTradeSkillState& NewState);
 
+	UFUNCTION()
+	void HandleRequestRejected(FGameplayTag RejectedTreeTag, FGameplayTag NodeTag, ERpgSkillTreeRequestRejection Reason);
+
+	/** Marks NodeTag as waiting for the server before a request goes out, and forgets its last rejection. */
+	void BeginRequest(FGameplayTag NodeTag);
+
 	void Subscribe();
 	void Unsubscribe();
 	void QueueRefresh();
@@ -501,6 +580,12 @@ private:
 	TWeakObjectPtr<URpgSkillTreeComponent> ObservedSkillTrees;
 	TWeakObjectPtr<URpgTradeSkillProgressionComponent> ObservedTradeSkills;
 	FGameplayTag SelectedNodeTag;
+
+	/** Nodes with a request in flight; any replicated change of the tree or a rejection ends the wait. */
+	TSet<FGameplayTag> PendingNodeTags;
+
+	/** Last rejection per node, until the selection moves or the node gets a new request. */
+	TMap<FGameplayTag, ERpgSkillTreeRequestRejection> RejectedNodes;
 	FRpgViewModelInvalidationQueue RefreshQueue;
 };
 
