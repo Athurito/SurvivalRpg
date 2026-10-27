@@ -189,6 +189,13 @@ namespace RpgLootHarvestPIETests
 			Node->GetHarvestState().bActive == bExpectedActive;
 	}
 
+	/** Returns the residual work this machine sees on the replicated node, or INDEX_NONE without a node. */
+	int32 GetNodeSectionWork(const FNetworkState& State)
+	{
+		const URpgHarvestableComponent* Node = IsValid(State.HarvestNode) ? State.HarvestNode->GetHarvestableNode() : nullptr;
+		return Node ? static_cast<int32>(Node->GetHarvestState().SectionWork) : INDEX_NONE;
+	}
+
 	/** Loads the same instanced field on one machine, the way every machine loads a PCG partition actor. */
 	ARpgNetworkAutomationHarvestInstancesFixture* LoadInstancesField(UWorld* World)
 	{
@@ -265,6 +272,18 @@ namespace RpgLootHarvestPIETests
 			}
 		}
 		return true;
+	}
+
+	/** Returns the residual work this machine sees on InstanceIndex of the loaded field, or INDEX_NONE. */
+	int32 GetInstanceSectionWork(const FNetworkState& State, const int32 InstanceIndex)
+	{
+		const URpgHarvestInstanceStockComponent* Stock = URpgHarvestInstanceStockComponent::FindForWorld(State.World);
+		const URpgHarvestableInstancesComponent* Instances =
+			IsValid(State.InstancesField) ? State.InstancesField->GetHarvestableInstances() : nullptr;
+		FIntVector Key;
+		return Stock && Instances && Instances->GetInstanceKey(InstanceIndex, Key)
+			? Stock->GetStockSnapshot(Key, NodeSectionCount).SectionWork
+			: INDEX_NONE;
 	}
 
 	/** Returns the swarm replicated to or spawned in World that has not been destroyed, or null. */
@@ -1097,13 +1116,22 @@ NETWORK_TEST_CLASS(LootHarvestPIE, "SurvivalRpg.Network")
 						State.Harvester->GetInventoryManagerComponent()->GetTotalItemCountByDefinition(
 							URpgNetworkAutomationMaterialDefinition::StaticClass()),
 						2 * LootQuantity));
+
+					// Fractional work stays on the next section without a reward or a new revision.
+					FRpgHarvestRequest Partial = MakeNodeRequest(State.HarvestNode, State.Harvester, 1);
+					Partial.WorkScale = 0.4f;
+					const FRpgHarvestResult PartialResult = Node->CommitHarvest_Implementation(Partial);
+					ASSERT_THAT(IsTrue(PartialResult.IsSuccess()));
+					ASSERT_THAT(AreEqual(PartialResult.SectionsTaken, 0));
+					ASSERT_THAT(AreEqual(GetNodeSectionWork(State), 40));
+					ASSERT_THAT(AreEqual(Node->GetHarvestState().Revision, 0));
 				})
 			.UntilClient(
-				TEXT("The flushed dormant node replicates its partial stock"),
+				TEXT("The flushed dormant node replicates its partial stock and residual work"),
 				0,
 				[](FNetworkState& State)
 				{
-					return HasReplicatedNodeState(State, NodeSectionCount - 2, 0, true);
+					return HasReplicatedNodeState(State, NodeSectionCount - 2, 0, true) && GetNodeSectionWork(State) == 40;
 				},
 				NetworkTimeout())
 			.ThenClientJoins(NetworkTimeout())
@@ -1131,11 +1159,11 @@ NETWORK_TEST_CLASS(LootHarvestPIE, "SurvivalRpg.Network")
 						MakeSectionedNodeProfile(State.HarvestNode))));
 				})
 			.UntilClient(
-				TEXT("Late join reconstructs the partial stock"),
+				TEXT("Late join reconstructs the partial stock and residual work"),
 				1,
 				[](FNetworkState& State)
 				{
-					return HasReplicatedNodeState(State, NodeSectionCount - 2, 0, true);
+					return HasReplicatedNodeState(State, NodeSectionCount - 2, 0, true) && GetNodeSectionWork(State) == 40;
 				},
 				NetworkTimeout())
 			.ThenServer(
@@ -1148,6 +1176,7 @@ NETWORK_TEST_CLASS(LootHarvestPIE, "SurvivalRpg.Network")
 					ASSERT_THAT(IsTrue(Result.IsSuccess()));
 					ASSERT_THAT(AreEqual(Result.SectionsTaken, 2));
 					ASSERT_THAT(IsTrue(Result.bDepleted));
+					ASSERT_THAT(AreEqual(Result.OverkillWork, 3 * RpgHarvestWork::UnitsPerSection - (2 * RpgHarvestWork::UnitsPerSection - 40)));
 					ASSERT_THAT(AreEqual(Node->GetHarvestState().Revision, 1));
 					ASSERT_THAT(AreEqual(
 						State.Harvester->GetInventoryManagerComponent()->GetTotalItemCountByDefinition(
@@ -1158,7 +1187,7 @@ NETWORK_TEST_CLASS(LootHarvestPIE, "SurvivalRpg.Network")
 				TEXT("Both clients see the depleted node"),
 				[](FNetworkState& State)
 				{
-					return HasReplicatedNodeState(State, 0, 1, false);
+					return HasReplicatedNodeState(State, 0, 1, false) && GetNodeSectionWork(State) == 0;
 				},
 				NetworkTimeout());
 	}
@@ -1245,6 +1274,10 @@ NETWORK_TEST_CLASS(LootHarvestPIE, "SurvivalRpg.Network")
 						MakeInstancesRequest(State, 0, State.Harvester, NodeSectionCount)).bDepleted));
 					ASSERT_THAT(IsTrue(Instances->CommitHarvest_Implementation(
 						MakeInstancesRequest(State, 1, State.Harvester, 1)).IsSuccess()));
+					FRpgHarvestRequest Partial = MakeInstancesRequest(State, 1, State.Harvester, 1);
+					Partial.WorkScale = 0.25f;
+					ASSERT_THAT(AreEqual(Instances->CommitHarvest_Implementation(Partial).SectionsTaken, 0));
+					ASSERT_THAT(AreEqual(GetInstanceSectionWork(State, 1), 25));
 					ASSERT_THAT(IsTrue(HasInstanceStock(State, {0, NodeSectionCount - 1, NodeSectionCount}, 2)));
 					ASSERT_THAT(AreEqual(
 						State.Harvester->GetInventoryManagerComponent()->GetTotalItemCountByDefinition(
@@ -1252,11 +1285,12 @@ NETWORK_TEST_CLASS(LootHarvestPIE, "SurvivalRpg.Network")
 						(NodeSectionCount + 1) * LootQuantity));
 				})
 			.UntilClient(
-				TEXT("The client presents the replicated instance stock"),
+				TEXT("The client presents the replicated instance stock and residual work"),
 				0,
 				[](FNetworkState& State)
 				{
-					return HasInstanceStock(State, {0, NodeSectionCount - 1, NodeSectionCount}, 2);
+					return HasInstanceStock(State, {0, NodeSectionCount - 1, NodeSectionCount}, 2) &&
+						GetInstanceSectionWork(State, 1) == 25;
 				},
 				NetworkTimeout())
 			.ThenClientJoins(NetworkTimeout())
@@ -1285,6 +1319,7 @@ NETWORK_TEST_CLASS(LootHarvestPIE, "SurvivalRpg.Network")
 					State.InstancesField = LoadInstancesField(State.World);
 					ASSERT_THAT(IsNotNull(State.InstancesField));
 					ASSERT_THAT(IsTrue(HasInstanceStock(State, {0, NodeSectionCount - 1, NodeSectionCount}, 2)));
+					ASSERT_THAT(AreEqual(GetInstanceSectionWork(State, 1), 25));
 				})
 			.ThenServer(
 				TEXT("A respawn restores the empty instance"),
@@ -1851,7 +1886,7 @@ NETWORK_TEST_CLASS(LootHarvestPIE, "SurvivalRpg.Network")
 						FIntVector Key;
 						ASSERT_THAT(IsTrue(Instances->GetInstanceKey(InstanceIndex, Key)));
 						const int32 Sections = InstanceIndex % 5 == 0 ? 1 : NodeSectionCount;
-						ASSERT_THAT(IsTrue(Stock->ExtractSections(Key, NodeSectionCount, Sections, 0.0f)));
+						ASSERT_THAT(IsTrue(Stock->CommitWork(Key, NodeSectionCount, Sections, 0, 0.0f)));
 						ExpectedLoadFieldStock[InstanceIndex] = NodeSectionCount - Sections;
 					}
 					ExpectedChangedInstances = Stock->GetNumChangedInstances();

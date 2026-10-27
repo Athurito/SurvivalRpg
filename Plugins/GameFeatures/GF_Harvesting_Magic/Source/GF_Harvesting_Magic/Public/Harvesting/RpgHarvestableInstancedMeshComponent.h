@@ -50,6 +50,13 @@ private:
 	/** Server-authored availability; inactive instances keep their index but use a zero-scale transform. */
 	UPROPERTY()
 	bool bActive = true;
+
+	/**
+	 * Residual work on the instance's single section in RpgHarvestWork units, from 0 to 99: work that did not yet
+	 * complete it. Zero while inactive; partial work does not advance the revision.
+	 */
+	UPROPERTY()
+	uint8 SectionWork = 0;
 };
 
 /** FastArray containing only resource instances that have changed from their authored state. */
@@ -188,6 +195,8 @@ private:
 	friend struct FRpgHarvestedInstanceStateList;
 
 	bool IsValidResourceInstanceIndex(int32 InstanceIndex) const;
+	/** Records residual work on an active instance without changing its availability or revision. Authority only. */
+	bool SetResourceInstanceSectionWork(int32 InstanceIndex, int32 SectionWork);
 	bool CanMutateInstanceTopology(const TCHAR* OperationName) const;
 	bool BuildInteractionOption(int32 InstanceIndex, const FInteractionQuery& InteractQuery, FInteractionOption& OutOption) const;
 	void CacheAuthoredInstanceTransforms();

@@ -20,13 +20,25 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestStockSnapshot
 	/** Sections already extracted in the current revision. */
 	int32 HarvestedSections = 0;
 
+	/** Residual work on the next section in RpgHarvestWork units, below one section. */
+	int32 SectionWork = 0;
+
 	/** Whether the resource is currently available. */
 	bool bActive = true;
 
-	/** Returns the sections left in the current revision, never negative. */
+	/** Returns the sections left in the current revision, including a partly worked one, never negative. */
 	int32 GetRemainingSections() const
 	{
 		return bActive ? FMath::Max(0, SectionCount - HarvestedSections) : 0;
+	}
+
+	/** Returns the work left until the resource depletes, in RpgHarvestWork units, never negative. */
+	int32 GetRemainingWork() const
+	{
+		const int32 RemainingSections = GetRemainingSections();
+		return RemainingSections > 0
+			? RemainingSections * RpgHarvestWork::UnitsPerSection - FMath::Clamp(SectionWork, 0, RpgHarvestWork::UnitsPerSection - 1)
+			: 0;
 	}
 };
 
@@ -56,12 +68,16 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestStockRules
 {
 	/**
 	 * Evaluates Request against Stock without mutating anything. The caller has already verified that the request
-	 * addresses this resource. A Harvested outcome reports the sections a commit would take and the stock left after it.
+	 * addresses this resource. A Harvested outcome reports the work a commit would accept, the sections that work
+	 * completes, the overkill beyond the remaining work, and the stock and residual work left after it.
 	 * Profile may be null for legacy deplete-only resources, which then skip tool and skill requirements.
 	 * ActiveWeakPoint is the representation's current weak point, or null when it has none; a request that may hit
-	 * weak points and strikes it takes the profile's bonus sections in addition, clamped to the remaining stock.
+	 * weak points and strikes it brings the profile's bonus sections as additional work from the same stock.
 	 * ProtectionProbe is the resource's world location; an area request is rejected as Protected when it lies inside a
 	 * harvest protection box. Null skips the check.
+	 *
+	 * Every commit evaluates again against the stock as it is at that moment on the server, so concurrent requests
+	 * never reuse the same work; the revision only rejects requests aimed at a depleted or respawned stock.
 	 */
 	static FRpgHarvestResult Evaluate(
 		const URpgHarvestProfile* Profile,

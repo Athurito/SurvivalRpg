@@ -30,6 +30,10 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestInstanceStockEntry : public FFastArray
 	UPROPERTY()
 	uint8 HarvestedSections = 0;
 
+	/** Residual work on the next section in RpgHarvestWork units, from 0 to 99; zero once depleted. */
+	UPROPERTY()
+	uint8 SectionWork = 0;
+
 	/** False while the instance is depleted and waits for its respawn. */
 	UPROPERTY()
 	bool bActive = true;

@@ -25,8 +25,12 @@ namespace RpgHarvestChains
 	/** Request that takes the whole remaining stock of a chained resource, like an area harvest from the trigger. */
 	FRpgHarvestRequest MakeChainRequest(const FRpgHarvestRequest& Template, const FVector& TriggerLocation)
 	{
+		// A chained resource is finished as a whole: follow-up work of the trigger's action that leaves no overkill.
 		FRpgHarvestRequest Request = Template;
 		Request.RequestedSections = URpgHarvestProfile::MaxSectionCount;
+		Request.WorkScale = 1.0f;
+		Request.bFinishResource = true;
+		Request.Provenance = Template.Provenance.MakeSecondary();
 		Request.bAreaHarvest = true;
 		Request.bCanHitWeakPoint = false;
 		Request.TraceOrigin = TriggerLocation;

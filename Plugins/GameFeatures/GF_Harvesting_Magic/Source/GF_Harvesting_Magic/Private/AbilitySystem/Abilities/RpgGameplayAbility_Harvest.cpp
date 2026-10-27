@@ -334,6 +334,8 @@ void URpgGameplayAbility_Harvest::ExecuteAuthorityCommit()
 	}
 	FRpgHarvestRequest RequestTemplate;
 	BuildRequestTemplate(*Spec, *CurrentActorInfo, Values, RequestTemplate);
+	// Everything this execution harvests, including chained resources, a swarm, and stride pulses, shares one root.
+	RequestTemplate.Provenance.RootActionId = FRpgHarvestProvenance::MakeRootActionId();
 
 	// A stride harvests around the walking harvester in pulses until its duration is over.
 	if (HasStride())

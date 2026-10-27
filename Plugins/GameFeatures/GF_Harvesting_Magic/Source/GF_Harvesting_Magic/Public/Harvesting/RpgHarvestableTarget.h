@@ -11,6 +11,86 @@
 class AActor;
 
 /**
+ * Quantized harvest work shared by every harvestable representation. Requests bring work, resources keep the
+ * residual work of their partly worked section, and every completed section is rewarded once.
+ */
+namespace RpgHarvestWork
+{
+	/** Work units in one stock section; work is counted in hundredths of a section. */
+	inline constexpr int32 UnitsPerSection = 100;
+
+	/** Largest work one request may bring, so oversized requests cannot overflow; anything beyond it is ignored. */
+	inline constexpr int32 MaxRequestUnits = 64 * UnitsPerSection;
+
+	/** Largest FRpgHarvestRequest::WorkScale a request may carry. */
+	inline constexpr float MaxWorkScale = 16.0f;
+}
+
+/** Who did a harvest's work: the harvester's own action, or follow-up work that action caused. */
+UENUM(BlueprintType)
+enum class ERpgHarvestWorkSource : uint8
+{
+	/** The harvester's own swing, power, or manual harvest. Direct work may trigger effects that react to own hits. */
+	Direct,
+
+	/**
+	 * Follow-up work another harvest caused, such as a helper creature, a felled root grove, or later burn, echo, and
+	 * propagation effects. Secondary work never counts as a direct hit.
+	 */
+	Secondary
+};
+
+/**
+ * Origin of one harvest request's work, carried through the commit into its result so that effects reacting to harvest
+ * work can tell own hits from follow-up work and group the work of one player action. Server-side; set by the code
+ * that builds the request, never by a client.
+ */
+USTRUCT(BlueprintType)
+struct GF_HARVESTING_MAGIC_API FRpgHarvestProvenance
+{
+	GENERATED_BODY()
+
+	/** Whether the harvester's own action did this work or follow-up work it caused. */
+	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
+	ERpgHarvestWorkSource Source = ERpgHarvestWorkSource::Direct;
+
+	/**
+	 * Server id of the player action at the root of this work, from MakeRootActionId; follow-up work keeps the id of
+	 * the action that caused it. Zero for previews and work without a root action.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
+	int32 RootActionId = 0;
+
+	/**
+	 * Effect that produced secondary work, for example a rune proc. Empty for direct work, and for helpers or chains
+	 * that the request's AbilityId already identifies.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
+	FGameplayTag ProcTag;
+
+	/** Returns whether this is the harvester's own work. */
+	bool IsDirect() const
+	{
+		return Source == ERpgHarvestWorkSource::Direct;
+	}
+
+	/** Returns this provenance as follow-up work of the same root action, produced by InProcTag. */
+	FRpgHarvestProvenance MakeSecondary(const FGameplayTag& InProcTag = FGameplayTag()) const
+	{
+		FRpgHarvestProvenance Secondary = *this;
+		Secondary.Source = ERpgHarvestWorkSource::Secondary;
+		if (InProcTag.IsValid())
+		{
+			Secondary.ProcTag = InProcTag;
+		}
+		return Secondary;
+	}
+
+	/** Returns a new positive root action id, unique within the server session. Game thread only. */
+	static int32 MakeRootActionId();
+};
+
+/**
  * Turns one harvested material into another at a whole-number ratio, for example two wood into one charcoal.
  *
  * A harvest ability lists the conversions it can make; each is active while the ability's owner has
@@ -98,11 +178,33 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestRequest
 	float HarvestPower = 1.0f;
 
 	/**
-	 * Number of logical stock sections this request wants to extract from one target.
-	 * Targets clamp the value to their remaining stock; values below one are rejected as invalid.
+	 * Number of logical stock sections of work this request brings to one target, before WorkScale. Targets clamp the
+	 * work to their remaining stock; values below one are rejected as invalid.
 	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Harvesting", meta = (ClampMin = "1", UIMin = "1"))
 	int32 RequestedSections = 1;
+
+	/**
+	 * Multiplier on the work of RequestedSections, above 0 and at most RpgHarvestWork::MaxWorkScale; for example 1.25
+	 * for a talent that adds a quarter section, or 0.3 for an echo. Work is quantized to hundredths of a section. A
+	 * section completes, and is rewarded once, when the work on it adds up to a whole section; work that falls short
+	 * stays on the resource as residual progress. Changes only how fast stock depletes, never its total yield;
+	 * HarvestPower scales yield. Server-side.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Harvesting", meta = (ClampMin = "0.01", ClampMax = "16.0"))
+	float WorkScale = 1.0f;
+
+	/**
+	 * True for requests that complete whatever stock is left, such as a felled root grove taking its other trees along.
+	 * They apply exactly the remaining work, ignore RequestedSections and WorkScale beyond validation, never strike
+	 * weak points, and never report overkill.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
+	bool bFinishResource = false;
+
+	/** Origin of this request's work; targets copy it into the result unchanged. Server-side. */
+	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
+	FRpgHarvestProvenance Provenance;
 
 	/**
 	 * Harvesting tool category carried by the request, resolved on the server from the source item.
@@ -146,13 +248,28 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestRequest
 	{
 		return PhysicalHarvester ? PhysicalHarvester.Get() : Harvester.Get();
 	}
+
+	/**
+	 * Returns the quantized work of RequestedSections and WorkScale in work units, at most
+	 * RpgHarvestWork::MaxRequestUnits, or zero for requests whose sections or scale are invalid. Weak-point bonus work
+	 * and bFinishResource are applied by the target.
+	 */
+	int32 GetRequestedWork() const
+	{
+		if (RequestedSections < 1 || !FMath::IsFinite(WorkScale) || WorkScale <= 0.0f || WorkScale > RpgHarvestWork::MaxWorkScale)
+		{
+			return 0;
+		}
+		const double Work = static_cast<double>(RequestedSections) * RpgHarvestWork::UnitsPerSection * WorkScale;
+		return static_cast<int32>(FMath::Clamp(FMath::RoundToDouble(Work), 0.0, static_cast<double>(RpgHarvestWork::MaxRequestUnits)));
+	}
 };
 
 /** Authoritative or previewed outcome of one harvest request against one target. */
 UENUM(BlueprintType)
 enum class ERpgHarvestOutcome : uint8
 {
-	/** Stock was (or would be) extracted and its reward delivered. */
+	/** The target accepted (or would accept) the work; completed sections were extracted and their reward delivered. */
 	Harvested,
 
 	/** The target is inactive or has no remaining stock. */
@@ -204,13 +321,42 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestResult
 	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
 	ERpgHarvestOutcome Outcome = ERpgHarvestOutcome::Invalid;
 
-	/** Stock sections extracted by a commit, or the sections an evaluation would extract. */
+	/**
+	 * Stock sections a commit completed, or an evaluation would complete; each is rewarded and awards XP once. Zero
+	 * when the work only advanced the partly worked section.
+	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
 	int32 SectionsTaken = 0;
 
-	/** Stock sections left on the target after this result. */
+	/** Stock sections left on the target after this result, including a partly worked one. */
 	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
 	int32 RemainingSections = 0;
+
+	/**
+	 * Work the target accepted, in RpgHarvestWork units: the request's work, including weak-point bonus work, up to
+	 * the work the target had left. Positive for every successful result.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
+	int32 WorkApplied = 0;
+
+	/**
+	 * Work of the request beyond what the target had left, in RpgHarvestWork units; positive only when the result
+	 * depletes the target. Requests with bFinishResource never report overkill.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
+	int32 OverkillWork = 0;
+
+	/** Work the target has left after this result, in RpgHarvestWork units; zero once depleted. */
+	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
+	int32 RemainingWork = 0;
+
+	/** Residual work on the partly worked section after this result, from 0 to RpgHarvestWork::UnitsPerSection - 1. */
+	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
+	int32 SectionWork = 0;
+
+	/** Origin of the request's work, copied from FRpgHarvestRequest::Provenance. */
+	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
+	FRpgHarvestProvenance Provenance;
 
 	/** Total stock sections of the target's current revision. */
 	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
@@ -231,10 +377,19 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestResult
 	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
 	ERpgHarvestDelivery Delivery = ERpgHarvestDelivery::None;
 
-	/** Returns whether the request was (or would be) harvested. */
+	/** Returns whether the request was (or would be) harvested: its work was accepted, with or without a completed section. */
 	bool IsSuccess() const
 	{
 		return Outcome == ERpgHarvestOutcome::Harvested;
+	}
+
+	/**
+	 * Returns whether this result is an accepted own hit: direct work the target accepted. It counts even when it
+	 * completed no section yet, which grants no reward or XP for that section.
+	 */
+	bool IsAcceptedDirectHit() const
+	{
+		return IsSuccess() && WorkApplied > 0 && Provenance.IsDirect();
 	}
 
 	/** Builds a rejection that reports the target's current stock without extracting anything. */

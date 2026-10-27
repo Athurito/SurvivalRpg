@@ -62,16 +62,18 @@ public:
 	FRpgHarvestStockSnapshot GetStockSnapshot(const FIntVector& Key, int32 SectionCount) const;
 
 	/**
-	 * Records SectionsTaken extracted sections of the instance identified by Key. An instance whose stock runs out
-	 * depletes, advances its revision, and is restored after RespawnDelaySeconds; zero or less keeps it depleted for
-	 * the session. Every machine presents the change PresentationDelaySeconds after it happened on the server; the
-	 * stock itself changes at once. HarvestYawDegrees is the cosmetic direction from the harvester toward the
-	 * instance. Authority only; the caller has already delivered the reward. Returns false when nothing changed.
+	 * Records committed work on the instance identified by Key: SectionsTaken completed sections, and SectionWork as
+	 * the residual work left on its next section, in RpgHarvestWork units. An instance whose stock runs out depletes,
+	 * advances its revision, and is restored after RespawnDelaySeconds; zero or less keeps it depleted for the session.
+	 * Every machine presents the change PresentationDelaySeconds after it happened on the server; the stock itself
+	 * changes at once. HarvestYawDegrees is the cosmetic direction from the harvester toward the instance. Authority
+	 * only; the caller has already delivered the reward of the completed sections. Returns false when nothing changed.
 	 */
-	bool ExtractSections(
+	bool CommitWork(
 		const FIntVector& Key,
 		int32 SectionCount,
 		int32 SectionsTaken,
+		int32 SectionWork,
 		float RespawnDelaySeconds,
 		float PresentationDelaySeconds = 0.0f,
 		float HarvestYawDegrees = 0.0f);

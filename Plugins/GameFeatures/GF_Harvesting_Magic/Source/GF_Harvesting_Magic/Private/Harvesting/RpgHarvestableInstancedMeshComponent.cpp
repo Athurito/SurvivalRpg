@@ -264,6 +264,7 @@ bool URpgHarvestableInstancedMeshComponent::CommitInteraction(
 	Request.Hit = AuthoritativeQuery.CandidateHit;
 	Request.ExpectedRevision = ValidatedOption.TargetRef.Revision;
 	Request.HarvestPower = 1.0f;
+	Request.Provenance.RootActionId = FRpgHarvestProvenance::MakeRootActionId();
 
 	return IRpgHarvestableTarget::Execute_CommitHarvest(this, Request).IsSuccess();
 }
@@ -294,6 +295,10 @@ FRpgHarvestResult URpgHarvestableInstancedMeshComponent::EvaluateHarvest_Impleme
 	Stock.SectionCount = 1;
 	Stock.bActive = IsResourceInstanceActive(InstanceIndex);
 	Stock.HarvestedSections = Stock.bActive ? 0 : 1;
+	if (const FRpgHarvestedInstanceStateEntry* Entry = ReplicatedInstanceStates.Find(InstanceIndex); Entry && Stock.bActive)
+	{
+		Stock.SectionWork = Entry->SectionWork;
+	}
 	// Only area requests respect protection, so only they pay for the instance location.
 	FTransform InstanceTransform;
 	const bool bProbeProtection = Request.bAreaHarvest && GetInstanceTransform(InstanceIndex, InstanceTransform, true);
@@ -332,6 +337,17 @@ FRpgHarvestResult URpgHarvestableInstancedMeshComponent::CommitHarvest_Implement
 	{
 		HarvestsInProgress.Remove(InstanceIndex);
 	};
+
+	// Work that does not complete the single section only advances its residual work; nothing is rewarded yet.
+	if (Result.SectionsTaken <= 0)
+	{
+		if (!SetResourceInstanceSectionWork(InstanceIndex, Result.SectionWork))
+		{
+			return FRpgHarvestResult::MakeRejected(ERpgHarvestOutcome::Invalid, 1, 1);
+		}
+		Result.Delivery = ERpgHarvestDelivery::Empty;
+		return Result;
+	}
 
 	// Existing reference nodes without a profile retain their deplete-only behavior.
 	// Profile-backed nodes must establish an inventory grant or complete world-drop fallback first.
@@ -405,9 +421,42 @@ bool URpgHarvestableInstancedMeshComponent::SetResourceInstanceActive(const int3
 
 	Entry->bActive = bNewActive;
 	Entry->Revision = FMath::Max(1, Entry->Revision + 1);
+	Entry->SectionWork = 0;
 	ReplicatedInstanceStates.MarkItemDirty(*Entry);
 
 	ApplyReplicatedInstanceState(InstanceIndex, bNewActive, Entry->Revision);
+	OwningActor->FlushNetDormancy();
+	OwningActor->ForceNetUpdate();
+	return true;
+}
+
+bool URpgHarvestableInstancedMeshComponent::SetResourceInstanceSectionWork(const int32 InstanceIndex, const int32 SectionWork)
+{
+	AActor* OwningActor = GetOwner();
+	const uint8 NewSectionWork = static_cast<uint8>(FMath::Clamp(SectionWork, 0, RpgHarvestWork::UnitsPerSection - 1));
+	if (!OwningActor || !OwningActor->HasAuthority() || !IsResourceInstanceActive(InstanceIndex))
+	{
+		return false;
+	}
+
+	FRpgHarvestedInstanceStateEntry* Entry = ReplicatedInstanceStates.FindMutable(InstanceIndex);
+	if (!Entry)
+	{
+		if (NewSectionWork == 0)
+		{
+			return true;
+		}
+		Entry = &ReplicatedInstanceStates.Entries.AddDefaulted_GetRef();
+		Entry->InstanceIndex = InstanceIndex;
+	}
+	if (Entry->SectionWork == NewSectionWork)
+	{
+		return true;
+	}
+
+	// The instance stays active and keeps its revision, so interaction options and swings aimed at it stay valid.
+	Entry->SectionWork = NewSectionWork;
+	ReplicatedInstanceStates.MarkItemDirty(*Entry);
 	OwningActor->FlushNetDormancy();
 	OwningActor->ForceNetUpdate();
 	return true;

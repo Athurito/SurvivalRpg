@@ -26,6 +26,13 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestSavedStock
 	UPROPERTY(SaveGame)
 	int32 HarvestedSections = 0;
 
+	/**
+	 * Residual work on the next section in RpgHarvestWork units, below one section. Saves without the field load it as
+	 * zero.
+	 */
+	UPROPERTY(SaveGame)
+	int32 SectionWork = 0;
+
 	/** False while the resource is depleted and waits for its respawn. */
 	UPROPERTY(SaveGame)
 	bool bActive = true;
@@ -38,7 +45,7 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestSavedStock
 	float RespawnSeconds = -1.0f;
 
 	/** Returns whether this is the authored, fully stocked state, which needs no save entry. */
-	bool IsPristine() const { return bActive && HarvestedSections <= 0; }
+	bool IsPristine() const { return bActive && HarvestedSections <= 0 && SectionWork <= 0; }
 };
 
 /** Saved stock of one actor-backed resource placed in a map. */

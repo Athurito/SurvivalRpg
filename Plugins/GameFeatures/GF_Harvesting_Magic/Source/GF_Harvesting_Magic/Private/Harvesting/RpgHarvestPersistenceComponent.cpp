@@ -23,7 +23,8 @@ namespace RpgHarvestPersistence
 
 	bool IsValidSavedStock(const FRpgHarvestSavedStock& Stock)
 	{
-		return Stock.Revision >= 0 && Stock.HarvestedSections >= 0 && FMath::IsFinite(Stock.RespawnSeconds);
+		return Stock.Revision >= 0 && Stock.HarvestedSections >= 0 && Stock.SectionWork >= 0 &&
+			FMath::IsFinite(Stock.RespawnSeconds);
 	}
 
 	/**

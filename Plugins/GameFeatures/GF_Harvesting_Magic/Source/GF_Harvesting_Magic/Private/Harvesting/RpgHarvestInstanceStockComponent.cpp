@@ -51,21 +51,24 @@ FRpgHarvestStockSnapshot URpgHarvestInstanceStockComponent::GetStockSnapshot(con
 	{
 		Snapshot.Revision = Entry->Revision;
 		Snapshot.HarvestedSections = Entry->HarvestedSections;
+		Snapshot.SectionWork = Entry->SectionWork;
 		Snapshot.bActive = Entry->bActive;
 	}
 	return Snapshot;
 }
 
-bool URpgHarvestInstanceStockComponent::ExtractSections(
+bool URpgHarvestInstanceStockComponent::CommitWork(
 	const FIntVector& Key,
 	const int32 SectionCount,
 	const int32 SectionsTaken,
+	const int32 SectionWork,
 	const float RespawnDelaySeconds,
 	const float PresentationDelaySeconds,
 	const float HarvestYawDegrees)
 {
-	TRACE_CPUPROFILER_EVENT_SCOPE(URpgHarvestInstanceStockComponent::ExtractSections);
-	if (!HasStockAuthority() || SectionsTaken <= 0)
+	TRACE_CPUPROFILER_EVENT_SCOPE(URpgHarvestInstanceStockComponent::CommitWork);
+	const uint8 NewSectionWork = static_cast<uint8>(FMath::Clamp(SectionWork, 0, RpgHarvestWork::UnitsPerSection - 1));
+	if (!HasStockAuthority() || SectionsTaken < 0 || (SectionsTaken == 0 && NewSectionWork == 0))
 	{
 		return false;
 	}
@@ -83,7 +86,7 @@ bool URpgHarvestInstanceStockComponent::ExtractSections(
 	}
 
 	FRpgHarvestInstanceStockEntry& Entry = Stock.GetEntry(EntryIndex);
-	if (!Entry.bActive)
+	if (!Entry.bActive || (SectionsTaken == 0 && Entry.SectionWork == NewSectionWork))
 	{
 		return false;
 	}
@@ -91,9 +94,11 @@ bool URpgHarvestInstanceStockComponent::ExtractSections(
 	const int32 ClampedSectionCount = FMath::Clamp(SectionCount, 1, URpgHarvestProfile::MaxSectionCount);
 	Entry.HarvestedSections = static_cast<uint8>(
 		FMath::Clamp(static_cast<int32>(Entry.HarvestedSections) + SectionsTaken, 0, ClampedSectionCount));
+	Entry.SectionWork = NewSectionWork;
 	if (Entry.HarvestedSections >= ClampedSectionCount)
 	{
 		Entry.bActive = false;
+		Entry.SectionWork = 0;
 		Entry.Revision = FMath::Max(1, Entry.Revision + 1);
 		const UWorld* World = GetWorld();
 		if (World && RespawnDelaySeconds > 0.0f)
@@ -175,6 +180,7 @@ bool URpgHarvestInstanceStockComponent::ExportSavedStock(const FIntVector& Key, 
 
 	OutStock.Revision = Entry->Revision;
 	OutStock.HarvestedSections = Entry->HarvestedSections;
+	OutStock.SectionWork = Entry->SectionWork;
 	OutStock.bActive = Entry->bActive;
 	const UWorld* World = GetWorld();
 	if (const double* Deadline = RespawnDeadlines.Find(Key); Deadline && World)
@@ -224,6 +230,9 @@ bool URpgHarvestInstanceStockComponent::ApplySavedStock(const FIntVector& Key, c
 		Entry.Revision = FMath::Max(0, SavedStock.Revision);
 		Entry.HarvestedSections = static_cast<uint8>(
 			FMath::Clamp(SavedStock.HarvestedSections, 0, URpgHarvestProfile::MaxSectionCount));
+		Entry.SectionWork = SavedStock.bActive
+			? static_cast<uint8>(FMath::Clamp(SavedStock.SectionWork, 0, RpgHarvestWork::UnitsPerSection - 1))
+			: 0;
 		Entry.bActive = SavedStock.bActive;
 		// Older than the live window, so every machine snaps to the saved stock instead of animating it.
 		Entry.LastChangeServerTime = GetServerWorldTimeSeconds() - LiveChangeWindowSeconds - 1.0f;
