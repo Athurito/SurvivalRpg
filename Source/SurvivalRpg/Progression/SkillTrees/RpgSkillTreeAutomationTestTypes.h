@@ -1,6 +1,7 @@
 #pragma once
 
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
+#include "SurvivalRpg/UI/RpgMvvmListEntryWidgets.h"
 
 #include "RpgSkillTreeAutomationTestTypes.generated.h"
 
@@ -32,4 +33,11 @@ public:
 	void HandleChanged() { ++Broadcasts; }
 
 	int32 Broadcasts = 0;
+};
+
+/** Native skill tree map entry without authored layout; its entry item is the node view model it shows. Test-only. */
+UCLASS(NotBlueprintable, Transient)
+class URpgSkillTreeAutomationTestMapEntry final : public URpgMvvmListEntryWidget
+{
+	GENERATED_BODY()
 };

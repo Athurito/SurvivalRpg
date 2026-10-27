@@ -23,7 +23,8 @@ are data. Code is only needed when an ability gains a new tunable value.
 | Abilities, effects and tags of learned nodes | `URpgEquipmentManagerComponent` | Granted while the weapon is in use; the source object is the weapon's equipment instance. |
 | Q/E/R binding | `URpgWeaponAbilityLoadoutComponent` | Order: player selection, then the tree of the weapon in use, then ability set defaults. |
 | Numeric upgrades | `URpgGameplayAbility::GetTunedValue` | Resolved on the server and the owning client. |
-| Presentation | `URpgSkillProgressionViewModel`, `URpgSkillTreeViewModel`, `URpgSkillTreeNodeViewModel`, `URpgTradeSkillViewModel`, `URpgSkillTreeGridWidget`, and the CommonUI screen `CUI_Skills` | Read-only; commands send the component's requests. |
+| Presentation | `URpgSkillProgressionViewModel`, `URpgSkillTreeViewModel`, `URpgSkillTreeNodeViewModel`, `URpgTradeSkillViewModel`, `URpgSkillTreeGridWidget`, `URpgSkillTreeMapWidget`, and the CommonUI screen `CUI_Skills` | Read-only; commands send the component's requests. |
+| Map camera and selection | `URpgSkillTreeMapWidget`, remembered per tree in `URpgUIScreenSubsystem` | Local to the player; never replicated or saved. |
 
 ## Runtime rules
 
@@ -77,8 +78,19 @@ and calls the node view model's `RequestRefund`).
 | `URpgSkillProgressionViewModel` | Character level, trade skills with XP, one tree view model per known tree, the selected tree, free points. `OnProgressionChanged` also fires when the selected tree changes, so a screen refreshes from one event. |
 | `URpgSkillTreeViewModel` | Points, rows with their gates, prerequisite links, Q/E/R slots, the selected node, and the commands learn, reset, select and assign. |
 | `URpgSkillTreeNodeViewModel` | One node: name, text, icon, kind, cell, cost, state (`Unlocked`, `Unlockable`, `Unaffordable`, `Locked`, `Excluded`), slot, and `bCanRefund` with the commands learn, refund and select. |
-| `URpgSkillTreeGridWidget` | Places one entry per node from `Row` and `Column`, draws the links and darkens locked rows. Entries implement User Object List Entry. |
+| `URpgSkillTreeGridWidget` | Places one entry per node from `Row` and `Column`, draws the links and darkens locked rows. Entries implement User Object List Entry. `CUI_Skills` still uses it. |
+| `URpgSkillTreeMapWidget` | Zoomable, pannable map ([below](#mastery-map)). MST-02 replaces the grid in `CUI_Skills` with it. |
 | `CUI_Skills`, `CUI_SkillTreeNode`, `CUI_TradeSkillEntry`, `CUI_SkillTreeListEntry` | Layout and style in `/Game/SurvivalRpg/UI/Menus/GameMenu/GameMenu/Skills`. |
+
+### Mastery map
+
+`URpgSkillTreeMapWidget` (MST-01, [mastery map foundation](mastery-map-foundation.md)) shows one tree on a clipped map:
+- The wheel zooms around the cursor; a drag with any mouse button pans after a few units.
+- A left click without a drag selects a node; nothing on the map learns or refunds.
+- Arrow keys and the gamepad move the selection to the nearest node in that direction and bring it into view; Tab follows the authored order.
+- Blueprints get zoom, fit, region and node focus, pan and cancel commands, and `Overview`/`Detail` from `DetailZoom`.
+- Camera and selection come back when the screen reopens.
+- Entries are presentation only and never receive presses; `URpgMvvmListEntryWidget` entries get their node view model as their entry item.
 
 The view models observe the replicated state and rebuild at most once per frame. Trade skill names come from
 `DisplayName` in the trade skill config, or the last part of the skill tag.
@@ -112,6 +124,8 @@ No code, widget or save change is needed; the skill screen lists the tree and dr
 Add an entry to `Nodes`:
 - `NodeTag`: `SkillTree.Node.<Weapon>.<Name>`. Never rename it once shipped; saves use it.
 - `Row` and `Column` for the grid, and `KindTag` for the style (`SkillTree.NodeKind.Active`, `Passive`, `Upgrade`, `Ultimate`).
+  - On a tree whose `LayoutMode` is `FreePosition`, `MapPosition` places the node instead (map units: slate units at zoom 1, Y down). `GridSpacing` turns a `Grid` tree's cells into map positions.
+  - `RegionId` puts the node into one of the tree's `Regions`. A region frames its nodes with its `Padding`, and `DefaultRegionId` chooses what the map frames first.
   - Put exclusive alternatives side by side in one row below their prerequisite, so the links fork. Chain upgrades that stack straight down, each requiring the one above, so no link passes behind another node.
   - A loose passive has no prerequisites.
   - Keep `RequiredPointsInTree` at 0 except for capstones such as an ultimate, so players choose freely and only chains gate nodes.
@@ -143,6 +157,10 @@ Add an entry to `Nodes`:
 - save and restore
 
 - the view models: projection, commands, coalesced refresh and the overview
+- the map layout: grid fallback, free positions, regions and their projection
+
+`SurvivalRpg.UI.SkillTreeMap.*` covers the map's camera, spatial navigation, pointer gestures, widget lifecycle with
+the remembered view, and that every shipped tree fits on the map.
 
 `SurvivalRpg.Save.WorldSave.MemoryRoundTrip` covers the save fields.
 `SurvivalRpg.Harvesting.Content.AxeSkillTreeContract` and `PickaxeSkillTreeContract` check the chain item →

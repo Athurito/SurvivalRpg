@@ -38,6 +38,11 @@ AI movement looks jerky when it stops dead, which `AAIController::MoveTo` does m
 - **The fix:** route combat moves through `RequestCombatMove` in `RpgStateTreeCombatTasks.cpp`. It projects the goal first, skips goals closer than 40 cm, tests the reach without the capsule, and clears stop-on-finish with every request.
 - **Ownership:** the global combat control task holds the focus for all combat states, and tasks leave the movement to the next state instead of stopping on exit.
 
+Native widgets that place authored entries outside a list view (`URpgViewModelEntryBox`, `URpgSkillTreeGridWidget`, `URpgSkillTreeMapWidget`; MST-01, [mastery map foundation](../../../../docs/mastery-map-foundation.md)):
+- **Item handoff:** `IUserObjectListEntry::Execute_OnListItemObjectSet` reaches only Blueprint implementations. A native `NativeOnListItemObjectSet` override, as in `URpgMvvmListEntryWidget`, needs `SetEntryItem`. Hand items over the way `URpgViewModelEntryBox::AppendEntry` does.
+- **Entry creation:** `CreateWidget(UWidget*, ...)` finds its owner through the widget's `UWidgetTree`; for a widget outside one it ensures and returns null. Tests build the host widget's tree and use `WidgetTree->ConstructWidget`.
+- **Drag surfaces:** take presses in `OnPreviewMouseButtonDown`, so an entry's button never clicks at the end of a drag. Slate releases mouse capture and calls `OnMouseCaptureLost` when window activation changes or the captor leaves the visible hierarchy, for example when its screen closes. End gestures there.
+
 ## Not adopted without evidence or request
 
 - Lyra subsystems not already present in this project

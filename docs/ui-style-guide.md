@@ -524,6 +524,9 @@ Blueprint that adopts the style overrides them in its class defaults with
 palette values:
 - `RpgSkillTreeGridWidget.h` link and locked-row colours: overridden in
   `CUI_Skills` (UI-01).
+- `RpgSkillTreeMapWidget.h` link colours, `FocusBrush` (a gold outline) and
+  `RegionBrush` (No Draw): to be overridden when MST-02 puts the map into
+  `CUI_Skills`.
 - `RpgInventorySpatialGridWidget.h`, `RpgInventorySpatialCellWidget.h`,
   `RpgInventorySpatialItemWidget.h`, `RpgInventoryDragVisualWidget.h`:
   overridden in `CUI_SpatialInventoryGrid`, `_Cell`, `_Item` and

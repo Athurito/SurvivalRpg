@@ -5,6 +5,7 @@
 #include "SurvivalRpg/Mvvm/RpgViewModelInvalidationQueue.h"
 #include "SurvivalRpg/Progression/Skills/Data/RpgTradeSkillState.h"
 #include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeComponent.h"
+#include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeDefinition.h"
 #include "UObject/SoftObjectPtr.h"
 
 #include "RpgSkillTreeViewModels.generated.h"
@@ -16,7 +17,6 @@ class URpgPlayerProgressionComponent;
 class URpgSkillTreeDefinition;
 class URpgSkillTreeViewModel;
 class URpgTradeSkillProgressionComponent;
-struct FRpgSkillTreeNode;
 
 /** How a skill tree node presents itself. Derived from ERpgSkillTreeUnlockResult; UI read-only. */
 UENUM(BlueprintType)
@@ -67,6 +67,22 @@ struct SURVIVALRPG_API FRpgSkillTreeLinkView
 {
 	GENERATED_BODY()
 
+	/** The prerequisite node. Links exist only for authored prerequisites, never for decoration. */
+	UPROPERTY(BlueprintReadOnly, Category = "Skill Tree")
+	FGameplayTag FromNodeTag;
+
+	/** The node that needs the prerequisite. */
+	UPROPERTY(BlueprintReadOnly, Category = "Skill Tree")
+	FGameplayTag ToNodeTag;
+
+	/** Map position of the prerequisite's center in map units. */
+	UPROPERTY(BlueprintReadOnly, Category = "Skill Tree")
+	FVector2D FromPosition = FVector2D::ZeroVector;
+
+	/** Map position of the dependent node's center in map units. */
+	UPROPERTY(BlueprintReadOnly, Category = "Skill Tree")
+	FVector2D ToPosition = FVector2D::ZeroVector;
+
 	/** Grid cell of the prerequisite (X = column, Y = row). */
 	UPROPERTY(BlueprintReadOnly, Category = "Skill Tree")
 	FIntPoint FromCell = FIntPoint::ZeroValue;
@@ -84,6 +100,31 @@ struct SURVIVALRPG_API FRpgSkillTreeLinkView
 	bool bToUnlocked = false;
 
 	bool operator==(const FRpgSkillTreeLinkView& Other) const = default;
+};
+
+/** One region of the mastery map with its framed bounds. UI read-only. */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgSkillTreeRegionView
+{
+	GENERATED_BODY()
+
+	/** Stable region identity from the tree definition. */
+	UPROPERTY(BlueprintReadOnly, Category = "Skill Tree")
+	FName RegionId;
+
+	/** Player-facing region name. */
+	UPROPERTY(BlueprintReadOnly, Category = "Skill Tree")
+	FText DisplayName;
+
+	/** Map area the region frames in map units: its node centers grown by its padding. */
+	UPROPERTY(BlueprintReadOnly, Category = "Skill Tree")
+	FBox2D Bounds = FBox2D(ForceInit);
+
+	bool operator==(const FRpgSkillTreeRegionView& Other) const
+	{
+		return RegionId == Other.RegionId && DisplayName.IdenticalTo(Other.DisplayName) && Bounds == Other.Bounds &&
+			Bounds.bIsValid == Other.Bounds.bIsValid;
+	}
 };
 
 /** One Q/E/R slot of a tree with the learned ability on it. UI read-only. */
@@ -129,10 +170,11 @@ class SURVIVALRPG_API URpgSkillTreeNodeViewModel : public UMVVMViewModelBase
 	GENERATED_BODY()
 
 public:
-	/** Projects Node for InTree. Called by the tree view model. */
+	/** Projects Node at InMapPosition for InTree. Called by the tree view model. */
 	void UpdateNode(
 		URpgSkillTreeViewModel* InTree,
 		const FRpgSkillTreeNode& Node,
+		const FVector2D& InMapPosition,
 		ERpgSkillTreeUnlockResult InUnlockResult,
 		int32 InAssignedSlotIndex,
 		bool bInSelected,
@@ -160,6 +202,8 @@ public:
 
 	FGameplayTag GetNodeTag() const { return NodeTag; }
 	FIntPoint GetCell() const { return FIntPoint(Column, Row); }
+	FVector2D GetMapPosition() const { return MapPosition; }
+	FName GetRegionId() const { return RegionId; }
 	ERpgSkillTreeNodeState GetState() const { return State; }
 	ERpgSkillTreeUnlockResult GetUnlockResult() const { return UnlockResult; }
 	FGameplayTag GetAbilityIdTag() const { return AbilityIdTag; }
@@ -195,6 +239,14 @@ protected:
 	/** Grid column, zero at the left. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Node", meta = (AllowPrivateAccess = "true"))
 	int32 Column = 0;
+
+	/** Center of the node on the map in map units, from the tree's layout mode. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Node", meta = (AllowPrivateAccess = "true"))
+	FVector2D MapPosition = FVector2D::ZeroVector;
+
+	/** Map region (branch) of the node, or None. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Node", meta = (AllowPrivateAccess = "true"))
+	FName RegionId;
 
 	/** Points the node costs. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Node", meta = (AllowPrivateAccess = "true"))
@@ -319,6 +371,13 @@ public:
 	const TArray<FRpgSkillTreeLinkView>& GetLinks() const { return Links; }
 	const TArray<FRpgSkillTreeSlotView>& GetSlots() const { return Slots; }
 	bool CanResetTree() const { return bCanResetTree; }
+	ERpgSkillTreeLayoutMode GetLayoutMode() const { return LayoutMode; }
+	const FBox2D& GetMapBounds() const { return MapBounds; }
+	const TArray<FRpgSkillTreeRegionView>& GetRegions() const { return Regions; }
+	FName GetDefaultRegionId() const { return DefaultRegionId; }
+
+	/** Returns the region view of RegionId, or null. */
+	const FRpgSkillTreeRegionView* FindRegion(FName RegionId) const;
 
 	/** Fired after every rebuild, for widgets that redraw the whole tree such as URpgSkillTreeGridWidget. */
 	UPROPERTY(BlueprintAssignable, Category = "Skill Tree|ViewModel")
@@ -392,6 +451,22 @@ protected:
 	/** Prerequisite links to draw. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Layout", meta = (AllowPrivateAccess = "true"))
 	TArray<FRpgSkillTreeLinkView> Links;
+
+	/** Whether the tree places nodes on its grid or at authored map positions. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Map", meta = (AllowPrivateAccess = "true"))
+	ERpgSkillTreeLayoutMode LayoutMode = ERpgSkillTreeLayoutMode::Grid;
+
+	/** Map area around every node and region in map units; invalid without nodes. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Map", meta = (AllowPrivateAccess = "true"))
+	FBox2D MapBounds = FBox2D(ForceInit);
+
+	/** Map regions in authored order. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Map", meta = (AllowPrivateAccess = "true"))
+	TArray<FRpgSkillTreeRegionView> Regions;
+
+	/** Region the map frames when it opens without a remembered view, or None for the whole tree. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Map", meta = (AllowPrivateAccess = "true"))
+	FName DefaultRegionId;
 
 	/** The three Q/E/R slots of the tree. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Slots", meta = (AllowPrivateAccess = "true"))

@@ -16,6 +16,22 @@ struct FRpgUIScreenRegistryEntry;
 enum class EAsyncWidgetLayerState : uint8;
 
 /**
+ * Camera and selection a map widget, such as the skill tree map, restores when its screen opens again. Local
+ * presentation state only: it holds no widget or view model references and is never replicated or saved.
+ */
+struct FRpgUIMapViewState
+{
+	/** Map point at the viewport center, in map units. */
+	FVector2D Center = FVector2D::ZeroVector;
+
+	/** Slate units per map unit. */
+	double Zoom = 1.0;
+
+	/** Selected entry of the map, for example a skill tree node, or empty. */
+	FGameplayTag SelectedTag;
+};
+
+/**
  * Local-player UI screen router that opens CommonGame widgets by UI.Screen gameplay tag.
  *
  * Gameplay remains authoritative elsewhere; this subsystem only resolves screen tags, pushes widgets,
@@ -56,6 +72,12 @@ public:
 	/** Returns true while a local screen is loading, retained in its stack (possibly covered), or finishing its close transition. */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "UI|Screens", meta = (Categories = "UI.Screen"))
 	bool IsScreenOpenOrPending(FGameplayTag ScreenTag) const;
+
+	/** Remembers the view of the map MapId, for example a skill tree tag, until the local player goes away. */
+	void SetMapViewState(FGameplayTag MapId, const FRpgUIMapViewState& State);
+
+	/** Returns the remembered view of MapId, or null. Closing screens keeps it; Deinitialize clears it. */
+	const FRpgUIMapViewState* FindMapViewState(FGameplayTag MapId) const;
 
 protected:
 	UPrimaryGameLayout* GetPrimaryGameLayout() const;
@@ -127,6 +149,9 @@ private:
 	/** Pending pushes canceled because gameplay access disappeared before initialization completed. */
 	UPROPERTY(Transient)
 	TSet<FGameplayTag> CanceledPendingScreenTags;
+
+	/** Map views remembered across screen close and reopen, keyed by map identity. Session-only presentation state. */
+	TMap<FGameplayTag, FRpgUIMapViewState> MapViewStates;
 
 	uint64 NextScreenCheckoutId = 0;
 	/** Async callbacks from an earlier drain must never mutate a subsequent screen request. */

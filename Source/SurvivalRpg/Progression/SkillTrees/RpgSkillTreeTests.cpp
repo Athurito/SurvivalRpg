@@ -27,6 +27,8 @@
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillGameplayTags.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillProgressionComponent.h"
 
+#include <limits>
+
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_SkillTreeTest_Tree, "SkillTree.Tree.AutomationTest");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_SkillTreeTest_UnregisteredTree, "SkillTree.Tree.AutomationTestUnregistered");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_SkillTreeTest_Root, "SkillTree.Node.AutomationTest.Root");
@@ -309,6 +311,130 @@ bool FRpgSkillTreeDefinitionValidationTest::RunTest(const FString& Parameters)
 	URpgSkillTreeDefinition* InvalidTuning = MakeTree();
 	InvalidTuning->Nodes[4].AbilityTunings[0].TuningTag = FGameplayTag();
 	ExpectInvalid(TEXT("A tuning without TuningTag is rejected"), InvalidTuning);
+	return true;
+}
+
+namespace RpgSkillTreeTests
+{
+	/**
+	 * The reference tree on a FreePosition map: every node keeps cell 0/0, which only a Grid tree would reject. Root
+	 * and Second form region Core, the two forms region Forms, which the map frames first.
+	 */
+	URpgSkillTreeDefinition* MakeMapTree()
+	{
+		URpgSkillTreeDefinition* Tree = MakeTree();
+		Tree->LayoutMode = ERpgSkillTreeLayoutMode::FreePosition;
+		Tree->DefaultRegionId = TEXT("Forms");
+		for (const TCHAR* RegionId : {TEXT("Core"), TEXT("Forms")})
+		{
+			FRpgSkillTreeMapRegion& Region = Tree->Regions.AddDefaulted_GetRef();
+			Region.RegionId = RegionId;
+			Region.Padding = FVector2D(50.0, 40.0);
+		}
+
+		const FVector2D Positions[] = {
+			FVector2D(0.0, 0.0),
+			FVector2D(250.0, 0.0),
+			FVector2D(-120.0, 220.0),
+			FVector2D(120.0, 220.0),
+			FVector2D(500.0, 300.0),
+			FVector2D(500.0, 450.0)};
+		const TCHAR* Regions[] = {TEXT("Core"), TEXT("Core"), TEXT("Forms"), TEXT("Forms"), nullptr, nullptr};
+		for (int32 Index = 0; Index < Tree->Nodes.Num(); ++Index)
+		{
+			Tree->Nodes[Index].Row = 0;
+			Tree->Nodes[Index].Column = 0;
+			Tree->Nodes[Index].MapPosition = Positions[Index];
+			Tree->Nodes[Index].RegionId = Regions[Index] ? FName(Regions[Index]) : NAME_None;
+		}
+		return Tree;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgSkillTreeDefinitionMapLayoutTest,
+	"SurvivalRpg.Progression.SkillTrees.Definition.MapLayout",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgSkillTreeDefinitionMapLayoutTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgSkillTreeTests;
+
+	// A Grid tree turns its cells into map positions.
+	const URpgSkillTreeDefinition* GridTree = MakeTree();
+	TestEqual(TEXT("Existing trees use the grid layout"), GridTree->LayoutMode, ERpgSkillTreeLayoutMode::Grid);
+	TestTrue(TEXT("Cell 0/0 sits at the map origin"), GridTree->GetNodeMapPosition(GridTree->Nodes[0]).Equals(FVector2D::ZeroVector));
+	TestTrue(TEXT("Cell row 1, column 1 sits one spacing right and down"),
+		GridTree->GetNodeMapPosition(GridTree->Nodes[3]).Equals(FVector2D(160.0, 160.0)));
+	const FBox2D GridBounds = GridTree->GetMapBounds();
+	TestTrue(TEXT("Grid bounds span every cell center"),
+		GridBounds.bIsValid && GridBounds.Min.Equals(FVector2D::ZeroVector) && GridBounds.Max.Equals(FVector2D(160.0, 320.0)));
+
+	// A FreePosition tree uses authored positions and frames its regions around their nodes.
+	URpgSkillTreeDefinition* MapTree = MakeMapTree();
+	TArray<FText> Errors;
+	TestTrue(TEXT("The map tree is valid"), MapTree->ValidateTree(Errors));
+	for (const FText& Error : Errors)
+	{
+		AddError(Error.ToString());
+	}
+	TestTrue(TEXT("A free node sits at its MapPosition"), MapTree->GetNodeMapPosition(MapTree->Nodes[2]).Equals(FVector2D(-120.0, 220.0)));
+	const FBox2D Core = MapTree->GetRegionBounds(TEXT("Core"));
+	TestTrue(TEXT("A region frames its nodes with its padding"),
+		Core.bIsValid && Core.Min.Equals(FVector2D(-50.0, -40.0)) && Core.Max.Equals(FVector2D(300.0, 40.0)));
+	TestFalse(TEXT("An unknown region has no bounds"), MapTree->GetRegionBounds(TEXT("Missing")).bIsValid);
+	const FBox2D MapBounds = MapTree->GetMapBounds();
+	TestTrue(TEXT("Map bounds include the regions and loose nodes"),
+		MapBounds.Min.Equals(FVector2D(-170.0, -40.0)) && MapBounds.Max.Equals(FVector2D(500.0, 450.0)));
+	TestNotNull(TEXT("FindRegion finds an authored region"), MapTree->FindRegion(TEXT("Forms")));
+
+	auto ExpectInvalid = [this](const TCHAR* What, URpgSkillTreeDefinition* Tree)
+	{
+		TArray<FText> CaseErrors;
+		TestFalse(What, Tree->ValidateTree(CaseErrors));
+		TestTrue(FString::Printf(TEXT("%s reports a reason"), What), !CaseErrors.IsEmpty());
+	};
+
+	URpgSkillTreeDefinition* SharedMapPosition = MakeMapTree();
+	SharedMapPosition->Nodes[1].MapPosition = SharedMapPosition->Nodes[0].MapPosition;
+	ExpectInvalid(TEXT("Two nodes at one map position are rejected"), SharedMapPosition);
+
+	URpgSkillTreeDefinition* NonFinitePosition = MakeMapTree();
+	NonFinitePosition->Nodes[4].MapPosition.X = std::numeric_limits<double>::quiet_NaN();
+	ExpectInvalid(TEXT("A non-finite map position is rejected"), NonFinitePosition);
+
+	URpgSkillTreeDefinition* UnknownNodeRegion = MakeMapTree();
+	UnknownNodeRegion->Nodes[4].RegionId = TEXT("Missing");
+	ExpectInvalid(TEXT("A node in an unknown region is rejected"), UnknownNodeRegion);
+
+	URpgSkillTreeDefinition* EmptyRegion = MakeMapTree();
+	EmptyRegion->Regions.AddDefaulted_GetRef().RegionId = TEXT("Empty");
+	ExpectInvalid(TEXT("A region without nodes is rejected"), EmptyRegion);
+
+	URpgSkillTreeDefinition* DuplicateRegion = MakeMapTree();
+	const FRpgSkillTreeMapRegion RegionCopy = DuplicateRegion->Regions[0];
+	DuplicateRegion->Regions.Add(RegionCopy);
+	ExpectInvalid(TEXT("A duplicated region id is rejected"), DuplicateRegion);
+
+	URpgSkillTreeDefinition* UnnamedRegion = MakeMapTree();
+	UnnamedRegion->Regions.AddDefaulted();
+	ExpectInvalid(TEXT("A region without id is rejected"), UnnamedRegion);
+
+	URpgSkillTreeDefinition* UnknownDefaultRegion = MakeMapTree();
+	UnknownDefaultRegion->DefaultRegionId = TEXT("Missing");
+	ExpectInvalid(TEXT("An unknown default region is rejected"), UnknownDefaultRegion);
+
+	URpgSkillTreeDefinition* NegativePadding = MakeMapTree();
+	NegativePadding->Regions[0].Padding.Y = -1.0;
+	ExpectInvalid(TEXT("A negative region padding is rejected"), NegativePadding);
+
+	URpgSkillTreeDefinition* SharedCellOnGrid = MakeMapTree();
+	SharedCellOnGrid->LayoutMode = ERpgSkillTreeLayoutMode::Grid;
+	ExpectInvalid(TEXT("The same nodes on a Grid tree share a cell"), SharedCellOnGrid);
+
+	URpgSkillTreeDefinition* FlatGrid = MakeTree();
+	FlatGrid->GridSpacing.Y = 0.0;
+	ExpectInvalid(TEXT("A grid without vertical spacing is rejected"), FlatGrid);
 	return true;
 }
 
@@ -941,6 +1067,60 @@ bool FRpgSkillTreeViewModelProjectionTest::RunTest(const FString& Parameters)
 
 	Tree->UnbindSkillTree();
 	TestTrue(TEXT("Unbinding clears the nodes"), Tree->GetNodes().IsEmpty());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgSkillTreeViewModelMapLayoutTest,
+	"SurvivalRpg.Progression.SkillTrees.ViewModel.MapLayoutProjection",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgSkillTreeViewModelMapLayoutTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgSkillTreeTests;
+
+	FScopedTestWorld TestWorld;
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		TestWorld.GetWorld() ? TestWorld.GetWorld()->SpawnActor<ARpgInventoryAutomationTestPlayerState>() : nullptr;
+	URpgSkillTreeComponent* SkillTrees = PlayerState ? PlayerState->GetSkillTreeComponent() : nullptr;
+	if (!TestNotNull(TEXT("Player state with skill trees spawns"), SkillTrees))
+	{
+		return false;
+	}
+
+	const URpgSkillTreeDefinition* Definition = MakeMapTree();
+	SkillTrees->RegisterSkillTree(Definition);
+	URpgSkillTreeViewModel* Tree = NewObject<URpgSkillTreeViewModel>(GetTransientPackage(), NAME_None, RF_Transient);
+	Tree->BindSkillTree(SkillTrees, TAG_SkillTreeTest_Tree);
+
+	TestEqual(TEXT("The view model reports the layout mode"), Tree->GetLayoutMode(), ERpgSkillTreeLayoutMode::FreePosition);
+	TestTrue(TEXT("The view model reports the map bounds"), Tree->GetMapBounds() == Definition->GetMapBounds() && Tree->GetMapBounds().bIsValid);
+	TestEqual(TEXT("The view model names the default region"), Tree->GetDefaultRegionId(), FName(TEXT("Forms")));
+	if (TestEqual(TEXT("Both regions are projected"), Tree->GetRegions().Num(), 2))
+	{
+		const FRpgSkillTreeRegionView* Core = Tree->FindRegion(TEXT("Core"));
+		TestTrue(TEXT("A region view carries its framed bounds"), Core && Core->Bounds == Definition->GetRegionBounds(TEXT("Core")));
+	}
+
+	const URpgSkillTreeNodeViewModel* FormA = Tree->FindNode(TAG_SkillTreeTest_FormA);
+	if (TestNotNull(TEXT("FormA is projected"), FormA))
+	{
+		TestTrue(TEXT("A node view model carries its map position"), FormA->GetMapPosition().Equals(FVector2D(-120.0, 220.0)));
+		TestEqual(TEXT("A node view model carries its region"), FormA->GetRegionId(), FName(TEXT("Forms")));
+	}
+
+	// Links name both ends and carry their map positions; they exist only for authored prerequisites.
+	const FRpgSkillTreeLinkView* RootToFormA = Tree->GetLinks().FindByPredicate([](const FRpgSkillTreeLinkView& Link)
+	{
+		return Link.ToNodeTag == TAG_SkillTreeTest_FormA;
+	});
+	TestEqual(TEXT("Only the two prerequisites are linked"), Tree->GetLinks().Num(), 2);
+	TestTrue(TEXT("The link names its prerequisite"), RootToFormA && RootToFormA->FromNodeTag == TAG_SkillTreeTest_Root);
+	TestTrue(TEXT("The link starts at the prerequisite's map position"), RootToFormA && RootToFormA->FromPosition.Equals(FVector2D::ZeroVector));
+	TestTrue(TEXT("The link ends at the dependent's map position"), RootToFormA && RootToFormA->ToPosition.Equals(FVector2D(-120.0, 220.0)));
+
+	Tree->UnbindSkillTree();
+	TestTrue(TEXT("Unbinding clears the regions"), Tree->GetRegions().IsEmpty() && !Tree->GetMapBounds().bIsValid);
 	return true;
 }
 

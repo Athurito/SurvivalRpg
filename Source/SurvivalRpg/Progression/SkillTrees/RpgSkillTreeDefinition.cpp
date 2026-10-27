@@ -41,6 +41,67 @@ const FRpgSkillTreeNode* URpgSkillTreeDefinition::FindNode(const FGameplayTag No
 	});
 }
 
+const FRpgSkillTreeMapRegion* URpgSkillTreeDefinition::FindRegion(const FName RegionId) const
+{
+	if (RegionId.IsNone())
+	{
+		return nullptr;
+	}
+
+	return Regions.FindByPredicate([RegionId](const FRpgSkillTreeMapRegion& Region)
+	{
+		return Region.RegionId == RegionId;
+	});
+}
+
+FVector2D URpgSkillTreeDefinition::GetNodeMapPosition(const FRpgSkillTreeNode& Node) const
+{
+	if (LayoutMode == ERpgSkillTreeLayoutMode::FreePosition)
+	{
+		return Node.MapPosition;
+	}
+	return FVector2D(Node.Column * GridSpacing.X, Node.Row * GridSpacing.Y);
+}
+
+FBox2D URpgSkillTreeDefinition::GetRegionBounds(const FName RegionId) const
+{
+	const FRpgSkillTreeMapRegion* Region = FindRegion(RegionId);
+	FBox2D Bounds(ForceInit);
+	if (!Region)
+	{
+		return Bounds;
+	}
+
+	for (const FRpgSkillTreeNode& Node : Nodes)
+	{
+		if (Node.NodeTag.IsValid() && Node.RegionId == RegionId)
+		{
+			Bounds += GetNodeMapPosition(Node);
+		}
+	}
+	return Bounds.bIsValid ? Bounds.ExpandBy(Region->Padding) : Bounds;
+}
+
+FBox2D URpgSkillTreeDefinition::GetMapBounds() const
+{
+	FBox2D Bounds(ForceInit);
+	for (const FRpgSkillTreeNode& Node : Nodes)
+	{
+		if (Node.NodeTag.IsValid())
+		{
+			Bounds += GetNodeMapPosition(Node);
+		}
+	}
+	for (const FRpgSkillTreeMapRegion& Region : Regions)
+	{
+		if (const FBox2D RegionBounds = GetRegionBounds(Region.RegionId); RegionBounds.bIsValid)
+		{
+			Bounds += RegionBounds;
+		}
+	}
+	return Bounds;
+}
+
 bool URpgSkillTreeDefinition::K2_FindNode(const FGameplayTag NodeTag, FRpgSkillTreeNode& OutNode) const
 {
 	if (const FRpgSkillTreeNode* Node = FindNode(NodeTag))
@@ -79,8 +140,54 @@ bool URpgSkillTreeDefinition::ValidateTree(TArray<FText>& OutErrors) const
 		OutErrors.Add(LOCTEXT("MissingMasterySkill", "MasterySkillTag is required; its level earns the tree's points."));
 	}
 
+	const bool bFreePosition = LayoutMode == ERpgSkillTreeLayoutMode::FreePosition;
+	if (!bFreePosition && (!(GridSpacing.X > 0.0) || !(GridSpacing.Y > 0.0)))
+	{
+		OutErrors.Add(LOCTEXT("InvalidGridSpacing", "GridSpacing must be positive in both directions."));
+	}
+
+	TSet<FName> RegionIds;
+	for (int32 RegionIndex = 0; RegionIndex < Regions.Num(); ++RegionIndex)
+	{
+		const FRpgSkillTreeMapRegion& Region = Regions[RegionIndex];
+		if (Region.RegionId.IsNone())
+		{
+			OutErrors.Add(FText::Format(LOCTEXT("MissingRegionId", "Regions[{0}] has no RegionId."), RegionIndex));
+			continue;
+		}
+		if (RegionIds.Contains(Region.RegionId))
+		{
+			OutErrors.Add(FText::Format(
+				LOCTEXT("DuplicateRegionId", "Region {0} appears more than once."),
+				FText::FromName(Region.RegionId)));
+			continue;
+		}
+		RegionIds.Add(Region.RegionId);
+
+		if (!FMath::IsFinite(Region.Padding.X) || !FMath::IsFinite(Region.Padding.Y) ||
+			Region.Padding.X < 0.0 || Region.Padding.Y < 0.0)
+		{
+			OutErrors.Add(FText::Format(
+				LOCTEXT("InvalidRegionPadding", "Region {0} needs a finite, non-negative Padding."),
+				FText::FromName(Region.RegionId)));
+		}
+		if (!Nodes.ContainsByPredicate([&Region](const FRpgSkillTreeNode& Node) { return Node.RegionId == Region.RegionId; }))
+		{
+			OutErrors.Add(FText::Format(
+				LOCTEXT("EmptyRegion", "Region {0} has no node, so the map cannot frame it."),
+				FText::FromName(Region.RegionId)));
+		}
+	}
+	if (!DefaultRegionId.IsNone() && !RegionIds.Contains(DefaultRegionId))
+	{
+		OutErrors.Add(FText::Format(
+			LOCTEXT("UnknownDefaultRegion", "DefaultRegionId {0} is not one of the tree's regions."),
+			FText::FromName(DefaultRegionId)));
+	}
+
 	TMap<FGameplayTag, int32> NodeIndices;
 	TSet<FIntPoint> Positions;
+	TSet<FVector2D> MapPositions;
 	for (int32 NodeIndex = 0; NodeIndex < Nodes.Num(); ++NodeIndex)
 	{
 		const FRpgSkillTreeNode& Node = Nodes[NodeIndex];
@@ -98,16 +205,43 @@ bool URpgSkillTreeDefinition::ValidateTree(TArray<FText>& OutErrors) const
 		}
 		NodeIndices.Add(Node.NodeTag, NodeIndex);
 
-		const FIntPoint Position(Node.Column, Node.Row);
-		if (Positions.Contains(Position))
+		if (bFreePosition)
+		{
+			if (!FMath::IsFinite(Node.MapPosition.X) || !FMath::IsFinite(Node.MapPosition.Y))
+			{
+				OutErrors.Add(FText::Format(
+					LOCTEXT("InvalidMapPosition", "Node {0} needs a finite MapPosition."),
+					FText::FromName(Node.NodeTag.GetTagName())));
+			}
+			else if (MapPositions.Contains(Node.MapPosition))
+			{
+				OutErrors.Add(FText::Format(
+					LOCTEXT("DuplicateMapPosition", "Node {0} shares its MapPosition with another node."),
+					FText::FromName(Node.NodeTag.GetTagName())));
+			}
+			MapPositions.Add(Node.MapPosition);
+		}
+		else
+		{
+			const FIntPoint Position(Node.Column, Node.Row);
+			if (Positions.Contains(Position))
+			{
+				OutErrors.Add(FText::Format(
+					LOCTEXT("DuplicatePosition", "Node {0} shares row {1}, column {2} with another node."),
+					FText::FromName(Node.NodeTag.GetTagName()),
+					Node.Row,
+					Node.Column));
+			}
+			Positions.Add(Position);
+		}
+
+		if (!Node.RegionId.IsNone() && !RegionIds.Contains(Node.RegionId))
 		{
 			OutErrors.Add(FText::Format(
-				LOCTEXT("DuplicatePosition", "Node {0} shares row {1}, column {2} with another node."),
+				LOCTEXT("UnknownNodeRegion", "Node {0} names region {1}, which is not one of the tree's regions."),
 				FText::FromName(Node.NodeTag.GetTagName()),
-				Node.Row,
-				Node.Column));
+				FText::FromName(Node.RegionId)));
 		}
-		Positions.Add(Position);
 
 		if (Node.Cost < 1)
 		{

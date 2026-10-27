@@ -24,6 +24,39 @@ enum class ERpgSkillTreeTuningOperation : uint8
 	Multiply
 };
 
+/** Where the nodes of a skill tree sit on the mastery map. Presentation only; no gameplay rule reads it. */
+UENUM(BlueprintType)
+enum class ERpgSkillTreeLayoutMode : uint8
+{
+	/** Nodes sit on a grid from Row and Column; GridSpacing turns cells into map positions. Existing trees use it. */
+	Grid,
+
+	/** Nodes sit at their authored MapPosition. Row and Column are ignored. */
+	FreePosition
+};
+
+/**
+ * One region of the mastery map, usually a branch such as Wucht. Its bounds follow the nodes that name it, so moving
+ * a node never needs a second edit. Designer-tuned static presentation data; no gameplay rule reads it.
+ */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgSkillTreeMapRegion
+{
+	GENERATED_BODY()
+
+	/** Stable region identity nodes and region shortcuts refer to, for example Wucht. Must be unique in the tree. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|Map")
+	FName RegionId;
+
+	/** Player-facing region name, for example the branch title. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|Map")
+	FText DisplayName;
+
+	/** Space around the region's node centers in map units; the map frames the region with it. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|Map", meta = (ClampMin = "0", UIMin = "0", UIMax = "400"))
+	FVector2D Padding = FVector2D(96.0, 96.0);
+};
+
 /**
  * One numeric change a learned node makes to the abilities granted by its weapon, for example a larger area radius.
  * Abilities read the result through URpgGameplayAbility::GetTunedValue, so new upgrades of existing values need no code.
@@ -83,13 +116,24 @@ struct SURVIVALRPG_API FRpgSkillTreeNode
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|Display", meta = (Categories = "SkillTree.NodeKind"))
 	FGameplayTag KindTag;
 
-	/** Grid row of the node, zero at the top. Rows usually rise with RequiredPointsInTree. */
+	/** Grid row of the node, zero at the top, on a Grid tree. Rows usually rise with RequiredPointsInTree. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|Layout", meta = (ClampMin = "0", UIMin = "0", UIMax = "12"))
 	int32 Row = 0;
 
-	/** Grid column of the node, zero at the left. Branches occupy neighboring columns. */
+	/** Grid column of the node, zero at the left, on a Grid tree. Branches occupy neighboring columns. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|Layout", meta = (ClampMin = "0", UIMin = "0", UIMax = "8"))
 	int32 Column = 0;
+
+	/**
+	 * Center of the node on a FreePosition tree, in map units: slate units at zoom 1, X to the right, Y down. Ignored
+	 * on a Grid tree. Presentation only.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|Layout")
+	FVector2D MapPosition = FVector2D::ZeroVector;
+
+	/** Map region (branch) the node belongs to: one of the tree's Regions, or None. Presentation only. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|Layout")
+	FName RegionId;
 
 	/** Points the node costs. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|Requirements", meta = (ClampMin = "1", UIMin = "1", UIMax = "5"))
@@ -131,8 +175,8 @@ struct SURVIVALRPG_API FRpgSkillTreeNode
  *
  * Every item that references the tree shares its progress, which belongs to the character. Points come from the level
  * of MasterySkillTag. The asset is registered as primary asset type RpgSkillTreeDefinition, so new trees are found
- * without code; the UI lays nodes out from their Row and Column. Static designer data; runtime state lives in
- * URpgSkillTreeComponent.
+ * without code; the UI places nodes by LayoutMode, from Row and Column or from MapPosition. Static designer data;
+ * runtime state lives in URpgSkillTreeComponent.
  */
 UCLASS(BlueprintType, Const)
 class SURVIVALRPG_API URpgSkillTreeDefinition : public UPrimaryDataAsset
@@ -176,8 +220,36 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree", meta = (TitleProperty = "NodeTag"))
 	TArray<FRpgSkillTreeNode> Nodes;
 
+	/** Whether nodes sit on the Row/Column grid or at their MapPosition. Presentation only. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|Map")
+	ERpgSkillTreeLayoutMode LayoutMode = ERpgSkillTreeLayoutMode::Grid;
+
+	/** Distance between neighboring grid cells in map units on a Grid tree. Both components must be positive. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|Map", meta = (ClampMin = "1", UIMin = "40", UIMax = "400"))
+	FVector2D GridSpacing = FVector2D(160.0, 160.0);
+
+	/** Map regions, usually one per branch, that region shortcuts can focus. Optional. Presentation only. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|Map", meta = (TitleProperty = "RegionId"))
+	TArray<FRpgSkillTreeMapRegion> Regions;
+
+	/** Region the map frames when it opens without a remembered view; None frames the whole tree. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|Map")
+	FName DefaultRegionId;
+
 	/** Returns the node with NodeTag, or null. */
 	const FRpgSkillTreeNode* FindNode(FGameplayTag NodeTag) const;
+
+	/** Returns the region with RegionId, or null. */
+	const FRpgSkillTreeMapRegion* FindRegion(FName RegionId) const;
+
+	/** Center of Node on the map in map units, from its cell on a Grid tree or its MapPosition otherwise. */
+	FVector2D GetNodeMapPosition(const FRpgSkillTreeNode& Node) const;
+
+	/** Box around the centers of RegionId's nodes, grown by its Padding; an invalid box when the region has no node. */
+	FBox2D GetRegionBounds(FName RegionId) const;
+
+	/** Box around every node center and every region; an invalid box when the tree has no node. */
+	FBox2D GetMapBounds() const;
 
 	/** Returns the points earned at SkillLevel, clamped to [0, MaxPoints]. */
 	int32 GetEarnedPointsForLevel(int32 SkillLevel) const;

@@ -70,6 +70,7 @@ namespace
 void URpgSkillTreeNodeViewModel::UpdateNode(
 	URpgSkillTreeViewModel* InTree,
 	const FRpgSkillTreeNode& Node,
+	const FVector2D& InMapPosition,
 	const ERpgSkillTreeUnlockResult InUnlockResult,
 	const int32 InAssignedSlotIndex,
 	const bool bInSelected,
@@ -90,6 +91,8 @@ void URpgSkillTreeNodeViewModel::UpdateNode(
 	UE_MVVM_SET_PROPERTY_VALUE(KindTag, Node.KindTag);
 	UE_MVVM_SET_PROPERTY_VALUE(Row, Node.Row);
 	UE_MVVM_SET_PROPERTY_VALUE(Column, Node.Column);
+	UE_MVVM_SET_PROPERTY_VALUE(MapPosition, InMapPosition);
+	UE_MVVM_SET_PROPERTY_VALUE(RegionId, Node.RegionId);
 	UE_MVVM_SET_PROPERTY_VALUE(Cost, Node.Cost);
 	UE_MVVM_SET_PROPERTY_VALUE(RequiredPointsInTree, Node.RequiredPointsInTree);
 	UE_MVVM_SET_PROPERTY_VALUE(State, NewState);
@@ -240,6 +243,14 @@ URpgSkillTreeNodeViewModel* URpgSkillTreeViewModel::FindNode(const FGameplayTag 
 	return nullptr;
 }
 
+const FRpgSkillTreeRegionView* URpgSkillTreeViewModel::FindRegion(const FName RegionId) const
+{
+	return RegionId.IsNone() ? nullptr : Regions.FindByPredicate([RegionId](const FRpgSkillTreeRegionView& Region)
+	{
+		return Region.RegionId == RegionId;
+	});
+}
+
 void URpgSkillTreeViewModel::HandleSkillTreeChanged(const FGameplayTag ChangedTreeTag)
 {
 	if (ChangedTreeTag == TreeTag)
@@ -380,6 +391,7 @@ void URpgSkillTreeViewModel::Rebuild()
 			NodeViewModel->UpdateNode(
 				this,
 				Node,
+				Tree->GetNodeMapPosition(Node),
 				SkillTrees->EvaluateUnlock(TreeTag, Node.NodeTag),
 				AssignedSlot,
 				SelectedNodeTag.IsValid() && Node.NodeTag == SelectedNodeTag,
@@ -424,6 +436,10 @@ void URpgSkillTreeViewModel::Rebuild()
 					continue;
 				}
 				FRpgSkillTreeLinkView& Link = NewLinks.AddDefaulted_GetRef();
+				Link.FromNodeTag = PrerequisiteTag;
+				Link.ToNodeTag = Node.NodeTag;
+				Link.FromPosition = Tree->GetNodeMapPosition(*Prerequisite);
+				Link.ToPosition = Tree->GetNodeMapPosition(Node);
 				Link.FromCell = FIntPoint(Prerequisite->Column, Prerequisite->Row);
 				Link.ToCell = FIntPoint(Node.Column, Node.Row);
 				Link.bFromUnlocked = SkillTrees->IsNodeUnlocked(TreeTag, PrerequisiteTag);
@@ -443,6 +459,30 @@ void URpgSkillTreeViewModel::Rebuild()
 	UE_MVVM_SET_PROPERTY_VALUE(Rows, NewRows);
 	UE_MVVM_SET_PROPERTY_VALUE(Links, NewLinks);
 	UE_MVVM_SET_PROPERTY_VALUE(Slots, NewSlots);
+
+	TArray<FRpgSkillTreeRegionView> NewRegions;
+	if (Tree)
+	{
+		for (const FRpgSkillTreeMapRegion& Region : Tree->Regions)
+		{
+			if (!Region.RegionId.IsNone())
+			{
+				FRpgSkillTreeRegionView& RegionView = NewRegions.AddDefaulted_GetRef();
+				RegionView.RegionId = Region.RegionId;
+				RegionView.DisplayName = Region.DisplayName;
+				RegionView.Bounds = Tree->GetRegionBounds(Region.RegionId);
+			}
+		}
+	}
+	const FBox2D NewMapBounds = Tree ? Tree->GetMapBounds() : FBox2D(ForceInit);
+	UE_MVVM_SET_PROPERTY_VALUE(LayoutMode, Tree ? Tree->LayoutMode : ERpgSkillTreeLayoutMode::Grid);
+	if (MapBounds != NewMapBounds || MapBounds.bIsValid != NewMapBounds.bIsValid)
+	{
+		MapBounds = NewMapBounds;
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(MapBounds);
+	}
+	UE_MVVM_SET_PROPERTY_VALUE(Regions, NewRegions);
+	UE_MVVM_SET_PROPERTY_VALUE(DefaultRegionId, Tree ? Tree->DefaultRegionId : NAME_None);
 
 	// A selection that left the tree, for example after a content change, is dropped.
 	URpgSkillTreeNodeViewModel* NewSelectedNode = SelectedNodeTag.IsValid() ? FindNode(SelectedNodeTag) : nullptr;
