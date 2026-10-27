@@ -1,6 +1,6 @@
 # MST-10b: Combat tree
 
-Task report for MST-10b in the [mastery map roadmap](mastery-map-roadmap.md); the design is in the [implementation plan](mastery-map-implementation-plan.md), section "Combat cluster (MST-10b)". It builds on [MST-10a](mastery-map-several-trees.md), which put several trees on the one map.
+Task report for MST-10b in the [mastery map roadmap](mastery-map-roadmap.md), [PR #312](https://github.com/Athurito/SurvivalRpg/pull/312); the design is in the [implementation plan](mastery-map-implementation-plan.md), section "Combat cluster (MST-10b)". It builds on [MST-10a](mastery-map-several-trees.md), which put several trees on the one map.
 
 ## User decisions (2026-10-27)
 
