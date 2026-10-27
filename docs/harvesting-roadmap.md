@@ -35,7 +35,7 @@ harvesting abilities into Blueprint content belongs to issue
 | Trees | Open-world trees are PCG instanced skinned meshes without collision. An invisible PCG trunk proxy at the same point holds the stock and is the harvest target (HARV-07). |
 | Protection | Area powers skip resources inside a harvest protection box and report them as protected. A deliberate single-target swing still harvests them (HARV-07). |
 | Area rewards | A multi-target harvest delivers the rewards of all its targets as one batch: into the inventory, or into one drop at the harvester (HARV-07). |
-| Skill trees | Every tool carries a skill tree in the style of New World (HARV-09a, [skill-trees.md](skill-trees.md)). The tool's trade skill level earns the points. Learned active powers are placed on Q/E/R in the tree, upgrades change their values through tunings, and the tree can be reset for free. The system is core and data-driven, so combat weapons can use it later. |
+| Skill trees | Every tool carries a skill tree in the style of New World (HARV-09a, [skill-trees.md](skill-trees.md)). The tool's trade skill level earns the points. Learned active powers are placed on Q/E/R in the tree, upgrades change their values through tunings, and the tree can be reset for free. The system is core and data-driven, so combat weapons can use it later. **Superseded by MST-03b (2026-10-27):** axe and pickaxe share `DA_SkillTree_Harvesting`, whose passive talents earn points from `Skill.Mastery.Harvesting`. The tool trees and their active powers (Rift Grip, Death Wave, Grave Swarm, their forms and Striding Wave) were retired by the user's decision; the sections below record their history. See [mastery-map-shared-harvesting.md](mastery-map-shared-harvesting.md). |
 | Portal areas | Portal realms are renewable: their resources are never saved and start over whenever the realm loads. A portal rule rearranges known resources instead of adding materials; the first one is root groves, where felling one tree fells the grove (HARV-10b). |
 | Swarm | Grave Swarm is the axe's second awakened power. Its creatures work through every resource in its area, one strike at a time, through the same `IRpgHarvestableTarget` path. The player's player state receives the rewards; the swarm is the physical harvester. A summoned swarm keeps working after a tool switch and ends when the player dies (HARV-08). |
 
@@ -896,6 +896,10 @@ to its authored values. Each tag names one value:
 | `Ability.Tuning.Harvest.StrikeInterval` | `Swarm.StrikeIntervalSeconds`, the rest after a strike | s |
 | `Ability.Tuning.Harvest.StrikeRadius` | `Swarm.StrikeRadius` | cm |
 | `Ability.Tuning.Harvest.Cooldown` | duration of the cooldown effect | s |
+| `Ability.Tuning.Harvest.Work` | work multiplier of every hit (`FRpgHarvestRequest::WorkScale`), base 1 (MST-03b) | factor |
+| `Ability.Tuning.Harvest.WeakPointWork` | multiplier on a weak-point hit's bonus work, base 1 (MST-03b) | factor |
+| `Ability.Tuning.Harvest.FollowUpWork` | work multiplier of the next hit on a resource after a weak-point hit on it, base 1 (MST-03b) | factor |
+| `Ability.Tuning.Harvest.FollowUpWindow` | seconds that follow-up waits; base 0 turns it off (MST-03b) | s |
 
 - The preview resolves the values each time it evaluates. The server
   captures them, with the aim, when execution starts; learning or resetting a

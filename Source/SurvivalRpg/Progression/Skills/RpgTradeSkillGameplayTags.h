@@ -21,4 +21,10 @@ namespace RpgTradeSkillGameplayTags
 
 	/** Processing skill for forging metal components, tools, weapons, and armor. */
 	SURVIVALRPG_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Skill_Crafting_Blacksmithing);
+
+	/**
+	 * Shared mastery of tool harvesting: felling and mining both advance it, and its level earns the points of the shared
+	 * harvesting skill tree. The professions Logging and Mining keep their own levels.
+	 */
+	SURVIVALRPG_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Skill_Mastery_Harvesting);
 }

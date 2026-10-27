@@ -222,18 +222,29 @@ void FRpgHarvestRewardService::AwardExperience(
 	AActor* Harvester,
 	const int32 HarvestedUnits)
 {
-	if (!Profile || !Profile->SkillTag.IsValid() || Profile->SkillExperience <= 0 || HarvestedUnits <= 0)
+	if (!Profile || HarvestedUnits <= 0)
 	{
 		return;
 	}
 
 	ARpgPlayerState* PlayerState = ResolveHarvesterPlayerState(Harvester);
-	if (URpgTradeSkillProgressionComponent* TradeSkills =
-			PlayerState ? PlayerState->GetTradeSkillProgressionComponent() : nullptr)
+	URpgTradeSkillProgressionComponent* TradeSkills = PlayerState ? PlayerState->GetTradeSkillProgressionComponent() : nullptr;
+	if (!TradeSkills)
+	{
+		return;
+	}
+	if (Profile->SkillTag.IsValid() && Profile->SkillExperience > 0)
 	{
 		TradeSkills->AddSkillXPByTag(
 			Profile->SkillTag,
 			static_cast<float>(Profile->SkillExperience) * static_cast<float>(HarvestedUnits));
+	}
+	// The shared mastery is awarded explicitly here, never by propagating XP between skill tags.
+	if (Profile->MasterySkillTag.IsValid() && Profile->MasteryExperience > 0)
+	{
+		TradeSkills->AddSkillXPByTag(
+			Profile->MasterySkillTag,
+			static_cast<float>(Profile->MasteryExperience) * static_cast<float>(HarvestedUnits));
 	}
 }
 

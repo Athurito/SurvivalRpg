@@ -7,7 +7,8 @@ Weapons and tools carry skill trees, as in New World:
 
 The system is generic. Harvesting tools use it first (HARV-09, see
 [harvesting-roadmap.md](harvesting-roadmap.md)); combat weapons can use it
-without code changes.
+without code changes. Since MST-03b, axe and pickaxe share one harvesting tree of passive talents
+([mastery-map-shared-harvesting.md](mastery-map-shared-harvesting.md)); its nodes place nothing on Q/E/R.
 
 The design goal is extensibility: new trees, nodes, abilities and upgrades
 are data. Code is only needed when an ability gains a new tunable value.
@@ -99,14 +100,18 @@ The view models observe the replicated state and rebuild at most once per frame.
 
 ## Current trees
 
-| Tree | Points | Nodes |
-| --- | --- | --- |
-| `DA_SkillTree_Axe` (`GF_Harvesting_Magic`) | Logging | Death Wave (row 0, column 1) forking into the exclusive forms Wide Wave and Ash Wave, with Long Reach below it; Grave Swarm (row 0, column 5) forking into the exclusive forms Swarm Brood and Grave Detonation; the loose passives Keen Edge and Quick Recovery in column 3; the ultimate Striding Wave (row 3, column 3) after 4 spent points |
-| `DA_SkillTree_Pickaxe` (`GF_Harvesting_Magic`) | Mining | Rift Grip (row 0, column 2) forking into the exclusive forms Wide Rift and Deep Grip; the loose passives Steady Hands and Quick Recovery beside it |
+| Tree | Carried by | Points | Nodes |
+| --- | --- | --- | --- |
+| `DA_SkillTree_Harvesting` (`GF_Harvesting_Magic`) | Axe and pickaxe | `Skill.Mastery.Harvesting` (shown as Harvesting) | Free-position map with the region Impact: the entry Cleaving Force (1 point, every hit +25 % work) forking into the exclusive choices Shatter (3 points, weak-point bonus work x2) and Follow Through (3 points, the next hit on the same resource within 3 s after a weak-point hit does +50 % work) |
 
-The upgrades and forms only carry tunings. The harvest abilities read the tags under `Ability.Tuning.Harvest`
-(area radius, reach, target count, sections, swarm creatures, rest and strike radius, cooldown); the table is in
+The talents only carry tunings. The harvest abilities read the tags under `Ability.Tuning.Harvest`
+(area radius, reach, target count, sections, swarm creatures, rest and strike radius, cooldown, and the work values
+Work, WeakPointWork, FollowUpWork and FollowUpWindow); the table is in
 [harvesting-roadmap.md](harvesting-roadmap.md#harvest-tunings).
+
+MST-03b retired the former `DA_SkillTree_Axe` and `DA_SkillTree_Pickaxe` with their active powers (Rift Grip,
+Death Wave, Grave Swarm, their forms and Striding Wave), as the user decided on 2026-10-27. Saved states of those
+trees stay unregistered: they grant nothing, requests for them are rejected, and their points are not refunded.
 
 ## How to extend
 
@@ -135,7 +140,7 @@ Add an entry to `Nodes`:
 - Any combination of grants:
   - **Active ability:** an ability set whose entry has an `AbilityIdTag` and no Q/E/R input tag. The tree places it on Q/E/R.
   - **Passive value:** a GameplayEffect in the node's ability set.
-  - **Flag for other systems:** `GrantedTags`. For example, Ash Wave grants `Harvest.Form.AshWave`, which turns on Death Wave's yield conversion from wood to charcoal.
+  - **Flag for other systems:** `GrantedTags`. For example, a form tag below `Harvest.Form` can turn on a harvest ability's yield conversion.
   - **Change to an existing value:** an `AbilityTunings` entry with an existing tuning tag.
 
 ### Add a tunable value
@@ -165,9 +170,10 @@ Add an entry to `Nodes`:
 the remembered view, and that every shipped tree fits on the map.
 
 `SurvivalRpg.Save.WorldSave.MemoryRoundTrip` covers the save fields.
-`SurvivalRpg.Harvesting.Content.AxeSkillTreeContract` and `PickaxeSkillTreeContract` check the chain item →
-fragment → tree → node → ability set → ability for the tool trees.
+`SurvivalRpg.Harvesting.Content.SharedHarvestingTreeContract` checks that axe and pickaxe carry the same tree, that its
+talents grant no abilities and form an entry with exclusive choices, and that the tool resources award the shared
+mastery XP. `AxeToolContract` and `PickaxeToolContract` check the tools' swings.
 `SurvivalRpg.Harvesting.Tuning.*` checks that harvest tunings change preview and commit alike, are captured when
-execution starts, and shape the swarm; `SurvivalRpg.Harvesting.Swarm.StrikeRadiusTakesEachTargetOnce` checks the
+execution starts, shape the swarm, and shape the work of own hits (`WorkTalentsShapeOwnHits`); `SurvivalRpg.Harvesting.Swarm.StrikeRadiusTakesEachTargetOnce` checks the
 strike radius. `SurvivalRpg.Harvesting.Stride.*` checks the strides of
 ultimates such as Striding Wave.

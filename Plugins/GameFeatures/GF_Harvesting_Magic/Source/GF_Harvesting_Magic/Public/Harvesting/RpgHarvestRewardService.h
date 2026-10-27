@@ -64,7 +64,10 @@ public:
 		const URpgHarvestRewardProfile* Profile,
 		const FRpgHarvestRewardRequest& Request);
 
-	/** Awards the profile's trade-skill XP once per harvested unit after a target has accepted successful delivery. */
+	/**
+	 * Awards the profile's trade-skill XP and its shared mastery XP once per harvested unit, after a target has accepted
+	 * successful delivery. Zero units award nothing.
+	 */
 	static void AwardExperience(const URpgHarvestRewardProfile* Profile, AActor* Harvester, int32 HarvestedUnits = 1);
 
 	/**
