@@ -53,7 +53,7 @@ All dependencies below are within MST; every row also has the CMB scheduling gat
 | MST-07a | Persistent world recipe knowledge: carrying a rune teaches the world its base recipe without consuming it, and the Kiln crafts a new rank-I Brand | MST-06d | Merged (2026-10-28, `af0db4e0`) | [mastery-map-rune-recipes.md](mastery-map-rune-recipes.md), [PR #320](https://github.com/Athurito/SurvivalRpg/pull/320) |
 | MST-07b | Guaranteed reward claims with saved identity, configurable as a choice or a loot pool, granted at mastery milestones and claimed on the Character tab; Brand drops from vein and pine loot pools; a full inventory never loses a claim | MST-07a | Merged (2026-10-28, `17e4ea30`) | [mastery-map-rune-rewards.md](mastery-map-rune-rewards.md), [PR #321](https://github.com/Athurito/SurvivalRpg/pull/321) |
 | MST-07c | Guaranteed rewards when an eligible portal closes, for the instigator and the realm's participants, with one claim identity per completion | MST-07b | Merged (2026-10-28, `4c56a024`) | [mastery-map-portal-rewards.md](mastery-map-portal-rewards.md), [PR #322](https://github.com/Athurito/SurvivalRpg/pull/322) |
-| MST-08a | In-place rank II/III upgrades and salvage at the Runenschrein with rune essence; atomic costs, safe equipped-rune refresh and a plain Runes section on the station screen | MST-07c | In review | [mastery-map-rune-shrine.md](mastery-map-rune-shrine.md) |
+| MST-08a | In-place rank II/III upgrades and salvage at the Runenschrein with rune essence; atomic costs, safe equipped-rune refresh and a plain Runes section on the station screen | MST-07c | In review | [mastery-map-rune-shrine.md](mastery-map-rune-shrine.md), [PR #323](https://github.com/Athurito/SurvivalRpg/pull/323) |
 | MST-08b | Integrated Runenschrein presentation: rune icons, rank preview and a screen of its own | MST-08a | Planned | — |
 | MST-09a | Harvesting Echo, Kraftuebertrag and Runenfluss; bounded own-hit triggers and actual-overkill transfer | MST-08b | Planned | — |
 | MST-09b | Erntesprung, Durchschlag, Ausbreitung and remaining Nachwirkung choices; finite propagation and no duplicated work | MST-09a | Planned | — |
@@ -110,7 +110,7 @@ Playtests of merged MST steps that wait for the user's batch test. Remove a row 
 ## Current handoff
 
 - **Active phase:** MST, started by the user on 2026-10-27 after CMB-01 to CMB-07 merged.
-- **Active task:** MST-08a, branch `claude/mst-08a-rune-upgrades`; the report is [mastery-map-rune-shrine.md](mastery-map-rune-shrine.md).
+- **Active task:** MST-08a, branch `claude/mst-08a-rune-upgrades`, [PR #323](https://github.com/Athurito/SurvivalRpg/pull/323); the report is [mastery-map-rune-shrine.md](mastery-map-rune-shrine.md).
   - `URpgCraftingStationComponent` upgrades and salvages runes at stations with `bOffersRuneWork`; costs and outputs are `FRpgRuneRank::UpgradeCosts` and `SalvageOutputs`.
   - `BP_CraftingStation_RuneShrine` stands beside the Kiln in `Lvl_HarvestPickaxe`; Brand's ranks cost and return `ID_RuneEssence`.
 - **Previous task:** MST-07c, merged on 2026-10-28 as `4c56a024` ([PR #322](https://github.com/Athurito/SurvivalRpg/pull/322)); the report is [mastery-map-portal-rewards.md](mastery-map-portal-rewards.md).

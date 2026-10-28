@@ -1,6 +1,6 @@
 # MST-08a: Rune upgrades and salvage at the Runenschrein
 
-Task report for MST-08a in the [mastery map roadmap](mastery-map-roadmap.md). It covers the upgrade and salvage transactions of the [implementation plan](mastery-map-implementation-plan.md), section "Physical runes and the workstation loop":
+Task report for MST-08a in the [mastery map roadmap](mastery-map-roadmap.md), [PR #323](https://github.com/Athurito/SurvivalRpg/pull/323). It covers the upgrade and salvage transactions of the [implementation plan](mastery-map-implementation-plan.md), section "Physical runes and the workstation loop":
 - Upgrade mutates the selected instance in place after complete cost, ownership and station validation.
 - Salvage consumes one eligible unsocketed instance and awards its configured essence.
 - Failed validation or capacity checks consume nothing.
