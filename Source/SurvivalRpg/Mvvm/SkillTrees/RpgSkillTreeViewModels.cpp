@@ -3,12 +3,19 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
-#include "SurvivalRpg/Progression/Player/RpgPlayerProgressionComponent.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentInstance.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemContainer.h"
+#include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
+#include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
+#include "SurvivalRpg/Progression/Player/RpgPlayerProgressionComponent.h"
 #include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeComponent.h"
 #include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeDefinition.h"
-#include "SurvivalRpg/Runes/RpgInventoryFragment_Rune.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillProgressionComponent.h"
+#include "SurvivalRpg/Runes/RpgInventoryFragment_Rune.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgSkillTreeViewModels)
 
@@ -68,6 +75,17 @@ namespace
 		}
 		return XPToNextLevel > 0.0f ? FMath::Clamp(XP / XPToNextLevel, 0.0f, 1.0f) : 0.0f;
 	}
+}
+
+bool FRpgSkillTreeRuneSlotView::operator==(const FRpgSkillTreeRuneSlotView& Other) const
+{
+	return bHasRune == Other.bHasRune && RuneTag == Other.RuneTag && Icon == Other.Icon &&
+		bIsHighlighted == Other.bIsHighlighted && Label.IdenticalTo(Other.Label, ETextIdenticalModeFlags::LexicalCompareInvariants);
+}
+
+void URpgSkillTreeNodeViewModel::SetRuneHighlighted(const bool bHighlighted)
+{
+	UE_MVVM_SET_PROPERTY_VALUE(bIsRuneHighlighted, bHighlighted);
 }
 
 void URpgSkillTreeNodeViewModel::UpdateNode(
@@ -255,6 +273,31 @@ void URpgSkillTreeViewModel::RequestSwapNode(const FGameplayTag NodeTag)
 	BeginRequest(NodeTag);
 	SkillTrees->RequestSwapNode(TreeTag, NodeTag);
 	Refresh();
+}
+
+void URpgSkillTreeViewModel::SetHighlightedRune(const FGameplayTag RuneTag)
+{
+	if (HighlightedRune == RuneTag)
+	{
+		return;
+	}
+
+	HighlightedRune = RuneTag;
+	if (const URpgSkillTreeComponent* SkillTrees = ObservedSkillTrees.Get())
+	{
+		if (const URpgSkillTreeDefinition* Tree = SkillTrees->FindSkillTree(TreeTag))
+		{
+			for (const FRpgSkillTreeNode& Node : Tree->Nodes)
+			{
+				if (URpgSkillTreeNodeViewModel* NodeViewModel = FindNode(Node.NodeTag))
+				{
+					NodeViewModel->SetRuneHighlighted(RuneTag.IsValid() && Node.RequiredRunes.HasTagExact(RuneTag));
+				}
+			}
+		}
+	}
+	// The map restyles its node entries on every tree change.
+	OnTreeChanged.Broadcast();
 }
 
 void URpgSkillTreeViewModel::BeginRequest(const FGameplayTag NodeTag)
@@ -525,6 +568,7 @@ void URpgSkillTreeViewModel::Rebuild()
 				SkillTrees->EvaluateRefund(TreeTag, Node.NodeTag) == ERpgSkillTreeRefundResult::Refundable,
 				Interaction,
 				Node.IsActiveWithRunes(SocketedRunes));
+			NodeViewModel->SetRuneHighlighted(HighlightedRune.IsValid() && Node.RequiredRunes.HasTagExact(HighlightedRune));
 			NewNodes.Add(NodeViewModel);
 
 			NewRowCount = FMath::Max(NewRowCount, Node.Row + 1);
@@ -687,6 +731,7 @@ void URpgSkillProgressionViewModel::Unbind()
 void URpgSkillProgressionViewModel::Refresh()
 {
 	RefreshQueue.Cancel();
+	bRefreshTreesOnRebuild = true;
 	Rebuild();
 }
 
@@ -724,6 +769,159 @@ void URpgSkillProgressionViewModel::HandleCharacterLevelChanged(int32 NewLevel)
 void URpgSkillProgressionViewModel::HandleCharacterXPChanged(float CurrentXP, float XPToNextLevel)
 {
 	QueueRefresh();
+}
+
+void URpgSkillProgressionViewModel::ToggleRuneHighlight(const int32 SlotIndex)
+{
+	const FGameplayTag RuneTag = RuneSlots.IsValidIndex(SlotIndex) ? RuneSlots[SlotIndex].RuneTag : FGameplayTag();
+	UE_MVVM_SET_PROPERTY_VALUE(HighlightedRuneTag, RuneTag.IsValid() && RuneTag != HighlightedRuneTag ? RuneTag : FGameplayTag());
+	ApplyRuneHighlight();
+}
+
+FText URpgSkillProgressionViewModel::GetRuneSlotLabel(const int32 SlotIndex) const
+{
+	return RuneSlots.IsValidIndex(SlotIndex) ? RuneSlots[SlotIndex].Label : FText::GetEmpty();
+}
+
+bool URpgSkillProgressionViewModel::IsRuneSlotFilled(const int32 SlotIndex) const
+{
+	return RuneSlots.IsValidIndex(SlotIndex) && RuneSlots[SlotIndex].bHasRune;
+}
+
+bool URpgSkillProgressionViewModel::IsRuneSlotHighlighted(const int32 SlotIndex) const
+{
+	return RuneSlots.IsValidIndex(SlotIndex) && RuneSlots[SlotIndex].bIsHighlighted;
+}
+
+void URpgSkillProgressionViewModel::RebuildRuneContext()
+{
+	// The socketed item in the main hand is the rune context of its tree's talents.
+	const APlayerState* PlayerState = ObservedPlayerState.Get();
+	const APawn* Pawn = PlayerState ? PlayerState->GetPawn() : nullptr;
+	const URpgEquipmentManagerComponent* Equipment = Pawn ? Pawn->FindComponentByClass<URpgEquipmentManagerComponent>() : nullptr;
+	const URpgEquipmentInstance* MainHand = Equipment ? Equipment->GetEquipmentInstanceInSlot(ERpgEquipmentSlot::MainHand) : nullptr;
+	const URpgInventoryItemInstance* Tool = MainHand ? Cast<URpgInventoryItemInstance>(MainHand->GetInstigator()) : nullptr;
+	const URpgInventoryFragment_ItemContainer* Containers =
+		Tool ? Tool->FindFragmentByClass<URpgInventoryFragment_ItemContainer>() : nullptr;
+	const URpgInventoryManagerComponent* Inventory = URpgInventoryManagerComponent::FindInventoryOfItem(Tool);
+
+	FRpgInventoryItemContainerDefinition SocketGrid;
+	bool bHasSocketGrid = false;
+	if (Containers)
+	{
+		TArray<FRpgInventoryItemContainerDefinition> Grids;
+		Containers->GetProvidedContainers(Grids);
+		for (const FRpgInventoryItemContainerDefinition& Grid : Grids)
+		{
+			if (Grid.bSocketGrid && Grid.IsValid())
+			{
+				SocketGrid = Grid;
+				bHasSocketGrid = true;
+				break;
+			}
+		}
+	}
+
+	TArray<FRpgSkillTreeRuneSlotView> NewSlots;
+	if (bHasSocketGrid && Inventory)
+	{
+		NewSlots.SetNum(SocketGrid.GridSize.Width * SocketGrid.GridSize.Height);
+		for (FRpgSkillTreeRuneSlotView& Slot : NewSlots)
+		{
+			Slot.Label = NSLOCTEXT("RpgSkillTreeViewModels", "EmptySocket", "Empty");
+		}
+		for (URpgInventoryItemInstance* Socketed : Inventory->GetSocketedItems(Tool))
+		{
+			FRpgInventoryGridPlacement Placement;
+			const URpgInventoryFragment_Rune* Rune = URpgInventoryFragment_Rune::FindRuneOfItem(Socketed);
+			if (!Rune || !Inventory->GetItemPlacement(Socketed, Placement) ||
+				Placement.GetContainerHandle().ContainerId != SocketGrid.ContainerId)
+			{
+				continue;
+			}
+			const int32 SlotIndex = Placement.Y * SocketGrid.GridSize.Width + Placement.X;
+			if (!NewSlots.IsValidIndex(SlotIndex))
+			{
+				continue;
+			}
+
+			static const TCHAR* RankNumerals[] = {TEXT("I"), TEXT("II"), TEXT("III")};
+			const int32 Rank = FMath::Clamp(Socketed->GetRuneRank(), 1, UE_ARRAY_COUNT(RankNumerals));
+			const URpgInventoryFragment_UIData* UIData = Socketed->FindFragmentByClass<URpgInventoryFragment_UIData>();
+			const URpgInventoryItemDefinition* Definition = Socketed->GetItemDef()
+				? GetDefault<URpgInventoryItemDefinition>(Socketed->GetItemDef())
+				: nullptr;
+			FRpgSkillTreeRuneSlotView& Slot = NewSlots[SlotIndex];
+			Slot.bHasRune = true;
+			Slot.RuneTag = Rune->RuneTag;
+			Slot.Icon = UIData ? UIData->Icon : TSoftObjectPtr<UTexture2D>();
+			Slot.Label = FText::Format(
+				NSLOCTEXT("RpgSkillTreeViewModels", "SocketedRune", "{0} {1}"),
+				Definition ? Definition->DisplayName : FText::FromString(Rune->RuneTag.ToString()),
+				FText::FromString(RankNumerals[Rank - 1]));
+		}
+	}
+
+	const URpgInventoryItemDefinition* ToolDefinition =
+		Tool && Tool->GetItemDef() ? GetDefault<URpgInventoryItemDefinition>(Tool->GetItemDef()) : nullptr;
+	UE_MVVM_SET_PROPERTY_VALUE(bHasRuneTool, !NewSlots.IsEmpty());
+	UE_MVVM_SET_PROPERTY_VALUE(RuneToolName, !NewSlots.IsEmpty() && ToolDefinition ? ToolDefinition->DisplayName : FText::GetEmpty());
+
+	// The highlight ends with its rune leaving the tool in hand.
+	const bool bHighlightStillSocketed = NewSlots.ContainsByPredicate([this](const FRpgSkillTreeRuneSlotView& Slot)
+	{
+		return Slot.bHasRune && Slot.RuneTag == HighlightedRuneTag;
+	});
+	if (!bHighlightStillSocketed)
+	{
+		UE_MVVM_SET_PROPERTY_VALUE(HighlightedRuneTag, FGameplayTag());
+	}
+	for (FRpgSkillTreeRuneSlotView& Slot : NewSlots)
+	{
+		Slot.bIsHighlighted = Slot.bHasRune && HighlightedRuneTag.IsValid() && Slot.RuneTag == HighlightedRuneTag;
+	}
+	UE_MVVM_SET_PROPERTY_VALUE(RuneSlots, NewSlots);
+}
+
+void URpgSkillProgressionViewModel::ApplyRuneHighlight()
+{
+	TArray<FRpgSkillTreeRuneSlotView> NewSlots = RuneSlots;
+	for (FRpgSkillTreeRuneSlotView& Slot : NewSlots)
+	{
+		Slot.bIsHighlighted = Slot.bHasRune && HighlightedRuneTag.IsValid() && Slot.RuneTag == HighlightedRuneTag;
+	}
+	UE_MVVM_SET_PROPERTY_VALUE(RuneSlots, NewSlots);
+	for (URpgSkillTreeViewModel* TreeViewModel : SkillTrees)
+	{
+		if (TreeViewModel)
+		{
+			TreeViewModel->SetHighlightedRune(HighlightedRuneTag);
+		}
+	}
+	OnProgressionChanged.Broadcast();
+}
+
+void URpgSkillProgressionViewModel::HandleInventoryChanged(FGameplayTag Channel, const FRpgInventoryChangeMessage& Message)
+{
+	const APlayerState* PlayerState = ObservedPlayerState.Get();
+	if (PlayerState && Message.InventoryOwner &&
+		Message.InventoryOwner == PlayerState->FindComponentByClass<URpgInventoryManagerComponent>())
+	{
+		bRefreshTreesOnRebuild = true;
+		QueueRefresh();
+	}
+}
+
+void URpgSkillProgressionViewModel::HandleEquipmentSlotsChanged(
+	FGameplayTag Channel,
+	const FRpgEquipmentLoadoutSlotsChangedMessage& Message)
+{
+	const APlayerState* PlayerState = ObservedPlayerState.Get();
+	if (PlayerState && Message.Owner && Message.Owner == PlayerState->GetOwner())
+	{
+		bRefreshTreesOnRebuild = true;
+		QueueRefresh();
+	}
 }
 
 void URpgSkillProgressionViewModel::HandleTreeViewChanged()
@@ -817,11 +1015,27 @@ void URpgSkillProgressionViewModel::Subscribe()
 		Character->OnLevelChanged.AddUniqueDynamic(this, &ThisClass::HandleCharacterLevelChanged);
 		Character->OnXPChanged.AddUniqueDynamic(this, &ThisClass::HandleCharacterXPChanged);
 	}
+
+	// Sockets and the tool in hand decide which learned talents sleep and what the rune bar shows.
+	if (UWorld* World = ObservedPlayerState.IsValid() ? ObservedPlayerState->GetWorld() : nullptr)
+	{
+		UGameplayMessageSubsystem& Messages = UGameplayMessageSubsystem::Get(World);
+		InventoryChangedHandle = Messages.RegisterListener<FRpgInventoryChangeMessage>(
+			FGameplayTag::RequestGameplayTag(TEXT("Rpg.Inventory.Message.StackChanged")),
+			this,
+			&ThisClass::HandleInventoryChanged);
+		EquipmentChangedHandle = Messages.RegisterListener<FRpgEquipmentLoadoutSlotsChangedMessage>(
+			RpgGameplayTags::Rpg_EquipmentLoadout_Message_SlotsChanged,
+			this,
+			&ThisClass::HandleEquipmentSlotsChanged);
+	}
 }
 
 void URpgSkillProgressionViewModel::Unsubscribe()
 {
 	RefreshQueue.Cancel();
+	InventoryChangedHandle.Unregister();
+	EquipmentChangedHandle.Unregister();
 	if (URpgSkillTreeComponent* SkillTreeComponent = ObservedSkillTrees.Get())
 	{
 		SkillTreeComponent->OnSkillTreeChanged.RemoveDynamic(this, &ThisClass::HandleSkillTreeChanged);
@@ -947,6 +1161,22 @@ void URpgSkillProgressionViewModel::Rebuild()
 	UE_MVVM_SET_PROPERTY_VALUE(TotalAvailablePoints, NewTotalAvailablePoints);
 
 	ObserveTrees(SkillTrees);
+
+	// Sockets or the tool in hand changed: the trees re-derive which learned talents sleep.
+	RebuildRuneContext();
+	const bool bRefreshTrees = bRefreshTreesOnRebuild;
+	bRefreshTreesOnRebuild = false;
+	for (URpgSkillTreeViewModel* TreeViewModel : SkillTrees)
+	{
+		if (TreeViewModel)
+		{
+			TreeViewModel->SetHighlightedRune(HighlightedRuneTag);
+			if (bRefreshTrees)
+			{
+				TreeViewModel->Refresh();
+			}
+		}
+	}
 	UpdateSelection();
 
 	OnProgressionChanged.Broadcast();
