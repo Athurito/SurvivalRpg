@@ -5,6 +5,7 @@
 #include "RpgPortalMessages.generated.h"
 
 class AActor;
+class APlayerState;
 class URpgPortalEncounterDefinition;
 class URpgLootTable;
 
@@ -44,6 +45,17 @@ struct GF_PORTALS_CORE_API FRpgPortalCompletedMessage
 	/** Whether this definition requires boss defeat before rewards should be considered. */
 	UPROPERTY(BlueprintReadOnly, Category = "Portal")
 	bool bRewardsRequireBossDefeat = true;
+
+	/**
+	 * Players who earned this completion's rewards: the closing player and everyone who entered the realm and is still
+	 * connected, each once. Server-side record; empty on clients.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Portal|Reward")
+	TArray<TObjectPtr<APlayerState>> Participants;
+
+	/** Unique id of this completion. Its reward claims use it, so each player receives a completion's reward once. */
+	UPROPERTY(BlueprintReadOnly, Category = "Portal|Reward")
+	FGuid CompletionId;
 
 	/** Whether the portal actor observed a realm boss defeat. */
 	UPROPERTY(BlueprintReadOnly, Category = "Portal")

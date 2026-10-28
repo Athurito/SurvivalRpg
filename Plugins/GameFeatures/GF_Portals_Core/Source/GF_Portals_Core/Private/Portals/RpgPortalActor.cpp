@@ -12,6 +12,7 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
+#include "GameFramework/GameStateBase.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/GameplayMessageSubsystem.h"
 #include "GameFramework/PlayerState.h"
@@ -26,6 +27,7 @@
 #include "GameplayTags/RpgPortalGameplayTags.h"
 #include "Portals/RpgPortalRealmMarkerActor.h"
 #include "Portals/RpgPortalEncounterDefinition.h"
+#include "Portals/RpgPortalCompletionRewards.h"
 #include "Portals/RpgPortalExitActor.h"
 #include "Portals/RpgPortalMessages.h"
 #include "Portals/RpgPortalStorageProgressionHook.h"
@@ -312,10 +314,13 @@ bool ARpgPortalActor::TryClosePortal(AActor* ClosingActor)
 	Message.bRewardsRequireBossDefeat = EncounterDefinition ? EncounterDefinition->bRewardsRequireBossDefeat : true;
 	Message.bBossDefeated = bRealmBossDefeated;
 	Message.bRewardsEligible = ShouldRewardsBeEligible();
+	Message.Participants = CollectCompletionParticipants(ClosingActor);
+	Message.CompletionId = FGuid::NewGuid();
 
 	if (UWorld* World = GetWorld())
 	{
 		FRpgPortalStorageProgressionHook::ApplyFirstEligibleCompletion(World, Message);
+		FRpgPortalCompletionRewards::GrantCompletionRewards(Message);
 		UGameplayMessageSubsystem& MessageSubsystem = UGameplayMessageSubsystem::Get(World);
 		MessageSubsystem.BroadcastMessage(RpgPortalGameplayTags::Rpg_Portal_Message_Completed, Message);
 	}
@@ -1846,6 +1851,39 @@ AActor* ARpgPortalActor::ResolveTravelActor(AActor* Actor) const
 	}
 
 	return Actor;
+}
+
+TArray<TObjectPtr<APlayerState>> ARpgPortalActor::CollectCompletionParticipants(AActor* ClosingActor) const
+{
+	TArray<TObjectPtr<APlayerState>> Participants;
+	APlayerState* Closer = Cast<APlayerState>(ClosingActor);
+	if (!Closer)
+	{
+		if (const APawn* Pawn = Cast<APawn>(ClosingActor))
+		{
+			Closer = Pawn->GetPlayerState();
+		}
+		else if (const AController* Controller = Cast<AController>(ClosingActor))
+		{
+			Closer = Controller->PlayerState;
+		}
+	}
+	if (Closer)
+	{
+		Participants.Add(Closer);
+	}
+
+	// Players who entered the realm keep a participant state until the portal is gone; only connected ones receive.
+	const UWorld* World = GetWorld();
+	const AGameStateBase* GameState = World ? World->GetGameState() : nullptr;
+	for (APlayerState* PlayerState : GameState ? GameState->PlayerArray : TArray<TObjectPtr<APlayerState>>())
+	{
+		if (PlayerState && RealmParticipantStates.Contains(PlayerState->GetUniqueId()))
+		{
+			Participants.AddUnique(PlayerState);
+		}
+	}
+	return Participants;
 }
 
 FTransform ARpgPortalActor::GetDefaultRealmLevelInstanceTransform() const

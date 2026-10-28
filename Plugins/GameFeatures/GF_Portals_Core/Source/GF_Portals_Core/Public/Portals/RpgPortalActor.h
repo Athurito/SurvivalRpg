@@ -21,6 +21,7 @@ class URpgGameplayAbility_EnterPortal;
 class URpgPortalEncounterDefinition;
 class URpgPortalTravelComponent;
 class AController;
+class APlayerState;
 enum class ERpgPortalTravelState : uint8;
 struct FRpgCombatActorKilledMessage;
 
@@ -227,6 +228,9 @@ protected:
 	void UnregisterRealmOccupant(AActor* TravelActor);
 	AController* ResolveTravelController(AActor* TravelActor) const;
 	FUniqueNetIdRepl ResolvePlayerNetId(AActor* TravelActor) const;
+
+	/** The closing player and every connected player who entered the realm, each once, for the completion rewards. */
+	TArray<TObjectPtr<APlayerState>> CollectCompletionParticipants(AActor* ClosingActor) const;
 	FUniqueNetIdRepl ResolvePlayerNetId(AController* Controller) const;
 	FRpgPortalRealmParticipantState* FindParticipantState(const FUniqueNetIdRepl& PlayerNetId);
 	const FRpgPortalRealmParticipantState* FindParticipantState(const FUniqueNetIdRepl& PlayerNetId) const;

@@ -10,6 +10,7 @@ class ARpgPortalExitActor;
 class ARpgPortalRealmEventDirector;
 class UGameplayEffect;
 class URpgLootTable;
+class URpgRewardClaimDefinition;
 class UWorld;
 class FDataValidationContext;
 
@@ -148,6 +149,14 @@ public:
 	/** Keeps rewards gated until a boss-aware listener marks the completion eligible. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Portal|Reward")
 	bool bRewardsRequireBossDefeat = true;
+
+	/**
+	 * Optional guaranteed reward of an eligible completion, for example a rune of the player's choice or a loot pool.
+	 * Every participant receives it once per completion: the closing player and everyone who entered the realm and is
+	 * still connected. They claim it from their reward list. Designer-authored; empty grants nothing.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Portal|Reward")
+	TObjectPtr<const URpgRewardClaimDefinition> CompletionReward;
 
 	/**
 	 * Soft reward table delivered once when this encounter first unlocks Rift-containment knowledge.
