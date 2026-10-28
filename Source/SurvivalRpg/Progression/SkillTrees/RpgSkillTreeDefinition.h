@@ -88,6 +88,25 @@ struct SURVIVALRPG_API FRpgSkillTreeAbilityTuning
 };
 
 /**
+ * Folds the ability tunings of one tuning tag from several sources, such as learned nodes and socketed runes: the last
+ * Set entry replaces the base value, then Add entries are added, then Multiply entries are multiplied.
+ */
+struct SURVIVALRPG_API FRpgAbilityTuningAccumulator
+{
+	/** Folds Tuning in when it targets TuningTag, has a finite value, and its ability id is empty or in AbilityIds. */
+	void Apply(const FRpgSkillTreeAbilityTuning& Tuning, const FGameplayTagContainer& AbilityIds, FGameplayTag TuningTag);
+
+	/** The folded result for BaseValue. */
+	float Resolve(float BaseValue) const;
+
+private:
+	bool bHasSet = false;
+	float SetValue = 0.0f;
+	float AddSum = 0.0f;
+	float MultiplyProduct = 1.0f;
+};
+
+/**
  * One purchasable node of a skill tree. Every field except NodeTag is optional, so a node can grant an active ability,
  * a passive effect, gameplay tags, numeric upgrades or any combination of them. Designer-tuned static data.
  */

@@ -12,13 +12,17 @@
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentAutomationTestTypes.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentInstance.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemContainer.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
+#include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeComponent.h"
 
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_RuneSocketTest_RankAbility, "Ability.AutomationRune.RankII");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_RuneSocketTest_TunedAbility, "Ability.AutomationRune.Tuned");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_RuneSocketTest_Tuning, "Ability.Tuning.AutomationRune.Value");
 
 namespace RpgRuneSocketTests
 {
@@ -553,6 +557,83 @@ bool FRpgRuneSocketEquippedGrantsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Rune A goes back into the unequipped tool"),
 		Move(Inventory, Fixture.RuneA, Socket(Inventory, Fixture.Tool, 0)), ERpgInventoryMutationResultCode::Success);
 	TestEqual(TEXT("An unequipped tool grants nothing"), AbilitySystem->GetTagCount(RuneTagA), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgRuneSocketedTuningTest,
+	"SurvivalRpg.Runes.Tunings.SocketedRuneTunesItsTool",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgRuneSocketedTuningTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgRuneSocketTests;
+	FScopedTestWorld TestWorld;
+	FSocketFixture Fixture;
+	if (!MakeSocketFixture(*this, TestWorld, Fixture))
+	{
+		return false;
+	}
+	URpgInventoryManagerComponent& Inventory = *Fixture.Inventory;
+	URpgInventoryItemInstance* OtherTool = Inventory.AddItemDefinitionToPlacement(
+		URpgRuneAutomationTestToolDefinition::StaticClass(), 1, Storage(5, 0));
+	URpgInventoryFragment_Rune* RuneA = const_cast<URpgInventoryFragment_Rune*>(
+		URpgInventoryFragment_Rune::FindRuneOfItem(Fixture.RuneA));
+	if (!TestNotNull(TEXT("A second tool is granted"), OtherTool) || !TestNotNull(TEXT("Rune A has its fragment"), RuneA) ||
+		!TestEqual(TEXT("Rune A has three ranks"), RuneA->Ranks.Num(), 3))
+	{
+		return false;
+	}
+
+	// Rank I adds 0.1 for every ability of the tool; rank II adds 0.15 and doubles the value for one ability id.
+	const TArray<FRpgRuneRank> AuthoredRanks = RuneA->Ranks;
+	ON_SCOPE_EXIT
+	{
+		RuneA->Ranks = AuthoredRanks;
+	};
+	auto MakeTuning = [](const FGameplayTag AbilityId, const ERpgSkillTreeTuningOperation Operation, const float Value)
+	{
+		FRpgSkillTreeAbilityTuning Tuning;
+		Tuning.AbilityIdTag = AbilityId;
+		Tuning.TuningTag = TAG_RuneSocketTest_Tuning;
+		Tuning.Operation = Operation;
+		Tuning.Value = Value;
+		return Tuning;
+	};
+	RuneA->Ranks[0].AbilityTunings = {MakeTuning(FGameplayTag(), ERpgSkillTreeTuningOperation::Add, 0.1f)};
+	RuneA->Ranks[1].AbilityTunings = {
+		MakeTuning(FGameplayTag(), ERpgSkillTreeTuningOperation::Add, 0.15f),
+		MakeTuning(TAG_RuneSocketTest_TunedAbility, ERpgSkillTreeTuningOperation::Multiply, 2.0f)};
+
+	URpgEquipmentInstance* ToolEquipment = NewObject<URpgEquipmentInstance>(GetTransientPackage(), NAME_None, RF_Transient);
+	URpgEquipmentInstance* OtherEquipment = NewObject<URpgEquipmentInstance>(GetTransientPackage(), NAME_None, RF_Transient);
+	ToolEquipment->SetInstigator(Fixture.Tool);
+	OtherEquipment->SetInstigator(OtherTool);
+	const FGameplayAbilitySpec ToolSpec(URpgInventoryAutomationTestUseAbility::StaticClass(), 1, INDEX_NONE, ToolEquipment);
+	FGameplayAbilitySpec TunedAbilitySpec(URpgInventoryAutomationTestUseAbility::StaticClass(), 1, INDEX_NONE, ToolEquipment);
+	TunedAbilitySpec.GetDynamicSpecSourceTags().AddTag(TAG_RuneSocketTest_TunedAbility);
+	const FGameplayAbilitySpec OtherSpec(URpgInventoryAutomationTestUseAbility::StaticClass(), 1, INDEX_NONE, OtherEquipment);
+	const FGameplayAbilityActorInfo ActorInfo;
+	auto Resolve = [&ActorInfo](const FGameplayAbilitySpec& Spec)
+	{
+		return URpgSkillTreeComponent::ResolveAbilityTuningForSpec(Spec, ActorInfo, TAG_RuneSocketTest_Tuning, 1.0f);
+	};
+
+	TestEqual(TEXT("A rune in storage tunes nothing"), Resolve(ToolSpec), 1.0f);
+	TestEqual(TEXT("Rune A goes into the tool"), Move(Inventory, Fixture.RuneA, Socket(Inventory, Fixture.Tool, 0)), ERpgInventoryMutationResultCode::Success);
+	TestEqual(TEXT("Rank I tunes the abilities of its tool"), Resolve(ToolSpec), 1.1f);
+	TestEqual(TEXT("The rune never tunes another tool"), Resolve(OtherSpec), 1.0f);
+
+	TestTrue(TEXT("Rune A reaches rank II"), Fixture.RuneA->SetRuneRank(2));
+	TestEqual(TEXT("Rank II replaces rank I's tunings"), Resolve(ToolSpec), 1.15f);
+	TestEqual(TEXT("An ability-specific tuning applies only to that ability"), Resolve(TunedAbilitySpec), 2.3f);
+
+	TestEqual(TEXT("Rune A leaves the tool"), Move(Inventory, Fixture.RuneA, Storage(1, 1)), ERpgInventoryMutationResultCode::Success);
+	TestEqual(TEXT("An unsocketed rune tunes nothing"), Resolve(ToolSpec), 1.0f);
+	TestEqual(TEXT("A spec without source equipment keeps its base value"),
+		URpgSkillTreeComponent::ResolveAbilityTuningForSpec(
+			FGameplayAbilitySpec(URpgInventoryAutomationTestUseAbility::StaticClass()), ActorInfo, TAG_RuneSocketTest_Tuning, 1.0f),
+		1.0f);
 	return true;
 }
 

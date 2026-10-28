@@ -7,6 +7,7 @@
 
 #include "RpgGameplayAbility_Harvest.generated.h"
 
+class ARpgHarvestBurn;
 class FRpgHarvestRewardBatch;
 class UAnimMontage;
 class URpgCameraMode;
@@ -78,6 +79,14 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestTunedValues
 	float FollowUpWorkScale = 1.0f;
 	float FollowUpSeconds = 0.0f;
 
+	/**
+	 * Burn a direct hit lights on the resource it works, from the tunings of runes such as Brand: work per second as a
+	 * fraction of the hit's own work (Ability.Tuning.Harvest.BurnWork) and burn time in seconds
+	 * (Ability.Tuning.Harvest.BurnDuration). Zero in either lights none.
+	 */
+	float BurnWork = 0.0f;
+	float BurnSeconds = 0.0f;
+
 	/** Swarm with tuned creature count, rest and strike radius. */
 	FRpgHarvestSwarmParams Swarm;
 
@@ -145,6 +154,9 @@ public:
 
 	/** Returns whether this ability's swings can strike a resource's active weak point for bonus sections. */
 	bool CanHitWeakPoints() const { return bCanHitWeakPoints && Targeting.Shape == ERpgHarvestTargetShape::SingleTarget; }
+
+	/** Returns the burn this ability's direct hits light while the source tool's runes give burn work, or null. */
+	TSubclassOf<ARpgHarvestBurn> GetBurnClass() const { return BurnClass; }
 
 	/** Returns the speed in cm/s at which this ability's presentation travels from target to target; 0 is instant. */
 	float GetPresentationWaveSpeed() const { return PresentationWaveSpeed; }
@@ -340,6 +352,14 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Swarm")
 	TSubclassOf<ARpgHarvestSwarm> SwarmClass;
+
+	/**
+	 * Burn a direct hit lights on each resource it works while the source tool's runes give burn work and burn time,
+	 * for example a socketed Brand. The server spawns one per player and resource; it replicates for its presentation.
+	 * Empty lights none. Designer content.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Burn")
+	TSubclassOf<ARpgHarvestBurn> BurnClass;
 
 	/**
 	 * Creature count, flight and reassignment rules of the summoned swarm. Used only with a SwarmClass. Skill tree nodes

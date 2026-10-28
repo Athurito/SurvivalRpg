@@ -12,7 +12,9 @@
 #include "SurvivalRpg/Equipment/RpgEquipmentInstance.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_SkillTree.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillProgressionComponent.h"
+#include "SurvivalRpg/Runes/RpgInventoryFragment_Rune.h"
 #include "SurvivalRpg/SurvivalRpg.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgSkillTreeComponent)
@@ -524,48 +526,33 @@ float URpgSkillTreeComponent::ResolveAbilityTuning(
 	const FGameplayTag TuningTag,
 	const float BaseValue) const
 {
+	FRpgAbilityTuningAccumulator Accumulator;
+	AccumulateAbilityTuning(Tree, AbilityIds, TuningTag, Accumulator);
+	return Accumulator.Resolve(BaseValue);
+}
+
+void URpgSkillTreeComponent::AccumulateAbilityTuning(
+	const URpgSkillTreeDefinition& Tree,
+	const FGameplayTagContainer& AbilityIds,
+	const FGameplayTag TuningTag,
+	FRpgAbilityTuningAccumulator& Accumulator) const
+{
 	const FRpgSkillTreeState* State = FindState(Tree.TreeTag);
-	if (!State || !TuningTag.IsValid())
+	if (!State)
 	{
-		return BaseValue;
+		return;
 	}
 
-	bool bHasSet = false;
-	float SetValue = BaseValue;
-	float AddSum = 0.0f;
-	float MultiplyProduct = 1.0f;
 	for (const FRpgSkillTreeNode& Node : Tree.Nodes)
 	{
-		if (!State->UnlockedNodes.Contains(Node.NodeTag))
+		if (State->UnlockedNodes.Contains(Node.NodeTag))
 		{
-			continue;
-		}
-
-		for (const FRpgSkillTreeAbilityTuning& Tuning : Node.AbilityTunings)
-		{
-			if (Tuning.TuningTag != TuningTag || !FMath::IsFinite(Tuning.Value) ||
-				(Tuning.AbilityIdTag.IsValid() && !AbilityIds.HasTagExact(Tuning.AbilityIdTag)))
+			for (const FRpgSkillTreeAbilityTuning& Tuning : Node.AbilityTunings)
 			{
-				continue;
-			}
-
-			switch (Tuning.Operation)
-			{
-			case ERpgSkillTreeTuningOperation::Set:
-				bHasSet = true;
-				SetValue = Tuning.Value;
-				break;
-			case ERpgSkillTreeTuningOperation::Add:
-				AddSum += Tuning.Value;
-				break;
-			case ERpgSkillTreeTuningOperation::Multiply:
-				MultiplyProduct *= Tuning.Value;
-				break;
+				Accumulator.Apply(Tuning, AbilityIds, TuningTag);
 			}
 		}
 	}
-
-	return ((bHasSet ? SetValue : BaseValue) + AddSum) * MultiplyProduct;
 }
 
 float URpgSkillTreeComponent::ResolveAbilityTuningForSpec(
@@ -575,15 +562,9 @@ float URpgSkillTreeComponent::ResolveAbilityTuningForSpec(
 	const float BaseValue)
 {
 	const URpgEquipmentInstance* Equipment = Cast<URpgEquipmentInstance>(Spec.SourceObject.Get());
-	const URpgSkillTreeDefinition* Tree = Equipment
-		? URpgInventoryFragment_SkillTree::FindSkillTreeOfItem(Equipment->GetInstigator())
-		: nullptr;
-	URpgSkillTreeComponent* SkillTrees = FindForActor(ActorInfo.OwnerActor.Get());
-	if (!SkillTrees)
-	{
-		SkillTrees = FindForActor(ActorInfo.AvatarActor.Get());
-	}
-	if (!Tree || !SkillTrees)
+	const URpgInventoryItemInstance* SourceItem =
+		Equipment ? Cast<URpgInventoryItemInstance>(Equipment->GetInstigator()) : nullptr;
+	if (!SourceItem || !TuningTag.IsValid())
 	{
 		return BaseValue;
 	}
@@ -603,7 +584,21 @@ float URpgSkillTreeComponent::ResolveAbilityTuningForSpec(
 		AbilityIds.AppendTags(Spec.Ability->GetAssetTags());
 	}
 
-	return SkillTrees->ResolveAbilityTuning(*Tree, AbilityIds, TuningTag, BaseValue);
+	FRpgAbilityTuningAccumulator Accumulator;
+	const URpgSkillTreeDefinition* Tree = URpgInventoryFragment_SkillTree::FindSkillTreeOfItem(SourceItem);
+	URpgSkillTreeComponent* SkillTrees = FindForActor(ActorInfo.OwnerActor.Get());
+	if (!SkillTrees)
+	{
+		SkillTrees = FindForActor(ActorInfo.AvatarActor.Get());
+	}
+	if (Tree && SkillTrees)
+	{
+		SkillTrees->AccumulateAbilityTuning(*Tree, AbilityIds, TuningTag, Accumulator);
+	}
+
+	// Runes socketed in the source item tune its abilities by their current rank, never another item's.
+	URpgInventoryFragment_Rune::AccumulateSocketedTunings(*SourceItem, AbilityIds, TuningTag, Accumulator);
+	return Accumulator.Resolve(BaseValue);
 }
 
 URpgSkillTreeComponent* URpgSkillTreeComponent::FindForActor(const AActor* Actor)

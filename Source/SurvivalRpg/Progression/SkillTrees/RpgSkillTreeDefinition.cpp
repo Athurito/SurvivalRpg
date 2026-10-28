@@ -12,6 +12,37 @@
 
 #define LOCTEXT_NAMESPACE "RpgSkillTreeDefinition"
 
+void FRpgAbilityTuningAccumulator::Apply(
+	const FRpgSkillTreeAbilityTuning& Tuning,
+	const FGameplayTagContainer& AbilityIds,
+	const FGameplayTag TuningTag)
+{
+	if (!TuningTag.IsValid() || Tuning.TuningTag != TuningTag || !FMath::IsFinite(Tuning.Value) ||
+		(Tuning.AbilityIdTag.IsValid() && !AbilityIds.HasTagExact(Tuning.AbilityIdTag)))
+	{
+		return;
+	}
+
+	switch (Tuning.Operation)
+	{
+	case ERpgSkillTreeTuningOperation::Set:
+		bHasSet = true;
+		SetValue = Tuning.Value;
+		break;
+	case ERpgSkillTreeTuningOperation::Add:
+		AddSum += Tuning.Value;
+		break;
+	case ERpgSkillTreeTuningOperation::Multiply:
+		MultiplyProduct *= Tuning.Value;
+		break;
+	}
+}
+
+float FRpgAbilityTuningAccumulator::Resolve(const float BaseValue) const
+{
+	return ((bHasSet ? SetValue : BaseValue) + AddSum) * MultiplyProduct;
+}
+
 void FRpgSkillTreeNode::GetGrantedAbilityIds(TArray<FGameplayTag>& OutAbilityIds) const
 {
 	if (!AbilitySet)

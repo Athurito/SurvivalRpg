@@ -3,9 +3,11 @@
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
+#include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeDefinition.h"
 #include "RpgInventoryFragment_Rune.generated.h"
 
 class URpgAbilitySet;
+class URpgInventoryItemInstance;
 
 /** Highest rank a rune item can reach: I, II and III. */
 inline constexpr int32 RpgRuneMaxRank = 3;
@@ -30,6 +32,14 @@ struct SURVIVALRPG_API FRpgRuneRank
 	/** Optional loose tags granted at this rank, in addition to the rune's RuneTag. Replicated with the ability system. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rune")
 	FGameplayTagContainer GrantedTags;
+
+	/**
+	 * Numeric changes this rank makes to the abilities of the item the rune is socketed in, for example Brand's burn
+	 * (Ability.Tuning.Harvest.BurnWork and .BurnDuration). They count only for abilities whose source equipment is
+	 * that item, so a rune never tunes another tool, and they combine with the item's learned skill tree tunings.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rune", meta = (TitleProperty = "TuningTag"))
+	TArray<FRpgSkillTreeAbilityTuning> AbilityTunings;
 };
 
 /**
@@ -55,6 +65,16 @@ public:
 
 	/** The rune fragment of ItemInstance's definition, or null when the item is no rune. */
 	static const URpgInventoryFragment_Rune* FindRuneOfItem(const UObject* ItemInstance);
+
+	/**
+	 * Folds the AbilityTunings of the current rank of every rune socketed in SourceItem into Accumulator. Valid on the
+	 * server and on the owning client, which both receive the socket contents.
+	 */
+	static void AccumulateSocketedTunings(
+		const URpgInventoryItemInstance& SourceItem,
+		const FGameplayTagContainer& AbilityIds,
+		FGameplayTag TuningTag,
+		FRpgAbilityTuningAccumulator& Accumulator);
 
 	/**
 	 * Identity of the rune kind, for example Rune.Brand. Talents and tools test for it; while socketed into an equipped

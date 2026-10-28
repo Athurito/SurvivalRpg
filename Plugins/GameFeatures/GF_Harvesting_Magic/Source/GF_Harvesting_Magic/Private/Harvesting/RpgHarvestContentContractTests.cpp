@@ -9,7 +9,9 @@
 #include "Engine/BlueprintGeneratedClass.h"
 #include "Engine/SCS_Node.h"
 #include "Engine/SimpleConstructionScript.h"
+#include "GameplayTags/RpgHarvestingMagicGameplayTags.h"
 #include "Harvesting/RpgHarvestAutomationTestWorld.h"
+#include "Harvesting/RpgHarvestBurn.h"
 #include "Harvesting/RpgHarvestChainComponent.h"
 #include "Harvesting/RpgHarvestProfile.h"
 #include "Harvesting/RpgHarvestableComponent.h"
@@ -45,6 +47,9 @@ namespace RpgHarvestContentContractTests
 	const TCHAR* DeadPineInstancesClassPath =
 		TEXT("/GF_Harvesting_Magic/Harvesting/Instances/BPC_HarvestInstances_DeadPine.BPC_HarvestInstances_DeadPine_C");
 	const TCHAR* BrandRuneClassPath = TEXT("/GF_Harvesting_Magic/Items/Runes/ID_Rune_Brand.ID_Rune_Brand_C");
+	const TCHAR* AxeChopAbilityClassPath = TEXT("/GF_Harvesting_Magic/GAS/Abilities/GA_Harvest_AxeChop.GA_Harvest_AxeChop_C");
+	const TCHAR* PickaxeStrikeAbilityClassPath =
+		TEXT("/GF_Harvesting_Magic/GAS/Abilities/GA_Harvest_PickaxeStrike.GA_Harvest_PickaxeStrike_C");
 
 	const FGameplayAbilitySpec* FindSpecWithId(const URpgAbilitySystemComponent& AbilitySystem, const FGameplayTag AbilityId)
 	{
@@ -478,6 +483,36 @@ bool FRpgHarvestRuneSocketContractTest::RunTest(const FString& Parameters)
 	}
 	TestTrue(TEXT("Brand has its rune identity"), Brand->RuneTag.IsValid());
 	TestEqual(TEXT("Brand reaches rank III"), Brand->GetMaxRank(), RpgRuneMaxRank);
+
+	// Every rank of Brand lights a burn, and a higher rank never burns weaker.
+	float PreviousBurnWork = 0.0f;
+	for (int32 Rank = 1; Rank <= Brand->GetMaxRank(); ++Rank)
+	{
+		FRpgAbilityTuningAccumulator BurnWork;
+		FRpgAbilityTuningAccumulator BurnDuration;
+		for (const FRpgSkillTreeAbilityTuning& Tuning : Brand->FindRank(Rank)->AbilityTunings)
+		{
+			BurnWork.Apply(Tuning, FGameplayTagContainer(), RpgHarvestingMagicGameplayTags::Ability_Tuning_Harvest_BurnWork);
+			BurnDuration.Apply(Tuning, FGameplayTagContainer(), RpgHarvestingMagicGameplayTags::Ability_Tuning_Harvest_BurnDuration);
+		}
+		TestTrue(*FString::Printf(TEXT("Brand rank %d burns"), Rank), BurnWork.Resolve(0.0f) > 0.0f && BurnDuration.Resolve(0.0f) > 0.0f);
+		TestTrue(*FString::Printf(TEXT("Brand rank %d burns at least as hard as the rank below"), Rank), BurnWork.Resolve(0.0f) >= PreviousBurnWork);
+		PreviousBurnWork = BurnWork.Resolve(0.0f);
+	}
+
+	// The axe and pickaxe swings light a burn that names Brand as its effect.
+	for (const TCHAR* SwingPath : {AxeChopAbilityClassPath, PickaxeStrikeAbilityClassPath})
+	{
+		UClass* SwingClass = LoadClass<URpgGameplayAbility_Harvest>(nullptr, SwingPath);
+		const TSubclassOf<ARpgHarvestBurn> BurnClass =
+			SwingClass ? GetDefault<URpgGameplayAbility_Harvest>(SwingClass)->GetBurnClass() : nullptr;
+		if (TestNotNull(*FString::Printf(TEXT("%s lights a burn"), SwingPath), BurnClass.Get()))
+		{
+			TestTrue(
+				*FString::Printf(TEXT("%s burns as Brand"), SwingPath),
+				GetDefault<ARpgHarvestBurn>(BurnClass)->GetProcTag() == Brand->RuneTag);
+		}
+	}
 
 	// Axe and pickaxe each carry three equal sockets that take harvesting runes and store nothing else.
 	for (const TCHAR* ToolPath : {AxeItemClassPath, PickaxeItemClassPath})
