@@ -74,6 +74,13 @@ bool FRpgWorldSaveGameMemoryRoundTripTest::RunTest(const FString& Parameters)
 	SavedTree.TreeTag = FGameplayTag::RequestGameplayTag(TEXT("SkillTree.Tree"));
 	SavedTree.UnlockedNodes.Add(FGameplayTag::RequestGameplayTag(TEXT("SkillTree.Node")));
 	SavedTree.SlotAbilityIds = {FGameplayTag::RequestGameplayTag(TEXT("Ability.Harvesting.AxeChop")), FGameplayTag(), FGameplayTag()};
+	Player.bHasRewardClaims = true;
+	FRpgRewardClaimSaveEntry& SavedClaim = Player.RewardClaims.PendingClaims.AddDefaulted_GetRef();
+	SavedClaim.ClaimId = TEXT("SkillTree.Tree.Harvesting/Mastery/3");
+	SavedClaim.Reward = TSoftObjectPtr<const URpgRewardClaimDefinition>(FSoftObjectPath(TEXT("/Game/Automation/DA_Reward.DA_Reward")));
+	SavedClaim.SourceTag = RpgTradeSkillGameplayTags::Skill_Gathering_Foraging;
+	SavedClaim.SourceLevel = 3;
+	Player.RewardClaims.ResolvedClaimIds.Add(TEXT("SkillTree.Tree.Harvesting/Mastery/2"));
 
 	const FRpgInventoryContainerHandle CarryContainer =
 		FRpgInventoryContainerHandle::MakeRoot(TEXT("Carry.Weapon1"));
@@ -153,6 +160,17 @@ bool FRpgWorldSaveGameMemoryRoundTripTest::RunTest(const FString& Parameters)
 			TestEqual(TEXT("Learned nodes survive serialization"), RestoredPlayer->SkillTreeStates[0].UnlockedNodes, SavedTree.UnlockedNodes);
 			TestEqual(TEXT("Q/E/R assignments survive serialization"), RestoredPlayer->SkillTreeStates[0].SlotAbilityIds, SavedTree.SlotAbilityIds);
 		}
+		TestTrue(TEXT("Reward claim presence survives serialization"), RestoredPlayer->bHasRewardClaims);
+		TestEqual(TEXT("Exactly one open reward claim survives serialization"), RestoredPlayer->RewardClaims.PendingClaims.Num(), 1);
+		if (RestoredPlayer->RewardClaims.PendingClaims.Num() == 1)
+		{
+			const FRpgRewardClaimSaveEntry& RestoredClaim = RestoredPlayer->RewardClaims.PendingClaims[0];
+			TestEqual(TEXT("Reward claim id survives serialization"), RestoredClaim.ClaimId, SavedClaim.ClaimId);
+			TestTrue(TEXT("Reward asset path survives serialization"), RestoredClaim.Reward.ToSoftObjectPath() == SavedClaim.Reward.ToSoftObjectPath());
+			TestEqual(TEXT("Reward source survives serialization"), RestoredClaim.SourceTag, SavedClaim.SourceTag);
+			TestEqual(TEXT("Reward source level survives serialization"), RestoredClaim.SourceLevel, 3);
+		}
+		TestTrue(TEXT("Resolved reward claim ids survive serialization"), RestoredPlayer->RewardClaims.ResolvedClaimIds == Player.RewardClaims.ResolvedClaimIds);
 
 		const FRpgInventorySlotAddress& RestoredCarryAddress = RestoredPlayer->QuickAccessBindings[0].SlotAddress;
 		TestEqual(

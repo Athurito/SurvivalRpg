@@ -47,6 +47,7 @@
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutComponent.h"
 #include "SurvivalRpg/Progression/Player/RpgPlayerProgressionComponent.h"
+#include "SurvivalRpg/Progression/Rewards/RpgRewardClaimComponent.h"
 #include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeComponent.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillProgressionComponent.h"
 #include "SurvivalRpg/System/RpgAssetManager.h"
@@ -1453,6 +1454,26 @@ bool ARpgGameModeBase::TryRestorePlayerSaveData(APlayerController* PC, const FRp
 		}
 	}
 
+	// Reward claims follow the skill trees; milestones the player reached but never received are granted afterwards.
+	if (URpgRewardClaimComponent* RewardClaims = PlayerState->GetRewardClaimComponent())
+	{
+		if (SaveData.bHasRewardClaims)
+		{
+			if (!RewardClaims->ImportSaveData(SaveData.RewardClaims))
+			{
+				return false;
+			}
+		}
+		else
+		{
+			RewardClaims->ResetToDefaults();
+		}
+	}
+	if (URpgSkillTreeComponent* SkillTrees = PlayerState->GetSkillTreeComponent())
+	{
+		SkillTrees->GrantReachedMasteryMilestones();
+	}
+
 	return true;
 }
 
@@ -1522,6 +1543,11 @@ void ARpgGameModeBase::CapturePlayerSaveData(APlayerController* PC)
 	{
 		SaveData.SkillTreeStates = SkillTrees->ExportSkillTreeStates();
 		SaveData.bHasSkillTreeProgression = true;
+	}
+	if (const URpgRewardClaimComponent* RewardClaims = PlayerState->GetRewardClaimComponent())
+	{
+		SaveData.RewardClaims = RewardClaims->ExportSaveData();
+		SaveData.bHasRewardClaims = true;
 	}
 }
 

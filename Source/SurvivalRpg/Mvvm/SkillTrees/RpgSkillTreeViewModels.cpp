@@ -12,6 +12,8 @@
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Progression/Player/RpgPlayerProgressionComponent.h"
+#include "SurvivalRpg/Progression/Rewards/RpgRewardClaimComponent.h"
+#include "SurvivalRpg/Progression/Rewards/RpgRewardClaimDefinition.h"
 #include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeComponent.h"
 #include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeDefinition.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillProgressionComponent.h"
@@ -712,6 +714,7 @@ void URpgSkillProgressionViewModel::BindPlayerState(APlayerState* InPlayerState)
 		ObservedSkillTrees = InPlayerState ? InPlayerState->FindComponentByClass<URpgSkillTreeComponent>() : nullptr;
 		ObservedTradeSkills = InPlayerState ? InPlayerState->FindComponentByClass<URpgTradeSkillProgressionComponent>() : nullptr;
 		ObservedCharacter = InPlayerState ? InPlayerState->FindComponentByClass<URpgPlayerProgressionComponent>() : nullptr;
+		ObservedRewardClaims = InPlayerState ? InPlayerState->FindComponentByClass<URpgRewardClaimComponent>() : nullptr;
 		Subscribe();
 	}
 
@@ -769,6 +772,142 @@ void URpgSkillProgressionViewModel::HandleCharacterLevelChanged(int32 NewLevel)
 void URpgSkillProgressionViewModel::HandleCharacterXPChanged(float CurrentXP, float XPToNextLevel)
 {
 	QueueRefresh();
+}
+
+int32 URpgSkillProgressionViewModel::GetRewardChoiceCount() const
+{
+	int32 Count = 0;
+	for (const FRpgRewardClaimView& Claim : RewardClaims)
+	{
+		Count += Claim.OptionLabels.Num();
+	}
+	return Count;
+}
+
+bool URpgSkillProgressionViewModel::ResolveRewardChoice(
+	const int32 ChoiceIndex,
+	int32& OutClaimIndex,
+	int32& OutOptionIndex) const
+{
+	int32 Remaining = ChoiceIndex;
+	for (int32 ClaimIndex = 0; ClaimIndex < RewardClaims.Num() && Remaining >= 0; ++ClaimIndex)
+	{
+		const int32 OptionCount = RewardClaims[ClaimIndex].OptionLabels.Num();
+		if (Remaining < OptionCount)
+		{
+			OutClaimIndex = ClaimIndex;
+			OutOptionIndex = Remaining;
+			return true;
+		}
+		Remaining -= OptionCount;
+	}
+	return false;
+}
+
+FText URpgSkillProgressionViewModel::GetRewardChoiceLabel(const int32 ChoiceIndex) const
+{
+	int32 ClaimIndex = INDEX_NONE;
+	int32 OptionIndex = INDEX_NONE;
+	if (!ResolveRewardChoice(ChoiceIndex, ClaimIndex, OptionIndex))
+	{
+		return FText::GetEmpty();
+	}
+	const FRpgRewardClaimView& Claim = RewardClaims[ClaimIndex];
+	return Claim.SourceText.IsEmpty()
+		? Claim.OptionLabels[OptionIndex]
+		: FText::Format(
+			NSLOCTEXT("RpgSkillTreeViewModels", "RewardChoiceWithSource", "{0} ({1})"),
+			Claim.OptionLabels[OptionIndex],
+			Claim.SourceText);
+}
+
+void URpgSkillProgressionViewModel::ClaimRewardChoice(const int32 ChoiceIndex)
+{
+	int32 ClaimIndex = INDEX_NONE;
+	int32 OptionIndex = INDEX_NONE;
+	URpgRewardClaimComponent* Claims = ObservedRewardClaims.Get();
+	if (Claims && ResolveRewardChoice(ChoiceIndex, ClaimIndex, OptionIndex))
+	{
+		Claims->RequestClaimReward(RewardClaims[ClaimIndex].ClaimId, OptionIndex);
+	}
+}
+
+void URpgSkillProgressionViewModel::HandleRewardClaimsChanged()
+{
+	QueueRefresh();
+}
+
+void URpgSkillProgressionViewModel::HandleRewardClaimResult(const FName ClaimId, const ERpgRewardClaimResult Result)
+{
+	FText Feedback;
+	switch (Result)
+	{
+	case ERpgRewardClaimResult::Claimed:
+		break;
+	case ERpgRewardClaimResult::NoRoom:
+		Feedback = NSLOCTEXT("RpgSkillTreeViewModels", "RewardNoRoom", "No room in your inventory. The reward stays open.");
+		break;
+	case ERpgRewardClaimResult::UnknownClaim:
+		Feedback = NSLOCTEXT("RpgSkillTreeViewModels", "RewardUnknown", "This reward was already claimed.");
+		break;
+	case ERpgRewardClaimResult::InvalidOption:
+		Feedback = NSLOCTEXT("RpgSkillTreeViewModels", "RewardInvalidOption", "This choice is not available.");
+		break;
+	default:
+		Feedback = NSLOCTEXT("RpgSkillTreeViewModels", "RewardRejected", "The reward could not be claimed.");
+		break;
+	}
+	UE_MVVM_SET_PROPERTY_VALUE(RewardFeedbackText, Feedback);
+	OnProgressionChanged.Broadcast();
+}
+
+void URpgSkillProgressionViewModel::RebuildRewardClaims()
+{
+	TArray<FRpgRewardClaimView> NewClaims;
+	if (const URpgRewardClaimComponent* Claims = ObservedRewardClaims.Get())
+	{
+		const URpgTradeSkillProgressionComponent* TradeSkills = ObservedTradeSkills.Get();
+		for (const FRpgRewardClaim& Claim : Claims->GetPendingClaims())
+		{
+			const URpgRewardClaimDefinition* Reward = Claim.Reward;
+			if (!Reward)
+			{
+				continue;
+			}
+
+			FRpgRewardClaimView& View = NewClaims.AddDefaulted_GetRef();
+			View.ClaimId = Claim.ClaimId;
+			View.Title = Reward->DisplayName;
+			if (Claim.SourceTag.IsValid())
+			{
+				const FText SourceName = TradeSkills
+					? TradeSkills->GetSkillDisplayName(Claim.SourceTag)
+					: FText::FromName(Claim.SourceTag.GetTagLeafName());
+				View.SourceText = Claim.SourceLevel > 0
+					? FText::Format(NSLOCTEXT("RpgSkillTreeViewModels", "RewardSourceLevel", "{0} level {1}"), SourceName, Claim.SourceLevel)
+					: SourceName;
+			}
+			if (Reward->IsChoice())
+			{
+				for (const FRpgRewardClaimOption& Option : Reward->Options)
+				{
+					const URpgInventoryItemDefinition* Item = Option.ItemDefinition
+						? GetDefault<URpgInventoryItemDefinition>(Option.ItemDefinition)
+						: nullptr;
+					const FText ItemName = Item ? Item->DisplayName : FText::GetEmpty();
+					View.OptionLabels.Add(Option.Count > 1
+						? FText::Format(NSLOCTEXT("RpgSkillTreeViewModels", "RewardOptionCount", "{0} {1}"), Option.Count, ItemName)
+						: ItemName);
+				}
+			}
+			else
+			{
+				// A loot pool has one button, named after the reward.
+				View.OptionLabels.Add(Reward->DisplayName);
+			}
+		}
+	}
+	UE_MVVM_SET_PROPERTY_VALUE(RewardClaims, NewClaims);
 }
 
 void URpgSkillProgressionViewModel::ToggleRuneHighlight(const int32 SlotIndex)
@@ -1015,6 +1154,11 @@ void URpgSkillProgressionViewModel::Subscribe()
 		Character->OnLevelChanged.AddUniqueDynamic(this, &ThisClass::HandleCharacterLevelChanged);
 		Character->OnXPChanged.AddUniqueDynamic(this, &ThisClass::HandleCharacterXPChanged);
 	}
+	if (URpgRewardClaimComponent* Claims = ObservedRewardClaims.Get())
+	{
+		Claims->OnClaimsChanged.AddUniqueDynamic(this, &ThisClass::HandleRewardClaimsChanged);
+		Claims->OnClaimResult.AddUniqueDynamic(this, &ThisClass::HandleRewardClaimResult);
+	}
 
 	// Sockets and the tool in hand decide which learned talents sleep and what the rune bar shows.
 	if (UWorld* World = ObservedPlayerState.IsValid() ? ObservedPlayerState->GetWorld() : nullptr)
@@ -1048,6 +1192,11 @@ void URpgSkillProgressionViewModel::Unsubscribe()
 	{
 		Character->OnLevelChanged.RemoveDynamic(this, &ThisClass::HandleCharacterLevelChanged);
 		Character->OnXPChanged.RemoveDynamic(this, &ThisClass::HandleCharacterXPChanged);
+	}
+	if (URpgRewardClaimComponent* Claims = ObservedRewardClaims.Get())
+	{
+		Claims->OnClaimsChanged.RemoveDynamic(this, &ThisClass::HandleRewardClaimsChanged);
+		Claims->OnClaimResult.RemoveDynamic(this, &ThisClass::HandleRewardClaimResult);
 	}
 }
 
@@ -1178,6 +1327,7 @@ void URpgSkillProgressionViewModel::Rebuild()
 		}
 	}
 	UpdateSelection();
+	RebuildRewardClaims();
 
 	OnProgressionChanged.Broadcast();
 }

@@ -15,6 +15,7 @@
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgInventoryCapacitySet.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Progression/Player/RpgPlayerProgressionComponent.h"
+#include "SurvivalRpg/Progression/Rewards/RpgRewardClaimComponent.h"
 #include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeComponent.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillProgressionComponent.h"
 #include "SurvivalRpg/Runes/RpgInventoryFragment_Rune.h"
@@ -24,6 +25,7 @@ ARpgPlayerState::ARpgPlayerState()
 	PlayerProgressionComponent = CreateDefaultSubobject<URpgPlayerProgressionComponent>(TEXT("PlayerProgressionComponent"));
 	TradeSkillProgressionComponent = CreateDefaultSubobject<URpgTradeSkillProgressionComponent>(TEXT("TradeSkillProgressionComponent"));
 	SkillTreeComponent = CreateDefaultSubobject<URpgSkillTreeComponent>(TEXT("SkillTreeComponent"));
+	RewardClaimComponent = CreateDefaultSubobject<URpgRewardClaimComponent>(TEXT("RewardClaimComponent"));
 	InventoryCapacitySet = CreateDefaultSubobject<URpgInventoryCapacitySet>(TEXT("InventoryCapacitySet"));
 	InventoryManagerComponent = CreateDefaultSubobject<URpgInventoryManagerComponent>(TEXT("InventoryManagerComponent"));
 	InventoryManagerComponent->SetCapacityMode(ERpgInventoryCapacityMode::Unlimited);

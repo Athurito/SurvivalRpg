@@ -4,6 +4,7 @@
 #include "GameplayTagContainer.h"
 #include "MVVMViewModelBase.h"
 #include "SurvivalRpg/Mvvm/RpgViewModelInvalidationQueue.h"
+#include "SurvivalRpg/Progression/Rewards/RpgRewardClaimComponent.h"
 #include "SurvivalRpg/Progression/Skills/Data/RpgTradeSkillState.h"
 #include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeComponent.h"
 #include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeDefinition.h"
@@ -15,11 +16,52 @@ class APlayerController;
 class APlayerState;
 class UTexture2D;
 class URpgPlayerProgressionComponent;
+class URpgRewardClaimComponent;
 class URpgSkillTreeDefinition;
 class URpgSkillTreeViewModel;
 class URpgTradeSkillProgressionComponent;
 struct FRpgEquipmentLoadoutSlotsChangedMessage;
 struct FRpgInventoryChangeMessage;
+
+/** One open guaranteed reward with its choices, for the rewards panel. Derived from the reward claims; UI read-only. */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgRewardClaimView
+{
+	GENERATED_BODY()
+
+	/** Id the claim command sends back to the server. */
+	UPROPERTY(BlueprintReadOnly, Category = "Rewards")
+	FName ClaimId;
+
+	/** Reward name, for example "Rune of your choice". */
+	UPROPERTY(BlueprintReadOnly, Category = "Rewards")
+	FText Title;
+
+	/** Where it came from, for example "Harvesting level 3"; empty without a source. */
+	UPROPERTY(BlueprintReadOnly, Category = "Rewards")
+	FText SourceText;
+
+	/** One label per button: an item name such as "Brand" or "3 Ore", or the reward's name for a loot pool. */
+	UPROPERTY(BlueprintReadOnly, Category = "Rewards")
+	TArray<FText> OptionLabels;
+
+	bool operator==(const FRpgRewardClaimView& Other) const
+	{
+		if (ClaimId != Other.ClaimId || !Title.EqualTo(Other.Title) || !SourceText.EqualTo(Other.SourceText) ||
+			OptionLabels.Num() != Other.OptionLabels.Num())
+		{
+			return false;
+		}
+		for (int32 Index = 0; Index < OptionLabels.Num(); ++Index)
+		{
+			if (!OptionLabels[Index].EqualTo(Other.OptionLabels[Index]))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+};
 
 /** One socket of the tool in hand, for the rune bar above the mastery map. Derived from the inventory; UI read-only. */
 USTRUCT(BlueprintType)
@@ -781,6 +823,28 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Skill Tree|Runes")
 	bool IsRuneSlotHighlighted(int32 SlotIndex) const;
 
+	/** Number of open guaranteed rewards. */
+	UFUNCTION(BlueprintPure, Category = "Skill Tree|Rewards")
+	int32 GetRewardClaimCount() const { return RewardClaims.Num(); }
+
+	/**
+	 * Number of choices over all open rewards, one button each: the options of every reward in grant order, or one
+	 * for a loot pool.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Skill Tree|Rewards")
+	int32 GetRewardChoiceCount() const;
+
+	/** Label of choice ChoiceIndex with its source, for example "Brand (Harvesting level 3)"; empty outside. */
+	UFUNCTION(BlueprintPure, Category = "Skill Tree|Rewards")
+	FText GetRewardChoiceLabel(int32 ChoiceIndex) const;
+
+	/** Asks the server to claim the reward of choice ChoiceIndex with that choice; the outcome updates RewardFeedbackText. */
+	UFUNCTION(BlueprintCallable, Category = "Skill Tree|Rewards")
+	void ClaimRewardChoice(int32 ChoiceIndex);
+
+	const TArray<FRpgRewardClaimView>& GetRewardClaims() const { return RewardClaims; }
+	const FText& GetRewardFeedbackText() const { return RewardFeedbackText; }
+
 	bool HasRuneTool() const { return bHasRuneTool; }
 	const TArray<FRpgSkillTreeRuneSlotView>& GetRuneSlots() const { return RuneSlots; }
 	FGameplayTag GetHighlightedRuneTag() const { return HighlightedRuneTag; }
@@ -856,6 +920,14 @@ protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Runes", meta = (AllowPrivateAccess = "true"))
 	FGameplayTag HighlightedRuneTag;
 
+	/** Open guaranteed rewards in grant order. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Rewards", meta = (AllowPrivateAccess = "true"))
+	TArray<FRpgRewardClaimView> RewardClaims;
+
+	/** Outcome of the last claim, for example "No room in your inventory"; empty after a success. Local UI state. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Rewards", meta = (AllowPrivateAccess = "true"))
+	FText RewardFeedbackText;
+
 private:
 	UFUNCTION()
 	void HandleSkillTreeChanged(FGameplayTag TreeTag);
@@ -871,6 +943,18 @@ private:
 
 	UFUNCTION()
 	void HandleTreeViewChanged();
+
+	UFUNCTION()
+	void HandleRewardClaimsChanged();
+
+	UFUNCTION()
+	void HandleRewardClaimResult(FName ClaimId, ERpgRewardClaimResult Result);
+
+	/** Rebuilds RewardClaims from the open claims. */
+	void RebuildRewardClaims();
+
+	/** Finds the reward and option of choice ChoiceIndex; false outside the choices. */
+	bool ResolveRewardChoice(int32 ChoiceIndex, int32& OutClaimIndex, int32& OutOptionIndex) const;
 
 	/** Follows the OnTreeChanged of exactly Trees. */
 	void ObserveTrees(TConstArrayView<TObjectPtr<URpgSkillTreeViewModel>> Trees);
@@ -897,6 +981,7 @@ private:
 	TWeakObjectPtr<URpgSkillTreeComponent> ObservedSkillTrees;
 	TWeakObjectPtr<URpgTradeSkillProgressionComponent> ObservedTradeSkills;
 	TWeakObjectPtr<URpgPlayerProgressionComponent> ObservedCharacter;
+	TWeakObjectPtr<URpgRewardClaimComponent> ObservedRewardClaims;
 	TArray<TWeakObjectPtr<URpgSkillTreeViewModel>> ObservedTrees;
 	FGameplayTag RequestedTreeTag;
 	FRpgViewModelInvalidationQueue RefreshQueue;

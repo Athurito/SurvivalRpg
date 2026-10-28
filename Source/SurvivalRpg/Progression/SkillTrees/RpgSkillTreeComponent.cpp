@@ -13,6 +13,7 @@
 #include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_SkillTree.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
+#include "SurvivalRpg/Progression/Rewards/RpgRewardClaimComponent.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillProgressionComponent.h"
 #include "SurvivalRpg/Runes/RpgInventoryFragment_Rune.h"
 #include "SurvivalRpg/SurvivalRpg.h"
@@ -174,6 +175,42 @@ int32 URpgSkillTreeComponent::GetEarnedPoints(const FGameplayTag TreeTag) const
 {
 	const URpgSkillTreeDefinition* Tree = FindSkillTree(TreeTag);
 	return Tree ? Tree->GetEarnedPointsForLevel(GetMasterySkillLevel(*Tree)) : 0;
+}
+
+int32 URpgSkillTreeComponent::GrantReachedMasteryMilestones(const FGameplayTag MasterySkillTag)
+{
+	const AActor* Owner = GetOwner();
+	URpgRewardClaimComponent* Claims = Owner && Owner->HasAuthority()
+		? Owner->FindComponentByClass<URpgRewardClaimComponent>()
+		: nullptr;
+	if (!Claims)
+	{
+		return 0;
+	}
+
+	int32 GrantedCount = 0;
+	for (const TObjectPtr<const URpgSkillTreeDefinition>& Tree : KnownTrees)
+	{
+		if (!Tree || (MasterySkillTag.IsValid() && Tree->MasterySkillTag != MasterySkillTag))
+		{
+			continue;
+		}
+
+		const int32 MasteryLevel = GetMasterySkillLevel(*Tree);
+		for (const FRpgSkillTreeMasteryMilestone& Milestone : Tree->MasteryMilestones)
+		{
+			if (Milestone.MasteryLevel <= MasteryLevel &&
+				Claims->GrantClaim(
+					Tree->GetMilestoneClaimId(Milestone.MasteryLevel),
+					Milestone.Reward,
+					Tree->MasterySkillTag,
+					Milestone.MasteryLevel))
+			{
+				++GrantedCount;
+			}
+		}
+	}
+	return GrantedCount;
 }
 
 int32 URpgSkillTreeComponent::GetSpentPoints(const FGameplayTag TreeTag) const

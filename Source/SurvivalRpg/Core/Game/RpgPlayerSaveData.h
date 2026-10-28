@@ -6,6 +6,7 @@
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryGraphTypes.h"
 #include "SurvivalRpg/Progression/Player/Data/RpgPlayerProgressionState.h"
+#include "SurvivalRpg/Progression/Rewards/RpgRewardClaimComponent.h"
 #include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeComponent.h"
 #include "SurvivalRpg/Progression/Skills/Data/RpgTradeSkillState.h"
 
@@ -34,8 +35,11 @@ struct SURVIVALRPG_API FRpgPlayerSaveData
 	/** First schema that persists weapon and tool skill trees. Older profiles load with empty trees. */
 	static constexpr int32 SkillTreeSchemaVersion = 4;
 
+	/** First schema that can carry guaranteed reward claims. */
+	static constexpr int32 RewardClaimSchemaVersion = 5;
+
 	/** Current per-player schema emitted by this build. */
-	static constexpr int32 CurrentSchemaVersion = SkillTreeSchemaVersion;
+	static constexpr int32 CurrentSchemaVersion = RewardClaimSchemaVersion;
 
 	/** Selects the migration/validation path before any runtime player state is changed. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save", meta = (ClampMin = "1", UIMin = "1"))
@@ -89,6 +93,14 @@ struct SURVIVALRPG_API FRpgPlayerSaveData
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save|Progression")
 	TArray<FRpgSkillTreeState> SkillTreeStates;
 
+	/** True when RewardClaims contains a captured authoritative reward claim snapshot. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save|Progression")
+	bool bHasRewardClaims = false;
+
+	/** Open guaranteed rewards and the ids already claimed, restored after the skill trees. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Rpg|Save|Progression")
+	FRpgRewardClaimSaveData RewardClaims;
+
 	/** Lightweight envelope validation; the inventory manager performs the authoritative deep graph validation. */
 	bool IsSchemaSupported() const
 	{
@@ -119,10 +131,16 @@ struct SURVIVALRPG_API FRpgPlayerSaveData
 			return false;
 		}
 
+		if (!URpgRewardClaimComponent::ValidateSaveData(RewardClaims))
+		{
+			return false;
+		}
+
 		return SchemaVersion >= MinimumSupportedSchemaVersion &&
 			SchemaVersion <= CurrentSchemaVersion &&
 			(!bHasPlayerProgression || SchemaVersion >= ProgressionSchemaVersion) &&
 			(!bHasTradeSkillProgression || SchemaVersion >= ProgressionSchemaVersion) &&
-			(!bHasSkillTreeProgression || SchemaVersion >= SkillTreeSchemaVersion);
+			(!bHasSkillTreeProgression || SchemaVersion >= SkillTreeSchemaVersion) &&
+			(!bHasRewardClaims || SchemaVersion >= RewardClaimSchemaVersion);
 	}
 };

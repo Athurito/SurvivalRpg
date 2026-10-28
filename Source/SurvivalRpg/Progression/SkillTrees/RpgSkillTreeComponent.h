@@ -327,6 +327,14 @@ public:
 	/** Clears every tree, as for profiles from saves before skill trees existed. */
 	void ResetSkillTreesToDefaults();
 
+	/**
+	 * Grants the reward of every mastery milestone the player has reached in every known tree of MasterySkillTag, or of
+	 * every tree when the tag is empty, to the owner's URpgRewardClaimComponent. Server only. Milestones already held
+	 * or claimed are skipped, so the trade skills call it on each level-up and the host after restoring a player.
+	 * Returns how many claims were newly granted.
+	 */
+	int32 GrantReachedMasteryMilestones(FGameplayTag MasterySkillTag = FGameplayTag());
+
 	/** Validates pointer-free save state without mutating runtime progress. */
 	static bool ValidateSkillTreeStates(const TArray<FRpgSkillTreeState>& InStates, FString* OutError = nullptr);
 
