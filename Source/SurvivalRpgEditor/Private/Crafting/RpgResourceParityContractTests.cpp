@@ -8,17 +8,21 @@
 #include "Interfaces/IPluginManager.h"
 #include "Misc/AutomationTest.h"
 #include "Modules/ModuleManager.h"
+#include "Portals/RpgPortalEncounterDefinition.h"
 #include "SurvivalRpg/Crafting/RpgCraftingRecipeDefinition.h"
 #include "SurvivalRpg/Crafting/RpgCraftingStationActor.h"
 #include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
 #include "SurvivalRpg/Inventory/Loot/RpgLootTable.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
+#include "SurvivalRpg/Progression/Rewards/RpgRewardClaimDefinition.h"
 
 namespace RpgResourceParityContractTests
 {
 	const TCHAR* ParityBenchClassPath =
 		TEXT("/GF_Dev_Sandbox/ResourceParity/BP_CraftingStation_ParityBench.BP_CraftingStation_ParityBench_C");
 	const TCHAR* KilnRecipeSetPath = TEXT("/GF_Harvesting_Magic/Crafting/DA_RecipeSet_Kiln.DA_RecipeSet_Kiln");
+	const TCHAR* RootGroveEncounterPath = TEXT("/GF_Dev_Sandbox/RootGrove/DA_PortalEncounter_RootGrove.DA_PortalEncounter_RootGrove");
+	const TCHAR* BrandRuneClassPath = TEXT("/GF_Harvesting_Magic/Items/Runes/ID_Rune_Brand.ID_Rune_Brand_C");
 
 	// The small ingredient pool that every combat style and the build target draw from.
 	const TCHAR* PoolMaterialPaths[] = {
@@ -184,6 +188,37 @@ bool FRpgResourceParityPoolContractTest::RunTest(const FString& Parameters)
 			*FString::Printf(TEXT("%s is harvested or refined from the pool"), *GetNameSafe(Material)),
 			IsHarvested(Profiles, Material) || ProducesFrom(KilnRecipes, Material, Pool));
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgResourceParityPortalRewardContractTest,
+	"SurvivalRpg.Portals.Content.ResourceParityPortalRewardsARune",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgResourceParityPortalRewardContractTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgResourceParityContractTests;
+
+	// Closing the playtest portal guarantees each participant a rune of their choice.
+	const URpgPortalEncounterDefinition* Encounter = LoadObject<URpgPortalEncounterDefinition>(nullptr, RootGroveEncounterPath);
+	const UClass* Brand = LoadClass<URpgInventoryItemDefinition>(nullptr, BrandRuneClassPath);
+	if (!TestNotNull(TEXT("The Root Grove encounter loads"), Encounter) || !TestNotNull(TEXT("Brand loads"), Brand))
+	{
+		return false;
+	}
+	const URpgRewardClaimDefinition* Reward = Encounter->CompletionReward;
+	if (!TestNotNull(TEXT("The Root Grove encounter has a completion reward"), Reward))
+	{
+		return false;
+	}
+	TestTrue(TEXT("The completion reward is valid"), Reward->HasValidConfiguration());
+	TestTrue(TEXT("The completion reward is a choice that offers Brand"), Reward->IsChoice() &&
+		Reward->Options.ContainsByPredicate([Brand](const FRpgRewardClaimOption& Option)
+		{
+			return Option.ItemDefinition == Brand;
+		}));
+	TestTrue(TEXT("Rewards still need the realm boss"), Encounter->bRewardsRequireBossDefeat);
 	return true;
 }
 
