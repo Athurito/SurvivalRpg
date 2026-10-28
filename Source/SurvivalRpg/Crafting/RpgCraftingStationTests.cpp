@@ -28,6 +28,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Misc/AutomationTest.h"
+#include "Misc/ScopeExit.h"
 #include "Templates/UnrealTemplate.h"
 #include "TimerManager.h"
 #include "UObject/StrongObjectPtr.h"
@@ -668,6 +669,177 @@ bool FRpgCraftingRuneCopyTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("The crafted rune has its own identity"), Crafted->GetItemId() != FoundRune->GetItemId());
 	TestEqual(TEXT("The crafted rune starts at rank I"), Crafted->GetRuneRank(), 1);
 	TestEqual(TEXT("The found rune keeps its rank"), FoundRune->GetRuneRank(), 2);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgCraftingRuneWorkTest,
+	"SurvivalRpg.Crafting.RuneWork.UpgradeAndSalvageTheChosenRune",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCraftingRuneWorkTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCraftingStationTests;
+	ConfigureRuneAutomationTestDefinitions();
+	FScopedCraftingWorld Fixture;
+	if (!Fixture.Initialize(*this)) { return false; }
+	URpgCraftingStationComponent* Station = Fixture.GetStation();
+	UWorld* World = Station->GetWorld();
+	AActor* Requester = Fixture.GetRequestingController();
+	ARpgGameStateBase* GameState = World->SpawnActor<ARpgGameStateBase>();
+	World->SetGameState(GameState);
+
+	const TSubclassOf<URpgInventoryItemDefinition> Material = URpgInventoryAutomationTestMaterialDefinition::StaticClass();
+	const TSubclassOf<URpgInventoryItemDefinition> Essence = URpgInventoryAutomationTestStackItemDefinition::StaticClass();
+	const TSubclassOf<URpgInventoryItemDefinition> RuneDefinition = URpgRuneAutomationTestRuneDefinition::StaticClass();
+	auto Costs = [Material](const int32 Count)
+	{
+		FRpgCraftingResourceCost Cost;
+		Cost.ItemDefinition = Material;
+		Cost.Count = Count;
+		return TArray<FRpgCraftingResourceCost>{Cost};
+	};
+	auto Outputs = [Essence](const int32 Count)
+	{
+		FRpgCraftingOutputItem Output;
+		Output.ItemDefinition = Essence;
+		Output.Count = Count;
+		return TArray<FRpgCraftingOutputItem>{Output};
+	};
+	// Rank I salvages into two different items, more cells than removing the rune frees.
+	TArray<FRpgCraftingOutputItem> RankOneOutputs = Outputs(2);
+	RankOneOutputs.Append(Outputs(1));
+	RankOneOutputs.Last().ItemDefinition = URpgInventoryAutomationTestUnitItemDefinition::StaticClass();
+	URpgRuneAutomationTestRuneDefinition::SetRankWork(1, {}, RankOneOutputs);
+	URpgRuneAutomationTestRuneDefinition::SetRankWork(2, Costs(2), Outputs(5));
+	URpgRuneAutomationTestRuneDefinition::SetRankWork(3, Costs(3), Outputs(9));
+	ON_SCOPE_EXIT
+	{
+		for (int32 Rank = 1; Rank <= 3; ++Rank)
+		{
+			URpgRuneAutomationTestRuneDefinition::SetRankWork(Rank, {}, {});
+		}
+	};
+
+	URpgInventoryManagerComponent* Player = Fixture.CreatePlayerInventory();
+	FRpgInventoryGridSize PlayerGrid;
+	PlayerGrid.Width = 3;
+	PlayerGrid.Height = 1;
+	Player->SetDefaultGridSize(PlayerGrid);
+	URpgInventoryItemInstance* Kept = Player->AddItemDefinition(RuneDefinition, 1);
+	URpgInventoryItemInstance* Chosen = Player->AddItemDefinition(RuneDefinition, 1);
+	URpgInventoryItemInstance* PlayerFiller = Player->AddItemDefinition(URpgInventoryAutomationTestUnitItemDefinition::StaticClass(), 1);
+	if (!TestNotNull(TEXT("The kept rune exists"), Kept) || !TestNotNull(TEXT("The chosen rune exists"), Chosen) ||
+		!TestNotNull(TEXT("A filler fills the player's inventory"), PlayerFiller)) { return false; }
+
+	TestEqual(TEXT("A station without rune work refuses"), Station->UpgradeRune(Requester, Chosen->GetItemId()), ERpgRuneWorkResult::NotOffered);
+	FBoolProperty* OffersRuneWork = FindFProperty<FBoolProperty>(URpgCraftingStationComponent::StaticClass(), TEXT("bOffersRuneWork"));
+	if (!TestNotNull(TEXT("The station has a rune work switch"), OffersRuneWork)) { return false; }
+	OffersRuneWork->SetPropertyValue_InContainer(Station, true);
+
+	// Only a full one-cell chest is connected and the player's inventory is full: salvage has no room and keeps the rune.
+	ARpgInventoryContainerActor* Tiny = Fixture.CreateChest(1, 1);
+	if (!Tiny || !Tiny->GetInventoryManager()->AddItemDefinition(URpgInventoryAutomationTestUnitItemDefinition::StaticClass(), 1)) { return false; }
+	TestEqual(TEXT("Salvage without room is refused"), Station->SalvageRune(Requester, Kept->GetItemId()), ERpgRuneWorkResult::NoRoom);
+	TestTrue(TEXT("The rune stays without room"), Player->ContainsItemInstance(Kept));
+	if (!TestTrue(TEXT("The filler leaves"), Player->ConsumeItemById(PlayerFiller->GetItemId(), 1).IsSuccess())) { return false; }
+	TestEqual(TEXT("Without materials the upgrade is refused"), Station->UpgradeRune(Requester, Chosen->GetItemId()), ERpgRuneWorkResult::MissingMaterials);
+	TestEqual(TEXT("A refused upgrade keeps the rank"), Chosen->GetRuneRank(), 1);
+
+	ARpgInventoryContainerActor* Chest = Fixture.CreateChest(4, 4);
+	if (!Chest || !Chest->GetInventoryManager()->AddItemDefinition(Material, 3)) { return false; }
+	TestEqual(TEXT("An unknown rune is refused"), Station->UpgradeRune(Requester, FRpgInventoryItemId::NewId()), ERpgRuneWorkResult::NotFound);
+	TestEqual(TEXT("The chosen rune is upgraded"), Station->UpgradeRune(Requester, Chosen->GetItemId()), ERpgRuneWorkResult::Done);
+	TestEqual(TEXT("The chosen rune reaches rank II"), Chosen->GetRuneRank(), 2);
+	TestEqual(TEXT("The other rune keeps rank I"), Kept->GetRuneRank(), 1);
+	TestEqual(TEXT("Rank II's cost is paid from the chest"), CountOf(Chest, Material), 1);
+	TestEqual(TEXT("Rank III costs more than the chest holds"), Station->UpgradeRune(Requester, Chosen->GetItemId()), ERpgRuneWorkResult::MissingMaterials);
+	TestEqual(TEXT("Insufficient materials change nothing"), Chosen->GetRuneRank(), 2);
+	TestEqual(TEXT("Insufficient materials take nothing"), CountOf(Chest, Material), 1);
+	Chest->GetInventoryManager()->AddItemDefinition(Material, 2);
+	TestEqual(TEXT("The chosen rune reaches rank III"), Station->UpgradeRune(Requester, Chosen->GetItemId()), ERpgRuneWorkResult::Done);
+	TestEqual(TEXT("A rune at rank III cannot rise further"), Station->EvaluateRuneUpgrade(Requester, Chosen->GetItemId()), ERpgRuneWorkResult::MaxRank);
+
+	// Salvage returns the rank's outputs and keeps what the world knows.
+	URpgCraftingRecipeDefinition* Recipe = Fixture.CreateRecipe();
+	Recipe->bUnlockedByDefault = false;
+	Recipe->RecipeUnlockTag = FGameplayTag::RequestGameplayTag(TEXT("Recipe.AutomationRune.A"));
+	GameState->GetRecipeUnlockComponent()->UnlockRecipe(Recipe);
+	TestEqual(TEXT("The chosen rune is salvaged"), Station->SalvageRune(Requester, Chosen->GetItemId()), ERpgRuneWorkResult::Done);
+	TestFalse(TEXT("The salvaged rune is gone"), Player->ContainsItemInstance(Chosen));
+	TestEqual(TEXT("Rank III's outputs arrive in the chest"), CountOf(Chest, Essence), 9);
+	TestTrue(TEXT("The kept rune stays"), Player->ContainsItemInstance(Kept));
+	TestTrue(TEXT("Salvage keeps the recipe known"), GameState->GetRecipeUnlockComponent()->IsRecipeUnlocked(Recipe));
+
+	// A socketed rune is refused.
+	URpgInventoryItemInstance* Tool = Player->AddItemDefinition(URpgRuneAutomationTestToolDefinition::StaticClass(), 1);
+	FRpgInventoryGridPlacement ToolPlacement;
+	if (!Tool || !Player->GetItemPlacement(Tool, ToolPlacement)) { return false; }
+	FRpgInventoryGridPlacement SocketPlacement;
+	SocketPlacement.SetContainerHandle(FRpgInventoryContainerHandle::MakeItemOwned(
+		Tool->GetItemId(), RpgRuneAutomationTestSocketGridId, ToolPlacement.GetContainerHandle().GetDirectChildDepth()));
+	SocketPlacement.X = 0;
+	SocketPlacement.Y = 0;
+	for (const FRpgInventoryEntryView& Entry : Player->GetAllEntries())
+	{
+		if (Entry.ItemId == Kept->GetItemId())
+		{
+			FRpgInventoryMoveIntent Intent;
+			Intent.EnsureRequestId();
+			Intent.ItemId = Entry.ItemId;
+			Intent.ExpectedEntryId = Entry.EntryId;
+			Intent.ExpectedSourcePlacement = Entry.Placement;
+			Intent.ExpectedQuantity = Entry.StackCount;
+			Intent.TargetPlacement = SocketPlacement;
+			TestTrue(TEXT("The kept rune goes into a socket"), Player->MoveItem(Intent).IsSuccess());
+		}
+	}
+	TestEqual(TEXT("A socketed rune cannot be salvaged"), Station->SalvageRune(Requester, Kept->GetItemId()), ERpgRuneWorkResult::Socketed);
+	TestTrue(TEXT("The socketed rune stays"), Player->ContainsItemInstance(Kept));
+	Chest->GetInventoryManager()->AddItemDefinition(Material, 2);
+	TestEqual(TEXT("A socketed rune can be upgraded"), Station->UpgradeRune(Requester, Kept->GetItemId()), ERpgRuneWorkResult::Done);
+	TestEqual(TEXT("The socketed rune reaches rank II in place"), Kept->GetRuneRank(), 2);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgCraftingRuneSalvageFallbackTest,
+	"SurvivalRpg.Crafting.RuneWork.SalvageFallsBackToThePlayer",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCraftingRuneSalvageFallbackTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCraftingStationTests;
+	ConfigureRuneAutomationTestDefinitions();
+	FScopedCraftingWorld Fixture;
+	if (!Fixture.Initialize(*this)) { return false; }
+	URpgCraftingStationComponent* Station = Fixture.GetStation();
+	AActor* Requester = Fixture.GetRequestingController();
+	FBoolProperty* OffersRuneWork = FindFProperty<FBoolProperty>(URpgCraftingStationComponent::StaticClass(), TEXT("bOffersRuneWork"));
+	if (!TestNotNull(TEXT("The station has a rune work switch"), OffersRuneWork)) { return false; }
+	OffersRuneWork->SetPropertyValue_InContainer(Station, true);
+	const TSubclassOf<URpgInventoryItemDefinition> Essence = URpgInventoryAutomationTestStackItemDefinition::StaticClass();
+	FRpgCraftingOutputItem Output;
+	Output.ItemDefinition = Essence;
+	Output.Count = 2;
+	URpgRuneAutomationTestRuneDefinition::SetRankWork(1, {}, {Output});
+	ON_SCOPE_EXIT
+	{
+		URpgRuneAutomationTestRuneDefinition::SetRankWork(1, {}, {});
+	};
+
+	URpgInventoryManagerComponent* Player = Fixture.CreatePlayerInventory();
+	FRpgInventoryGridSize PlayerGrid;
+	PlayerGrid.Width = 2;
+	PlayerGrid.Height = 1;
+	Player->SetDefaultGridSize(PlayerGrid);
+	URpgInventoryItemInstance* Rune = Player->AddItemDefinition(URpgRuneAutomationTestRuneDefinition::StaticClass(), 1);
+	ARpgInventoryContainerActor* Tiny = Fixture.CreateChest(1, 1);
+	if (!TestNotNull(TEXT("The rune exists"), Rune) || !Tiny ||
+		!Tiny->GetInventoryManager()->AddItemDefinition(URpgInventoryAutomationTestUnitItemDefinition::StaticClass(), 1)) { return false; }
+
+	TestEqual(TEXT("Without a chest with room the salvage still succeeds"), Station->SalvageRune(Requester, Rune->GetItemId()), ERpgRuneWorkResult::Done);
+	TestFalse(TEXT("The rune is gone"), Player->ContainsItemInstance(Rune));
+	TestEqual(TEXT("The outputs land in the player's inventory"), Player->GetTotalItemCountByDefinition(Essence), 2);
+	TestEqual(TEXT("The full chest is untouched"), CountOf(Tiny, Essence), 0);
 	return true;
 }
 

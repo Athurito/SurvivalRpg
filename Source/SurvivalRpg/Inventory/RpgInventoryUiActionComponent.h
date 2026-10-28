@@ -640,6 +640,14 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Crafting")
 	void RequestStopCraftingOrder(URpgCraftingStationComponent* CraftingStation, FGuid OrderId);
 
+	/** Raises the requester's rune RuneItemId by one rank at a station that offers rune work. Server-authoritative. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Crafting")
+	void RequestUpgradeRune(URpgCraftingStationComponent* CraftingStation, FRpgInventoryItemId RuneItemId);
+
+	/** Salvages the requester's unsocketed rune RuneItemId at a station that offers rune work. Server-authoritative. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Crafting")
+	void RequestSalvageRune(URpgCraftingStationComponent* CraftingStation, FRpgInventoryItemId RuneItemId);
+
 	/** Changes the connected chest receiving a station order's outputs; None switches to automatic storing. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|Crafting")
 	void RequestSetCraftingOrderTarget(URpgCraftingStationComponent* CraftingStation, FGuid OrderId, FName TargetContainerId);

@@ -149,6 +149,20 @@ void URpgRuneAutomationTestRuneDefinition::SetBaseRecipe(const URpgCraftingRecip
 	}
 }
 
+void URpgRuneAutomationTestRuneDefinition::SetRankWork(
+	const int32 Rank,
+	const TArray<FRpgCraftingResourceCost>& UpgradeCosts,
+	const TArray<FRpgCraftingOutputItem>& SalvageOutputs)
+{
+	URpgInventoryFragment_Rune* Rune =
+		RpgRuneAutomationTestTypes::FindRune(GetMutableDefault<URpgRuneAutomationTestRuneDefinition>());
+	if (Rune && Rune->Ranks.IsValidIndex(Rank - 1))
+	{
+		Rune->Ranks[Rank - 1].UpgradeCosts = UpgradeCosts;
+		Rune->Ranks[Rank - 1].SalvageOutputs = SalvageOutputs;
+	}
+}
+
 URpgRuneAutomationTestOtherRuneDefinition::URpgRuneAutomationTestOtherRuneDefinition(
 	const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)

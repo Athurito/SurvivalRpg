@@ -6,6 +6,8 @@
 
 class URpgAbilitySet;
 class URpgCraftingRecipeDefinition;
+struct FRpgCraftingOutputItem;
+struct FRpgCraftingResourceCost;
 class URpgSkillTreeDefinition;
 
 /** Socket grid id of the automation tool. */
@@ -82,6 +84,9 @@ public:
 
 	/** Points the class default fragment's BaseRecipe at Recipe; tests restore null when they finish. */
 	static void SetBaseRecipe(const URpgCraftingRecipeDefinition* Recipe);
+
+	/** Sets rank Rank's UpgradeCosts and SalvageOutputs on the class default fragment; tests restore empty arrays. */
+	static void SetRankWork(int32 Rank, const TArray<FRpgCraftingResourceCost>& UpgradeCosts, const TArray<FRpgCraftingOutputItem>& SalvageOutputs);
 };
 
 /** Editor-only rune B with one rank, which grants Rune.AutomationTest.B once configured. */

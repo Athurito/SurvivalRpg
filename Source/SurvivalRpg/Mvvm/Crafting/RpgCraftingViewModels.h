@@ -17,6 +17,34 @@ class URpgInventoryManagerComponent;
 class URpgInventoryItemDefinition;
 class URpgWorldStorageKnowledgeComponent;
 
+/** One rune action of a station that offers rune work: upgrade or salvage one rune of the requester. UI read-only. */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgRuneWorkActionView
+{
+	GENERATED_BODY()
+
+	/** Rune the action works on. */
+	UPROPERTY(BlueprintReadOnly, Category = "Crafting|Runes")
+	FRpgInventoryItemId RuneItemId;
+
+	/** True for an upgrade, false for a salvage. */
+	UPROPERTY(BlueprintReadOnly, Category = "Crafting|Runes")
+	bool bUpgrade = true;
+
+	/** Button text on two lines, for example "Upgrade Brand I to II" over "3 Rune Essence, 4 Ore", or "Brand III: highest rank". */
+	UPROPERTY(BlueprintReadOnly, Category = "Crafting|Runes")
+	FText Label;
+
+	/** True when the station would accept the action now. */
+	UPROPERTY(BlueprintReadOnly, Category = "Crafting|Runes")
+	bool bEnabled = false;
+
+	bool operator==(const FRpgRuneWorkActionView& Other) const
+	{
+		return RuneItemId == Other.RuneItemId && bUpgrade == Other.bUpgrade && Label.EqualTo(Other.Label) && bEnabled == Other.bEnabled;
+	}
+};
+
 /** Presentation state of one recipe row, derived from unlock state and the connected chests. UI read-only. */
 UENUM(BlueprintType)
 enum class ERpgCraftingRecipeState : uint8
@@ -444,6 +472,21 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Crafting|ViewModel")
 	void BindCraftingStation(URpgCraftingStationComponent* InStation, AActor* InRequestingActor);
 
+	/** Number of rune actions, two per rune of the requester (upgrade, then salvage); zero without rune work. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|Runes")
+	int32 GetRuneWorkActionCount() const { return RuneWorkActions.Num(); }
+
+	/** Button text of rune action ActionIndex, or empty. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|Runes")
+	FText GetRuneWorkActionLabel(int32 ActionIndex) const;
+
+	/** True when rune action ActionIndex can run now. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|Runes")
+	bool IsRuneWorkActionEnabled(int32 ActionIndex) const;
+
+	/** Rune action ActionIndex, or null. */
+	const FRpgRuneWorkActionView* FindRuneWorkAction(int32 ActionIndex) const;
+
 	/** Clears station bindings and UI lists. Filters and the catalog stay. */
 	UFUNCTION(BlueprintCallable, Category = "Crafting|ViewModel")
 	void UnbindCraftingStation();
@@ -628,12 +671,24 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Crafting|ViewModel")
 	FRpgCraftingViewModelListChanged OnSelectedRecipeDetailsChanged;
 
+	/** Fired whenever the rune actions or whether the station offers rune work change. */
+	UPROPERTY(BlueprintAssignable, Category = "Crafting|Runes")
+	FRpgCraftingViewModelListChanged OnRuneWorkChanged;
+
 protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Station", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgCraftingStationComponent> ObservedStation = nullptr;
 
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Station", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<AActor> RequestingActor = nullptr;
+
+	/** True when the station offers rune work, so the screen shows the rune actions. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Runes", meta = (AllowPrivateAccess = "true"))
+	bool bOffersRuneWork = false;
+
+	/** Upgrade and salvage actions for every rune of the requester, in inventory order. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Runes", meta = (AllowPrivateAccess = "true"))
+	TArray<FRpgRuneWorkActionView> RuneWorkActions;
 
 	/** Header title: the station's authored name, a generic title when it has none, or empty while unbound. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Station", meta = (AllowPrivateAccess = "true"))
@@ -909,6 +964,7 @@ private:
 	void RebuildSelectedRecipeDetails();
 	void RebuildOrderStrip();
 	void RebuildActionAvailability();
+	void RebuildRuneWork();
 	void BroadcastFields(TConstArrayView<UE::FieldNotification::FFieldId> Fields);
 	void HandleCraftingStationChanged(FGameplayTag Channel, const FRpgCraftingStationChangeMessage& Message);
 	void HandleRecipeUnlockChanged(FGameplayTag Channel, const struct FRpgRecipeUnlockChangeMessage& Message);

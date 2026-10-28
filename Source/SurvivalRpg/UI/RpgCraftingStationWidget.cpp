@@ -339,6 +339,25 @@ FText URpgCraftingStationWidget::ResolveQuickTransferDisplayName() const
 	return Super::ResolveQuickTransferDisplayName();
 }
 
+void URpgCraftingStationWidget::RequestRuneWorkAction(const int32 ActionIndex)
+{
+	const FRpgRuneWorkActionView* Action = CraftingViewModel ? CraftingViewModel->FindRuneWorkAction(ActionIndex) : nullptr;
+	URpgCraftingStationComponent* Station = CraftingStation;
+	URpgInventoryUiActionComponent* UiActions = ResolveInventoryUiActionComponent();
+	if (!bCraftingContextBound || !Action || !Action->bEnabled || !Station || !UiActions)
+	{
+		return;
+	}
+	if (Action->bUpgrade)
+	{
+		UiActions->RequestUpgradeRune(Station, Action->RuneItemId);
+	}
+	else
+	{
+		UiActions->RequestSalvageRune(Station, Action->RuneItemId);
+	}
+}
+
 void URpgCraftingStationWidget::RequestStartCraftingOrder()
 {
 	if (!bCraftingContextBound || !CraftingViewModel ||
