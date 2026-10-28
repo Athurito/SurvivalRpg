@@ -48,7 +48,7 @@ All dependencies below are within MST; every row also has the CMB scheduling gat
 | MST-05 | Extend the delivered rune/item foundation with physical instances, ranks and three harvesting-tool sockets; validated moves, grants, replication and persistence | MST-04; CMB-07 contract re-inspection | Merged (2026-10-27, `a612f369`) | [mastery-map-rune-sockets.md](mastery-map-rune-sockets.md), [PR #314](https://github.com/Athurito/SurvivalRpg/pull/314) |
 | MST-06a | Tool sockets in the inventory: the socket grid of the item in a weapon carry slot shows below that slot; explicit drag only, never pickups, first-fit placement or quick transfers | MST-05 | Merged (2026-10-28, `d91c5e42`) | [mastery-map-socket-ui.md](mastery-map-socket-ui.md), [PR #316](https://github.com/Athurito/SurvivalRpg/pull/316) |
 | MST-06b | Brand's burn as secondary harvest work through the existing stock/reward commit: own hits light the resource, the burn works it over time by rank, the igniting player gets rewards and XP, safe in co-op | MST-06a | Merged (2026-10-28, `4066e9c8`) | [mastery-map-brand-burn.md](mastery-map-brand-burn.md), [PR #317](https://github.com/Athurito/SurvivalRpg/pull/317) |
-| MST-06c | Source-tool activation evaluator and learned-but-inactive UI; Brand's talents Anhaltende Macht and Entladung | MST-06b | In review | [mastery-map-rune-talents.md](mastery-map-rune-talents.md) |
+| MST-06c | Source-tool activation evaluator and learned-but-inactive UI; Brand's talents Anhaltende Macht and Entladung | MST-06b | In review | [mastery-map-rune-talents.md](mastery-map-rune-talents.md), [PR #318](https://github.com/Athurito/SurvivalRpg/pull/318) |
 | MST-06d | Rune bar on the skill screen: the tool in hand and its three sockets above the map, and highlights of the talents of a clicked rune | MST-06c | Planned | — |
 | MST-07 | Rune drops, guaranteed claims, persistent base-recipe knowledge and rank-I crafting through existing loot/station paths | MST-06c | Planned | — |
 | MST-08 | In-place rank II/III upgrades, salvage and Runenschrein presentation; atomic costs and safe equipped-rune refresh | MST-07 | Planned | — |
@@ -102,7 +102,7 @@ Playtests of merged MST steps that wait for the user's batch test. Remove a row 
 ## Current handoff
 
 - **Active phase:** MST, started by the user on 2026-10-27 after CMB-01 to CMB-07 merged.
-- **Active task:** MST-06c, branch `claude/mst-06c-rune-talents`; the report is [mastery-map-rune-talents.md](mastery-map-rune-talents.md).
+- **Active task:** MST-06c, branch `claude/mst-06c-rune-talents`, [PR #318](https://github.com/Athurito/SurvivalRpg/pull/318); the report is [mastery-map-rune-talents.md](mastery-map-rune-talents.md).
   - `RequiredRunes` binds a talent to runes in its tool; `URpgSkillTreeComponent::IsNodeActiveForItem` drives grants, tunings and the sleeping state on the skill screen.
   - The Aftermath branch has Lasting Power (longer, refreshing burns) and Discharge (release at once). The rune bar moved to MST-06d.
 - **Previous task:** MST-06b, merged on 2026-10-28 as `4066e9c8` ([PR #317](https://github.com/Athurito/SurvivalRpg/pull/317)); the report is [mastery-map-brand-burn.md](mastery-map-brand-burn.md).

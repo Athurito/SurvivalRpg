@@ -1,6 +1,6 @@
 # MST-06c: Rune-bound talents
 
-Task report for MST-06c in the [mastery map roadmap](mastery-map-roadmap.md). It adds the source-tool activation rule of the [implementation plan](mastery-map-implementation-plan.md), section "Shared harvesting progression", and Brand's talents Anhaltende Macht (Lasting Power) and Entladung (Discharge), as the user accepted on 2026-10-28 ([MST-06a report](mastery-map-socket-ui.md#user-decisions-2026-10-28)). It builds on Brand's burn from [MST-06b](mastery-map-brand-burn.md).
+Task report for MST-06c in the [mastery map roadmap](mastery-map-roadmap.md), [PR #318](https://github.com/Athurito/SurvivalRpg/pull/318). It adds the source-tool activation rule of the [implementation plan](mastery-map-implementation-plan.md), section "Shared harvesting progression", and Brand's talents Anhaltende Macht (Lasting Power) and Entladung (Discharge), as the user accepted on 2026-10-28 ([MST-06a report](mastery-map-socket-ui.md#user-decisions-2026-10-28)). It builds on Brand's burn from [MST-06b](mastery-map-brand-burn.md).
 
 ## Scope change
 
@@ -78,7 +78,7 @@ Run on 2026-10-28 in this worktree:
     - The contract then failed on the second entry talent and on Discharge's one-member choice group; both led to the changes above.
 - `ue.py test SurvivalRpg.Progression SurvivalRpg.UI SurvivalRpg.Harvesting SurvivalRpg.Save SurvivalRpg.Combat SurvivalRpg.Inventory SurvivalRpg.Equipment SurvivalRpg.Runes SurvivalRpg.Crafting SurvivalRpg.BaseStorage --null-rhi`: **455 of 455 passed**; the 16 with warnings are the known ones.
 - `ue.py test SurvivalRpg.Network.SkillTreePIE SurvivalRpg.Network.LootHarvestPIE SurvivalRpg.Network.HarvestCuePIE SurvivalRpg.Network.RuneSocketPIE SurvivalRpg.Network.InventoryReorderPIE`: **13 of 13 passed**, only `LogNetPackageMap` warnings.
-- `ue.py cook Lvl_HarvestPickaxe`: see the PR.
+- `ue.py cook Lvl_HarvestPickaxe`: **passed**, 0 errors; the 3 warnings are the disabled Steam subsystem, the missing GameplayCue notify paths and the `CUI_RespawnScreen` asset log.
 - **Agent PIE check** in `Lvl_HarvestPickaxe`, listen server with two players. For the check only, the starter also gave a pickaxe in hand; this was reverted and not committed. Mastery XP came from `Rpg.Progression.AddSkillXP`.
   - **Map:** the Aftermath branch appears beside Impact, with its own region shortcut.
   - **Host:**
