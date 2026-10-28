@@ -1,6 +1,6 @@
 # MST-07a: Rune recipes known to the world
 
-Task report for MST-07a in the [mastery map roadmap](mastery-map-roadmap.md). It covers the recipe part of the [implementation plan](mastery-map-implementation-plan.md), section "Physical runes and the workstation loop":
+Task report for MST-07a in the [mastery map roadmap](mastery-map-roadmap.md), [PR #320](https://github.com/Athurito/SurvivalRpg/pull/320). It covers the recipe part of the [implementation plan](mastery-map-implementation-plan.md), section "Physical runes and the workstation loop":
 - Discovering a rune unlocks its base recipe without consuming the rune.
 - Crafting produces a new rank-I instance.
 - Base rune recipes are shared knowledge of the current world and are saved with it.

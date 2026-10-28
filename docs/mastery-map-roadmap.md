@@ -50,7 +50,7 @@ All dependencies below are within MST; every row also has the CMB scheduling gat
 | MST-06b | Brand's burn as secondary harvest work through the existing stock/reward commit: own hits light the resource, the burn works it over time by rank, the igniting player gets rewards and XP, safe in co-op | MST-06a | Merged (2026-10-28, `4066e9c8`) | [mastery-map-brand-burn.md](mastery-map-brand-burn.md), [PR #317](https://github.com/Athurito/SurvivalRpg/pull/317) |
 | MST-06c | Source-tool activation evaluator and learned-but-inactive UI; Brand's talents Anhaltende Macht and Entladung | MST-06b | Merged (2026-10-28, `fff77e59`) | [mastery-map-rune-talents.md](mastery-map-rune-talents.md), [PR #318](https://github.com/Athurito/SurvivalRpg/pull/318) |
 | MST-06d | Rune bar on the skill screen: the tool in hand and its three sockets above the map, and highlights of the talents of a clicked rune | MST-06c | Merged (2026-10-28, `95ed8607`) | [mastery-map-rune-bar.md](mastery-map-rune-bar.md), [PR #319](https://github.com/Athurito/SurvivalRpg/pull/319) |
-| MST-07a | Persistent world recipe knowledge: carrying a rune teaches the world its base recipe without consuming it, and the Kiln crafts a new rank-I Brand | MST-06d | In review | [mastery-map-rune-recipes.md](mastery-map-rune-recipes.md) |
+| MST-07a | Persistent world recipe knowledge: carrying a rune teaches the world its base recipe without consuming it, and the Kiln crafts a new rank-I Brand | MST-06d | In review | [mastery-map-rune-recipes.md](mastery-map-rune-recipes.md), [PR #320](https://github.com/Athurito/SurvivalRpg/pull/320) |
 | MST-07b | Rune drops through loot tables and guaranteed selectable reward claims with persisted claim identity; a full inventory never loses a claim | MST-07a | Planned | — |
 | MST-08 | In-place rank II/III upgrades, salvage and Runenschrein presentation; atomic costs and safe equipped-rune refresh | MST-07b | Planned | — |
 | MST-09a | Harvesting Echo, Kraftuebertrag and Runenfluss; bounded own-hit triggers and actual-overkill transfer | MST-08 | Planned | — |
@@ -105,7 +105,7 @@ Playtests of merged MST steps that wait for the user's batch test. Remove a row 
 ## Current handoff
 
 - **Active phase:** MST, started by the user on 2026-10-27 after CMB-01 to CMB-07 merged.
-- **Active task:** MST-07a, branch `claude/mst-07a-rune-recipes`; the report is [mastery-map-rune-recipes.md](mastery-map-rune-recipes.md).
+- **Active task:** MST-07a, branch `claude/mst-07a-rune-recipes`, [PR #320](https://github.com/Athurito/SurvivalRpg/pull/320); the report is [mastery-map-rune-recipes.md](mastery-map-rune-recipes.md).
   - `URpgRecipeUnlockComponent` is a world save participant, so learned recipes stay known after the world loads again.
   - `URpgInventoryFragment_Rune::BaseRecipe` names a rune's locked recipe; the player state teaches it to the world after each change of the player's inventory.
   - The Kiln offers `DA_Recipe_Rune_Brand` (4 ore and 2 charcoal, 6 s) for a new rank-I Brand.
