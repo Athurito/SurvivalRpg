@@ -1199,6 +1199,10 @@ bool FRpgBaseStorageResourceEntryFieldNotifyTest::RunTest(
 		FindFProperty<FBoolProperty>(
 			ViewModel->GetClass(),
 			TEXT("bIsFull"));
+	const FBoolProperty* HasCapacityWarningProperty =
+		FindFProperty<FBoolProperty>(
+			ViewModel->GetClass(),
+			TEXT("bHasCapacityWarning"));
 	if (!TestNotNull(
 			TEXT("The DisplayName snapshot property exists"),
 			DisplayNameProperty) ||
@@ -1225,7 +1229,10 @@ bool FRpgBaseStorageResourceEntryFieldNotifyTest::RunTest(
 			IsEmptyProperty) ||
 		!TestNotNull(
 			TEXT("The bIsFull snapshot property exists"),
-			IsFullProperty))
+			IsFullProperty) ||
+		!TestNotNull(
+			TEXT("The bHasCapacityWarning snapshot property exists"),
+			HasCapacityWarningProperty))
 	{
 		return false;
 	}
@@ -1244,6 +1251,7 @@ bool FRpgBaseStorageResourceEntryFieldNotifyTest::RunTest(
 		int32 SortIndex = 0;
 		bool bIsEmpty = true;
 		bool bIsFull = false;
+		bool bHasCapacityWarning = false;
 	};
 	FAtomicBaseResourceSnapshot FirstCallbackSnapshot;
 	Counter.SetFirstNotificationCallback(
@@ -1257,7 +1265,8 @@ bool FRpgBaseStorageResourceEntryFieldNotifyTest::RunTest(
 		 FillRatioProperty,
 		 SortIndexProperty,
 		 IsEmptyProperty,
-		 IsFullProperty](
+		 IsFullProperty,
+		 HasCapacityWarningProperty](
 			UObject* ChangedObject,
 			UE::FieldNotification::FFieldId FieldId)
 		{
@@ -1293,6 +1302,9 @@ bool FRpgBaseStorageResourceEntryFieldNotifyTest::RunTest(
 			FirstCallbackSnapshot.bIsFull =
 				IsFullProperty->GetPropertyValue_InContainer(
 					ChangedObject);
+			FirstCallbackSnapshot.bHasCapacityWarning =
+				HasCapacityWarningProperty->GetPropertyValue_InContainer(
+					ChangedObject);
 		});
 
 	FRpgBaseResourceEntryView FullEntry = SortedEntry;
@@ -1308,6 +1320,7 @@ bool FRpgBaseStorageResourceEntryFieldNotifyTest::RunTest(
 			{FName(TEXT("FreeCapacity")), 1},
 			{FName(TEXT("FillRatio")), 1},
 			{FName(TEXT("bIsFull")), 1},
+			{FName(TEXT("bHasCapacityWarning")), 1},
 		});
 	TestTrue(
 		TEXT("The first changed FieldNotify callback captured a snapshot"),
@@ -1353,6 +1366,9 @@ bool FRpgBaseStorageResourceEntryFieldNotifyTest::RunTest(
 	TestTrue(
 		TEXT("The first callback sees the final full state"),
 		FirstCallbackSnapshot.bIsFull);
+	TestTrue(
+		TEXT("The first callback sees the final capacity warning"),
+		FirstCallbackSnapshot.bHasCapacityWarning);
 
 	Counter.Reset();
 	ViewModel->InitializeFromResourceEntry(FullEntry);

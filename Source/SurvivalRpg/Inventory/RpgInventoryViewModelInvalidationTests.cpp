@@ -1292,6 +1292,12 @@ bool FRpgBaseStorageViewModelInvalidationTest::RunTest(
 		return false;
 	}
 
+	// Shared Materials capacity is the required mode; this fixture never runs
+	// BeginPlay, so the empty pool is seeded before the VM observes it.
+	TestTrue(
+		TEXT("The empty base storage receives shared Materials capacity"),
+		BaseStorage->AddMaterialCapacityPoints(10));
+
 	const TArray<TSubclassOf<URpgInventoryItemDefinition>>
 		AllowedResources;
 	ViewModel->BindBaseStorage(
@@ -1307,7 +1313,8 @@ bool FRpgBaseStorageViewModelInvalidationTest::RunTest(
 
 	int32 RawMessageCount = 0;
 	int32 OrderChangedMessageCount = 0;
-	int32 CapacityChangedMessageCount = 0;
+	int32 DepositMessageCount = 0;
+	int32 DepositedCount = 0;
 	FScopedGameplayMessageListener RawMessageListener;
 	RawMessageListener.Set(
 		UGameplayMessageSubsystem::Get(
@@ -1316,7 +1323,8 @@ bool FRpgBaseStorageViewModelInvalidationTest::RunTest(
 					GetBaseStorageChangedChannel(),
 					[&RawMessageCount,
 					 &OrderChangedMessageCount,
-					 &CapacityChangedMessageCount,
+					 &DepositMessageCount,
+					 &DepositedCount,
 					 ExpectedStorage = BaseStorage](
 						FGameplayTag,
 						const FRpgBaseResourceChangeMessage& Message)
@@ -1330,17 +1338,20 @@ bool FRpgBaseStorageViewModelInvalidationTest::RunTest(
 						++RawMessageCount;
 						OrderChangedMessageCount +=
 							Message.bOrderChanged ? 1 : 0;
-						CapacityChangedMessageCount +=
-							Message.bCapacityChanged ? 1 : 0;
+						DepositMessageCount +=
+							Message.Delta != 0 ? 1 : 0;
+						DepositedCount += Message.Delta;
 					}));
 
 	const TSubclassOf<URpgInventoryItemDefinition>
 		MaterialDefinition =
 			URpgInventoryAutomationTestMaterialDefinition::
 				StaticClass();
-	BaseStorage->AddResourceCapacity(
-		MaterialDefinition,
-		10);
+	TestTrue(
+		TEXT("The first deposit creates the resource row"),
+		BaseStorage->StoreDefinitionResource(
+			MaterialDefinition,
+			4));
 	TestEqual(
 		TEXT("First row creation keeps both synchronous producer messages"),
 		RawMessageCount,
@@ -1350,9 +1361,13 @@ bool FRpgBaseStorageViewModelInvalidationTest::RunTest(
 		OrderChangedMessageCount,
 		1);
 	TestEqual(
-		TEXT("One producer message announces the new capacity"),
-		CapacityChangedMessageCount,
+		TEXT("One producer message announces the deposited count"),
+		DepositMessageCount,
 		1);
+	TestEqual(
+		TEXT("The producer messages carry the whole deposit"),
+		DepositedCount,
+		4);
 	TestEqual(
 		TEXT("The base-storage VM does not rebuild per producer message"),
 		Counter.GetCount(),
