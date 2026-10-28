@@ -1,6 +1,6 @@
 # MST-06d: Rune bar on the skill screen
 
-Task report for MST-06d in the [mastery map roadmap](mastery-map-roadmap.md). It completes the rune context of the [implementation plan](mastery-map-implementation-plan.md), section "Accepted interaction and gameplay contract": "the current tool and its three rune sockets are context for the same harvesting tree, shown as a strip over the map", and a click on a rune highlights its talents without changing gameplay state. MST-06c moved this part out of its own scope ([rune talents](mastery-map-rune-talents.md)).
+Task report for MST-06d in the [mastery map roadmap](mastery-map-roadmap.md), [PR #319](https://github.com/Athurito/SurvivalRpg/pull/319). It completes the rune context of the [implementation plan](mastery-map-implementation-plan.md), section "Accepted interaction and gameplay contract": "the current tool and its three rune sockets are context for the same harvesting tree, shown as a strip over the map", and a click on a rune highlights its talents without changing gameplay state. MST-06c moved this part out of its own scope ([rune talents](mastery-map-rune-talents.md)).
 
 ## C++ boundary decision
 
