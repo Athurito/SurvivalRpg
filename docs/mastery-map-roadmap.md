@@ -46,7 +46,7 @@ All dependencies below are within MST; every row also has the CMB scheduling gat
 | MST-03c | Single-map skill screen: full-tab map, points per budget and zoom/region controls on top, node-anchored detail card with Learn/Refund; remove the profession/tree lists, the Q/E/R bar and the detail column | MST-03b | Merged (2026-10-27, `5d45019e`) | [mastery-map-single-map.md](mastery-map-single-map.md), [PR #310](https://github.com/Athurito/SurvivalRpg/pull/310) |
 | MST-04 | Atomic replacement of exclusive choices, owner request/result feedback on the detail card, grant reconciliation and VM updates | MST-03c | Merged (2026-10-27, `08285c1e`) | [mastery-map-choice-swap.md](mastery-map-choice-swap.md), [PR #313](https://github.com/Athurito/SurvivalRpg/pull/313) |
 | MST-05 | Extend the delivered rune/item foundation with physical instances, ranks and three harvesting-tool sockets; validated moves, grants, replication and persistence | MST-04; CMB-07 contract re-inspection | Merged (2026-10-27, `a612f369`) | [mastery-map-rune-sockets.md](mastery-map-rune-sockets.md), [PR #314](https://github.com/Athurito/SurvivalRpg/pull/314) |
-| MST-06a | Tool sockets in the inventory: the socket grid of the item in a weapon carry slot shows below that slot; explicit drag only, never pickups, first-fit placement or quick transfers | MST-05 | In review | [mastery-map-socket-ui.md](mastery-map-socket-ui.md) |
+| MST-06a | Tool sockets in the inventory: the socket grid of the item in a weapon carry slot shows below that slot; explicit drag only, never pickups, first-fit placement or quick transfers | MST-05 | In review | [mastery-map-socket-ui.md](mastery-map-socket-ui.md), [PR #316](https://github.com/Athurito/SurvivalRpg/pull/316) |
 | MST-06b | Brand's burn as secondary harvest work through the existing stock/reward commit: own hits light the resource, the burn works it over time by rank, the igniting player gets rewards and XP, safe in co-op | MST-06a | Planned | — |
 | MST-06c | Source-tool activation evaluator, rune context/highlights and learned-but-inactive UI; Brand's talents Anhaltende Macht and Entladung | MST-06b | Planned | — |
 | MST-07 | Rune drops, guaranteed claims, persistent base-recipe knowledge and rank-I crafting through existing loot/station paths | MST-06c | Planned | — |
@@ -99,7 +99,7 @@ Playtests of merged MST steps that wait for the user's batch test. Remove a row 
 ## Current handoff
 
 - **Active phase:** MST, started by the user on 2026-10-27 after CMB-01 to CMB-07 merged.
-- **Active task:** MST-06a, branch `claude/mst-06a-tool-socket-ui`; the report is [mastery-map-socket-ui.md](mastery-map-socket-ui.md).
+- **Active task:** MST-06a, branch `claude/mst-06a-tool-socket-ui`, [PR #316](https://github.com/Athurito/SurvivalRpg/pull/316); the report is [mastery-map-socket-ui.md](mastery-map-socket-ui.md).
   - The socket grid of the item in Weapon I or Weapon II shows as a socket strip below that slot. The new layout group kind `Socket` keeps sockets out of pickups, first-fit placement and quick transfers.
 - **Previous task:** MST-05, merged on 2026-10-27 as `a612f369` ([PR #314](https://github.com/Athurito/SurvivalRpg/pull/314)); the report is [mastery-map-rune-sockets.md](mastery-map-rune-sockets.md).
 - **User decisions (2026-10-28):** MST-06 is split into MST-06a, MST-06b and MST-06c, and Brand works as recorded in the [MST-06a report](mastery-map-socket-ui.md#user-decisions-2026-10-28): the rune itself lights resources, Anhaltende Macht lengthens and refreshes the burn, Entladung releases it at once.

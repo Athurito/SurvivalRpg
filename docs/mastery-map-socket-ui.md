@@ -1,6 +1,6 @@
 # MST-06a: Tool sockets in the inventory
 
-Task report for MST-06a in the [mastery map roadmap](mastery-map-roadmap.md). It makes the rune sockets of [MST-05](mastery-map-rune-sockets.md) usable by hand, which that task's limits named as the first step of MST-06.
+Task report for MST-06a in the [mastery map roadmap](mastery-map-roadmap.md), [PR #316](https://github.com/Athurito/SurvivalRpg/pull/316). It makes the rune sockets of [MST-05](mastery-map-rune-sockets.md) usable by hand, which that task's limits named as the first step of MST-06.
 
 ## User decisions (2026-10-28)
 
