@@ -195,44 +195,64 @@ bool FRpgHarvestSharedTreeContractTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("The shared tree is a free-position map"), Tree.LayoutMode == ERpgSkillTreeLayoutMode::FreePosition);
 	TestTrue(TEXT("The shared tree frames a default region"), Tree.FindRegion(Tree.DefaultRegionId) != nullptr);
 
-	// Talents are passive tunings; nothing occupies the tool's Q/E/R anymore.
-	const FRpgSkillTreeNode* Entry = nullptr;
+	// Talents are passive tunings; nothing occupies the tool's Q/E/R anymore. Every branch (region) has one entry
+	// talent, and its other talents build on it.
+	TMap<FName, const FRpgSkillTreeNode*> Entries;
 	TSet<FName> ChoiceGroups;
 	for (const FRpgSkillTreeNode& Node : Tree.Nodes)
 	{
 		const FString Name = Node.NodeTag.ToString();
 		TestTrue(*FString::Printf(TEXT("%s grants no ability"), *Name), Node.AbilitySet == nullptr);
 		TestFalse(*FString::Printf(TEXT("%s changes harvesting through tunings"), *Name), Node.AbilityTunings.IsEmpty());
+		TestTrue(*FString::Printf(TEXT("%s belongs to a branch"), *Name), Tree.FindRegion(Node.RegionId) != nullptr);
 		if (Node.Prerequisites.IsEmpty())
 		{
-			TestTrue(TEXT("Only one entry talent has no prerequisite"), Entry == nullptr);
-			Entry = &Node;
+			TestFalse(*FString::Printf(TEXT("%s is the only entry of its branch"), *Name), Entries.Contains(Node.RegionId));
+			Entries.Add(Node.RegionId, &Node);
 		}
 		else if (!Node.ExclusiveGroup.IsNone())
 		{
 			ChoiceGroups.Add(Node.ExclusiveGroup);
 		}
 	}
-	if (!TestNotNull(TEXT("The tree has an entry talent"), Entry))
+	for (const TPair<FName, const FRpgSkillTreeNode*>& Entry : Entries)
 	{
-		return false;
+		TestTrue(
+			*FString::Printf(TEXT("The entry of %s is learnable with the first point"), *Entry.Key.ToString()),
+			Entry.Value->Cost <= Tree.GetEarnedPointsForLevel(2));
 	}
-	TestTrue(TEXT("The entry talent is learnable with the first point"), Entry->Cost <= Tree.GetEarnedPointsForLevel(2));
+	for (const FRpgSkillTreeNode& Node : Tree.Nodes)
+	{
+		const FRpgSkillTreeNode* const* Entry = Entries.Find(Node.RegionId);
+		if (!Node.Prerequisites.IsEmpty() && TestNotNull(TEXT("Every branch has an entry talent"), Entry))
+		{
+			TestTrue(
+				*FString::Printf(TEXT("%s builds on its branch's entry"), *Node.NodeTag.ToString()),
+				Node.Prerequisites.Contains((*Entry)->NodeTag));
+		}
+	}
 	for (const FName Group : ChoiceGroups)
 	{
 		int32 Members = 0;
 		for (const FRpgSkillTreeNode& Node : Tree.Nodes)
 		{
-			if (Node.ExclusiveGroup == Group)
-			{
-				++Members;
-				TestTrue(
-					*FString::Printf(TEXT("%s builds on the entry talent"), *Node.NodeTag.ToString()),
-					Node.Prerequisites.Contains(Entry->NodeTag));
-			}
+			Members += Node.ExclusiveGroup == Group ? 1 : 0;
 		}
 		TestTrue(*FString::Printf(TEXT("Choice %s offers alternatives"), *Group.ToString()), Members >= 2);
 	}
+
+	// The Aftermath branch works with Brand: its talents sleep without it in the tool.
+	const FGameplayTag Brand = FGameplayTag::RequestGameplayTag(TEXT("Rune.Brand"));
+	bool bHasAftermath = false;
+	for (const FRpgSkillTreeNode& Node : Tree.Nodes)
+	{
+		if (Node.RegionId == TEXT("Aftermath"))
+		{
+			bHasAftermath = true;
+			TestTrue(*FString::Printf(TEXT("%s needs Brand"), *Node.NodeTag.ToString()), Node.RequiredRunes.HasTagExact(Brand));
+		}
+	}
+	TestTrue(TEXT("The tree has the Aftermath branch"), bHasAftermath);
 	TestFalse(TEXT("The tree offers an exclusive choice"), ChoiceGroups.IsEmpty());
 
 	// Every resource of a harvesting tool advances the shared mastery once per section.

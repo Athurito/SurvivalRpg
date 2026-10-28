@@ -275,14 +275,25 @@ public:
 		const URpgSkillTreeDefinition& Tree,
 		const FGameplayTagContainer& AbilityIds,
 		FGameplayTag TuningTag,
-		float BaseValue) const;
+		float BaseValue,
+		const FGameplayTagContainer& SocketedRunes = FGameplayTagContainer()) const;
 
-	/** Folds the learned tunings of Tree for TuningTag into Accumulator, as ResolveAbilityTuning applies them. */
+	/**
+	 * Folds the learned tunings of Tree for TuningTag into Accumulator, as ResolveAbilityTuning applies them. Nodes
+	 * whose RequiredRunes SocketedRunes does not satisfy sleep and add nothing.
+	 */
 	void AccumulateAbilityTuning(
 		const URpgSkillTreeDefinition& Tree,
 		const FGameplayTagContainer& AbilityIds,
 		FGameplayTag TuningTag,
-		FRpgAbilityTuningAccumulator& Accumulator) const;
+		FRpgAbilityTuningAccumulator& Accumulator,
+		const FGameplayTagContainer& SocketedRunes) const;
+
+	/**
+	 * The one activation rule of learned nodes: whether Node works on SourceItem, the item that carries its tree, given
+	 * the runes socketed in it. Equipment grants, ability tunings and the skill screen all use it.
+	 */
+	static bool IsNodeActiveForItem(const FRpgSkillTreeNode& Node, const UObject* SourceItem);
 
 	/**
 	 * Resolves TuningTag for the ability of Spec from the item of the spec's source equipment: the learned tunings of
@@ -297,6 +308,9 @@ public:
 
 	/** Finds the component of Actor's player: on a PlayerState, a pawn's PlayerState, a controller's PlayerState or Actor itself. */
 	static URpgSkillTreeComponent* FindForActor(const AActor* Actor);
+
+	/** Returns the item in Pawn's main or off hand whose skill tree is TreeTag, the source of its talents, or null. */
+	static const UObject* FindActiveItemOfTree(const APawn* Pawn, FGameplayTag TreeTag);
 
 	/** Returns the tree whose Q/E/R assignment applies to Pawn: the main-hand weapon's, then the off-hand weapon's. */
 	static const URpgSkillTreeDefinition* FindActiveWeaponSkillTree(const APawn* Pawn);

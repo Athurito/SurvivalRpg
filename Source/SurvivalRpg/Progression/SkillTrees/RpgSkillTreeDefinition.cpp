@@ -43,6 +43,17 @@ float FRpgAbilityTuningAccumulator::Resolve(const float BaseValue) const
 	return ((bHasSet ? SetValue : BaseValue) + AddSum) * MultiplyProduct;
 }
 
+bool FRpgSkillTreeNode::IsActiveWithRunes(const FGameplayTagContainer& SocketedRunes) const
+{
+	if (RequiredRunes.IsEmpty())
+	{
+		return true;
+	}
+	return RuneMatch == ERpgSkillTreeRuneMatch::AllRunes
+		? SocketedRunes.HasAllExact(RequiredRunes)
+		: SocketedRunes.HasAnyExact(RequiredRunes);
+}
+
 void FRpgSkillTreeNode::GetGrantedAbilityIds(TArray<FGameplayTag>& OutAbilityIds) const
 {
 	if (!AbilitySet)

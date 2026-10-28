@@ -36,6 +36,21 @@ namespace RpgHarvestWorkTests
 	/** A burn tick of one second; timers fire once their time is exceeded, so a step lies just past it. */
 	constexpr float BurnStep = 1.01f;
 
+	/** What a direct hit asks of its burn: work per second in sections, burn time, refresh and discharge. */
+	FRpgHarvestBurnParams MakeBurn(
+		const float WorkPerSecond,
+		const float DurationSeconds,
+		const bool bRefresh = false,
+		const float DischargeMultiplier = 0.0f)
+	{
+		FRpgHarvestBurnParams Params;
+		Params.WorkPerSecond = WorkPerSecond;
+		Params.DurationSeconds = DurationSeconds;
+		Params.bRefresh = bRefresh;
+		Params.DischargeMultiplier = DischargeMultiplier;
+		return Params;
+	}
+
 	URpgHarvestProfile* MakeProfile(UObject* Outer, const int32 SectionCount, const float RespawnSeconds = 0.0f)
 	{
 		URpgHarvestProfile* Profile = NewObject<URpgHarvestProfile>(Outer);
@@ -749,9 +764,9 @@ bool FRpgHarvestWorkBurnTest::RunTest(const FString& Parameters)
 	Direct.Provenance.RootActionId = FRpgHarvestProvenance::MakeRootActionId();
 	TestEqual(TEXT("The igniting hit takes one section"), Stock->CommitHarvest_Implementation(Direct).SectionsTaken, 1);
 
-	TestNull(TEXT("A burn without work is not lit"), ARpgHarvestBurn::Light(Stock, Direct, BurnClass, 0.0f, 4.0f));
-	TestNull(TEXT("A burn without time is not lit"), ARpgHarvestBurn::Light(Stock, Direct, BurnClass, 0.3f, 0.0f));
-	ARpgHarvestBurn* Burn = ARpgHarvestBurn::Light(Stock, Direct, BurnClass, 0.3f, 4.0f);
+	TestNull(TEXT("A burn without work is not lit"), ARpgHarvestBurn::Light(Stock, Direct, BurnClass, MakeBurn(0.0f, 4.0f)));
+	TestNull(TEXT("A burn without time is not lit"), ARpgHarvestBurn::Light(Stock, Direct, BurnClass, MakeBurn(0.3f, 0.0f)));
+	ARpgHarvestBurn* Burn = ARpgHarvestBurn::Light(Stock, Direct, BurnClass, MakeBurn(0.3f, 4.0f));
 	if (!TestNotNull(TEXT("The hit lights a burn"), Burn))
 	{
 		return false;
@@ -759,7 +774,7 @@ bool FRpgHarvestWorkBurnTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("The burn works for the igniting player"), Burn->GetBeneficiary() == Harvester);
 	TestTrue(
 		TEXT("A further hit of the same player keeps its one burn unchanged"),
-		ARpgHarvestBurn::Light(Stock, Direct, BurnClass, 0.6f, 8.0f) == Burn &&
+		ARpgHarvestBurn::Light(Stock, Direct, BurnClass, MakeBurn(0.6f, 8.0f)) == Burn &&
 			FMath::IsNearlyEqual(Burn->GetWorkPerSecond(), 0.3f));
 	TestTrue(TEXT("The burn is found by resource and player"), ARpgHarvestBurn::FindBurn(Stock, Direct.Hit.Item, Harvester) == Burn);
 
@@ -791,7 +806,7 @@ bool FRpgHarvestWorkBurnTest::RunTest(const FString& Parameters)
 	FRpgHarvestRequest SecondDirect = MakeNodeRequest(Node, Harvester, 1.0f);
 	SecondDirect.Provenance.RootActionId = FRpgHarvestProvenance::MakeRootActionId();
 	TestEqual(TEXT("The second hit takes the third section"), Stock->CommitHarvest_Implementation(SecondDirect).SectionsTaken, 1);
-	ARpgHarvestBurn* SecondBurn = ARpgHarvestBurn::Light(Stock, SecondDirect, BurnClass, 0.5f, 10.0f);
+	ARpgHarvestBurn* SecondBurn = ARpgHarvestBurn::Light(Stock, SecondDirect, BurnClass, MakeBurn(0.5f, 10.0f));
 	if (!TestNotNull(TEXT("The second hit lights a new burn"), SecondBurn))
 	{
 		return false;
@@ -833,8 +848,8 @@ bool FRpgHarvestWorkSharedBurnTest::RunTest(const FString& Parameters)
 	HarvesterHit.Provenance.RootActionId = FRpgHarvestProvenance::MakeRootActionId();
 	FRpgHarvestRequest PartnerHit = MakeNodeRequest(Node, Partner, 1.0f);
 	PartnerHit.Provenance.RootActionId = FRpgHarvestProvenance::MakeRootActionId();
-	ARpgHarvestBurn* HarvesterBurn = ARpgHarvestBurn::Light(Stock, HarvesterHit, ARpgHarvestBurn::StaticClass(), 0.5f, 4.0f);
-	ARpgHarvestBurn* PartnerBurn = ARpgHarvestBurn::Light(Stock, PartnerHit, ARpgHarvestBurn::StaticClass(), 0.25f, 4.0f);
+	ARpgHarvestBurn* HarvesterBurn = ARpgHarvestBurn::Light(Stock, HarvesterHit, ARpgHarvestBurn::StaticClass(), MakeBurn(0.5f, 4.0f));
+	ARpgHarvestBurn* PartnerBurn = ARpgHarvestBurn::Light(Stock, PartnerHit, ARpgHarvestBurn::StaticClass(), MakeBurn(0.25f, 4.0f));
 	if (!TestNotNull(TEXT("The first player's burn is lit"), HarvesterBurn) ||
 		!TestNotNull(TEXT("The second player's burn is lit"), PartnerBurn))
 	{
@@ -866,6 +881,73 @@ bool FRpgHarvestWorkSharedBurnTest::RunTest(const FString& Parameters)
 		TEXT("Both burns go out when their time is up"),
 		(!IsValid(HarvesterBurn) || HarvesterBurn->IsActorBeingDestroyed()) &&
 			(!IsValid(PartnerBurn) || PartnerBurn->IsActorBeingDestroyed()));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestWorkBurnTalentTest,
+	"SurvivalRpg.Harvesting.Work.BurnRefreshesAndDischarges",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestWorkBurnTalentTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestWorkTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	ARpgHarvestAutomationNodeActor* Node = SpawnNode(World, MakeProfile(World, 4));
+	ARpgHarvestAutomationTestPlayerState* Harvester = SpawnHarvester(World);
+	if (!TestNotNull(TEXT("Node exists"), Node) || !TestNotNull(TEXT("Harvester exists"), Harvester))
+	{
+		return false;
+	}
+	URpgHarvestableComponent* Stock = Node->HarvestableNode;
+	const TSubclassOf<ARpgHarvestBurn> BurnClass = ARpgHarvestBurn::StaticClass();
+	TestWorld.PrimeTimerManager();
+
+	FRpgHarvestRequest Hit = MakeNodeRequest(Node, Harvester, 1.0f);
+	Hit.Provenance.RootActionId = FRpgHarvestProvenance::MakeRootActionId();
+	ARpgHarvestBurn* Burn = ARpgHarvestBurn::Light(Stock, Hit, BurnClass, MakeBurn(0.3f, 4.0f));
+	if (!TestNotNull(TEXT("The first hit lights a burn"), Burn))
+	{
+		return false;
+	}
+	TestWorld.PrimeTimerManager();
+	TestWorld.AdvanceTimers(BurnStep);
+	TestWorld.AdvanceTimers(BurnStep);
+	TestEqual(TEXT("Two ticks are left after two seconds"), Burn->GetRemainingTicks(), 2);
+
+	// Lasting Power: a further hit restarts the burn time instead of keeping it.
+	TestTrue(TEXT("A refreshing hit keeps the same burn"), ARpgHarvestBurn::Light(Stock, Hit, BurnClass, MakeBurn(0.3f, 4.0f, true)) == Burn);
+	TestEqual(TEXT("The refresh restarts the burn time"), Burn->GetRemainingTicks(), 4);
+	for (int32 Second = 0; Second < 4; ++Second)
+	{
+		TestWorld.AdvanceTimers(BurnStep);
+	}
+	TestEqual(TEXT("Six ticks of 30 units complete one section"), static_cast<int32>(Stock->GetHarvestState().HarvestedSections), 1);
+	TestEqual(TEXT("The rest stays residual work"), static_cast<int32>(Stock->GetHarvestState().SectionWork), 80);
+	TestTrue(TEXT("The refreshed burn goes out after its new time"), !IsValid(Burn) || Burn->IsActorBeingDestroyed());
+
+	// Discharge: a further hit releases the remaining work at once, times its multiplier, and puts the burn out.
+	ARpgHarvestBurn* SecondBurn = ARpgHarvestBurn::Light(Stock, Hit, BurnClass, MakeBurn(0.3f, 4.0f));
+	if (!TestNotNull(TEXT("A new hit lights a new burn"), SecondBurn))
+	{
+		return false;
+	}
+	TestWorld.PrimeTimerManager();
+	TestWorld.AdvanceTimers(BurnStep);
+	TestEqual(TEXT("The new burn's first tick completes the second section"), static_cast<int32>(Stock->GetHarvestState().HarvestedSections), 2);
+	TestEqual(TEXT("Its residual work is 10 units"), static_cast<int32>(Stock->GetHarvestState().SectionWork), 10);
+	TestNull(TEXT("A discharging hit leaves no burn"), ARpgHarvestBurn::Light(Stock, Hit, BurnClass, MakeBurn(0.3f, 4.0f, true, 1.5f)));
+	TestEqual(TEXT("Three ticks times 1.5 complete the third section at once"), static_cast<int32>(Stock->GetHarvestState().HarvestedSections), 3);
+	TestEqual(TEXT("The discharge leaves 45 units of residual work"), static_cast<int32>(Stock->GetHarvestState().SectionWork), 45);
+	TestTrue(TEXT("The discharge is secondary work of the burn's action"), !SecondBurn->GetLastResult().Provenance.IsDirect());
+	TestTrue(TEXT("The discharged burn is out"), !IsValid(SecondBurn) || SecondBurn->IsActorBeingDestroyed());
+	TestNull(TEXT("No burn is left on the resource"), ARpgHarvestBurn::FindBurn(Stock, Hit.Hit.Item, Harvester));
+	TestWorld.AdvanceTimers(BurnStep);
+	TestEqual(TEXT("Nothing burns after the discharge"), static_cast<int32>(Stock->GetHarvestState().SectionWork), 45);
+	TestEqual(TEXT("Every completed section rewarded the igniting player once"), CountMaterial(Harvester), 3 * YieldPerSection);
 	return true;
 }
 

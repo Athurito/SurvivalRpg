@@ -524,10 +524,11 @@ float URpgSkillTreeComponent::ResolveAbilityTuning(
 	const URpgSkillTreeDefinition& Tree,
 	const FGameplayTagContainer& AbilityIds,
 	const FGameplayTag TuningTag,
-	const float BaseValue) const
+	const float BaseValue,
+	const FGameplayTagContainer& SocketedRunes) const
 {
 	FRpgAbilityTuningAccumulator Accumulator;
-	AccumulateAbilityTuning(Tree, AbilityIds, TuningTag, Accumulator);
+	AccumulateAbilityTuning(Tree, AbilityIds, TuningTag, Accumulator, SocketedRunes);
 	return Accumulator.Resolve(BaseValue);
 }
 
@@ -535,7 +536,8 @@ void URpgSkillTreeComponent::AccumulateAbilityTuning(
 	const URpgSkillTreeDefinition& Tree,
 	const FGameplayTagContainer& AbilityIds,
 	const FGameplayTag TuningTag,
-	FRpgAbilityTuningAccumulator& Accumulator) const
+	FRpgAbilityTuningAccumulator& Accumulator,
+	const FGameplayTagContainer& SocketedRunes) const
 {
 	const FRpgSkillTreeState* State = FindState(Tree.TreeTag);
 	if (!State)
@@ -545,7 +547,7 @@ void URpgSkillTreeComponent::AccumulateAbilityTuning(
 
 	for (const FRpgSkillTreeNode& Node : Tree.Nodes)
 	{
-		if (State->UnlockedNodes.Contains(Node.NodeTag))
+		if (State->UnlockedNodes.Contains(Node.NodeTag) && Node.IsActiveWithRunes(SocketedRunes))
 		{
 			for (const FRpgSkillTreeAbilityTuning& Tuning : Node.AbilityTunings)
 			{
@@ -593,12 +595,24 @@ float URpgSkillTreeComponent::ResolveAbilityTuningForSpec(
 	}
 	if (Tree && SkillTrees)
 	{
-		SkillTrees->AccumulateAbilityTuning(*Tree, AbilityIds, TuningTag, Accumulator);
+		SkillTrees->AccumulateAbilityTuning(
+			*Tree,
+			AbilityIds,
+			TuningTag,
+			Accumulator,
+			URpgInventoryFragment_Rune::GetSocketedRuneTags(SourceItem));
 	}
 
 	// Runes socketed in the source item tune its abilities by their current rank, never another item's.
 	URpgInventoryFragment_Rune::AccumulateSocketedTunings(*SourceItem, AbilityIds, TuningTag, Accumulator);
 	return Accumulator.Resolve(BaseValue);
+}
+
+bool URpgSkillTreeComponent::IsNodeActiveForItem(const FRpgSkillTreeNode& Node, const UObject* SourceItem)
+{
+	return Node.RequiredRunes.IsEmpty() ||
+		Node.IsActiveWithRunes(
+			URpgInventoryFragment_Rune::GetSocketedRuneTags(Cast<URpgInventoryItemInstance>(SourceItem)));
 }
 
 URpgSkillTreeComponent* URpgSkillTreeComponent::FindForActor(const AActor* Actor)
@@ -642,6 +656,28 @@ const URpgSkillTreeDefinition* URpgSkillTreeComponent::FindActiveWeaponSkillTree
 			: nullptr)
 		{
 			return Tree;
+		}
+	}
+	return nullptr;
+}
+
+const UObject* URpgSkillTreeComponent::FindActiveItemOfTree(const APawn* Pawn, const FGameplayTag TreeTag)
+{
+	const URpgEquipmentManagerComponent* Equipment = Pawn ? Pawn->FindComponentByClass<URpgEquipmentManagerComponent>() : nullptr;
+	if (!Equipment || !TreeTag.IsValid())
+	{
+		return nullptr;
+	}
+
+	for (const ERpgEquipmentSlot Slot : {ERpgEquipmentSlot::MainHand, ERpgEquipmentSlot::OffHand})
+	{
+		const URpgEquipmentInstance* Instance = Equipment->GetEquipmentInstanceInSlot(Slot);
+		const URpgSkillTreeDefinition* Tree = Instance
+			? URpgInventoryFragment_SkillTree::FindActiveSkillTreeOfItem(Instance->GetInstigator(), Slot)
+			: nullptr;
+		if (Tree && Tree->TreeTag == TreeTag)
+		{
+			return Instance->GetInstigator();
 		}
 	}
 	return nullptr;

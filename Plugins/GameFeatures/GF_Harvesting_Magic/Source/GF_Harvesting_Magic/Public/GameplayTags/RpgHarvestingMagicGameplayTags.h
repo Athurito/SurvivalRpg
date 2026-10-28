@@ -81,4 +81,13 @@ namespace RpgHarvestingMagicGameplayTags
 
 	/** Rune tuning of how long, in seconds, a lit burn keeps working its resource; base 0 lights none. */
 	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_BurnDuration);
+
+	/** Skill tree tuning: above 0, a further hit on a resource the player burns restarts the burn's time; base 0. */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_BurnRefresh);
+
+	/**
+	 * Skill tree tuning: above 0, a further hit on a resource the player burns releases the burn's remaining work at
+	 * once, times this value, and puts it out; base 0.
+	 */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_BurnDischarge);
 }

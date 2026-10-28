@@ -4,7 +4,10 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
 #include "SurvivalRpg/Progression/Player/RpgPlayerProgressionComponent.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
+#include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeComponent.h"
 #include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeDefinition.h"
+#include "SurvivalRpg/Runes/RpgInventoryFragment_Rune.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillProgressionComponent.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgSkillTreeViewModels)
@@ -76,7 +79,8 @@ void URpgSkillTreeNodeViewModel::UpdateNode(
 	const bool bInSelected,
 	const bool bInRowUnlocked,
 	const bool bInCanRefund,
-	const FRpgSkillTreeNodeInteraction& Interaction)
+	const FRpgSkillTreeNodeInteraction& Interaction,
+	const bool bInRunesActive)
 {
 	Tree = InTree;
 
@@ -112,6 +116,34 @@ void URpgSkillTreeNodeViewModel::UpdateNode(
 	UE_MVVM_SET_PROPERTY_VALUE(RequestStatus, Interaction.RequestStatus);
 	UE_MVVM_SET_PROPERTY_VALUE(bIsRequestPending, Interaction.RequestStatus == ERpgSkillTreeRequestStatus::Pending);
 	UE_MVVM_SET_PROPERTY_VALUE(Rejection, Interaction.Rejection);
+
+	const bool bNewNeedsRunes = !Node.RequiredRunes.IsEmpty();
+	FText NewRuneRequirementText;
+	if (bNewNeedsRunes)
+	{
+		// Rune tags end in the rune's name, for example Rune.Brand.
+		TArray<FString> RuneNames;
+		for (const FGameplayTag& Rune : Node.RequiredRunes)
+		{
+			FString Name = Rune.ToString();
+			int32 DotIndex = INDEX_NONE;
+			if (Name.FindLastChar(TEXT('.'), DotIndex))
+			{
+				Name.RightChopInline(DotIndex + 1);
+			}
+			RuneNames.Add(Name);
+		}
+		const FText Separator = Node.RuneMatch == ERpgSkillTreeRuneMatch::AllRunes
+			? NSLOCTEXT("RpgSkillTreeViewModels", "RunesAnd", " and ")
+			: NSLOCTEXT("RpgSkillTreeViewModels", "RunesOr", " or ");
+		NewRuneRequirementText = FText::Format(
+			NSLOCTEXT("RpgSkillTreeViewModels", "RuneRequirement", "Needs {0} in the tool's sockets"),
+			FText::FromString(FString::Join(RuneNames, *Separator.ToString())));
+	}
+	UE_MVVM_SET_PROPERTY_VALUE(RequiredRunes, Node.RequiredRunes);
+	UE_MVVM_SET_PROPERTY_VALUE(bNeedsRunes, bNewNeedsRunes);
+	UE_MVVM_SET_PROPERTY_VALUE(bIsDormant, bNewNeedsRunes && NewState == ERpgSkillTreeNodeState::Unlocked && !bInRunesActive);
+	UE_MVVM_SET_PROPERTY_VALUE(RuneRequirementText, NewRuneRequirementText);
 }
 
 void URpgSkillTreeNodeViewModel::RequestUnlock()
@@ -429,6 +461,11 @@ void URpgSkillTreeViewModel::Rebuild()
 		}
 	}
 
+	// Rune-bound nodes work only with their runes in the sockets of this tree's tool in hand.
+	const APlayerState* OwnerPlayerState = SkillTrees ? Cast<APlayerState>(SkillTrees->GetOwner()) : nullptr;
+	const FGameplayTagContainer SocketedRunes = URpgInventoryFragment_Rune::GetSocketedRuneTags(Cast<URpgInventoryItemInstance>(
+		URpgSkillTreeComponent::FindActiveItemOfTree(OwnerPlayerState ? OwnerPlayerState->GetPawn() : nullptr, TreeTag)));
+
 	TArray<TObjectPtr<URpgSkillTreeNodeViewModel>> NewNodes;
 	int32 NewRowCount = 0;
 	int32 NewColumnCount = 0;
@@ -486,7 +523,8 @@ void URpgSkillTreeViewModel::Rebuild()
 				SelectedNodeTag.IsValid() && Node.NodeTag == SelectedNodeTag,
 				NewSpentPoints >= Node.RequiredPointsInTree,
 				SkillTrees->EvaluateRefund(TreeTag, Node.NodeTag) == ERpgSkillTreeRefundResult::Refundable,
-				Interaction);
+				Interaction,
+				Node.IsActiveWithRunes(SocketedRunes));
 			NewNodes.Add(NodeViewModel);
 
 			NewRowCount = FMath::Max(NewRowCount, Node.Row + 1);

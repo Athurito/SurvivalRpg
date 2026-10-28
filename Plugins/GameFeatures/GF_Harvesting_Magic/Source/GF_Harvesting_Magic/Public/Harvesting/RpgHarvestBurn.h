@@ -8,16 +8,35 @@
 
 #include "RpgHarvestBurn.generated.h"
 
+/** What one direct hit asks of the burn on its resource, from the tunings of the hitting tool. Server-side. */
+struct GF_HARVESTING_MAGIC_API FRpgHarvestBurnParams
+{
+	/** Sections of work the burn does per second; above zero to light or refresh a burn. */
+	float WorkPerSecond = 0.0f;
+
+	/** Burn time in seconds of a new or refreshed burn; above zero to light or refresh a burn. */
+	float DurationSeconds = 0.0f;
+
+	/** Whether a further hit restarts the burn time of the player's running burn on the resource. */
+	bool bRefresh = false;
+
+	/**
+	 * Above zero, a further hit releases the work the player's running burn would still do, times this value, at once,
+	 * and puts the burn out instead of refreshing it.
+	 */
+	float DischargeMultiplier = 0.0f;
+};
+
 /**
  * One burn on one harvestable resource, lit by a socketed rune such as Brand when its harvester's own hit works the
  * resource.
  *
  * Server-authoritative: every TickIntervalSeconds the burn commits secondary work of the igniting action on the
- * resource, with the igniting player as harvester, until its time is up, the resource is empty, respawned or protected,
- * or the player leaves. The work only depletes the stock faster; every section it completes rewards the igniting player
- * and awards XP once, through the resource's normal commit. Each player keeps at most one burn per resource, so co-op
- * partners can burn the same resource side by side. The actor replicates without movement, so every player sees its
- * presentation, such as a fire Niagara component of the Blueprint subclass, for as long as it burns.
+ * resource, with the igniting player as harvester, until its ticks are used up, the resource is empty, respawned or
+ * protected, or the player leaves. The work only depletes the stock faster; every section it completes rewards the
+ * igniting player and awards XP once, through the resource's normal commit. Each player keeps at most one burn per
+ * resource, so co-op partners can burn the same resource side by side. The actor replicates without movement, so every
+ * player sees its presentation, such as a fire Niagara component of the Blueprint subclass, for as long as it burns.
  */
 UCLASS(Blueprintable)
 class GF_HARVESTING_MAGIC_API ARpgHarvestBurn : public AActor
@@ -28,17 +47,16 @@ public:
 	explicit ARpgHarvestBurn(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	/**
-	 * Authority: lights a burn of BurnClass on the resource that DirectRequest struck on Receiver, for the player of
-	 * DirectRequest's harvester. WorkPerSecond is in sections of work per second and DurationSeconds the burn time, both
-	 * above zero. When that player already burns the resource, returns that burn unchanged. Returns null when nothing
-	 * burns.
+	 * Authority: applies a direct hit to the burn of DirectRequest's player on the resource it struck on Receiver.
+	 * Without a running burn, lights one of BurnClass. With one, releases it when Params asks for a discharge, restarts
+	 * its time when Params asks for a refresh, and otherwise keeps it unchanged. Returns the burn that keeps burning,
+	 * or null when none does.
 	 */
 	static ARpgHarvestBurn* Light(
 		UObject* Receiver,
 		const FRpgHarvestRequest& DirectRequest,
 		TSubclassOf<ARpgHarvestBurn> BurnClass,
-		float WorkPerSecond,
-		float DurationSeconds);
+		const FRpgHarvestBurnParams& Params);
 
 	/** Authority: the burn that Beneficiary keeps on resource Item of Receiver, or null. */
 	static ARpgHarvestBurn* FindBurn(const UObject* Receiver, int32 Item, const AActor* Beneficiary);
@@ -49,8 +67,8 @@ public:
 	/** Authority: sections of work the burn does per second. */
 	float GetWorkPerSecond() const { return WorkPerSecond; }
 
-	/** Authority: seconds of burn time left. */
-	float GetRemainingSeconds() const;
+	/** Authority: commits of burn work still to come. */
+	int32 GetRemainingTicks() const { return RemainingTicks; }
 
 	/** The effect this burn's work names in its provenance, for example Rune.Brand. */
 	FGameplayTag GetProcTag() const { return ProcTag; }
@@ -73,7 +91,10 @@ protected:
 	FGameplayTag ProcTag;
 
 private:
-	bool Start(UObject* InReceiver, AActor* Beneficiary, const FRpgHarvestRequest& DirectRequest, float InWorkPerSecond, float DurationSeconds);
+	bool Start(UObject* InReceiver, AActor* Beneficiary, const FRpgHarvestRequest& DirectRequest, const FRpgHarvestBurnParams& Params);
+	int32 TicksFor(float DurationSeconds) const;
+	void Refresh(float DurationSeconds);
+	void Discharge(float Multiplier);
 	void Burn();
 	void Extinguish();
 
@@ -87,6 +108,6 @@ private:
 	TWeakObjectPtr<UObject> Receiver;
 	int32 Item = INDEX_NONE;
 	float WorkPerSecond = 0.0f;
-	double EndTime = 0.0;
+	int32 RemainingTicks = 0;
 	FTimerHandle BurnTimerHandle;
 };

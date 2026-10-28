@@ -5,6 +5,7 @@
 #include "RpgRuneAutomationTestTypes.generated.h"
 
 class URpgAbilitySet;
+class URpgSkillTreeDefinition;
 
 /** Socket grid id of the automation tool. */
 inline const FName RpgRuneAutomationTestSocketGridId(TEXT("Runes"));
@@ -32,6 +33,21 @@ public:
 		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	virtual bool IsEditorOnly() const override { return true; }
+};
+
+/** Editor-only 1x1 tool with the "Runes" socket grid and a skill tree that tests set with SetTestSkillTree. */
+UCLASS(NotBlueprintable, Transient)
+class SURVIVALRPG_API URpgRuneAutomationTestTreeToolDefinition final : public URpgInventoryItemDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgRuneAutomationTestTreeToolDefinition(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	virtual bool IsEditorOnly() const override { return true; }
+
+	/** Points the class default's skill tree fragment at Tree; tests restore null when they finish. */
+	static void SetTestSkillTree(const URpgSkillTreeDefinition* Tree);
 };
 
 /** Editor-only 1x1 bag with a 2x2 storage grid that refuses nested containers. */

@@ -934,8 +934,10 @@ void URpgEquipmentManagerComponent::RebuildEquipmentAbilityGrants()
 			SkillTrees->RegisterSkillTree(SkillTree);
 			for (const FRpgSkillTreeNode& Node : SkillTree->Nodes)
 			{
+				// A node whose runes are missing from this item sleeps: learned, but without grants.
 				if ((Node.AbilitySet || !Node.GrantedTags.IsEmpty()) &&
-					SkillTrees->IsNodeUnlocked(SkillTree->TreeTag, Node.NodeTag))
+					SkillTrees->IsNodeUnlocked(SkillTree->TreeTag, Node.NodeTag) &&
+					URpgSkillTreeComponent::IsNodeActiveForItem(Node, Entry.Instance->GetInstigator()))
 				{
 					DesiredNodes.Add(Node.NodeTag, &Node);
 				}

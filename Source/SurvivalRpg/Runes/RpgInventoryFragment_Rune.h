@@ -66,6 +66,9 @@ public:
 	/** The rune fragment of ItemInstance's definition, or null when the item is no rune. */
 	static const URpgInventoryFragment_Rune* FindRuneOfItem(const UObject* ItemInstance);
 
+	/** The RuneTags of the runes socketed in SourceItem, the rune context of its talents; empty for null. */
+	static FGameplayTagContainer GetSocketedRuneTags(const URpgInventoryItemInstance* SourceItem);
+
 	/**
 	 * Folds the AbilityTunings of the current rank of every rune socketed in SourceItem into Accumulator. Valid on the
 	 * server and on the owning client, which both receive the socket contents.

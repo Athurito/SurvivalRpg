@@ -58,6 +58,11 @@ are data. Code is only needed when an ability gains a new tunable value.
 - **In use:** a weapon is in use while it is equipped in one of the fragment's `ActiveInSlots` (main hand by default).
   - While it is in use, the equipment manager grants each learned node's `AbilitySet` (abilities, passive effects) and `GrantedTags` (loose tags, replicated).
   - Unequipping, switching weapons or resetting the tree removes them.
+- **Rune-bound nodes (MST-06c):** a node with `RequiredRunes` works only while the item carrying its tree has those runes in its sockets (`RuneMatch`: any or all).
+  - Otherwise the learned node sleeps on that item: no grants and no tunings, but it stays learned and keeps its points. Socketing the rune wakes it without a new purchase.
+  - Learning, refunding and saving ignore the runes, so a talent can be bought before its rune is found.
+  - `URpgSkillTreeComponent::IsNodeActiveForItem` is the one rule; the equipment grants, the ability tunings and the skill screen's `bIsDormant` all use it.
+- **Rune tunings (MST-06b):** the `AbilityTunings` of the current rank of every rune socketed in the item count like learned node tunings, after them, for the abilities of that item only.
   - Learned nodes stay learned, so switching back restores everything.
 - **Tunings:** `GetTunedValue(TuningTag, Base)` collects the learned entries of the tree of the ability's weapon that match the tag and either target the ability's id or have no id.
   - The result is `(last Set or Base + sum of Add) * product of Multiply`.
@@ -159,6 +164,7 @@ Add an entry to `Nodes`:
   - A loose passive has no prerequisites.
   - Keep `RequiredPointsInTree` at 0 except for capstones such as an ultimate, so players choose freely and only chains gate nodes.
 - `Cost`, `RequiredPointsInTree`, `Prerequisites` and optionally `ExclusiveGroup`.
+- Optionally `RequiredRunes` and `RuneMatch` for a talent that needs runes in the tool's sockets, for example `Rune.Brand` for the Aftermath branch.
 - Any combination of grants:
   - **Active ability:** an ability set whose entry has an `AbilityIdTag` and no Q/E/R input tag. The tree places it on Q/E/R.
   - **Passive value:** a GameplayEffect in the node's ability set.

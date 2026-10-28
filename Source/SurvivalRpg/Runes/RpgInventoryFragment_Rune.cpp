@@ -36,6 +36,23 @@ const URpgInventoryFragment_Rune* URpgInventoryFragment_Rune::FindRuneOfItem(con
 	return Item ? Item->FindFragmentByClass<URpgInventoryFragment_Rune>() : nullptr;
 }
 
+FGameplayTagContainer URpgInventoryFragment_Rune::GetSocketedRuneTags(const URpgInventoryItemInstance* SourceItem)
+{
+	FGameplayTagContainer RuneTags;
+	if (const URpgInventoryManagerComponent* Inventory = URpgInventoryManagerComponent::FindInventoryOfItem(SourceItem))
+	{
+		for (const URpgInventoryItemInstance* Socketed : Inventory->GetSocketedItems(SourceItem))
+		{
+			const URpgInventoryFragment_Rune* Rune = FindRuneOfItem(Socketed);
+			if (Rune && Rune->RuneTag.IsValid())
+			{
+				RuneTags.AddTag(Rune->RuneTag);
+			}
+		}
+	}
+	return RuneTags;
+}
+
 void URpgInventoryFragment_Rune::AccumulateSocketedTunings(
 	const URpgInventoryItemInstance& SourceItem,
 	const FGameplayTagContainer& AbilityIds,
