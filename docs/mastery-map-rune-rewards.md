@@ -1,6 +1,6 @@
 # MST-07b: Guaranteed rune rewards and rune drops
 
-Task report for MST-07b in the [mastery map roadmap](mastery-map-roadmap.md). It covers the reward part of the [implementation plan](mastery-map-implementation-plan.md), section "Physical runes and the workstation loop":
+Task report for MST-07b in the [mastery map roadmap](mastery-map-roadmap.md), [PR #321](https://github.com/Athurito/SurvivalRpg/pull/321). It covers the reward part of the [implementation plan](mastery-map-implementation-plan.md), section "Physical runes and the workstation loop":
 - Loot tables and a guaranteed selectable reward use authored reward data.
 - Claim identity is saved, so a reconnect cannot claim twice.
 - A full inventory preserves the claim.

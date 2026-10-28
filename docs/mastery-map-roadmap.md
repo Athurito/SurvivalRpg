@@ -51,7 +51,7 @@ All dependencies below are within MST; every row also has the CMB scheduling gat
 | MST-06c | Source-tool activation evaluator and learned-but-inactive UI; Brand's talents Anhaltende Macht and Entladung | MST-06b | Merged (2026-10-28, `fff77e59`) | [mastery-map-rune-talents.md](mastery-map-rune-talents.md), [PR #318](https://github.com/Athurito/SurvivalRpg/pull/318) |
 | MST-06d | Rune bar on the skill screen: the tool in hand and its three sockets above the map, and highlights of the talents of a clicked rune | MST-06c | Merged (2026-10-28, `95ed8607`) | [mastery-map-rune-bar.md](mastery-map-rune-bar.md), [PR #319](https://github.com/Athurito/SurvivalRpg/pull/319) |
 | MST-07a | Persistent world recipe knowledge: carrying a rune teaches the world its base recipe without consuming it, and the Kiln crafts a new rank-I Brand | MST-06d | Merged (2026-10-28, `af0db4e0`) | [mastery-map-rune-recipes.md](mastery-map-rune-recipes.md), [PR #320](https://github.com/Athurito/SurvivalRpg/pull/320) |
-| MST-07b | Guaranteed reward claims with saved identity, configurable as a choice or a loot pool, granted at mastery milestones and claimed on the Character tab; Brand drops from vein and pine loot pools; a full inventory never loses a claim | MST-07a | In review | [mastery-map-rune-rewards.md](mastery-map-rune-rewards.md) |
+| MST-07b | Guaranteed reward claims with saved identity, configurable as a choice or a loot pool, granted at mastery milestones and claimed on the Character tab; Brand drops from vein and pine loot pools; a full inventory never loses a claim | MST-07a | In review | [mastery-map-rune-rewards.md](mastery-map-rune-rewards.md), [PR #321](https://github.com/Athurito/SurvivalRpg/pull/321) |
 | MST-07c | Guaranteed rewards when an eligible portal closes, for the instigator and the realm's participants, with one claim identity per completion | MST-07b | Planned | — |
 | MST-08 | In-place rank II/III upgrades, salvage and Runenschrein presentation; atomic costs and safe equipped-rune refresh | MST-07b | Planned | — |
 | MST-09a | Harvesting Echo, Kraftuebertrag and Runenfluss; bounded own-hit triggers and actual-overkill transfer | MST-08 | Planned | — |
@@ -107,7 +107,7 @@ Playtests of merged MST steps that wait for the user's batch test. Remove a row 
 ## Current handoff
 
 - **Active phase:** MST, started by the user on 2026-10-27 after CMB-01 to CMB-07 merged.
-- **Active task:** MST-07b, branch `claude/mst-07b-rune-rewards`; the report is [mastery-map-rune-rewards.md](mastery-map-rune-rewards.md).
+- **Active task:** MST-07b, branch `claude/mst-07b-rune-rewards`, [PR #321](https://github.com/Athurito/SurvivalRpg/pull/321); the report is [mastery-map-rune-rewards.md](mastery-map-rune-rewards.md).
   - `URpgRewardClaimComponent` on the PlayerState holds a player's guaranteed rewards; `URpgRewardClaimDefinition` configures a choice or a loot pool.
   - `URpgSkillTreeDefinition::MasteryMilestones` grants them; the Harvesting tree offers "Rune of your choice" at mastery level 3, claimed on the Character tab.
   - `LT_IronVein` and `LT_DeadPine` drop Brand at 2 % per roll, scaled by rare find.
