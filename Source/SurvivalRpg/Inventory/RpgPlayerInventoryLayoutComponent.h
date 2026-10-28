@@ -166,6 +166,14 @@ private:
 	void AppendStaticGroupViews(
 		const URpgPlayerInventoryLayoutDefinition& LayoutDefinition,
 		TArray<FRpgInventorySlotGroupView>& OutGroups) const;
-	void AppendItemContainerViews(const URpgInventoryItemInstance* ProviderItem, ERpgEquipmentSlot SourceEquipmentSlot, TArray<FRpgInventorySlotGroupView>& OutGroups) const;
+	/**
+	 * Appends the grids of ProviderItem. A gear provider (SourceEquipmentSlot) contributes its storage grids as
+	 * Content; an item in a carry slot (SourceCarryRole) contributes only its socket grids as Socket groups.
+	 */
+	void AppendItemContainerViews(
+		const URpgInventoryItemInstance* ProviderItem,
+		ERpgEquipmentSlot SourceEquipmentSlot,
+		FGameplayTag SourceCarryRole,
+		TArray<FRpgInventorySlotGroupView>& OutGroups) const;
 	void BroadcastLayoutChanged() const;
 };

@@ -21,6 +21,19 @@ public:
 	virtual bool IsEditorOnly() const override { return true; }
 };
 
+/** Editor-only 1x1 MainHand weapon with the same "Runes" socket grid, for tests that carry it in a carry slot. */
+UCLASS(NotBlueprintable, Transient)
+class SURVIVALRPG_API URpgRuneAutomationTestSocketedWeaponDefinition final : public URpgInventoryItemDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgRuneAutomationTestSocketedWeaponDefinition(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	virtual bool IsEditorOnly() const override { return true; }
+};
+
 /** Editor-only 1x1 bag with a 2x2 storage grid that refuses nested containers. */
 UCLASS(NotBlueprintable, Transient)
 class SURVIVALRPG_API URpgRuneAutomationTestBagDefinition final : public URpgInventoryItemDefinition

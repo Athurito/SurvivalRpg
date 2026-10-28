@@ -250,6 +250,29 @@ void URpgPlayerInventoryPaneWidget::RefreshSlotGroups()
 	BindContentGroup(Content_Belt, FindEquipmentProvidedContentGroup(ERpgEquipmentSlot::Belt), TEXT("Content_Belt"));
 	BindContentGroup(Content_Pouch, FindEquipmentProvidedContentGroup(ERpgEquipmentSlot::Pouch), TEXT("Content_Pouch"));
 	BindContentGroup(Content_ResourceBag, FindEquipmentProvidedContentGroup(ERpgEquipmentSlot::ResourceBag), TEXT("Content_ResourceBag"));
+
+	// Socket hosts are optional: a pane without them simply shows no sockets.
+	auto BindSocketGroup = [this](URpgInventorySlotGroupWidget* GroupWidget, FGameplayTag CarryRole)
+	{
+		if (!GroupWidget)
+		{
+			return;
+		}
+
+		URpgInventorySlotGroupViewModel* GroupViewModel =
+			PlayerInventoryViewModel->GetSocketGroupForCarryRole(CarryRole);
+		GroupWidget->BindInventoryPresentation(
+			GroupViewModel,
+			InteractionContext,
+			MakePanelId(TEXT("Content")));
+		if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(GroupWidget->Slot))
+		{
+			CanvasSlot->SetAutoSize(true);
+		}
+		GroupWidget->SetVisibility(GroupViewModel ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	};
+	BindSocketGroup(Sockets_Weapon1, RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Primary);
+	BindSocketGroup(Sockets_Weapon2, RpgGameplayTags::Rpg_Inventory_Layout_Role_Carry_Secondary);
 }
 
 void URpgPlayerInventoryPaneWidget::RefreshActionBar()
@@ -705,7 +728,7 @@ URpgInventorySlotGroupViewModel* URpgPlayerInventoryPaneWidget::FindEquipmentPro
 
 	for (URpgInventorySlotGroupViewModel* Group : PlayerInventoryViewModel->GetInventoryGroups())
 	{
-		if (Group && Group->IsProvidedByEquipment() &&
+		if (Group && Group->IsContentGroup() && Group->IsProvidedByEquipment() &&
 			Group->GetSourceEquipmentSlot() == SourceEquipmentSlot)
 		{
 			return Group;
@@ -722,6 +745,9 @@ void URpgPlayerInventoryPaneWidget::CollectStandaloneContentGroupWidgets(TArray<
 	OutWidgets.Add(Content_Belt);
 	OutWidgets.Add(Content_Pouch);
 	OutWidgets.Add(Content_ResourceBag);
+	// Socket grids navigate, drop and release like content grids; only automatic placement skips them.
+	OutWidgets.Add(Sockets_Weapon1);
+	OutWidgets.Add(Sockets_Weapon2);
 	OutWidgets.Remove(nullptr);
 }
 
