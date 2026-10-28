@@ -1,6 +1,6 @@
 # MST-07c: Guaranteed rewards when a portal closes
 
-Task report for MST-07c in the [mastery map roadmap](mastery-map-roadmap.md). It adds the portal source of the guaranteed rewards from [MST-07b](mastery-map-rune-rewards.md), as the user accepted on 2026-10-28:
+Task report for MST-07c in the [mastery map roadmap](mastery-map-roadmap.md), [PR #322](https://github.com/Athurito/SurvivalRpg/pull/322). It adds the portal source of the guaranteed rewards from [MST-07b](mastery-map-rune-rewards.md), as the user accepted on 2026-10-28:
 - Closing an eligible portal rewards the player who closes it and everyone who was in the realm.
 - Each completion is its own reward.
 

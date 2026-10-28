@@ -52,7 +52,7 @@ All dependencies below are within MST; every row also has the CMB scheduling gat
 | MST-06d | Rune bar on the skill screen: the tool in hand and its three sockets above the map, and highlights of the talents of a clicked rune | MST-06c | Merged (2026-10-28, `95ed8607`) | [mastery-map-rune-bar.md](mastery-map-rune-bar.md), [PR #319](https://github.com/Athurito/SurvivalRpg/pull/319) |
 | MST-07a | Persistent world recipe knowledge: carrying a rune teaches the world its base recipe without consuming it, and the Kiln crafts a new rank-I Brand | MST-06d | Merged (2026-10-28, `af0db4e0`) | [mastery-map-rune-recipes.md](mastery-map-rune-recipes.md), [PR #320](https://github.com/Athurito/SurvivalRpg/pull/320) |
 | MST-07b | Guaranteed reward claims with saved identity, configurable as a choice or a loot pool, granted at mastery milestones and claimed on the Character tab; Brand drops from vein and pine loot pools; a full inventory never loses a claim | MST-07a | Merged (2026-10-28, `17e4ea30`) | [mastery-map-rune-rewards.md](mastery-map-rune-rewards.md), [PR #321](https://github.com/Athurito/SurvivalRpg/pull/321) |
-| MST-07c | Guaranteed rewards when an eligible portal closes, for the instigator and the realm's participants, with one claim identity per completion | MST-07b | In review | [mastery-map-portal-rewards.md](mastery-map-portal-rewards.md) |
+| MST-07c | Guaranteed rewards when an eligible portal closes, for the instigator and the realm's participants, with one claim identity per completion | MST-07b | In review | [mastery-map-portal-rewards.md](mastery-map-portal-rewards.md), [PR #322](https://github.com/Athurito/SurvivalRpg/pull/322) |
 | MST-08 | In-place rank II/III upgrades, salvage and Runenschrein presentation; atomic costs and safe equipped-rune refresh | MST-07b | Planned | — |
 | MST-09a | Harvesting Echo, Kraftuebertrag and Runenfluss; bounded own-hit triggers and actual-overkill transfer | MST-08 | Planned | — |
 | MST-09b | Erntesprung, Durchschlag, Ausbreitung and remaining Nachwirkung choices; finite propagation and no duplicated work | MST-09a | Planned | — |
@@ -108,7 +108,7 @@ Playtests of merged MST steps that wait for the user's batch test. Remove a row 
 ## Current handoff
 
 - **Active phase:** MST, started by the user on 2026-10-27 after CMB-01 to CMB-07 merged.
-- **Active task:** MST-07c, branch `claude/mst-07c-portal-rewards`; the report is [mastery-map-portal-rewards.md](mastery-map-portal-rewards.md).
+- **Active task:** MST-07c, branch `claude/mst-07c-portal-rewards`, [PR #322](https://github.com/Athurito/SurvivalRpg/pull/322); the report is [mastery-map-portal-rewards.md](mastery-map-portal-rewards.md).
   - `URpgPortalEncounterDefinition::CompletionReward` is granted on an eligible close to the closer and every connected realm participant, one claim per completion (`FRpgPortalCompletionRewards`).
   - The Root Grove portal in `Lvl_ResourceParity` gives "Rune of your choice".
 - **Previous task:** MST-07b, merged on 2026-10-28 as `17e4ea30` ([PR #321](https://github.com/Athurito/SurvivalRpg/pull/321)); the report is [mastery-map-rune-rewards.md](mastery-map-rune-rewards.md).
