@@ -24,6 +24,17 @@ enum class ERpgSkillTreeTuningOperation : uint8
 	Multiply
 };
 
+/** How a node's RequiredRunes must be socketed in the item that carries its tree. */
+UENUM(BlueprintType)
+enum class ERpgSkillTreeRuneMatch : uint8
+{
+	/** At least one of the runes, for example Erntesprung or Durchschlag. */
+	AnyRune,
+
+	/** Every one of the runes, for example Brand and Erntesprung. */
+	AllRunes
+};
+
 /** Where the nodes of a skill tree sit on the mastery map. Presentation only; no gameplay rule reads it. */
 UENUM(BlueprintType)
 enum class ERpgSkillTreeLayoutMode : uint8
@@ -171,6 +182,19 @@ struct SURVIVALRPG_API FRpgSkillTreeNode
 	FName ExclusiveGroup;
 
 	/**
+	 * Runes, by rune tag, that must sit in the sockets of the item carrying this tree for the node to work, for example
+	 * Rune.Brand. While they do not, the learned node sleeps on that item: its grants and tunings are off, but it stays
+	 * learned and keeps its points. Learning and saving ignore it, so a talent can be bought before its rune is found.
+	 * Empty means the node always works. Designer-tuned static data.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|Requirements", meta = (Categories = "Rune"))
+	FGameplayTagContainer RequiredRunes;
+
+	/** Whether any or all of RequiredRunes must be socketed. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|Requirements")
+	ERpgSkillTreeRuneMatch RuneMatch = ERpgSkillTreeRuneMatch::AnyRune;
+
+	/**
 	 * Abilities, passive effects and attribute changes granted while the node is learned and the weapon of this tree is
 	 * in use. Abilities with an AbilityIdTag can be placed on Q/E/R; the first free slot takes a newly learned one.
 	 */
@@ -187,6 +211,9 @@ struct SURVIVALRPG_API FRpgSkillTreeNode
 
 	/** Returns the stable ability ids of the abilities this node grants. */
 	void GetGrantedAbilityIds(TArray<FGameplayTag>& OutAbilityIds) const;
+
+	/** Returns whether the node works with SocketedRunes, the rune tags in the sockets of the item carrying its tree. */
+	bool IsActiveWithRunes(const FGameplayTagContainer& SocketedRunes) const;
 };
 
 /**

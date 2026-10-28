@@ -87,6 +87,14 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestTunedValues
 	float BurnWork = 0.0f;
 	float BurnSeconds = 0.0f;
 
+	/**
+	 * What a further hit does to the player's running burn on the resource: restart its time
+	 * (Ability.Tuning.Harvest.BurnRefresh above 0), or release its remaining work at once times BurnDischarge
+	 * (Ability.Tuning.Harvest.BurnDischarge above 0), which wins over a refresh.
+	 */
+	bool bBurnRefresh = false;
+	float BurnDischarge = 0.0f;
+
 	/** Swarm with tuned creature count, rest and strike radius. */
 	FRpgHarvestSwarmParams Swarm;
 

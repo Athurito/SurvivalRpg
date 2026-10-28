@@ -25,13 +25,12 @@ ARpgHarvestBurn* ARpgHarvestBurn::Light(
 	UObject* Receiver,
 	const FRpgHarvestRequest& DirectRequest,
 	const TSubclassOf<ARpgHarvestBurn> BurnClass,
-	const float WorkPerSecond,
-	const float DurationSeconds)
+	const FRpgHarvestBurnParams& Params)
 {
 	UWorld* World = Receiver ? Receiver->GetWorld() : nullptr;
 	if (!World || World->GetNetMode() == NM_Client || !BurnClass || !IsValid(DirectRequest.Harvester) ||
-		!FMath::IsFinite(WorkPerSecond) || WorkPerSecond <= 0.0f ||
-		!FMath::IsFinite(DurationSeconds) || DurationSeconds <= 0.0f)
+		!FMath::IsFinite(Params.WorkPerSecond) || Params.WorkPerSecond <= 0.0f ||
+		!FMath::IsFinite(Params.DurationSeconds) || Params.DurationSeconds <= 0.0f)
 	{
 		return nullptr;
 	}
@@ -44,6 +43,15 @@ ARpgHarvestBurn* ARpgHarvestBurn::Light(
 	}
 	if (ARpgHarvestBurn* Existing = FindBurn(Receiver, DirectRequest.Hit.Item, Beneficiary))
 	{
+		if (FMath::IsFinite(Params.DischargeMultiplier) && Params.DischargeMultiplier > 0.0f)
+		{
+			Existing->Discharge(Params.DischargeMultiplier);
+			return nullptr;
+		}
+		if (Params.bRefresh)
+		{
+			Existing->Refresh(Params.DurationSeconds);
+		}
 		return Existing;
 	}
 
@@ -53,7 +61,7 @@ ARpgHarvestBurn* ARpgHarvestBurn::Light(
 		BurnClass,
 		FTransform(DirectRequest.Hit.ImpactPoint),
 		SpawnParameters);
-	if (Burn && !Burn->Start(Receiver, Beneficiary, DirectRequest, WorkPerSecond, DurationSeconds))
+	if (Burn && !Burn->Start(Receiver, Beneficiary, DirectRequest, Params))
 	{
 		Burn->Destroy();
 		Burn = nullptr;
@@ -80,12 +88,6 @@ ARpgHarvestBurn* ARpgHarvestBurn::FindBurn(const UObject* Receiver, const int32 
 	return nullptr;
 }
 
-float ARpgHarvestBurn::GetRemainingSeconds() const
-{
-	const UWorld* World = GetWorld();
-	return World ? static_cast<float>(FMath::Max(0.0, EndTime - World->GetTimeSeconds())) : 0.0f;
-}
-
 void ARpgHarvestBurn::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	if (UWorld* World = GetWorld())
@@ -99,8 +101,7 @@ bool ARpgHarvestBurn::Start(
 	UObject* InReceiver,
 	AActor* Beneficiary,
 	const FRpgHarvestRequest& DirectRequest,
-	const float InWorkPerSecond,
-	const float DurationSeconds)
+	const FRpgHarvestBurnParams& Params)
 {
 	UWorld* World = GetWorld();
 	if (!HasAuthority() || !World || !InReceiver || !Beneficiary)
@@ -111,8 +112,8 @@ bool ARpgHarvestBurn::Start(
 	const float Interval = FMath::Max(0.1f, TickIntervalSeconds);
 	Receiver = InReceiver;
 	Item = DirectRequest.Hit.Item;
-	WorkPerSecond = InWorkPerSecond;
-	EndTime = World->GetTimeSeconds() + DurationSeconds;
+	WorkPerSecond = Params.WorkPerSecond;
+	RemainingTicks = TicksFor(Params.DurationSeconds);
 
 	// Every commit is follow-up work of the igniting action, for its player. The resource it worked has to stay the same
 	// stock: a depletion or respawn changes the revision, and the next commit then puts the burn out.
@@ -131,19 +132,44 @@ bool ARpgHarvestBurn::Start(
 	return true;
 }
 
+int32 ARpgHarvestBurn::TicksFor(const float DurationSeconds) const
+{
+	return FMath::Max(1, FMath::RoundToInt(DurationSeconds / FMath::Max(0.1f, TickIntervalSeconds)));
+}
+
+void ARpgHarvestBurn::Refresh(const float DurationSeconds)
+{
+	RemainingTicks = FMath::Max(RemainingTicks, TicksFor(DurationSeconds));
+}
+
+void ARpgHarvestBurn::Discharge(const float Multiplier)
+{
+	UObject* Target = Receiver.Get();
+	if (Target && IsValid(RequestTemplate.Harvester) && RemainingTicks > 0)
+	{
+		// The work of every tick still to come, released in one commit.
+		FRpgHarvestRequest Request = RequestTemplate;
+		Request.WorkScale = FMath::Clamp(
+			RequestTemplate.WorkScale * RemainingTicks * Multiplier,
+			0.01f,
+			RpgHarvestWork::MaxWorkScale);
+		LastResult = IRpgHarvestableTarget::Execute_CommitHarvest(Target, Request);
+	}
+	Extinguish();
+}
+
 void ARpgHarvestBurn::Burn()
 {
 	UObject* Target = Receiver.Get();
-	const UWorld* World = GetWorld();
-	if (!Target || !World || !IsValid(RequestTemplate.Harvester))
+	if (!Target || !IsValid(RequestTemplate.Harvester))
 	{
 		Extinguish();
 		return;
 	}
 
 	LastResult = IRpgHarvestableTarget::Execute_CommitHarvest(Target, RequestTemplate);
-	const bool bTimeUp = World->GetTimeSeconds() + UE_KINDA_SMALL_NUMBER >= EndTime;
-	if (!LastResult.IsSuccess() || LastResult.RemainingWork <= 0 || bTimeUp)
+	--RemainingTicks;
+	if (!LastResult.IsSuccess() || LastResult.RemainingWork <= 0 || RemainingTicks <= 0)
 	{
 		Extinguish();
 	}
@@ -151,6 +177,7 @@ void ARpgHarvestBurn::Burn()
 
 void ARpgHarvestBurn::Extinguish()
 {
+	RemainingTicks = 0;
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(BurnTimerHandle);

@@ -210,7 +210,8 @@ public:
 		bool bInSelected,
 		bool bInRowUnlocked,
 		bool bInCanRefund,
-		const FRpgSkillTreeNodeInteraction& Interaction);
+		const FRpgSkillTreeNodeInteraction& Interaction,
+		bool bInRunesActive = true);
 
 	/** Tree view model that owns this node. */
 	UFUNCTION(BlueprintPure, Category = "Skill Tree|ViewModel")
@@ -252,6 +253,8 @@ public:
 	FGameplayTag GetSwapReplacesNodeTag() const { return SwapReplacesNodeTag; }
 	ERpgSkillTreeRequestStatus GetRequestStatus() const { return RequestStatus; }
 	ERpgSkillTreeRequestRejection GetRejection() const { return Rejection; }
+	bool NeedsRunes() const { return bNeedsRunes; }
+	bool IsDormant() const { return bIsDormant; }
 
 protected:
 	/** Stable node identity. */
@@ -364,6 +367,25 @@ protected:
 	/** Why the server rejected the last request, while RequestStatus is Rejected; None otherwise. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Node", meta = (AllowPrivateAccess = "true"))
 	ERpgSkillTreeRequestRejection Rejection = ERpgSkillTreeRequestRejection::None;
+
+	/** Rune tags the node needs in its tool's sockets to work, copied from the node; empty for most nodes. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Node", meta = (AllowPrivateAccess = "true"))
+	FGameplayTagContainer RequiredRunes;
+
+	/** True when the node only works with runes in its tool's sockets. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Node", meta = (AllowPrivateAccess = "true"))
+	bool bNeedsRunes = false;
+
+	/**
+	 * True when the node is learned but sleeps: the tool of this tree in hand lacks its runes, or no such tool is in
+	 * hand. Derived from the same rule the server's grants use; UI read-only.
+	 */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Node", meta = (AllowPrivateAccess = "true"))
+	bool bIsDormant = false;
+
+	/** Player-facing rune requirement, for example "Needs Brand in the tool's sockets"; empty without one. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Node", meta = (AllowPrivateAccess = "true"))
+	FText RuneRequirementText;
 
 private:
 	TWeakObjectPtr<URpgSkillTreeViewModel> Tree;

@@ -126,4 +126,14 @@ namespace RpgHarvestingMagicGameplayTags
 		Ability_Tuning_Harvest_BurnDuration,
 		"Ability.Tuning.Harvest.BurnDuration",
 		"Seconds a lit burn keeps working its resource; base 0 lights none.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_BurnRefresh,
+		"Ability.Tuning.Harvest.BurnRefresh",
+		"Above 0, a further hit on a resource the player burns restarts the burn's time; base 0.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_BurnDischarge,
+		"Ability.Tuning.Harvest.BurnDischarge",
+		"Above 0, a further hit releases the remaining burn work at once, times this value, and puts the burn out; base 0.");
 }

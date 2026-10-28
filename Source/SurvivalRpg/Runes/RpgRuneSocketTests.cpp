@@ -18,11 +18,19 @@
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemContainer.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
+#include "SurvivalRpg/Mvvm/SkillTrees/RpgSkillTreeViewModels.h"
 #include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeComponent.h"
+#include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeDefinition.h"
+#include "SurvivalRpg/Progression/Skills/RpgTradeSkillGameplayTags.h"
+#include "SurvivalRpg/Progression/Skills/RpgTradeSkillProgressionComponent.h"
 
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_RuneSocketTest_RankAbility, "Ability.AutomationRune.RankII");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_RuneSocketTest_TunedAbility, "Ability.AutomationRune.Tuned");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_RuneSocketTest_Tuning, "Ability.Tuning.AutomationRune.Value");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_RuneSocketTest_Tree, "SkillTree.Tree.AutomationRune");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_RuneSocketTest_PlainNode, "SkillTree.Node.AutomationRune.Plain");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_RuneSocketTest_RuneBoundNode, "SkillTree.Node.AutomationRune.RuneBound");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_RuneSocketTest_RuneBoundGranted, "SkillTree.AutomationRune.RuneBoundGranted");
 
 namespace RpgRuneSocketTests
 {
@@ -634,6 +642,140 @@ bool FRpgRuneSocketedTuningTest::RunTest(const FString& Parameters)
 		URpgSkillTreeComponent::ResolveAbilityTuningForSpec(
 			FGameplayAbilitySpec(URpgInventoryAutomationTestUseAbility::StaticClass()), ActorInfo, TAG_RuneSocketTest_Tuning, 1.0f),
 		1.0f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgRuneBoundTalentTest,
+	"SurvivalRpg.Runes.Talents.RuneBoundNodesSleepWithoutTheirRune",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgRuneBoundTalentTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgRuneSocketTests;
+	ConfigureRuneAutomationTestDefinitions();
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		World ? World->SpawnActor<ARpgInventoryAutomationTestPlayerState>() : nullptr;
+	ARpgEquipmentAutomationTestPawn* Pawn = World ? World->SpawnActor<ARpgEquipmentAutomationTestPawn>() : nullptr;
+	if (!TestNotNull(TEXT("The player state spawns"), PlayerState) || !TestNotNull(TEXT("The pawn spawns"), Pawn))
+	{
+		return false;
+	}
+	Pawn->SetPlayerState(PlayerState);
+	URpgAbilitySystemComponent* AbilitySystem = Pawn->GetRpgAbilitySystemComponent();
+	URpgEquipmentManagerComponent* Equipment = Pawn->GetEquipmentManagerComponent();
+	URpgSkillTreeComponent* SkillTrees = PlayerState->GetSkillTreeComponent();
+	URpgInventoryManagerComponent* Inventory = PlayerState->GetInventoryManagerComponent();
+	if (!TestNotNull(TEXT("The pawn has an ability system"), AbilitySystem) ||
+		!TestNotNull(TEXT("The pawn has an equipment manager"), Equipment) ||
+		!TestNotNull(TEXT("The player has skill trees"), SkillTrees) ||
+		!TestNotNull(TEXT("The player has an inventory"), Inventory))
+	{
+		return false;
+	}
+	AbilitySystem->InitAbilityActorInfo(Pawn, Pawn);
+	AbilitySystem->SetForceGrantAuthorityForTests(true);
+
+	// Plain always works; RuneBound needs rune A in the tool's sockets.
+	const FGameplayTag RuneTagA = FGameplayTag::RequestGameplayTag(TEXT("Rune.AutomationTest.A"));
+	URpgSkillTreeDefinition* Tree = NewObject<URpgSkillTreeDefinition>(GetTransientPackage(), NAME_None, RF_Transient);
+	Tree->TreeTag = TAG_RuneSocketTest_Tree;
+	Tree->MasterySkillTag = RpgTradeSkillGameplayTags::Skill_Gathering_Logging;
+	Tree->MaxPoints = 10;
+	auto AddTuning = [](FRpgSkillTreeNode& Node, const float Value)
+	{
+		FRpgSkillTreeAbilityTuning& Tuning = Node.AbilityTunings.AddDefaulted_GetRef();
+		Tuning.TuningTag = TAG_RuneSocketTest_Tuning;
+		Tuning.Operation = ERpgSkillTreeTuningOperation::Add;
+		Tuning.Value = Value;
+	};
+	FRpgSkillTreeNode& Plain = Tree->Nodes.AddDefaulted_GetRef();
+	Plain.NodeTag = TAG_RuneSocketTest_PlainNode;
+	AddTuning(Plain, 10.0f);
+	FRpgSkillTreeNode& RuneBound = Tree->Nodes.AddDefaulted_GetRef();
+	RuneBound.NodeTag = TAG_RuneSocketTest_RuneBoundNode;
+	RuneBound.Column = 1;
+	RuneBound.RequiredRunes.AddTag(RuneTagA);
+	RuneBound.GrantedTags.AddTag(TAG_RuneSocketTest_RuneBoundGranted);
+	AddTuning(RuneBound, 50.0f);
+	URpgRuneAutomationTestTreeToolDefinition::SetTestSkillTree(Tree);
+	ON_SCOPE_EXIT
+	{
+		URpgRuneAutomationTestTreeToolDefinition::SetTestSkillTree(nullptr);
+	};
+
+	// Without a controller the player inventory has no layout; its default storage grid holds the items.
+	FRpgInventoryGridSize GridSize;
+	GridSize.Width = 6;
+	GridSize.Height = 3;
+	Inventory->SetDefaultGridSize(GridSize);
+	URpgInventoryItemInstance* Tool = Inventory->AddItemDefinitionToPlacement(
+		URpgRuneAutomationTestTreeToolDefinition::StaticClass(), 1, Storage(0, 0));
+	URpgInventoryItemInstance* Rune = Inventory->AddItemDefinitionToPlacement(
+		URpgRuneAutomationTestRuneDefinition::StaticClass(), 1, Storage(1, 0));
+	if (!TestNotNull(TEXT("The tool lies in storage"), Tool) || !TestNotNull(TEXT("Rune A lies in storage"), Rune))
+	{
+		return false;
+	}
+	URpgEquipmentInstance* MainHand = Equipment->EquipItemInSlotWithInstigator(
+		URpgEquipmentAutomationTestSwordDefinition::StaticClass(), ERpgEquipmentSlot::MainHand, Tool);
+	if (!TestNotNull(TEXT("The tool is in hand"), MainHand))
+	{
+		return false;
+	}
+
+	URpgTradeSkillProgressionComponent* TradeSkills = PlayerState->GetTradeSkillProgressionComponent();
+	for (int32 Guard = 0; Guard < 200 && TradeSkills->GetSkillLevelByTag(RpgTradeSkillGameplayTags::Skill_Gathering_Logging) < 4; ++Guard)
+	{
+		TradeSkills->AddSkillXPByTag(RpgTradeSkillGameplayTags::Skill_Gathering_Logging, 100.0f);
+	}
+	TestEqual(TEXT("Plain is learned"), SkillTrees->UnlockNode(TAG_RuneSocketTest_Tree, TAG_RuneSocketTest_PlainNode), ERpgSkillTreeUnlockResult::Unlockable);
+	TestEqual(TEXT("A rune-bound talent can be learned before its rune is socketed"),
+		SkillTrees->UnlockNode(TAG_RuneSocketTest_Tree, TAG_RuneSocketTest_RuneBoundNode), ERpgSkillTreeUnlockResult::Unlockable);
+
+	const FGameplayAbilitySpec ToolSpec(URpgInventoryAutomationTestUseAbility::StaticClass(), 1, INDEX_NONE, MainHand);
+	const FGameplayAbilityActorInfo& ActorInfo = *AbilitySystem->AbilityActorInfo;
+	auto Tuned = [&ToolSpec, &ActorInfo]()
+	{
+		return URpgSkillTreeComponent::ResolveAbilityTuningForSpec(ToolSpec, ActorInfo, TAG_RuneSocketTest_Tuning, 0.0f);
+	};
+	URpgSkillTreeViewModel* TreeView = NewObject<URpgSkillTreeViewModel>(GetTransientPackage(), NAME_None, RF_Transient);
+	TreeView->BindSkillTree(SkillTrees, TAG_RuneSocketTest_Tree);
+	auto Dormant = [TreeView]()
+	{
+		TreeView->Refresh();
+		const URpgSkillTreeNodeViewModel* Node = TreeView->FindNode(TAG_RuneSocketTest_RuneBoundNode);
+		return Node && Node->NeedsRunes() && Node->IsDormant();
+	};
+
+	TestFalse(TEXT("Without rune A the talent sleeps on the tool"), URpgSkillTreeComponent::IsNodeActiveForItem(RuneBound, Tool));
+	TestEqual(TEXT("A sleeping talent adds no tuning"), Tuned(), 10.0f);
+	TestEqual(TEXT("A sleeping talent grants nothing"), AbilitySystem->GetTagCount(TAG_RuneSocketTest_RuneBoundGranted), 0);
+	TestTrue(TEXT("The skill screen shows it learned but sleeping"), Dormant());
+
+	TestEqual(TEXT("Rune A goes into the tool in hand"),
+		Move(*Inventory, Rune, Socket(*Inventory, Tool, 0)), ERpgInventoryMutationResultCode::Success);
+	TestTrue(TEXT("With rune A the talent works"), URpgSkillTreeComponent::IsNodeActiveForItem(RuneBound, Tool));
+	TestEqual(TEXT("The awake talent tunes the tool's abilities"), Tuned(), 60.0f);
+	TestEqual(TEXT("The awake talent is granted once"), AbilitySystem->GetTagCount(TAG_RuneSocketTest_RuneBoundGranted), 1);
+	TestFalse(TEXT("The skill screen shows it awake"), Dormant());
+
+	TestEqual(TEXT("Rune A leaves the tool"),
+		Move(*Inventory, Rune, Storage(2, 0)), ERpgInventoryMutationResultCode::Success);
+	TestEqual(TEXT("The talent sleeps again"), Tuned(), 10.0f);
+	TestEqual(TEXT("Its grant leaves with the rune"), AbilitySystem->GetTagCount(TAG_RuneSocketTest_RuneBoundGranted), 0);
+	TestTrue(TEXT("It stays learned without repurchase"), SkillTrees->IsNodeUnlocked(TAG_RuneSocketTest_Tree, TAG_RuneSocketTest_RuneBoundNode));
+	TestTrue(TEXT("The skill screen shows it sleeping again"), Dormant());
+
+	TestEqual(TEXT("Rune A goes back into the tool"),
+		Move(*Inventory, Rune, Socket(*Inventory, Tool, 2)), ERpgInventoryMutationResultCode::Success);
+	TestEqual(TEXT("The talent wakes without repurchase"), AbilitySystem->GetTagCount(TAG_RuneSocketTest_RuneBoundGranted), 1);
+	Equipment->UnequipItem(MainHand);
+	TestEqual(TEXT("Unequipping the tool removes the talent's grant"), AbilitySystem->GetTagCount(TAG_RuneSocketTest_RuneBoundGranted), 0);
+	TestTrue(TEXT("With no tool of the tree in hand the talent shows as sleeping"), Dormant());
+	TreeView->UnbindSkillTree();
 	return true;
 }
 

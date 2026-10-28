@@ -5,6 +5,7 @@
 #include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_EquippableItem.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemContainer.h"
+#include "SurvivalRpg/Inventory/RpgInventoryFragment_SkillTree.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgRuneAutomationTestTypes)
@@ -64,6 +65,26 @@ URpgRuneAutomationTestToolDefinition::URpgRuneAutomationTestToolDefinition(const
 	DisplayName = FText::FromString(TEXT("Automation Socketed Tool"));
 	RpgRuneAutomationTestTypes::AddSpatialAndTraits(*this, ERpgInventoryItemCategory::Tool, Fragments);
 	RpgRuneAutomationTestTypes::AddSocketGrid(*this, Fragments);
+}
+
+URpgRuneAutomationTestTreeToolDefinition::URpgRuneAutomationTestTreeToolDefinition(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	DisplayName = FText::FromString(TEXT("Automation Socketed Tree Tool"));
+	RpgRuneAutomationTestTypes::AddSpatialAndTraits(*this, ERpgInventoryItemCategory::Tool, Fragments);
+	RpgRuneAutomationTestTypes::AddSocketGrid(*this, Fragments);
+	Fragments.Add(CreateDefaultSubobject<URpgInventoryFragment_SkillTree>(TEXT("SkillTree")));
+}
+
+void URpgRuneAutomationTestTreeToolDefinition::SetTestSkillTree(const URpgSkillTreeDefinition* Tree)
+{
+	for (URpgInventoryItemFragment* Fragment : GetMutableDefault<URpgRuneAutomationTestTreeToolDefinition>()->Fragments)
+	{
+		if (URpgInventoryFragment_SkillTree* SkillTreeFragment = Cast<URpgInventoryFragment_SkillTree>(Fragment))
+		{
+			SkillTreeFragment->SkillTree = Tree;
+		}
+	}
 }
 
 URpgRuneAutomationTestSocketedWeaponDefinition::URpgRuneAutomationTestSocketedWeaponDefinition(
