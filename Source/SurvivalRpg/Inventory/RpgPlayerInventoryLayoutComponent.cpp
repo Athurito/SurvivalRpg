@@ -355,6 +355,12 @@ bool URpgPlayerInventoryLayoutComponent::CanItemUseSlotAddress(URpgInventoryItem
 	{
 		if (Group.ContainerHandle == Address.GetContainerHandle() && Group.ContainsCell(Address.X, Address.Y))
 		{
+			if (Group.GroupKind == ERpgInventorySlotGroupKind::Socket)
+			{
+				// The planner applies the provider's own socket rules again, including one item of each kind.
+				return Group.Rule.AllowsItem(Item);
+			}
+
 			if (!Group.Rule.AllowsItem(Item) ||
 				!URpgPlayerInventoryLayoutDefinition::
 					IsStaticGroupEquipmentContractValid(
@@ -720,7 +726,28 @@ TArray<FRpgInventorySlotGroupView> URpgPlayerInventoryLayoutComponent::BuildSlot
 			continue;
 		}
 
-		AppendItemContainerViews(ProviderItem, ProviderSlot, Groups);
+		AppendItemContainerViews(ProviderItem, ProviderSlot, FGameplayTag(), Groups);
+	}
+
+	// The item in a carry slot shows its socket grids, such as the rune sockets of a tool, below that slot.
+	for (const FRpgInventorySlotGroupView& StaticGroup : StaticGroups)
+	{
+		if (!PlayerInventory ||
+			StaticGroup.GroupKind != ERpgInventorySlotGroupKind::Carry ||
+			!StaticGroup.SemanticRole.IsValid() ||
+			!StaticGroup.ContainsCell(0, 0))
+		{
+			continue;
+		}
+
+		const URpgInventoryItemInstance* CarriedItem = PlayerInventory->GetItemAtContainerCell(
+			StaticGroup.ContainerHandle,
+			0,
+			0);
+		if (CarriedItem && CarriedItem->FindFragmentByClass<URpgInventoryFragment_ItemContainer>())
+		{
+			AppendItemContainerViews(CarriedItem, ERpgEquipmentSlot::None, StaticGroup.SemanticRole, Groups);
+		}
 	}
 
 	return Groups;
@@ -805,6 +832,7 @@ void URpgPlayerInventoryLayoutComponent::AppendStaticGroupViews(
 void URpgPlayerInventoryLayoutComponent::AppendItemContainerViews(
 	const URpgInventoryItemInstance* ProviderItem,
 	ERpgEquipmentSlot SourceEquipmentSlot,
+	FGameplayTag SourceCarryRole,
 	TArray<FRpgInventorySlotGroupView>& OutGroups) const
 {
 	const URpgInventoryFragment_ItemContainer* ProviderFragment = ProviderItem
@@ -828,11 +856,13 @@ void URpgPlayerInventoryLayoutComponent::AppendItemContainerViews(
 		return;
 	}
 
+	const bool bCarryProvider = SourceCarryRole.IsValid();
 	TArray<FRpgInventoryItemContainerDefinition> ContainerDefinitions;
 	ProviderFragment->GetProvidedContainers(ContainerDefinitions);
 	for (const FRpgInventoryItemContainerDefinition& Definition : ContainerDefinitions)
 	{
-		if (!Definition.IsValid())
+		// Gear providers show their storage, carried items only their sockets.
+		if (!Definition.IsValid() || Definition.bSocketGrid != bCarryProvider)
 		{
 			continue;
 		}
@@ -852,15 +882,18 @@ void URpgPlayerInventoryLayoutComponent::AppendItemContainerViews(
 		GroupView.ContainerId = Definition.ContainerId;
 		GroupView.DisplayName = Definition.DisplayName;
 		GroupView.Icon = Definition.Icon;
-		GroupView.GroupKind = ERpgInventorySlotGroupKind::Content;
+		GroupView.GroupKind = bCarryProvider
+			? ERpgInventorySlotGroupKind::Socket
+			: ERpgInventorySlotGroupKind::Content;
 		GroupView.EquipmentSlotRole = ERpgEquipmentSlot::None;
 		GroupView.GridSize = Definition.GridSize;
 		GroupView.Rule.AllowedCategories = Definition.AllowedCategories;
 		GroupView.Rule.RequiredItemTags = Definition.RequiredItemTags;
 		GroupView.Rule.BlockedItemTags = Definition.BlockedItemTags;
 		GroupView.Rule.bActionbarBindable = Definition.bQuickAccessEligible;
-		GroupView.bProvidedByEquipment = true;
+		GroupView.bProvidedByEquipment = !bCarryProvider;
 		GroupView.SourceEquipmentSlot = SourceEquipmentSlot;
+		GroupView.SourceCarryRole = SourceCarryRole;
 	}
 }
 

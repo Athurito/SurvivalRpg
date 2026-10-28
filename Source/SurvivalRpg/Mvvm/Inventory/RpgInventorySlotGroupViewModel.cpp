@@ -57,6 +57,9 @@ void URpgInventorySlotGroupViewModel::InitializeGroup(const FRpgInventorySlotGro
 		InGroupView.GroupKind == ERpgInventorySlotGroupKind::Gear;
 	const bool bNewContentGroup =
 		InGroupView.GroupKind == ERpgInventorySlotGroupKind::Content;
+	const bool bNewSocketGroup =
+		InGroupView.GroupKind == ERpgInventorySlotGroupKind::Socket;
+	const FGameplayTag NewSourceCarryRole = InGroupView.SourceCarryRole;
 	const bool bNewProvidedByEquipment = InGroupView.bProvidedByEquipment;
 	const ERpgEquipmentSlot NewSourceEquipmentSlot =
 		InGroupView.SourceEquipmentSlot;
@@ -82,6 +85,8 @@ void URpgInventorySlotGroupViewModel::InitializeGroup(const FRpgInventorySlotGro
 	const bool bCarryGroupChanged = bCarryGroup != bNewCarryGroup;
 	const bool bGearGroupChanged = bGearGroup != bNewGearGroup;
 	const bool bContentGroupChanged = bContentGroup != bNewContentGroup;
+	const bool bSocketGroupChanged = bSocketGroup != bNewSocketGroup;
+	const bool bSourceCarryRoleChanged = SourceCarryRole != NewSourceCarryRole;
 	const bool bProvidedByEquipmentChanged =
 		bProvidedByEquipment != bNewProvidedByEquipment;
 	const bool bSourceEquipmentSlotChanged =
@@ -100,6 +105,8 @@ void URpgInventorySlotGroupViewModel::InitializeGroup(const FRpgInventorySlotGro
 	bCarryGroup = bNewCarryGroup;
 	bGearGroup = bNewGearGroup;
 	bContentGroup = bNewContentGroup;
+	bSocketGroup = bNewSocketGroup;
+	SourceCarryRole = NewSourceCarryRole;
 	bProvidedByEquipment = bNewProvidedByEquipment;
 	SourceEquipmentSlot = NewSourceEquipmentSlot;
 	Slots = MoveTemp(NewSlots);
@@ -147,6 +154,14 @@ void URpgInventorySlotGroupViewModel::InitializeGroup(const FRpgInventorySlotGro
 	if (bContentGroupChanged)
 	{
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bContentGroup);
+	}
+	if (bSocketGroupChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bSocketGroup);
+	}
+	if (bSourceCarryRoleChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SourceCarryRole);
 	}
 	if (bProvidedByEquipmentChanged)
 	{

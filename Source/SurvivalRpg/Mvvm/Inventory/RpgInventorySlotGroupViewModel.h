@@ -65,6 +65,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
 	bool IsContentGroup() const { return bContentGroup; }
 
+	/** True for the socket grid of an item in a carry slot, such as a tool's rune sockets. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
+	bool IsSocketGroup() const { return bSocketGroup; }
+
+	/** Semantic role of the carry group whose item provides this socket grid; invalid for other groups. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Layout ViewModel")
+	FGameplayTag GetSourceCarryRole() const { return SourceCarryRole; }
+
 protected:
 	/** Stable graph address. Item-owned containers with the same local id remain distinct. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
@@ -109,6 +117,14 @@ protected:
 	/** True when this group is normal item storage such as Pockets or Backpack contents. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
 	bool bContentGroup = false;
+
+	/** True when this group is the socket grid of an item in a carry slot. Read-only UI state. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
+	bool bSocketGroup = false;
+
+	/** Carry group role whose item provides this socket grid, copied from the layout. Read-only UI state. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))
+	FGameplayTag SourceCarryRole;
 
 	/** True when this group came from an equipped bag/belt/pouch/resource-bag item. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Layout ViewModel", meta = (AllowPrivateAccess = "true"))

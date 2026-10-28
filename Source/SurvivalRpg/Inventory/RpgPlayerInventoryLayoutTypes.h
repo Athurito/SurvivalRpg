@@ -118,7 +118,14 @@ enum class ERpgInventorySlotGroupKind : uint8
 	Carry,
 
 	/** Dedicated equipped gear slot such as Head, Chest, Backpack, or Belt. */
-	Gear
+	Gear,
+
+	/**
+	 * Socket grid of an item, such as the rune sockets of a tool in a carry slot. Derived at runtime and never
+	 * authored as a static group. Only explicit moves target it: pickups, first-fit placement and quick
+	 * transfers skip it.
+	 */
+	Socket
 };
 
 /**
@@ -254,6 +261,10 @@ struct SURVIVALRPG_API FRpgInventorySlotGroupView
 	/** Typed equipment slot whose item provides this group, or None for static groups. */
 	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
 	ERpgEquipmentSlot SourceEquipmentSlot = ERpgEquipmentSlot::None;
+
+	/** Semantic role of the carry group whose item provides this socket grid; invalid for every other group. */
+	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Layout")
+	FGameplayTag SourceCarryRole;
 
 	FRpgInventorySlotAddress MakeAddress(int32 X, int32 Y) const
 	{

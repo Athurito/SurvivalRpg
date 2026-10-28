@@ -126,6 +126,17 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgInventoryCarrySlotWidget> Carry_Offhand = nullptr;
 
+	/**
+	 * Optional host for the socket grid of the item in the primary carry slot, such as the rune sockets of an axe.
+	 * The shield slot has no host because shields have no sockets.
+	 */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgInventorySlotGroupWidget> Sockets_Weapon1 = nullptr;
+
+	/** Optional host for the socket grid of the item in the secondary carry slot. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgInventorySlotGroupWidget> Sockets_Weapon2 = nullptr;
+
 	/** Required static host for the equipped backpack's optional runtime container. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<URpgInventorySlotGroupWidget> Content_Backpack = nullptr;

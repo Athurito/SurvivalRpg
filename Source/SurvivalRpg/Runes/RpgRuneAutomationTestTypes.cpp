@@ -2,6 +2,8 @@
 
 #include "NativeGameplayTags.h"
 #include "RpgInventoryFragment_Rune.h"
+#include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
+#include "SurvivalRpg/Inventory/RpgInventoryFragment_EquippableItem.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemContainer.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
 
@@ -34,6 +36,21 @@ namespace RpgRuneAutomationTestTypes
 		OutFragments.Add(Traits);
 	}
 
+	void AddSocketGrid(URpgInventoryItemDefinition& Definition, TArray<TObjectPtr<URpgInventoryItemFragment>>& OutFragments)
+	{
+		URpgInventoryFragment_ItemContainer* Container =
+			Definition.CreateDefaultSubobject<URpgInventoryFragment_ItemContainer>(TEXT("ItemContainer"));
+		FRpgInventoryItemContainerDefinition& Sockets = Container->ProvidedContainers.AddDefaulted_GetRef();
+		Sockets.ContainerId = RpgRuneAutomationTestSocketGridId;
+		Sockets.DisplayName = FText::FromString(TEXT("Rune sockets"));
+		Sockets.GridSize.Width = 3;
+		Sockets.GridSize.Height = 1;
+		Sockets.AllowedCategories.Add(ERpgInventoryItemCategory::Rune);
+		Sockets.bAllowNestedContainers = false;
+		Sockets.bSocketGrid = true;
+		OutFragments.Add(Container);
+	}
+
 	URpgInventoryFragment_Rune* FindRune(const URpgInventoryItemDefinition* Definition)
 	{
 		return Definition ? const_cast<URpgInventoryFragment_Rune*>(Cast<URpgInventoryFragment_Rune>(
@@ -46,18 +63,22 @@ URpgRuneAutomationTestToolDefinition::URpgRuneAutomationTestToolDefinition(const
 {
 	DisplayName = FText::FromString(TEXT("Automation Socketed Tool"));
 	RpgRuneAutomationTestTypes::AddSpatialAndTraits(*this, ERpgInventoryItemCategory::Tool, Fragments);
+	RpgRuneAutomationTestTypes::AddSocketGrid(*this, Fragments);
+}
 
-	URpgInventoryFragment_ItemContainer* Container =
-		CreateDefaultSubobject<URpgInventoryFragment_ItemContainer>(TEXT("ItemContainer"));
-	FRpgInventoryItemContainerDefinition& Sockets = Container->ProvidedContainers.AddDefaulted_GetRef();
-	Sockets.ContainerId = RpgRuneAutomationTestSocketGridId;
-	Sockets.DisplayName = FText::FromString(TEXT("Rune sockets"));
-	Sockets.GridSize.Width = 3;
-	Sockets.GridSize.Height = 1;
-	Sockets.AllowedCategories.Add(ERpgInventoryItemCategory::Rune);
-	Sockets.bAllowNestedContainers = false;
-	Sockets.bSocketGrid = true;
-	Fragments.Add(Container);
+URpgRuneAutomationTestSocketedWeaponDefinition::URpgRuneAutomationTestSocketedWeaponDefinition(
+	const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	DisplayName = FText::FromString(TEXT("Automation Socketed Weapon"));
+	RpgRuneAutomationTestTypes::AddSpatialAndTraits(*this, ERpgInventoryItemCategory::Weapon, Fragments);
+
+	URpgInventoryFragment_EquippableItem* Equippable =
+		CreateDefaultSubobject<URpgInventoryFragment_EquippableItem>(TEXT("Equippable"));
+	Equippable->EquipmentDefinition = URpgInventoryAutomationTestWeaponEquipmentDefinition::StaticClass();
+	Fragments.Add(Equippable);
+
+	RpgRuneAutomationTestTypes::AddSocketGrid(*this, Fragments);
 }
 
 URpgRuneAutomationTestBagDefinition::URpgRuneAutomationTestBagDefinition(const FObjectInitializer& ObjectInitializer)

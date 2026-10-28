@@ -65,6 +65,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Player ViewModel")
 	TArray<URpgInventorySlotGroupViewModel*> GetInventoryGroups() const;
 
+	/** Socket grids of the items in the carry slots, such as a tool's rune sockets. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Player ViewModel")
+	TArray<URpgInventorySlotGroupViewModel*> GetSocketGroups() const;
+
+	/** Returns the first socket grid of the item in the carry group with CarryRole, or null when it has none. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Player ViewModel")
+	URpgInventorySlotGroupViewModel* GetSocketGroupForCarryRole(FGameplayTag CarryRole) const;
+
 	/** General 1..8 actionbar slot VMs for the player inventory screen. */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Player ViewModel")
 	TArray<URpgActionBarSlotViewModel*> GetActionBarSlots() const;
@@ -112,6 +120,10 @@ protected:
 	/** Non-carry item storage groups, including bag-provided dynamic groups. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Player ViewModel", meta = (AllowPrivateAccess = "true"))
 	TArray<TObjectPtr<URpgInventorySlotGroupViewModel>> InventoryGroups;
+
+	/** Socket grids of carried items, in carry-group order. Read-only UI projection of the layout. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Player ViewModel", meta = (AllowPrivateAccess = "true"))
+	TArray<TObjectPtr<URpgInventorySlotGroupViewModel>> SocketGroups;
 
 	/** 1..8 actionbar slot projections. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Inventory|Player ViewModel", meta = (AllowPrivateAccess = "true"))

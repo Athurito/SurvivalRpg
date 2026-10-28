@@ -146,6 +146,34 @@ TArray<URpgInventorySlotGroupViewModel*> URpgPlayerInventoryViewModel::GetInvent
 	return Result;
 }
 
+TArray<URpgInventorySlotGroupViewModel*> URpgPlayerInventoryViewModel::GetSocketGroups() const
+{
+	TArray<URpgInventorySlotGroupViewModel*> Result;
+	Result.Reserve(SocketGroups.Num());
+	for (URpgInventorySlotGroupViewModel* Group : SocketGroups)
+	{
+		Result.Add(Group);
+	}
+	return Result;
+}
+
+URpgInventorySlotGroupViewModel* URpgPlayerInventoryViewModel::GetSocketGroupForCarryRole(FGameplayTag CarryRole) const
+{
+	if (!CarryRole.IsValid())
+	{
+		return nullptr;
+	}
+
+	for (URpgInventorySlotGroupViewModel* Group : SocketGroups)
+	{
+		if (Group && Group->GetSourceCarryRole() == CarryRole)
+		{
+			return Group;
+		}
+	}
+	return nullptr;
+}
+
 TArray<URpgActionBarSlotViewModel*> URpgPlayerInventoryViewModel::GetActionBarSlots() const
 {
 	TArray<URpgActionBarSlotViewModel*> Result;
@@ -209,6 +237,14 @@ URpgInventorySlotGroupViewModel* URpgPlayerInventoryViewModel::GetSlotGroupByHan
 	}
 
 	for (URpgInventorySlotGroupViewModel* Group : InventoryGroups)
+	{
+		if (Group && Group->GetContainerHandle() == ContainerHandle)
+		{
+			return Group;
+		}
+	}
+
+	for (URpgInventorySlotGroupViewModel* Group : SocketGroups)
 	{
 		if (Group && Group->GetContainerHandle() == ContainerHandle)
 		{
@@ -464,18 +500,22 @@ void URpgPlayerInventoryViewModel::RefreshSlotGroups()
 
 	CacheSlots(CarryGroups);
 	CacheSlots(InventoryGroups);
+	CacheSlots(SocketGroups);
 	CacheGroups(CarryGroups);
 	CacheGroups(InventoryGroups);
+	CacheGroups(SocketGroups);
 
 	TArray<TObjectPtr<URpgInventorySlotGroupViewModel>> NewCarryGroups;
 	TArray<TObjectPtr<URpgInventorySlotGroupViewModel>> NewInventoryGroups;
+	TArray<TObjectPtr<URpgInventorySlotGroupViewModel>> NewSocketGroups;
 
 	if (InventoryLayout)
 	{
 		for (const FRpgInventorySlotGroupView& GroupView : InventoryLayout->GetSlotGroups())
 		{
 			if (GroupView.GroupKind != ERpgInventorySlotGroupKind::Carry &&
-				GroupView.GroupKind != ERpgInventorySlotGroupKind::Content)
+				GroupView.GroupKind != ERpgInventorySlotGroupKind::Content &&
+				GroupView.GroupKind != ERpgInventorySlotGroupKind::Socket)
 			{
 				continue;
 			}
@@ -520,6 +560,10 @@ void URpgPlayerInventoryViewModel::RefreshSlotGroups()
 			{
 				NewInventoryGroups.Add(GroupViewModel);
 			}
+			else
+			{
+				NewSocketGroups.Add(GroupViewModel);
+			}
 		}
 	}
 
@@ -531,9 +575,14 @@ void URpgPlayerInventoryViewModel::RefreshSlotGroups()
 		!ArePlayerInventoryRootViewModelArraysEqual(
 			InventoryGroups,
 			NewInventoryGroups);
+	const bool bSocketGroupsChanged =
+		!ArePlayerInventoryRootViewModelArraysEqual(
+			SocketGroups,
+			NewSocketGroups);
 
 	CarryGroups = MoveTemp(NewCarryGroups);
 	InventoryGroups = MoveTemp(NewInventoryGroups);
+	SocketGroups = MoveTemp(NewSocketGroups);
 
 	if (bCarryGroupsChanged)
 	{
@@ -542,6 +591,10 @@ void URpgPlayerInventoryViewModel::RefreshSlotGroups()
 	if (bInventoryGroupsChanged)
 	{
 		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(InventoryGroups);
+	}
+	if (bSocketGroupsChanged)
+	{
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SocketGroups);
 	}
 	OnSlotGroupsChanged.Broadcast();
 }

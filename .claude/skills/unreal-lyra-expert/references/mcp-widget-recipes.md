@@ -102,4 +102,5 @@ Recipes and pitfalls observed in this project's UE 5.8 editor sessions. Read it 
   - `ObjectTools` can neither read nor set a controller's `ControlRotation` or `Pawn`, nor an inventory's `InventoryList`.
   - Setting a PIE actor's root `RelativeLocation` through `ObjectTools` stores the value but does not move the actor.
   - Walk with timed W, A, S and D holds and read the character's `CollisionCylinder.RelativeLocation`. Leave aimed pickups to the playtest, or check in a map where the item is already in the inventory.
+  - To start with a world item in a carry slot, add it for the check to an active starter inventory component's class defaults with `bAssignToEquipment` and the slot, without saving. Starter components run in no fixed order, so the item may still land in the pockets; `Drag` it into the slot. Restore the array afterwards as [Unreal MCP asset authoring](unreal-mcp-asset-authoring.md#create-edit-and-compile-a-blueprint) describes and check `git status` (MST-06a).
 - PIE window size: set `NewWindowWidth` and `NewWindowHeight` on `/Script/UnrealEd.Default__LevelEditorPlaySettings` through `ObjectTools.set_properties`; Python does not expose them.
