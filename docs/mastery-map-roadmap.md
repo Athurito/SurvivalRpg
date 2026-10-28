@@ -47,7 +47,7 @@ All dependencies below are within MST; every row also has the CMB scheduling gat
 | MST-04 | Atomic replacement of exclusive choices, owner request/result feedback on the detail card, grant reconciliation and VM updates | MST-03c | Merged (2026-10-27, `08285c1e`) | [mastery-map-choice-swap.md](mastery-map-choice-swap.md), [PR #313](https://github.com/Athurito/SurvivalRpg/pull/313) |
 | MST-05 | Extend the delivered rune/item foundation with physical instances, ranks and three harvesting-tool sockets; validated moves, grants, replication and persistence | MST-04; CMB-07 contract re-inspection | Merged (2026-10-27, `a612f369`) | [mastery-map-rune-sockets.md](mastery-map-rune-sockets.md), [PR #314](https://github.com/Athurito/SurvivalRpg/pull/314) |
 | MST-06a | Tool sockets in the inventory: the socket grid of the item in a weapon carry slot shows below that slot; explicit drag only, never pickups, first-fit placement or quick transfers | MST-05 | Merged (2026-10-28, `d91c5e42`) | [mastery-map-socket-ui.md](mastery-map-socket-ui.md), [PR #316](https://github.com/Athurito/SurvivalRpg/pull/316) |
-| MST-06b | Brand's burn as secondary harvest work through the existing stock/reward commit: own hits light the resource, the burn works it over time by rank, the igniting player gets rewards and XP, safe in co-op | MST-06a | In review | [mastery-map-brand-burn.md](mastery-map-brand-burn.md) |
+| MST-06b | Brand's burn as secondary harvest work through the existing stock/reward commit: own hits light the resource, the burn works it over time by rank, the igniting player gets rewards and XP, safe in co-op | MST-06a | In review | [mastery-map-brand-burn.md](mastery-map-brand-burn.md), [PR #317](https://github.com/Athurito/SurvivalRpg/pull/317) |
 | MST-06c | Source-tool activation evaluator, rune context/highlights and learned-but-inactive UI; Brand's talents Anhaltende Macht and Entladung | MST-06b | Planned | — |
 | MST-07 | Rune drops, guaranteed claims, persistent base-recipe knowledge and rank-I crafting through existing loot/station paths | MST-06c | Planned | — |
 | MST-08 | In-place rank II/III upgrades, salvage and Runenschrein presentation; atomic costs and safe equipped-rune refresh | MST-07 | Planned | — |
@@ -100,7 +100,7 @@ Playtests of merged MST steps that wait for the user's batch test. Remove a row 
 ## Current handoff
 
 - **Active phase:** MST, started by the user on 2026-10-27 after CMB-01 to CMB-07 merged.
-- **Active task:** MST-06b, branch `claude/mst-06b-brand-burn`; the report is [mastery-map-brand-burn.md](mastery-map-brand-burn.md).
+- **Active task:** MST-06b, branch `claude/mst-06b-brand-burn`, [PR #317](https://github.com/Athurito/SurvivalRpg/pull/317); the report is [mastery-map-brand-burn.md](mastery-map-brand-burn.md).
   - Rune ranks tune the abilities of their own tool through `FRpgRuneRank::AbilityTunings`; Brand gives the swings burn work and burn time.
   - `ARpgHarvestBurn` works a struck resource as secondary work for the igniting player, one burn per player and resource, and replicates for its presentation.
 - **Previous task:** MST-06a, merged on 2026-10-28 as `d91c5e42` ([PR #316](https://github.com/Athurito/SurvivalRpg/pull/316)); the report is [mastery-map-socket-ui.md](mastery-map-socket-ui.md).

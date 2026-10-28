@@ -1,6 +1,6 @@
 # MST-06b: Brand's burn
 
-Task report for MST-06b in the [mastery map roadmap](mastery-map-roadmap.md). The user split MST-06 and accepted the Brand design on 2026-10-28; both decisions are in the [MST-06a report](mastery-map-socket-ui.md#user-decisions-2026-10-28). This task delivers the rune's own effect. The talents Anhaltende Macht and Entladung follow in MST-06c.
+Task report for MST-06b in the [mastery map roadmap](mastery-map-roadmap.md), [PR #317](https://github.com/Athurito/SurvivalRpg/pull/317). The user split MST-06 and accepted the Brand design on 2026-10-28; both decisions are in the [MST-06a report](mastery-map-socket-ui.md#user-decisions-2026-10-28). This task delivers the rune's own effect. The talents Anhaltende Macht and Entladung follow in MST-06c.
 
 ## C++ boundary decision
 
@@ -71,7 +71,7 @@ Run on 2026-10-28 in this worktree:
 - **Failed attempt in the tests:** the burn ticks first came one second late. Stepping a test world's timers exactly onto a deadline fires the timer one step later, as [GAS and network test pitfalls](../.agents/skills/unreal-lyra-expert/references/gas-and-network-test-pitfalls.md#timers-in-test-worlds) already describes; the burn tests step 1.01 s.
 - `ue.py test SurvivalRpg.Progression SurvivalRpg.UI SurvivalRpg.Harvesting SurvivalRpg.Save SurvivalRpg.Combat SurvivalRpg.Inventory SurvivalRpg.Equipment SurvivalRpg.Runes SurvivalRpg.Crafting SurvivalRpg.BaseStorage --null-rhi`: **453 of 453 passed**. The 16 with warnings are the known RequestId collisions, UI asset logs and PIE locomotion messages.
 - `ue.py test SurvivalRpg.Network.LootHarvestPIE SurvivalRpg.Network.HarvestCuePIE SurvivalRpg.Network.RuneSocketPIE SurvivalRpg.Network.SkillTreePIE SurvivalRpg.Network.InventoryReorderPIE`: **13 of 13 passed**, with only `LogNetPackageMap` warnings.
-- `ue.py cook Lvl_HarvestPickaxe`: see the PR.
+- `ue.py cook Lvl_HarvestPickaxe`: **passed**, 0 errors; the 3 warnings are the disabled Steam subsystem, the missing GameplayCue notify paths and the `CUI_RespawnScreen` asset log.
 - **Agent PIE check** in `Lvl_HarvestPickaxe`, listen server with two players.
   - **Setup for the check only, reverted and not committed:** three iron veins in front of the player starts, so that a straight swing reaches one without mouse aim, and the starter also gave the pickaxe.
   - **Host:**
