@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
+#include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeDefinition.h"
 #include "RpgInventoryFragment_Rune.generated.h"
@@ -43,6 +44,20 @@ struct SURVIVALRPG_API FRpgRuneRank
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rune", meta = (TitleProperty = "TuningTag"))
 	TArray<FRpgSkillTreeAbilityTuning> AbilityTunings;
+
+	/**
+	 * Materials an upgrade to this rank costs, taken from the connected chests of a station that offers rune work, such
+	 * as the Runenschrein. Ignored on rank I. Designer-tuned static data.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rune|Upgrade", meta = (TitleProperty = "ItemDefinition"))
+	TArray<FRpgCraftingResourceCost> UpgradeCosts;
+
+	/**
+	 * Items salvaging an unsocketed rune of this rank returns into the station's connected chests, such as rune essence.
+	 * Empty salvages for nothing. Designer-tuned static data.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rune|Salvage", meta = (TitleProperty = "ItemDefinition"))
+	TArray<FRpgCraftingOutputItem> SalvageOutputs;
 };
 
 /**

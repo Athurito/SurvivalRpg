@@ -26,6 +26,7 @@
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryUiActionComponent.h"
 #include "SurvivalRpg/Inventory/RpgPlayerInventoryLayoutComponent.h"
+#include "SurvivalRpg/Runes/RpgRuneAutomationTestTypes.h"
 #include "UObject/StrongObjectPtr.h"
 #include "UObject/UnrealType.h"
 
@@ -128,6 +129,28 @@ namespace RpgPhysicalStoragePIETests
 			for (const FRpgCraftingRefundEntry& Refund : Crafting->GetCurrentOrder().UnitCredits)
 				if (Refund.ItemDefinition == ItemClass) Result += Refund.Count;
 		return Result;
+	}
+
+	/** Rank of the item RuneId in Inventory, or 0 when the inventory does not hold it. */
+	int32 RuneRankIn(const URpgInventoryManagerComponent* Inventory, const FRpgInventoryItemId& RuneId)
+	{
+		if (Inventory)
+			for (const FRpgInventoryEntryView& Entry : Inventory->GetAllEntries())
+				if (Entry.ItemId == RuneId && Entry.Instance) return Entry.Instance->GetRuneRank();
+		return 0;
+	}
+
+	/** Upgrade to rank II costs one MaterialClass; salvaging rank II returns four. Applied to the shared class default. */
+	void SetRuneWork(UClass* MaterialClass)
+	{
+		FRpgCraftingResourceCost Cost;
+		Cost.ItemDefinition = MaterialClass;
+		Cost.Count = 1;
+		FRpgCraftingOutputItem Output;
+		Output.ItemDefinition = MaterialClass;
+		Output.Count = 4;
+		URpgRuneAutomationTestRuneDefinition::SetRankWork(2, MaterialClass ? TArray<FRpgCraftingResourceCost>{Cost} : TArray<FRpgCraftingResourceCost>(),
+			MaterialClass ? TArray<FRpgCraftingOutputItem>{Output} : TArray<FRpgCraftingOutputItem>());
 	}
 
 	TArray<ARpgInventoryContainerActor*> BuiltChests(UWorld* World)
@@ -605,6 +628,66 @@ NETWORK_TEST_CLASS(PhysicalStoragePIE, "SurvivalRpg.Network")
 	}
 
 	/** The two clients use content assets as network-addressable parameters without modifying asset defaults. */
+	TEST_METHOD(RemoteRuneWorkUpgradesAndSalvagesTheOwnersRune)
+	{
+		using namespace RpgPhysicalStoragePIETests;
+		if (!PrepareCompetition(true)) return;
+		Network->ThenServer(TEXT("Offer rune work at the workbench and give the first remote owner a rank I rune"), [this](FState& State)
+		{
+			ConfigureRuneAutomationTestDefinitions();
+			SetRuneWork(MaterialClass.Get());
+			auto* Crafting = Station(State.World);
+			ASSERT_THAT(IsNotNull(Crafting)); if (!Crafting) return;
+			FBoolProperty* OffersRuneWork = FindFProperty<FBoolProperty>(URpgCraftingStationComponent::StaticClass(), TEXT("bOffersRuneWork"));
+			ASSERT_THAT(IsNotNull(OffersRuneWork)); if (!OffersRuneWork) return;
+			OffersRuneWork->SetPropertyValue_InContainer(Crafting, true);
+			ASSERT_THAT(IsNotNull(Chest(State.World, ContainerId)->GetInventoryManager()->GrantItemDefinition(MaterialClass.Get(), 1)));
+			URpgInventoryItemInstance* Rune = PlayerInventory(ServerController(State, 0))->GrantItemDefinition(URpgRuneAutomationTestRuneDefinition::StaticClass(), 1);
+			ASSERT_THAT(IsNotNull(Rune)); if (!Rune) return;
+			StoredItemId = Rune->GetItemId();
+			ASSERT_THAT(IsTrue(Crafting->CanActorAccess(ServerController(State, 0)->GetPawn())));
+		})
+		.UntilClient(TEXT("The owner sees its rank I rune and the shared material"), 0, [this](FState& State)
+		{
+			const auto* Actor = Chest(State.World, ContainerId);
+			return ControllerReady(LocalController(State.World)) && Station(State.World) && Actor &&
+				Actor->GetInventoryManager()->GetTotalItemCountByDefinition(MaterialClass.Get()) == 1 &&
+				RuneRankIn(PlayerInventory(LocalController(State.World)), StoredItemId) == 1;
+		}, Timeout())
+		.ThenClient(TEXT("The owner asks the server to upgrade its rune"), 0, [this](FState& State)
+		{
+			LocalController(State.World)->GetInventoryUiActionComponent()->RequestUpgradeRune(Station(State.World), StoredItemId);
+		})
+		.UntilServer(TEXT("The server raises exactly that rune to rank II and takes the material"), [this](FState& State)
+		{
+			return RuneRankIn(PlayerInventory(ServerController(State, 0)), StoredItemId) == 2 &&
+				Chest(State.World, ContainerId)->GetInventoryManager()->GetTotalItemCountByDefinition(MaterialClass.Get()) == 0;
+		}, Timeout())
+		.UntilClient(TEXT("The owner's rune shows rank II"), 0, [this](FState& State)
+		{
+			return RuneRankIn(PlayerInventory(LocalController(State.World)), StoredItemId) == 2;
+		}, Timeout())
+		.ThenClient(TEXT("The owner asks the server to salvage its rune"), 0, [this](FState& State)
+		{
+			LocalController(State.World)->GetInventoryUiActionComponent()->RequestSalvageRune(Station(State.World), StoredItemId);
+		})
+		.UntilServer(TEXT("The server removes the rune and delivers rank II's outputs"), [this](FState& State)
+		{
+			const auto* Owner = PlayerInventory(ServerController(State, 0));
+			return RuneRankIn(Owner, StoredItemId) == 0 &&
+				Chest(State.World, ContainerId)->GetInventoryManager()->GetTotalItemCountByDefinition(MaterialClass.Get()) +
+				Owner->GetTotalItemCountByDefinition(MaterialClass.Get()) == 4;
+		}, Timeout())
+		.UntilClient(TEXT("The owner no longer holds the rune"), 0, [this](FState& State)
+		{
+			return RuneRankIn(PlayerInventory(LocalController(State.World)), StoredItemId) == 0;
+		}, Timeout())
+		.ThenServer(TEXT("Restore the rune's class default"), [](FState& State)
+		{
+			SetRuneWork(nullptr);
+		});
+	}
+
 	bool PrepareCompetition(bool bWithCrafting)
 	{
 		using namespace RpgPhysicalStoragePIETests;

@@ -69,6 +69,10 @@ public:
 		return CraftingPresentationBindGeneration;
 	}
 
+	/** Sends rune action ActionIndex of the view model (upgrade or salvage) to the server. */
+	UFUNCTION(BlueprintCallable, Category = "Crafting|Runes")
+	void RequestRuneWorkAction(int32 ActionIndex);
+
 	/** Starts the selected recipe, quantity and target chest as the station's order through the server. */
 	UFUNCTION(BlueprintCallable, Category = "Crafting|Actions")
 	void RequestStartCraftingOrder();

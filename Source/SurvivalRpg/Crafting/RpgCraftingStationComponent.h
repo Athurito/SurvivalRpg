@@ -4,6 +4,7 @@
 #include "GameplayTagContainer.h"
 #include "RpgCraftingSaveTypes.h"
 #include "SurvivalRpg/Interaction/IInteractableTarget.h"
+#include "SurvivalRpg/Inventory/RpgInventoryGraphTypes.h"
 #include "UObject/SoftObjectPtr.h"
 
 #include "RpgCraftingStationComponent.generated.h"
@@ -15,6 +16,7 @@ class ARpgBaseCampActor;
 class URpgCraftingRecipeDefinition;
 class URpgCraftingRecipeSet;
 class URpgInventoryContainerComponent;
+class URpgInventoryItemInstance;
 struct FRpgInventoryBatchOperation;
 
 /** Replicated state of a station's order. Pausing is a separate flag and freezes any of these states. */
@@ -32,6 +34,35 @@ enum class ERpgCraftingOrderState : uint8
 
 	/** The target chest is gone or no longer connected; the station retries until it returns or the target changes. */
 	WaitingForTarget
+};
+
+/** Outcome of upgrading or salvaging a rune at a station. */
+UENUM(BlueprintType)
+enum class ERpgRuneWorkResult : uint8
+{
+	/** The rune changed rank or was salvaged. */
+	Done,
+
+	/** This station offers no rune work, or another station mutation is in progress. */
+	NotOffered,
+
+	/** The requester is too far away or has no inventory. */
+	NoAccess,
+
+	/** The requester's inventory holds no rune with that id. */
+	NotFound,
+
+	/** The rune is already at its highest rank. */
+	MaxRank,
+
+	/** The rune sits in a socket; take it out before salvaging. */
+	Socketed,
+
+	/** The connected chests lack the upgrade's materials. */
+	MissingMaterials,
+
+	/** Neither a connected chest nor the requester's inventory has room for the salvage outputs. */
+	NoRoom
 };
 
 /** One resource requirement consumed by a crafting station. */
@@ -414,6 +445,29 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Crafting")
 	bool CanActorAccess(const AActor* RequestingActor) const;
 
+	/** True when players can upgrade and salvage runes here, as at the Runenschrein. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|Runes")
+	bool OffersRuneWork() const { return bOffersRuneWork; }
+
+	/** Checks an upgrade of the requester's rune RuneItemId by one rank without changing anything. Valid on clients for display. */
+	ERpgRuneWorkResult EvaluateRuneUpgrade(const AActor* RequestingActor, FRpgInventoryItemId RuneItemId) const;
+
+	/**
+	 * Raises the requester's rune RuneItemId by one rank in place, also while it sits in an equipped tool. The next rank's
+	 * UpgradeCosts come from the connected chests in the same commit; on any failure nothing changes. Server only.
+	 */
+	ERpgRuneWorkResult UpgradeRune(AActor* RequestingActor, FRpgInventoryItemId RuneItemId);
+
+	/** Checks a salvage of the requester's rune RuneItemId without changing anything. Valid on clients for display. */
+	ERpgRuneWorkResult EvaluateRuneSalvage(const AActor* RequestingActor, FRpgInventoryItemId RuneItemId) const;
+
+	/**
+	 * Removes the requester's unsocketed rune RuneItemId and puts its rank's SalvageOutputs, in one commit, into the
+	 * first connected chest that takes them automatically and has room, else into the requester's own inventory.
+	 * Recipe knowledge is untouched. Server only.
+	 */
+	ERpgRuneWorkResult SalvageRune(AActor* RequestingActor, FRpgInventoryItemId RuneItemId);
+
 protected:
 	/** Stable unique identity authored on placed stations; built stations inherit their container identity. */
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Crafting|Persistence")
@@ -459,6 +513,10 @@ protected:
 	UPROPERTY(EditInstanceOnly, Replicated, BlueprintReadOnly, Category = "Crafting|Base Storage")
 	TObjectPtr<ARpgBaseCampActor> LinkedBaseCamp;
 
+	/** Whether players can upgrade and salvage runes at this station, paid from and delivered to its connected chests. Designer data. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Runes")
+	bool bOffersRuneWork = false;
+
 	/** Largest quantity one order may request. Designer tuning. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Order", meta = (ClampMin = "1", UIMin = "1"))
 	int32 MaxOrderQuantity = 99;
@@ -489,6 +547,14 @@ private:
 	bool PlanUnitStart(const URpgCraftingRecipeDefinition* RecipeDefinition, const TArray<URpgInventoryManagerComponent*>& Targets,
 		TArray<FRpgInventoryBatchOperation>& OutConsumption, TArray<FRpgCraftingRefundEntry>& OutCredits, ERpgCraftingOrderState& OutBlockedState) const;
 	bool ApplyStationBatch(const TArray<FRpgInventoryBatchOperation>& Operations, TFunction<void()> CommitSideEffects, TFunction<bool()> Revalidate);
+
+	/** Shared checks of rune work; resolves the requester's inventory and rune. */
+	ERpgRuneWorkResult ResolveRuneWork(const AActor* RequestingActor, FRpgInventoryItemId RuneItemId,
+		URpgInventoryManagerComponent*& OutInventory, URpgInventoryItemInstance*& OutRune) const;
+
+	/** Plans the salvage of Rune: its removal plus its outputs into the first connected chest with room. */
+	ERpgRuneWorkResult PlanRuneSalvage(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Rune,
+		TArray<FRpgInventoryBatchOperation>& OutOperations) const;
 	bool RefundUnitCredits(TFunction<void()> CommitSideEffects);
 	void TryStartNextUnit();
 	void StartUnitTimer(float RemainingDuration);

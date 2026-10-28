@@ -189,6 +189,15 @@ EDataValidationResult URpgInventoryFragment_Rune::IsDataValid(FDataValidationCon
 	{
 		AddError(NSLOCTEXT("RpgInventoryFragmentRune", "MissingRuneTag", "A rune needs a RuneTag."));
 	}
+	for (int32 RankIndex = 1; RankIndex < Ranks.Num(); ++RankIndex)
+	{
+		if (Ranks[RankIndex].UpgradeCosts.IsEmpty())
+		{
+			AddError(FText::Format(
+				NSLOCTEXT("RpgInventoryFragmentRune", "MissingUpgradeCosts", "Rank {0} needs UpgradeCosts, or the upgrade to it would be free."),
+				RankIndex + 1));
+		}
+	}
 	if (Ranks.IsEmpty() || Ranks.Num() > RpgRuneMaxRank)
 	{
 		AddError(FText::Format(

@@ -10,6 +10,7 @@
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/ActionBar/RpgActionBarComponent.h"
 #include "SurvivalRpg/Base/RpgBaseStorageStationComponent.h"
+#include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
@@ -316,6 +317,22 @@ void URpgInventoryUiActionComponent::RequestStartCraftingOrder_Implementation(UR
 		RecipeDefinition,
 		Quantity,
 		TargetContainerId);
+}
+
+void URpgInventoryUiActionComponent::RequestUpgradeRune_Implementation(URpgCraftingStationComponent* CraftingStation, FRpgInventoryItemId RuneItemId)
+{
+	if (CraftingStation)
+	{
+		CraftingStation->UpgradeRune(GetOwner(), RuneItemId);
+	}
+}
+
+void URpgInventoryUiActionComponent::RequestSalvageRune_Implementation(URpgCraftingStationComponent* CraftingStation, FRpgInventoryItemId RuneItemId)
+{
+	if (CraftingStation)
+	{
+		CraftingStation->SalvageRune(GetOwner(), RuneItemId);
+	}
 }
 
 void URpgInventoryUiActionComponent::RequestStopCraftingOrder_Implementation(URpgCraftingStationComponent* CraftingStation, FGuid OrderId)

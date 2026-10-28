@@ -743,6 +743,13 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Intent")
 	bool ConsumeItemsByDefinition(TSubclassOf<URpgInventoryItemDefinition> ItemDef, int32 NumToConsume);
 
+	/**
+	 * Publishes a trusted change of ItemId's runtime state, such as a rune rank a station set inside its own committed
+	 * batch: bumps the revision for replication and notifies change and post-commit observers, so equipment grants,
+	 * saves and UI follow. Server only; returns false when the item is not in this inventory.
+	 */
+	bool MarkItemRuntimeStateChanged(FRpgInventoryItemId ItemId);
+
 	/** Plans ordinary item consumption, transfer and grants across all participants without publishing state. */
 	bool CanApplyInventoryBatch(
 		const TArray<FRpgInventoryBatchOperation>& Operations,

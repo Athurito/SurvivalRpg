@@ -545,6 +545,9 @@ bool FRpgRuneSocketEquippedGrantsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Rank I is still granted once"), AbilitySystem->GetTagCount(RankI), 1);
 
 	TestTrue(TEXT("Rune A reaches rank II"), Fixture.RuneA->SetRuneRank(2));
+	TestTrue(TEXT("The rank change is published"), Inventory.MarkItemRuntimeStateChanged(Fixture.RuneA->GetItemId()));
+	TestEqual(TEXT("The published rank removes rank I's grants at once"), AbilitySystem->GetTagCount(RankI), 0);
+	TestEqual(TEXT("The published rank grants rank II once"), AbilitySystem->GetTagCount(RankII), 1);
 	TestEqual(TEXT("Rune B goes into the tool"),
 		Move(Inventory, Fixture.RuneB, Socket(Inventory, Fixture.Tool, 2)), ERpgInventoryMutationResultCode::Success);
 	TestEqual(TEXT("Rune B is granted"), AbilitySystem->GetTagCount(RuneTagB), 1);

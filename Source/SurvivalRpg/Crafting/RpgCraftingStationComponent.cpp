@@ -26,6 +26,7 @@
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Inventory/RpgPhysicalStorageTypes.h"
+#include "SurvivalRpg/Runes/RpgInventoryFragment_Rune.h"
 #include "SurvivalRpg/System/RpgAssetManager.h"
 #include "SurvivalRpg/System/RpgGameData.h"
 #include "TimerManager.h"
@@ -751,6 +752,149 @@ void URpgCraftingStationComponent::ContinueOrderInternal()
 		// A paid unit waits for room or its target; delivering is the next step.
 		CompleteActiveUnitInternal();
 	}
+}
+
+ERpgRuneWorkResult URpgCraftingStationComponent::ResolveRuneWork(const AActor* RequestingActor, const FRpgInventoryItemId RuneItemId,
+	URpgInventoryManagerComponent*& OutInventory, URpgInventoryItemInstance*& OutRune) const
+{
+	OutInventory = nullptr;
+	OutRune = nullptr;
+	if (!bOffersRuneWork || bMutationInProgress) { return ERpgRuneWorkResult::NotOffered; }
+	OutInventory = FindRequestingPlayerInventory(RequestingActor);
+	if (!OutInventory || !CanActorAccess(RequestingActor)) { return ERpgRuneWorkResult::NoAccess; }
+	for (const FRpgInventoryEntryView& Entry : OutInventory->GetAllEntries())
+	{
+		if (Entry.ItemId == RuneItemId && URpgInventoryFragment_Rune::FindRuneOfItem(Entry.Instance))
+		{
+			OutRune = Entry.Instance;
+			return ERpgRuneWorkResult::Done;
+		}
+	}
+	return ERpgRuneWorkResult::NotFound;
+}
+
+ERpgRuneWorkResult URpgCraftingStationComponent::EvaluateRuneUpgrade(const AActor* RequestingActor, const FRpgInventoryItemId RuneItemId) const
+{
+	URpgInventoryManagerComponent* Inventory = nullptr;
+	URpgInventoryItemInstance* Rune = nullptr;
+	const ERpgRuneWorkResult Resolved = ResolveRuneWork(RequestingActor, RuneItemId, Inventory, Rune);
+	if (Resolved != ERpgRuneWorkResult::Done) { return Resolved; }
+	const FRpgRuneRank* NextRank = URpgInventoryFragment_Rune::FindRuneOfItem(Rune)->FindRank(Rune->GetRuneRank() + 1);
+	if (!NextRank) { return ERpgRuneWorkResult::MaxRank; }
+	TArray<FRpgInventoryBatchOperation> Consumption;
+	TArray<FRpgCraftingRefundEntry> Credits;
+	return NextRank->UpgradeCosts.IsEmpty() ||
+		BuildStorageConsumptionPlan(GetConnectedStorageInventories(), NextRank->UpgradeCosts, 1, Consumption, Credits)
+		? ERpgRuneWorkResult::Done
+		: ERpgRuneWorkResult::MissingMaterials;
+}
+
+ERpgRuneWorkResult URpgCraftingStationComponent::UpgradeRune(AActor* RequestingActor, const FRpgInventoryItemId RuneItemId)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority()) { return ERpgRuneWorkResult::NoAccess; }
+	URpgInventoryManagerComponent* Inventory = nullptr;
+	URpgInventoryItemInstance* Rune = nullptr;
+	const ERpgRuneWorkResult Resolved = ResolveRuneWork(RequestingActor, RuneItemId, Inventory, Rune);
+	if (Resolved != ERpgRuneWorkResult::Done) { return Resolved; }
+	TGuardValue<bool> MutationGuard(bMutationInProgress, true);
+	const int32 CurrentRank = Rune->GetRuneRank();
+	const FRpgRuneRank* NextRank = URpgInventoryFragment_Rune::FindRuneOfItem(Rune)->FindRank(CurrentRank + 1);
+	if (!NextRank) { return ERpgRuneWorkResult::MaxRank; }
+	TArray<FRpgInventoryBatchOperation> Consumption;
+	TArray<FRpgCraftingRefundEntry> Credits;
+	if (!NextRank->UpgradeCosts.IsEmpty() &&
+		!BuildStorageConsumptionPlan(GetConnectedStorageInventories(), NextRank->UpgradeCosts, 1, Consumption, Credits))
+	{
+		return ERpgRuneWorkResult::MissingMaterials;
+	}
+
+	// The rank rises in the commit that takes the materials, so a failed debit never upgrades and the reverse.
+	const TFunction<bool()> ContextValid = MakeContextRevalidator(RequestingActor);
+	const TWeakObjectPtr<URpgInventoryManagerComponent> WeakInventory(Inventory);
+	const TWeakObjectPtr<URpgInventoryItemInstance> WeakRune(Rune);
+	auto Revalidate = [ContextValid, WeakInventory, WeakRune, CurrentRank]()
+	{
+		return ContextValid() && WeakInventory.IsValid() && WeakRune.IsValid() &&
+			WeakInventory->ContainsItemInstance(WeakRune.Get()) && WeakRune->GetRuneRank() == CurrentRank;
+	};
+	auto RaiseRank = [WeakRune, CurrentRank]()
+	{
+		if (WeakRune.IsValid()) { WeakRune->SetRuneRank(CurrentRank + 1); }
+	};
+	if (!ApplyStationBatch(Consumption, RaiseRank, Revalidate)) { return ERpgRuneWorkResult::MissingMaterials; }
+	Inventory->MarkItemRuntimeStateChanged(RuneItemId);
+	return ERpgRuneWorkResult::Done;
+}
+
+ERpgRuneWorkResult URpgCraftingStationComponent::PlanRuneSalvage(URpgInventoryManagerComponent* Inventory, URpgInventoryItemInstance* Rune,
+	TArray<FRpgInventoryBatchOperation>& OutOperations) const
+{
+	OutOperations.Reset();
+	for (URpgInventoryItemInstance* Item : Inventory->GetAllItems())
+	{
+		if (Item && Inventory->GetSocketedItems(Item).Contains(Rune)) { return ERpgRuneWorkResult::Socketed; }
+	}
+
+	FRpgInventoryBatchOperation& Removal = OutOperations.AddDefaulted_GetRef();
+	Removal.SourceInventory = Inventory;
+	Removal.ItemId = Rune->GetItemId();
+	Removal.Quantity = 1;
+	Removal.ExpectedSourceRevision = Inventory->GetInventoryRevision();
+	const FRpgRuneRank* Rank = URpgInventoryFragment_Rune::FindRuneOfItem(Rune)->FindRank(Rune->GetRuneRank());
+	if (!Rank || Rank->SalvageOutputs.IsEmpty()) { return ERpgRuneWorkResult::Done; }
+
+	// The outputs go into the first connected chest that takes them automatically and has room for all of them, else
+	// into the requester's own inventory.
+	TArray<URpgInventoryManagerComponent*> Targets =
+		RankAutomaticOutputTargets(GetConnectedStorageInventories(), Rank->SalvageOutputs[0].ItemDefinition);
+	Targets.Add(Inventory);
+	for (URpgInventoryManagerComponent* Target : Targets)
+	{
+		TArray<FRpgInventoryBatchOperation> Candidate = OutOperations;
+		for (const FRpgCraftingOutputItem& Output : Rank->SalvageOutputs)
+		{
+			FRpgInventoryBatchOperation& Grant = Candidate.AddDefaulted_GetRef();
+			Grant.TargetInventory = Target;
+			Grant.ItemDefinition = Output.ItemDefinition;
+			Grant.Quantity = Output.Count;
+			Grant.ExpectedTargetRevision = Target->GetInventoryRevision();
+		}
+		ERpgInventoryMutationResultCode Code;
+		if (Target && Target->CanApplyInventoryBatch(Candidate, Code))
+		{
+			OutOperations = MoveTemp(Candidate);
+			return ERpgRuneWorkResult::Done;
+		}
+	}
+	return ERpgRuneWorkResult::NoRoom;
+}
+
+ERpgRuneWorkResult URpgCraftingStationComponent::EvaluateRuneSalvage(const AActor* RequestingActor, const FRpgInventoryItemId RuneItemId) const
+{
+	URpgInventoryManagerComponent* Inventory = nullptr;
+	URpgInventoryItemInstance* Rune = nullptr;
+	const ERpgRuneWorkResult Resolved = ResolveRuneWork(RequestingActor, RuneItemId, Inventory, Rune);
+	if (Resolved != ERpgRuneWorkResult::Done) { return Resolved; }
+	for (URpgInventoryItemInstance* Item : Inventory->GetAllItems())
+	{
+		if (Item && Inventory->GetSocketedItems(Item).Contains(Rune)) { return ERpgRuneWorkResult::Socketed; }
+	}
+	return ERpgRuneWorkResult::Done;
+}
+
+ERpgRuneWorkResult URpgCraftingStationComponent::SalvageRune(AActor* RequestingActor, const FRpgInventoryItemId RuneItemId)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority()) { return ERpgRuneWorkResult::NoAccess; }
+	URpgInventoryManagerComponent* Inventory = nullptr;
+	URpgInventoryItemInstance* Rune = nullptr;
+	const ERpgRuneWorkResult Resolved = ResolveRuneWork(RequestingActor, RuneItemId, Inventory, Rune);
+	if (Resolved != ERpgRuneWorkResult::Done) { return Resolved; }
+	TGuardValue<bool> MutationGuard(bMutationInProgress, true);
+	TArray<FRpgInventoryBatchOperation> Operations;
+	const ERpgRuneWorkResult Planned = PlanRuneSalvage(Inventory, Rune, Operations);
+	if (Planned != ERpgRuneWorkResult::Done) { return Planned; }
+	if (!ApplyStationBatch(Operations, {}, MakeContextRevalidator(RequestingActor))) { return ERpgRuneWorkResult::NoRoom; }
+	return ERpgRuneWorkResult::Done;
 }
 
 bool URpgCraftingStationComponent::CanActorAccess(const AActor* RequestingActor) const

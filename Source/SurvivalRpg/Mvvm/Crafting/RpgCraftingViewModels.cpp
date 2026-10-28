@@ -20,6 +20,7 @@
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
+#include "SurvivalRpg/Runes/RpgInventoryFragment_Rune.h"
 #include "Templates/Identity.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgCraftingViewModels)
@@ -695,6 +696,7 @@ void URpgCraftingStationViewModel::RefreshRecipesAndDetails()
 	const int32 PreviousCraftQuantity = CraftQuantity;
 	RebuildRecipeList();
 	RebuildSelectedRecipeDetails();
+	RebuildRuneWork();
 
 	if (PreviousSelectedRecipe != SelectedRecipe.Get())
 	{
@@ -2030,12 +2032,116 @@ void URpgCraftingStationViewModel::HandleInventoryChanged(FGameplayTag Channel, 
 	{
 		return;
 	}
+	// The requester's runes and their ranks feed the rune actions.
+	if (ObservedStation->OffersRuneWork() &&
+		ChangedInventory == URpgCraftingStationComponent::FindRequestingPlayerInventory(RequestingActor))
+	{
+		RequestRefresh(CraftingRefreshDomains::RecipesAndDetails);
+	}
 	if (ConnectedStorage.ContainsByPredicate([ChangedInventory](const TWeakObjectPtr<URpgInventoryManagerComponent>& Inventory)
 	{
 		return Inventory.Get() == ChangedInventory;
 	}))
 	{
 		RequestRefresh(CraftingRefreshDomains::RecipesAndDetails | CraftingRefreshDomains::Order);
+	}
+}
+
+FText URpgCraftingStationViewModel::GetRuneWorkActionLabel(const int32 ActionIndex) const
+{
+	const FRpgRuneWorkActionView* Action = FindRuneWorkAction(ActionIndex);
+	return Action ? Action->Label : FText::GetEmpty();
+}
+
+bool URpgCraftingStationViewModel::IsRuneWorkActionEnabled(const int32 ActionIndex) const
+{
+	const FRpgRuneWorkActionView* Action = FindRuneWorkAction(ActionIndex);
+	return Action && Action->bEnabled;
+}
+
+const FRpgRuneWorkActionView* URpgCraftingStationViewModel::FindRuneWorkAction(const int32 ActionIndex) const
+{
+	return RuneWorkActions.IsValidIndex(ActionIndex) ? &RuneWorkActions[ActionIndex] : nullptr;
+}
+
+void URpgCraftingStationViewModel::RebuildRuneWork()
+{
+	const bool bNewOffersRuneWork = ObservedStation && ObservedStation->OffersRuneWork();
+	TArray<FRpgRuneWorkActionView> NewActions;
+	const URpgInventoryManagerComponent* Inventory =
+		bNewOffersRuneWork ? URpgCraftingStationComponent::FindRequestingPlayerInventory(RequestingActor) : nullptr;
+	if (Inventory)
+	{
+		static const TCHAR* RankNumerals[] = {TEXT("I"), TEXT("II"), TEXT("III")};
+		auto Numeral = [](const int32 Rank)
+		{
+			return FText::FromString(RankNumerals[FMath::Clamp(Rank, 1, UE_ARRAY_COUNT(RankNumerals)) - 1]);
+		};
+		auto ItemName = [](const TSubclassOf<URpgInventoryItemDefinition> Definition)
+		{
+			return Definition ? GetDefault<URpgInventoryItemDefinition>(Definition)->DisplayName : FText::GetEmpty();
+		};
+		auto ListItems = [&ItemName](const auto& Entries)
+		{
+			TArray<FText> Parts;
+			for (const auto& Entry : Entries)
+			{
+				Parts.Add(FText::Format(NSLOCTEXT("RpgCraftingViewModels", "RuneWorkItem", "{0} {1}"), Entry.Count, ItemName(Entry.ItemDefinition)));
+			}
+			return Parts.IsEmpty() ? NSLOCTEXT("RpgCraftingViewModels", "RuneWorkNothing", "nothing") : FText::Join(FText::FromString(TEXT(", ")), Parts);
+		};
+
+		for (const FRpgInventoryEntryView& Entry : Inventory->GetAllEntries())
+		{
+			const URpgInventoryFragment_Rune* Rune = URpgInventoryFragment_Rune::FindRuneOfItem(Entry.Instance);
+			if (!Rune)
+			{
+				continue;
+			}
+			const int32 Rank = Entry.Instance->GetRuneRank();
+			const FText RuneName = ItemName(Entry.Instance->GetItemDef());
+
+			FRpgRuneWorkActionView& Upgrade = NewActions.AddDefaulted_GetRef();
+			Upgrade.RuneItemId = Entry.ItemId;
+			Upgrade.bUpgrade = true;
+			const ERpgRuneWorkResult UpgradeResult = ObservedStation->EvaluateRuneUpgrade(RequestingActor, Entry.ItemId);
+			const FRpgRuneRank* NextRank = Rune->FindRank(Rank + 1);
+			Upgrade.Label = NextRank
+				? FText::Format(
+					NSLOCTEXT("RpgCraftingViewModels", "RuneWorkUpgrade", "Upgrade {0} {1} to {2}\n{3}"),
+					RuneName, Numeral(Rank), Numeral(Rank + 1), ListItems(NextRank->UpgradeCosts))
+				: FText::Format(NSLOCTEXT("RpgCraftingViewModels", "RuneWorkMaxRank", "{0} {1}: highest rank"), RuneName, Numeral(Rank));
+			Upgrade.bEnabled = UpgradeResult == ERpgRuneWorkResult::Done;
+
+			FRpgRuneWorkActionView& Salvage = NewActions.AddDefaulted_GetRef();
+			Salvage.RuneItemId = Entry.ItemId;
+			Salvage.bUpgrade = false;
+			const ERpgRuneWorkResult SalvageResult = ObservedStation->EvaluateRuneSalvage(RequestingActor, Entry.ItemId);
+			const FRpgRuneRank* CurrentRank = Rune->FindRank(Rank);
+			Salvage.Label = SalvageResult == ERpgRuneWorkResult::Socketed
+				? FText::Format(NSLOCTEXT("RpgCraftingViewModels", "RuneWorkSocketed", "{0} {1} is socketed"), RuneName, Numeral(Rank))
+				: FText::Format(
+					NSLOCTEXT("RpgCraftingViewModels", "RuneWorkSalvage", "Salvage {0} {1}\nfor {2}"),
+					RuneName, Numeral(Rank), CurrentRank ? ListItems(CurrentRank->SalvageOutputs) : FText::GetEmpty());
+			Salvage.bEnabled = SalvageResult == ERpgRuneWorkResult::Done;
+		}
+	}
+
+	const bool bOffersChanged = bOffersRuneWork != bNewOffersRuneWork;
+	const bool bActionsChanged = RuneWorkActions != NewActions;
+	if (bOffersChanged)
+	{
+		bOffersRuneWork = bNewOffersRuneWork;
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bOffersRuneWork);
+	}
+	if (bActionsChanged)
+	{
+		RuneWorkActions = MoveTemp(NewActions);
+		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(RuneWorkActions);
+	}
+	if (bOffersChanged || bActionsChanged)
+	{
+		OnRuneWorkChanged.Broadcast();
 	}
 }
 

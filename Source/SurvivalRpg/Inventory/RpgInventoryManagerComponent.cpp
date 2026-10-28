@@ -465,6 +465,21 @@ void URpgInventoryManagerComponent::MarkInventoryStateDirty(bool bBroadcastPostC
 	}
 }
 
+bool URpgInventoryManagerComponent::MarkItemRuntimeStateChanged(const FRpgInventoryItemId ItemId)
+{
+	const AActor* OwningActor = GetOwner();
+	FRpgInventoryEntry* Entry = OwningActor && OwningActor->HasAuthority() ? InventoryList.FindEntryByItemId(ItemId) : nullptr;
+	if (!Entry)
+	{
+		return false;
+	}
+
+	MarkInventoryStateDirty(false);
+	InventoryList.BroadcastChangeMessage(*Entry, Entry->StackCount, Entry->StackCount);
+	OnInventoryPostCommit.Broadcast(this);
+	return true;
+}
+
 void URpgInventoryManagerComponent::BroadcastInventoryStateChanged() const
 {
 	UWorld* World = GetWorld();

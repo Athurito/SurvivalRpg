@@ -56,6 +56,8 @@ namespace RpgHarvestContentContractTests
 	const TCHAR* DeadPineLootPath = TEXT("/GF_Harvesting_Magic/Loot/LT_DeadPine.LT_DeadPine");
 	const TCHAR* KilnRecipeSetPath = TEXT("/GF_Harvesting_Magic/Crafting/DA_RecipeSet_Kiln.DA_RecipeSet_Kiln");
 	const TCHAR* KilnStationClassPath = TEXT("/GF_Harvesting_Magic/Crafting/BP_CraftingStation_Kiln.BP_CraftingStation_Kiln_C");
+	const TCHAR* RuneShrineClassPath = TEXT("/GF_Harvesting_Magic/Crafting/BP_CraftingStation_RuneShrine.BP_CraftingStation_RuneShrine_C");
+	const TCHAR* RuneEssenceClassPath = TEXT("/GF_Harvesting_Magic/Items/Materials/ID_RuneEssence.ID_RuneEssence_C");
 	const TCHAR* AxeChopAbilityClassPath = TEXT("/GF_Harvesting_Magic/GAS/Abilities/GA_Harvest_AxeChop.GA_Harvest_AxeChop_C");
 	const TCHAR* PickaxeStrikeAbilityClassPath =
 		TEXT("/GF_Harvesting_Magic/GAS/Abilities/GA_Harvest_PickaxeStrike.GA_Harvest_PickaxeStrike_C");
@@ -664,6 +666,57 @@ bool FRpgHarvestRuneRewardContractTest::RunTest(const FString& Parameters)
 		}
 		TestTrue(*FString::Printf(TEXT("%s drops Brand as a rare find"), LootPath), bDropsBrandRarely);
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestRuneWorkContractTest,
+	"SurvivalRpg.Harvesting.Content.RuneWorkContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestRuneWorkContractTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestContentContractTests;
+
+	// Brand's higher ranks cost rune essence at the Runenschrein, and every rank salvages into essence.
+	UClass* BrandClass = LoadClass<URpgInventoryItemDefinition>(nullptr, BrandRuneClassPath);
+	UClass* EssenceClass = LoadClass<URpgInventoryItemDefinition>(nullptr, RuneEssenceClassPath);
+	const URpgInventoryFragment_Rune* Brand = BrandClass
+		? Cast<URpgInventoryFragment_Rune>(GetDefault<URpgInventoryItemDefinition>(BrandClass)->FindFragmentByClass(
+			URpgInventoryFragment_Rune::StaticClass()))
+		: nullptr;
+	if (!TestNotNull(TEXT("Brand is a rune"), Brand) || !TestNotNull(TEXT("Rune essence loads"), EssenceClass))
+	{
+		return false;
+	}
+	auto CountOfEssence = [EssenceClass](const auto& Entries)
+	{
+		int32 Count = 0;
+		for (const auto& Entry : Entries)
+		{
+			Count += Entry.ItemDefinition == EssenceClass ? Entry.Count : 0;
+		}
+		return Count;
+	};
+	int32 PreviousSalvage = 0;
+	for (int32 Rank = 1; Rank <= Brand->GetMaxRank(); ++Rank)
+	{
+		const FRpgRuneRank* RankData = Brand->FindRank(Rank);
+		if (Rank > 1)
+		{
+			TestTrue(*FString::Printf(TEXT("Brand rank %d costs rune essence"), Rank), CountOfEssence(RankData->UpgradeCosts) > 0);
+		}
+		const int32 Salvage = CountOfEssence(RankData->SalvageOutputs);
+		TestTrue(*FString::Printf(TEXT("Brand rank %d salvages into more essence than the rank below"), Rank), Salvage > PreviousSalvage);
+		PreviousSalvage = Salvage;
+	}
+
+	// The Runenschrein offers rune work and no recipes of its own.
+	UClass* ShrineClass = LoadClass<ARpgCraftingStationActor>(nullptr, RuneShrineClassPath);
+	const URpgCraftingStationComponent* Shrine =
+		ShrineClass ? GetDefault<ARpgCraftingStationActor>(ShrineClass)->GetCraftingStationComponent() : nullptr;
+	TestTrue(TEXT("The Runenschrein offers rune work"), Shrine && Shrine->OffersRuneWork());
 	return true;
 }
 

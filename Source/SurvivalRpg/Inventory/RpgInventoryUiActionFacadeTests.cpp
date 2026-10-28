@@ -123,6 +123,8 @@ bool FRpgInventoryUiActionFacadeRpcOwnershipContractTest::RunTest(
 		FName(TEXT("RequestSetCraftingOrderTarget")),
 		FName(TEXT("RequestPauseCraftingStation")),
 		FName(TEXT("RequestResumeCraftingStation")),
+		FName(TEXT("RequestUpgradeRune")),
+		FName(TEXT("RequestSalvageRune")),
 		FName(TEXT("RequestPhysicalStorageCommand")),
 	};
 	static const FName RetiredLegacyRequestFunctions[] = {
@@ -207,7 +209,7 @@ bool FRpgInventoryUiActionFacadeRpcOwnershipContractTest::RunTest(
 	TestEqual(
 		TEXT("The inventory UI action facade retains exactly its canonical and feature Request RPCs"),
 		RequestFunctionCount,
-		27);
+		29);
 	TestTrue(
 		TEXT("Every canonical or feature inventory action Request RPC remains reflected"),
 		RemainingExpectedRequestFunctions.IsEmpty());
