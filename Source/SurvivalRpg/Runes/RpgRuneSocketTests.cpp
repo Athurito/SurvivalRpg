@@ -762,8 +762,39 @@ bool FRpgRuneBoundTalentTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("The awake talent is granted once"), AbilitySystem->GetTagCount(TAG_RuneSocketTest_RuneBoundGranted), 1);
 	TestFalse(TEXT("The skill screen shows it awake"), Dormant());
 
+	// The rune bar lists the sockets of the tool in hand and highlights the talents of a clicked rune.
+	URpgSkillProgressionViewModel* Progression = NewObject<URpgSkillProgressionViewModel>(GetTransientPackage(), NAME_None, RF_Transient);
+	Progression->BindPlayerState(PlayerState);
+	URpgSkillTreeViewModel* BarTree = nullptr;
+	for (URpgSkillTreeViewModel* Candidate : Progression->GetSkillTrees())
+	{
+		BarTree = Candidate && Candidate->GetTreeTag() == TAG_RuneSocketTest_Tree ? Candidate : BarTree;
+	}
+	auto Highlighted = [BarTree](const FGameplayTag NodeTag)
+	{
+		const URpgSkillTreeNodeViewModel* Node = BarTree ? BarTree->FindNode(NodeTag) : nullptr;
+		return Node && Node->IsRuneHighlighted();
+	};
+	TestTrue(TEXT("The rune bar shows the tool in hand"), Progression->HasRuneTool());
+	TestEqual(TEXT("The rune bar shows its three sockets"), Progression->GetRuneSlots().Num(), 3);
+	TestTrue(TEXT("The first socket holds rune A"), Progression->IsRuneSlotFilled(0) && !Progression->IsRuneSlotFilled(1));
+	TestTrue(TEXT("The bar lists the tree"), BarTree != nullptr);
+	Progression->ToggleRuneHighlight(0);
+	TestTrue(TEXT("Clicking rune A highlights it"), Progression->IsRuneSlotHighlighted(0) && Progression->GetHighlightedRuneTag() == RuneTagA);
+	TestTrue(TEXT("Rune A's talent is highlighted"), Highlighted(TAG_RuneSocketTest_RuneBoundNode));
+	TestFalse(TEXT("A talent without runes is not highlighted"), Highlighted(TAG_RuneSocketTest_PlainNode));
+	Progression->ToggleRuneHighlight(0);
+	TestFalse(TEXT("Clicking rune A again ends the highlight"), Highlighted(TAG_RuneSocketTest_RuneBoundNode));
+	Progression->ToggleRuneHighlight(1);
+	TestFalse(TEXT("An empty socket highlights nothing"), Progression->GetHighlightedRuneTag().IsValid());
+	Progression->ToggleRuneHighlight(0);
+
 	TestEqual(TEXT("Rune A leaves the tool"),
 		Move(*Inventory, Rune, Storage(2, 0)), ERpgInventoryMutationResultCode::Success);
+	Progression->Refresh();
+	TestFalse(TEXT("The highlight ends when its rune leaves the tool"), Highlighted(TAG_RuneSocketTest_RuneBoundNode));
+	TestFalse(TEXT("The bar shows the emptied socket"), Progression->IsRuneSlotFilled(0));
+	Progression->Unbind();
 	TestEqual(TEXT("The talent sleeps again"), Tuned(), 10.0f);
 	TestEqual(TEXT("Its grant leaves with the rune"), AbilitySystem->GetTagCount(TAG_RuneSocketTest_RuneBoundGranted), 0);
 	TestTrue(TEXT("It stays learned without repurchase"), SkillTrees->IsNodeUnlocked(TAG_RuneSocketTest_Tree, TAG_RuneSocketTest_RuneBoundNode));

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "GameFramework/GameplayMessageSubsystem.h"
 #include "GameplayTagContainer.h"
 #include "MVVMViewModelBase.h"
 #include "SurvivalRpg/Mvvm/RpgViewModelInvalidationQueue.h"
@@ -17,6 +18,38 @@ class URpgPlayerProgressionComponent;
 class URpgSkillTreeDefinition;
 class URpgSkillTreeViewModel;
 class URpgTradeSkillProgressionComponent;
+struct FRpgEquipmentLoadoutSlotsChangedMessage;
+struct FRpgInventoryChangeMessage;
+
+/** One socket of the tool in hand, for the rune bar above the mastery map. Derived from the inventory; UI read-only. */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgSkillTreeRuneSlotView
+{
+	GENERATED_BODY()
+
+	/** True when a rune sits in this socket. */
+	UPROPERTY(BlueprintReadOnly, Category = "Skill Tree|Runes")
+	bool bHasRune = false;
+
+	/** Identity of the socketed rune, for example Rune.Brand; empty for an empty socket. */
+	UPROPERTY(BlueprintReadOnly, Category = "Skill Tree|Runes")
+	FGameplayTag RuneTag;
+
+	/** Player-facing rune name with its rank, for example "Brand II", or "Empty" for an empty socket. */
+	UPROPERTY(BlueprintReadOnly, Category = "Skill Tree|Runes")
+	FText Label;
+
+	/** Rune icon from its item UI data, or null. */
+	UPROPERTY(BlueprintReadOnly, Category = "Skill Tree|Runes")
+	TSoftObjectPtr<UTexture2D> Icon;
+
+	/** True while this rune's talents are highlighted on the map. Local UI state. */
+	UPROPERTY(BlueprintReadOnly, Category = "Skill Tree|Runes")
+	bool bIsHighlighted = false;
+
+	bool operator==(const FRpgSkillTreeRuneSlotView& Other) const;
+	bool operator!=(const FRpgSkillTreeRuneSlotView& Other) const { return !(*this == Other); }
+};
 
 /** How a skill tree node presents itself. Derived from ERpgSkillTreeUnlockResult; UI read-only. */
 UENUM(BlueprintType)
@@ -255,6 +288,10 @@ public:
 	ERpgSkillTreeRequestRejection GetRejection() const { return Rejection; }
 	bool NeedsRunes() const { return bNeedsRunes; }
 	bool IsDormant() const { return bIsDormant; }
+	bool IsRuneHighlighted() const { return bIsRuneHighlighted; }
+
+	/** Marks the node as a talent of the rune the rune bar highlights. Called by the tree view model. */
+	void SetRuneHighlighted(bool bHighlighted);
 
 protected:
 	/** Stable node identity. */
@@ -386,6 +423,10 @@ protected:
 	/** Player-facing rune requirement, for example "Needs Brand in the tool's sockets"; empty without one. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Node", meta = (AllowPrivateAccess = "true"))
 	FText RuneRequirementText;
+
+	/** True while the rune bar highlights a rune this node needs. Local UI state. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Node", meta = (AllowPrivateAccess = "true"))
+	bool bIsRuneHighlighted = false;
 
 private:
 	TWeakObjectPtr<URpgSkillTreeViewModel> Tree;
@@ -593,6 +634,16 @@ private:
 	/** Marks NodeTag as waiting for the server before a request goes out, and forgets its last rejection. */
 	void BeginRequest(FGameplayTag NodeTag);
 
+public:
+	/**
+	 * Highlights the nodes that need RuneTag, or none for an empty tag, and announces the change to the map. Local UI
+	 * state; called by the progression view model's rune bar.
+	 */
+	void SetHighlightedRune(FGameplayTag RuneTag);
+
+private:
+	FGameplayTag HighlightedRune;
+
 	void Subscribe();
 	void Unsubscribe();
 	void QueueRefresh();
@@ -711,6 +762,29 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Skill Tree|ViewModel")
 	TArray<URpgSkillTreeViewModel*> GetSkillTrees() const;
 
+	/**
+	 * Highlights on the map the talents of the rune in socket SlotIndex of the tool in hand, or turns the highlight off
+	 * when that rune is already highlighted or the socket is empty. Local UI state only.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Skill Tree|Runes")
+	void ToggleRuneHighlight(int32 SlotIndex);
+
+	/** Label of socket SlotIndex of the tool in hand, for example "Brand II" or "Empty"; empty outside the sockets. */
+	UFUNCTION(BlueprintPure, Category = "Skill Tree|Runes")
+	FText GetRuneSlotLabel(int32 SlotIndex) const;
+
+	/** True when a rune sits in socket SlotIndex of the tool in hand. */
+	UFUNCTION(BlueprintPure, Category = "Skill Tree|Runes")
+	bool IsRuneSlotFilled(int32 SlotIndex) const;
+
+	/** True while the rune in socket SlotIndex is highlighted. */
+	UFUNCTION(BlueprintPure, Category = "Skill Tree|Runes")
+	bool IsRuneSlotHighlighted(int32 SlotIndex) const;
+
+	bool HasRuneTool() const { return bHasRuneTool; }
+	const TArray<FRpgSkillTreeRuneSlotView>& GetRuneSlots() const { return RuneSlots; }
+	FGameplayTag GetHighlightedRuneTag() const { return HighlightedRuneTag; }
+
 	URpgSkillTreeViewModel* GetSelectedSkillTree() const { return SelectedSkillTree; }
 	URpgSkillTreeNodeViewModel* GetSelectedNode() const { return SelectedNode; }
 	int32 GetCharacterLevel() const { return CharacterLevel; }
@@ -766,6 +840,22 @@ protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Trees", meta = (AllowPrivateAccess = "true"))
 	int32 TotalAvailablePoints = 0;
 
+	/** True while the main hand holds an item with rune sockets, for the rune bar above the map. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Runes", meta = (AllowPrivateAccess = "true"))
+	bool bHasRuneTool = false;
+
+	/** Name of the socketed item in the main hand, or empty. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Runes", meta = (AllowPrivateAccess = "true"))
+	FText RuneToolName;
+
+	/** Sockets of the item in the main hand in socket order; empty without one. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Runes", meta = (AllowPrivateAccess = "true"))
+	TArray<FRpgSkillTreeRuneSlotView> RuneSlots;
+
+	/** Rune whose talents the map highlights, or empty. Local UI state. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Skill Tree|Runes", meta = (AllowPrivateAccess = "true"))
+	FGameplayTag HighlightedRuneTag;
+
 private:
 	UFUNCTION()
 	void HandleSkillTreeChanged(FGameplayTag TreeTag);
@@ -788,6 +878,15 @@ private:
 	/** Updates SelectedNode and SelectedSkillTree from the trees' selections. */
 	void UpdateSelection();
 
+	/** Rebuilds the rune bar from the item in the main hand and keeps the highlight only while its rune is socketed. */
+	void RebuildRuneContext();
+
+	/** Pushes HighlightedRuneTag to every tree and marks the highlighted socket. */
+	void ApplyRuneHighlight();
+
+	void HandleInventoryChanged(FGameplayTag Channel, const FRpgInventoryChangeMessage& Message);
+	void HandleEquipmentSlotsChanged(FGameplayTag Channel, const FRpgEquipmentLoadoutSlotsChangedMessage& Message);
+
 	void Subscribe();
 	void Unsubscribe();
 	void QueueRefresh();
@@ -801,4 +900,9 @@ private:
 	TArray<TWeakObjectPtr<URpgSkillTreeViewModel>> ObservedTrees;
 	FGameplayTag RequestedTreeTag;
 	FRpgViewModelInvalidationQueue RefreshQueue;
+	FGameplayMessageListenerHandle InventoryChangedHandle;
+	FGameplayMessageListenerHandle EquipmentChangedHandle;
+
+	/** Set when sockets or the tool in hand may have changed, so the next rebuild re-derives the trees' sleeping talents. */
+	bool bRefreshTreesOnRebuild = false;
 };
