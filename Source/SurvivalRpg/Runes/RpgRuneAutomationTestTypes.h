@@ -5,6 +5,7 @@
 #include "RpgRuneAutomationTestTypes.generated.h"
 
 class URpgAbilitySet;
+class URpgCraftingRecipeDefinition;
 class URpgSkillTreeDefinition;
 
 /** Socket grid id of the automation tool. */
@@ -78,6 +79,9 @@ public:
 
 	/** Points rank Rank's AbilitySet of the class default fragment at AbilitySet; tests restore null when they finish. */
 	static void SetRankAbilitySet(int32 Rank, const URpgAbilitySet* AbilitySet);
+
+	/** Points the class default fragment's BaseRecipe at Recipe; tests restore null when they finish. */
+	static void SetBaseRecipe(const URpgCraftingRecipeDefinition* Recipe);
 };
 
 /** Editor-only rune B with one rank, which grants Rune.AutomationTest.B once configured. */

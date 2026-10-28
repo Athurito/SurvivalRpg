@@ -8,6 +8,7 @@
 #include "SurvivalRpg/Core/Character/RpgPawnData.h"
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
+#include "SurvivalRpg/Core/Game/RpgGameStateBase.h"
 #include "SurvivalRpg/Core/Game/Experience/RpgExperienceDefinition.h"
 #include "SurvivalRpg/Core/Game/Experience/RpgExperienceManagerComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
@@ -16,6 +17,7 @@
 #include "SurvivalRpg/Progression/Player/RpgPlayerProgressionComponent.h"
 #include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeComponent.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillProgressionComponent.h"
+#include "SurvivalRpg/Runes/RpgInventoryFragment_Rune.h"
 
 ARpgPlayerState::ARpgPlayerState()
 {
@@ -42,6 +44,36 @@ void ARpgPlayerState::PostInitializeComponents()
 		check(ExperienceComponent);
 
 		ExperienceComponent->CallOrRegister_OnExperienceLoaded(FOnRpgExperienceLoaded::FDelegate::CreateUObject(this, &ThisClass::OnExperienceLoaded));
+	}
+}
+
+void ARpgPlayerState::BeginPlay()
+{
+	Super::BeginPlay();
+
+	if (HasAuthority() && InventoryManagerComponent)
+	{
+		InventoryManagerComponent->OnInventoryPostCommit.AddUObject(this, &ThisClass::HandleInventoryCommitted);
+	}
+}
+
+void ARpgPlayerState::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (InventoryManagerComponent)
+	{
+		InventoryManagerComponent->OnInventoryPostCommit.RemoveAll(this);
+	}
+	Super::EndPlay(EndPlayReason);
+}
+
+void ARpgPlayerState::HandleInventoryCommitted(URpgInventoryManagerComponent* Inventory)
+{
+	const UWorld* World = GetWorld();
+	const ARpgGameStateBase* RpgGameState = World ? World->GetGameState<ARpgGameStateBase>() : nullptr;
+	URpgRecipeUnlockComponent* RecipeUnlocks = RpgGameState ? RpgGameState->GetRecipeUnlockComponent() : nullptr;
+	if (Inventory && RecipeUnlocks)
+	{
+		URpgInventoryFragment_Rune::LearnBaseRecipesOfRunesIn(*Inventory, *RecipeUnlocks);
 	}
 }
 

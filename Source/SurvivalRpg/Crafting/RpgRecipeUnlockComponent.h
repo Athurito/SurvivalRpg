@@ -2,6 +2,7 @@
 
 #include "Components/ActorComponent.h"
 #include "GameplayTagContainer.h"
+#include "SurvivalRpg/Core/Game/RpgWorldSaveParticipant.h"
 
 #include "RpgRecipeUnlockComponent.generated.h"
 
@@ -26,14 +27,26 @@ struct SURVIVALRPG_API FRpgRecipeUnlockChangeMessage
 	bool bNewlyUnlocked = false;
 };
 
+/** Pointer-free recipe knowledge of one world, the payload of the recipe unlock store's world save entry. */
+USTRUCT()
+struct SURVIVALRPG_API FRpgRecipeUnlockSaveData
+{
+	GENERATED_BODY()
+
+	/** Concrete Recipe.* unlock tags the world has learned. Host-authoritative save data; never replicated as is. */
+	UPROPERTY(SaveGame)
+	FGameplayTagContainer UnlockedRecipeTags;
+};
+
 /**
- * Replicated global recipe unlock store.
+ * Replicated recipe knowledge of the current world.
  *
- * This component is intended to live on the GameState so a recipe unlock becomes available to every
- * player in the current session. Disk persistence is deliberately left to a later SaveGame layer.
+ * This component lives on the GameState, so a recipe unlock becomes available to every player in the world, for
+ * example the base recipe of a rune someone found. The server owns it, and it is saved with the host's world snapshot
+ * as a world save participant, so a learned recipe stays known after the world is loaded again.
  */
 UCLASS(BlueprintType, ClassGroup = (Crafting), meta = (BlueprintSpawnableComponent))
-class SURVIVALRPG_API URpgRecipeUnlockComponent : public UActorComponent
+class SURVIVALRPG_API URpgRecipeUnlockComponent : public UActorComponent, public IRpgWorldSaveParticipant
 {
 	GENERATED_BODY()
 
@@ -41,8 +54,22 @@ public:
 	explicit URpgRecipeUnlockComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
-	/** Adds one global recipe unlock tag. Server-authoritative; returns false if the tag is invalid or already unlocked. */
+	//~ IRpgWorldSaveParticipant interface
+	virtual FName GetWorldSaveFeatureId() const override;
+	virtual bool CaptureWorldSaveData(FRpgWorldFeatureSaveData& OutData) override;
+	virtual bool RestoreWorldSaveData(const FRpgWorldFeatureSaveData* SavedData) override;
+	//~ End IRpgWorldSaveParticipant interface
+
+	/** Schema of this store's world save payload. */
+	static constexpr int32 CurrentSaveSchemaVersion = 1;
+
+	/**
+	 * Adds one recipe unlock tag for the whole world. Server-authoritative; returns false if the tag is not a concrete
+	 * Recipe.* tag or is already unlocked. A new unlock replicates to every player and marks the world save dirty.
+	 */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Crafting|Unlocks")
 	bool UnlockRecipeTag(FGameplayTag RecipeUnlockTag);
 
@@ -68,8 +95,11 @@ private:
 
 	void BroadcastUnlockChanged(FGameplayTag RecipeUnlockTag, bool bNewlyUnlocked) const;
 
+	/** True for a valid tag below the Recipe root, the only tags this store keeps and saves. */
+	static bool IsConcreteRecipeTag(FGameplayTag RecipeUnlockTag);
+
 private:
-	/** Session-replicated global recipe unlocks. Mutated by the server; clients treat it as read-only UI state. */
+	/** Recipe unlocks of this world. Mutated by the server and saved with the world; clients only read them. */
 	UPROPERTY(ReplicatedUsing = OnRep_UnlockedRecipeTags, BlueprintReadOnly, Category = "Crafting|Unlocks", meta = (AllowPrivateAccess = "true"))
 	FGameplayTagContainer UnlockedRecipeTags;
 };

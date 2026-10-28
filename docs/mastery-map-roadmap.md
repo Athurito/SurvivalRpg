@@ -1,6 +1,6 @@
 # Mastery map roadmap
 
-Updated: 2026-10-28. Status: **In progress**; MST-06c is merged, MST-06d is in review.
+Updated: 2026-10-28. Status: **In progress**; MST-06 is merged, MST-07a is in review.
 
 This is the execution roadmap for the [mastery map implementation plan](mastery-map-implementation-plan.md): a zoomable shared harvesting mastery map, meaningful talent choices, and the rune loot/crafting/upgrade loop. The plan owns design, architecture, and detailed acceptance contracts; this roadmap owns task status, order, and the current handoff.
 
@@ -49,9 +49,10 @@ All dependencies below are within MST; every row also has the CMB scheduling gat
 | MST-06a | Tool sockets in the inventory: the socket grid of the item in a weapon carry slot shows below that slot; explicit drag only, never pickups, first-fit placement or quick transfers | MST-05 | Merged (2026-10-28, `d91c5e42`) | [mastery-map-socket-ui.md](mastery-map-socket-ui.md), [PR #316](https://github.com/Athurito/SurvivalRpg/pull/316) |
 | MST-06b | Brand's burn as secondary harvest work through the existing stock/reward commit: own hits light the resource, the burn works it over time by rank, the igniting player gets rewards and XP, safe in co-op | MST-06a | Merged (2026-10-28, `4066e9c8`) | [mastery-map-brand-burn.md](mastery-map-brand-burn.md), [PR #317](https://github.com/Athurito/SurvivalRpg/pull/317) |
 | MST-06c | Source-tool activation evaluator and learned-but-inactive UI; Brand's talents Anhaltende Macht and Entladung | MST-06b | Merged (2026-10-28, `fff77e59`) | [mastery-map-rune-talents.md](mastery-map-rune-talents.md), [PR #318](https://github.com/Athurito/SurvivalRpg/pull/318) |
-| MST-06d | Rune bar on the skill screen: the tool in hand and its three sockets above the map, and highlights of the talents of a clicked rune | MST-06c | In review | [mastery-map-rune-bar.md](mastery-map-rune-bar.md), [PR #319](https://github.com/Athurito/SurvivalRpg/pull/319) |
-| MST-07 | Rune drops, guaranteed claims, persistent base-recipe knowledge and rank-I crafting through existing loot/station paths | MST-06c | Planned | — |
-| MST-08 | In-place rank II/III upgrades, salvage and Runenschrein presentation; atomic costs and safe equipped-rune refresh | MST-07 | Planned | — |
+| MST-06d | Rune bar on the skill screen: the tool in hand and its three sockets above the map, and highlights of the talents of a clicked rune | MST-06c | Merged (2026-10-28, `95ed8607`) | [mastery-map-rune-bar.md](mastery-map-rune-bar.md), [PR #319](https://github.com/Athurito/SurvivalRpg/pull/319) |
+| MST-07a | Persistent world recipe knowledge: carrying a rune teaches the world its base recipe without consuming it, and the Kiln crafts a new rank-I Brand | MST-06d | In review | [mastery-map-rune-recipes.md](mastery-map-rune-recipes.md), [PR #320](https://github.com/Athurito/SurvivalRpg/pull/320) |
+| MST-07b | Rune drops through loot tables and guaranteed selectable reward claims with persisted claim identity; a full inventory never loses a claim | MST-07a | Planned | — |
+| MST-08 | In-place rank II/III upgrades, salvage and Runenschrein presentation; atomic costs and safe equipped-rune refresh | MST-07b | Planned | — |
 | MST-09a | Harvesting Echo, Kraftuebertrag and Runenfluss; bounded own-hit triggers and actual-overkill transfer | MST-08 | Planned | — |
 | MST-09b | Erntesprung, Durchschlag, Ausbreitung and remaining Nachwirkung choices; finite propagation and no duplicated work | MST-09a | Planned | — |
 | MST-09c | Totenarbeiter and Helfer; temporary workers, correct beneficiary/reward attribution, lifecycle and bounded triggers | MST-09b | Planned | — |
@@ -61,7 +62,7 @@ All dependencies below are within MST; every row also has the CMB scheduling gat
 
 Default implementation order follows the table after CMB. MST-03a's technical independence documents an ownership boundary; it does not schedule concurrent work during CMB. Only expose purchasable talents once their gameplay exists. The Brand transfer choice therefore waits for Erntesprung in MST-09b.
 
-The user decided on 2026-10-27 to make the skill screen one map for every tree. MST-03c comes before MST-04, so that MST-04 builds its feedback into the new detail card instead of the old panel. After reviewing MST-03c, the user moved MST-10 ahead of MST-04 the same day, with a Combat tree as the second cluster. MST-10 is split into MST-10a (the map for several trees) and MST-10b (the Combat tree); both come before MST-04. The user approved the Combat talents and the kill-based mastery XP of MST-10b on 2026-10-27. On 2026-10-28 the user split MST-06 into MST-06a, MST-06b and MST-06c and accepted the Brand design recorded in the [MST-06a report](mastery-map-socket-ui.md#user-decisions-2026-10-28). MST-06c then moved the rune bar with highlights into MST-06d, to keep its PR bounded.
+The user decided on 2026-10-27 to make the skill screen one map for every tree. MST-03c comes before MST-04, so that MST-04 builds its feedback into the new detail card instead of the old panel. After reviewing MST-03c, the user moved MST-10 ahead of MST-04 the same day, with a Combat tree as the second cluster. MST-10 is split into MST-10a (the map for several trees) and MST-10b (the Combat tree); both come before MST-04. The user approved the Combat talents and the kill-based mastery XP of MST-10b on 2026-10-27. On 2026-10-28 the user split MST-06 into MST-06a, MST-06b and MST-06c and accepted the Brand design recorded in the [MST-06a report](mastery-map-socket-ui.md#user-decisions-2026-10-28). MST-06c then moved the rune bar with highlights into MST-06d, to keep its PR bounded. The user chose shared per-world rune recipe knowledge on 2026-10-28; MST-07 is split into MST-07a (recipe knowledge and rank-I crafting) and MST-07b (drops and guaranteed claims), to keep each PR bounded.
 
 ## Post-CMB baseline refresh
 
@@ -99,19 +100,21 @@ Playtests of merged MST steps that wait for the user's batch test. Remove a row 
 | MST-06b | [Playtest](mastery-map-brand-burn.md#playtest): socketed Brand sets struck veins and pines glowing for about 4 s and works them further, nothing without Brand, two players | Waiting for the user |
 | MST-06c | [Playtest](mastery-map-rune-talents.md#playtest): learn Lasting Power without Brand (sleeping), wake it by socketing Brand, longer burns, Discharge releases the burn, two players | Waiting for the user |
 | MST-06d | [Playtest](mastery-map-rune-bar.md#playtest): the rune bar shows the tool in Weapon I and its sockets, clicking Brand frames its talents violet, the bar follows socket changes, two players | Waiting for the user |
+| MST-07a | [Playtest](mastery-map-rune-recipes.md#playtest): the Kiln offers Brand Rune once a player carries Brand, 4 ore and 2 charcoal in the chest craft a new rank-I Brand, both players see the recipe | Waiting for the user |
 
 ## Current handoff
 
 - **Active phase:** MST, started by the user on 2026-10-27 after CMB-01 to CMB-07 merged.
-- **Active task:** MST-06d, branch `claude/mst-06d-rune-bar`, [PR #319](https://github.com/Athurito/SurvivalRpg/pull/319); the report is [mastery-map-rune-bar.md](mastery-map-rune-bar.md).
-  - `URpgSkillProgressionViewModel` projects the socketed tool in the main hand and its sockets, and follows inventory and equipment changes while the screen exists.
-  - `CUI_Skills` shows the rune bar under the top bar; clicking a rune frames its talents in violet through `CUI_SkillTreeNode`.
-- **Previous task:** MST-06c, merged on 2026-10-28 as `fff77e59` ([PR #318](https://github.com/Athurito/SurvivalRpg/pull/318)); the report is [mastery-map-rune-talents.md](mastery-map-rune-talents.md).
-- **User decisions (2026-10-28):** MST-06 is split into MST-06a, MST-06b and MST-06c, and Brand works as recorded in the [MST-06a report](mastery-map-socket-ui.md#user-decisions-2026-10-28): the rune itself lights resources, Anhaltende Macht lengthens and refreshes the burn, Entladung releases it at once.
+- **Active task:** MST-07a, branch `claude/mst-07a-rune-recipes`, [PR #320](https://github.com/Athurito/SurvivalRpg/pull/320); the report is [mastery-map-rune-recipes.md](mastery-map-rune-recipes.md).
+  - `URpgRecipeUnlockComponent` is a world save participant, so learned recipes stay known after the world loads again.
+  - `URpgInventoryFragment_Rune::BaseRecipe` names a rune's locked recipe; the player state teaches it to the world after each change of the player's inventory.
+  - The Kiln offers `DA_Recipe_Rune_Brand` (4 ore and 2 charcoal, 6 s) for a new rank-I Brand.
+- **Previous task:** MST-06d, merged on 2026-10-28 as `95ed8607` ([PR #319](https://github.com/Athurito/SurvivalRpg/pull/319)); the report is [mastery-map-rune-bar.md](mastery-map-rune-bar.md).
+- **User decisions (2026-10-28):** rune recipe knowledge is shared per world, as the plan proposed. MST-06 is split into MST-06a, MST-06b and MST-06c, and Brand works as recorded in the [MST-06a report](mastery-map-socket-ui.md#user-decisions-2026-10-28): the rune itself lights resources, Anhaltende Macht lengthens and refreshes the burn, Entladung releases it at once.
 - **User decisions (2026-10-27):**
   - One map for every tree. After the MST-03c review, MST-10a and MST-10b come before MST-04, with Combat as the second cluster, and the game window has a minimum size of 1280 x 720.
   - Combat talents as proposed: Kampfrhythmus (+10 % base damage), then Konter (perfect block +50 % stagger damage, more stamina back) or Bollwerk (block 25 % less stamina, 15 % more damage stopped). Combat mastery XP comes from kills.
   - For MST-03b, the retired tool trees and powers and the Impact talents as recorded in its report.
-- **Next MST action:** after MST-06d merges, MST-07 needs the user's decision on rune recipe knowledge (shared per world or per player) before it starts.
+- **Next MST action:** after MST-07a merges, MST-07b: rune drops through loot tables and guaranteed reward claims.
 - **Rune contract:** rechecked for MST-05. CMB-07's engraved weapon runes and the combat Echo stay unchanged; harvesting runes are separate rune items in `GF_Harvesting_Magic`.
-- **Later content decisions:** production XP and cost curves and the starter and guaranteed-reward pacing remain authored tuning. Shared-world rune recipe knowledge is the plan's proposed co-op default and must be settled before MST-07.
+- **Later content decisions:** production XP and cost curves and the starter and guaranteed-reward pacing remain authored tuning. The drop sources and chances of runes and the guaranteed-reward source are authored content for MST-07b.
