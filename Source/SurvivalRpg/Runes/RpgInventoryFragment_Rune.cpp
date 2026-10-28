@@ -1,5 +1,7 @@
 #include "RpgInventoryFragment_Rune.h"
 
+#include "SurvivalRpg/Crafting/RpgCraftingRecipeDefinition.h"
+#include "SurvivalRpg/Crafting/RpgRecipeUnlockComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemContainer.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
@@ -79,6 +81,29 @@ void URpgInventoryFragment_Rune::AccumulateSocketedTunings(
 			Accumulator.Apply(Tuning, AbilityIds, TuningTag);
 		}
 	}
+}
+
+int32 URpgInventoryFragment_Rune::LearnBaseRecipesOfRunesIn(
+	const URpgInventoryManagerComponent& Inventory,
+	URpgRecipeUnlockComponent& RecipeUnlocks)
+{
+	const AActor* InventoryOwner = Inventory.GetOwner();
+	if (!InventoryOwner || !InventoryOwner->HasAuthority())
+	{
+		return 0;
+	}
+
+	int32 LearnedCount = 0;
+	for (const URpgInventoryItemInstance* Item : Inventory.GetAllItems())
+	{
+		const URpgInventoryFragment_Rune* Rune = FindRuneOfItem(Item);
+		const URpgCraftingRecipeDefinition* Recipe = Rune ? Rune->BaseRecipe.Get() : nullptr;
+		if (Recipe && !RecipeUnlocks.IsRecipeUnlocked(Recipe) && RecipeUnlocks.UnlockRecipe(Recipe))
+		{
+			++LearnedCount;
+		}
+	}
+	return LearnedCount;
 }
 
 FName URpgInventoryFragment_Rune::GetRuntimeStateIdentifier() const
@@ -186,6 +211,20 @@ EDataValidationResult URpgInventoryFragment_Rune::IsDataValid(FDataValidationCon
 		{
 			AddError(NSLOCTEXT("RpgInventoryFragmentRune", "RuneOwnsContainer", "A rune cannot provide containers."));
 		}
+		if (BaseRecipe && !BaseRecipe->OutputItems.ContainsByPredicate([ItemDefinition](const FRpgCraftingOutputItem& Output)
+			{
+				return Output.ItemDefinition == ItemDefinition->GetClass();
+			}))
+		{
+			AddError(NSLOCTEXT("RpgInventoryFragmentRune", "BaseRecipeOutput", "The BaseRecipe must output this rune."));
+		}
+	}
+	if (BaseRecipe && (BaseRecipe->bUnlockedByDefault || !BaseRecipe->RecipeUnlockTag.IsValid()))
+	{
+		AddError(NSLOCTEXT(
+			"RpgInventoryFragmentRune",
+			"BaseRecipeUnlock",
+			"The BaseRecipe needs a RecipeUnlockTag and must not be unlocked by default, so that finding the rune teaches it."));
 	}
 	return Result;
 }

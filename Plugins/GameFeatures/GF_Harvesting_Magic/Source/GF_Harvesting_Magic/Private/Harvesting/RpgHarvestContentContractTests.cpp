@@ -18,6 +18,9 @@
 #include "Harvesting/RpgHarvestableInstancesComponent.h"
 #include "Harvesting/RpgHarvestInstanceStockComponent.h"
 #include "Inventory/RpgInventoryFragment_HarvestingTool.h"
+#include "SurvivalRpg/Crafting/RpgCraftingRecipeDefinition.h"
+#include "SurvivalRpg/Crafting/RpgCraftingStationActor.h"
+#include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
@@ -47,6 +50,8 @@ namespace RpgHarvestContentContractTests
 	const TCHAR* DeadPineInstancesClassPath =
 		TEXT("/GF_Harvesting_Magic/Harvesting/Instances/BPC_HarvestInstances_DeadPine.BPC_HarvestInstances_DeadPine_C");
 	const TCHAR* BrandRuneClassPath = TEXT("/GF_Harvesting_Magic/Items/Runes/ID_Rune_Brand.ID_Rune_Brand_C");
+	const TCHAR* KilnRecipeSetPath = TEXT("/GF_Harvesting_Magic/Crafting/DA_RecipeSet_Kiln.DA_RecipeSet_Kiln");
+	const TCHAR* KilnStationClassPath = TEXT("/GF_Harvesting_Magic/Crafting/BP_CraftingStation_Kiln.BP_CraftingStation_Kiln_C");
 	const TCHAR* AxeChopAbilityClassPath = TEXT("/GF_Harvesting_Magic/GAS/Abilities/GA_Harvest_AxeChop.GA_Harvest_AxeChop_C");
 	const TCHAR* PickaxeStrikeAbilityClassPath =
 		TEXT("/GF_Harvesting_Magic/GAS/Abilities/GA_Harvest_PickaxeStrike.GA_Harvest_PickaxeStrike_C");
@@ -558,6 +563,47 @@ bool FRpgHarvestRuneSocketContractTest::RunTest(const FString& Parameters)
 			TestTrue(*FString::Printf(TEXT("%s sockets take Brand"), ToolPath), Sockets.AllowsItemDefinition(BrandClass, 1));
 		}
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestRuneRecipeContractTest,
+	"SurvivalRpg.Harvesting.Content.RuneRecipeContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestRuneRecipeContractTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestContentContractTests;
+
+	// Finding Brand teaches its locked base recipe, which crafts a new Brand at the Kiln.
+	UClass* BrandClass = LoadClass<URpgInventoryItemDefinition>(nullptr, BrandRuneClassPath);
+	const URpgInventoryFragment_Rune* Brand = BrandClass
+		? Cast<URpgInventoryFragment_Rune>(GetDefault<URpgInventoryItemDefinition>(BrandClass)->FindFragmentByClass(
+			URpgInventoryFragment_Rune::StaticClass()))
+		: nullptr;
+	const URpgCraftingRecipeDefinition* Recipe = Brand ? Brand->BaseRecipe.Get() : nullptr;
+	if (!TestNotNull(TEXT("Brand names its base recipe"), Recipe))
+	{
+		return false;
+	}
+	TestFalse(TEXT("The base recipe is locked until Brand is found"), Recipe->bUnlockedByDefault);
+	TestTrue(
+		TEXT("The base recipe unlocks through a Recipe tag"),
+		Recipe->RecipeUnlockTag.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("Recipe"))));
+	TestTrue(
+		TEXT("The base recipe crafts one Brand"),
+		Recipe->OutputItems.Num() == 1 && Recipe->OutputItems[0].ItemDefinition == BrandClass && Recipe->OutputItems[0].Count == 1);
+	TestFalse(TEXT("A new Brand costs materials"), Recipe->RequiredResources.IsEmpty());
+
+	const URpgCraftingRecipeSet* KilnRecipes = LoadObject<URpgCraftingRecipeSet>(nullptr, KilnRecipeSetPath);
+	TestTrue(TEXT("The Kiln offers the base recipe"), KilnRecipes && KilnRecipes->Recipes.Contains(Recipe));
+	UClass* KilnClass = LoadClass<ARpgCraftingStationActor>(nullptr, KilnStationClassPath);
+	const URpgCraftingStationComponent* Kiln =
+		KilnClass ? GetDefault<ARpgCraftingStationActor>(KilnClass)->GetCraftingStationComponent() : nullptr;
+	TestTrue(
+		TEXT("The Kiln meets the recipe's station tags"),
+		Kiln && Kiln->GetStationTags().HasAllExact(Recipe->RequiredStationTags));
 	return true;
 }
 

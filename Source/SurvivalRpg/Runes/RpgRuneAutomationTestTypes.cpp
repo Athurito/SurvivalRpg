@@ -140,6 +140,15 @@ void URpgRuneAutomationTestRuneDefinition::SetRankAbilitySet(const int32 Rank, c
 	}
 }
 
+void URpgRuneAutomationTestRuneDefinition::SetBaseRecipe(const URpgCraftingRecipeDefinition* Recipe)
+{
+	if (URpgInventoryFragment_Rune* Rune =
+			RpgRuneAutomationTestTypes::FindRune(GetMutableDefault<URpgRuneAutomationTestRuneDefinition>()))
+	{
+		Rune->BaseRecipe = Recipe;
+	}
+}
+
 URpgRuneAutomationTestOtherRuneDefinition::URpgRuneAutomationTestOtherRuneDefinition(
 	const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)

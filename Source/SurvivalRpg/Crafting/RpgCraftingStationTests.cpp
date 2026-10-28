@@ -7,6 +7,8 @@
 
 #include "SurvivalRpg/Base/RpgBaseCampActor.h"
 #include "SurvivalRpg/Base/RpgWorldStorageKnowledgeComponent.h"
+#include "SurvivalRpg/Crafting/RpgRecipeUnlockComponent.h"
+#include "SurvivalRpg/Runes/RpgRuneAutomationTestTypes.h"
 #include "SurvivalRpg/Core/Game/RpgGameStateBase.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
 #include "SurvivalRpg/Base/RpgStorageAccessRules.h"
@@ -596,6 +598,76 @@ bool FRpgCraftingWaitsForMaterialsTest::RunTest(const FString& Parameters)
 	AdvanceCraftingTimers(World, 0.2f);
 	TestEqual(TEXT("The remaining unit completes"), CountOf(Target, Product), 2);
 	TestFalse(TEXT("The order ends"), Station->HasCraftingOrder());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgCraftingRuneCopyTest,
+	"SurvivalRpg.Crafting.Order.CraftedRuneIsANewRankOneCopy",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCraftingRuneCopyTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCraftingStationTests;
+	ConfigureRuneAutomationTestDefinitions();
+	FScopedCraftingWorld Fixture;
+	if (!Fixture.Initialize(*this)) { return false; }
+	URpgCraftingStationComponent* Station = Fixture.GetStation();
+	UWorld* World = Station->GetWorld();
+	AActor* Requester = Fixture.GetRequestingController();
+	ARpgGameStateBase* GameState = World->SpawnActor<ARpgGameStateBase>();
+	if (!TestNotNull(TEXT("The world has a GameState"), GameState)) { return false; }
+	World->SetGameState(GameState);
+	URpgRecipeUnlockComponent* Unlocks = GameState->GetRecipeUnlockComponent();
+
+	const TSubclassOf<URpgInventoryItemDefinition> Material = URpgInventoryAutomationTestMaterialDefinition::StaticClass();
+	const TSubclassOf<URpgInventoryItemDefinition> RuneDefinition = URpgRuneAutomationTestRuneDefinition::StaticClass();
+	URpgCraftingRecipeDefinition* Recipe = Fixture.CreateMaterialRecipe(2, 0.1f);
+	Recipe->bUnlockedByDefault = false;
+	Recipe->RecipeUnlockTag = FGameplayTag::RequestGameplayTag(TEXT("Recipe.AutomationRune.A"));
+	Recipe->OutputItems[0].ItemDefinition = RuneDefinition;
+	ARpgInventoryContainerActor* Source = Fixture.CreateChest();
+	ARpgInventoryContainerActor* FullTarget = Fixture.CreateChest(1, 1);
+	ARpgInventoryContainerActor* Target = Fixture.CreateChest(4, 4);
+	if (!Source || !FullTarget || !Target || !Source->GetInventoryManager()->AddItemDefinition(Material, 6) ||
+		!FullTarget->GetInventoryManager()->AddItemDefinition(Material, 1) || !Fixture.OfferRecipes(*this, { Recipe }))
+	{
+		return false;
+	}
+	URpgInventoryItemInstance* FoundRune = Target->GetInventoryManager()->AddItemDefinition(RuneDefinition, 1);
+	if (!TestNotNull(TEXT("A found rune lies in the target"), FoundRune) ||
+		!TestTrue(TEXT("The found rune was upgraded"), FoundRune->SetRuneRank(2)))
+	{
+		return false;
+	}
+
+	TestTrue(TEXT("The station lists the rune recipe"), Station->GetAvailableRecipes().Contains(Recipe));
+	TestFalse(TEXT("The rune recipe starts locked"), Station->IsRecipeUnlocked(Recipe));
+	TestFalse(TEXT("A locked rune recipe cannot start"), Station->StartCraftingOrder(Requester, Recipe, 1, ChestId(Target)));
+	TestTrue(TEXT("The world learns the recipe"), Unlocks->UnlockRecipe(Recipe));
+	TestTrue(TEXT("The learned recipe is unlocked"), Station->IsRecipeUnlocked(Recipe));
+
+	TestFalse(TEXT("A full target refuses the order"), Station->StartCraftingOrder(Requester, Recipe, 1, ChestId(FullTarget)));
+	TestEqual(TEXT("The refused order consumes nothing"), CountOf(Source, Material), 6);
+
+	TestTrue(TEXT("The order starts"), Station->StartCraftingOrder(Requester, Recipe, 1, ChestId(Target)));
+	AdvanceCraftingTimers(World, 0.2f);
+	TestEqual(TEXT("One unit's costs are paid"), CountOf(Source, Material), 4);
+	TestEqual(TEXT("The target holds the found rune and the crafted one"), CountOf(Target, RuneDefinition), 2);
+	URpgInventoryItemInstance* Crafted = nullptr;
+	for (URpgInventoryItemInstance* Item : Target->GetInventoryManager()->GetAllItems())
+	{
+		if (Item && Item != FoundRune && Item->GetItemDef() == RuneDefinition)
+		{
+			Crafted = Item;
+		}
+	}
+	if (!TestNotNull(TEXT("The crafted rune is its own instance"), Crafted))
+	{
+		return false;
+	}
+	TestTrue(TEXT("The crafted rune has its own identity"), Crafted->GetItemId() != FoundRune->GetItemId());
+	TestEqual(TEXT("The crafted rune starts at rank I"), Crafted->GetRuneRank(), 1);
+	TestEqual(TEXT("The found rune keeps its rank"), FoundRune->GetRuneRank(), 2);
 	return true;
 }
 

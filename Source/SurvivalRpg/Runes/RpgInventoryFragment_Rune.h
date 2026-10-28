@@ -7,7 +7,10 @@
 #include "RpgInventoryFragment_Rune.generated.h"
 
 class URpgAbilitySet;
+class URpgCraftingRecipeDefinition;
 class URpgInventoryItemInstance;
+class URpgInventoryManagerComponent;
+class URpgRecipeUnlockComponent;
 
 /** Highest rank a rune item can reach: I, II and III. */
 inline constexpr int32 RpgRuneMaxRank = 3;
@@ -80,6 +83,15 @@ public:
 		FRpgAbilityTuningAccumulator& Accumulator);
 
 	/**
+	 * Teaches the world the BaseRecipe of every rune in Inventory, including runes in item-owned grids such as a tool's
+	 * sockets, without consuming them. Server only; returns how many recipes were newly learned. The player state calls
+	 * this after each change of its inventory, so finding a rune is what teaches its recipe.
+	 */
+	static int32 LearnBaseRecipesOfRunesIn(
+		const URpgInventoryManagerComponent& Inventory,
+		URpgRecipeUnlockComponent& RecipeUnlocks);
+
+	/**
 	 * Identity of the rune kind, for example Rune.Brand. Talents and tools test for it; while socketed into an equipped
 	 * item the wielder carries it as a loose tag.
 	 */
@@ -89,6 +101,14 @@ public:
 	/** Rank I, II and III in order; one to three entries. A new rune starts at rank I. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rune")
 	TArray<FRpgRuneRank> Ranks;
+
+	/**
+	 * Recipe that crafts a new rank-I copy of this rune. Designer data. It is locked until a player of the world
+	 * carries this rune: the server then unlocks its RecipeUnlockTag for the whole world and saves it with the world.
+	 * The recipe should output this rune and not be unlocked by default. Empty means the rune cannot be crafted.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rune|Crafting")
+	TObjectPtr<const URpgCraftingRecipeDefinition> BaseRecipe;
 
 	//~URpgInventoryItemFragment interface
 	virtual FName GetRuntimeStateIdentifier() const override;

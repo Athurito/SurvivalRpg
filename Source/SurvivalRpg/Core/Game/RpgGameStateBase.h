@@ -38,7 +38,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rpg|GameState")
 	URpgAbilitySystemComponent* GetRpgAbilitySystemComponent() const { return AbilitySystemComponent; }
 
-	/** Gets the session-wide recipe unlock store shared by every player. */
+	/** Gets the world's recipe unlock store, shared by every player and saved with the world. */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|GameState")
 	URpgRecipeUnlockComponent* GetRecipeUnlockComponent() const { return RecipeUnlockComponent; }
 
@@ -58,7 +58,7 @@ private:
 	UPROPERTY(VisibleAnywhere, Category = "Rpg|GameState")
 	TObjectPtr<URpgAbilitySystemComponent> AbilitySystemComponent;
 
-	/** Replicated session-global recipe unlocks used by crafting stations and crafting UI. */
+	/** Replicated, world-saved recipe unlocks used by crafting stations and crafting UI. */
 	UPROPERTY(VisibleAnywhere, Category = "Rpg|GameState")
 	TObjectPtr<URpgRecipeUnlockComponent> RecipeUnlockComponent;
 

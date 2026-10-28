@@ -72,6 +72,8 @@ public:
 	ARpgPlayerState();
 
 	virtual void PostInitializeComponents() override;
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void ClientInitialize(AController* C) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	
@@ -133,6 +135,9 @@ protected:
 	void OnRep_CheckpointState();
 
 	void OnExperienceLoaded(const URpgExperienceDefinition* CurrentExperience);
+
+	/** Server: after each committed change of the player's inventory, the world learns the recipes of found runes. */
+	void HandleInventoryCommitted(URpgInventoryManagerComponent* Inventory);
 	void BroadcastRespawnStateChanged() const;
 	void BroadcastCheckpointChanged() const;
 
