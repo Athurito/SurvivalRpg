@@ -3,6 +3,7 @@
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemContainer.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
+#include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 
 #include "Serialization/MemoryReader.h"
 #include "Serialization/MemoryWriter.h"
@@ -33,6 +34,34 @@ const URpgInventoryFragment_Rune* URpgInventoryFragment_Rune::FindRuneOfItem(con
 {
 	const URpgInventoryItemInstance* Item = Cast<URpgInventoryItemInstance>(ItemInstance);
 	return Item ? Item->FindFragmentByClass<URpgInventoryFragment_Rune>() : nullptr;
+}
+
+void URpgInventoryFragment_Rune::AccumulateSocketedTunings(
+	const URpgInventoryItemInstance& SourceItem,
+	const FGameplayTagContainer& AbilityIds,
+	const FGameplayTag TuningTag,
+	FRpgAbilityTuningAccumulator& Accumulator)
+{
+	const URpgInventoryManagerComponent* Inventory = URpgInventoryManagerComponent::FindInventoryOfItem(&SourceItem);
+	if (!Inventory)
+	{
+		return;
+	}
+
+	for (const URpgInventoryItemInstance* Socketed : Inventory->GetSocketedItems(&SourceItem))
+	{
+		const URpgInventoryFragment_Rune* Rune = FindRuneOfItem(Socketed);
+		const FRpgRuneRank* Rank = Rune ? Rune->FindRank(Socketed->GetRuneRank()) : nullptr;
+		if (!Rank)
+		{
+			continue;
+		}
+
+		for (const FRpgSkillTreeAbilityTuning& Tuning : Rank->AbilityTunings)
+		{
+			Accumulator.Apply(Tuning, AbilityIds, TuningTag);
+		}
+	}
 }
 
 FName URpgInventoryFragment_Rune::GetRuntimeStateIdentifier() const

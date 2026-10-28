@@ -72,4 +72,13 @@ namespace RpgHarvestingMagicGameplayTags
 
 	/** Skill tree tuning of how long, in seconds, that follow-up waits for the next hit; base 0 turns it off. */
 	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_FollowUpWindow);
+
+	/**
+	 * Rune tuning of the burn a hit lights: work per second as a fraction of the hit's own work, for example 0.1 for
+	 * 10 %; base 0 lights none.
+	 */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_BurnWork);
+
+	/** Rune tuning of how long, in seconds, a lit burn keeps working its resource; base 0 lights none. */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_BurnDuration);
 }

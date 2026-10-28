@@ -13,6 +13,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameplayEffect.h"
 #include "GameplayTags/RpgHarvestingMagicGameplayTags.h"
+#include "Harvesting/RpgHarvestBurn.h"
 #include "Harvesting/RpgHarvestChainComponent.h"
 #include "Harvesting/RpgHarvestInstanceStockComponent.h"
 #include "Harvesting/RpgHarvestRewardService.h"
@@ -485,6 +486,13 @@ const FRpgHarvestTargetEvaluation* URpgGameplayAbility_Harvest::CommitSelection(
 			FollowUpItem = Target.Hit.Item;
 			FollowUpDeadline = Now + Values.FollowUpSeconds;
 		}
+		// A socketed rune such as Brand sets the resource burning for this player; the burn's work per second is a
+		// fraction of this hit's own work, without follow-up or weak-point bonus.
+		if (BurnClass && Values.BurnWork > 0.0f && Values.BurnSeconds > 0.0f && Target.Result.RemainingWork > 0)
+		{
+			const float HitWork = RequestTemplate.RequestedSections * RequestTemplate.WorkScale;
+			ARpgHarvestBurn::Light(Receiver, Request, BurnClass, Values.BurnWork * HitWork, Values.BurnSeconds);
+		}
 		if (FirstHarvestedIndex == INDEX_NONE)
 		{
 			FirstHarvestedIndex = TargetIndex;
@@ -828,6 +836,8 @@ void URpgGameplayAbility_Harvest::ResolveTunedValues(
 	OutValues.WeakPointWorkScale = FMath::Clamp(Tune(Ability_Tuning_Harvest_WeakPointWork, 1.0f), 0.0f, RpgHarvestWork::MaxWorkScale);
 	OutValues.FollowUpWorkScale = FMath::Clamp(Tune(Ability_Tuning_Harvest_FollowUpWork, 1.0f), 0.01f, RpgHarvestWork::MaxWorkScale);
 	OutValues.FollowUpSeconds = FMath::Max(0.0f, Tune(Ability_Tuning_Harvest_FollowUpWindow, 0.0f));
+	OutValues.BurnWork = FMath::Clamp(Tune(Ability_Tuning_Harvest_BurnWork, 0.0f), 0.0f, RpgHarvestWork::MaxWorkScale);
+	OutValues.BurnSeconds = FMath::Clamp(Tune(Ability_Tuning_Harvest_BurnDuration, 0.0f), 0.0f, 60.0f);
 
 	OutValues.Swarm = Swarm;
 	if (SummonsSwarm())

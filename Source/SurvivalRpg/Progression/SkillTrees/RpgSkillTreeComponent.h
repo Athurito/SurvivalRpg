@@ -9,6 +9,7 @@ class APawn;
 class URpgSkillTreeDefinition;
 struct FGameplayAbilityActorInfo;
 struct FGameplayAbilitySpec;
+struct FRpgAbilityTuningAccumulator;
 struct FRpgSkillTreeNode;
 
 /** Saved and owner-replicated progress of one skill tree. Pointer-free, so the host save stores it directly. */
@@ -276,9 +277,17 @@ public:
 		FGameplayTag TuningTag,
 		float BaseValue) const;
 
+	/** Folds the learned tunings of Tree for TuningTag into Accumulator, as ResolveAbilityTuning applies them. */
+	void AccumulateAbilityTuning(
+		const URpgSkillTreeDefinition& Tree,
+		const FGameplayTagContainer& AbilityIds,
+		FGameplayTag TuningTag,
+		FRpgAbilityTuningAccumulator& Accumulator) const;
+
 	/**
-	 * Resolves TuningTag for the ability of Spec: the tree comes from the item of the spec's source equipment, the
-	 * progress from the owner of ActorInfo. Returns BaseValue for abilities without a tree.
+	 * Resolves TuningTag for the ability of Spec from the item of the spec's source equipment: the learned tunings of
+	 * that item's tree, with the progress from the owner of ActorInfo, then the current-rank tunings of the runes
+	 * socketed in that item. Returns BaseValue for abilities without a source item.
 	 */
 	static float ResolveAbilityTuningForSpec(
 		const FGameplayAbilitySpec& Spec,

@@ -3,6 +3,7 @@
 #include "Misc/AutomationTest.h"
 
 #include "GameplayTags/RpgHarvestingMagicGameplayTags.h"
+#include "Harvesting/RpgHarvestBurn.h"
 #include "Harvesting/RpgHarvestableComponent.h"
 #include "Harvesting/RpgHarvestableInstancedMeshActor.h"
 #include "Harvesting/RpgHarvestableInstancedMeshComponent.h"
@@ -32,6 +33,8 @@ namespace RpgHarvestWorkTests
 	constexpr int32 Unit = RpgHarvestWork::UnitsPerSection;
 	constexpr int32 YieldPerSection = 2;
 	constexpr int32 ExperiencePerSection = 10;
+	/** A burn tick of one second; timers fire once their time is exceeded, so a step lies just past it. */
+	constexpr float BurnStep = 1.01f;
 
 	URpgHarvestProfile* MakeProfile(UObject* Outer, const int32 SectionCount, const float RespawnSeconds = 0.0f)
 	{
@@ -717,6 +720,152 @@ bool FRpgHarvestWorkLegacyInstancesTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("The instance awards its XP once"),
 		FMath::IsNearlyEqual(GetMiningXP(Harvester), static_cast<float>(ExperiencePerSection)));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestWorkBurnTest,
+	"SurvivalRpg.Harvesting.Work.BurnWorksTheResourceForItsIgniter",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestWorkBurnTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestWorkTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	ARpgHarvestAutomationNodeActor* Node = SpawnNode(World, MakeProfile(World, 4));
+	ARpgHarvestAutomationTestPlayerState* Harvester = SpawnHarvester(World);
+	if (!TestNotNull(TEXT("Node exists"), Node) || !TestNotNull(TEXT("Harvester exists"), Harvester))
+	{
+		return false;
+	}
+	URpgHarvestableComponent* Stock = Node->HarvestableNode;
+	const TSubclassOf<ARpgHarvestBurn> BurnClass = ARpgHarvestBurn::StaticClass();
+	TestWorld.PrimeTimerManager();
+
+	FRpgHarvestRequest Direct = MakeNodeRequest(Node, Harvester, 1.0f);
+	Direct.Provenance.RootActionId = FRpgHarvestProvenance::MakeRootActionId();
+	TestEqual(TEXT("The igniting hit takes one section"), Stock->CommitHarvest_Implementation(Direct).SectionsTaken, 1);
+
+	TestNull(TEXT("A burn without work is not lit"), ARpgHarvestBurn::Light(Stock, Direct, BurnClass, 0.0f, 4.0f));
+	TestNull(TEXT("A burn without time is not lit"), ARpgHarvestBurn::Light(Stock, Direct, BurnClass, 0.3f, 0.0f));
+	ARpgHarvestBurn* Burn = ARpgHarvestBurn::Light(Stock, Direct, BurnClass, 0.3f, 4.0f);
+	if (!TestNotNull(TEXT("The hit lights a burn"), Burn))
+	{
+		return false;
+	}
+	TestTrue(TEXT("The burn works for the igniting player"), Burn->GetBeneficiary() == Harvester);
+	TestTrue(
+		TEXT("A further hit of the same player keeps its one burn unchanged"),
+		ARpgHarvestBurn::Light(Stock, Direct, BurnClass, 0.6f, 8.0f) == Burn &&
+			FMath::IsNearlyEqual(Burn->GetWorkPerSecond(), 0.3f));
+	TestTrue(TEXT("The burn is found by resource and player"), ARpgHarvestBurn::FindBurn(Stock, Direct.Hit.Item, Harvester) == Burn);
+
+	TestWorld.PrimeTimerManager();
+	TestWorld.AdvanceTimers(BurnStep);
+	TestEqual(TEXT("The first second burns 30 units"), static_cast<int32>(Stock->GetHarvestState().SectionWork), 30);
+	const FRpgHarvestResult& FirstBurn = Burn->GetLastResult();
+	TestTrue(
+		TEXT("Burn work is secondary work of the igniting action"),
+		FirstBurn.IsSuccess() && !FirstBurn.Provenance.IsDirect() &&
+			FirstBurn.Provenance.RootActionId == Direct.Provenance.RootActionId);
+	TestWorld.AdvanceTimers(BurnStep);
+	TestWorld.AdvanceTimers(BurnStep);
+	TestEqual(TEXT("Three seconds burn 90 units"), static_cast<int32>(Stock->GetHarvestState().SectionWork), 90);
+	TestEqual(TEXT("Partial burn work rewards nothing"), CountMaterial(Harvester), YieldPerSection);
+
+	TestWorld.AdvanceTimers(BurnStep);
+	TestEqual(TEXT("The fourth second completes a section for the igniting player"), CountMaterial(Harvester), 2 * YieldPerSection);
+	TestTrue(
+		TEXT("The burned section awards XP once"),
+		FMath::IsNearlyEqual(GetMiningXP(Harvester), static_cast<float>(2 * ExperiencePerSection)));
+	TestEqual(TEXT("The rest stays residual work"), static_cast<int32>(Stock->GetHarvestState().SectionWork), 20);
+	TestTrue(TEXT("The burn goes out when its time is up"), !IsValid(Burn) || Burn->IsActorBeingDestroyed());
+	TestNull(TEXT("No burn is left on the resource"), ARpgHarvestBurn::FindBurn(Stock, Direct.Hit.Item, Harvester));
+	TestWorld.AdvanceTimers(BurnStep);
+	TestEqual(TEXT("An extinguished burn does no more work"), static_cast<int32>(Stock->GetHarvestState().SectionWork), 20);
+
+	// A burn that empties its resource goes out with it.
+	FRpgHarvestRequest SecondDirect = MakeNodeRequest(Node, Harvester, 1.0f);
+	SecondDirect.Provenance.RootActionId = FRpgHarvestProvenance::MakeRootActionId();
+	TestEqual(TEXT("The second hit takes the third section"), Stock->CommitHarvest_Implementation(SecondDirect).SectionsTaken, 1);
+	ARpgHarvestBurn* SecondBurn = ARpgHarvestBurn::Light(Stock, SecondDirect, BurnClass, 0.5f, 10.0f);
+	if (!TestNotNull(TEXT("The second hit lights a new burn"), SecondBurn))
+	{
+		return false;
+	}
+	TestWorld.PrimeTimerManager();
+	TestWorld.AdvanceTimers(BurnStep);
+	TestEqual(TEXT("The new burn continues from the residual work"), static_cast<int32>(Stock->GetHarvestState().SectionWork), 70);
+	TestWorld.AdvanceTimers(BurnStep);
+	TestFalse(TEXT("The burn empties the resource"), Stock->IsHarvestable());
+	TestEqual(TEXT("The total yield equals the defined stock"), CountMaterial(Harvester), 4 * YieldPerSection);
+	TestTrue(TEXT("The burn goes out with its resource"), !IsValid(SecondBurn) || SecondBurn->IsActorBeingDestroyed());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestWorkSharedBurnTest,
+	"SurvivalRpg.Harvesting.Work.BurnsOfTwoPlayersShareOneResource",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestWorkSharedBurnTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestWorkTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	ARpgHarvestAutomationNodeActor* Node = SpawnNode(World, MakeProfile(World, 4));
+	ARpgHarvestAutomationTestPlayerState* Harvester = SpawnHarvester(World);
+	ARpgHarvestAutomationTestPlayerState* Partner = SpawnHarvester(World);
+	if (!TestNotNull(TEXT("Node exists"), Node) || !TestNotNull(TEXT("Harvester exists"), Harvester) ||
+		!TestNotNull(TEXT("Partner exists"), Partner))
+	{
+		return false;
+	}
+	URpgHarvestableComponent* Stock = Node->HarvestableNode;
+	TestWorld.PrimeTimerManager();
+
+	FRpgHarvestRequest HarvesterHit = MakeNodeRequest(Node, Harvester, 1.0f);
+	HarvesterHit.Provenance.RootActionId = FRpgHarvestProvenance::MakeRootActionId();
+	FRpgHarvestRequest PartnerHit = MakeNodeRequest(Node, Partner, 1.0f);
+	PartnerHit.Provenance.RootActionId = FRpgHarvestProvenance::MakeRootActionId();
+	ARpgHarvestBurn* HarvesterBurn = ARpgHarvestBurn::Light(Stock, HarvesterHit, ARpgHarvestBurn::StaticClass(), 0.5f, 4.0f);
+	ARpgHarvestBurn* PartnerBurn = ARpgHarvestBurn::Light(Stock, PartnerHit, ARpgHarvestBurn::StaticClass(), 0.25f, 4.0f);
+	if (!TestNotNull(TEXT("The first player's burn is lit"), HarvesterBurn) ||
+		!TestNotNull(TEXT("The second player's burn is lit"), PartnerBurn))
+	{
+		return false;
+	}
+	TestTrue(TEXT("Each player keeps an own burn on the shared resource"), HarvesterBurn != PartnerBurn);
+	TestTrue(
+		TEXT("Each burn works for its own player"),
+		HarvesterBurn->GetBeneficiary() == Harvester && PartnerBurn->GetBeneficiary() == Partner);
+
+	TestWorld.PrimeTimerManager();
+	for (int32 Second = 0; Second < 4; ++Second)
+	{
+		TestWorld.AdvanceTimers(BurnStep);
+	}
+	TestEqual(TEXT("Both burns together complete three sections"), static_cast<int32>(Stock->GetHarvestState().HarvestedSections), 3);
+	TestEqual(TEXT("No residual work is left"), static_cast<int32>(Stock->GetHarvestState().SectionWork), 0);
+	TestEqual(
+		TEXT("The players together receive exactly the yield of three sections"),
+		CountMaterial(Harvester) + CountMaterial(Partner),
+		3 * YieldPerSection);
+	TestTrue(
+		TEXT("Each player is rewarded for the sections its burn completed"),
+		CountMaterial(Harvester) >= YieldPerSection && CountMaterial(Partner) >= YieldPerSection);
+	TestTrue(
+		TEXT("XP is awarded once per section"),
+		FMath::IsNearlyEqual(GetMiningXP(Harvester) + GetMiningXP(Partner), static_cast<float>(3 * ExperiencePerSection)));
+	TestTrue(
+		TEXT("Both burns go out when their time is up"),
+		(!IsValid(HarvesterBurn) || HarvesterBurn->IsActorBeingDestroyed()) &&
+			(!IsValid(PartnerBurn) || PartnerBurn->IsActorBeingDestroyed()));
 	return true;
 }
 

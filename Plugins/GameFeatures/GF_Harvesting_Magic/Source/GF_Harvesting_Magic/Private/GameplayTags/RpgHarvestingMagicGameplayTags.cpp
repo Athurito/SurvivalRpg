@@ -116,4 +116,14 @@ namespace RpgHarvestingMagicGameplayTags
 		Ability_Tuning_Harvest_FollowUpWindow,
 		"Ability.Tuning.Harvest.FollowUpWindow",
 		"Seconds after a weak-point hit during which the next hit on the same target gets the follow-up work; base 0 is off.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_BurnWork,
+		"Ability.Tuning.Harvest.BurnWork",
+		"Work per second of the burn a hit lights, as a fraction of the hit's work; base 0 lights none.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_BurnDuration,
+		"Ability.Tuning.Harvest.BurnDuration",
+		"Seconds a lit burn keeps working its resource; base 0 lights none.");
 }
