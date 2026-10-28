@@ -8,6 +8,7 @@
 class UCurveFloat;
 class UTexture2D;
 class URpgAbilitySet;
+class URpgRewardClaimDefinition;
 class FDataValidationContext;
 
 /** How one skill tree tuning entry combines with the ability's base value. */
@@ -217,6 +218,24 @@ struct SURVIVALRPG_API FRpgSkillTreeNode
 };
 
 /**
+ * A guaranteed reward the player earns once when the tree's mastery skill reaches MasteryLevel, for example a rune of
+ * their choice. Designer-authored static data; the player's URpgRewardClaimComponent holds the earned claim.
+ */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgSkillTreeMasteryMilestone
+{
+	GENERATED_BODY()
+
+	/** Mastery skill level that earns the reward, 2 or higher. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|Milestones", meta = (ClampMin = "2", UIMin = "2", UIMax = "100"))
+	int32 MasteryLevel = 2;
+
+	/** Reward the player claims, a choice of items or a loot pool. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|Milestones")
+	TObjectPtr<const URpgRewardClaimDefinition> Reward;
+};
+
+/**
  * Data-only skill tree carried by a weapon or tool type through URpgInventoryFragment_SkillTree.
  *
  * Every item that references the tree shares its progress, which belongs to the character. Points come from the level
@@ -261,6 +280,16 @@ public:
 	/** Upper limit of the points this tree can earn. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|Points", meta = (ClampMin = "0", UIMin = "0", UIMax = "50"))
 	int32 MaxPoints = 20;
+
+	/**
+	 * Guaranteed rewards earned once at mastery levels, in addition to points. Each milestone grants one claim per player
+	 * with the id "<TreeTag>/Mastery/<MasteryLevel>", also when a player passes the level in one jump or already passed it.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|Milestones", meta = (TitleProperty = "MasteryLevel"))
+	TArray<FRpgSkillTreeMasteryMilestone> MasteryMilestones;
+
+	/** Claim id of the milestone at MasteryLevel. */
+	FName GetMilestoneClaimId(int32 MasteryLevel) const;
 
 	/** Purchasable nodes. Order is the order in which Set tunings apply. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree", meta = (TitleProperty = "NodeTag"))

@@ -11,6 +11,7 @@ class URpgTradeSkillProgressionComponent;
 class URpgSkillTreeComponent;
 class URpgInventoryCapacitySet;
 class URpgPlayerProgressionComponent;
+class URpgRewardClaimComponent;
 class URpgInventoryManagerComponent;
 class URpgExperienceDefinition;
 
@@ -100,6 +101,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rpg|Progression")
 	URpgSkillTreeComponent* GetSkillTreeComponent() const { return SkillTreeComponent; }
 
+	/** Returns the owner-only replicated, server-authoritative guaranteed rewards the player can claim. */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Progression")
+	URpgRewardClaimComponent* GetRewardClaimComponent() const { return RewardClaimComponent; }
+
 	void SetRespawnState(bool bInIsWaitingForRespawn, float InRespawnAvailableServerTime);
 	void SetCheckpointData(bool bInHasCheckpoint, const FTransform& InCheckpointTransform);
 
@@ -150,6 +155,10 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, Category = "Rpg|Progression")
 	TObjectPtr<URpgSkillTreeComponent> SkillTreeComponent;
+
+	/** Guaranteed rewards earned at milestones and not claimed yet; saved with the player. */
+	UPROPERTY(VisibleAnywhere, Category = "Rpg|Progression")
+	TObjectPtr<URpgRewardClaimComponent> RewardClaimComponent;
 
 	UPROPERTY(VisibleAnywhere, Category = "Rpg|Inventory")
 	TObjectPtr<URpgInventoryManagerComponent> InventoryManagerComponent;

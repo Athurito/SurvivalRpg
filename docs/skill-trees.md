@@ -26,6 +26,7 @@ are data. Code is only needed when an ability gains a new tunable value.
 | Numeric upgrades | `URpgGameplayAbility::GetTunedValue` | Resolved on the server and the owning client. |
 | Presentation | `URpgSkillProgressionViewModel`, `URpgSkillTreeViewModel`, `URpgSkillTreeNodeViewModel`, `URpgTradeSkillViewModel`, `URpgSkillTreeGridWidget`, `URpgSkillTreeMapWidget`, and the CommonUI screen `CUI_Skills` | Read-only; commands send the component's requests. |
 | Map camera and selection | `URpgSkillTreeMapWidget`, remembered per tree in `URpgUIScreenSubsystem` | Local to the player; never replicated or saved. |
+| Mastery milestone rewards | `MasteryMilestones` on the tree, claims in `URpgRewardClaimComponent` on the PlayerState | Each milestone grants one claim per player; the claim is server-authoritative, replicated to the owner and saved. |
 
 ## Runtime rules
 
@@ -72,6 +73,9 @@ are data. Code is only needed when an ability gains a new tunable value.
   - Nodes that no longer exist are dropped and refunded.
   - A tree whose purchases no longer fit is reset.
   - States of trees that are not registered are kept unchanged.
+- **Mastery milestones (MST-07b, [rune rewards](mastery-map-rune-rewards.md)):** each `MasteryMilestones` entry grants its reward once when the tree's mastery skill reaches its level.
+  - The claim id is `<TreeTag>/Mastery/<Level>`. A level-up grants every milestone reached so far, and so does loading a player, so a jump over several levels or a milestone added later is never missed.
+  - The player claims the reward on the Character tab (`CUI_Character`, Rewards). An id that was claimed is never granted again.
 - **Registration:** at BeginPlay the component registers every tree the asset manager knows, and the equipment manager registers the tree of every weapon it equips.
   - Trees under `/Game/SurvivalRpg` are scanned by `DefaultGame.ini`.
   - A Game Feature adds its own folder to the primary asset types of its GameFeatureData.
@@ -166,6 +170,12 @@ Add an entry to `Nodes`:
   - Keep `RequiredPointsInTree` at 0 except for capstones such as an ultimate, so players choose freely and only chains gate nodes.
 - `Cost`, `RequiredPointsInTree`, `Prerequisites` and optionally `ExclusiveGroup`.
 - Optionally `RequiredRunes` and `RuneMatch` for a talent that needs runes in the tool's sockets, for example `Rune.Brand` for the Aftermath branch.
+
+### Add a mastery milestone reward
+
+1. Create a `URpgRewardClaimDefinition` DataAsset in the feature that owns the tree. Fill `Options` for a choice, for example one rune of the player's choosing, or set `LootTable` for a loot pool rolled once when the player claims it.
+2. Add a `MasteryMilestones` entry to the tree with the `MasteryLevel` (2 or higher) and the reward.
+3. Never change a shipped milestone's level: its claim id contains it.
 - Any combination of grants:
   - **Active ability:** an ability set whose entry has an `AbilityIdTag` and no Q/E/R input tag. The tree places it on Q/E/R.
   - **Passive value:** a GameplayEffect in the node's ability set.

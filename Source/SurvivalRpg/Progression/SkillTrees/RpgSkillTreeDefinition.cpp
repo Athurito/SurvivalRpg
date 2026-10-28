@@ -3,6 +3,7 @@
 #include "Curves/CurveFloat.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
+#include "SurvivalRpg/Progression/Rewards/RpgRewardClaimDefinition.h"
 
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
@@ -68,6 +69,11 @@ void FRpgSkillTreeNode::GetGrantedAbilityIds(TArray<FGameplayTag>& OutAbilityIds
 			OutAbilityIds.AddUnique(GrantedAbility.AbilityIdTag);
 		}
 	}
+}
+
+FName URpgSkillTreeDefinition::GetMilestoneClaimId(const int32 MasteryLevel) const
+{
+	return FName(*FString::Printf(TEXT("%s/Mastery/%d"), *TreeTag.ToString(), MasteryLevel));
 }
 
 const FRpgSkillTreeNode* URpgSkillTreeDefinition::FindNode(const FGameplayTag NodeTag) const
@@ -190,6 +196,24 @@ bool URpgSkillTreeDefinition::ValidateTree(TArray<FText>& OutErrors) const
 	if (!FMath::IsFinite(MapOrigin.X) || !FMath::IsFinite(MapOrigin.Y))
 	{
 		OutErrors.Add(LOCTEXT("InvalidMapOrigin", "MapOrigin must be finite."));
+	}
+
+	TSet<int32> MilestoneLevels;
+	for (const FRpgSkillTreeMasteryMilestone& Milestone : MasteryMilestones)
+	{
+		if (Milestone.MasteryLevel < 2 || MilestoneLevels.Contains(Milestone.MasteryLevel))
+		{
+			OutErrors.Add(FText::Format(
+				LOCTEXT("InvalidMilestoneLevel", "Mastery milestone level {0} must be 2 or higher and unique."),
+				Milestone.MasteryLevel));
+		}
+		MilestoneLevels.Add(Milestone.MasteryLevel);
+		if (!Milestone.Reward || !Milestone.Reward->HasValidConfiguration())
+		{
+			OutErrors.Add(FText::Format(
+				LOCTEXT("InvalidMilestoneReward", "Mastery milestone level {0} needs a valid reward."),
+				Milestone.MasteryLevel));
+		}
 	}
 
 	TSet<FName> RegionIds;

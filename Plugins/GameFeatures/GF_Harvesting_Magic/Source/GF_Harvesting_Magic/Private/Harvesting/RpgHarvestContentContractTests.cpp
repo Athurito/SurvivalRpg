@@ -21,6 +21,7 @@
 #include "SurvivalRpg/Crafting/RpgCraftingRecipeDefinition.h"
 #include "SurvivalRpg/Crafting/RpgCraftingStationActor.h"
 #include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
+#include "SurvivalRpg/Inventory/Loot/RpgLootTable.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
@@ -31,6 +32,7 @@
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_SkillTree.h"
 #include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeComponent.h"
 #include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeDefinition.h"
+#include "SurvivalRpg/Progression/Rewards/RpgRewardClaimDefinition.h"
 #include "SurvivalRpg/Progression/Skills/RpgTradeSkillGameplayTags.h"
 #include "SurvivalRpg/Runes/RpgInventoryFragment_Rune.h"
 
@@ -50,6 +52,8 @@ namespace RpgHarvestContentContractTests
 	const TCHAR* DeadPineInstancesClassPath =
 		TEXT("/GF_Harvesting_Magic/Harvesting/Instances/BPC_HarvestInstances_DeadPine.BPC_HarvestInstances_DeadPine_C");
 	const TCHAR* BrandRuneClassPath = TEXT("/GF_Harvesting_Magic/Items/Runes/ID_Rune_Brand.ID_Rune_Brand_C");
+	const TCHAR* IronVeinLootPath = TEXT("/GF_Harvesting_Magic/Loot/LT_IronVein.LT_IronVein");
+	const TCHAR* DeadPineLootPath = TEXT("/GF_Harvesting_Magic/Loot/LT_DeadPine.LT_DeadPine");
 	const TCHAR* KilnRecipeSetPath = TEXT("/GF_Harvesting_Magic/Crafting/DA_RecipeSet_Kiln.DA_RecipeSet_Kiln");
 	const TCHAR* KilnStationClassPath = TEXT("/GF_Harvesting_Magic/Crafting/BP_CraftingStation_Kiln.BP_CraftingStation_Kiln_C");
 	const TCHAR* AxeChopAbilityClassPath = TEXT("/GF_Harvesting_Magic/GAS/Abilities/GA_Harvest_AxeChop.GA_Harvest_AxeChop_C");
@@ -604,6 +608,62 @@ bool FRpgHarvestRuneRecipeContractTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("The Kiln meets the recipe's station tags"),
 		Kiln && Kiln->GetStationTags().HasAllExact(Recipe->RequiredStationTags));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestRuneRewardContractTest,
+	"SurvivalRpg.Harvesting.Content.RuneRewardContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestRuneRewardContractTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestContentContractTests;
+
+	UClass* BrandClass = LoadClass<URpgInventoryItemDefinition>(nullptr, BrandRuneClassPath);
+	if (!TestNotNull(TEXT("Brand loads"), BrandClass))
+	{
+		return false;
+	}
+
+	// The shared harvesting tree guarantees a rune of the player's choice at a mastery milestone.
+	const FGameplayTag TreeTag = FGameplayTag::RequestGameplayTag(TEXT("SkillTree.Tree.Harvesting"));
+	const URpgSkillTreeDefinition* Tree = LoadToolSkillTree(*this, PickaxeItemClassPath, TreeTag, RpgTradeSkillGameplayTags::Skill_Mastery_Harvesting);
+	if (!Tree)
+	{
+		return false;
+	}
+	const FRpgSkillTreeMasteryMilestone* RuneMilestone = Tree->MasteryMilestones.FindByPredicate(
+		[BrandClass](const FRpgSkillTreeMasteryMilestone& Milestone)
+		{
+			return Milestone.Reward && Milestone.Reward->IsChoice() &&
+				Milestone.Reward->Options.ContainsByPredicate([BrandClass](const FRpgRewardClaimOption& Option)
+				{
+					return Option.ItemDefinition == BrandClass;
+				});
+		});
+	if (TestNotNull(TEXT("A harvesting milestone offers Brand as a choice"), RuneMilestone))
+	{
+		TestTrue(TEXT("The rune milestone reward is valid"), RuneMilestone->Reward->HasValidConfiguration());
+		TestTrue(TEXT("The rune milestone lies above the first level"), RuneMilestone->MasteryLevel >= 2);
+	}
+
+	// Veins and pines can drop Brand as a rare find.
+	for (const TCHAR* LootPath : {IronVeinLootPath, DeadPineLootPath})
+	{
+		const URpgLootTable* Loot = LoadObject<URpgLootTable>(nullptr, LootPath);
+		bool bDropsBrandRarely = false;
+		for (const FRpgLootGroup& Group : Loot ? Loot->Groups : TArray<FRpgLootGroup>())
+		{
+			for (const FRpgLootEntry& Entry : Group.Entries)
+			{
+				bDropsBrandRarely |= Entry.ItemDefinition == BrandClass && Group.Mode == ERpgLootGroupMode::Independent &&
+					Entry.ChancePercent > 0.0f && Entry.ChancePercent < 100.0f;
+			}
+		}
+		TestTrue(*FString::Printf(TEXT("%s drops Brand as a rare find"), LootPath), bDropsBrandRarely);
+	}
 	return true;
 }
 

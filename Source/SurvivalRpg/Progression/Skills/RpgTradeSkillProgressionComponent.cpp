@@ -8,6 +8,7 @@
 #include "Net/UnrealNetwork.h"
 #include "RpgTradeSkillGameplayTags.h"
 #include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
+#include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeComponent.h"
 #include "SurvivalRpg/SurvivalRpg.h"
 
 namespace RpgTradeSkillProgression
@@ -414,9 +415,12 @@ void URpgTradeSkillProgressionComponent::HandleSkillLevelUp(
 	const FGameplayTag SkillTag,
 	const int32 NewLevel)
 {
-	(void)SkillTag;
 	(void)NewLevel;
-	// Milestone choices and feature-owned unlocks intentionally attach here in later slices.
+	// Trees mastered by this skill grant the rewards of the milestones the new level reached.
+	if (URpgSkillTreeComponent* SkillTrees = GetOwner() ? GetOwner()->FindComponentByClass<URpgSkillTreeComponent>() : nullptr)
+	{
+		SkillTrees->GrantReachedMasteryMilestones(SkillTag);
+	}
 }
 
 void URpgTradeSkillProgressionComponent::MarkOwnerSaveDirty() const
