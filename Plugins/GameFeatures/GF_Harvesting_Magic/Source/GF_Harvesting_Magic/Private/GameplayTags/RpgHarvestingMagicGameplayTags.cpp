@@ -136,4 +136,24 @@ namespace RpgHarvestingMagicGameplayTags
 		Ability_Tuning_Harvest_BurnDischarge,
 		"Ability.Tuning.Harvest.BurnDischarge",
 		"Above 0, a further hit releases the remaining burn work at once, times this value, and puts the burn out; base 0.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_EchoWork,
+		"Ability.Tuning.Harvest.EchoWork",
+		"Work of the echo every few own hits send onto the struck resource, as a fraction of the hit's work; base 0 echoes nothing.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_EchoHits,
+		"Ability.Tuning.Harvest.EchoHits",
+		"Accepted own hits that charge one echo; base from the ability, usually 3.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_TransferWork,
+		"Ability.Tuning.Harvest.TransferWork",
+		"Share of a depleting hit's actual overkill carried to the nearest other resource of the tool; base 0 carries nothing.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_RuneFlowSplit,
+		"Ability.Tuning.Harvest.RuneFlowSplit",
+		"Above 0, echoes and transfers also strike a second resource nearby, each with this fraction of the work; base 0.");
 }

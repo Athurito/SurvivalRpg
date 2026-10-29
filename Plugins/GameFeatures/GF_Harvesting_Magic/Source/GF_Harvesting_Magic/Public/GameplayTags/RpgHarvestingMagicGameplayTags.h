@@ -90,4 +90,25 @@ namespace RpgHarvestingMagicGameplayTags
 	 * once, times this value, and puts it out; base 0.
 	 */
 	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_BurnDischarge);
+
+	/**
+	 * Rune tuning of the echo every few own hits send onto the struck resource: its work as a fraction of the hit's own
+	 * work, for example 0.5 for 50 %; base 0 echoes nothing.
+	 */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_EchoWork);
+
+	/** Skill tree tuning of how many accepted own hits charge one echo; base from the ability, usually 3. */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_EchoHits);
+
+	/**
+	 * Rune tuning of the share of a depleting hit's actual overkill that carries to the nearest other resource of the
+	 * tool, for example 0.5 for 50 %; base 0 carries nothing.
+	 */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_TransferWork);
+
+	/**
+	 * Skill tree tuning: above 0, echoes and transfers also strike a second resource of the tool nearby, and each
+	 * strike does this fraction of the work, for example 0.6; base 0 strikes one resource.
+	 */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_RuneFlowSplit);
 }

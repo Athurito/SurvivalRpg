@@ -4,6 +4,7 @@
 
 #include "GameplayTags/RpgHarvestingMagicGameplayTags.h"
 #include "Harvesting/RpgHarvestBurn.h"
+#include "Harvesting/RpgHarvestRuneStrike.h"
 #include "Harvesting/RpgHarvestableComponent.h"
 #include "Harvesting/RpgHarvestableInstancedMeshActor.h"
 #include "Harvesting/RpgHarvestableInstancedMeshComponent.h"
@@ -948,6 +949,154 @@ bool FRpgHarvestWorkBurnTalentTest::RunTest(const FString& Parameters)
 	TestWorld.AdvanceTimers(BurnStep);
 	TestEqual(TEXT("Nothing burns after the discharge"), static_cast<int32>(Stock->GetHarvestState().SectionWork), 45);
 	TestEqual(TEXT("Every completed section rewarded the igniting player once"), CountMaterial(Harvester), 3 * YieldPerSection);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestEchoChargeTest,
+	"SurvivalRpg.Harvesting.Work.EchoChargeCountsOwnHits",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestEchoChargeTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	FRpgHarvestEchoCharge Charge;
+	TestFalse(TEXT("The first own hit only charges"), Charge.AddHit(0.0, 3, 5.0f));
+	TestFalse(TEXT("The second own hit only charges"), Charge.AddHit(1.0, 3, 5.0f));
+	TestTrue(TEXT("The third own hit echoes"), Charge.AddHit(2.0, 3, 5.0f));
+	TestEqual(TEXT("An echo starts the charge over"), Charge.GetHits(), 0);
+	Charge.AddHit(3.0, 3, 5.0f);
+	Charge.AddHit(4.0, 3, 5.0f);
+	TestFalse(TEXT("A hit after the timeout starts the charge over"), Charge.AddHit(9.5, 3, 5.0f));
+	TestEqual(TEXT("The late hit is the first of a new charge"), Charge.GetHits(), 1);
+	TestTrue(TEXT("Two hits echo once a talent condenses the charge"), Charge.AddHit(10.0, 2, 5.0f));
+	TestTrue(TEXT("One hit per echo echoes every hit"), Charge.AddHit(10.5, 1, 5.0f));
+	TestFalse(TEXT("Without a hit count nothing echoes"), Charge.AddHit(11.0, 0, 5.0f));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestRuneStrikeTest,
+	"SurvivalRpg.Harvesting.Work.RuneStrikeWorksLaterForItsPlayer",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestRuneStrikeTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestWorkTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	ARpgHarvestAutomationNodeActor* Node = SpawnNode(World, MakeProfile(World, 4));
+	ARpgHarvestAutomationTestPlayerState* Harvester = SpawnHarvester(World);
+	if (!TestNotNull(TEXT("Node exists"), Node) || !TestNotNull(TEXT("Harvester exists"), Harvester))
+	{
+		return false;
+	}
+	URpgHarvestableComponent* Stock = Node->HarvestableNode;
+	const TSubclassOf<ARpgHarvestRuneStrike> StrikeClass = ARpgHarvestRuneStrike::StaticClass();
+	TestWorld.PrimeTimerManager();
+
+	FRpgHarvestRequest Direct = MakeNodeRequest(Node, Harvester, 1.0f);
+	Direct.Provenance.RootActionId = FRpgHarvestProvenance::MakeRootActionId();
+	TestEqual(TEXT("The triggering hit takes one section"), Stock->CommitHarvest_Implementation(Direct).SectionsTaken, 1);
+
+	TestNull(TEXT("A strike without work is not launched"), ARpgHarvestRuneStrike::Launch(Stock, Direct.Hit, Direct, StrikeClass, 0.0f, false));
+	ARpgHarvestRuneStrike* Strike = ARpgHarvestRuneStrike::Launch(Stock, Direct.Hit, Direct, StrikeClass, 0.5f, false);
+	if (!TestNotNull(TEXT("The hit launches a strike"), Strike))
+	{
+		return false;
+	}
+	TestTrue(TEXT("The strike works for the triggering player"), Strike->GetBeneficiary() == Harvester);
+	TestEqual(TEXT("The strike waits for its delay"), static_cast<int32>(Stock->GetHarvestState().SectionWork), 0);
+	TestWorld.AdvanceTimers(0.35f);
+	TestTrue(TEXT("The strike has struck after its delay"), Strike->HasStruck());
+	TestEqual(TEXT("The strike does half a section of work"), static_cast<int32>(Stock->GetHarvestState().SectionWork), 50);
+	const FRpgHarvestResult& StrikeResult = Strike->GetLastResult();
+	TestTrue(
+		TEXT("Strike work is secondary work of the triggering action"),
+		StrikeResult.IsSuccess() && !StrikeResult.Provenance.IsDirect() && !StrikeResult.IsAcceptedDirectHit() &&
+			StrikeResult.Provenance.RootActionId == Direct.Provenance.RootActionId);
+	TestEqual(TEXT("Partial strike work rewards nothing"), CountMaterial(Harvester), YieldPerSection);
+
+	// A strike of a whole section completes one and rewards its player once.
+	ARpgHarvestRuneStrike* WholeStrike = ARpgHarvestRuneStrike::Launch(Stock, Direct.Hit, Direct, StrikeClass, 1.0f, false);
+	TestWorld.AdvanceTimers(0.35f);
+	TestTrue(TEXT("The whole strike completes a section"), WholeStrike && WholeStrike->GetLastResult().SectionsTaken == 1);
+	TestEqual(TEXT("The completed section rewards the triggering player"), CountMaterial(Harvester), 2 * YieldPerSection);
+	TestTrue(
+		TEXT("The struck section awards XP once"),
+		FMath::IsNearlyEqual(GetMiningXP(Harvester), static_cast<float>(2 * ExperiencePerSection)));
+
+	// A strike on a resource that was emptied meanwhile takes nothing.
+	ARpgHarvestRuneStrike* LateStrike = ARpgHarvestRuneStrike::Launch(Stock, Direct.Hit, Direct, StrikeClass, 1.0f, false);
+	FRpgHarvestRequest Finisher = MakeNodeRequest(Node, Harvester, 2.0f);
+	Finisher.Provenance.RootActionId = FRpgHarvestProvenance::MakeRootActionId();
+	TestTrue(TEXT("A further hit empties the resource"), Stock->CommitHarvest_Implementation(Finisher).bDepleted);
+	const int32 MaterialAfterDepletion = CountMaterial(Harvester);
+	TestWorld.AdvanceTimers(0.35f);
+	TestTrue(TEXT("The late strike is refused"), LateStrike && LateStrike->HasStruck() && !LateStrike->GetLastResult().IsSuccess());
+	TestEqual(TEXT("The late strike rewards nothing"), CountMaterial(Harvester), MaterialAfterDepletion);
+	TestEqual(TEXT("The total yield equals the defined stock"), MaterialAfterDepletion, 4 * YieldPerSection);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestRuneFlowRulesTest,
+	"SurvivalRpg.Harvesting.Work.RuneFlowCarriesOnlyActualOverkill",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestRuneFlowRulesTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	FRpgHarvestResult Depleting;
+	Depleting.Outcome = ERpgHarvestOutcome::Harvested;
+	Depleting.WorkApplied = 100;
+	Depleting.OverkillWork = 250;
+	Depleting.bDepleted = true;
+	TestTrue(TEXT("All of the overkill carries 2.5 sections"), FMath::IsNearlyEqual(FRpgHarvestRuneFlow::TransferSections(Depleting, 1.0f), 2.5f));
+	TestTrue(TEXT("Half of it carries 1.25 sections"), FMath::IsNearlyEqual(FRpgHarvestRuneFlow::TransferSections(Depleting, 0.5f), 1.25f));
+	FRpgHarvestResult Exact = Depleting;
+	Exact.OverkillWork = 0;
+	TestEqual(TEXT("Completing a resource exactly carries nothing"), FRpgHarvestRuneFlow::TransferSections(Exact, 1.0f), 0.0f);
+	TestEqual(TEXT("A refused hit carries nothing"),
+		FRpgHarvestRuneFlow::TransferSections(FRpgHarvestResult::MakeRejected(ERpgHarvestOutcome::Depleted), 1.0f), 0.0f);
+	TestEqual(TEXT("Without a share nothing carries"), FRpgHarvestRuneFlow::TransferSections(Depleting, 0.0f), 0.0f);
+
+	// Follow-up targets: the nearest ones a strike would harvest, never the struck resource itself.
+	auto MakeReceiver = []() -> UObject* { return NewObject<URpgHarvestAutomationHarvestedListener>(GetTransientPackage()); };
+	UObject* Struck = MakeReceiver();
+	UObject* OutOfReach = MakeReceiver();
+	UObject* Near = MakeReceiver();
+	UObject* Protected = MakeReceiver();
+	UObject* Far = MakeReceiver();
+	UObject* Farthest = MakeReceiver();
+	auto MakeCandidate = [](UObject* Receiver, const int32 Item, const bool bInReach, const bool bHarvestable)
+	{
+		FRpgHarvestTargetEvaluation Candidate;
+		Candidate.Receiver = Receiver;
+		Candidate.Hit.Item = Item;
+		Candidate.bInReach = bInReach;
+		Candidate.Result.Outcome = bHarvestable ? ERpgHarvestOutcome::Harvested : ERpgHarvestOutcome::Protected;
+		return Candidate;
+	};
+	const TArray<FRpgHarvestTargetEvaluation> Candidates = {
+		MakeCandidate(Struck, 0, true, true),
+		MakeCandidate(OutOfReach, 0, false, true),
+		MakeCandidate(Near, 0, true, true),
+		MakeCandidate(Protected, 0, true, false),
+		MakeCandidate(Struck, 1, true, true),
+		MakeCandidate(Far, 0, true, true),
+		MakeCandidate(Farthest, 0, true, true)};
+	TArray<FRpgHarvestTargetEvaluation> Picked;
+	FRpgHarvestRuneFlow::PickFollowUpTargets(Candidates, Struck, 0, 1, Picked);
+	TestTrue(TEXT("One follow-up takes the nearest other resource"), Picked.Num() == 1 && Picked[0].Receiver.Get() == Near);
+	Picked.Reset();
+	FRpgHarvestRuneFlow::PickFollowUpTargets(Candidates, Struck, 0, 3, Picked);
+	TestTrue(
+		TEXT("Further follow-ups skip refused resources and take another instance of the same component"),
+		Picked.Num() == 3 && Picked[0].Receiver.Get() == Near && Picked[1].Receiver.Get() == Struck && Picked[1].Hit.Item == 1 &&
+			Picked[2].Receiver.Get() == Far);
 	return true;
 }
 

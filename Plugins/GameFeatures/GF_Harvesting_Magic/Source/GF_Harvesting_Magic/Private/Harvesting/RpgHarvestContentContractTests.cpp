@@ -12,6 +12,7 @@
 #include "GameplayTags/RpgHarvestingMagicGameplayTags.h"
 #include "Harvesting/RpgHarvestAutomationTestWorld.h"
 #include "Harvesting/RpgHarvestBurn.h"
+#include "Harvesting/RpgHarvestRuneStrike.h"
 #include "Harvesting/RpgHarvestChainComponent.h"
 #include "Harvesting/RpgHarvestProfile.h"
 #include "Harvesting/RpgHarvestableComponent.h"
@@ -52,6 +53,9 @@ namespace RpgHarvestContentContractTests
 	const TCHAR* DeadPineInstancesClassPath =
 		TEXT("/GF_Harvesting_Magic/Harvesting/Instances/BPC_HarvestInstances_DeadPine.BPC_HarvestInstances_DeadPine_C");
 	const TCHAR* BrandRuneClassPath = TEXT("/GF_Harvesting_Magic/Items/Runes/ID_Rune_Brand.ID_Rune_Brand_C");
+	const TCHAR* EchoRuneClassPath = TEXT("/GF_Harvesting_Magic/Items/Runes/ID_Rune_Echo.ID_Rune_Echo_C");
+	const TCHAR* TransferRuneClassPath = TEXT("/GF_Harvesting_Magic/Items/Runes/ID_Rune_Kraftuebertrag.ID_Rune_Kraftuebertrag_C");
+	const TCHAR* RuneChoiceRewardPath = TEXT("/GF_Harvesting_Magic/Items/Runes/DA_Reward_HarvestingRuneChoice.DA_Reward_HarvestingRuneChoice");
 	const TCHAR* IronVeinLootPath = TEXT("/GF_Harvesting_Magic/Loot/LT_IronVein.LT_IronVein");
 	const TCHAR* DeadPineLootPath = TEXT("/GF_Harvesting_Magic/Loot/LT_DeadPine.LT_DeadPine");
 	const TCHAR* KilnRecipeSetPath = TEXT("/GF_Harvesting_Magic/Crafting/DA_RecipeSet_Kiln.DA_RecipeSet_Kiln");
@@ -719,6 +723,156 @@ bool FRpgHarvestRuneWorkContractTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("The Runenschrein offers rune work"), Shrine && Shrine->OffersRuneWork());
 	TestTrue(TEXT("The Runenschrein opens its rune screen"), Shrine &&
 		Shrine->GetScreenTag() == FGameplayTag::RequestGameplayTag(TEXT("UI.Screen.RuneShrine"), false));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestRuneFlowContractTest,
+	"SurvivalRpg.Harvesting.Content.RuneFlowContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestRuneFlowContractTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestContentContractTests;
+	using namespace RpgHarvestingMagicGameplayTags;
+
+	// Echo and Kraftuebertrag are rank I to III runes; each rank tunes its effect, never weaker than the rank below,
+	// and they cost and salvage like Brand at the Runenschrein.
+	struct FRuneCase
+	{
+		const TCHAR* ClassPath;
+		const TCHAR* RuneTag;
+		FGameplayTag TuningTag;
+	};
+	const FRuneCase Cases[] = {
+		{EchoRuneClassPath, TEXT("Rune.Echo"), Ability_Tuning_Harvest_EchoWork},
+		{TransferRuneClassPath, TEXT("Rune.Kraftuebertrag"), Ability_Tuning_Harvest_TransferWork}};
+	const URpgCraftingRecipeSet* KilnRecipes = LoadObject<URpgCraftingRecipeSet>(nullptr, KilnRecipeSetPath);
+	const URpgRewardClaimDefinition* RuneChoice = LoadObject<URpgRewardClaimDefinition>(nullptr, RuneChoiceRewardPath);
+	UClass* PickaxeClass = LoadClass<URpgInventoryItemDefinition>(nullptr, PickaxeItemClassPath);
+	const URpgInventoryFragment_ItemContainer* PickaxeContainers = PickaxeClass
+		? Cast<URpgInventoryFragment_ItemContainer>(GetDefault<URpgInventoryItemDefinition>(PickaxeClass)->FindFragmentByClass(
+			URpgInventoryFragment_ItemContainer::StaticClass()))
+		: nullptr;
+	TArray<FRpgInventoryItemContainerDefinition> PickaxeGrids;
+	if (PickaxeContainers)
+	{
+		PickaxeContainers->GetProvidedContainers(PickaxeGrids);
+	}
+	for (const FRuneCase& Case : Cases)
+	{
+		UClass* RuneClass = LoadClass<URpgInventoryItemDefinition>(nullptr, Case.ClassPath);
+		const URpgInventoryFragment_Rune* Rune = RuneClass
+			? Cast<URpgInventoryFragment_Rune>(GetDefault<URpgInventoryItemDefinition>(RuneClass)->FindFragmentByClass(
+				URpgInventoryFragment_Rune::StaticClass()))
+			: nullptr;
+		if (!TestNotNull(*FString::Printf(TEXT("%s is a rune item"), Case.RuneTag), Rune))
+		{
+			continue;
+		}
+		TestTrue(*FString::Printf(TEXT("%s has its rune identity"), Case.RuneTag),
+			Rune->RuneTag == FGameplayTag::RequestGameplayTag(Case.RuneTag, false));
+		TestEqual(*FString::Printf(TEXT("%s reaches rank III"), Case.RuneTag), Rune->GetMaxRank(), RpgRuneMaxRank);
+		float Previous = 0.0f;
+		for (int32 Rank = 1; Rank <= Rune->GetMaxRank(); ++Rank)
+		{
+			const FRpgRuneRank* RankData = Rune->FindRank(Rank);
+			FRpgAbilityTuningAccumulator Effect;
+			for (const FRpgSkillTreeAbilityTuning& Tuning : RankData->AbilityTunings)
+			{
+				Effect.Apply(Tuning, FGameplayTagContainer(), Case.TuningTag);
+			}
+			TestTrue(*FString::Printf(TEXT("%s rank %d works"), Case.RuneTag, Rank), Effect.Resolve(0.0f) > 0.0f);
+			TestTrue(*FString::Printf(TEXT("%s rank %d is at least as strong as the rank below"), Case.RuneTag, Rank), Effect.Resolve(0.0f) >= Previous);
+			Previous = Effect.Resolve(0.0f);
+			TestTrue(*FString::Printf(TEXT("%s rank %d salvages into something"), Case.RuneTag, Rank), !RankData->SalvageOutputs.IsEmpty());
+			if (Rank > 1)
+			{
+				TestFalse(*FString::Printf(TEXT("%s rank %d has an upgrade cost"), Case.RuneTag, Rank), RankData->UpgradeCosts.IsEmpty());
+			}
+		}
+		const URpgCraftingRecipeDefinition* Recipe = Rune->BaseRecipe;
+		TestTrue(
+			*FString::Printf(TEXT("%s has a locked base recipe that forges it"), Case.RuneTag),
+			Recipe && !Recipe->bUnlockedByDefault && Recipe->RecipeUnlockTag.IsValid() &&
+				Recipe->OutputItems.ContainsByPredicate([RuneClass](const FRpgCraftingOutputItem& Output)
+				{
+					return Output.ItemDefinition == RuneClass;
+				}));
+		TestTrue(*FString::Printf(TEXT("The Kiln offers the %s recipe"), Case.RuneTag), KilnRecipes && KilnRecipes->Recipes.Contains(Recipe));
+		TestTrue(
+			*FString::Printf(TEXT("The rune choice offers %s"), Case.RuneTag),
+			RuneChoice && RuneChoice->Options.ContainsByPredicate([RuneClass](const FRpgRewardClaimOption& Option)
+			{
+				return Option.ItemDefinition == RuneClass;
+			}));
+		TestTrue(
+			*FString::Printf(TEXT("The pickaxe sockets take %s"), Case.RuneTag),
+			PickaxeGrids.Num() == 1 && PickaxeGrids[0].AllowsItemDefinition(RuneClass, 1));
+		for (const TCHAR* LootPath : {IronVeinLootPath, DeadPineLootPath})
+		{
+			const URpgLootTable* Loot = LoadObject<URpgLootTable>(nullptr, LootPath);
+			bool bDropsRarely = false;
+			for (const FRpgLootGroup& Group : Loot ? Loot->Groups : TArray<FRpgLootGroup>())
+			{
+				for (const FRpgLootEntry& Entry : Group.Entries)
+				{
+					bDropsRarely |= Entry.ItemDefinition == RuneClass && Group.Mode == ERpgLootGroupMode::Independent &&
+						Entry.ChancePercent > 0.0f && Entry.ChancePercent < 100.0f;
+				}
+			}
+			TestTrue(*FString::Printf(TEXT("%s drops %s as a rare find"), LootPath, Case.RuneTag), bDropsRarely);
+		}
+	}
+
+	// The axe and pickaxe swings echo and transfer with strikes that name their runes.
+	for (const TCHAR* SwingPath : {AxeChopAbilityClassPath, PickaxeStrikeAbilityClassPath})
+	{
+		UClass* SwingClass = LoadClass<URpgGameplayAbility_Harvest>(nullptr, SwingPath);
+		const URpgGameplayAbility_Harvest* Swing = SwingClass ? GetDefault<URpgGameplayAbility_Harvest>(SwingClass) : nullptr;
+		if (!TestNotNull(*FString::Printf(TEXT("%s loads"), SwingPath), Swing))
+		{
+			continue;
+		}
+		const TSubclassOf<ARpgHarvestRuneStrike> EchoClass = Swing->GetEchoStrikeClass();
+		const TSubclassOf<ARpgHarvestRuneStrike> TransferClass = Swing->GetTransferStrikeClass();
+		TestTrue(*FString::Printf(TEXT("%s echoes as Echo"), SwingPath),
+			EchoClass && GetDefault<ARpgHarvestRuneStrike>(EchoClass)->GetProcTag() == FGameplayTag::RequestGameplayTag(TEXT("Rune.Echo"), false));
+		TestTrue(*FString::Printf(TEXT("%s transfers as Kraftuebertrag"), SwingPath),
+			TransferClass &&
+				GetDefault<ARpgHarvestRuneStrike>(TransferClass)->GetProcTag() == FGameplayTag::RequestGameplayTag(TEXT("Rune.Kraftuebertrag"), false));
+	}
+
+	// The Rune Flow branch needs Echo or Kraftuebertrag in the tool; its two choices exclude each other.
+	const FGameplayTag Mastery = RpgTradeSkillGameplayTags::Skill_Mastery_Harvesting;
+	const URpgSkillTreeDefinition* Tree =
+		LoadToolSkillTree(*this, PickaxeItemClassPath, FGameplayTag::RequestGameplayTag(TEXT("SkillTree.Tree.Harvesting")), Mastery);
+	if (!Tree)
+	{
+		return false;
+	}
+	FGameplayTagContainer FlowRunes;
+	FlowRunes.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Rune.Echo"), false));
+	FlowRunes.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Rune.Kraftuebertrag"), false));
+	int32 FlowNodes = 0;
+	TSet<FName> FlowChoices;
+	for (const FRpgSkillTreeNode& Node : Tree->Nodes)
+	{
+		if (Node.RegionId != TEXT("RuneFlow"))
+		{
+			continue;
+		}
+		++FlowNodes;
+		TestTrue(*FString::Printf(TEXT("%s needs Echo or Kraftuebertrag"), *Node.NodeTag.ToString()),
+			Node.RequiredRunes == FlowRunes && Node.RuneMatch == ERpgSkillTreeRuneMatch::AnyRune);
+		if (!Node.ExclusiveGroup.IsNone())
+		{
+			FlowChoices.Add(Node.ExclusiveGroup);
+		}
+	}
+	TestEqual(TEXT("Rune Flow has an entry and two choices"), FlowNodes, 3);
+	TestEqual(TEXT("The two Rune Flow choices share one group"), FlowChoices.Num(), 1);
 	return true;
 }
 

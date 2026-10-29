@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Harvesting/RpgHarvestRuneStrike.h"
 #include "Harvesting/RpgHarvestSwarm.h"
 #include "Harvesting/RpgHarvestTargeting.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_FromEquipment.h"
@@ -95,6 +96,25 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestTunedValues
 	bool bBurnRefresh = false;
 	float BurnDischarge = 0.0f;
 
+	/**
+	 * Echo of runes such as Echo: every EchoHits accepted own hits, the struck resource takes EchoWork times the hit's
+	 * own work once more (Ability.Tuning.Harvest.EchoWork, .EchoHits). Zero EchoWork echoes nothing.
+	 */
+	float EchoWork = 0.0f;
+	int32 EchoHits = 3;
+
+	/**
+	 * Share of a depleting hit's actual overkill that runes such as Kraftuebertrag carry to the nearest other resource
+	 * (Ability.Tuning.Harvest.TransferWork). Zero carries nothing.
+	 */
+	float TransferWork = 0.0f;
+
+	/**
+	 * Above zero, echoes and transfers also strike a second resource nearby, and each strike does this fraction of the
+	 * work (Ability.Tuning.Harvest.RuneFlowSplit).
+	 */
+	float RuneFlowSplit = 0.0f;
+
 	/** Swarm with tuned creature count, rest and strike radius. */
 	FRpgHarvestSwarmParams Swarm;
 
@@ -165,6 +185,12 @@ public:
 
 	/** Returns the burn this ability's direct hits light while the source tool's runes give burn work, or null. */
 	TSubclassOf<ARpgHarvestBurn> GetBurnClass() const { return BurnClass; }
+
+	/** Strike an Echo sends onto the struck resource, or null when this ability echoes nothing. */
+	TSubclassOf<ARpgHarvestRuneStrike> GetEchoStrikeClass() const { return EchoStrikeClass; }
+
+	/** Strike a Kraftuebertrag sends with a depleting hit's overkill, or null when this ability carries nothing. */
+	TSubclassOf<ARpgHarvestRuneStrike> GetTransferStrikeClass() const { return TransferStrikeClass; }
 
 	/** Returns the speed in cm/s at which this ability's presentation travels from target to target; 0 is instant. */
 	float GetPresentationWaveSpeed() const { return PresentationWaveSpeed; }
@@ -370,6 +396,40 @@ protected:
 	TSubclassOf<ARpgHarvestBurn> BurnClass;
 
 	/**
+	 * Strike an Echo sends onto the struck resource after every EchoHitsPerEcho accepted own hits, while the source
+	 * tool's runes give echo work (Ability.Tuning.Harvest.EchoWork). Its work is that fraction of the hit's own work.
+	 * The server spawns it; it replicates for its presentation. Empty echoes nothing. Designer content.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Rune Flow")
+	TSubclassOf<ARpgHarvestRuneStrike> EchoStrikeClass;
+
+	/**
+	 * Strike a Kraftuebertrag sends to the nearest other resource the tool can work, within RuneFlowRadius, with a
+	 * share of a depleting hit's actual overkill (Ability.Tuning.Harvest.TransferWork). Empty carries nothing.
+	 * Designer content.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Rune Flow")
+	TSubclassOf<ARpgHarvestRuneStrike> TransferStrikeClass;
+
+	/** Accepted own hits that charge one echo before tunings (Ability.Tuning.Harvest.EchoHits), 1 to 16. Designer-tuned. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Rune Flow", meta = (ClampMin = "1", ClampMax = "16", UIMin = "1", UIMax = "8"))
+	int32 EchoHitsPerEcho = 3;
+
+	/**
+	 * Seconds an echo charge waits for the next own hit before it starts over. The charge also ends when the tool's
+	 * abilities are removed. Designer-tuned.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Rune Flow", meta = (ClampMin = "0.1", UIMin = "1.0", UIMax = "15.0", Units = "s"))
+	float EchoChargeTimeoutSeconds = 5.0f;
+
+	/**
+	 * Radius in centimeters around a struck resource in which a transfer, or an echo split by a talent, finds further
+	 * resources the tool can work, nearest first. Designer-tuned.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Rune Flow", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "2000.0", Units = "cm"))
+	float RuneFlowRadius = 800.0f;
+
+	/**
 	 * Creature count, flight and reassignment rules of the summoned swarm. Used only with a SwarmClass. Skill tree nodes
 	 * tune CreatureCount, StrikeIntervalSeconds and StrikeRadius (Ability.Tuning.Harvest.Creatures, .StrikeInterval,
 	 * .StrikeRadius).
@@ -443,6 +503,21 @@ private:
 		const FRpgHarvestRequest& RequestTemplate,
 		const FRpgHarvestTunedValues& Values);
 
+	/**
+	 * Server: sends rune strikes of StrikeClass with WorkSections sections of work, as follow-up work of
+	 * StruckRequest. With bIncludeStruck the struck resource takes one while it has work left (an echo); the nearest
+	 * other resources of the tool within RuneFlowRadius take the rest: one for a transfer, plus one more when Values
+	 * split rune flow. Two strikes each do Values.RuneFlowSplit of the work; a single strike does all of it.
+	 */
+	void SendRuneFlowStrikes(
+		TSubclassOf<ARpgHarvestRuneStrike> StrikeClass,
+		UObject* StruckReceiver,
+		const FRpgHarvestRequest& StruckRequest,
+		bool bStruckHasWork,
+		float WorkSections,
+		const FRpgHarvestTunedValues& Values,
+		bool bIncludeStruck) const;
+
 	/** Server: starts the stride of the current activation with the values captured when execution started. */
 	void StartStride(const FRpgHarvestRequest& RequestTemplate, const FRpgHarvestTunedValues& Values);
 
@@ -498,6 +573,9 @@ private:
 	TWeakObjectPtr<UObject> FollowUpReceiver;
 	int32 FollowUpItem = INDEX_NONE;
 	double FollowUpDeadline = -1.0;
+
+	/** Server-only own hits counted towards the next echo; it ends with this ability instance. */
+	FRpgHarvestEchoCharge EchoCharge;
 
 	/** Server-only state of the running stride: its pulse and end timers, captured values and pending rewards. */
 	FTimerHandle StridePulseTimerHandle;
