@@ -1,6 +1,6 @@
 # MST-09a: Echo, Kraftübertragung and Rune Flow
 
-Task report for MST-09a in the [mastery map roadmap](mastery-map-roadmap.md). It adds the harvesting runes Echo and Kraftübertragung and the Rune Flow branch (Runenfluss) of the [implementation plan](mastery-map-implementation-plan.md), section "Target content catalog": Runenresonanz, then Teilung or Verdichtung. The plan's rules apply:
+Task report for MST-09a in the [mastery map roadmap](mastery-map-roadmap.md), [PR #325](https://github.com/Athurito/SurvivalRpg/pull/325). It adds the harvesting runes Echo and Kraftübertragung and the Rune Flow branch (Runenfluss) of the [implementation plan](mastery-map-implementation-plan.md), section "Target content catalog": Runenresonanz, then Teilung or Verdichtung. The plan's rules apply:
 - Own direct hits drive Echo.
 - Follow-up work carries provenance and a finite chain budget.
 - Only actual overkill enters Kraftübertragung.
