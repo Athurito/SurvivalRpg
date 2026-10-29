@@ -17,6 +17,9 @@
 #include "SurvivalRpg/UI/RpgCraftingRecipeEntryWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryInteractionScreenWidget.h"
 #include "SurvivalRpg/UI/RpgInventoryPanelNavigationCoordinator.h"
+#include "SurvivalRpg/UI/RpgUIScreenRegistry.h"
+#include "SurvivalRpg/Runes/RpgRuneAutomationTestTypes.h"
+#include "Blueprint/IUserObjectListEntry.h"
 
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Blueprint/IUserListEntry.h"
@@ -64,6 +67,8 @@ namespace RpgCraftingStationWidgetTests
 		TEXT(
 			"/Game/SurvivalRpg/Crafting/UI/"
 			"CUI_CraftingIngredientEntrySpatial.CUI_CraftingIngredientEntrySpatial_C");
+	constexpr TCHAR ScreenRegistryPath[] =
+		TEXT("/Game/SurvivalRpg/UI/DA_RpgUIScreenRegistry.DA_RpgUIScreenRegistry");
 	constexpr TCHAR CraftingActionTablePath[] =
 		TEXT(
 			"/Game/SurvivalRpg/UI/Input/"
@@ -1122,6 +1127,107 @@ bool FRpgCraftingScreenPayloadLifecycleTest::RunTest(
 		TEXT("Explicit payload clear performs no extra bind"),
 		Widget->GetCraftingPresentationBindGeneration(),
 		4u);
+
+	Widget->DeactivateWidget();
+	SlateWidget.Reset();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgRuneShrineScreenTest,
+	"SurvivalRpg.Inventory.UI.Crafting.RuneShrineScreen",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgRuneShrineScreenTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgCraftingStationWidgetTests;
+	ConfigureRuneAutomationTestDefinitions();
+
+	FScopedCraftingWidgetWorld TestWorld;
+	if (!TestWorld.InitializePlayerFixture(*this))
+	{
+		return false;
+	}
+
+	// The registry routes the Runenschrein's screen tag to a crafting station screen.
+	const FGameplayTag RuneShrineTag = FGameplayTag::RequestGameplayTag(TEXT("UI.Screen.RuneShrine"), false);
+	const URpgUIScreenRegistry* Registry = LoadObject<URpgUIScreenRegistry>(nullptr, ScreenRegistryPath);
+	FRpgUIScreenRegistryEntry Entry;
+	if (!TestTrue(TEXT("The rune shrine screen tag exists"), RuneShrineTag.IsValid()) ||
+		!TestNotNull(TEXT("The UI screen registry loads"), Registry) ||
+		!TestTrue(TEXT("The registry routes the rune shrine screen"), Registry->FindScreen(RuneShrineTag, Entry)))
+	{
+		return false;
+	}
+	UClass* ScreenClass = Entry.WidgetClass.LoadSynchronous();
+	if (!TestTrue(
+			TEXT("The rune shrine screen is a crafting station screen"),
+			ScreenClass && ScreenClass->IsChildOf(URpgCraftingStationWidget::StaticClass())))
+	{
+		return false;
+	}
+
+	const FScopedCraftingWidgetWorld::FStationContext Context = TestWorld.CreateStation(TEXT("RuneShrineUiStation"));
+	FBoolProperty* OffersRuneWork = FindFProperty<FBoolProperty>(URpgCraftingStationComponent::StaticClass(), TEXT("bOffersRuneWork"));
+	FStructProperty* StationScreenTag = FindFProperty<FStructProperty>(URpgCraftingStationComponent::StaticClass(), TEXT("ScreenTag"));
+	if (!TestTrue(TEXT("The rune station context is valid"), Context.IsValid()) ||
+		!TestNotNull(TEXT("The station has a rune work switch"), OffersRuneWork) ||
+		!TestNotNull(TEXT("The station names its screen"), StationScreenTag))
+	{
+		return false;
+	}
+	OffersRuneWork->SetPropertyValue_InContainer(Context.Station, true);
+	*StationScreenTag->ContainerPtrToValuePtr<FGameplayTag>(Context.Station) = RuneShrineTag;
+	URpgInventoryItemInstance* Rune =
+		TestWorld.GetPlayerInventory()->AddItemDefinition(URpgRuneAutomationTestRuneDefinition::StaticClass(), 1);
+	if (!TestNotNull(TEXT("The player carries a rune"), Rune))
+	{
+		return false;
+	}
+
+	URpgCraftingStationWidget* Widget = CreateWidget<URpgCraftingStationWidget>(TestWorld.GetTestWorld(), ScreenClass);
+	if (!TestNotNull(TEXT("The rune shrine screen initializes"), Widget))
+	{
+		return false;
+	}
+	ICommonInputModule::GetSettings().LoadData();
+	TSharedPtr<SWidget> SlateWidget = Widget->TakeWidget();
+
+	// A payload for the crafting screen does not fit a station that opens the rune screen.
+	URpgCraftingStationScreenPayload* CraftingPayload =
+		MakePayload(Widget, TestWorld.GetPlayerInventory(), Context, TestWorld.GetPawn());
+	IRpgUIScreenPayloadReceiver::Execute_ReceiveScreenPayload(Widget, CraftingPayload);
+	TestNull(TEXT("A payload naming another screen is rejected"), Widget->GetCraftingScreenPayload());
+
+	URpgCraftingStationScreenPayload* Payload = MakePayload(Widget, TestWorld.GetPlayerInventory(), Context, TestWorld.GetPawn());
+	Payload->ScreenTag = RuneShrineTag;
+	IRpgUIScreenPayloadReceiver::Execute_ReceiveScreenPayload(Widget, Payload);
+	Widget->ActivateWidget();
+	TestEqual(TEXT("The rune screen binds once on activation"), Widget->GetCraftingPresentationBindGeneration(), 1u);
+
+	// Required seams of the rune screen: the rune list, its cost rows and the two actions.
+	UCommonListView* RuneList = Cast<UCommonListView>(Widget->GetWidgetFromName(TEXT("RuneList")));
+	if (TestNotNull(TEXT("The rune screen authors its rune list"), RuneList))
+	{
+		TestEqual(TEXT("The carried rune is listed"), RuneList->GetNumItems(), 1);
+		const URpgRuneWorkRuneViewModel* Row = Cast<URpgRuneWorkRuneViewModel>(RuneList->GetSelectedItem());
+		TestTrue(TEXT("The rune row is selected"), Row && Row->GetRuneItemId() == Rune->GetItemId());
+		TestEqual(TEXT("The rune list takes CommonUI focus"), Widget->GetDesiredFocusTarget(), static_cast<UWidget*>(RuneList));
+		UClass* RowClass = GetListEntryWidgetClass(RuneList);
+		TestTrue(TEXT("Rune rows are list entries"), RowClass && RowClass->ImplementsInterface(UUserObjectListEntry::StaticClass()));
+	}
+	UClass* CostEntryClass =
+		GetListEntryWidgetClass(Cast<UCommonListView>(Widget->GetWidgetFromName(TEXT("RuneUpgradeCostList"))));
+	TestTrue(
+		TEXT("Upgrade costs use the typed ingredient-entry presenter"),
+		CostEntryClass && CostEntryClass->IsChildOf(URpgCraftingIngredientEntryWidget::StaticClass()));
+	TestTrue(
+		TEXT("The rune screen authors its upgrade control"),
+		Cast<URpgCraftingActionButtonWidget>(Widget->GetWidgetFromName(TEXT("RuneUpgradeButton"))) != nullptr);
+	TestTrue(
+		TEXT("The rune screen authors its salvage control"),
+		Cast<URpgCraftingActionButtonWidget>(Widget->GetWidgetFromName(TEXT("RuneSalvageButton"))) != nullptr);
 
 	Widget->DeactivateWidget();
 	SlateWidget.Reset();

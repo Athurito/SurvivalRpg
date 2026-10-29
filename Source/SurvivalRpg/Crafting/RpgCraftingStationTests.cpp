@@ -18,6 +18,7 @@
 #include "SurvivalRpg/Inventory/RpgInventoryContainerActor.h"
 #include "SurvivalRpg/Inventory/RpgInventoryContainerComponent.h"
 #include "SurvivalRpg/Inventory/RpgPhysicalStorageTypes.h"
+#include "SurvivalRpg/Mvvm/Crafting/RpgCraftingViewModels.h"
 #include "SurvivalRpg/Mvvm/Inventory/RpgPhysicalStorageViewModel.h"
 #include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
@@ -840,6 +841,164 @@ bool FRpgCraftingRuneSalvageFallbackTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("The rune is gone"), Player->ContainsItemInstance(Rune));
 	TestEqual(TEXT("The outputs land in the player's inventory"), Player->GetTotalItemCountByDefinition(Essence), 2);
 	TestEqual(TEXT("The full chest is untouched"), CountOf(Tiny, Essence), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgCraftingStationScreenTagTest,
+	"SurvivalRpg.Crafting.Station.ScreenTagDefaultsToCrafting",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCraftingStationScreenTagTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCraftingStationTests;
+	FScopedCraftingWorld Fixture;
+	if (!Fixture.Initialize(*this)) { return false; }
+	URpgCraftingStationComponent* Station = Fixture.GetStation();
+	TestTrue(TEXT("A station without a screen tag opens the crafting screen"), Station->GetScreenTag() == RpgGameplayTags::UI_Screen_Crafting);
+	FStructProperty* ScreenTag = FindFProperty<FStructProperty>(URpgCraftingStationComponent::StaticClass(), TEXT("ScreenTag"));
+	if (!TestNotNull(TEXT("The station names its screen"), ScreenTag)) { return false; }
+	*ScreenTag->ContainerPtrToValuePtr<FGameplayTag>(Station) = RpgGameplayTags::UI_Screen_Loot;
+	TestTrue(TEXT("A station with a screen tag opens that screen"), Station->GetScreenTag() == RpgGameplayTags::UI_Screen_Loot);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgCraftingRuneShrineReadModelTest,
+	"SurvivalRpg.Crafting.RuneWork.ShrineReadModel",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCraftingRuneShrineReadModelTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCraftingStationTests;
+	ConfigureRuneAutomationTestDefinitions();
+	FScopedCraftingWorld Fixture;
+	if (!Fixture.Initialize(*this)) { return false; }
+	URpgCraftingStationComponent* Station = Fixture.GetStation();
+	AActor* Requester = Fixture.GetRequestingController();
+	FBoolProperty* OffersRuneWork = FindFProperty<FBoolProperty>(URpgCraftingStationComponent::StaticClass(), TEXT("bOffersRuneWork"));
+	if (!TestNotNull(TEXT("The station has a rune work switch"), OffersRuneWork)) { return false; }
+	OffersRuneWork->SetPropertyValue_InContainer(Station, true);
+
+	const TSubclassOf<URpgInventoryItemDefinition> Material = URpgInventoryAutomationTestMaterialDefinition::StaticClass();
+	const TSubclassOf<URpgInventoryItemDefinition> Essence = URpgInventoryAutomationTestStackItemDefinition::StaticClass();
+	const TSubclassOf<URpgInventoryItemDefinition> RuneDefinition = URpgRuneAutomationTestRuneDefinition::StaticClass();
+	FRpgCraftingResourceCost Cost;
+	Cost.ItemDefinition = Material;
+	Cost.Count = 2;
+	FRpgCraftingOutputItem Output;
+	Output.ItemDefinition = Essence;
+	Output.Count = 4;
+	URpgRuneAutomationTestRuneDefinition::SetRankWork(1, {}, {Output});
+	URpgRuneAutomationTestRuneDefinition::SetRankWork(2, {Cost}, {});
+	URpgRuneAutomationTestRuneDefinition::SetRankDescription(1, INVTEXT("Rank one burns"));
+	URpgRuneAutomationTestRuneDefinition::SetRankDescription(2, INVTEXT("Rank two burns longer"));
+	ON_SCOPE_EXIT
+	{
+		for (int32 Rank = 1; Rank <= 3; ++Rank)
+		{
+			URpgRuneAutomationTestRuneDefinition::SetRankWork(Rank, {}, {});
+			URpgRuneAutomationTestRuneDefinition::SetRankDescription(Rank, FText::GetEmpty());
+		}
+	};
+	auto ReadInt = [](const UObject* Object, const TCHAR* Name)
+	{
+		const FIntProperty* Property = Object ? FindFProperty<FIntProperty>(Object->GetClass(), Name) : nullptr;
+		return Property ? Property->GetPropertyValue_InContainer(Object) : INDEX_NONE;
+	};
+
+	URpgInventoryManagerComponent* Player = Fixture.CreatePlayerInventory();
+	URpgInventoryItemInstance* First = Player->AddItemDefinition(RuneDefinition, 1);
+	URpgInventoryItemInstance* Second = Player->AddItemDefinition(RuneDefinition, 1);
+	ARpgInventoryContainerActor* Chest = Fixture.CreateChest(4, 4);
+	if (!TestNotNull(TEXT("The first rune exists"), First) || !TestNotNull(TEXT("The second rune exists"), Second) ||
+		!Chest || !Chest->GetInventoryManager()->AddItemDefinition(Material, 1)) { return false; }
+
+	TStrongObjectPtr<URpgCraftingStationViewModel> ViewModel(NewObject<URpgCraftingStationViewModel>());
+	ViewModel->BindCraftingStation(Station, Requester);
+	ViewModel->Refresh();
+	ON_SCOPE_EXIT
+	{
+		ViewModel->UnbindCraftingStation();
+	};
+
+	const FString RuneName = GetDefault<URpgInventoryItemDefinition>(RuneDefinition)->DisplayName.ToString();
+	TestTrue(TEXT("The read model knows the station offers rune work"), ViewModel->OffersRuneWork());
+	TestEqual(TEXT("Both carried runes are listed"), ViewModel->GetRuneRows().Num(), 2);
+	TestTrue(TEXT("The first rune is selected"), ViewModel->GetSelectedRuneItemId() == First->GetItemId());
+	TestEqual(TEXT("The title names the rune and its rank"), ViewModel->GetSelectedRuneTitle().ToString(), RuneName + TEXT(" I"));
+	TestEqual(TEXT("A rune in the pockets is carried"), ViewModel->GetSelectedRuneLocation().ToString(), FString(TEXT("Carried")));
+	TestEqual(TEXT("The current rank is described"), ViewModel->GetSelectedRuneRankDescription().ToString(), FString(TEXT("Rank one burns")));
+	TestEqual(TEXT("The preview names the next rank"), ViewModel->GetSelectedRuneNextRankTitle().ToString(), FString(TEXT("Next: Rank II")));
+	TestEqual(TEXT("The preview describes the next rank"), ViewModel->GetSelectedRuneNextRankDescription().ToString(), FString(TEXT("Rank two burns longer")));
+	const TArray<URpgCraftingIngredientViewModel*> Costs = ViewModel->GetRuneUpgradeCosts();
+	if (TestEqual(TEXT("The next rank's cost is one material row"), Costs.Num(), 1))
+	{
+		TestEqual(TEXT("The row needs the next rank's count"), ReadInt(Costs[0], TEXT("RequiredCount")), 2);
+		TestEqual(TEXT("The row counts the connected chests"), ReadInt(Costs[0], TEXT("AvailableCount")), 1);
+	}
+	TestFalse(TEXT("Without materials the upgrade is not offered"), ViewModel->CanUpgradeSelectedRune());
+	TestEqual(TEXT("The status explains the missing materials"), ViewModel->GetRuneUpgradeStatusText().ToString(), FString(TEXT("The connected chests lack materials.")));
+	TestTrue(TEXT("A carried rune can be salvaged"), ViewModel->CanSalvageSelectedRune());
+	TestEqual(TEXT("The salvage line names the outputs"), ViewModel->GetRuneSalvageText().ToString(),
+		FString::Printf(TEXT("Returns 4 %s"), *GetDefault<URpgInventoryItemDefinition>(Essence)->DisplayName.ToString()));
+
+	// The selection follows the chosen rune through an upgrade.
+	ViewModel->SelectRune(Second->GetItemId());
+	TestTrue(TEXT("The second rune is selected"), ViewModel->GetSelectedRuneItemId() == Second->GetItemId());
+	Chest->GetInventoryManager()->AddItemDefinition(Material, 1);
+	ViewModel->Refresh();
+	TestTrue(TEXT("With materials the upgrade is offered"), ViewModel->CanUpgradeSelectedRune());
+	TestTrue(TEXT("Nothing blocks the upgrade"), ViewModel->GetRuneUpgradeStatusText().IsEmpty());
+	TestEqual(TEXT("The second rune is upgraded"), Station->UpgradeRune(Requester, Second->GetItemId()), ERpgRuneWorkResult::Done);
+	ViewModel->Refresh();
+	TestTrue(TEXT("The upgraded rune stays selected"), ViewModel->GetSelectedRuneItemId() == Second->GetItemId());
+	TestEqual(TEXT("The title shows the new rank"), ViewModel->GetSelectedRuneTitle().ToString(), RuneName + TEXT(" II"));
+	TestEqual(TEXT("The preview moves to rank III"), ViewModel->GetSelectedRuneNextRankTitle().ToString(), FString(TEXT("Next: Rank III")));
+	TestEqual(TEXT("The first rune keeps rank I in its row"), ViewModel->GetRuneRows()[0]->GetRank(), 1);
+
+	// A socketed rune names its tool and explains why it cannot be salvaged.
+	URpgInventoryItemInstance* Tool = Player->AddItemDefinition(URpgRuneAutomationTestToolDefinition::StaticClass(), 1);
+	FRpgInventoryGridPlacement ToolPlacement;
+	if (!Tool || !Player->GetItemPlacement(Tool, ToolPlacement)) { return false; }
+	FRpgInventoryGridPlacement SocketPlacement;
+	SocketPlacement.SetContainerHandle(FRpgInventoryContainerHandle::MakeItemOwned(
+		Tool->GetItemId(), RpgRuneAutomationTestSocketGridId, ToolPlacement.GetContainerHandle().GetDirectChildDepth()));
+	SocketPlacement.X = 0;
+	SocketPlacement.Y = 0;
+	for (const FRpgInventoryEntryView& Entry : Player->GetAllEntries())
+	{
+		if (Entry.ItemId == First->GetItemId())
+		{
+			FRpgInventoryMoveIntent Intent;
+			Intent.EnsureRequestId();
+			Intent.ItemId = Entry.ItemId;
+			Intent.ExpectedEntryId = Entry.EntryId;
+			Intent.ExpectedSourcePlacement = Entry.Placement;
+			Intent.ExpectedQuantity = Entry.StackCount;
+			Intent.TargetPlacement = SocketPlacement;
+			TestTrue(TEXT("The first rune goes into a socket"), Player->MoveItem(Intent).IsSuccess());
+		}
+	}
+	ViewModel->Refresh();
+	ViewModel->SelectRune(First->GetItemId());
+	const FString ToolName = Tool->GetItemDef() ? GetDefault<URpgInventoryItemDefinition>(Tool->GetItemDef())->DisplayName.ToString() : FString();
+	TestEqual(TEXT("A socketed rune names its tool"), ViewModel->GetSelectedRuneLocation().ToString(), TEXT("Socketed in ") + ToolName);
+	TestFalse(TEXT("A socketed rune cannot be salvaged"), ViewModel->CanSalvageSelectedRune());
+	TestEqual(TEXT("The salvage line explains the socket"), ViewModel->GetRuneSalvageText().ToString(),
+		FString::Printf(TEXT("Take it out of %s to salvage it."), *ToolName));
+
+	// Salvaging the selected rune moves the selection to the remaining one.
+	ViewModel->SelectRune(Second->GetItemId());
+	TestEqual(TEXT("The second rune is salvaged"), Station->SalvageRune(Requester, Second->GetItemId()), ERpgRuneWorkResult::Done);
+	ViewModel->Refresh();
+	TestEqual(TEXT("One rune is left"), ViewModel->GetRuneRows().Num(), 1);
+	TestTrue(TEXT("The selection moves to the remaining rune"), ViewModel->GetSelectedRuneItemId() == First->GetItemId());
+
+	// A station without rune work lists no runes.
+	OffersRuneWork->SetPropertyValue_InContainer(Station, false);
+	ViewModel->Refresh();
+	TestFalse(TEXT("The read model sees the switch"), ViewModel->OffersRuneWork());
+	TestEqual(TEXT("No runes are listed"), ViewModel->GetRuneRows().Num(), 0);
+	TestFalse(TEXT("Nothing is selected"), ViewModel->GetSelectedRuneItemId().IsValid());
 	return true;
 }
 

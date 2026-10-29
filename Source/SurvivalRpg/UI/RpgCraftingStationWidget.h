@@ -30,7 +30,9 @@ class URpgPlayerInventoryViewModel;
  *
  * This screen validates the explicit station payload, owns the stable read-only crafting view model, and fills the
  * authored lists: categories, recipes with tier sections, materials, preview values, tier options and target chests.
- * Every gameplay mutation is forwarded as a typed intent through the owning controller's URpgInventoryUiActionComponent.
+ * A screen for a station without recipes, such as the Runenschrein's, omits the recipe controls and authors the rune
+ * widgets instead. Every gameplay mutation is forwarded as a typed intent through the owning controller's
+ * URpgInventoryUiActionComponent.
  */
 UCLASS(Abstract, Blueprintable)
 class SURVIVALRPG_API URpgCraftingStationWidget
@@ -69,9 +71,13 @@ public:
 		return CraftingPresentationBindGeneration;
 	}
 
-	/** Sends rune action ActionIndex of the view model (upgrade or salvage) to the server. */
+	/** Asks the server to raise the rune selected in the rune list by one rank, paid from the connected chests. */
 	UFUNCTION(BlueprintCallable, Category = "Crafting|Runes")
-	void RequestRuneWorkAction(int32 ActionIndex);
+	void RequestUpgradeSelectedRune();
+
+	/** Asks the server to salvage the rune selected in the rune list into its rank's outputs. */
+	UFUNCTION(BlueprintCallable, Category = "Crafting|Runes")
+	void RequestSalvageSelectedRune();
 
 	/** Starts the selected recipe, quantity and target chest as the station's order through the server. */
 	UFUNCTION(BlueprintCallable, Category = "Crafting|Actions")
@@ -102,6 +108,7 @@ protected:
 	virtual UWidget* NativeGetDesiredFocusTarget() const override;
 #if WITH_EDITOR
 	virtual void ValidateCompiledDefaults(class IWidgetCompilerLog& CompileLog) const override;
+	virtual void ValidateCompiledWidgetTree(const class UWidgetTree& BlueprintWidgetTree, class IWidgetCompilerLog& CompileLog) const override;
 #endif
 
 	//~IRpgUIScreenPayloadReceiver interface
@@ -137,12 +144,12 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<URpgPlayerInventoryPaneWidget> PlayerInventoryPane = nullptr;
 
-	/** Authored recipe list: tier section headers and recipe rows. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+	/** Recipe list: tier section headers and recipe rows. Every screen of a station with recipes authors it. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UCommonListView> RecipeList = nullptr;
 
-	/** Authored material rows of the selected recipe. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+	/** Material rows of the selected recipe. Every screen of a station with recipes authors it. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UCommonListView> IngredientList = nullptr;
 
 	/** Optional category rows: All, collapsible groups and subcategories. Clicks activate a row. */
@@ -185,12 +192,12 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UCommonLazyImage> StationIcon = nullptr;
 
-	/** Required main action that starts the selection as the station's order. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+	/** Main action that starts the selection as the station's order; requires CraftInputAction when authored. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<URpgCraftingActionButtonWidget> CraftButton = nullptr;
 
-	/** Required pause/resume control of the station's order. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+	/** Pause/resume control of the station's order; requires TogglePauseInputAction when authored. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<URpgCraftingActionButtonWidget> PauseButton = nullptr;
 
 	/** Optional control that stops the order's remaining units. */
@@ -217,17 +224,73 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UWidget> TargetStoragePopup = nullptr;
 
-	/** Required control that decreases the chosen quantity by one. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+	/** Control that decreases the chosen quantity by one. Every screen of a station with recipes authors it. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<URpgCraftingActionButtonWidget> QuantityMinusButton = nullptr;
 
-	/** Required control that increases the chosen quantity by one. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+	/** Control that increases the chosen quantity by one. Every screen of a station with recipes authors it. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<URpgCraftingActionButtonWidget> QuantityPlusButton = nullptr;
 
-	/** Required control that sets the quantity the chests can pay for and the target can hold. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+	/** Control that sets the quantity the chests can pay for and the target can hold. Every screen of a station with recipes authors it. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<URpgCraftingActionButtonWidget> QuantityMaxButton = nullptr;
+
+	/** Optional rune list of a station that offers rune work: one row per rune the player carries. Selecting a row selects the rune. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UCommonListView> RuneList = nullptr;
+
+	/** Optional material rows of the selected rune's next rank, with the counts in the connected chests. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UCommonListView> RuneUpgradeCostList = nullptr;
+
+	/** Optional large icon of the selected rune. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UCommonLazyImage> RuneIcon = nullptr;
+
+	/** Optional name and rank of the selected rune, such as "Brand II". */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UCommonTextBlock> RuneNameText = nullptr;
+
+	/** Optional place of the selected rune, such as "Socketed in Pickaxe". */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UCommonTextBlock> RuneLocationText = nullptr;
+
+	/** Optional summary of the selected rune's current rank. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UCommonTextBlock> RuneRankDescriptionText = nullptr;
+
+	/** Optional heading of the rank preview, such as "Next: Rank III", or "Highest rank reached". */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UCommonTextBlock> RuneNextRankTitleText = nullptr;
+
+	/** Optional summary of the selected rune's next rank; empty at the highest rank. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UCommonTextBlock> RuneNextRankDescriptionText = nullptr;
+
+	/** Optional reason the upgrade cannot run now; empty while it can. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UCommonTextBlock> RuneUpgradeStatusText = nullptr;
+
+	/** Optional salvage result or reason, such as "Returns 5 Rune Essence". */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UCommonTextBlock> RuneSalvageText = nullptr;
+
+	/** Optional upgrade control of the selected rune; enabled while the station would accept the upgrade. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgCraftingActionButtonWidget> RuneUpgradeButton = nullptr;
+
+	/** Optional salvage control of the selected rune; enabled while the station would accept the salvage. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<URpgCraftingActionButtonWidget> RuneSalvageButton = nullptr;
+
+	/** Optional container of the selected rune's details; collapsed while no rune is selected. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> RuneDetailsPanel = nullptr;
+
+	/** Optional hint shown while the station offers rune work and the player carries no rune. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> RuneEmptyHint = nullptr;
 
 	/** Names, icons and tier names for the category list and tier headers. Presentation data; null uses tag names. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Crafting|Presentation")
@@ -290,6 +353,7 @@ private:
 	void RefreshSelectedRecipePresentation();
 	void RefreshStationHeaderPresentation();
 	void RefreshCraftingActionAvailability();
+	void RefreshRunePresentation();
 	void StartOrderProgressRefresh();
 	void StopOrderProgressRefresh();
 	void RegisterCraftingActionBindings();
@@ -299,6 +363,7 @@ private:
 	TSubclassOf<UUserWidget> HandleGetRecipeEntryClass(UObject* Item) const;
 	bool HandleIsRecipeItemSelectable(UObject* Item) const;
 	void HandleRecipeSelectionChanged(UObject* SelectedItem);
+	void HandleRuneSelectionChanged(UObject* SelectedItem);
 	void HandleCategoryItemClicked(UObject* Item);
 	void HandleTierOptionClicked(UObject* Item);
 	void HandleTargetOptionClicked(UObject* Item);
@@ -327,6 +392,9 @@ private:
 
 	UFUNCTION()
 	void HandleSelectedRecipeDetailsChanged();
+
+	UFUNCTION()
+	void HandleRuneWorkChanged();
 
 	UFUNCTION()
 	void HandleSearchTextChanged(const FText& Text);

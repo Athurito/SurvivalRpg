@@ -17,34 +17,6 @@ class URpgInventoryManagerComponent;
 class URpgInventoryItemDefinition;
 class URpgWorldStorageKnowledgeComponent;
 
-/** One rune action of a station that offers rune work: upgrade or salvage one rune of the requester. UI read-only. */
-USTRUCT(BlueprintType)
-struct SURVIVALRPG_API FRpgRuneWorkActionView
-{
-	GENERATED_BODY()
-
-	/** Rune the action works on. */
-	UPROPERTY(BlueprintReadOnly, Category = "Crafting|Runes")
-	FRpgInventoryItemId RuneItemId;
-
-	/** True for an upgrade, false for a salvage. */
-	UPROPERTY(BlueprintReadOnly, Category = "Crafting|Runes")
-	bool bUpgrade = true;
-
-	/** Button text on two lines, for example "Upgrade Brand I to II" over "3 Rune Essence, 4 Ore", or "Brand III: highest rank". */
-	UPROPERTY(BlueprintReadOnly, Category = "Crafting|Runes")
-	FText Label;
-
-	/** True when the station would accept the action now. */
-	UPROPERTY(BlueprintReadOnly, Category = "Crafting|Runes")
-	bool bEnabled = false;
-
-	bool operator==(const FRpgRuneWorkActionView& Other) const
-	{
-		return RuneItemId == Other.RuneItemId && bUpgrade == Other.bUpgrade && Label.EqualTo(Other.Label) && bEnabled == Other.bEnabled;
-	}
-};
-
 /** Presentation state of one recipe row, derived from unlock state and the connected chests. UI read-only. */
 UENUM(BlueprintType)
 enum class ERpgCraftingRecipeState : uint8
@@ -457,8 +429,96 @@ protected:
 };
 
 /**
+ * One rune the requester carries, as a row of the rune list of a station that offers rune work, such as the
+ * Runenschrein. Derived from the requester's replicated inventory and the station's checks; UI read-only.
+ */
+UCLASS(BlueprintType, meta = (MVVMAllowedContextCreationType = "Manual"))
+class SURVIVALRPG_API URpgRuneWorkRuneViewModel : public UMVVMViewModelBase
+{
+	GENERATED_BODY()
+
+public:
+	/** Fills this row; the station view model calls it on every rebuild. */
+	void InitializeRune(
+		const FRpgInventoryItemId& InRuneItemId,
+		const FText& InDisplayName,
+		const TSoftObjectPtr<UTexture2D>& InIcon,
+		int32 InRank,
+		int32 InMaxRank,
+		const FText& InTitleText,
+		const FText& InLocationText,
+		bool bInSocketed,
+		bool bInCanUpgrade,
+		bool bInCanSalvage);
+
+	/** Persistent id of the rune item instance this row shows. */
+	const FRpgInventoryItemId& GetRuneItemId() const { return RuneItemId; }
+
+	/** Current rank, 1..3. */
+	int32 GetRank() const { return Rank; }
+
+	/** True while the rune sits in an item's socket. */
+	bool IsSocketed() const { return bSocketed; }
+
+	/** Name and rank, such as "Brand II". */
+	const FText& GetTitleText() const { return TitleText; }
+
+	/** Where the rune is, such as "Socketed in Pickaxe". */
+	const FText& GetLocationText() const { return LocationText; }
+
+	/** Icon of the rune, or null. */
+	const TSoftObjectPtr<UTexture2D>& GetIcon() const { return Icon; }
+
+protected:
+	/** Persistent id of the rune item instance. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Runes", meta = (AllowPrivateAccess = "true"))
+	FRpgInventoryItemId RuneItemId;
+
+	/** The rune's name, such as "Brand". */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Runes", meta = (AllowPrivateAccess = "true"))
+	FText DisplayName;
+
+	/** Name and rank, such as "Brand II". */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Runes", meta = (AllowPrivateAccess = "true"))
+	FText TitleText;
+
+	/** Optional icon read from the rune's item UIData. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Runes", meta = (AllowPrivateAccess = "true"))
+	TSoftObjectPtr<UTexture2D> Icon;
+
+	/** Current rank, 1..3. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Runes", meta = (AllowPrivateAccess = "true"))
+	int32 Rank = 1;
+
+	/** Highest rank of this rune, 1..3. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Runes", meta = (AllowPrivateAccess = "true"))
+	int32 MaxRank = 1;
+
+	/** Where the rune is, such as "Socketed in Pickaxe" or "Carried". */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Runes", meta = (AllowPrivateAccess = "true"))
+	FText LocationText;
+
+	/** True while the rune sits in an item's socket; socketed runes can be upgraded but not salvaged. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Runes", meta = (AllowPrivateAccess = "true"))
+	bool bSocketed = false;
+
+	/** True when the station would accept an upgrade now. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Runes", meta = (AllowPrivateAccess = "true"))
+	bool bCanUpgrade = false;
+
+	/** True at the highest rank. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Runes", meta = (AllowPrivateAccess = "true"))
+	bool bAtMaxRank = false;
+
+	/** True when the station would accept a salvage now. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Runes", meta = (AllowPrivateAccess = "true"))
+	bool bCanSalvage = false;
+};
+
+/**
  * Crafting screen model that observes one station and projects categories, recipes, the selected recipe, target chests
- * and the station's order for widgets. It reads replicated state only; commands go through the screen widget.
+ * and the station's order for widgets. At a station that offers rune work it also projects the requester's runes and the
+ * selected rune's next rank. It reads replicated state only; commands go through the screen widget.
  */
 UCLASS(BlueprintType)
 class SURVIVALRPG_API URpgCraftingStationViewModel : public UMVVMViewModelBase
@@ -472,20 +532,69 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Crafting|ViewModel")
 	void BindCraftingStation(URpgCraftingStationComponent* InStation, AActor* InRequestingActor);
 
-	/** Number of rune actions, two per rune of the requester (upgrade, then salvage); zero without rune work. */
+	/** True when the observed station offers rune work, so the screen shows the requester's runes. */
 	UFUNCTION(BlueprintPure, Category = "Crafting|Runes")
-	int32 GetRuneWorkActionCount() const { return RuneWorkActions.Num(); }
+	bool OffersRuneWork() const { return bOffersRuneWork; }
 
-	/** Button text of rune action ActionIndex, or empty. */
+	/** Rows of the runes the requester carries, sockets included, in inventory order; empty without rune work. */
 	UFUNCTION(BlueprintPure, Category = "Crafting|Runes")
-	FText GetRuneWorkActionLabel(int32 ActionIndex) const;
+	TArray<URpgRuneWorkRuneViewModel*> GetRuneRows() const;
 
-	/** True when rune action ActionIndex can run now. */
+	/** Selects the rune RuneItemId for the details. The selection follows the rune; when it leaves, the first rune is selected. */
+	UFUNCTION(BlueprintCallable, Category = "Crafting|Runes")
+	void SelectRune(FRpgInventoryItemId RuneItemId);
+
+	/** Id of the selected rune; invalid while the requester carries none. */
 	UFUNCTION(BlueprintPure, Category = "Crafting|Runes")
-	bool IsRuneWorkActionEnabled(int32 ActionIndex) const;
+	FRpgInventoryItemId GetSelectedRuneItemId() const { return SelectedRuneItemId; }
 
-	/** Rune action ActionIndex, or null. */
-	const FRpgRuneWorkActionView* FindRuneWorkAction(int32 ActionIndex) const;
+	/** Name and rank of the selected rune, such as "Brand II". */
+	UFUNCTION(BlueprintPure, Category = "Crafting|Runes")
+	FText GetSelectedRuneTitle() const { return SelectedRuneTitle; }
+
+	/** Icon of the selected rune, or null. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|Runes")
+	TSoftObjectPtr<UTexture2D> GetSelectedRuneIcon() const { return SelectedRuneIcon; }
+
+	/** Where the selected rune is, such as "Socketed in Pickaxe". */
+	UFUNCTION(BlueprintPure, Category = "Crafting|Runes")
+	FText GetSelectedRuneLocation() const { return SelectedRuneLocation; }
+
+	/** Summary of the selected rune's current rank. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|Runes")
+	FText GetSelectedRuneRankDescription() const { return SelectedRuneRankDescription; }
+
+	/** Heading of the rank preview, such as "Next: Rank III", or "Highest rank reached". */
+	UFUNCTION(BlueprintPure, Category = "Crafting|Runes")
+	FText GetSelectedRuneNextRankTitle() const { return SelectedRuneNextRankTitle; }
+
+	/** Summary of the selected rune's next rank; empty at the highest rank. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|Runes")
+	FText GetSelectedRuneNextRankDescription() const { return SelectedRuneNextRankDescription; }
+
+	/** Material rows of the next rank with the counts in the connected chests; empty at the highest rank. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|Runes")
+	TArray<URpgCraftingIngredientViewModel*> GetRuneUpgradeCosts() const;
+
+	/** Label of the upgrade action, such as "Upgrade to Rank III" or "Highest rank". */
+	UFUNCTION(BlueprintPure, Category = "Crafting|Runes")
+	FText GetRuneUpgradeActionText() const { return RuneUpgradeActionText; }
+
+	/** Why the upgrade cannot run now, such as "The connected chests lack materials"; empty while it can. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|Runes")
+	FText GetRuneUpgradeStatusText() const { return RuneUpgradeStatusText; }
+
+	/** True when the station would accept an upgrade of the selected rune now. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|Runes")
+	bool CanUpgradeSelectedRune() const { return bCanUpgradeSelectedRune; }
+
+	/** What salvaging the selected rune returns, or why it cannot, such as "Returns 5 Rune Essence". */
+	UFUNCTION(BlueprintPure, Category = "Crafting|Runes")
+	FText GetRuneSalvageText() const { return RuneSalvageText; }
+
+	/** True when the station would accept a salvage of the selected rune now. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|Runes")
+	bool CanSalvageSelectedRune() const { return bCanSalvageSelectedRune; }
 
 	/** Clears station bindings and UI lists. Filters and the catalog stay. */
 	UFUNCTION(BlueprintCallable, Category = "Crafting|ViewModel")
@@ -671,7 +780,7 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Crafting|ViewModel")
 	FRpgCraftingViewModelListChanged OnSelectedRecipeDetailsChanged;
 
-	/** Fired whenever the rune actions or whether the station offers rune work change. */
+	/** Fired whenever the rune rows, the selected rune or its details change. */
 	UPROPERTY(BlueprintAssignable, Category = "Crafting|Runes")
 	FRpgCraftingViewModelListChanged OnRuneWorkChanged;
 
@@ -682,13 +791,69 @@ protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Station", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<AActor> RequestingActor = nullptr;
 
-	/** True when the station offers rune work, so the screen shows the rune actions. */
+	/** True when the station offers rune work, so the screen shows the requester's runes. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Runes", meta = (AllowPrivateAccess = "true"))
 	bool bOffersRuneWork = false;
 
-	/** Upgrade and salvage actions for every rune of the requester, in inventory order. */
+	/** One row per rune the requester carries, in inventory order. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Runes", meta = (AllowPrivateAccess = "true"))
-	TArray<FRpgRuneWorkActionView> RuneWorkActions;
+	TArray<TObjectPtr<URpgRuneWorkRuneViewModel>> RuneRows;
+
+	/** True when the requester carries at least one rune; false drives the empty hint. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Runes", meta = (AllowPrivateAccess = "true"))
+	bool bHasRunes = false;
+
+	/** Selected rune; local UI state that follows the rune across rebuilds. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Runes", meta = (AllowPrivateAccess = "true"))
+	FRpgInventoryItemId SelectedRuneItemId;
+
+	/** Name and rank of the selected rune, such as "Brand II". */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Runes", meta = (AllowPrivateAccess = "true"))
+	FText SelectedRuneTitle;
+
+	/** Icon of the selected rune. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Runes", meta = (AllowPrivateAccess = "true"))
+	TSoftObjectPtr<UTexture2D> SelectedRuneIcon;
+
+	/** Where the selected rune is, such as "Socketed in Pickaxe". */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Runes", meta = (AllowPrivateAccess = "true"))
+	FText SelectedRuneLocation;
+
+	/** Summary of the selected rune's current rank. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Runes", meta = (AllowPrivateAccess = "true"))
+	FText SelectedRuneRankDescription;
+
+	/** Heading of the rank preview, such as "Next: Rank III", or "Highest rank reached". */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Runes", meta = (AllowPrivateAccess = "true"))
+	FText SelectedRuneNextRankTitle;
+
+	/** Summary of the next rank; empty at the highest rank. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Runes", meta = (AllowPrivateAccess = "true"))
+	FText SelectedRuneNextRankDescription;
+
+	/** Material rows of the next rank with the counts in the connected chests. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Runes", meta = (AllowPrivateAccess = "true"))
+	TArray<TObjectPtr<URpgCraftingIngredientViewModel>> RuneUpgradeCosts;
+
+	/** Label of the upgrade action. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Runes", meta = (AllowPrivateAccess = "true"))
+	FText RuneUpgradeActionText;
+
+	/** Why the upgrade cannot run now; empty while it can. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Runes", meta = (AllowPrivateAccess = "true"))
+	FText RuneUpgradeStatusText;
+
+	/** True when the station would accept an upgrade of the selected rune now. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Runes", meta = (AllowPrivateAccess = "true"))
+	bool bCanUpgradeSelectedRune = false;
+
+	/** What salvaging the selected rune returns, or why it cannot. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Runes", meta = (AllowPrivateAccess = "true"))
+	FText RuneSalvageText;
+
+	/** True when the station would accept a salvage of the selected rune now. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Runes", meta = (AllowPrivateAccess = "true"))
+	bool bCanSalvageSelectedRune = false;
 
 	/** Header title: the station's authored name, a generic title when it has none, or empty while unbound. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Crafting|Station", meta = (AllowPrivateAccess = "true"))
@@ -964,7 +1129,8 @@ private:
 	void RebuildSelectedRecipeDetails();
 	void RebuildOrderStrip();
 	void RebuildActionAvailability();
-	void RebuildRuneWork();
+	/** Rebuilds the rune rows and the selected rune's details; true when anything changed and OnRuneWorkChanged fired. */
+	bool RebuildRuneWork();
 	void BroadcastFields(TConstArrayView<UE::FieldNotification::FFieldId> Fields);
 	void HandleCraftingStationChanged(FGameplayTag Channel, const FRpgCraftingStationChangeMessage& Message);
 	void HandleRecipeUnlockChanged(FGameplayTag Channel, const struct FRpgRecipeUnlockChangeMessage& Message);

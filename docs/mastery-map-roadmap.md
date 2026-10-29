@@ -1,6 +1,6 @@
 # Mastery map roadmap
 
-Updated: 2026-10-28. Status: **In progress**; MST-07 is merged, MST-08a is in review.
+Updated: 2026-10-29. Status: **In progress**; MST-08a is merged, MST-08b is in review.
 
 This is the execution roadmap for the [mastery map implementation plan](mastery-map-implementation-plan.md): a zoomable shared harvesting mastery map, meaningful talent choices, and the rune loot/crafting/upgrade loop. The plan owns design, architecture, and detailed acceptance contracts; this roadmap owns task status, order, and the current handoff.
 
@@ -53,8 +53,8 @@ All dependencies below are within MST; every row also has the CMB scheduling gat
 | MST-07a | Persistent world recipe knowledge: carrying a rune teaches the world its base recipe without consuming it, and the Kiln crafts a new rank-I Brand | MST-06d | Merged (2026-10-28, `af0db4e0`) | [mastery-map-rune-recipes.md](mastery-map-rune-recipes.md), [PR #320](https://github.com/Athurito/SurvivalRpg/pull/320) |
 | MST-07b | Guaranteed reward claims with saved identity, configurable as a choice or a loot pool, granted at mastery milestones and claimed on the Character tab; Brand drops from vein and pine loot pools; a full inventory never loses a claim | MST-07a | Merged (2026-10-28, `17e4ea30`) | [mastery-map-rune-rewards.md](mastery-map-rune-rewards.md), [PR #321](https://github.com/Athurito/SurvivalRpg/pull/321) |
 | MST-07c | Guaranteed rewards when an eligible portal closes, for the instigator and the realm's participants, with one claim identity per completion | MST-07b | Merged (2026-10-28, `4c56a024`) | [mastery-map-portal-rewards.md](mastery-map-portal-rewards.md), [PR #322](https://github.com/Athurito/SurvivalRpg/pull/322) |
-| MST-08a | In-place rank II/III upgrades and salvage at the Runenschrein with rune essence; atomic costs, safe equipped-rune refresh and a plain Runes section on the station screen | MST-07c | In review | [mastery-map-rune-shrine.md](mastery-map-rune-shrine.md), [PR #323](https://github.com/Athurito/SurvivalRpg/pull/323) |
-| MST-08b | Integrated Runenschrein presentation: rune icons, rank preview and a screen of its own | MST-08a | Planned | — |
+| MST-08a | In-place rank II/III upgrades and salvage at the Runenschrein with rune essence; atomic costs, safe equipped-rune refresh and a plain Runes section on the station screen | MST-07c | Merged (2026-10-28, `621d0021`) | [mastery-map-rune-shrine.md](mastery-map-rune-shrine.md), [PR #323](https://github.com/Athurito/SurvivalRpg/pull/323) |
+| MST-08b | Integrated Runenschrein presentation: rune icons, rank preview and a screen of its own | MST-08a | In review | [mastery-map-rune-shrine-screen.md](mastery-map-rune-shrine-screen.md) |
 | MST-09a | Harvesting Echo, Kraftuebertrag and Runenfluss; bounded own-hit triggers and actual-overkill transfer | MST-08b | Planned | — |
 | MST-09b | Erntesprung, Durchschlag, Ausbreitung and remaining Nachwirkung choices; finite propagation and no duplicated work | MST-09a | Planned | — |
 | MST-09c | Totenarbeiter and Helfer; temporary workers, correct beneficiary/reward attribution, lifecycle and bounded triggers | MST-09b | Planned | — |
@@ -106,19 +106,20 @@ Playtests of merged MST steps that wait for the user's batch test. Remove a row 
 | MST-07b | [Playtest](mastery-map-rune-rewards.md#playtest): Harvesting level 3 shows a Brand reward on the Character tab, claiming adds a rune, a full inventory keeps the reward, veins and pines sometimes drop Brand, two players | Waiting for the user |
 | MST-07c | [Playtest](mastery-map-portal-rewards.md#playtest): closing the Root Grove portal in `Lvl_ResourceParity` after its boss gives every realm participant and the closer "Brand (Portal)", two players | Waiting for the user |
 | MST-08a | [Playtest](mastery-map-rune-shrine.md#playtest): the Runenschrein in `Lvl_HarvestPickaxe` salvages Brand into essence and upgrades it in place with essence, ore and charcoal, two players | Waiting for the user |
+| MST-08b | [Playtest](mastery-map-rune-shrine-screen.md#playtest): the Runenschrein opens its own screen with the rune list, rank preview, costs with chest counts, upgrade and salvage; the Kiln keeps the crafting screen, two players | Waiting for the user |
 
 ## Current handoff
 
 - **Active phase:** MST, started by the user on 2026-10-27 after CMB-01 to CMB-07 merged.
-- **Active task:** MST-08a, branch `claude/mst-08a-rune-upgrades`, [PR #323](https://github.com/Athurito/SurvivalRpg/pull/323); the report is [mastery-map-rune-shrine.md](mastery-map-rune-shrine.md).
-  - `URpgCraftingStationComponent` upgrades and salvages runes at stations with `bOffersRuneWork`; costs and outputs are `FRpgRuneRank::UpgradeCosts` and `SalvageOutputs`.
-  - `BP_CraftingStation_RuneShrine` stands beside the Kiln in `Lvl_HarvestPickaxe`; Brand's ranks cost and return `ID_RuneEssence`.
-- **Previous task:** MST-07c, merged on 2026-10-28 as `4c56a024` ([PR #322](https://github.com/Athurito/SurvivalRpg/pull/322)); the report is [mastery-map-portal-rewards.md](mastery-map-portal-rewards.md).
+- **Active task:** MST-08b, branch `claude/mst-08b-rune-shrine-screen`; the report is [mastery-map-rune-shrine-screen.md](mastery-map-rune-shrine-screen.md).
+  - A station opens the screen its `URpgCraftingStationComponent::ScreenTag` names; the Runenschrein opens `UI.Screen.RuneShrine` (`CUI_RuneShrine`).
+  - `URpgCraftingStationViewModel` projects the rune rows (`URpgRuneWorkRuneViewModel`), the selection and the rank preview; `URpgCraftingStationWidget` fills the rune widgets and sends upgrade and salvage for the selected rune.
+- **Previous task:** MST-08a, merged on 2026-10-28 as `621d0021` ([PR #323](https://github.com/Athurito/SurvivalRpg/pull/323)); the report is [mastery-map-rune-shrine.md](mastery-map-rune-shrine.md).
 - **User decisions (2026-10-28):** rune recipe knowledge is shared per world, as the plan proposed. Guaranteed rewards are configurable, from mastery milestones and from closing portals, and runes also drop from loot pools. A portal reward goes to the closer and everyone who was in the realm, once per completion. Rune essence from salvage pays for rank upgrades together with ore and charcoal (proposal accepted); MST-08 is split into MST-08a (transactions) and MST-08b (presentation). MST-06 is split into MST-06a, MST-06b and MST-06c, and Brand works as recorded in the [MST-06a report](mastery-map-socket-ui.md#user-decisions-2026-10-28): the rune itself lights resources, Anhaltende Macht lengthens and refreshes the burn, Entladung releases it at once.
 - **User decisions (2026-10-27):**
   - One map for every tree. After the MST-03c review, MST-10a and MST-10b come before MST-04, with Combat as the second cluster, and the game window has a minimum size of 1280 x 720.
   - Combat talents as proposed: Kampfrhythmus (+10 % base damage), then Konter (perfect block +50 % stagger damage, more stamina back) or Bollwerk (block 25 % less stamina, 15 % more damage stopped). Combat mastery XP comes from kills.
   - For MST-03b, the retired tool trees and powers and the Impact talents as recorded in its report.
-- **Next MST action:** after MST-08a merges, MST-08b: the integrated Runenschrein presentation.
+- **Next MST action:** after MST-08b merges, MST-09a: Harvesting Echo, Kraftuebertrag and Runenfluss.
 - **Rune contract:** rechecked for MST-05. CMB-07's engraved weapon runes and the combat Echo stay unchanged; harvesting runes are separate rune items in `GF_Harvesting_Magic`.
 - **Later content decisions:** production XP and cost curves and the starter and guaranteed-reward pacing remain authored tuning. Rune drop chances, milestone levels and the portal reward are authored content; the 2 % Brand drop is first tuning.

@@ -154,14 +154,9 @@ bool FRpgInventoryUIRequiredBindWidgetsTest::RunTest(
 		{ URpgBaseTerminalWidget::StaticClass(), TEXT("BaseResourceList") },
 		{ URpgInventorySpatialPaneWidget::StaticClass(), TEXT("SpatialGrid") },
 		{ URpgBaseResourceListWidget::StaticClass(), TEXT("ResourceList") },
-		{ URpgCraftingActionButtonWidget::StaticClass(), TEXT("Text") },
-		{ URpgCraftingStationWidget::StaticClass(), TEXT("RecipeList") },
-		{ URpgCraftingStationWidget::StaticClass(), TEXT("IngredientList") },
-		{ URpgCraftingStationWidget::StaticClass(), TEXT("CraftButton") },
-		{ URpgCraftingStationWidget::StaticClass(), TEXT("PauseButton") },
-		{ URpgCraftingStationWidget::StaticClass(), TEXT("QuantityMinusButton") },
-		{ URpgCraftingStationWidget::StaticClass(), TEXT("QuantityPlusButton") },
-		{ URpgCraftingStationWidget::StaticClass(), TEXT("QuantityMaxButton") }
+		// The crafting presenter's recipe controls are optional, so a rune-only station screen can omit them;
+		// SurvivalRpg.Inventory.UI.Crafting.ScreenContract checks that the crafting screen authors them.
+		{ URpgCraftingActionButtonWidget::StaticClass(), TEXT("Text") }
 	};
 
 	for (const FRequiredWidgetProperty& Required :

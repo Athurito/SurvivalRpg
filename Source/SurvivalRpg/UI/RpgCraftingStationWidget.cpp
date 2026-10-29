@@ -24,6 +24,7 @@
 #include "TimerManager.h"
 
 #if WITH_EDITOR
+#include "Blueprint/WidgetTree.h"
 #include "Editor/WidgetCompilerLog.h"
 #endif
 
@@ -96,16 +97,17 @@ void URpgCraftingStationWidget::ValidateCompiledDefaults(
 {
 	Super::ValidateCompiledDefaults(CompileLog);
 
+	// ValidateCompiledWidgetTree requires both rows when the screen authors their buttons.
 	ValidateCommonInputActionRow(
 		CompileLog,
 		CraftInputAction,
 		LOCTEXT("CraftInputActionLabel", "CraftInputAction"),
-		/*bRequired=*/ true);
+		/*bRequired=*/ false);
 	ValidateCommonInputActionRow(
 		CompileLog,
 		TogglePauseInputAction,
 		LOCTEXT("TogglePauseInputActionLabel", "TogglePauseInputAction"),
-		/*bRequired=*/ true);
+		/*bRequired=*/ false);
 	ValidateCommonInputActionRow(
 		CompileLog,
 		StopOrderInputAction,
@@ -118,6 +120,23 @@ void URpgCraftingStationWidget::ValidateCompiledDefaults(
 }
 
 #endif
+
+void URpgCraftingStationWidget::ValidateCompiledWidgetTree(
+	const UWidgetTree& BlueprintWidgetTree,
+	IWidgetCompilerLog& CompileLog) const
+{
+	Super::ValidateCompiledWidgetTree(BlueprintWidgetTree, CompileLog);
+
+	// A recipe screen needs the input rows of its order controls; a rune-only screen authors neither.
+	if (BlueprintWidgetTree.FindWidget(TEXT("CraftButton")) && !IsActionRowValid(CraftInputAction))
+	{
+		CompileLog.Error(LOCTEXT("CraftInputActionRequired", "CraftInputAction is required while the screen authors CraftButton."));
+	}
+	if (BlueprintWidgetTree.FindWidget(TEXT("PauseButton")) && !IsActionRowValid(TogglePauseInputAction))
+	{
+		CompileLog.Error(LOCTEXT("TogglePauseInputActionRequired", "TogglePauseInputAction is required while the screen authors PauseButton."));
+	}
+}
 
 void URpgCraftingStationWidget::NativeOnInitialized()
 {
@@ -210,6 +229,10 @@ UWidget* URpgCraftingStationWidget::NativeGetDesiredFocusTarget() const
 	if (RecipeList && RecipeList->GetNumItems() > 0)
 	{
 		return RecipeList;
+	}
+	if (RuneList && RuneList->GetNumItems() > 0)
+	{
+		return RuneList;
 	}
 	return Super::NativeGetDesiredFocusTarget();
 }
@@ -339,22 +362,23 @@ FText URpgCraftingStationWidget::ResolveQuickTransferDisplayName() const
 	return Super::ResolveQuickTransferDisplayName();
 }
 
-void URpgCraftingStationWidget::RequestRuneWorkAction(const int32 ActionIndex)
+void URpgCraftingStationWidget::RequestUpgradeSelectedRune()
 {
-	const FRpgRuneWorkActionView* Action = CraftingViewModel ? CraftingViewModel->FindRuneWorkAction(ActionIndex) : nullptr;
-	URpgCraftingStationComponent* Station = CraftingStation;
 	URpgInventoryUiActionComponent* UiActions = ResolveInventoryUiActionComponent();
-	if (!bCraftingContextBound || !Action || !Action->bEnabled || !Station || !UiActions)
+	if (bCraftingContextBound && CraftingStation && CraftingViewModel && UiActions &&
+		CraftingViewModel->CanUpgradeSelectedRune())
 	{
-		return;
+		UiActions->RequestUpgradeRune(CraftingStation, CraftingViewModel->GetSelectedRuneItemId());
 	}
-	if (Action->bUpgrade)
+}
+
+void URpgCraftingStationWidget::RequestSalvageSelectedRune()
+{
+	URpgInventoryUiActionComponent* UiActions = ResolveInventoryUiActionComponent();
+	if (bCraftingContextBound && CraftingStation && CraftingViewModel && UiActions &&
+		CraftingViewModel->CanSalvageSelectedRune())
 	{
-		UiActions->RequestUpgradeRune(Station, Action->RuneItemId);
-	}
-	else
-	{
-		UiActions->RequestSalvageRune(Station, Action->RuneItemId);
+		UiActions->RequestSalvageRune(CraftingStation, CraftingViewModel->GetSelectedRuneItemId());
 	}
 }
 
@@ -514,7 +538,8 @@ bool URpgCraftingStationWidget::IsPayloadCoherent(
 	const URpgCraftingStationScreenPayload* Payload) const
 {
 	return Payload &&
-		Payload->ScreenTag == RpgGameplayTags::UI_Screen_Crafting &&
+		Payload->CraftingStation &&
+		Payload->ScreenTag == Payload->CraftingStation->GetScreenTag() &&
 		Payload->PlayerInventory &&
 		Payload->PrimaryInventory == Payload->PlayerInventory &&
 		Payload->CraftingStation &&
@@ -614,6 +639,7 @@ bool URpgCraftingStationWidget::BindCraftingContext()
 	RefreshRecipeItems();
 	RefreshSelectedRecipePresentation();
 	RefreshStationHeaderPresentation();
+	RefreshRunePresentation();
 	StartOrderProgressRefresh();
 	++CraftingPresentationBindGeneration;
 	return true;
@@ -651,7 +677,9 @@ void URpgCraftingStationWidget::ResetCraftingContext()
 		CategoryList,
 		TierFilterList,
 		TargetStorageList,
-		PreviewStatList
+		PreviewStatList,
+		RuneList,
+		RuneUpgradeCostList
 	};
 	for (UCommonListView* List : Lists)
 	{
@@ -670,6 +698,7 @@ void URpgCraftingStationWidget::ResetCraftingContext()
 	RefreshSelectedRecipePresentation();
 	RefreshStationHeaderPresentation();
 	RefreshCraftingActionAvailability();
+	RefreshRunePresentation();
 }
 
 void URpgCraftingStationWidget::RefreshStationHeaderPresentation()
@@ -722,6 +751,9 @@ void URpgCraftingStationWidget::BindViewModelDelegates()
 		CraftingViewModel->OnSelectedRecipeDetailsChanged.AddUniqueDynamic(
 			this,
 			&ThisClass::HandleSelectedRecipeDetailsChanged);
+		CraftingViewModel->OnRuneWorkChanged.AddUniqueDynamic(
+			this,
+			&ThisClass::HandleRuneWorkChanged);
 	}
 }
 
@@ -741,6 +773,9 @@ void URpgCraftingStationWidget::UnbindViewModelDelegates()
 		CraftingViewModel->OnSelectedRecipeDetailsChanged.RemoveDynamic(
 			this,
 			&ThisClass::HandleSelectedRecipeDetailsChanged);
+		CraftingViewModel->OnRuneWorkChanged.RemoveDynamic(
+			this,
+			&ThisClass::HandleRuneWorkChanged);
 	}
 }
 
@@ -759,6 +794,24 @@ void URpgCraftingStationWidget::BindAuthoredControlEvents()
 		RecipeList->OnIsItemSelectableOrNavigable().BindUObject(
 			this,
 			&ThisClass::HandleIsRecipeItemSelectable);
+	}
+	if (RuneList)
+	{
+		RuneList->OnItemSelectionChanged().AddUObject(
+			this,
+			&ThisClass::HandleRuneSelectionChanged);
+	}
+	if (RuneUpgradeButton)
+	{
+		RuneUpgradeButton->OnClicked().AddUObject(
+			this,
+			&ThisClass::RequestUpgradeSelectedRune);
+	}
+	if (RuneSalvageButton)
+	{
+		RuneSalvageButton->OnClicked().AddUObject(
+			this,
+			&ThisClass::RequestSalvageSelectedRune);
 	}
 	if (CategoryList)
 	{
@@ -848,6 +901,10 @@ void URpgCraftingStationWidget::UnbindAuthoredControlEvents()
 		RecipeList->OnGetEntryClassForItem().Unbind();
 		RecipeList->OnIsItemSelectableOrNavigable().Unbind();
 	}
+	if (RuneList)
+	{
+		RuneList->OnItemSelectionChanged().RemoveAll(this);
+	}
 	UCommonListView* ClickLists[] = {
 		CategoryList,
 		TierFilterList,
@@ -876,7 +933,9 @@ void URpgCraftingStationWidget::UnbindAuthoredControlEvents()
 		TargetStorageButton,
 		QuantityMinusButton,
 		QuantityPlusButton,
-		QuantityMaxButton
+		QuantityMaxButton,
+		RuneUpgradeButton,
+		RuneSalvageButton
 	};
 	for (URpgCraftingActionButtonWidget* Button : Buttons)
 	{
@@ -1011,6 +1070,72 @@ void URpgCraftingStationWidget::RefreshSelectedRecipePresentation()
 	RefreshCategoryItems();
 	RefreshTierOptionItems();
 	RefreshCraftingActionAvailability();
+}
+
+void URpgCraftingStationWidget::RefreshRunePresentation()
+{
+	const URpgCraftingStationViewModel* ViewModel = bCraftingContextBound ? CraftingViewModel.Get() : nullptr;
+	const TArray<URpgRuneWorkRuneViewModel*> Rows =
+		ViewModel ? ViewModel->GetRuneRows() : TArray<URpgRuneWorkRuneViewModel*>();
+	ReconcileListItems(RuneList, Rows);
+	const FRpgInventoryItemId SelectedId = ViewModel ? ViewModel->GetSelectedRuneItemId() : FRpgInventoryItemId();
+	SyncListSelection(RuneList, Rows, [&SelectedId](const URpgRuneWorkRuneViewModel* Row)
+	{
+		return Row->GetRuneItemId() == SelectedId;
+	});
+
+	const bool bHasSelection = ViewModel && SelectedId.IsValid();
+	ReconcileListItems(
+		RuneUpgradeCostList,
+		bHasSelection ? ViewModel->GetRuneUpgradeCosts() : TArray<URpgCraftingIngredientViewModel*>());
+	auto SetText = [bHasSelection](UCommonTextBlock* Text, const FText& Value)
+	{
+		if (Text)
+		{
+			Text->SetText(bHasSelection ? Value : FText::GetEmpty());
+		}
+	};
+	SetText(RuneNameText, ViewModel ? ViewModel->GetSelectedRuneTitle() : FText::GetEmpty());
+	SetText(RuneLocationText, ViewModel ? ViewModel->GetSelectedRuneLocation() : FText::GetEmpty());
+	SetText(RuneRankDescriptionText, ViewModel ? ViewModel->GetSelectedRuneRankDescription() : FText::GetEmpty());
+	SetText(RuneNextRankTitleText, ViewModel ? ViewModel->GetSelectedRuneNextRankTitle() : FText::GetEmpty());
+	SetText(RuneNextRankDescriptionText, ViewModel ? ViewModel->GetSelectedRuneNextRankDescription() : FText::GetEmpty());
+	SetText(RuneUpgradeStatusText, ViewModel ? ViewModel->GetRuneUpgradeStatusText() : FText::GetEmpty());
+	SetText(RuneSalvageText, ViewModel ? ViewModel->GetRuneSalvageText() : FText::GetEmpty());
+	if (RuneIcon)
+	{
+		const TSoftObjectPtr<UTexture2D> Icon = bHasSelection ? ViewModel->GetSelectedRuneIcon() : TSoftObjectPtr<UTexture2D>();
+		if (!Icon.IsNull())
+		{
+			RuneIcon->SetBrushFromLazyTexture(Icon, /*bMatchSize=*/ true);
+		}
+		else
+		{
+			RuneIcon->SetBrushFromTexture(nullptr);
+		}
+	}
+	if (RuneUpgradeButton)
+	{
+		RuneUpgradeButton->SetIsEnabled(bHasSelection && ViewModel->CanUpgradeSelectedRune());
+		RuneUpgradeButton->SetCraftButtonText(
+			bHasSelection ? ViewModel->GetRuneUpgradeActionText() : NSLOCTEXT("RpgCrafting", "RuneUpgradeDefault", "Upgrade"));
+	}
+	if (RuneSalvageButton)
+	{
+		RuneSalvageButton->SetIsEnabled(bHasSelection && ViewModel->CanSalvageSelectedRune());
+		RuneSalvageButton->SetCraftButtonText(NSLOCTEXT("RpgCrafting", "RuneSalvageAction", "Salvage"));
+	}
+	if (RuneDetailsPanel)
+	{
+		RuneDetailsPanel->SetVisibility(bHasSelection ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+	}
+	if (RuneEmptyHint)
+	{
+		RuneEmptyHint->SetVisibility(
+			ViewModel && ViewModel->OffersRuneWork() && Rows.IsEmpty()
+				? ESlateVisibility::HitTestInvisible
+				: ESlateVisibility::Collapsed);
+	}
 }
 
 void URpgCraftingStationWidget::RefreshCraftingActionAvailability()
@@ -1350,6 +1475,20 @@ void URpgCraftingStationWidget::HandleTierOptionsChanged()
 void URpgCraftingStationWidget::HandleSelectedRecipeDetailsChanged()
 {
 	RefreshSelectedRecipePresentation();
+}
+
+void URpgCraftingStationWidget::HandleRuneWorkChanged()
+{
+	RefreshRunePresentation();
+}
+
+void URpgCraftingStationWidget::HandleRuneSelectionChanged(UObject* SelectedItem)
+{
+	const URpgRuneWorkRuneViewModel* Row = Cast<URpgRuneWorkRuneViewModel>(SelectedItem);
+	if (bCraftingContextBound && CraftingViewModel && Row)
+	{
+		CraftingViewModel->SelectRune(Row->GetRuneItemId());
+	}
 }
 
 void URpgCraftingStationWidget::HandlePlayerInventoryPaneNavigationPanelsChanged()

@@ -165,10 +165,13 @@ bool FRpgInventoryScreenFamilyClosureTest::RunTest(
 			"CUI_BaseTerminalSpatial.CUI_BaseTerminalSpatial_C"),
 		TEXT(
 			"/Game/SurvivalRpg/Crafting/UI/"
-			"CUI_CraftingStationSpatial.CUI_CraftingStationSpatial_C")
+			"CUI_CraftingStationSpatial.CUI_CraftingStationSpatial_C"),
+		TEXT(
+			"/Game/SurvivalRpg/Crafting/UI/"
+			"CUI_RuneShrine.CUI_RuneShrine_C")
 	};
 	TestEqual(
-		TEXT("Exactly four authored InventoryInteraction screens exist"),
+		TEXT("Exactly five authored InventoryInteraction screens exist"),
 		ProjectScreenClassPaths.Num(),
 		ExpectedScreenClassPaths.Num());
 	for (const FString& ExpectedClassPath : ExpectedScreenClassPaths)
@@ -228,6 +231,12 @@ bool FRpgInventoryScreenFamilyClosureTest::RunTest(
 			TEXT(
 				"/Game/SurvivalRpg/Crafting/UI/"
 				"CUI_CraftingStationSpatial.CUI_CraftingStationSpatial_C")
+		},
+		{
+			FGameplayTag::RequestGameplayTag(TEXT("UI.Screen.RuneShrine"), false),
+			TEXT(
+				"/Game/SurvivalRpg/Crafting/UI/"
+				"CUI_RuneShrine.CUI_RuneShrine_C")
 		}
 	};
 	for (const FExpectedSemanticRoute& ExpectedRoute : ExpectedRoutes)

@@ -163,6 +163,16 @@ void URpgRuneAutomationTestRuneDefinition::SetRankWork(
 	}
 }
 
+void URpgRuneAutomationTestRuneDefinition::SetRankDescription(const int32 Rank, const FText& Description)
+{
+	URpgInventoryFragment_Rune* Rune =
+		RpgRuneAutomationTestTypes::FindRune(GetMutableDefault<URpgRuneAutomationTestRuneDefinition>());
+	if (Rune && Rune->Ranks.IsValidIndex(Rank - 1))
+	{
+		Rune->Ranks[Rank - 1].Description = Description;
+	}
+}
+
 URpgRuneAutomationTestOtherRuneDefinition::URpgRuneAutomationTestOtherRuneDefinition(
 	const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)

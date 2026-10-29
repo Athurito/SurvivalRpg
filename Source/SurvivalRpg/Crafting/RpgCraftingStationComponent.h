@@ -449,6 +449,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Crafting|Runes")
 	bool OffersRuneWork() const { return bOffersRuneWork; }
 
+	/** UI.Screen tag of the screen this station opens: the authored ScreenTag, or UI.Screen.Crafting when it is empty. */
+	UFUNCTION(BlueprintPure, Category = "Crafting|Display")
+	FGameplayTag GetScreenTag() const;
+
 	/** Checks an upgrade of the requester's rune RuneItemId by one rank without changing anything. Valid on clients for display. */
 	ERpgRuneWorkResult EvaluateRuneUpgrade(const AActor* RequestingActor, FRpgInventoryItemId RuneItemId) const;
 
@@ -496,6 +500,14 @@ protected:
 	/** Names of this station's units and actions, such as "run" and "Start smelting" for a kiln. Empty texts fall back to generic ones. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Display")
 	FRpgCraftingStationPresentation Presentation;
+
+	/**
+	 * Screen the owning client opens when a player uses this station, as a tag of the UI screen registry, such as the
+	 * Runenschrein's rune screen (UI.Screen.RuneShrine). Its widget must be a crafting station screen. Designer data on the
+	 * station class; not replicated. Empty opens the crafting screen (UI.Screen.Crafting).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Display", meta = (Categories = "UI.Screen"))
+	FGameplayTag ScreenTag;
 
 	/** Data-driven recipe list offered by this station. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crafting|Recipes")
