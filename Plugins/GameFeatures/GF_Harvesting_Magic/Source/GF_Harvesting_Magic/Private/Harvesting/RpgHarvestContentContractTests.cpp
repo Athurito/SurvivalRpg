@@ -717,6 +717,8 @@ bool FRpgHarvestRuneWorkContractTest::RunTest(const FString& Parameters)
 	const URpgCraftingStationComponent* Shrine =
 		ShrineClass ? GetDefault<ARpgCraftingStationActor>(ShrineClass)->GetCraftingStationComponent() : nullptr;
 	TestTrue(TEXT("The Runenschrein offers rune work"), Shrine && Shrine->OffersRuneWork());
+	TestTrue(TEXT("The Runenschrein opens its rune screen"), Shrine &&
+		Shrine->GetScreenTag() == FGameplayTag::RequestGameplayTag(TEXT("UI.Screen.RuneShrine"), false));
 	return true;
 }
 

@@ -124,15 +124,17 @@ void ARpgPlayerController::ClientOpenCraftingInteraction_Implementation(AActor* 
 		return;
 	}
 
+	// Each station names its screen, so a Runenschrein opens its rune screen and a kiln the crafting screen.
+	const FGameplayTag ScreenTag = CraftingStation->GetScreenTag();
 	URpgCraftingStationScreenPayload* Payload = NewObject<URpgCraftingStationScreenPayload>(this);
-	Payload->ScreenTag = RpgGameplayTags::UI_Screen_Crafting;
+	Payload->ScreenTag = ScreenTag;
 	Payload->PrimaryInventory = PlayerInventory;
 	Payload->ContextActor = CraftingActor;
 	Payload->ContextComponent = CraftingStation;
 	Payload->PlayerInventory = PlayerInventory;
 	Payload->CraftingStation = CraftingStation;
 	Payload->RequestingActor = GetPawn();
-	URpgUIScreenBlueprintLibrary::OpenUIScreen(this, RpgGameplayTags::UI_Screen_Crafting, Payload);
+	URpgUIScreenBlueprintLibrary::OpenUIScreen(this, ScreenTag, Payload);
 }
 
 void ARpgPlayerController::ClientOpenBaseStorageInteraction_Implementation(

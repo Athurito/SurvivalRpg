@@ -438,6 +438,33 @@ void URpgCraftingIngredientViewModel::InitializeIngredient(TSubclassOf<URpgInven
 	BroadcastChanges(*this, Changes);
 }
 
+void URpgRuneWorkRuneViewModel::InitializeRune(
+	const FRpgInventoryItemId& InRuneItemId,
+	const FText& InDisplayName,
+	const TSoftObjectPtr<UTexture2D>& InIcon,
+	const int32 InRank,
+	const int32 InMaxRank,
+	const FText& InTitleText,
+	const FText& InLocationText,
+	const bool bInSocketed,
+	const bool bInCanUpgrade,
+	const bool bInCanSalvage)
+{
+	FFieldChanges Changes;
+	RPG_CRAFTING_SET(Changes, RuneItemId, InRuneItemId);
+	RPG_CRAFTING_SET(Changes, DisplayName, InDisplayName);
+	RPG_CRAFTING_SET(Changes, TitleText, InTitleText);
+	RPG_CRAFTING_SET(Changes, Icon, InIcon);
+	RPG_CRAFTING_SET(Changes, Rank, InRank);
+	RPG_CRAFTING_SET(Changes, MaxRank, InMaxRank);
+	RPG_CRAFTING_SET(Changes, LocationText, InLocationText);
+	RPG_CRAFTING_SET(Changes, bSocketed, bInSocketed);
+	RPG_CRAFTING_SET(Changes, bCanUpgrade, bInCanUpgrade);
+	RPG_CRAFTING_SET(Changes, bAtMaxRank, InRank >= InMaxRank);
+	RPG_CRAFTING_SET(Changes, bCanSalvage, bInCanSalvage);
+	BroadcastChanges(*this, Changes);
+}
+
 void URpgCraftingOutputViewModel::InitializeOutput(TSubclassOf<URpgInventoryItemDefinition> InItemDefinition, int32 InOutputCount)
 {
 	FFieldChanges Changes;
@@ -659,6 +686,7 @@ void URpgCraftingStationViewModel::UnbindCraftingStation()
 	RebuildStationState();
 	RebuildRecipeList();
 	RebuildSelectedRecipeDetails();
+	RebuildRuneWork();
 }
 
 void URpgCraftingStationViewModel::SetPresentationCatalog(URpgCraftingCategoryCatalog* InCatalog)
@@ -2047,50 +2075,73 @@ void URpgCraftingStationViewModel::HandleInventoryChanged(FGameplayTag Channel, 
 	}
 }
 
-FText URpgCraftingStationViewModel::GetRuneWorkActionLabel(const int32 ActionIndex) const
+TArray<URpgRuneWorkRuneViewModel*> URpgCraftingStationViewModel::GetRuneRows() const
 {
-	const FRpgRuneWorkActionView* Action = FindRuneWorkAction(ActionIndex);
-	return Action ? Action->Label : FText::GetEmpty();
+	return TArray<URpgRuneWorkRuneViewModel*>(RuneRows);
 }
 
-bool URpgCraftingStationViewModel::IsRuneWorkActionEnabled(const int32 ActionIndex) const
+TArray<URpgCraftingIngredientViewModel*> URpgCraftingStationViewModel::GetRuneUpgradeCosts() const
 {
-	const FRpgRuneWorkActionView* Action = FindRuneWorkAction(ActionIndex);
-	return Action && Action->bEnabled;
+	return TArray<URpgCraftingIngredientViewModel*>(RuneUpgradeCosts);
 }
 
-const FRpgRuneWorkActionView* URpgCraftingStationViewModel::FindRuneWorkAction(const int32 ActionIndex) const
+void URpgCraftingStationViewModel::SelectRune(const FRpgInventoryItemId RuneItemId)
 {
-	return RuneWorkActions.IsValidIndex(ActionIndex) ? &RuneWorkActions[ActionIndex] : nullptr;
+	if (RuneItemId == SelectedRuneItemId ||
+		!RuneRows.ContainsByPredicate([&RuneItemId](const URpgRuneWorkRuneViewModel* Row)
+		{
+			return Row && Row->GetRuneItemId() == RuneItemId;
+		}))
+	{
+		return;
+	}
+	SelectedRuneItemId = RuneItemId;
+	UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(SelectedRuneItemId);
+	// Runes with equal details change no field, but the list still has to follow the selection.
+	if (!RebuildRuneWork())
+	{
+		OnRuneWorkChanged.Broadcast();
+	}
 }
 
-void URpgCraftingStationViewModel::RebuildRuneWork()
+bool URpgCraftingStationViewModel::RebuildRuneWork()
 {
 	const bool bNewOffersRuneWork = ObservedStation && ObservedStation->OffersRuneWork();
-	TArray<FRpgRuneWorkActionView> NewActions;
 	const URpgInventoryManagerComponent* Inventory =
 		bNewOffersRuneWork ? URpgCraftingStationComponent::FindRequestingPlayerInventory(RequestingActor) : nullptr;
+
+	static const TCHAR* RankNumerals[] = {TEXT("I"), TEXT("II"), TEXT("III")};
+	auto Numeral = [](const int32 Rank)
+	{
+		return FText::FromString(RankNumerals[FMath::Clamp(Rank, 1, UE_ARRAY_COUNT(RankNumerals)) - 1]);
+	};
+
+	// The item each socketed rune sits in, for the location line.
+	TMap<const URpgInventoryItemInstance*, const URpgInventoryItemInstance*> SocketHosts;
 	if (Inventory)
 	{
-		static const TCHAR* RankNumerals[] = {TEXT("I"), TEXT("II"), TEXT("III")};
-		auto Numeral = [](const int32 Rank)
+		for (const URpgInventoryItemInstance* Item : Inventory->GetAllItems())
 		{
-			return FText::FromString(RankNumerals[FMath::Clamp(Rank, 1, UE_ARRAY_COUNT(RankNumerals)) - 1]);
-		};
-		auto ItemName = [](const TSubclassOf<URpgInventoryItemDefinition> Definition)
-		{
-			return Definition ? GetDefault<URpgInventoryItemDefinition>(Definition)->DisplayName : FText::GetEmpty();
-		};
-		auto ListItems = [&ItemName](const auto& Entries)
-		{
-			TArray<FText> Parts;
-			for (const auto& Entry : Entries)
+			for (const URpgInventoryItemInstance* Socketed : Item ? Inventory->GetSocketedItems(Item) : TArray<URpgInventoryItemInstance*>())
 			{
-				Parts.Add(FText::Format(NSLOCTEXT("RpgCraftingViewModels", "RuneWorkItem", "{0} {1}"), Entry.Count, ItemName(Entry.ItemDefinition)));
+				SocketHosts.Add(Socketed, Item);
 			}
-			return Parts.IsEmpty() ? NSLOCTEXT("RpgCraftingViewModels", "RuneWorkNothing", "nothing") : FText::Join(FText::FromString(TEXT(", ")), Parts);
-		};
+		}
+	}
 
+	/** Rank data of one row, kept for the details of the selected rune. */
+	struct FRuneSource
+	{
+		const URpgInventoryFragment_Rune* Rune = nullptr;
+		int32 Rank = 1;
+		ERpgRuneWorkResult Upgrade = ERpgRuneWorkResult::NotOffered;
+		ERpgRuneWorkResult Salvage = ERpgRuneWorkResult::NotOffered;
+		FText HostName;
+	};
+	TArray<TObjectPtr<URpgRuneWorkRuneViewModel>> NewRows;
+	TArray<FRuneSource> Sources;
+	if (Inventory)
+	{
 		for (const FRpgInventoryEntryView& Entry : Inventory->GetAllEntries())
 		{
 			const URpgInventoryFragment_Rune* Rune = URpgInventoryFragment_Rune::FindRuneOfItem(Entry.Instance);
@@ -2098,51 +2149,145 @@ void URpgCraftingStationViewModel::RebuildRuneWork()
 			{
 				continue;
 			}
-			const int32 Rank = Entry.Instance->GetRuneRank();
-			const FText RuneName = ItemName(Entry.Instance->GetItemDef());
+			FRuneSource& Source = Sources.AddDefaulted_GetRef();
+			Source.Rune = Rune;
+			Source.Rank = FMath::Clamp(Entry.Instance->GetRuneRank(), 1, Rune->GetMaxRank());
+			Source.Upgrade = ObservedStation->EvaluateRuneUpgrade(RequestingActor, Entry.ItemId);
+			Source.Salvage = ObservedStation->EvaluateRuneSalvage(RequestingActor, Entry.ItemId);
+			const URpgInventoryItemInstance* const* Host = SocketHosts.Find(Entry.Instance.Get());
+			Source.HostName = Host && *Host ? GetItemDisplayName((*Host)->GetItemDef()) : FText::GetEmpty();
 
-			FRpgRuneWorkActionView& Upgrade = NewActions.AddDefaulted_GetRef();
-			Upgrade.RuneItemId = Entry.ItemId;
-			Upgrade.bUpgrade = true;
-			const ERpgRuneWorkResult UpgradeResult = ObservedStation->EvaluateRuneUpgrade(RequestingActor, Entry.ItemId);
-			const FRpgRuneRank* NextRank = Rune->FindRank(Rank + 1);
-			Upgrade.Label = NextRank
-				? FText::Format(
-					NSLOCTEXT("RpgCraftingViewModels", "RuneWorkUpgrade", "Upgrade {0} {1} to {2}\n{3}"),
-					RuneName, Numeral(Rank), Numeral(Rank + 1), ListItems(NextRank->UpgradeCosts))
-				: FText::Format(NSLOCTEXT("RpgCraftingViewModels", "RuneWorkMaxRank", "{0} {1}: highest rank"), RuneName, Numeral(Rank));
-			Upgrade.bEnabled = UpgradeResult == ERpgRuneWorkResult::Done;
-
-			FRpgRuneWorkActionView& Salvage = NewActions.AddDefaulted_GetRef();
-			Salvage.RuneItemId = Entry.ItemId;
-			Salvage.bUpgrade = false;
-			const ERpgRuneWorkResult SalvageResult = ObservedStation->EvaluateRuneSalvage(RequestingActor, Entry.ItemId);
-			const FRpgRuneRank* CurrentRank = Rune->FindRank(Rank);
-			Salvage.Label = SalvageResult == ERpgRuneWorkResult::Socketed
-				? FText::Format(NSLOCTEXT("RpgCraftingViewModels", "RuneWorkSocketed", "{0} {1} is socketed"), RuneName, Numeral(Rank))
-				: FText::Format(
-					NSLOCTEXT("RpgCraftingViewModels", "RuneWorkSalvage", "Salvage {0} {1}\nfor {2}"),
-					RuneName, Numeral(Rank), CurrentRank ? ListItems(CurrentRank->SalvageOutputs) : FText::GetEmpty());
-			Salvage.bEnabled = SalvageResult == ERpgRuneWorkResult::Done;
+			const FText Name = GetItemDisplayName(Entry.Instance->GetItemDef());
+			const FText Location = Host
+				? FText::Format(NSLOCTEXT("RpgCraftingViewModels", "RuneSocketedIn", "Socketed in {0}"), Source.HostName)
+				: NSLOCTEXT("RpgCraftingViewModels", "RuneCarried", "Carried");
+			const TObjectPtr<URpgRuneWorkRuneViewModel>* Existing = RuneRows.FindByPredicate(
+				[&Entry](const URpgRuneWorkRuneViewModel* Row) { return Row && Row->GetRuneItemId() == Entry.ItemId; });
+			URpgRuneWorkRuneViewModel* Row = Existing ? Existing->Get() : NewObject<URpgRuneWorkRuneViewModel>(this);
+			Row->InitializeRune(
+				Entry.ItemId,
+				Name,
+				GetItemIcon(Entry.Instance->GetItemDef()),
+				Source.Rank,
+				Rune->GetMaxRank(),
+				FText::Format(NSLOCTEXT("RpgCraftingViewModels", "RuneTitle", "{0} {1}"), Name, Numeral(Source.Rank)),
+				Location,
+				Host != nullptr,
+				Source.Upgrade == ERpgRuneWorkResult::Done,
+				Source.Salvage == ERpgRuneWorkResult::Done);
+			NewRows.Add(Row);
 		}
 	}
 
-	const bool bOffersChanged = bOffersRuneWork != bNewOffersRuneWork;
-	const bool bActionsChanged = RuneWorkActions != NewActions;
-	if (bOffersChanged)
+	// The selection follows its rune; when the rune is gone, the first rune takes its place.
+	int32 SelectedIndex = NewRows.IndexOfByPredicate([this](const URpgRuneWorkRuneViewModel* Row)
 	{
-		bOffersRuneWork = bNewOffersRuneWork;
-		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(bOffersRuneWork);
-	}
-	if (bActionsChanged)
+		return Row->GetRuneItemId() == SelectedRuneItemId;
+	});
+	if (SelectedIndex == INDEX_NONE && !NewRows.IsEmpty())
 	{
-		RuneWorkActions = MoveTemp(NewActions);
-		UE_MVVM_BROADCAST_FIELD_VALUE_CHANGED(RuneWorkActions);
+		SelectedIndex = 0;
 	}
-	if (bOffersChanged || bActionsChanged)
+	const URpgRuneWorkRuneViewModel* Selected = NewRows.IsValidIndex(SelectedIndex) ? NewRows[SelectedIndex].Get() : nullptr;
+	const FRuneSource* Source = Sources.IsValidIndex(SelectedIndex) ? &Sources[SelectedIndex] : nullptr;
+	const FRpgRuneRank* CurrentRank = Source ? Source->Rune->FindRank(Source->Rank) : nullptr;
+	const FRpgRuneRank* NextRank = Source ? Source->Rune->FindRank(Source->Rank + 1) : nullptr;
+
+	auto JoinItems = [](const TArray<FRpgCraftingOutputItem>& Items)
 	{
-		OnRuneWorkChanged.Broadcast();
+		TArray<FText> Parts;
+		for (const FRpgCraftingOutputItem& Item : Items)
+		{
+			Parts.Add(FText::Format(NSLOCTEXT("RpgCraftingViewModels", "RuneWorkItem", "{0} {1}"), Item.Count, GetItemDisplayName(Item.ItemDefinition)));
+		}
+		return FText::Join(FText::FromString(TEXT(", ")), Parts);
+	};
+	auto AccessProblem = [](const ERpgRuneWorkResult Result)
+	{
+		return Result == ERpgRuneWorkResult::NoAccess
+			? NSLOCTEXT("RpgCraftingViewModels", "RuneWorkNoAccess", "Too far from the station.")
+			: FText::GetEmpty();
+	};
+
+	FText NewNextRankTitle;
+	FText NewUpgradeActionText;
+	FText NewUpgradeStatusText;
+	FText NewSalvageText;
+	TArray<TObjectPtr<URpgCraftingIngredientViewModel>> NewCosts;
+	if (Source)
+	{
+		NewNextRankTitle = NextRank
+			? FText::Format(NSLOCTEXT("RpgCraftingViewModels", "RuneNextRank", "Next: Rank {0}"), Numeral(Source->Rank + 1))
+			: NSLOCTEXT("RpgCraftingViewModels", "RuneHighestRankReached", "Highest rank reached");
+		NewUpgradeActionText = NextRank
+			? FText::Format(NSLOCTEXT("RpgCraftingViewModels", "RuneUpgradeAction", "Upgrade to Rank {0}"), Numeral(Source->Rank + 1))
+			: NSLOCTEXT("RpgCraftingViewModels", "RuneHighestRank", "Highest rank");
+		NewUpgradeStatusText = Source->Upgrade == ERpgRuneWorkResult::MissingMaterials
+			? NSLOCTEXT("RpgCraftingViewModels", "RuneUpgradeMissing", "The connected chests lack materials.")
+			: AccessProblem(Source->Upgrade);
+		if (Source->Salvage == ERpgRuneWorkResult::Socketed)
+		{
+			NewSalvageText = FText::Format(
+				NSLOCTEXT("RpgCraftingViewModels", "RuneSalvageSocketed", "Take it out of {0} to salvage it."), Source->HostName);
+		}
+		else if (Source->Salvage == ERpgRuneWorkResult::NoAccess)
+		{
+			NewSalvageText = AccessProblem(Source->Salvage);
+		}
+		else
+		{
+			NewSalvageText = CurrentRank && !CurrentRank->SalvageOutputs.IsEmpty()
+				? FText::Format(NSLOCTEXT("RpgCraftingViewModels", "RuneSalvageReturns", "Returns {0}"), JoinItems(CurrentRank->SalvageOutputs))
+				: NSLOCTEXT("RpgCraftingViewModels", "RuneSalvageNothing", "Returns nothing");
+		}
+		if (NextRank)
+		{
+			const TArray<URpgInventoryManagerComponent*> Storage = GetCachedConnectedStorage();
+			for (int32 Index = 0; Index < NextRank->UpgradeCosts.Num(); ++Index)
+			{
+				const FRpgCraftingResourceCost& Cost = NextRank->UpgradeCosts[Index];
+				URpgCraftingIngredientViewModel* Row = ReuseOrCreate(this, RuneUpgradeCosts, Index);
+				Row->InitializeIngredient(
+					Cost.ItemDefinition, Cost.Count, 1, URpgCraftingStationComponent::CountStorageResource(Storage, Cost.ItemDefinition));
+				NewCosts.Add(Row);
+			}
+		}
 	}
+
+	FFieldChanges Changes;
+	RPG_CRAFTING_SET(Changes, bOffersRuneWork, bNewOffersRuneWork);
+	RPG_CRAFTING_SET(Changes, bHasRunes, !NewRows.IsEmpty());
+	RPG_CRAFTING_SET(Changes, SelectedRuneItemId, Selected ? Selected->GetRuneItemId() : FRpgInventoryItemId());
+	RPG_CRAFTING_SET(Changes, SelectedRuneTitle, Selected ? Selected->GetTitleText() : FText::GetEmpty());
+	RPG_CRAFTING_SET(Changes, SelectedRuneIcon, Selected ? Selected->GetIcon() : TSoftObjectPtr<UTexture2D>());
+	RPG_CRAFTING_SET(Changes, SelectedRuneLocation, Selected ? Selected->GetLocationText() : FText::GetEmpty());
+	RPG_CRAFTING_SET(Changes, SelectedRuneRankDescription, CurrentRank ? CurrentRank->Description : FText::GetEmpty());
+	RPG_CRAFTING_SET(Changes, SelectedRuneNextRankTitle, NewNextRankTitle);
+	RPG_CRAFTING_SET(Changes, SelectedRuneNextRankDescription, NextRank ? NextRank->Description : FText::GetEmpty());
+	RPG_CRAFTING_SET(Changes, RuneUpgradeActionText, NewUpgradeActionText);
+	RPG_CRAFTING_SET(Changes, RuneUpgradeStatusText, NewUpgradeStatusText);
+	RPG_CRAFTING_SET(Changes, bCanUpgradeSelectedRune, Source && Source->Upgrade == ERpgRuneWorkResult::Done);
+	RPG_CRAFTING_SET(Changes, RuneSalvageText, NewSalvageText);
+	RPG_CRAFTING_SET(Changes, bCanSalvageSelectedRune, Source && Source->Salvage == ERpgRuneWorkResult::Done);
+	const bool bRowsChanged = RuneRows != NewRows;
+	if (bRowsChanged)
+	{
+		RuneRows = MoveTemp(NewRows);
+		Changes.Add(ThisClass::FFieldNotificationClassDescriptor::RuneRows);
+	}
+	const bool bCostsChanged = RuneUpgradeCosts != NewCosts;
+	if (bCostsChanged)
+	{
+		RuneUpgradeCosts = MoveTemp(NewCosts);
+		Changes.Add(ThisClass::FFieldNotificationClassDescriptor::RuneUpgradeCosts);
+	}
+	BroadcastChanges(*this, Changes);
+	if (Changes.IsEmpty())
+	{
+		return false;
+	}
+	OnRuneWorkChanged.Broadcast();
+	return true;
 }
 
 void URpgCraftingStationViewModel::HandleWorldKnowledgeChanged(FGameplayTag KnowledgeTag, bool bIsKnown)

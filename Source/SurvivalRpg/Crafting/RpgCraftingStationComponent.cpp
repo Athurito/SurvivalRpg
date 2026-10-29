@@ -754,6 +754,11 @@ void URpgCraftingStationComponent::ContinueOrderInternal()
 	}
 }
 
+FGameplayTag URpgCraftingStationComponent::GetScreenTag() const
+{
+	return ScreenTag.IsValid() ? ScreenTag : RpgGameplayTags::UI_Screen_Crafting;
+}
+
 ERpgRuneWorkResult URpgCraftingStationComponent::ResolveRuneWork(const AActor* RequestingActor, const FRpgInventoryItemId RuneItemId,
 	URpgInventoryManagerComponent*& OutInventory, URpgInventoryItemInstance*& OutRune) const
 {

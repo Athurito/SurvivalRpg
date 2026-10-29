@@ -87,6 +87,9 @@ public:
 
 	/** Sets rank Rank's UpgradeCosts and SalvageOutputs on the class default fragment; tests restore empty arrays. */
 	static void SetRankWork(int32 Rank, const TArray<FRpgCraftingResourceCost>& UpgradeCosts, const TArray<FRpgCraftingOutputItem>& SalvageOutputs);
+
+	/** Sets rank Rank's Description on the class default fragment; tests restore empty text. */
+	static void SetRankDescription(int32 Rank, const FText& Description);
 };
 
 /** Editor-only rune B with one rank, which grants Rune.AutomationTest.B once configured. */
