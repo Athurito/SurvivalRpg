@@ -1,6 +1,6 @@
 # MST-08b: The Runenschrein screen
 
-Task report for MST-08b in the [mastery map roadmap](mastery-map-roadmap.md). It completes MST-08 of the [implementation plan](mastery-map-implementation-plan.md) with the "integrated Runenschrein presentation". [MST-08a](mastery-map-rune-shrine.md) added the transactions behind it: upgrade and salvage, rune essence, and a plain Runes section on the crafting screen.
+Task report for MST-08b in the [mastery map roadmap](mastery-map-roadmap.md), [PR #324](https://github.com/Athurito/SurvivalRpg/pull/324). It completes MST-08 of the [implementation plan](mastery-map-implementation-plan.md) with the "integrated Runenschrein presentation". [MST-08a](mastery-map-rune-shrine.md) added the transactions behind it: upgrade and salvage, rune essence, and a plain Runes section on the crafting screen.
 
 ## C++ boundary decision
 

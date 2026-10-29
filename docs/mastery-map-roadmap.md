@@ -54,7 +54,7 @@ All dependencies below are within MST; every row also has the CMB scheduling gat
 | MST-07b | Guaranteed reward claims with saved identity, configurable as a choice or a loot pool, granted at mastery milestones and claimed on the Character tab; Brand drops from vein and pine loot pools; a full inventory never loses a claim | MST-07a | Merged (2026-10-28, `17e4ea30`) | [mastery-map-rune-rewards.md](mastery-map-rune-rewards.md), [PR #321](https://github.com/Athurito/SurvivalRpg/pull/321) |
 | MST-07c | Guaranteed rewards when an eligible portal closes, for the instigator and the realm's participants, with one claim identity per completion | MST-07b | Merged (2026-10-28, `4c56a024`) | [mastery-map-portal-rewards.md](mastery-map-portal-rewards.md), [PR #322](https://github.com/Athurito/SurvivalRpg/pull/322) |
 | MST-08a | In-place rank II/III upgrades and salvage at the Runenschrein with rune essence; atomic costs, safe equipped-rune refresh and a plain Runes section on the station screen | MST-07c | Merged (2026-10-28, `621d0021`) | [mastery-map-rune-shrine.md](mastery-map-rune-shrine.md), [PR #323](https://github.com/Athurito/SurvivalRpg/pull/323) |
-| MST-08b | Integrated Runenschrein presentation: rune icons, rank preview and a screen of its own | MST-08a | In review | [mastery-map-rune-shrine-screen.md](mastery-map-rune-shrine-screen.md) |
+| MST-08b | Integrated Runenschrein presentation: rune icons, rank preview and a screen of its own | MST-08a | In review | [mastery-map-rune-shrine-screen.md](mastery-map-rune-shrine-screen.md), [PR #324](https://github.com/Athurito/SurvivalRpg/pull/324) |
 | MST-09a | Harvesting Echo, Kraftuebertrag and Runenfluss; bounded own-hit triggers and actual-overkill transfer | MST-08b | Planned | — |
 | MST-09b | Erntesprung, Durchschlag, Ausbreitung and remaining Nachwirkung choices; finite propagation and no duplicated work | MST-09a | Planned | — |
 | MST-09c | Totenarbeiter and Helfer; temporary workers, correct beneficiary/reward attribution, lifecycle and bounded triggers | MST-09b | Planned | — |
@@ -111,7 +111,7 @@ Playtests of merged MST steps that wait for the user's batch test. Remove a row 
 ## Current handoff
 
 - **Active phase:** MST, started by the user on 2026-10-27 after CMB-01 to CMB-07 merged.
-- **Active task:** MST-08b, branch `claude/mst-08b-rune-shrine-screen`; the report is [mastery-map-rune-shrine-screen.md](mastery-map-rune-shrine-screen.md).
+- **Active task:** MST-08b, branch `claude/mst-08b-rune-shrine-screen`, [PR #324](https://github.com/Athurito/SurvivalRpg/pull/324); the report is [mastery-map-rune-shrine-screen.md](mastery-map-rune-shrine-screen.md).
   - A station opens the screen its `URpgCraftingStationComponent::ScreenTag` names; the Runenschrein opens `UI.Screen.RuneShrine` (`CUI_RuneShrine`).
   - `URpgCraftingStationViewModel` projects the rune rows (`URpgRuneWorkRuneViewModel`), the selection and the rank preview; `URpgCraftingStationWidget` fills the rune widgets and sends upgrade and salvage for the selected rune.
 - **Previous task:** MST-08a, merged on 2026-10-28 as `621d0021` ([PR #323](https://github.com/Athurito/SurvivalRpg/pull/323)); the report is [mastery-map-rune-shrine.md](mastery-map-rune-shrine.md).
