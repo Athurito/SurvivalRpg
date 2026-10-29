@@ -498,6 +498,19 @@ const FRpgHarvestTargetEvaluation* URpgGameplayAbility_Harvest::CommitSelection(
 			BurnParams.DischargeMultiplier = Values.BurnDischarge;
 			ARpgHarvestBurn::Light(Receiver, Request, BurnClass, BurnParams);
 		}
+		// A socketed rune such as Kraftuebertrag carries a share of the actual overkill of a depleting hit to the
+		// nearest other resources the tool can work.
+		if (TransferStrikeClass && Values.TransferWork > 0.0f && Target.Result.OverkillWork > 0)
+		{
+			SendRuneFlowStrikes(
+				TransferStrikeClass,
+				Receiver,
+				Request,
+				false,
+				FRpgHarvestRuneFlow::TransferSections(Target.Result, Values.TransferWork),
+				Values,
+				false);
+		}
 		if (FirstHarvestedIndex == INDEX_NONE)
 		{
 			FirstHarvestedIndex = TargetIndex;
@@ -512,6 +525,29 @@ const FRpgHarvestTargetEvaluation* URpgGameplayAbility_Harvest::CommitSelection(
 				FVector::UpVector,
 				static_cast<float>(FMath::Max(Extent.X, Extent.Y)));
 			++TargetCues;
+		}
+	}
+
+	// A socketed rune such as Echo repeats every few accepted own hits on the first struck resource, with a fraction of
+	// the hit's own work, without follow-up or weak-point bonus. One execution counts as one hit.
+	if (EchoStrikeClass && Values.EchoWork > 0.0f && FirstHarvestedIndex != INDEX_NONE)
+	{
+		const FRpgHarvestTargetEvaluation& Struck = Selection.Targets[FirstHarvestedIndex];
+		UObject* StruckReceiver = Struck.Receiver.Get();
+		if (StruckReceiver && Struck.Result.IsAcceptedDirectHit() &&
+			EchoCharge.AddHit(Now, Values.EchoHits, EchoChargeTimeoutSeconds))
+		{
+			FRpgHarvestRequest StruckRequest = RequestTemplate;
+			StruckRequest.Hit = Struck.Hit;
+			StruckRequest.TraceOrigin = Struck.Hit.TraceStart;
+			SendRuneFlowStrikes(
+				EchoStrikeClass,
+				StruckReceiver,
+				StruckRequest,
+				Struck.Result.RemainingWork > 0,
+				Values.EchoWork * RequestTemplate.RequestedSections * RequestTemplate.WorkScale,
+				Values,
+				true);
 		}
 	}
 
@@ -530,6 +566,66 @@ const FRpgHarvestTargetEvaluation* URpgGameplayAbility_Harvest::CommitSelection(
 		Selection.Targets.Append(MoveTemp(Chained));
 	}
 	return FirstHarvestedIndex != INDEX_NONE ? &Selection.Targets[FirstHarvestedIndex] : nullptr;
+}
+
+void URpgGameplayAbility_Harvest::SendRuneFlowStrikes(
+	const TSubclassOf<ARpgHarvestRuneStrike> StrikeClass,
+	UObject* StruckReceiver,
+	const FRpgHarvestRequest& StruckRequest,
+	const bool bStruckHasWork,
+	const float WorkSections,
+	const FRpgHarvestTunedValues& Values,
+	const bool bIncludeStruck) const
+{
+	UWorld* World = GetWorld();
+	if (!World || !StrikeClass || !StruckReceiver || WorkSections < 0.01f)
+	{
+		return;
+	}
+
+	// An echo strikes its own resource and, split, one more; a transfer strikes one other resource, split two.
+	const bool bSplit = Values.RuneFlowSplit > 0.0f;
+	const int32 OtherCount = bIncludeStruck ? (bSplit ? 1 : 0) : (bSplit ? 2 : 1);
+	TArray<FRpgHarvestTargetEvaluation> Others;
+	if (OtherCount > 0)
+	{
+		// Further resources are any the tool could work there: area requests, so protected resources stay out.
+		FRpgHarvestRequest CandidateTemplate = StruckRequest;
+		CandidateTemplate.RequestedSections = 1;
+		CandidateTemplate.WorkScale = 1.0f;
+		CandidateTemplate.bCanHitWeakPoint = false;
+		CandidateTemplate.bAreaHarvest = true;
+		CandidateTemplate.Provenance = StruckRequest.Provenance.MakeSecondary();
+		FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(RpgHarvestRuneFlow), false);
+		if (const AActor* Avatar = CurrentActorInfo ? CurrentActorInfo->AvatarActor.Get() : nullptr)
+		{
+			QueryParams.AddIgnoredActor(Avatar);
+		}
+		TArray<FRpgHarvestTargetEvaluation> Candidates;
+		FRpgHarvestTargeting::CollectAreaTargets(
+			*World,
+			StruckRequest.Hit.ImpactPoint,
+			RuneFlowRadius,
+			Values.Targeting.TraceChannel,
+			QueryParams,
+			StruckRequest.Hit.ImpactPoint,
+			true,
+			CandidateTemplate,
+			OtherCount + 1,
+			Candidates);
+		FRpgHarvestRuneFlow::PickFollowUpTargets(Candidates, StruckReceiver, StruckRequest.Hit.Item, OtherCount, Others);
+	}
+
+	const int32 StrikeCount = (bIncludeStruck && bStruckHasWork ? 1 : 0) + Others.Num();
+	const float Share = bSplit && StrikeCount > 1 ? Values.RuneFlowSplit : 1.0f;
+	if (bIncludeStruck && bStruckHasWork)
+	{
+		ARpgHarvestRuneStrike::Launch(StruckReceiver, StruckRequest.Hit, StruckRequest, StrikeClass, WorkSections * Share, false);
+	}
+	for (const FRpgHarvestTargetEvaluation& Other : Others)
+	{
+		ARpgHarvestRuneStrike::Launch(Other.Receiver.Get(), Other.Hit, StruckRequest, StrikeClass, WorkSections * Share, true);
+	}
 }
 
 void URpgGameplayAbility_Harvest::StartStride(const FRpgHarvestRequest& RequestTemplate, const FRpgHarvestTunedValues& Values)
@@ -845,6 +941,10 @@ void URpgGameplayAbility_Harvest::ResolveTunedValues(
 	OutValues.BurnSeconds = FMath::Clamp(Tune(Ability_Tuning_Harvest_BurnDuration, 0.0f), 0.0f, 60.0f);
 	OutValues.bBurnRefresh = Tune(Ability_Tuning_Harvest_BurnRefresh, 0.0f) > 0.0f;
 	OutValues.BurnDischarge = FMath::Clamp(Tune(Ability_Tuning_Harvest_BurnDischarge, 0.0f), 0.0f, RpgHarvestWork::MaxWorkScale);
+	OutValues.EchoWork = FMath::Clamp(Tune(Ability_Tuning_Harvest_EchoWork, 0.0f), 0.0f, RpgHarvestWork::MaxWorkScale);
+	OutValues.EchoHits = TuneCount(Ability_Tuning_Harvest_EchoHits, FMath::Clamp(EchoHitsPerEcho, 1, 16), 1, 16);
+	OutValues.TransferWork = FMath::Clamp(Tune(Ability_Tuning_Harvest_TransferWork, 0.0f), 0.0f, RpgHarvestWork::MaxWorkScale);
+	OutValues.RuneFlowSplit = FMath::Clamp(Tune(Ability_Tuning_Harvest_RuneFlowSplit, 0.0f), 0.0f, 1.0f);
 
 	OutValues.Swarm = Swarm;
 	if (SummonsSwarm())

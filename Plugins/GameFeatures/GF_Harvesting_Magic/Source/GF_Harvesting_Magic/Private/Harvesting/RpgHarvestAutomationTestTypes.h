@@ -324,6 +324,15 @@ public:
 		Stride = InStride;
 		StrideGameplayCue = InCueTag;
 	}
+	void ConfigureRuneFlow(
+		const TSubclassOf<ARpgHarvestRuneStrike> InEchoClass,
+		const TSubclassOf<ARpgHarvestRuneStrike> InTransferClass,
+		const float InRadius)
+	{
+		EchoStrikeClass = InEchoClass;
+		TransferStrikeClass = InTransferClass;
+		RuneFlowRadius = InRadius;
+	}
 };
 
 /** Records preview notifications so tests can assert change-only broadcasting. */
