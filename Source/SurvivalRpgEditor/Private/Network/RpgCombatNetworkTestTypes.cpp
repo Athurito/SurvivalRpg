@@ -6,6 +6,7 @@
 #include "Engine/World.h"
 #include "GameFramework/GameModeBase.h"
 #include "GameFramework/PlayerStart.h"
+#include "GameFramework/WorldSettings.h"
 #include "GameplayEffect.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgDefenseSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
@@ -84,6 +85,29 @@ void FRpgScopedNetworkTestGround::OnGameModeInitialized(AGameModeBase* GameMode)
 	{
 		const double LaneY = (Index - 0.5 * (GroundPlayerStartCount - 1)) * GroundLaneSpacing;
 		World->SpawnActor<APlayerStart>(FVector(0.0, LaneY, GroundPlayerStartHeight), FRotator::ZeroRotator, Spawn);
+	}
+}
+
+FRpgScopedNetworkTestFrameTimeLimit::~FRpgScopedNetworkTestFrameTimeLimit()
+{
+	FWorldDelegates::OnPostWorldInitialization.Remove(Handle);
+}
+
+void FRpgScopedNetworkTestFrameTimeLimit::Start(const float InMaxFrameTime)
+{
+	check(InMaxFrameTime > 0.0f);
+	MaxFrameTime = InMaxFrameTime;
+	FWorldDelegates::OnPostWorldInitialization.Remove(Handle);
+	Handle = FWorldDelegates::OnPostWorldInitialization.AddRaw(this, &FRpgScopedNetworkTestFrameTimeLimit::OnPostWorldInitialization);
+}
+
+void FRpgScopedNetworkTestFrameTimeLimit::OnPostWorldInitialization(UWorld* World, const FWorldInitializationValues InitializationValues)
+{
+	AWorldSettings* Settings = World && World->WorldType == EWorldType::PIE ? World->GetWorldSettings() : nullptr;
+	if (Settings)
+	{
+		// UWorld::Tick clamps each frame's game delta to this; the PIE copy of the settings dies with its world.
+		Settings->MaxUndilatedFrameTime = FMath::Min(Settings->MaxUndilatedFrameTime, MaxFrameTime);
 	}
 }
 

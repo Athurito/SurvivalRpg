@@ -14,7 +14,9 @@ class URpgAbilitySystemComponent;
 class URpgDefenseSet;
 class URpgHealthComponent;
 class URpgHealthSet;
+class UWorld;
 struct FGameplayEffectSpec;
+struct FWorldInitializationValues;
 
 /** Replicated static ground shared by the server and client combat test worlds. */
 UCLASS(NotBlueprintable, Transient)
@@ -65,6 +67,30 @@ private:
 	void OnGameModeInitialized(AGameModeBase* GameMode);
 
 	FDelegateHandle Handle;
+};
+
+/**
+ * Caps the game time every PIE world advances in one frame while this object lives.
+ *
+ * Rendered PIE shares the GPU with every other process. Under load the editor drops to about 10 fps, and the
+ * authority samples a 0.18 s melee attack window only about twice, so its straight trace chords pass beside targets
+ * placed on the swing's arc. With the cap, slow frames slow the worlds down instead of taking larger steps; frames
+ * faster than the cap are unaffected. Start it in BEFORE_EACH, before the network component creates its worlds, and
+ * keep it alive through network teardown.
+ */
+class FRpgScopedNetworkTestFrameTimeLimit final
+{
+public:
+	~FRpgScopedNetworkTestFrameTimeLimit();
+
+	/** Installs the hook for every PIE world initialized while this object lives; MaxFrameTime in seconds, > 0. */
+	void Start(float InMaxFrameTime);
+
+private:
+	void OnPostWorldInitialization(UWorld* World, const FWorldInitializationValues InitializationValues);
+
+	FDelegateHandle Handle;
+	float MaxFrameTime = 0.0f;
 };
 
 /**

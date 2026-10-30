@@ -70,6 +70,11 @@ namespace RpgCombatPIENetworkTests
 	constexpr float MinimumBladeCenterAdvance = 2.0f;
 	constexpr float FastMontageTimingPlayRate = 1.5f;
 	constexpr float EchoTestDamage = 25.0f;
+	// The worlds never step more than this per frame, also when rendering under GPU load is slower; at about 10 fps the
+	// authority sampled the attack window only twice and its trace chords missed the target below. The suite was
+	// validated at 100 to 120 fps. At a steady 60 Hz the 1.5x attack still misses, because the authority window opens
+	// one or two frames after the authored start.
+	constexpr float MaxSimulatedFrameTime = 1.0f / 120.0f;
 	// On the path of the combo's first hit (AM_SwordShieldCombo01_Step1, 0.13..0.30 s): the blade's sampled sweep,
 	// with the CMB-01 grip and root motion, passes through the target capsule's center.
 	const FVector FixedBasicSwordContactOffset(160.0f, 20.0f, 0.0f);
@@ -762,6 +767,7 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 	// Keep the hooks alive through CQTest network teardown; never restore persistence on test actors.
 	RpgCombatPIENetworkTests::FScopedPIEWorldSaveIsolation WorldSaveIsolation;
 	FRpgScopedNetworkTestGround Ground;
+	FRpgScopedNetworkTestFrameTimeLimit FrameTimeLimit;
 	RpgCombatPIENetworkTests::FScopedAbilityLifecycle AttackLifecycle;
 	RpgCombatPIENetworkTests::FScopedAbilityLifecycle DodgeLifecycle;
 	FGameplayAbilitySpecHandle DodgeAbilityHandle;
@@ -1393,6 +1399,7 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 		}
 		WorldSaveIsolation.Start();
 		Ground.Start();
+		FrameTimeLimit.Start(MaxSimulatedFrameTime);
 		CombatSettings->bLogWeaponAttackLifecycle = true;
 		PrototypeGameModeClass = LoadClass<ARpgGameModeBase>(
 			nullptr,
@@ -2088,6 +2095,7 @@ NETWORK_TEST_CLASS(CombatImpactCuesPIE, "SurvivalRpg.Network")
 
 	RpgCombatPIENetworkTests::FScopedPIEWorldSaveIsolation WorldSaveIsolation;
 	FRpgScopedNetworkTestGround Ground;
+	FRpgScopedNetworkTestFrameTimeLimit FrameTimeLimit;
 	RpgCombatPIENetworkTests::FScopedAbilityLifecycle StaggerLifecycle;
 	FPIENetworkComponent<FNetworkState> Network{
 		TestRunner,
@@ -2201,6 +2209,7 @@ NETWORK_TEST_CLASS(CombatImpactCuesPIE, "SurvivalRpg.Network")
 		CombatSettings->bLogWeaponAttackLifecycle = true;
 		WorldSaveIsolation.Start();
 		Ground.Start();
+		FrameTimeLimit.Start(MaxSimulatedFrameTime);
 		PrototypeGameModeClass = LoadClass<ARpgGameModeBase>(nullptr, PrototypeGameModeClassPath);
 		ASSERT_THAT(IsNotNull(PrototypeGameModeClass));
 		DeveloperSettings->ExperienceOverride = FPrimaryAssetId(
