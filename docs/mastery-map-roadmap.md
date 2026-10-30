@@ -1,6 +1,6 @@
 # Mastery map roadmap
 
-Updated: 2026-10-29. Status: **In progress**; MST-08 is merged, MST-09a is in review.
+Updated: 2026-10-30. Status: **In progress**; MST-09a is merged, MST-09b is in review.
 
 This is the execution roadmap for the [mastery map implementation plan](mastery-map-implementation-plan.md): a zoomable shared harvesting mastery map, meaningful talent choices, and the rune loot/crafting/upgrade loop. The plan owns design, architecture, and detailed acceptance contracts; this roadmap owns task status, order, and the current handoff.
 
@@ -55,8 +55,8 @@ All dependencies below are within MST; every row also has the CMB scheduling gat
 | MST-07c | Guaranteed rewards when an eligible portal closes, for the instigator and the realm's participants, with one claim identity per completion | MST-07b | Merged (2026-10-28, `4c56a024`) | [mastery-map-portal-rewards.md](mastery-map-portal-rewards.md), [PR #322](https://github.com/Athurito/SurvivalRpg/pull/322) |
 | MST-08a | In-place rank II/III upgrades and salvage at the Runenschrein with rune essence; atomic costs, safe equipped-rune refresh and a plain Runes section on the station screen | MST-07c | Merged (2026-10-28, `621d0021`) | [mastery-map-rune-shrine.md](mastery-map-rune-shrine.md), [PR #323](https://github.com/Athurito/SurvivalRpg/pull/323) |
 | MST-08b | Integrated Runenschrein presentation: rune icons, rank preview and a screen of its own | MST-08a | Merged (2026-10-29, `3bb60a68`) | [mastery-map-rune-shrine-screen.md](mastery-map-rune-shrine-screen.md), [PR #324](https://github.com/Athurito/SurvivalRpg/pull/324) |
-| MST-09a | Harvesting Echo, Kraftuebertrag and Runenfluss; bounded own-hit triggers and actual-overkill transfer | MST-08b | In review | [mastery-map-rune-flow.md](mastery-map-rune-flow.md), [PR #325](https://github.com/Athurito/SurvivalRpg/pull/325) |
-| MST-09b | Erntesprung, Durchschlag, Ausbreitung and remaining Nachwirkung choices; finite propagation and no duplicated work | MST-09a | Planned | — |
+| MST-09a | Harvesting Echo, Kraftuebertrag and Runenfluss; bounded own-hit triggers and actual-overkill transfer | MST-08b | Merged (2026-10-29, `daf50e73`) | [mastery-map-rune-flow.md](mastery-map-rune-flow.md), [PR #325](https://github.com/Athurito/SurvivalRpg/pull/325) |
+| MST-09b | Erntesprung, Durchschlag, Ausbreitung and remaining Nachwirkung choices; finite propagation and no duplicated work | MST-09a | In review | [mastery-map-spread.md](mastery-map-spread.md) |
 | MST-09c | Totenarbeiter and Helfer; temporary workers, correct beneficiary/reward attribution, lifecycle and bounded triggers | MST-09b | Planned | — |
 | MST-09d | Full catalog/cutover acceptance, legacy cleanup, input/performance/network regression and cook reachability | MST-09c | Planned | — |
 | MST-10a | Several skill trees with their own budgets as regions of the one map, Path of Exile style: tree placement as authored data, tree-qualified node identity, screen-level view cache, fit and shortcuts across trees, a budget entry per tree in the top bar and a point counter at each cluster; proven with the Harvesting tree and a synthetic second tree in automation | MST-03c | Merged (2026-10-27, `9f0dbcf0`) | [mastery-map-several-trees.md](mastery-map-several-trees.md), [PR #311](https://github.com/Athurito/SurvivalRpg/pull/311) |
@@ -108,20 +108,22 @@ Playtests of merged MST steps that wait for the user's batch test. Remove a row 
 | MST-08a | [Playtest](mastery-map-rune-shrine.md#playtest): the Runenschrein in `Lvl_HarvestPickaxe` salvages Brand into essence and upgrades it in place with essence, ore and charcoal, two players | Waiting for the user |
 | MST-08b | [Playtest](mastery-map-rune-shrine-screen.md#playtest): the Runenschrein opens its own screen with the rune list, rank preview, costs with chest counts, upgrade and salvage; the Kiln keeps the crafting screen, two players | Waiting for the user |
 | MST-09a | [Playtest](mastery-map-rune-flow.md#playtest): Echo flashes on every third hit, Kraftübertragung carries overkill to the next vein, the Rune Flow talents divide or condense, two players | Waiting for the user |
+| MST-09b | [Playtest](mastery-map-spread.md#playtest): Erntesprung leaps green to two more veins, Durchschlag strikes red into the vein behind, Spread forks or deepens them, a burn wanders on with Wandering Effect, two players | Waiting for the user |
 
 ## Current handoff
 
 - **Active phase:** MST, started by the user on 2026-10-27 after CMB-01 to CMB-07 merged.
-- **Active task:** MST-09a, branch `claude/mst-09a-harvest-echo`, [PR #325](https://github.com/Athurito/SurvivalRpg/pull/325); the report is [mastery-map-rune-flow.md](mastery-map-rune-flow.md).
-  - `ARpgHarvestRuneStrike` is the delayed follow-up hit of Echo and Kraftübertragung; `URpgGameplayAbility_Harvest` counts the echo charge and carries actual overkill (`EchoStrikeClass`, `TransferStrikeClass`).
-  - `ID_Rune_Echo` and `ID_Rune_Kraftuebertrag` are obtainable like Brand; the region Rune Flow of `DA_SkillTree_Harvesting` holds Rune Resonance, Division and Condensation.
-- **Previous task:** MST-08b, merged on 2026-10-29 as `3bb60a68` ([PR #324](https://github.com/Athurito/SurvivalRpg/pull/324)); the report is [mastery-map-rune-shrine-screen.md](mastery-map-rune-shrine-screen.md).
+- **Active task:** MST-09b, branch `claude/mst-09b-harvest-spread`; the report is [mastery-map-spread.md](mastery-map-spread.md).
+  - `URpgGameplayAbility_Harvest` sends Erntesprung leaps and Durchschlag pierces (`LeapStrikeClass`, `PierceStrikeClass`) through `FRpgHarvestRuneFlow::PlanLeaps` and `PickPierceTargets`; `ARpgHarvestBurn` wanders on with `WanderRadius`.
+  - `ID_Rune_Erntesprung` and `ID_Rune_Durchschlag` are obtainable like Brand; the region Spread of `DA_SkillTree_Harvesting` holds Wide Paths, Fork and Deep Rift, and Aftermath gains Wandering Effect as the alternative to Discharge.
+- **Previous task:** MST-09a, merged on 2026-10-29 as `daf50e73` ([PR #325](https://github.com/Athurito/SurvivalRpg/pull/325)); the report is [mastery-map-rune-flow.md](mastery-map-rune-flow.md).
+- **User decisions (2026-10-30):** Erntesprung, Durchschlag, the Spread talents and Wandering Effect as proposed, recorded in the [MST-09b report](mastery-map-spread.md#user-decisions-2026-10-30). Totenarbeiter and the Helper talents as proposed for MST-09c. MST-09b, MST-09c and MST-09d are built and merged one after another.
 - **User decisions (2026-10-29):** Echo, Kraftübertragung and the Rune Flow talents as proposed, in one PR; the values are recorded in the [MST-09a report](mastery-map-rune-flow.md#user-decisions-2026-10-29).
 - **User decisions (2026-10-28):** rune recipe knowledge is shared per world, as the plan proposed. Guaranteed rewards are configurable, from mastery milestones and from closing portals, and runes also drop from loot pools. A portal reward goes to the closer and everyone who was in the realm, once per completion. Rune essence from salvage pays for rank upgrades together with ore and charcoal (proposal accepted); MST-08 is split into MST-08a (transactions) and MST-08b (presentation). MST-06 is split into MST-06a, MST-06b and MST-06c, and Brand works as recorded in the [MST-06a report](mastery-map-socket-ui.md#user-decisions-2026-10-28): the rune itself lights resources, Anhaltende Macht lengthens and refreshes the burn, Entladung releases it at once.
 - **User decisions (2026-10-27):**
   - One map for every tree. After the MST-03c review, MST-10a and MST-10b come before MST-04, with Combat as the second cluster, and the game window has a minimum size of 1280 x 720.
   - Combat talents as proposed: Kampfrhythmus (+10 % base damage), then Konter (perfect block +50 % stagger damage, more stamina back) or Bollwerk (block 25 % less stamina, 15 % more damage stopped). Combat mastery XP comes from kills.
   - For MST-03b, the retired tool trees and powers and the Impact talents as recorded in its report.
-- **Next MST action:** after MST-09a merges, MST-09b: Erntesprung, Durchschlag, Ausbreitung and the remaining Nachwirkung choices.
+- **Next MST action:** after MST-09b merges, MST-09c: Totenarbeiter and the Helper branch.
 - **Rune contract:** rechecked for MST-05. CMB-07's engraved weapon runes and the combat Echo stay unchanged; harvesting runes are separate rune items in `GF_Harvesting_Magic`.
 - **Later content decisions:** production XP and cost curves and the starter and guaranteed-reward pacing remain authored tuning. Rune drop chances, milestone levels and the portal reward are authored content; the 2 % Brand drop is first tuning.

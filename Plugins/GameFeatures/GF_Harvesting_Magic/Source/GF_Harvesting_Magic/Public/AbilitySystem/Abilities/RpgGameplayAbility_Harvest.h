@@ -115,6 +115,33 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestTunedValues
 	 */
 	float RuneFlowSplit = 0.0f;
 
+	/**
+	 * Leap of runes such as Erntesprung: every own hit leaps on from resource to resource of the tool, and each leap
+	 * does LeapWork times the hit's own work (Ability.Tuning.Harvest.LeapWork). Zero leaps nowhere.
+	 */
+	float LeapWork = 0.0f;
+
+	/**
+	 * Pierce of runes such as Durchschlag: every own hit strikes the next resource behind the struck one with PierceWork
+	 * times the hit's own work (Ability.Tuning.Harvest.PierceWork). Zero pierces nothing.
+	 */
+	float PierceWork = 0.0f;
+
+	/** Multiplier on the reach of leaps, pierces and wandering burns (Ability.Tuning.Harvest.SpreadReach), above 0. */
+	float SpreadReach = 1.0f;
+
+	/**
+	 * Above zero, every leap step and every pierce strikes two resources, and each strike does this fraction of the work
+	 * (Ability.Tuning.Harvest.SpreadSplit).
+	 */
+	float SpreadSplit = 0.0f;
+
+	/**
+	 * Whether a burn whose resource runs empty moves on to the nearest other resource of the tool within the leap's
+	 * reach (Ability.Tuning.Harvest.BurnWander above 0).
+	 */
+	bool bBurnWander = false;
+
 	/** Swarm with tuned creature count, rest and strike radius. */
 	FRpgHarvestSwarmParams Swarm;
 
@@ -191,6 +218,12 @@ public:
 
 	/** Strike a Kraftuebertrag sends with a depleting hit's overkill, or null when this ability carries nothing. */
 	TSubclassOf<ARpgHarvestRuneStrike> GetTransferStrikeClass() const { return TransferStrikeClass; }
+
+	/** Strike an Erntesprung sends from resource to resource, or null when this ability leaps nowhere. */
+	TSubclassOf<ARpgHarvestRuneStrike> GetLeapStrikeClass() const { return LeapStrikeClass; }
+
+	/** Strike a Durchschlag drives into the resource behind the struck one, or null when this ability pierces nothing. */
+	TSubclassOf<ARpgHarvestRuneStrike> GetPierceStrikeClass() const { return PierceStrikeClass; }
 
 	/** Returns the speed in cm/s at which this ability's presentation travels from target to target; 0 is instant. */
 	float GetPresentationWaveSpeed() const { return PresentationWaveSpeed; }
@@ -430,6 +463,51 @@ protected:
 	float RuneFlowRadius = 800.0f;
 
 	/**
+	 * Strike an Erntesprung sends on from the struck resource to the nearest other resource the tool can work, and on
+	 * from there, LeapJumps times, while the source tool's runes give leap work (Ability.Tuning.Harvest.LeapWork). Its
+	 * work is that fraction of the hit's own work. Empty leaps nowhere. Designer content.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Spread")
+	TSubclassOf<ARpgHarvestRuneStrike> LeapStrikeClass;
+
+	/**
+	 * Strike a Durchschlag drives into the nearest resource the tool can work behind the struck one, in the hit's
+	 * direction, while the source tool's runes give pierce work (Ability.Tuning.Harvest.PierceWork). Empty pierces
+	 * nothing. Designer content.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Spread")
+	TSubclassOf<ARpgHarvestRuneStrike> PierceStrikeClass;
+
+	/**
+	 * Radius in centimeters in which a leap finds the next resource from the one it left, before tunings
+	 * (Ability.Tuning.Harvest.SpreadReach). A burn that wanders uses it too. Designer-tuned.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Spread", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "2000.0", Units = "cm"))
+	float LeapRadius = 600.0f;
+
+	/** Leaps one own hit makes, one after another and never twice onto the same resource, 1 to 8. Designer-tuned. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Spread", meta = (ClampMin = "1", ClampMax = "8", UIMin = "1", UIMax = "4"))
+	int32 LeapJumps = 2;
+
+	/** Seconds each further leap lands after the one before, on top of the strike's own delay. Designer-tuned. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Spread", meta = (ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "0.5", Units = "s"))
+	float LeapStepSeconds = 0.2f;
+
+	/**
+	 * Distance in centimeters behind the struck resource in which a pierce finds the next resource, before tunings
+	 * (Ability.Tuning.Harvest.SpreadReach). Designer-tuned.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Spread", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "2000.0", Units = "cm"))
+	float PierceDepth = 400.0f;
+
+	/**
+	 * Half angle in degrees of the cone behind the struck resource, around the hit's direction, in which a pierce finds
+	 * the next resource. Designer-tuned.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Spread", meta = (ClampMin = "1.0", ClampMax = "89.0", UIMin = "10.0", UIMax = "60.0", Units = "deg"))
+	float PierceConeDegrees = 35.0f;
+
+	/**
 	 * Creature count, flight and reassignment rules of the summoned swarm. Used only with a SwarmClass. Skill tree nodes
 	 * tune CreatureCount, StrikeIntervalSeconds and StrikeRadius (Ability.Tuning.Harvest.Creatures, .StrikeInterval,
 	 * .StrikeRadius).
@@ -517,6 +595,26 @@ private:
 		float WorkSections,
 		const FRpgHarvestTunedValues& Values,
 		bool bIncludeStruck) const;
+
+	/**
+	 * Server: sends the leaps and the pierce of Values from the struck resource as follow-up work of StruckRequest. A
+	 * leap goes on LeapJumps times to the nearest resource not struck by this hit yet; a pierce strikes the nearest
+	 * resource behind the struck one. With Values.SpreadSplit each step strikes two resources at that share.
+	 */
+	void SendSpreadStrikes(UObject* StruckReceiver, const FRpgHarvestRequest& StruckRequest, float HitWorkSections, const FRpgHarvestTunedValues& Values) const;
+
+	/**
+	 * Server: collects the resources around Center within Radius that the tool could work with follow-up work of
+	 * StruckRequest, nearest first, up to MaxTargets the request would harvest (zero or less collects all). Follow-up
+	 * work is an area request, so protected resources stay out.
+	 */
+	void CollectFollowUpCandidates(
+		const FRpgHarvestRequest& StruckRequest,
+		const FVector& Center,
+		float Radius,
+		int32 MaxTargets,
+		const FRpgHarvestTunedValues& Values,
+		TArray<FRpgHarvestTargetEvaluation>& OutCandidates) const;
 
 	/** Server: starts the stride of the current activation with the values captured when execution started. */
 	void StartStride(const FRpgHarvestRequest& RequestTemplate, const FRpgHarvestTunedValues& Values);

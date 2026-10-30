@@ -496,6 +496,9 @@ const FRpgHarvestTargetEvaluation* URpgGameplayAbility_Harvest::CommitSelection(
 			BurnParams.DurationSeconds = Values.BurnSeconds;
 			BurnParams.bRefresh = Values.bBurnRefresh;
 			BurnParams.DischargeMultiplier = Values.BurnDischarge;
+			// A talent such as Wandering Effect lets the burn move on within the leap's reach once its resource is empty.
+			BurnParams.WanderRadius = Values.bBurnWander ? LeapRadius * Values.SpreadReach : 0.0f;
+			BurnParams.WanderChannel = Values.Targeting.TraceChannel;
 			ARpgHarvestBurn::Light(Receiver, Request, BurnClass, BurnParams);
 		}
 		// A socketed rune such as Kraftuebertrag carries a share of the actual overkill of a depleting hit to the
@@ -551,6 +554,25 @@ const FRpgHarvestTargetEvaluation* URpgGameplayAbility_Harvest::CommitSelection(
 		}
 	}
 
+	// Socketed runes such as Erntesprung and Durchschlag spread every own hit from the first struck resource: leaps from
+	// resource to resource and a pierce into the one behind, each with a fraction of the hit's own work.
+	if ((LeapStrikeClass || PierceStrikeClass) && (Values.LeapWork > 0.0f || Values.PierceWork > 0.0f) &&
+		FirstHarvestedIndex != INDEX_NONE)
+	{
+		const FRpgHarvestTargetEvaluation& Struck = Selection.Targets[FirstHarvestedIndex];
+		if (UObject* StruckReceiver = Struck.Receiver.Get(); StruckReceiver && Struck.Result.IsAcceptedDirectHit())
+		{
+			FRpgHarvestRequest StruckRequest = RequestTemplate;
+			StruckRequest.Hit = Struck.Hit;
+			StruckRequest.TraceOrigin = Struck.Hit.TraceStart;
+			SendSpreadStrikes(
+				StruckReceiver,
+				StruckRequest,
+				RequestTemplate.RequestedSections * RequestTemplate.WorkScale,
+				Values);
+		}
+	}
+
 	// A target depleted inside a chain box takes the box's other resources along. Their presentation continues from
 	// the moment the trigger is presented, and their rewards join the open batch.
 	if (UWorld* World = GetWorld(); World && FirstHarvestedIndex != INDEX_NONE)
@@ -589,30 +611,8 @@ void URpgGameplayAbility_Harvest::SendRuneFlowStrikes(
 	TArray<FRpgHarvestTargetEvaluation> Others;
 	if (OtherCount > 0)
 	{
-		// Further resources are any the tool could work there: area requests, so protected resources stay out.
-		FRpgHarvestRequest CandidateTemplate = StruckRequest;
-		CandidateTemplate.RequestedSections = 1;
-		CandidateTemplate.WorkScale = 1.0f;
-		CandidateTemplate.bCanHitWeakPoint = false;
-		CandidateTemplate.bAreaHarvest = true;
-		CandidateTemplate.Provenance = StruckRequest.Provenance.MakeSecondary();
-		FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(RpgHarvestRuneFlow), false);
-		if (const AActor* Avatar = CurrentActorInfo ? CurrentActorInfo->AvatarActor.Get() : nullptr)
-		{
-			QueryParams.AddIgnoredActor(Avatar);
-		}
 		TArray<FRpgHarvestTargetEvaluation> Candidates;
-		FRpgHarvestTargeting::CollectAreaTargets(
-			*World,
-			StruckRequest.Hit.ImpactPoint,
-			RuneFlowRadius,
-			Values.Targeting.TraceChannel,
-			QueryParams,
-			StruckRequest.Hit.ImpactPoint,
-			true,
-			CandidateTemplate,
-			OtherCount + 1,
-			Candidates);
+		CollectFollowUpCandidates(StruckRequest, StruckRequest.Hit.ImpactPoint, RuneFlowRadius, OtherCount + 1, Values, Candidates);
 		FRpgHarvestRuneFlow::PickFollowUpTargets(Candidates, StruckReceiver, StruckRequest.Hit.Item, OtherCount, Others);
 	}
 
@@ -625,6 +625,122 @@ void URpgGameplayAbility_Harvest::SendRuneFlowStrikes(
 	for (const FRpgHarvestTargetEvaluation& Other : Others)
 	{
 		ARpgHarvestRuneStrike::Launch(Other.Receiver.Get(), Other.Hit, StruckRequest, StrikeClass, WorkSections * Share, true);
+	}
+}
+
+void URpgGameplayAbility_Harvest::CollectFollowUpCandidates(
+	const FRpgHarvestRequest& StruckRequest,
+	const FVector& Center,
+	const float Radius,
+	const int32 MaxTargets,
+	const FRpgHarvestTunedValues& Values,
+	TArray<FRpgHarvestTargetEvaluation>& OutCandidates) const
+{
+	const UWorld* World = GetWorld();
+	if (!World || Radius <= 0.0f)
+	{
+		return;
+	}
+
+	// Further resources are any the tool could work there: area requests, so protected resources stay out.
+	FRpgHarvestRequest CandidateTemplate = StruckRequest;
+	CandidateTemplate.RequestedSections = 1;
+	CandidateTemplate.WorkScale = 1.0f;
+	CandidateTemplate.bCanHitWeakPoint = false;
+	CandidateTemplate.bAreaHarvest = true;
+	CandidateTemplate.Provenance = StruckRequest.Provenance.MakeSecondary();
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(RpgHarvestRuneFlow), false);
+	if (const AActor* Avatar = CurrentActorInfo ? CurrentActorInfo->AvatarActor.Get() : nullptr)
+	{
+		QueryParams.AddIgnoredActor(Avatar);
+	}
+	FRpgHarvestTargeting::CollectAreaTargets(
+		*World,
+		Center,
+		Radius,
+		Values.Targeting.TraceChannel,
+		QueryParams,
+		StruckRequest.Hit.ImpactPoint,
+		true,
+		CandidateTemplate,
+		MaxTargets,
+		OutCandidates);
+}
+
+void URpgGameplayAbility_Harvest::SendSpreadStrikes(
+	UObject* StruckReceiver,
+	const FRpgHarvestRequest& StruckRequest,
+	const float HitWorkSections,
+	const FRpgHarvestTunedValues& Values) const
+{
+	if (!StruckReceiver || !FMath::IsFinite(HitWorkSections) || HitWorkSections <= 0.0f)
+	{
+		return;
+	}
+
+	// A talent such as Fork makes every step strike two resources, each with a share of the work.
+	const bool bSplit = Values.SpreadSplit > 0.0f;
+	const int32 TargetsPerStep = bSplit ? 2 : 1;
+	const float Share = bSplit ? Values.SpreadSplit : 1.0f;
+	const FRpgHarvestResourceId Struck{StruckReceiver, StruckRequest.Hit.Item};
+
+	// Erntesprung: the hit leaps on from resource to resource, never onto one this hit already struck.
+	if (LeapStrikeClass && Values.LeapWork > 0.0f)
+	{
+		const float Radius = LeapRadius * Values.SpreadReach;
+		TArray<FRpgHarvestLeapStrike> Leaps;
+		FRpgHarvestRuneFlow::PlanLeaps(
+			Struck,
+			StruckRequest.Hit.ImpactPoint,
+			FMath::Clamp(LeapJumps, 1, 8),
+			TargetsPerStep,
+			[this, &StruckRequest, Radius, &Values](const FVector& Center, const int32 MaxTargets, TArray<FRpgHarvestTargetEvaluation>& OutCandidates)
+			{
+				CollectFollowUpCandidates(StruckRequest, Center, Radius, MaxTargets, Values, OutCandidates);
+			},
+			Leaps);
+		for (const FRpgHarvestLeapStrike& Leap : Leaps)
+		{
+			ARpgHarvestRuneStrike::Launch(
+				Leap.Target.Receiver.Get(),
+				Leap.Target.Hit,
+				StruckRequest,
+				LeapStrikeClass,
+				Values.LeapWork * HitWorkSections * Share,
+				true,
+				Leap.Step * LeapStepSeconds);
+		}
+	}
+
+	// Durchschlag: the hit drives through into the nearest resource behind the struck one, in the hit's direction.
+	if (PierceStrikeClass && Values.PierceWork > 0.0f)
+	{
+		FVector Direction = StruckRequest.Hit.TraceEnd - StruckRequest.Hit.TraceStart;
+		if (Direction.IsNearlyZero(1.0))
+		{
+			Direction = StruckRequest.Hit.ImpactPoint - StruckRequest.TraceOrigin;
+		}
+		TArray<FRpgHarvestTargetEvaluation> Candidates;
+		CollectFollowUpCandidates(StruckRequest, StruckRequest.Hit.ImpactPoint, PierceDepth * Values.SpreadReach, 0, Values, Candidates);
+		TArray<FRpgHarvestTargetEvaluation> Pierced;
+		FRpgHarvestRuneFlow::PickPierceTargets(
+			Candidates,
+			Struck,
+			StruckRequest.Hit.ImpactPoint,
+			Direction,
+			PierceConeDegrees,
+			TargetsPerStep,
+			Pierced);
+		for (const FRpgHarvestTargetEvaluation& Target : Pierced)
+		{
+			ARpgHarvestRuneStrike::Launch(
+				Target.Receiver.Get(),
+				Target.Hit,
+				StruckRequest,
+				PierceStrikeClass,
+				Values.PierceWork * HitWorkSections * Share,
+				true);
+		}
 	}
 }
 
@@ -945,6 +1061,11 @@ void URpgGameplayAbility_Harvest::ResolveTunedValues(
 	OutValues.EchoHits = TuneCount(Ability_Tuning_Harvest_EchoHits, FMath::Clamp(EchoHitsPerEcho, 1, 16), 1, 16);
 	OutValues.TransferWork = FMath::Clamp(Tune(Ability_Tuning_Harvest_TransferWork, 0.0f), 0.0f, RpgHarvestWork::MaxWorkScale);
 	OutValues.RuneFlowSplit = FMath::Clamp(Tune(Ability_Tuning_Harvest_RuneFlowSplit, 0.0f), 0.0f, 1.0f);
+	OutValues.LeapWork = FMath::Clamp(Tune(Ability_Tuning_Harvest_LeapWork, 0.0f), 0.0f, RpgHarvestWork::MaxWorkScale);
+	OutValues.PierceWork = FMath::Clamp(Tune(Ability_Tuning_Harvest_PierceWork, 0.0f), 0.0f, RpgHarvestWork::MaxWorkScale);
+	OutValues.SpreadReach = FMath::Clamp(Tune(Ability_Tuning_Harvest_SpreadReach, 1.0f), 0.1f, 4.0f);
+	OutValues.SpreadSplit = FMath::Clamp(Tune(Ability_Tuning_Harvest_SpreadSplit, 0.0f), 0.0f, 1.0f);
+	OutValues.bBurnWander = Tune(Ability_Tuning_Harvest_BurnWander, 0.0f) > 0.0f;
 
 	OutValues.Swarm = Swarm;
 	if (SummonsSwarm())

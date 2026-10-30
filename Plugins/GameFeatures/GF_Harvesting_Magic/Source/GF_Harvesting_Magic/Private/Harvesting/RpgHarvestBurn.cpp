@@ -1,10 +1,12 @@
 #include "Harvesting/RpgHarvestBurn.h"
 
+#include "CollisionQueryParams.h"
 #include "Components/SceneComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Harvesting/RpgHarvestRewardService.h"
 #include "Harvesting/RpgHarvestStockRules.h"
+#include "Harvesting/RpgHarvestTargeting.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgHarvestBurn)
@@ -114,6 +116,8 @@ bool ARpgHarvestBurn::Start(
 	Item = DirectRequest.Hit.Item;
 	WorkPerSecond = Params.WorkPerSecond;
 	RemainingTicks = TicksFor(Params.DurationSeconds);
+	WanderRadius = FMath::IsFinite(Params.WanderRadius) ? FMath::Max(0.0f, Params.WanderRadius) : 0.0f;
+	WanderChannel = Params.WanderChannel;
 
 	// Every commit is follow-up work of the igniting action, for its player. The resource it worked has to stay the same
 	// stock: a depletion or respawn changes the revision, and the next commit then puts the burn out.
@@ -160,19 +164,92 @@ void ARpgHarvestBurn::Discharge(const float Multiplier)
 
 void ARpgHarvestBurn::Burn()
 {
-	UObject* Target = Receiver.Get();
-	if (!Target || !IsValid(RequestTemplate.Harvester))
+	if (!IsValid(RequestTemplate.Harvester))
 	{
 		Extinguish();
 		return;
 	}
 
-	LastResult = IRpgHarvestableTarget::Execute_CommitHarvest(Target, RequestTemplate);
+	// A resource that is gone, emptied or respawned, by this burn or by any hit, ends the burn here; a wandering burn
+	// carries its remaining ticks on. Every tick counts, so the wandering always ends.
+	UObject* Target = Receiver.Get();
+	LastResult = Target
+		? IRpgHarvestableTarget::Execute_CommitHarvest(Target, RequestTemplate)
+		: FRpgHarvestResult::MakeRejected(ERpgHarvestOutcome::Depleted);
 	--RemainingTicks;
+	const bool bEmptied = LastResult.IsSuccess()
+		? LastResult.RemainingWork <= 0
+		: LastResult.Outcome == ERpgHarvestOutcome::Depleted || LastResult.Outcome == ERpgHarvestOutcome::Stale;
+	if (bEmptied && RemainingTicks > 0 && WanderRadius > 0.0f && Wander())
+	{
+		Extinguish();
+		return;
+	}
 	if (!LastResult.IsSuccess() || LastResult.RemainingWork <= 0 || RemainingTicks <= 0)
 	{
 		Extinguish();
 	}
+}
+
+bool ARpgHarvestBurn::Wander()
+{
+	UWorld* World = GetWorld();
+	AActor* Beneficiary = RequestTemplate.Harvester;
+	if (!World || !Beneficiary)
+	{
+		return false;
+	}
+
+	// The next resource is one the hit's tool could work there: an area request, so protected resources stay out.
+	FRpgHarvestRequest CandidateTemplate = RequestTemplate;
+	CandidateTemplate.WorkScale = 1.0f;
+	CandidateTemplate.bAreaHarvest = true;
+	const FVector Origin = GetActorLocation();
+	TArray<FRpgHarvestTargetEvaluation> Candidates;
+	FRpgHarvestTargeting::CollectAreaTargets(
+		*World,
+		Origin,
+		WanderRadius,
+		WanderChannel,
+		FCollisionQueryParams(SCENE_QUERY_STAT(RpgHarvestBurnWander), false),
+		Origin,
+		true,
+		CandidateTemplate,
+		0,
+		Candidates);
+	for (const FRpgHarvestTargetEvaluation& Candidate : Candidates)
+	{
+		UObject* NextReceiver = Candidate.Receiver.Get();
+		if (!Candidate.WouldHarvest() || !NextReceiver || (NextReceiver == Receiver.Get() && Candidate.Hit.Item == Item) ||
+			FindBurn(NextReceiver, Candidate.Hit.Item, Beneficiary))
+		{
+			continue;
+		}
+
+		FActorSpawnParameters SpawnParameters;
+		SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		ARpgHarvestBurn* Next = World->SpawnActor<ARpgHarvestBurn>(GetClass(), FTransform(Candidate.Hit.ImpactPoint), SpawnParameters);
+		if (!Next)
+		{
+			return false;
+		}
+		FRpgHarvestRequest NextRequest = RequestTemplate;
+		NextRequest.Hit = Candidate.Hit;
+		NextRequest.WorkScale = 1.0f;
+		FRpgHarvestBurnParams Params;
+		Params.WorkPerSecond = WorkPerSecond;
+		Params.DurationSeconds = RemainingTicks * FMath::Max(0.1f, TickIntervalSeconds);
+		Params.WanderRadius = WanderRadius;
+		Params.WanderChannel = WanderChannel;
+		if (!Next->Start(NextReceiver, Beneficiary, NextRequest, Params))
+		{
+			Next->Destroy();
+			return false;
+		}
+		WanderedTo = Next;
+		return true;
+	}
+	return false;
 }
 
 void ARpgHarvestBurn::Extinguish()

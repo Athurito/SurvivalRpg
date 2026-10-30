@@ -111,4 +111,31 @@ namespace RpgHarvestingMagicGameplayTags
 	 * strike does this fraction of the work, for example 0.6; base 0 strikes one resource.
 	 */
 	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_RuneFlowSplit);
+
+	/**
+	 * Rune tuning of the leap every own hit sends on from resource to resource of the tool, such as Erntesprung: each
+	 * leap's work as a fraction of the hit's own work, for example 0.3 for 30 %; base 0 leaps nowhere.
+	 */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_LeapWork);
+
+	/**
+	 * Rune tuning of the strike every own hit drives through to the next resource behind the struck one, such as
+	 * Durchschlag: its work as a fraction of the hit's own work, for example 0.5 for 50 %; base 0 pierces nothing.
+	 */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_PierceWork);
+
+	/** Skill tree tuning of how far leaps, pierces and wandering burns reach, as a multiplier; base 1. */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_SpreadReach);
+
+	/**
+	 * Skill tree tuning: above 0, every leap step and every pierce strikes two resources, each with this fraction of the
+	 * work, for example 0.6; base 0 strikes one.
+	 */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_SpreadSplit);
+
+	/**
+	 * Skill tree tuning: above 0, a burn whose resource runs empty moves on to the nearest other resource of the tool
+	 * within the leap's reach and burns there for its remaining time; base 0.
+	 */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_BurnWander);
 }

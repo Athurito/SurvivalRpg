@@ -156,4 +156,29 @@ namespace RpgHarvestingMagicGameplayTags
 		Ability_Tuning_Harvest_RuneFlowSplit,
 		"Ability.Tuning.Harvest.RuneFlowSplit",
 		"Above 0, echoes and transfers also strike a second resource nearby, each with this fraction of the work; base 0.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_LeapWork,
+		"Ability.Tuning.Harvest.LeapWork",
+		"Work of each leap an own hit sends on from resource to resource, as a fraction of the hit's work; base 0 leaps nowhere.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_PierceWork,
+		"Ability.Tuning.Harvest.PierceWork",
+		"Work of the strike an own hit drives through to the next resource behind, as a fraction of the hit's work; base 0.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_SpreadReach,
+		"Ability.Tuning.Harvest.SpreadReach",
+		"Multiplier on how far leaps, pierces and wandering burns reach; base 1.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_SpreadSplit,
+		"Ability.Tuning.Harvest.SpreadSplit",
+		"Above 0, every leap step and pierce strikes two resources, each with this fraction of the work; base 0.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_BurnWander,
+		"Ability.Tuning.Harvest.BurnWander",
+		"Above 0, a burn whose resource runs empty moves on to the nearest other resource and burns there; base 0.");
 }
