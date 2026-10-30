@@ -73,8 +73,8 @@ private:
  * Caps the game time every PIE world advances in one frame while this object lives.
  *
  * Rendered PIE shares the GPU with every other process. Under load the editor drops to about 10 fps, and the
- * authority samples a 0.18 s melee attack window only about twice, so its straight trace chords pass beside targets
- * placed on the swing's arc. With the cap, slow frames slow the worlds down instead of taking larger steps; frames
+ * authority samples a 0.18 s melee attack window only about twice, far coarser than the 60 Hz server the combat tests
+ * model. With the cap, slow frames slow the worlds down instead of taking larger steps; frames
  * faster than the cap are unaffected. Start it in BEFORE_EACH, before the network component creates its worlds, and
  * keep it alive through network teardown.
  */

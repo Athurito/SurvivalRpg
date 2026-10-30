@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "RpgGameplayAbility_FromEquipment.h"
+#include "SurvivalRpg/Combat/RpgWeaponTraceInterpolation.h"
 #include "SurvivalRpg/Equipment/RpgWeaponInstance.h"
 #include "RpgGameplayAbility_BasicWeaponAttack.generated.h"
 
@@ -176,9 +177,10 @@ private:
 	/** Server: removes the step tags this activation added. */
 	void RemoveStepOwnerTags();
 	FGameplayTag ResolveAttackDefinitionTag(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo) const;
-	bool TryGetSocketLocationFromWeapon(const URpgWeaponInstance* WeaponInstance, FName SocketName, FVector& OutLocation) const;
-	bool TryGetSocketLocationFromAvatar(FName SocketName, FVector& OutLocation) const;
-	bool GatherTracePointLocations(TArray<FVector>& OutLocations);
+	bool TryGetSocketTransformFromWeapon(const URpgWeaponInstance* WeaponInstance, FName SocketName, FTransform& OutTransform) const;
+	bool TryGetSocketTransformFromAvatar(FName SocketName, FTransform& OutTransform) const;
+	/** Samples the body and every trace point's world transform; false while a trace point cannot be resolved. */
+	bool GatherBladeSample(RpgWeaponTraceInterpolation::FBladeSample& OutSample);
 	void BuildInterpolatedTracePointPairs(
 		const TArray<FVector>& PreviousSocketLocations,
 		const TArray<FVector>& CurrentSocketLocations,
@@ -210,6 +212,10 @@ private:
 	void HandleMontageEnded(const TCHAR* Stage, bool bWasCancelled);
 	void OpenAttackWindow();
 	void CloseAttackWindow(bool bLogMissingEndNotify);
+	/**
+	 * Traces the blade's motion since the previous sample. Authority applies damage from it and a remote owner plays its
+	 * impact feedback; both trace a pose that turned more than a sub-step since the last sample along its swing arc.
+	 */
 	void PerformBladeTraceSample();
 	void BuildTraceQueryParams(FCollisionQueryParams& QueryParams) const;
 	void PerformLineTraceRibbon(
@@ -308,13 +314,16 @@ private:
 	int32 AuthorityTracePointFailuresThisActivation = 0;
 	int32 AuthorityDamageHitsThisActivation = 0;
 	int32 AuthorityDuplicateHitsSkippedThisActivation = 0;
+	/** Most sub-steps one authority trace sample split its blade motion into; above 1 the pose jumped since the last sample. */
+	int32 AuthorityMaxTraceSubstepsThisActivation = 0;
 	bool bLoggedTracePointFailureThisActivation = false;
 
 	FTimerHandle TraceSampleTimerHandle;
 	FTimerHandle AuthorityAttackWindowStartTimerHandle;
 	FTimerHandle AuthorityAttackWindowEndTimerHandle;
 	FTimerHandle AuthorityMontageWindowPollTimerHandle;
-	TArray<FVector> PreviousTracePointLocations;
+	/** Blade pose of the open window's last trace sample; the next sample traces the motion from it. */
+	RpgWeaponTraceInterpolation::FBladeSample PreviousBladeSample;
 	TSet<TObjectKey<AActor>> HitActorsThisWindow;
 
 #if WITH_DEV_AUTOMATION_TESTS

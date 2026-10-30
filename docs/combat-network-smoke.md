@@ -62,11 +62,12 @@ Topology and network profile:
   predicted GameplayAbility, montage, sockets, traces, GameplayEffect, and health state
 - `PktLag=60`, `PktLagVariance=10`, and no configured packet loss
 - rendered offscreen RHI; `NullRHI` is intentionally not used
-- every PIE world steps at most 1/120 s per frame (`FRpgScopedNetworkTestFrameTimeLimit`), the 100 to 120 fps the
-  suite was validated at. When the editor renders slower, for example while another process holds the GPU, the
-  worlds run slower than wall time instead of sampling the attack windows coarsely; the CQTest timeouts stay
-  wall-clock. At 1/60 s the server's window opens on time, but its per-frame trace chords can still miss: it
-  advances the remote client's montage with the client's moves, at times two or three frames at once
+- every PIE world steps at most 1/60 s per frame (`FRpgScopedNetworkTestFrameTimeLimit`), the rate of a real
+  server. When the editor renders slower, for example while another process holds the GPU, the worlds run slower
+  than wall time instead of sampling the attack windows coarsely; the CQTest timeouts stay wall-clock. At this
+  rate the server advances the remote client's montage with the client's moves, at times two or three frames at
+  once; its blade trace then follows the swing arc in sub-steps (`RpgWeaponTraceInterpolation`) instead of one
+  straight chord that passed beside the target
 
 The test performs 20 sequential remote-client attacks at the authored rate, one additional attack
 with a transient 1.5x montage-rate override, and one cancellation during the open authority

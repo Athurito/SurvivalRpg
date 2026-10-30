@@ -71,11 +71,10 @@ namespace RpgCombatPIENetworkTests
 	constexpr float FastMontageTimingPlayRate = 1.5f;
 	constexpr float EchoTestDamage = 25.0f;
 	// The worlds never step more than this per frame, also when rendering under GPU load is slower; at about 10 fps the
-	// authority sampled the attack window only twice and its trace chords missed the target below. The suite was
-	// validated at 100 to 120 fps. At a steady 60 Hz the authority window now opens on time, but the server advances the
-	// remote client's montage with its moves, at times two or three frames at once under the test's jitter, and one
-	// straight trace chord across such a jump can pass beside the target.
-	constexpr float MaxSimulatedFrameTime = 1.0f / 120.0f;
+	// authority sampled the attack window only twice and missed the target below. A real 60 Hz server is the contract:
+	// its window opens on time, and when it advances the remote client's montage two or three frames at once with the
+	// client's moves, under the test's jitter, it traces the blade's jump along the swing arc in sub-steps.
+	constexpr float MaxSimulatedFrameTime = 1.0f / 60.0f;
 	// On the path of the combo's first hit (AM_SwordShieldCombo01_Step1, 0.13..0.30 s): the blade's sampled sweep,
 	// with the CMB-01 grip and root motion, passes through the target capsule's center.
 	const FVector FixedBasicSwordContactOffset(160.0f, 20.0f, 0.0f);
