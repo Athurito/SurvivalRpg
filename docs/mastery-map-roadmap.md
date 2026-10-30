@@ -1,6 +1,6 @@
 # Mastery map roadmap
 
-Updated: 2026-10-30. Status: **In progress**; MST-09c is merged, MST-09d is in review.
+Updated: 2026-10-30. Status: **Complete**; MST-09d merged, and every task of this roadmap is merged. The playtest backlog waits for the user.
 
 This is the execution roadmap for the [mastery map implementation plan](mastery-map-implementation-plan.md): a zoomable shared harvesting mastery map, meaningful talent choices, and the rune loot/crafting/upgrade loop. The plan owns design, architecture, and detailed acceptance contracts; this roadmap owns task status, order, and the current handoff.
 
@@ -58,7 +58,7 @@ All dependencies below are within MST; every row also has the CMB scheduling gat
 | MST-09a | Harvesting Echo, Kraftuebertrag and Runenfluss; bounded own-hit triggers and actual-overkill transfer | MST-08b | Merged (2026-10-29, `daf50e73`) | [mastery-map-rune-flow.md](mastery-map-rune-flow.md), [PR #325](https://github.com/Athurito/SurvivalRpg/pull/325) |
 | MST-09b | Erntesprung, Durchschlag, Ausbreitung and remaining Nachwirkung choices; finite propagation and no duplicated work | MST-09a | Merged (2026-10-30, `85b44c4b`) | [mastery-map-spread.md](mastery-map-spread.md), [PR #326](https://github.com/Athurito/SurvivalRpg/pull/326) |
 | MST-09c | Totenarbeiter and Helfer; temporary workers, correct beneficiary/reward attribution, lifecycle and bounded triggers | MST-09b | Merged (2026-10-30, `9ef5dbb1`) | [mastery-map-helpers.md](mastery-map-helpers.md), [PR #327](https://github.com/Athurito/SurvivalRpg/pull/327) |
-| MST-09d | Full catalog/cutover acceptance, legacy cleanup, input/performance/network regression and cook reachability | MST-09c | In review | [mastery-map-cutover.md](mastery-map-cutover.md), [PR #328](https://github.com/Athurito/SurvivalRpg/pull/328) |
+| MST-09d | Full catalog/cutover acceptance, legacy cleanup, input/performance/network regression and cook reachability | MST-09c | Merged (2026-10-30, `8c9f64ee`) | [mastery-map-cutover.md](mastery-map-cutover.md), [PR #328](https://github.com/Athurito/SurvivalRpg/pull/328) |
 | MST-10a | Several skill trees with their own budgets as regions of the one map, Path of Exile style: tree placement as authored data, tree-qualified node identity, screen-level view cache, fit and shortcuts across trees, a budget entry per tree in the top bar and a point counter at each cluster; proven with the Harvesting tree and a synthetic second tree in automation | MST-03c | Merged (2026-10-27, `9f0dbcf0`) | [mastery-map-several-trees.md](mastery-map-several-trees.md), [PR #311](https://github.com/Athurito/SurvivalRpg/pull/311) |
 | MST-10b | Combat tree: core mastery `Skill.Mastery.Combat` earned by kills through the existing kill XP action; one `DA_SkillTree_Combat` carried by the melee weapons, with Kampfrhythmus (1 point, +10 % attack damage) forking into the exclusive Konter (3 points, perfect block +50 % stagger damage and more stamina back) and Bollwerk (3 points, blocking costs 25 % less stamina and stops 15 % more damage) as granted GameplayEffects | MST-10a | Merged (2026-10-27, `a8ebbfe3`) | [mastery-map-combat-tree.md](mastery-map-combat-tree.md), [PR #312](https://github.com/Athurito/SurvivalRpg/pull/312) |
 
@@ -115,10 +115,9 @@ Playtests of merged MST steps that wait for the user's batch test. Remove a row 
 ## Current handoff
 
 - **Active phase:** MST, started by the user on 2026-10-27 after CMB-01 to CMB-07 merged.
-- **Active task:** MST-09d, branch `claude/mst-09d-harvest-cutover`, [PR #328](https://github.com/Athurito/SurvivalRpg/pull/328); the report is [mastery-map-cutover.md](mastery-map-cutover.md).
-  - `SurvivalRpg.Harvesting.Content.CatalogContract` and `SurvivalRpg.Harvesting.Ability.AllRunesWorkTogether` accept the full catalog of six runes and fifteen talents.
-  - The Ash Wave and Striding Wave cues are retired; the Totenarbeiter wisp shows a strike burst.
-- **Previous task:** MST-09c, merged on 2026-10-30 as `9ef5dbb1` ([PR #327](https://github.com/Athurito/SurvivalRpg/pull/327)); the report is [mastery-map-helpers.md](mastery-map-helpers.md).
+- **Active task:** none.
+- **Previous task:** MST-09d, merged on 2026-10-30 as `8c9f64ee` ([PR #328](https://github.com/Athurito/SurvivalRpg/pull/328)); the report is [mastery-map-cutover.md](mastery-map-cutover.md). It accepted the full catalog of six runes and fifteen talents and closed MST-09.
+- **Open outside MST:** four combat PIE network tests (`CombatImpactCuesPIE` and three of `CombatRemoteMeleePIE`) fail, already before MST-09b; see the [MST-09d report](mastery-map-cutover.md#validation).
 - **User decisions (2026-10-30):** Erntesprung, Durchschlag, the Spread talents and Wandering Effect as proposed, recorded in the [MST-09b report](mastery-map-spread.md#user-decisions-2026-10-30). Totenarbeiter and the Helper talents as proposed for MST-09c. MST-09b, MST-09c and MST-09d are built and merged one after another.
 - **User decisions (2026-10-29):** Echo, Kraftübertragung and the Rune Flow talents as proposed, in one PR; the values are recorded in the [MST-09a report](mastery-map-rune-flow.md#user-decisions-2026-10-29).
 - **User decisions (2026-10-28):** rune recipe knowledge is shared per world, as the plan proposed. Guaranteed rewards are configurable, from mastery milestones and from closing portals, and runes also drop from loot pools. A portal reward goes to the closer and everyone who was in the realm, once per completion. Rune essence from salvage pays for rank upgrades together with ore and charcoal (proposal accepted); MST-08 is split into MST-08a (transactions) and MST-08b (presentation). MST-06 is split into MST-06a, MST-06b and MST-06c, and Brand works as recorded in the [MST-06a report](mastery-map-socket-ui.md#user-decisions-2026-10-28): the rune itself lights resources, Anhaltende Macht lengthens and refreshes the burn, Entladung releases it at once.
@@ -126,6 +125,6 @@ Playtests of merged MST steps that wait for the user's batch test. Remove a row 
   - One map for every tree. After the MST-03c review, MST-10a and MST-10b come before MST-04, with Combat as the second cluster, and the game window has a minimum size of 1280 x 720.
   - Combat talents as proposed: Kampfrhythmus (+10 % base damage), then Konter (perfect block +50 % stagger damage, more stamina back) or Bollwerk (block 25 % less stamina, 15 % more damage stopped). Combat mastery XP comes from kills.
   - For MST-03b, the retired tool trees and powers and the Impact talents as recorded in its report.
-- **Next MST action:** none planned. After MST-09d merges, the roadmap's tasks are complete and only the playtest backlog remains; new work needs a user decision.
+- **Next MST action:** none planned; only the playtest backlog remains. New work needs a user decision.
 - **Rune contract:** rechecked for MST-05. CMB-07's engraved weapon runes and the combat Echo stay unchanged; harvesting runes are separate rune items in `GF_Harvesting_Magic`.
 - **Later content decisions:** production XP and cost curves and the starter and guaranteed-reward pacing remain authored tuning. Rune drop chances, milestone levels and the portal reward are authored content; the 2 % Brand drop is first tuning.
