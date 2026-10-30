@@ -14,6 +14,8 @@
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
+#include "EngineUtils.h"
+
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgHarvestSwarm)
 
 namespace RpgHarvestSwarm
@@ -112,6 +114,24 @@ ARpgHarvestSwarm::ARpgHarvestSwarm(const FObjectInitializer& ObjectInitializer)
 
 ARpgHarvestSwarm::~ARpgHarvestSwarm() = default;
 
+ARpgHarvestSwarm* ARpgHarvestSwarm::FindActiveSwarm(const UWorld& World, const AActor* Beneficiary, const FGameplayTag ProcTag)
+{
+	if (!Beneficiary)
+	{
+		return nullptr;
+	}
+	for (TActorIterator<ARpgHarvestSwarm> It(&World); It; ++It)
+	{
+		ARpgHarvestSwarm* Swarm = *It;
+		if (IsValid(Swarm) && !Swarm->IsActorBeingDestroyed() && Swarm->bStarted && !Swarm->IsFinished() &&
+			Swarm->GetBeneficiary() == Beneficiary && Swarm->ProcTag == ProcTag)
+		{
+			return Swarm;
+		}
+	}
+	return nullptr;
+}
+
 bool ARpgHarvestSwarm::StartSwarm(
 	AActor* InSummoner,
 	const FRpgHarvestRequest& InRequestTemplate,
@@ -153,7 +173,7 @@ bool ARpgHarvestSwarm::StartSwarm(
 	RequestTemplate.PhysicalHarvester = this;
 	RequestTemplate.RequestedSections = FMath::Max(1, InRequestTemplate.RequestedSections);
 	// The creatures' strikes are follow-up work of the summoning action, never the harvester's own hits.
-	RequestTemplate.Provenance = InRequestTemplate.Provenance.MakeSecondary();
+	RequestTemplate.Provenance = InRequestTemplate.Provenance.MakeSecondary(ProcTag);
 	RequestTemplate.bAreaHarvest = true;
 	RequestTemplate.bCanHitWeakPoint = false;
 	RequestTemplate.PresentationDelaySeconds = 0.0f;

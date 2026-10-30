@@ -181,4 +181,24 @@ namespace RpgHarvestingMagicGameplayTags
 		Ability_Tuning_Harvest_BurnWander,
 		"Ability.Tuning.Harvest.BurnWander",
 		"Above 0, a burn whose resource runs empty moves on to the nearest other resource and burns there; base 0.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_WorkerWork,
+		"Ability.Tuning.Harvest.WorkerWork",
+		"Work of each strike of the dead workers own hits raise, as a fraction of the hit's work; base 0 raises none.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_WorkerCount,
+		"Ability.Tuning.Harvest.WorkerCount",
+		"Workers that rise at once, 1 to 4; base from the ability's worker swarm, usually 1.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_WorkerHits,
+		"Ability.Tuning.Harvest.WorkerHits",
+		"Accepted own hits that raise the workers; base from the ability, usually 5.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_WorkerLifetime,
+		"Ability.Tuning.Harvest.WorkerLifetime",
+		"Seconds the workers keep working; base from the ability's worker swarm.");
 }

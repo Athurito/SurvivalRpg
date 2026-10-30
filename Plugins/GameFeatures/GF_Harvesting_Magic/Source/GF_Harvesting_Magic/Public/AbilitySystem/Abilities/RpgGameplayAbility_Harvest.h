@@ -142,6 +142,15 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestTunedValues
 	 */
 	bool bBurnWander = false;
 
+	/**
+	 * Dead workers of runes such as Totenarbeiter: every WorkerHits accepted own hits raise Worker.CreatureCount workers
+	 * at the struck resource, and each of their strikes does WorkerWork times the hit's own work
+	 * (Ability.Tuning.Harvest.WorkerWork, .WorkerHits, .WorkerCount, .WorkerLifetime). Zero WorkerWork raises none.
+	 */
+	float WorkerWork = 0.0f;
+	int32 WorkerHits = 5;
+	FRpgHarvestSwarmParams Worker;
+
 	/** Swarm with tuned creature count, rest and strike radius. */
 	FRpgHarvestSwarmParams Swarm;
 
@@ -224,6 +233,9 @@ public:
 
 	/** Strike a Durchschlag drives into the resource behind the struck one, or null when this ability pierces nothing. */
 	TSubclassOf<ARpgHarvestRuneStrike> GetPierceStrikeClass() const { return PierceStrikeClass; }
+
+	/** Swarm of dead workers a Totenarbeiter raises, or null when this ability raises none. */
+	TSubclassOf<ARpgHarvestSwarm> GetWorkerSwarmClass() const { return WorkerSwarmClass; }
 
 	/** Returns the speed in cm/s at which this ability's presentation travels from target to target; 0 is instant. */
 	float GetPresentationWaveSpeed() const { return PresentationWaveSpeed; }
@@ -508,6 +520,39 @@ protected:
 	float PierceConeDegrees = 35.0f;
 
 	/**
+	 * Swarm of dead workers a Totenarbeiter raises at the struck resource every WorkerHitsPerSummon accepted own hits,
+	 * while the source tool's runes give worker work (Ability.Tuning.Harvest.WorkerWork). The workers work the resources
+	 * the tool can work within WorkerRadius for the player, and their strikes never count as the player's hits. A player
+	 * keeps one crew of this swarm's ProcTag at a time; hits while it works do not count. Empty raises none. Designer
+	 * content.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Helpers")
+	TSubclassOf<ARpgHarvestSwarm> WorkerSwarmClass;
+
+	/** Accepted own hits that raise the workers before tunings (Ability.Tuning.Harvest.WorkerHits), 1 to 16. Designer-tuned. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Helpers", meta = (ClampMin = "1", ClampMax = "16", UIMin = "1", UIMax = "8"))
+	int32 WorkerHitsPerSummon = 5;
+
+	/** Seconds the worker charge waits for the next own hit before it starts over. Designer-tuned. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Helpers", meta = (ClampMin = "0.1", UIMin = "1.0", UIMax = "20.0", Units = "s"))
+	float WorkerChargeTimeoutSeconds = 8.0f;
+
+	/** Radius in centimeters around the struck resource whose resources the workers work. Designer-tuned. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Helpers", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "2000.0", Units = "cm"))
+	float WorkerRadius = 600.0f;
+
+	/** Most resources one crew of workers works, nearest to the struck resource first, 1 to 16. Designer-tuned. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Helpers", meta = (ClampMin = "1", ClampMax = "16", UIMin = "1", UIMax = "8"))
+	int32 WorkerMaxTargets = 6;
+
+	/**
+	 * Creature count, flight, rest between strikes and lifetime of the workers. Skill tree nodes tune CreatureCount and
+	 * MaxLifetimeSeconds (Ability.Tuning.Harvest.WorkerCount, .WorkerLifetime). Designer-tuned.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Helpers")
+	FRpgHarvestSwarmParams Worker;
+
+	/**
 	 * Creature count, flight and reassignment rules of the summoned swarm. Used only with a SwarmClass. Skill tree nodes
 	 * tune CreatureCount, StrikeIntervalSeconds and StrikeRadius (Ability.Tuning.Harvest.Creatures, .StrikeInterval,
 	 * .StrikeRadius).
@@ -616,6 +661,16 @@ private:
 		const FRpgHarvestTunedValues& Values,
 		TArray<FRpgHarvestTargetEvaluation>& OutCandidates) const;
 
+	/**
+	 * Server: raises Values' workers at the resource StruckRequest struck, for the resources of the tool around it. Each
+	 * worker strike does Values.WorkerWork times HitWorkSections sections of work, as follow-up work of StruckRequest.
+	 * Returns the workers' swarm, or null when none rose.
+	 */
+	ARpgHarvestSwarm* RaiseWorkers(const FRpgHarvestRequest& StruckRequest, float HitWorkSections, const FRpgHarvestTunedValues& Values) const;
+
+	/** Server: whether the player of RequestTemplate already has workers of this ability's worker swarm at work. */
+	bool HasActiveWorkers(const FRpgHarvestRequest& RequestTemplate) const;
+
 	/** Server: starts the stride of the current activation with the values captured when execution started. */
 	void StartStride(const FRpgHarvestRequest& RequestTemplate, const FRpgHarvestTunedValues& Values);
 
@@ -674,6 +729,9 @@ private:
 
 	/** Server-only own hits counted towards the next echo; it ends with this ability instance. */
 	FRpgHarvestEchoCharge EchoCharge;
+
+	/** Server-only own hits counted towards the next workers; it ends with this ability instance. */
+	FRpgHarvestEchoCharge WorkerCharge;
 
 	/** Server-only state of the running stride: its pulse and end timers, captured values and pending rewards. */
 	FTimerHandle StridePulseTimerHandle;

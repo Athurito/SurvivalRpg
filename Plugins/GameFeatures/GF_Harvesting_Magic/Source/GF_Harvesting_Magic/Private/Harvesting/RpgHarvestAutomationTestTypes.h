@@ -345,6 +345,12 @@ public:
 		LeapRadius = InLeapRadius;
 		PierceDepth = InPierceDepth;
 	}
+	void ConfigureWorkers(const TSubclassOf<ARpgHarvestSwarm> InSwarmClass, const FRpgHarvestSwarmParams& InWorker, const float InRadius)
+	{
+		WorkerSwarmClass = InSwarmClass;
+		Worker = InWorker;
+		WorkerRadius = InRadius;
+	}
 };
 
 /** Records preview notifications so tests can assert change-only broadcasting. */

@@ -57,6 +57,7 @@ namespace RpgHarvestContentContractTests
 	const TCHAR* TransferRuneClassPath = TEXT("/GF_Harvesting_Magic/Items/Runes/ID_Rune_Kraftuebertrag.ID_Rune_Kraftuebertrag_C");
 	const TCHAR* LeapRuneClassPath = TEXT("/GF_Harvesting_Magic/Items/Runes/ID_Rune_Erntesprung.ID_Rune_Erntesprung_C");
 	const TCHAR* PierceRuneClassPath = TEXT("/GF_Harvesting_Magic/Items/Runes/ID_Rune_Durchschlag.ID_Rune_Durchschlag_C");
+	const TCHAR* WorkerRuneClassPath = TEXT("/GF_Harvesting_Magic/Items/Runes/ID_Rune_Totenarbeiter.ID_Rune_Totenarbeiter_C");
 	const TCHAR* RuneChoiceRewardPath = TEXT("/GF_Harvesting_Magic/Items/Runes/DA_Reward_HarvestingRuneChoice.DA_Reward_HarvestingRuneChoice");
 	const TCHAR* IronVeinLootPath = TEXT("/GF_Harvesting_Magic/Loot/LT_IronVein.LT_IronVein");
 	const TCHAR* DeadPineLootPath = TEXT("/GF_Harvesting_Magic/Loot/LT_DeadPine.LT_DeadPine");
@@ -955,6 +956,63 @@ bool FRpgHarvestSpreadContractTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Wandering Effect and Discharge exclude each other"),
 		!Wander->ExclusiveGroup.IsNone() && Wander->ExclusiveGroup == Discharge->ExclusiveGroup);
 	TestTrue(TEXT("Wandering Effect follows Lasting Power"), Wander->Prerequisites == Discharge->Prerequisites);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestHelperContractTest,
+	"SurvivalRpg.Harvesting.Content.HelperContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestHelperContractTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestContentContractTests;
+	using namespace RpgHarvestingMagicGameplayTags;
+
+	// Totenarbeiter is a rank I to III rune, found, forged, upgraded and salvaged like Brand.
+	TestHarvestingRune(*this, WorkerRuneClassPath, TEXT("Rune.Totenarbeiter"), Ability_Tuning_Harvest_WorkerWork);
+
+	// Both swings raise workers whose work names the rune; the workers rise as one worker, for a limited time.
+	const FGameplayTag WorkerTag = FGameplayTag::RequestGameplayTag(TEXT("Rune.Totenarbeiter"), false);
+	for (const TCHAR* SwingPath : {AxeChopAbilityClassPath, PickaxeStrikeAbilityClassPath})
+	{
+		UClass* SwingClass = LoadClass<URpgGameplayAbility_Harvest>(nullptr, SwingPath);
+		const URpgGameplayAbility_Harvest* Swing = SwingClass ? GetDefault<URpgGameplayAbility_Harvest>(SwingClass) : nullptr;
+		const TSubclassOf<ARpgHarvestSwarm> WorkerClass = Swing ? Swing->GetWorkerSwarmClass() : nullptr;
+		TestTrue(*FString::Printf(TEXT("%s raises workers as Totenarbeiter"), SwingPath),
+			WorkerClass && GetDefault<ARpgHarvestSwarm>(WorkerClass)->GetProcTag() == WorkerTag);
+	}
+
+	// The Helper branch needs Totenarbeiter in the tool; its two choices exclude each other.
+	const URpgSkillTreeDefinition* Tree = LoadToolSkillTree(
+		*this,
+		PickaxeItemClassPath,
+		FGameplayTag::RequestGameplayTag(TEXT("SkillTree.Tree.Harvesting")),
+		RpgTradeSkillGameplayTags::Skill_Mastery_Harvesting);
+	if (!Tree)
+	{
+		return false;
+	}
+	FGameplayTagContainer HelperRunes;
+	HelperRunes.AddTag(WorkerTag);
+	int32 HelperNodes = 0;
+	TSet<FName> HelperChoices;
+	for (const FRpgSkillTreeNode& Node : Tree->Nodes)
+	{
+		if (Node.RegionId != TEXT("Helpers"))
+		{
+			continue;
+		}
+		++HelperNodes;
+		TestTrue(*FString::Printf(TEXT("%s needs Totenarbeiter"), *Node.NodeTag.ToString()), Node.RequiredRunes == HelperRunes);
+		if (!Node.ExclusiveGroup.IsNone())
+		{
+			HelperChoices.Add(Node.ExclusiveGroup);
+		}
+	}
+	TestEqual(TEXT("Helpers has an entry and two choices"), HelperNodes, 3);
+	TestEqual(TEXT("The two Helper choices share one group"), HelperChoices.Num(), 1);
 	return true;
 }
 

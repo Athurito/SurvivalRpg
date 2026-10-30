@@ -254,6 +254,15 @@ public:
 	/** Returns the current server world time in seconds, or the world time without a game state. */
 	double GetServerWorldTimeSeconds() const;
 
+	/** The effect this swarm's work names in its provenance, for example Rune.Totenarbeiter; empty for plain swarms. */
+	FGameplayTag GetProcTag() const { return ProcTag; }
+
+	/**
+	 * Server: a swarm of Beneficiary (a player state, or the harvester without one) whose work names ProcTag and that has
+	 * not finished yet, or null. Workers of a rune use it to keep one crew per player.
+	 */
+	static ARpgHarvestSwarm* FindActiveSwarm(const UWorld& World, const AActor* Beneficiary, FGameplayTag ProcTag);
+
 protected:
 	//~ AActor interface
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -304,6 +313,13 @@ protected:
 	/** Depth in centimeters below their start from which the creatures rise. Cosmetic. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Swarm", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "400.0", Units = "cm"))
 	float EmergeDepth = 160.0f;
+
+	/**
+	 * Effect the swarm's work names in its provenance, for example Rune.Totenarbeiter for the dead workers of a rune, so
+	 * later effects can tell it from other follow-up work. Designer-set on the Blueprint subclass; empty for plain swarms.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Swarm", meta = (Categories = "Rune"))
+	FGameplayTag ProcTag;
 
 	/** Seconds a finished creature's actor stays for its dissipation presentation. Cosmetic. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Swarm", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "3.0", Units = "s"))
