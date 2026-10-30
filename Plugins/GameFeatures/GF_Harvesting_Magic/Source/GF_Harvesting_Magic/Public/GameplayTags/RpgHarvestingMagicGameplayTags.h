@@ -138,4 +138,19 @@ namespace RpgHarvestingMagicGameplayTags
 	 * within the leap's reach and burns there for its remaining time; base 0.
 	 */
 	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_BurnWander);
+
+	/**
+	 * Rune tuning of the dead workers every few own hits raise, such as Totenarbeiter: each worker strike's work as a
+	 * fraction of the hit's own work, for example 0.4 for 40 %; base 0 raises none.
+	 */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_WorkerWork);
+
+	/** Skill tree tuning of how many workers rise at once, 1 to 4; base from the ability's worker swarm, usually 1. */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_WorkerCount);
+
+	/** Skill tree tuning of how many accepted own hits raise the workers; base from the ability, usually 5. */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_WorkerHits);
+
+	/** Skill tree tuning of how many seconds the workers keep working; base from the ability's worker swarm. */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_WorkerLifetime);
 }

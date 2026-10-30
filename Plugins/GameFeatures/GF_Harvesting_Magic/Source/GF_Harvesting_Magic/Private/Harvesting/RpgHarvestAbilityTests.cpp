@@ -55,6 +55,8 @@ UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestSpreadTest_Pierce, "SkillTree.Node.Harv
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestSpreadTest_Fork, "SkillTree.Node.HarvestSpreadTest.Fork");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestSpreadTest_Burn, "SkillTree.Node.HarvestSpreadTest.Burn");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestSpreadTest_Wander, "SkillTree.Node.HarvestSpreadTest.Wander");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestWorkerTest_Worker, "SkillTree.Node.HarvestWorkerTest.Worker");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestWorkerTest_Pack, "SkillTree.Node.HarvestWorkerTest.Pack");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestTuningTest_Cooldown, "Cooldown.HarvestTuningTest");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestWorkTest_Tree, "SkillTree.Tree.HarvestWorkTest");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestWorkTest_Cleave, "SkillTree.Node.HarvestWorkTest.Cleave");
@@ -3925,6 +3927,147 @@ bool FRpgHarvestBurnWanderAbilityTest::RunTest(const FString& Parameters)
 		TEXT("Every completed section rewarded the igniting player once"),
 		CountMaterial(Harvester.PlayerState),
 		5 * YieldPerSection);
+	return true;
+}
+
+namespace RpgHarvestWorkerTests
+{
+	using namespace RpgHarvestAbilityTests;
+	using namespace RpgHarvestTuningTests;
+
+	/**
+	 * One-point nodes on Mining that tune every ability of the tool like the Helper runes and talents: Worker (strikes of
+	 * half a hit's work, raised every second own hit) and Pack (one more worker).
+	 */
+	URpgSkillTreeDefinition* MakeWorkerTree()
+	{
+		using namespace RpgHarvestingMagicGameplayTags;
+
+		URpgSkillTreeDefinition* Tree = NewObject<URpgSkillTreeDefinition>(GetTransientPackage(), NAME_None, RF_Transient);
+		Tree->TreeTag = TAG_HarvestTuningTest_Tree;
+		Tree->MasterySkillTag = RpgTradeSkillGameplayTags::Skill_Gathering_Mining;
+		Tree->MaxPoints = 10;
+		FRpgSkillTreeNode& Worker = Tree->Nodes.AddDefaulted_GetRef();
+		Worker.NodeTag = TAG_HarvestWorkerTest_Worker;
+		Worker.Column = 0;
+		Worker.AbilityTunings = {
+			MakeTuning(Ability_Tuning_Harvest_WorkerWork, ERpgSkillTreeTuningOperation::Set, 0.5f),
+			MakeTuning(Ability_Tuning_Harvest_WorkerHits, ERpgSkillTreeTuningOperation::Set, 2.0f)};
+		FRpgSkillTreeNode& Pack = Tree->Nodes.AddDefaulted_GetRef();
+		Pack.NodeTag = TAG_HarvestWorkerTest_Pack;
+		Pack.Column = 1;
+		Pack.AbilityTunings = {MakeTuning(Ability_Tuning_Harvest_WorkerCount, ERpgSkillTreeTuningOperation::Add, 1.0f)};
+		return Tree;
+	}
+
+	/** Swarms in World that have not finished. */
+	int32 CountActiveSwarms(UWorld* World)
+	{
+		int32 Count = 0;
+		for (TActorIterator<ARpgHarvestSwarm> It(World); It; ++It)
+		{
+			Count += IsValid(*It) && !It->IsActorBeingDestroyed() && !It->IsFinished() ? 1 : 0;
+		}
+		return Count;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestWorkerAbilityTest,
+	"SurvivalRpg.Harvesting.Ability.WorkersRiseEveryFewHitsForTheirPlayer",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestWorkerAbilityTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestWorkerTests;
+	using RpgHarvestSwarmTests::Advance;
+	using RpgHarvestSwarmTests::FindActiveSwarm;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	// A large resource on the view ray, so the workers keep working it, and one 15 m away, beyond their 6 m.
+	const double Eye = Harvester.Pawn->BaseEyeHeight;
+	ARpgHarvestAutomationCollidableNodeActor* Struck = SpawnNode(World, FVector(150.0, 0.0, Eye), MakeProfile(World, 20));
+	ARpgHarvestAutomationCollidableNodeActor* Far = SpawnNode(World, FVector(150.0, -1500.0, Eye), MakeProfile(World, 4));
+	URpgSkillTreeDefinition* Tree = MakeWorkerTree();
+	FScopedTreeTool TreeTool(Tree);
+	URpgSkillTreeComponent* SkillTrees = PrepareSkillTree(Harvester, Tree);
+	URpgEquipmentInstance* Equipment = MakeTreeToolEquipment(Harvester);
+	const FGrantedAbility Swing = GrantAbility(Harvester.AbilitySystem, Equipment);
+	if (!Struck || !Far || !TestNotNull(TEXT("Skill trees are prepared"), SkillTrees) || !TestNotNull(TEXT("Swing exists"), Swing.Instance))
+	{
+		return false;
+	}
+	FRpgHarvestSwarmParams Workers;
+	Workers.CreatureCount = 1;
+	Workers.FlightSpeed = 1000.0f;
+	Workers.EmergeSeconds = 0.2f;
+	Workers.LaunchIntervalSeconds = 0.1f;
+	Workers.StrikeIntervalSeconds = 0.5f;
+	Workers.MaxReassignments = 4;
+	Workers.MaxLifetimeSeconds = 3.0f;
+	Workers.bRequireLineOfSight = false;
+	Swing.Instance->ConfigureWorkers(ARpgHarvestSwarm::StaticClass(), Workers, 600.0f);
+	URpgHarvestAutomationHarvestedListener* Results = NewObject<URpgHarvestAutomationHarvestedListener>();
+	Struck->HarvestableNode->OnHarvested.AddDynamic(Results, &URpgHarvestAutomationHarvestedListener::HandleHarvested);
+	TestWorld.PrimeTimerManager();
+
+	TestTrue(TEXT("A hit without worker work activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	TestNull(TEXT("Without worker work no worker rises"), FindActiveSwarm(World));
+	TestEqual(TEXT("Worker is learned"),
+		SkillTrees->UnlockNode(TAG_HarvestTuningTest_Tree, TAG_HarvestWorkerTest_Worker), ERpgSkillTreeUnlockResult::Unlockable);
+	TestTrue(TEXT("The first counted hit activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	TestNull(TEXT("One counted hit raises no worker"), FindActiveSwarm(World));
+	TestTrue(TEXT("The second counted hit activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	ARpgHarvestSwarm* Crew = FindActiveSwarm(World);
+	if (!TestNotNull(TEXT("The second counted hit raises a worker"), Crew))
+	{
+		return false;
+	}
+	TestTrue(TEXT("The worker works for the hitting player"), Crew->GetBeneficiary() == Harvester.PlayerState);
+	TestEqual(TEXT("One worker rises"), Crew->GetCreatures().Num(), 1);
+
+	// A hit while the worker works raises no second crew and does not count towards the next one.
+	TestTrue(TEXT("A hit while the worker works activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	TestEqual(TEXT("The player keeps one crew"), CountActiveSwarms(World), 1);
+	const int32 HitSections = 4;
+	Advance(TestWorld, 1.5);
+	const int32 MidSections = static_cast<int32>(Struck->HarvestableNode->GetHarvestState().HarvestedSections);
+	TestTrue(TEXT("The worker works the struck resource"), MidSections > HitSections || Struck->HarvestableNode->GetHarvestState().SectionWork > 0);
+	TestEqual(TEXT("Its rewards wait for the crew to finish"), CountMaterial(Harvester.PlayerState), HitSections * YieldPerSection);
+	Advance(TestWorld, 2.0);
+	TestNull(TEXT("The worker is gone after its lifetime"), FindActiveSwarm(World));
+	const int32 Harvested = static_cast<int32>(Struck->HarvestableNode->GetHarvestState().HarvestedSections);
+	TestTrue(TEXT("The worker completed sections of its own"), Harvested >= HitSections + 2);
+	TestEqual(TEXT("Every completed section rewarded the player once"), CountMaterial(Harvester.PlayerState), Harvested * YieldPerSection);
+	TestEqual(TEXT("A resource beyond the workers' reach is untouched"), Far->HarvestableNode->GetRemainingSections(), 4);
+	TestTrue(
+		TEXT("Worker strikes are follow-up work, never the player's own hits"),
+		Results->Results.ContainsByPredicate([](const FRpgHarvestResult& Result)
+		{
+			return Result.IsSuccess() && !Result.Provenance.IsDirect() && Result.Provenance.RootActionId > 0;
+		}));
+
+	// The hit during the work did not count: one more hit raises nothing, the second one raises the next crew. Pack
+	// raises two workers at once.
+	TestEqual(TEXT("Pack is learned"),
+		SkillTrees->UnlockNode(TAG_HarvestTuningTest_Tree, TAG_HarvestWorkerTest_Pack), ERpgSkillTreeUnlockResult::Unlockable);
+	TestTrue(TEXT("A first hit after the crew activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	TestNull(TEXT("The hit during the work did not count"), FindActiveSwarm(World));
+	TestTrue(TEXT("A second hit after the crew activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	ARpgHarvestSwarm* Pack = FindActiveSwarm(World);
+	TestTrue(TEXT("Pack raises two workers"), Pack && Pack->GetCreatures().Num() == 2);
+	Advance(TestWorld, 3.5);
+	TestEqual(
+		TEXT("The pack's sections reward the player once as well"),
+		CountMaterial(Harvester.PlayerState),
+		static_cast<int32>(Struck->HarvestableNode->GetHarvestState().HarvestedSections) * YieldPerSection);
 	return true;
 }
 

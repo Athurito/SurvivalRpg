@@ -63,6 +63,17 @@ URpgGameplayAbility_Harvest::URpgGameplayAbility_Harvest(const FObjectInitialize
 	ActivationGroup = ERpgAbilityActivationGroup::Exclusive_Blocking;
 	CommitEventTag = RpgHarvestingMagicGameplayTags::GameplayEvent_Harvesting_Commit;
 
+	// Dead workers are one quiet helper by default: it rises at the struck resource, strikes about once a second and
+	// is gone after five seconds. Walls do not stop it, since it only works resources right around the struck one.
+	Worker.CreatureCount = 1;
+	Worker.FlightSpeed = 500.0f;
+	Worker.EmergeSeconds = 0.5f;
+	Worker.LaunchIntervalSeconds = 0.2f;
+	Worker.StrikeIntervalSeconds = 1.2f;
+	Worker.MaxReassignments = 4;
+	Worker.MaxLifetimeSeconds = 5.0f;
+	Worker.bRequireLineOfSight = false;
+
 	const FGameplayTag DeathTag = FGameplayTag::RequestGameplayTag(TEXT("Status.Death"), false);
 	if (DeathTag.IsValid())
 	{
@@ -554,6 +565,22 @@ const FRpgHarvestTargetEvaluation* URpgGameplayAbility_Harvest::CommitSelection(
 		}
 	}
 
+	// A socketed rune such as Totenarbeiter raises dead workers every few accepted own hits at the first struck
+	// resource; they work the resources of the tool around it for a while, for this player. A player keeps one crew at a
+	// time, and hits while it works do not count towards the next.
+	if (WorkerSwarmClass && Values.WorkerWork > 0.0f && FirstHarvestedIndex != INDEX_NONE)
+	{
+		const FRpgHarvestTargetEvaluation& Struck = Selection.Targets[FirstHarvestedIndex];
+		if (Struck.Receiver.IsValid() && Struck.Result.IsAcceptedDirectHit() && !HasActiveWorkers(RequestTemplate) &&
+			WorkerCharge.AddHit(Now, Values.WorkerHits, WorkerChargeTimeoutSeconds))
+		{
+			FRpgHarvestRequest StruckRequest = RequestTemplate;
+			StruckRequest.Hit = Struck.Hit;
+			StruckRequest.TraceOrigin = Struck.Hit.TraceStart;
+			RaiseWorkers(StruckRequest, RequestTemplate.RequestedSections * RequestTemplate.WorkScale, Values);
+		}
+	}
+
 	// Socketed runes such as Erntesprung and Durchschlag spread every own hit from the first struck resource: leaps from
 	// resource to resource and a pierce into the one behind, each with a fraction of the hit's own work.
 	if ((LeapStrikeClass || PierceStrikeClass) && (Values.LeapWork > 0.0f || Values.PierceWork > 0.0f) &&
@@ -742,6 +769,63 @@ void URpgGameplayAbility_Harvest::SendSpreadStrikes(
 				true);
 		}
 	}
+}
+
+bool URpgGameplayAbility_Harvest::HasActiveWorkers(const FRpgHarvestRequest& RequestTemplate) const
+{
+	const UWorld* World = GetWorld();
+	if (!World || !WorkerSwarmClass)
+	{
+		return false;
+	}
+	AActor* Beneficiary = FRpgHarvestRewardService::ResolveHarvesterPlayerState(RequestTemplate.Harvester);
+	return ARpgHarvestSwarm::FindActiveSwarm(
+		*World,
+		Beneficiary ? Beneficiary : RequestTemplate.Harvester.Get(),
+		GetDefault<ARpgHarvestSwarm>(WorkerSwarmClass)->GetProcTag()) != nullptr;
+}
+
+ARpgHarvestSwarm* URpgGameplayAbility_Harvest::RaiseWorkers(
+	const FRpgHarvestRequest& StruckRequest,
+	const float HitWorkSections,
+	const FRpgHarvestTunedValues& Values) const
+{
+	UWorld* World = GetWorld();
+	AActor* Avatar = CurrentActorInfo ? CurrentActorInfo->AvatarActor.Get() : nullptr;
+	if (!World || !Avatar || !WorkerSwarmClass || !FMath::IsFinite(HitWorkSections) || HitWorkSections <= 0.0f)
+	{
+		return nullptr;
+	}
+
+	// The workers take the resources of the tool around the struck one, the struck one first while it has stock.
+	TArray<FRpgHarvestTargetEvaluation> Targets;
+	CollectFollowUpCandidates(StruckRequest, StruckRequest.Hit.ImpactPoint, WorkerRadius, FMath::Clamp(WorkerMaxTargets, 1, 16), Values, Targets);
+	if (!Targets.ContainsByPredicate([](const FRpgHarvestTargetEvaluation& Target) { return Target.WouldHarvest(); }))
+	{
+		return nullptr;
+	}
+
+	// Every worker strike takes one section's worth of reservation and does a share of the hit's own work.
+	FRpgHarvestRequest WorkerRequest = StruckRequest;
+	WorkerRequest.RequestedSections = 1;
+	WorkerRequest.WorkScale = FMath::Clamp(Values.WorkerWork * HitWorkSections, 0.01f, RpgHarvestWork::MaxWorkScale);
+	WorkerRequest.bCanHitWeakPoint = false;
+	WorkerRequest.bFinishResource = false;
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.Owner = Avatar;
+	SpawnParameters.Instigator = Cast<APawn>(Avatar);
+	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARpgHarvestSwarm* Workers = World->SpawnActor<ARpgHarvestSwarm>(
+		WorkerSwarmClass,
+		FTransform(StruckRequest.Hit.ImpactPoint),
+		SpawnParameters);
+	if (Workers && !Workers->StartSwarm(Avatar, WorkerRequest, Values.Worker, Targets))
+	{
+		Workers->Destroy();
+		Workers = nullptr;
+	}
+	return Workers;
 }
 
 void URpgGameplayAbility_Harvest::StartStride(const FRpgHarvestRequest& RequestTemplate, const FRpgHarvestTunedValues& Values)
@@ -1066,6 +1150,12 @@ void URpgGameplayAbility_Harvest::ResolveTunedValues(
 	OutValues.SpreadReach = FMath::Clamp(Tune(Ability_Tuning_Harvest_SpreadReach, 1.0f), 0.1f, 4.0f);
 	OutValues.SpreadSplit = FMath::Clamp(Tune(Ability_Tuning_Harvest_SpreadSplit, 0.0f), 0.0f, 1.0f);
 	OutValues.bBurnWander = Tune(Ability_Tuning_Harvest_BurnWander, 0.0f) > 0.0f;
+	OutValues.WorkerWork = FMath::Clamp(Tune(Ability_Tuning_Harvest_WorkerWork, 0.0f), 0.0f, RpgHarvestWork::MaxWorkScale);
+	OutValues.WorkerHits = TuneCount(Ability_Tuning_Harvest_WorkerHits, FMath::Clamp(WorkerHitsPerSummon, 1, 16), 1, 16);
+	OutValues.Worker = Worker;
+	OutValues.Worker.CreatureCount = TuneCount(Ability_Tuning_Harvest_WorkerCount, FMath::Clamp(Worker.CreatureCount, 1, 4), 1, 4);
+	OutValues.Worker.MaxLifetimeSeconds =
+		FMath::Clamp(Tune(Ability_Tuning_Harvest_WorkerLifetime, Worker.MaxLifetimeSeconds), 0.5f, 60.0f);
 
 	OutValues.Swarm = Swarm;
 	if (SummonsSwarm())
