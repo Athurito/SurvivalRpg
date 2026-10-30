@@ -57,6 +57,7 @@ UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestSpreadTest_Burn, "SkillTree.Node.Harves
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestSpreadTest_Wander, "SkillTree.Node.HarvestSpreadTest.Wander");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestWorkerTest_Worker, "SkillTree.Node.HarvestWorkerTest.Worker");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestWorkerTest_Pack, "SkillTree.Node.HarvestWorkerTest.Pack");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestCatalogTest_AllRunes, "SkillTree.Node.HarvestCatalogTest.AllRunes");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestTuningTest_Cooldown, "Cooldown.HarvestTuningTest");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestWorkTest_Tree, "SkillTree.Tree.HarvestWorkTest");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestWorkTest_Cleave, "SkillTree.Node.HarvestWorkTest.Cleave");
@@ -4068,6 +4069,157 @@ bool FRpgHarvestWorkerAbilityTest::RunTest(const FString& Parameters)
 		TEXT("The pack's sections reward the player once as well"),
 		CountMaterial(Harvester.PlayerState),
 		static_cast<int32>(Struck->HarvestableNode->GetHarvestState().HarvestedSections) * YieldPerSection);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestAllRunesAbilityTest,
+	"SurvivalRpg.Harvesting.Ability.AllRunesWorkTogether",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestAllRunesAbilityTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestAbilityTests;
+	using namespace RpgHarvestTuningTests;
+	using namespace RpgHarvestingMagicGameplayTags;
+	using RpgHarvestSwarmTests::Advance;
+	using RpgHarvestSwarmTests::FindActiveSwarm;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+
+	// One node tunes the tool like all six runes at once, with the talents that widen them: Brand with Wandering
+	// Effect, Echo on every hit, Kraftuebertrag, Erntesprung and Durchschlag forked, and workers on every hit.
+	URpgSkillTreeDefinition* Tree = NewObject<URpgSkillTreeDefinition>(GetTransientPackage(), NAME_None, RF_Transient);
+	Tree->TreeTag = TAG_HarvestTuningTest_Tree;
+	Tree->MasterySkillTag = RpgTradeSkillGameplayTags::Skill_Gathering_Mining;
+	Tree->MaxPoints = 10;
+	FRpgSkillTreeNode& AllRunes = Tree->Nodes.AddDefaulted_GetRef();
+	AllRunes.NodeTag = TAG_HarvestCatalogTest_AllRunes;
+	AllRunes.AbilityTunings = {
+		MakeTuning(Ability_Tuning_Harvest_BurnWork, ERpgSkillTreeTuningOperation::Set, 0.3f),
+		MakeTuning(Ability_Tuning_Harvest_BurnDuration, ERpgSkillTreeTuningOperation::Set, 3.0f),
+		MakeTuning(Ability_Tuning_Harvest_BurnWander, ERpgSkillTreeTuningOperation::Set, 1.0f),
+		MakeTuning(Ability_Tuning_Harvest_EchoWork, ERpgSkillTreeTuningOperation::Set, 0.5f),
+		MakeTuning(Ability_Tuning_Harvest_EchoHits, ERpgSkillTreeTuningOperation::Set, 1.0f),
+		MakeTuning(Ability_Tuning_Harvest_TransferWork, ERpgSkillTreeTuningOperation::Set, 1.0f),
+		MakeTuning(Ability_Tuning_Harvest_RuneFlowSplit, ERpgSkillTreeTuningOperation::Set, 0.6f),
+		MakeTuning(Ability_Tuning_Harvest_LeapWork, ERpgSkillTreeTuningOperation::Set, 0.5f),
+		MakeTuning(Ability_Tuning_Harvest_PierceWork, ERpgSkillTreeTuningOperation::Set, 0.5f),
+		MakeTuning(Ability_Tuning_Harvest_SpreadSplit, ERpgSkillTreeTuningOperation::Set, 0.6f),
+		MakeTuning(Ability_Tuning_Harvest_WorkerWork, ERpgSkillTreeTuningOperation::Set, 0.5f),
+		MakeTuning(Ability_Tuning_Harvest_WorkerHits, ERpgSkillTreeTuningOperation::Set, 1.0f)};
+
+	// The struck resource on the view ray; two behind it, three beside it within a leap, and one far away.
+	const double Eye = Harvester.Pawn->BaseEyeHeight;
+	TArray<ARpgHarvestAutomationCollidableNodeActor*> Nodes = {
+		SpawnNode(World, FVector(150.0, 0.0, Eye), MakeProfile(World, 5)),
+		SpawnNode(World, FVector(450.0, 0.0, Eye), MakeProfile(World, 4)),
+		SpawnNode(World, FVector(450.0, 140.0, Eye), MakeProfile(World, 4)),
+		SpawnNode(World, FVector(150.0, 300.0, Eye), MakeProfile(World, 4)),
+		SpawnNode(World, FVector(150.0, -450.0, Eye), MakeProfile(World, 4)),
+		SpawnNode(World, FVector(150.0, 750.0, Eye), MakeProfile(World, 4))};
+	ARpgHarvestAutomationCollidableNodeActor* Far = SpawnNode(World, FVector(150.0, -1500.0, Eye), MakeProfile(World, 4));
+	FScopedTreeTool TreeTool(Tree);
+	URpgSkillTreeComponent* SkillTrees = PrepareSkillTree(Harvester, Tree);
+	URpgEquipmentInstance* Equipment = MakeTreeToolEquipment(Harvester);
+	const FGrantedAbility Swing = GrantAbility(Harvester.AbilitySystem, Equipment);
+	if (Nodes.Contains(nullptr) || !Far || !TestNotNull(TEXT("Skill trees are prepared"), SkillTrees) ||
+		!TestNotNull(TEXT("Swing exists"), Swing.Instance))
+	{
+		return false;
+	}
+	FRpgHarvestSwarmParams Workers;
+	Workers.CreatureCount = 2;
+	Workers.FlightSpeed = 1000.0f;
+	Workers.EmergeSeconds = 0.2f;
+	Workers.StrikeIntervalSeconds = 0.5f;
+	Workers.MaxReassignments = 4;
+	Workers.MaxLifetimeSeconds = 3.0f;
+	Workers.bRequireLineOfSight = false;
+	Swing.Instance->ConfigureBurn(ARpgHarvestBurn::StaticClass());
+	Swing.Instance->ConfigureRuneFlow(ARpgHarvestRuneStrike::StaticClass(), ARpgHarvestRuneStrike::StaticClass(), 800.0f);
+	Swing.Instance->ConfigureSpread(ARpgHarvestRuneStrike::StaticClass(), ARpgHarvestRuneStrike::StaticClass(), 600.0f, 400.0f);
+	Swing.Instance->ConfigureWorkers(ARpgHarvestSwarm::StaticClass(), Workers, 600.0f);
+	Swing.Instance->ConfigureSections(3);
+	TestEqual(TEXT("All runes are learned"),
+		SkillTrees->UnlockNode(TAG_HarvestTuningTest_Tree, TAG_HarvestCatalogTest_AllRunes), ERpgSkillTreeUnlockResult::Unlockable);
+
+	// Every result of every resource, and every follow-up actor spawned.
+	URpgHarvestAutomationHarvestedListener* Results = NewObject<URpgHarvestAutomationHarvestedListener>();
+	for (ARpgHarvestAutomationCollidableNodeActor* Node : Nodes)
+	{
+		Node->HarvestableNode->OnHarvested.AddDynamic(Results, &URpgHarvestAutomationHarvestedListener::HandleHarvested);
+	}
+	int32 Strikes = 0;
+	int32 Burns = 0;
+	int32 Crews = 0;
+	const FDelegateHandle SpawnHandle = World->AddOnActorSpawnedHandler(FOnActorSpawned::FDelegate::CreateLambda(
+		[&Strikes, &Burns, &Crews](AActor* Actor)
+		{
+			Strikes += Actor && Actor->IsA<ARpgHarvestRuneStrike>() ? 1 : 0;
+			Burns += Actor && Actor->IsA<ARpgHarvestBurn>() ? 1 : 0;
+			Crews += Actor && Actor->IsA<ARpgHarvestSwarm>() ? 1 : 0;
+		}));
+	ON_SCOPE_EXIT
+	{
+		World->RemoveOnActorSpawnedHandler(SpawnHandle);
+	};
+	TestWorld.PrimeTimerManager();
+
+	// Two own hits: the first works the struck resource, the second empties it with overkill.
+	TestTrue(TEXT("The first own hit activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	Advance(TestWorld, 0.1);
+	TestTrue(TEXT("The second own hit activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	Advance(TestWorld, 12.0);
+
+	// Everything that followed the two hits has ended.
+	TestNull(TEXT("No worker is left"), FindActiveSwarm(World));
+	int32 LiveFollowUps = 0;
+	for (TActorIterator<AActor> It(World); It; ++It)
+	{
+		LiveFollowUps += (It->IsA<ARpgHarvestRuneStrike>() || It->IsA<ARpgHarvestBurn>()) && !It->IsActorBeingDestroyed() ? 1 : 0;
+	}
+	TestEqual(TEXT("No strike or burn is left"), LiveFollowUps, 0);
+	TestEqual(TEXT("One crew of workers rose for both hits"), Crews, 1);
+	// Per hit at most: an echo split in two, a transfer split in two, two forked leap steps and a forked pierce.
+	TestTrue(*FString::Printf(TEXT("Follow-up strikes are bounded (%d)"), Strikes), Strikes > 0 && Strikes <= 2 * 10);
+	TestTrue(*FString::Printf(TEXT("Burns are bounded by their ticks (%d)"), Burns), Burns > 0 && Burns <= 2 * 4);
+
+	// Only the two hits are own hits; everything else is follow-up work of one of them.
+	TSet<int32> Roots;
+	int32 Direct = 0;
+	for (const FRpgHarvestResult& Result : Results->Results)
+	{
+		if (Result.IsSuccess() && Result.Provenance.IsDirect())
+		{
+			++Direct;
+			Roots.Add(Result.Provenance.RootActionId);
+		}
+	}
+	TestEqual(TEXT("Exactly the two hits are own hits"), Direct, 2);
+	TestTrue(
+		TEXT("Every follow-up belongs to one of the two hits"),
+		!Results->Results.ContainsByPredicate([&Roots](const FRpgHarvestResult& Result)
+		{
+			return Result.IsSuccess() && !Result.Provenance.IsDirect() && !Roots.Contains(Result.Provenance.RootActionId);
+		}));
+
+	// No section is rewarded twice and none is lost: the yield is exactly the completed sections.
+	int32 Completed = 0;
+	for (const ARpgHarvestAutomationCollidableNodeActor* Node : Nodes)
+	{
+		Completed += static_cast<int32>(Node->HarvestableNode->GetHarvestState().HarvestedSections);
+	}
+	TestTrue(TEXT("The follow-ups completed sections beyond the hits"), Completed > 5);
+	TestEqual(TEXT("Every completed section rewarded the player exactly once"), CountMaterial(Harvester.PlayerState), Completed * YieldPerSection);
+	TestEqual(TEXT("A resource out of every reach is untouched"), Far->HarvestableNode->GetRemainingSections(), 4);
 	return true;
 }
 

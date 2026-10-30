@@ -482,10 +482,10 @@ namespace RpgLootHarvestPIETests
 			Component->GetResourceInstanceRevision(0) == 1;
 	}
 
-	/** The Striding Wave cue tag from the project tags; editor modules cannot define native tags. */
+	/** The generic stride cue tag from the project tags; editor modules cannot define native tags. */
 	FGameplayTag StrideCueTag()
 	{
-		return FGameplayTag::RequestGameplayTag(TEXT("GameplayCue.Harvesting.StridingWave"));
+		return FGameplayTag::RequestGameplayTag(TEXT("GameplayCue.Harvesting.Stride"));
 	}
 
 	/** Returns whether this machine's copy of the harvester's ability system shows the stride cue. */

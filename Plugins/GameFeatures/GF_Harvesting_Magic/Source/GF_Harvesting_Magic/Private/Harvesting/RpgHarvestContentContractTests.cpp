@@ -1016,4 +1016,152 @@ bool FRpgHarvestHelperContractTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestCatalogContractTest,
+	"SurvivalRpg.Harvesting.Content.CatalogContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestCatalogContractTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestContentContractTests;
+	using namespace RpgHarvestingMagicGameplayTags;
+
+	// Axe and pickaxe share the one harvesting tree.
+	const FGameplayTag TreeTag = FGameplayTag::RequestGameplayTag(TEXT("SkillTree.Tree.Harvesting"));
+	const FGameplayTag Mastery = RpgTradeSkillGameplayTags::Skill_Mastery_Harvesting;
+	const URpgSkillTreeDefinition* Tree = LoadToolSkillTree(*this, PickaxeItemClassPath, TreeTag, Mastery);
+	if (!Tree)
+	{
+		return false;
+	}
+	TestTrue(TEXT("The axe carries the same tree"), LoadToolSkillTree(*this, AxeItemClassPath, TreeTag, Mastery) == Tree);
+
+	// The plan's catalog: five branches of a one-point entry and two exclusive three-point choices, fifteen talents,
+	// and exactly enough points for one path through every branch.
+	TMap<FName, TArray<const FRpgSkillTreeNode*>> Branches;
+	for (const FRpgSkillTreeNode& Node : Tree->Nodes)
+	{
+		Branches.FindOrAdd(Node.RegionId).Add(&Node);
+	}
+	TestEqual(TEXT("The tree has fifteen talents"), Tree->Nodes.Num(), 15);
+	TestEqual(TEXT("The tree has five branches"), Branches.Num(), 5);
+	int32 PathCost = 0;
+	for (const TPair<FName, TArray<const FRpgSkillTreeNode*>>& Branch : Branches)
+	{
+		const FString Name = Branch.Key.ToString();
+		const TArray<const FRpgSkillTreeNode*> Entries = Branch.Value.FilterByPredicate([](const FRpgSkillTreeNode* Node)
+		{
+			return Node->Prerequisites.IsEmpty();
+		});
+		if (!TestEqual(*FString::Printf(TEXT("%s has one entry"), *Name), Entries.Num(), 1) ||
+			!TestEqual(*FString::Printf(TEXT("%s has three talents"), *Name), Branch.Value.Num(), 3))
+		{
+			continue;
+		}
+		TestEqual(*FString::Printf(TEXT("%s's entry costs one point"), *Name), Entries[0]->Cost, 1);
+		FName Group = NAME_None;
+		for (const FRpgSkillTreeNode* Node : Branch.Value)
+		{
+			if (Node == Entries[0])
+			{
+				continue;
+			}
+			TestEqual(*FString::Printf(TEXT("%s costs three points"), *Node->NodeTag.ToString()), Node->Cost, 3);
+			TestTrue(*FString::Printf(TEXT("%s builds on its entry"), *Node->NodeTag.ToString()),
+				Node->Prerequisites.Num() == 1 && Node->Prerequisites[0] == Entries[0]->NodeTag);
+			TestFalse(*FString::Printf(TEXT("%s is a choice"), *Node->NodeTag.ToString()), Node->ExclusiveGroup.IsNone());
+			TestTrue(*FString::Printf(TEXT("%s shares its branch's choice group"), *Node->NodeTag.ToString()),
+				Group.IsNone() || Group == Node->ExclusiveGroup);
+			Group = Node->ExclusiveGroup;
+			TestTrue(*FString::Printf(TEXT("%s needs the runes of its entry"), *Node->NodeTag.ToString()),
+				Entries[0]->RequiredRunes.IsEmpty() || Node->RequiredRunes.HasAny(Entries[0]->RequiredRunes));
+		}
+		PathCost += 1 + 3;
+	}
+	TestEqual(TEXT("One path through every branch spends exactly the tree's points"), PathCost, Tree->MaxPoints);
+
+	// Every talent has gameplay: it tunes at least one value the harvest ability reads.
+	const TSet<FGameplayTag> ReadTunings = {
+		Ability_Tuning_Harvest_AreaRadius, Ability_Tuning_Harvest_Reach, Ability_Tuning_Harvest_MaxTargets,
+		Ability_Tuning_Harvest_Sections, Ability_Tuning_Harvest_Creatures, Ability_Tuning_Harvest_StrikeInterval,
+		Ability_Tuning_Harvest_StrikeRadius, Ability_Tuning_Harvest_Cooldown, Ability_Tuning_Harvest_Work,
+		Ability_Tuning_Harvest_WeakPointWork, Ability_Tuning_Harvest_FollowUpWork, Ability_Tuning_Harvest_FollowUpWindow,
+		Ability_Tuning_Harvest_BurnWork, Ability_Tuning_Harvest_BurnDuration, Ability_Tuning_Harvest_BurnRefresh,
+		Ability_Tuning_Harvest_BurnDischarge, Ability_Tuning_Harvest_BurnWander, Ability_Tuning_Harvest_EchoWork,
+		Ability_Tuning_Harvest_EchoHits, Ability_Tuning_Harvest_TransferWork, Ability_Tuning_Harvest_RuneFlowSplit,
+		Ability_Tuning_Harvest_LeapWork, Ability_Tuning_Harvest_PierceWork, Ability_Tuning_Harvest_SpreadReach,
+		Ability_Tuning_Harvest_SpreadSplit, Ability_Tuning_Harvest_WorkerWork, Ability_Tuning_Harvest_WorkerCount,
+		Ability_Tuning_Harvest_WorkerHits, Ability_Tuning_Harvest_WorkerLifetime};
+	for (const FRpgSkillTreeNode& Node : Tree->Nodes)
+	{
+		TestFalse(*FString::Printf(TEXT("%s tunes something"), *Node.NodeTag.ToString()), Node.AbilityTunings.IsEmpty());
+		for (const FRpgSkillTreeAbilityTuning& Tuning : Node.AbilityTunings)
+		{
+			TestTrue(*FString::Printf(TEXT("%s tunes %s, which the harvest ability reads"), *Node.NodeTag.ToString(), *Tuning.TuningTag.ToString()),
+				ReadTunings.Contains(Tuning.TuningTag));
+		}
+	}
+
+	// The six runes: each drives a branch, reaches the player the same ways, and every swing carries its effect.
+	struct FCatalogRune
+	{
+		const TCHAR* ClassPath;
+		const TCHAR* RuneTag;
+	};
+	const FCatalogRune Runes[] = {
+		{BrandRuneClassPath, TEXT("Rune.Brand")},
+		{EchoRuneClassPath, TEXT("Rune.Echo")},
+		{TransferRuneClassPath, TEXT("Rune.Kraftuebertrag")},
+		{LeapRuneClassPath, TEXT("Rune.Erntesprung")},
+		{PierceRuneClassPath, TEXT("Rune.Durchschlag")},
+		{WorkerRuneClassPath, TEXT("Rune.Totenarbeiter")}};
+	FGameplayTagContainer CatalogRunes;
+	const URpgCraftingRecipeSet* KilnRecipes = LoadObject<URpgCraftingRecipeSet>(nullptr, KilnRecipeSetPath);
+	const URpgRewardClaimDefinition* RuneChoice = LoadObject<URpgRewardClaimDefinition>(nullptr, RuneChoiceRewardPath);
+	for (const FCatalogRune& Entry : Runes)
+	{
+		const FGameplayTag RuneTag = FGameplayTag::RequestGameplayTag(Entry.RuneTag, false);
+		CatalogRunes.AddTag(RuneTag);
+		UClass* RuneClass = LoadClass<URpgInventoryItemDefinition>(nullptr, Entry.ClassPath);
+		const URpgInventoryFragment_Rune* Rune = RuneClass
+			? Cast<URpgInventoryFragment_Rune>(GetDefault<URpgInventoryItemDefinition>(RuneClass)->FindFragmentByClass(
+				URpgInventoryFragment_Rune::StaticClass()))
+			: nullptr;
+		if (!TestNotNull(*FString::Printf(TEXT("%s is a rune item"), Entry.RuneTag), Rune))
+		{
+			continue;
+		}
+		TestTrue(*FString::Printf(TEXT("%s drives a branch"), Entry.RuneTag),
+			Tree->Nodes.ContainsByPredicate([RuneTag](const FRpgSkillTreeNode& Node) { return Node.RequiredRunes.HasTagExact(RuneTag); }));
+		for (int32 Rank = 1; Rank <= Rune->GetMaxRank(); ++Rank)
+		{
+			for (const FRpgSkillTreeAbilityTuning& Tuning : Rune->FindRank(Rank)->AbilityTunings)
+			{
+				TestTrue(*FString::Printf(TEXT("%s rank %d tunes a value the harvest ability reads"), Entry.RuneTag, Rank),
+					ReadTunings.Contains(Tuning.TuningTag));
+			}
+		}
+		TestTrue(*FString::Printf(TEXT("The Kiln forges %s"), Entry.RuneTag), KilnRecipes && KilnRecipes->Recipes.Contains(Rune->BaseRecipe));
+		TestTrue(*FString::Printf(TEXT("The rune choice offers %s"), Entry.RuneTag),
+			RuneChoice && RuneChoice->Options.ContainsByPredicate([RuneClass](const FRpgRewardClaimOption& Option)
+			{
+				return Option.ItemDefinition == RuneClass;
+			}));
+	}
+	for (const FRpgSkillTreeNode& Node : Tree->Nodes)
+	{
+		TestTrue(*FString::Printf(TEXT("%s needs only catalog runes"), *Node.NodeTag.ToString()), CatalogRunes.HasAllExact(Node.RequiredRunes));
+	}
+	for (const TCHAR* SwingPath : {AxeChopAbilityClassPath, PickaxeStrikeAbilityClassPath})
+	{
+		UClass* SwingClass = LoadClass<URpgGameplayAbility_Harvest>(nullptr, SwingPath);
+		const URpgGameplayAbility_Harvest* Swing = SwingClass ? GetDefault<URpgGameplayAbility_Harvest>(SwingClass) : nullptr;
+		TestTrue(*FString::Printf(TEXT("%s carries every rune's effect"), SwingPath),
+			Swing && Swing->GetBurnClass() && Swing->GetEchoStrikeClass() && Swing->GetTransferStrikeClass() &&
+				Swing->GetLeapStrikeClass() && Swing->GetPierceStrikeClass() && Swing->GetWorkerSwarmClass());
+	}
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
