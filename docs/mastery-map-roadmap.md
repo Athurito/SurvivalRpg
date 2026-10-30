@@ -56,7 +56,7 @@ All dependencies below are within MST; every row also has the CMB scheduling gat
 | MST-08a | In-place rank II/III upgrades and salvage at the Runenschrein with rune essence; atomic costs, safe equipped-rune refresh and a plain Runes section on the station screen | MST-07c | Merged (2026-10-28, `621d0021`) | [mastery-map-rune-shrine.md](mastery-map-rune-shrine.md), [PR #323](https://github.com/Athurito/SurvivalRpg/pull/323) |
 | MST-08b | Integrated Runenschrein presentation: rune icons, rank preview and a screen of its own | MST-08a | Merged (2026-10-29, `3bb60a68`) | [mastery-map-rune-shrine-screen.md](mastery-map-rune-shrine-screen.md), [PR #324](https://github.com/Athurito/SurvivalRpg/pull/324) |
 | MST-09a | Harvesting Echo, Kraftuebertrag and Runenfluss; bounded own-hit triggers and actual-overkill transfer | MST-08b | Merged (2026-10-29, `daf50e73`) | [mastery-map-rune-flow.md](mastery-map-rune-flow.md), [PR #325](https://github.com/Athurito/SurvivalRpg/pull/325) |
-| MST-09b | Erntesprung, Durchschlag, Ausbreitung and remaining Nachwirkung choices; finite propagation and no duplicated work | MST-09a | In review | [mastery-map-spread.md](mastery-map-spread.md) |
+| MST-09b | Erntesprung, Durchschlag, Ausbreitung and remaining Nachwirkung choices; finite propagation and no duplicated work | MST-09a | In review | [mastery-map-spread.md](mastery-map-spread.md), [PR #326](https://github.com/Athurito/SurvivalRpg/pull/326) |
 | MST-09c | Totenarbeiter and Helfer; temporary workers, correct beneficiary/reward attribution, lifecycle and bounded triggers | MST-09b | Planned | — |
 | MST-09d | Full catalog/cutover acceptance, legacy cleanup, input/performance/network regression and cook reachability | MST-09c | Planned | — |
 | MST-10a | Several skill trees with their own budgets as regions of the one map, Path of Exile style: tree placement as authored data, tree-qualified node identity, screen-level view cache, fit and shortcuts across trees, a budget entry per tree in the top bar and a point counter at each cluster; proven with the Harvesting tree and a synthetic second tree in automation | MST-03c | Merged (2026-10-27, `9f0dbcf0`) | [mastery-map-several-trees.md](mastery-map-several-trees.md), [PR #311](https://github.com/Athurito/SurvivalRpg/pull/311) |
@@ -113,7 +113,7 @@ Playtests of merged MST steps that wait for the user's batch test. Remove a row 
 ## Current handoff
 
 - **Active phase:** MST, started by the user on 2026-10-27 after CMB-01 to CMB-07 merged.
-- **Active task:** MST-09b, branch `claude/mst-09b-harvest-spread`; the report is [mastery-map-spread.md](mastery-map-spread.md).
+- **Active task:** MST-09b, branch `claude/mst-09b-harvest-spread`, [PR #326](https://github.com/Athurito/SurvivalRpg/pull/326); the report is [mastery-map-spread.md](mastery-map-spread.md).
   - `URpgGameplayAbility_Harvest` sends Erntesprung leaps and Durchschlag pierces (`LeapStrikeClass`, `PierceStrikeClass`) through `FRpgHarvestRuneFlow::PlanLeaps` and `PickPierceTargets`; `ARpgHarvestBurn` wanders on with `WanderRadius`.
   - `ID_Rune_Erntesprung` and `ID_Rune_Durchschlag` are obtainable like Brand; the region Spread of `DA_SkillTree_Harvesting` holds Wide Paths, Fork and Deep Rift, and Aftermath gains Wandering Effect as the alternative to Discharge.
 - **Previous task:** MST-09a, merged on 2026-10-29 as `daf50e73` ([PR #325](https://github.com/Athurito/SurvivalRpg/pull/325)); the report is [mastery-map-rune-flow.md](mastery-map-rune-flow.md).
