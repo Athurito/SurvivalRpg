@@ -72,8 +72,9 @@ namespace RpgCombatPIENetworkTests
 	constexpr float EchoTestDamage = 25.0f;
 	// The worlds never step more than this per frame, also when rendering under GPU load is slower; at about 10 fps the
 	// authority sampled the attack window only twice and its trace chords missed the target below. The suite was
-	// validated at 100 to 120 fps. At a steady 60 Hz the 1.5x attack still misses, because the authority window opens
-	// one or two frames after the authored start.
+	// validated at 100 to 120 fps. At a steady 60 Hz the authority window now opens on time, but the server advances the
+	// remote client's montage with its moves, at times two or three frames at once under the test's jitter, and one
+	// straight trace chord across such a jump can pass beside the target.
 	constexpr float MaxSimulatedFrameTime = 1.0f / 120.0f;
 	// On the path of the combo's first hit (AM_SwordShieldCombo01_Step1, 0.13..0.30 s): the blade's sampled sweep,
 	// with the CMB-01 grip and root motion, passes through the target capsule's center.
@@ -1007,6 +1008,59 @@ NETWORK_TEST_CLASS(CombatRemoteMeleePIE, "SurvivalRpg.Network")
 					return State.MaximumBladeCenterAdvance >= MinimumBladeCenterAdvance;
 				},
 				AttackWindowPoseTimeout())
+			.UntilServer(
+				MakeStepDescription(AttackIndex, TEXT("authority closes its window before the recovery ends")),
+				[](FNetworkState& State)
+				{
+					ARpgCharacter* Character = nullptr;
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					FGameplayAbilitySpec* AttackSpec = nullptr;
+					URpgGameplayAbility_BasicWeaponAttack* AttackAbility = nullptr;
+					return ResolveAuthorityAttack(
+							State,
+							Character,
+							AbilitySystem,
+							AttackSpec,
+							AttackAbility) &&
+						AttackSpec->IsActive() &&
+						!AttackAbility->IsAttackWindowOpenForTests() &&
+						AttackAbility->GetAuthorityWindowCloseCountForTests() >=
+							State.WindowCloseBaseline + 1;
+				},
+				NetworkTimeout())
+			.ThenServer(
+				MakeStepDescription(AttackIndex, TEXT("a late window-start notify does not reopen the window")),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = nullptr;
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					FGameplayAbilitySpec* AttackSpec = nullptr;
+					URpgGameplayAbility_BasicWeaponAttack* AttackAbility = nullptr;
+					ASSERT_THAT(IsTrue(ResolveAuthorityAttack(
+						State,
+						Character,
+						AbilitySystem,
+						AttackSpec,
+						AttackAbility)));
+					if (!AbilitySystem || !AttackSpec || !AttackAbility)
+					{
+						return;
+					}
+
+					// The authority also opens from its own notify; a queued one that arrives after the close must not count.
+					const FGameplayTag EventTag =
+						FGameplayTag::RequestGameplayTag(TEXT("GameplayEvent.Weapon.Attack.Window.Start"));
+					FGameplayEventData Payload;
+					Payload.EventTag = EventTag;
+					Payload.Instigator = Character;
+					Payload.Target = Character;
+					AbilitySystem->HandleGameplayEvent(EventTag, &Payload);
+					ASSERT_THAT(IsTrue(AttackSpec->IsActive()));
+					ASSERT_THAT(IsFalse(AttackAbility->IsAttackWindowOpenForTests()));
+					ASSERT_THAT(IsTrue(
+						AttackAbility->GetAuthorityWindowOpenCountForTests() ==
+							State.WindowOpenBaseline + 1));
+				})
 			.UntilServer(
 				MakeStepDescription(AttackIndex, TEXT("authority applies damage and fully cleans up")),
 				[ExpectedHealthDrops](FNetworkState& State)

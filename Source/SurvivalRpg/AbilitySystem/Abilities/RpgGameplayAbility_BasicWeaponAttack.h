@@ -88,11 +88,18 @@ protected:
 		bool bReplicateEndAbility,
 		bool bWasCancelled) override;
 
-	/** Receives the authored local window-start signal; authority records it as telemetry only. */
+	/**
+	 * Receives the authored local window-start signal. The owner opens its window from it; authority opens on whichever
+	 * of this notify, its montage poll and its schedule comes first, and from the notify only while its running step's
+	 * montage has reached the start.
+	 */
 	UFUNCTION()
 	void OnAttackWindowStarted(FGameplayEventData Payload);
 
-	/** Receives the authored local window-end signal; authority records it as telemetry only. */
+	/**
+	 * Receives the authored local window-end signal. The owner closes its window from it; authority closes on whichever
+	 * of this notify, its montage poll and its schedule comes first, and only a window that is open.
+	 */
 	UFUNCTION()
 	void OnAttackWindowEnded(FGameplayEventData Payload);
 
@@ -112,13 +119,23 @@ protected:
 	UFUNCTION()
 	void OnMontageCancelled();
 
-	/** Opens the server-authoritative trace window from the one-shot authority schedule. */
+	/**
+	 * Opens the server-authoritative trace window from the one-shot authority schedule when neither the notify nor the
+	 * montage poll opened it first, for example while the server's montage does not advance.
+	 */
 	UFUNCTION()
 	void OnAuthorityAttackWindowStarted();
 
-	/** Closes the server-authoritative trace window exactly once from the authority schedule. */
+	/** Closes the server-authoritative trace window from the authority schedule when nothing closed it first. */
 	UFUNCTION()
 	void OnAuthorityAttackWindowEnded();
+
+	/**
+	 * Authority, once per frame after the animation update while the window is scheduled: opens and closes the window
+	 * when the running step's own montage reaches the authored times. A remote client's montage advances with its moves,
+	 * several per server frame, and its queued notifies may then never arrive; the clock schedule lags the montage.
+	 */
+	void OnAuthorityMontageWindowPoll();
 
 	/** Opens the running step's combo window; chains a buffered press or a pending server request. */
 	UFUNCTION()
@@ -182,6 +199,11 @@ private:
 		FString& OutFailureReason) const;
 	bool ScheduleAuthorityAttackWindow();
 	void ClearAuthorityAttackWindowSchedule();
+	/**
+	 * Whether the running step's own montage instance has played to MontageTime. False for a notify of a replaced step or
+	 * of an earlier instance of the same montage, which never reaches this step's window.
+	 */
+	bool HasActiveMontageReached(float MontageTime) const;
 	void LogAttackLifecycle(const TCHAR* Stage, const FString& Detail = FString()) const;
 	void LogAttackLifecycleLazy(const TCHAR* Stage, TFunctionRef<FString()> DetailBuilder) const;
 	void WriteAttackLifecycle(const TCHAR* Stage, const FString& Detail) const;
@@ -254,6 +276,8 @@ private:
 	/** Loose tags the server added for the running step; removed on the next step or when the attack ends. */
 	FGameplayTagContainer AppliedStepOwnerTags;
 	FGameplayTag ActiveAttackTag;
+	/** Authored attack window of the running step, in montage seconds. */
+	float ActiveAttackWindowStartTime = 0.0f;
 	float ActiveAttackWindowEndTime = 0.0f;
 	int32 ComboStepIndex = 0;
 	/** Item-rolled damage replacing the entry attack's authored damage; negative keeps authored values. */
@@ -289,6 +313,7 @@ private:
 	FTimerHandle TraceSampleTimerHandle;
 	FTimerHandle AuthorityAttackWindowStartTimerHandle;
 	FTimerHandle AuthorityAttackWindowEndTimerHandle;
+	FTimerHandle AuthorityMontageWindowPollTimerHandle;
 	TArray<FVector> PreviousTracePointLocations;
 	TSet<TObjectKey<AActor>> HitActorsThisWindow;
 
