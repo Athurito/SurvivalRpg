@@ -4,6 +4,7 @@
 
 #include "AbilitySystem/Abilities/RpgGameplayAbility_Harvest.h"
 #include "GameplayTags/RpgHarvestingMagicGameplayTags.h"
+#include "Harvesting/RpgHarvestBurn.h"
 #include "Harvesting/RpgHarvestableComponent.h"
 #include "Harvesting/RpgHarvestAutomationTestTypes.h"
 #include "Harvesting/RpgHarvestAutomationTestWorld.h"
@@ -49,6 +50,11 @@ UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestRuneFlowTest_Echo, "SkillTree.Node.Harv
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestRuneFlowTest_EveryHit, "SkillTree.Node.HarvestRuneFlowTest.EveryHit");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestRuneFlowTest_Transfer, "SkillTree.Node.HarvestRuneFlowTest.Transfer");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestRuneFlowTest_Split, "SkillTree.Node.HarvestRuneFlowTest.Split");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestSpreadTest_Leap, "SkillTree.Node.HarvestSpreadTest.Leap");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestSpreadTest_Pierce, "SkillTree.Node.HarvestSpreadTest.Pierce");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestSpreadTest_Fork, "SkillTree.Node.HarvestSpreadTest.Fork");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestSpreadTest_Burn, "SkillTree.Node.HarvestSpreadTest.Burn");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestSpreadTest_Wander, "SkillTree.Node.HarvestSpreadTest.Wander");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestTuningTest_Cooldown, "Cooldown.HarvestTuningTest");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestWorkTest_Tree, "SkillTree.Tree.HarvestWorkTest");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestWorkTest_Cleave, "SkillTree.Node.HarvestWorkTest.Cleave");
@@ -3662,6 +3668,263 @@ bool FRpgHarvestTransferAbilityTest::RunTest(const FString& Parameters)
 		TEXT("Each of the two nearest other resources takes 1.2 sections"),
 		SplitNear->HarvestableNode->GetRemainingSections() == 3 && SectionWork(SplitNear) == 20 &&
 			SplitFar->HarvestableNode->GetRemainingSections() == 3 && SectionWork(SplitFar) == 20);
+	return true;
+}
+
+namespace RpgHarvestSpreadTests
+{
+	using namespace RpgHarvestAbilityTests;
+	using namespace RpgHarvestTuningTests;
+	using RpgHarvestRuneFlowTests::SectionWork;
+
+	/**
+	 * One-point nodes on Mining that tune every ability of the tool like the Ausbreitung runes and talents: Leap (half
+	 * a hit's work per leap), Pierce (all of it), Fork (two strikes of 60 % per step), Burn (half a hit's work per
+	 * second for 4 s, like Brand) and Wander (the burn moves on when its resource runs empty).
+	 */
+	URpgSkillTreeDefinition* MakeSpreadTree()
+	{
+		using namespace RpgHarvestingMagicGameplayTags;
+
+		URpgSkillTreeDefinition* Tree = NewObject<URpgSkillTreeDefinition>(GetTransientPackage(), NAME_None, RF_Transient);
+		Tree->TreeTag = TAG_HarvestTuningTest_Tree;
+		Tree->MasterySkillTag = RpgTradeSkillGameplayTags::Skill_Gathering_Mining;
+		Tree->MaxPoints = 10;
+		auto AddNode = [Tree](const FGameplayTag NodeTag, const int32 Column, const TArray<FRpgSkillTreeAbilityTuning>& Tunings)
+		{
+			FRpgSkillTreeNode& Node = Tree->Nodes.AddDefaulted_GetRef();
+			Node.NodeTag = NodeTag;
+			Node.Column = Column;
+			Node.AbilityTunings = Tunings;
+		};
+		AddNode(TAG_HarvestSpreadTest_Leap, 0, {MakeTuning(Ability_Tuning_Harvest_LeapWork, ERpgSkillTreeTuningOperation::Set, 0.5f)});
+		AddNode(TAG_HarvestSpreadTest_Pierce, 1, {MakeTuning(Ability_Tuning_Harvest_PierceWork, ERpgSkillTreeTuningOperation::Set, 1.0f)});
+		AddNode(TAG_HarvestSpreadTest_Fork, 2, {MakeTuning(Ability_Tuning_Harvest_SpreadSplit, ERpgSkillTreeTuningOperation::Set, 0.6f)});
+		AddNode(
+			TAG_HarvestSpreadTest_Burn,
+			3,
+			{MakeTuning(Ability_Tuning_Harvest_BurnWork, ERpgSkillTreeTuningOperation::Set, 0.5f),
+				MakeTuning(Ability_Tuning_Harvest_BurnDuration, ERpgSkillTreeTuningOperation::Set, 4.0f)});
+		AddNode(TAG_HarvestSpreadTest_Wander, 4, {MakeTuning(Ability_Tuning_Harvest_BurnWander, ERpgSkillTreeTuningOperation::Set, 1.0f)});
+		return Tree;
+	}
+
+	/** A burn tick of one second; timers fire once their time is exceeded, so a step lies just past it. */
+	constexpr float BurnStep = 1.01f;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestLeapAbilityTest,
+	"SurvivalRpg.Harvesting.Ability.LeapStrikesEachResourceOnce",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestLeapAbilityTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestSpreadTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	// The struck resource on the view ray, A 3 m and B 4.5 m beside it, C 4.5 m beyond A (7.5 m from the struck one)
+	// and Far 15 m away. Leaps reach 6 m from the resource they left.
+	const double Eye = Harvester.Pawn->BaseEyeHeight;
+	ARpgHarvestAutomationCollidableNodeActor* Struck = SpawnNode(World, FVector(150.0, 0.0, Eye), MakeProfile(World, 6));
+	ARpgHarvestAutomationCollidableNodeActor* A = SpawnNode(World, FVector(150.0, 300.0, Eye), MakeProfile(World, 4));
+	ARpgHarvestAutomationCollidableNodeActor* B = SpawnNode(World, FVector(150.0, -450.0, Eye), MakeProfile(World, 4));
+	ARpgHarvestAutomationCollidableNodeActor* C = SpawnNode(World, FVector(150.0, 750.0, Eye), MakeProfile(World, 4));
+	ARpgHarvestAutomationCollidableNodeActor* Far = SpawnNode(World, FVector(150.0, -1500.0, Eye), MakeProfile(World, 4));
+	URpgSkillTreeDefinition* Tree = MakeSpreadTree();
+	FScopedTreeTool TreeTool(Tree);
+	URpgSkillTreeComponent* SkillTrees = PrepareSkillTree(Harvester, Tree);
+	URpgEquipmentInstance* Equipment = MakeTreeToolEquipment(Harvester);
+	const FGrantedAbility Swing = GrantAbility(Harvester.AbilitySystem, Equipment);
+	if (!Struck || !A || !B || !C || !Far || !TestNotNull(TEXT("Skill trees are prepared"), SkillTrees) ||
+		!TestNotNull(TEXT("Swing exists"), Swing.Instance))
+	{
+		return false;
+	}
+	Swing.Instance->ConfigureSpread(ARpgHarvestRuneStrike::StaticClass(), ARpgHarvestRuneStrike::StaticClass(), 600.0f, 400.0f);
+	TestEqual(TEXT("Leap is learned"),
+		SkillTrees->UnlockNode(TAG_HarvestTuningTest_Tree, TAG_HarvestSpreadTest_Leap), ERpgSkillTreeUnlockResult::Unlockable);
+	TestWorld.PrimeTimerManager();
+
+	// Two leaps: to the nearest other resource, then on to the nearest one from there that this hit did not strike.
+	TestTrue(TEXT("An own hit activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	TestEqual(TEXT("The hit takes its section"), Struck->HarvestableNode->GetRemainingSections(), 5);
+	TestEqual(TEXT("The leap waits for its delay"), SectionWork(A), 0);
+	TestWorld.AdvanceTimers(0.35f);
+	TestEqual(TEXT("The first leap does half the hit's work on the nearest other resource"), SectionWork(A), 50);
+	TestEqual(TEXT("The second leap lands one step later"), SectionWork(C), 0);
+	TestWorld.AdvanceTimers(0.2f);
+	TestEqual(TEXT("The second leap goes on from the first resource"), SectionWork(C), 50);
+	TestTrue(
+		TEXT("The leaps never come back to the struck resource and skip resources beyond their reach"),
+		SectionWork(Struck) == 0 && SectionWork(B) == 0 && SectionWork(Far) == 0);
+	TestEqual(TEXT("Leaps add no yield of their own"), CountMaterial(Harvester.PlayerState), YieldPerSection);
+
+	// Fork: the first step strikes the two nearest resources and the next goes on from the nearer one, 60 % each.
+	TestEqual(TEXT("Fork is learned"),
+		SkillTrees->UnlockNode(TAG_HarvestTuningTest_Tree, TAG_HarvestSpreadTest_Fork), ERpgSkillTreeUnlockResult::Unlockable);
+	TestTrue(TEXT("A forking hit activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	TestWorld.AdvanceTimers(0.6f);
+	TestTrue(
+		TEXT("A forked leap does 30 units on A and B, then 30 on C"),
+		SectionWork(A) == 80 && SectionWork(B) == 30 && SectionWork(C) == 80 && SectionWork(Far) == 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestPierceAbilityTest,
+	"SurvivalRpg.Harvesting.Ability.PierceStrikesTheResourceBehind",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestPierceAbilityTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestSpreadTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	// The struck resource on the view ray; Behind 3 m further along the ray, Aside 3.4 m behind and 1.4 m off it, Beside
+	// level with it, Back behind the harvester, and Deep 8 m along the ray, beyond the pierce's 4 m.
+	const double Eye = Harvester.Pawn->BaseEyeHeight;
+	ARpgHarvestAutomationCollidableNodeActor* Struck = SpawnNode(World, FVector(150.0, 0.0, Eye), MakeProfile(World, 6));
+	ARpgHarvestAutomationCollidableNodeActor* Behind = SpawnNode(World, FVector(450.0, 0.0, Eye), MakeProfile(World, 4));
+	ARpgHarvestAutomationCollidableNodeActor* Aside = SpawnNode(World, FVector(450.0, 140.0, Eye), MakeProfile(World, 4));
+	ARpgHarvestAutomationCollidableNodeActor* Beside = SpawnNode(World, FVector(150.0, 300.0, Eye), MakeProfile(World, 4));
+	ARpgHarvestAutomationCollidableNodeActor* Back = SpawnNode(World, FVector(-300.0, 0.0, Eye), MakeProfile(World, 4));
+	ARpgHarvestAutomationCollidableNodeActor* Deep = SpawnNode(World, FVector(950.0, 0.0, Eye), MakeProfile(World, 4));
+	URpgSkillTreeDefinition* Tree = MakeSpreadTree();
+	FScopedTreeTool TreeTool(Tree);
+	URpgSkillTreeComponent* SkillTrees = PrepareSkillTree(Harvester, Tree);
+	URpgEquipmentInstance* Equipment = MakeTreeToolEquipment(Harvester);
+	const FGrantedAbility Swing = GrantAbility(Harvester.AbilitySystem, Equipment);
+	if (!Struck || !Behind || !Aside || !Beside || !Back || !Deep || !TestNotNull(TEXT("Skill trees are prepared"), SkillTrees) ||
+		!TestNotNull(TEXT("Swing exists"), Swing.Instance))
+	{
+		return false;
+	}
+	Swing.Instance->ConfigureSpread(ARpgHarvestRuneStrike::StaticClass(), ARpgHarvestRuneStrike::StaticClass(), 600.0f, 400.0f);
+	TestEqual(TEXT("Pierce is learned"),
+		SkillTrees->UnlockNode(TAG_HarvestTuningTest_Tree, TAG_HarvestSpreadTest_Pierce), ERpgSkillTreeUnlockResult::Unlockable);
+	TestWorld.PrimeTimerManager();
+
+	TestTrue(TEXT("An own hit activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	TestEqual(TEXT("The hit takes its section"), Struck->HarvestableNode->GetRemainingSections(), 5);
+	TestWorld.AdvanceTimers(0.35f);
+	TestEqual(TEXT("The pierce does the hit's whole work on the resource behind"), Behind->HarvestableNode->GetRemainingSections(), 3);
+	TestTrue(
+		TEXT("Only the nearest resource behind is struck"),
+		Aside->HarvestableNode->GetRemainingSections() == 4 && SectionWork(Aside) == 0 &&
+			Beside->HarvestableNode->GetRemainingSections() == 4 && Back->HarvestableNode->GetRemainingSections() == 4 &&
+			Deep->HarvestableNode->GetRemainingSections() == 4);
+	TestEqual(TEXT("The pierced section rewards the harvester"), CountMaterial(Harvester.PlayerState), 2 * YieldPerSection);
+
+	// Fork: the two nearest resources behind take 60 % each; nothing beside, behind the harvester or too deep.
+	TestEqual(TEXT("Fork is learned"),
+		SkillTrees->UnlockNode(TAG_HarvestTuningTest_Tree, TAG_HarvestSpreadTest_Fork), ERpgSkillTreeUnlockResult::Unlockable);
+	TestTrue(TEXT("A forking hit activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	TestWorld.AdvanceTimers(0.35f);
+	TestTrue(
+		TEXT("A forked pierce does 60 units on the two resources behind"),
+		SectionWork(Behind) == 60 && SectionWork(Aside) == 60 && SectionWork(Beside) == 0 && SectionWork(Back) == 0 &&
+			SectionWork(Deep) == 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestBurnWanderAbilityTest,
+	"SurvivalRpg.Harvesting.Ability.BurnWandersOnWhenItsResourceRunsEmpty",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestBurnWanderAbilityTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestSpreadTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	// Two groups 20 m apart on the view ray: a two-section resource on the ray, a neighbor 3 m beside it, and in the
+	// second group one more 7 m away, beyond the 6 m a burn wanders.
+	const double Eye = Harvester.Pawn->BaseEyeHeight;
+	ARpgHarvestAutomationCollidableNodeActor* Plain = SpawnNode(World, FVector(150.0, 0.0, Eye), MakeProfile(World, 2));
+	ARpgHarvestAutomationCollidableNodeActor* PlainNeighbor = SpawnNode(World, FVector(150.0, 300.0, Eye), MakeProfile(World, 4));
+	ARpgHarvestAutomationCollidableNodeActor* Wandering = SpawnNode(World, FVector(2150.0, 0.0, Eye), MakeProfile(World, 2));
+	ARpgHarvestAutomationCollidableNodeActor* Neighbor = SpawnNode(World, FVector(2150.0, 300.0, Eye), MakeProfile(World, 4));
+	ARpgHarvestAutomationCollidableNodeActor* Distant = SpawnNode(World, FVector(2150.0, -700.0, Eye), MakeProfile(World, 4));
+	URpgSkillTreeDefinition* Tree = MakeSpreadTree();
+	FScopedTreeTool TreeTool(Tree);
+	URpgSkillTreeComponent* SkillTrees = PrepareSkillTree(Harvester, Tree);
+	URpgEquipmentInstance* Equipment = MakeTreeToolEquipment(Harvester);
+	const FGrantedAbility Swing = GrantAbility(Harvester.AbilitySystem, Equipment);
+	if (!Plain || !PlainNeighbor || !Wandering || !Neighbor || !Distant ||
+		!TestNotNull(TEXT("Skill trees are prepared"), SkillTrees) || !TestNotNull(TEXT("Swing exists"), Swing.Instance))
+	{
+		return false;
+	}
+	Swing.Instance->ConfigureBurn(ARpgHarvestBurn::StaticClass());
+	Swing.Instance->ConfigureSpread(nullptr, nullptr, 600.0f, 400.0f);
+	FRpgHarvestTargetingParams FarReach;
+	FarReach.MaxAimDistance = 6000.0f;
+	FarReach.MaxReachFromAvatar = 6000.0f;
+	Swing.Instance->ConfigureTargeting(FarReach);
+	TestEqual(TEXT("Burn is learned"),
+		SkillTrees->UnlockNode(TAG_HarvestTuningTest_Tree, TAG_HarvestSpreadTest_Burn), ERpgSkillTreeUnlockResult::Unlockable);
+	AActor* Beneficiary = Harvester.PlayerState;
+	TestWorld.PrimeTimerManager();
+
+	// Without Wander, the burn goes out with its resource although it has time left.
+	TestTrue(TEXT("A hit lights a burn"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	TestNotNull(TEXT("The struck resource burns"), ARpgHarvestBurn::FindBurn(Plain->HarvestableNode, INDEX_NONE, Beneficiary));
+	TestWorld.AdvanceTimers(BurnStep);
+	TestWorld.AdvanceTimers(BurnStep);
+	TestFalse(TEXT("Two burn ticks empty the resource"), Plain->HarvestableNode->IsHarvestable());
+	TestWorld.AdvanceTimers(BurnStep);
+	TestTrue(
+		TEXT("The burn goes out with its resource"),
+		!ARpgHarvestBurn::FindBurn(PlainNeighbor->HarvestableNode, INDEX_NONE, Beneficiary) &&
+			PlainNeighbor->HarvestableNode->GetRemainingSections() == 4 && SectionWork(PlainNeighbor) == 0);
+	Plain->Destroy();
+
+	// With Wander, the burn moves on to the nearest other resource and burns there for its two remaining ticks only.
+	TestEqual(TEXT("Wander is learned"),
+		SkillTrees->UnlockNode(TAG_HarvestTuningTest_Tree, TAG_HarvestSpreadTest_Wander), ERpgSkillTreeUnlockResult::Unlockable);
+	TestTrue(TEXT("A wandering hit lights a burn"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	TestWorld.AdvanceTimers(BurnStep);
+	TestWorld.AdvanceTimers(BurnStep);
+	TestFalse(TEXT("Two burn ticks empty the struck resource"), Wandering->HarvestableNode->IsHarvestable());
+	ARpgHarvestBurn* Wandered = ARpgHarvestBurn::FindBurn(Neighbor->HarvestableNode, INDEX_NONE, Beneficiary);
+	if (!TestNotNull(TEXT("The burn moved on to the neighbor"), Wandered))
+	{
+		return false;
+	}
+	TestEqual(TEXT("The wandered burn keeps only the remaining ticks"), Wandered->GetRemainingTicks(), 2);
+	TestTrue(TEXT("The wandered burn works for the same player"), Wandered->GetBeneficiary() == Beneficiary);
+	TestWorld.AdvanceTimers(BurnStep);
+	TestWorld.AdvanceTimers(BurnStep);
+	TestEqual(TEXT("Its two ticks complete one section of the neighbor"), Neighbor->HarvestableNode->GetRemainingSections(), 3);
+	TestEqual(TEXT("No residual work is left"), SectionWork(Neighbor), 0);
+	TestNull(TEXT("The burn is out after its time"), ARpgHarvestBurn::FindBurn(Neighbor->HarvestableNode, INDEX_NONE, Beneficiary));
+	TestEqual(TEXT("A resource beyond the wander reach is untouched"), Distant->HarvestableNode->GetRemainingSections(), 4);
+	TestEqual(
+		TEXT("Every completed section rewarded the igniting player once"),
+		CountMaterial(Harvester.PlayerState),
+		5 * YieldPerSection);
 	return true;
 }
 

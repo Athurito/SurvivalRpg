@@ -25,6 +25,16 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestBurnParams
 	 * and puts the burn out instead of refreshing it.
 	 */
 	float DischargeMultiplier = 0.0f;
+
+	/**
+	 * Above zero, a new burn moves on when its resource runs empty while it still has burn time: to the nearest other
+	 * resource within this radius in centimeters that the hit's tool can work and that does not burn for the player yet.
+	 * It burns there for its remaining time. Zero puts it out with its resource.
+	 */
+	float WanderRadius = 0.0f;
+
+	/** Collision channel on which a wandering burn finds the next resource, like the hit's trace channel. */
+	TEnumAsByte<ECollisionChannel> WanderChannel = ECC_Visibility;
 };
 
 /**
@@ -37,6 +47,10 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestBurnParams
  * igniting player and awards XP once, through the resource's normal commit. Each player keeps at most one burn per
  * resource, so co-op partners can burn the same resource side by side. The actor replicates without movement, so every
  * player sees its presentation, such as a fire Niagara component of the Blueprint subclass, for as long as it burns.
+ *
+ * A burn lit with a wander radius, from a talent such as Wandering Effect, moves on when its resource runs empty: a new
+ * burn of the same class takes over its remaining ticks on the nearest other resource, so the total burn time never
+ * grows and the wandering always ends.
  */
 UCLASS(Blueprintable)
 class GF_HARVESTING_MAGIC_API ARpgHarvestBurn : public AActor
@@ -70,6 +84,12 @@ public:
 	/** Authority: commits of burn work still to come. */
 	int32 GetRemainingTicks() const { return RemainingTicks; }
 
+	/** Authority: the resource the burn works. */
+	UObject* GetReceiver() const { return Receiver.Get(); }
+
+	/** Authority: the burn that took over this one's remaining time on another resource, or null. */
+	ARpgHarvestBurn* GetWanderedTo() const { return WanderedTo.Get(); }
+
 	/** The effect this burn's work names in its provenance, for example Rune.Brand. */
 	FGameplayTag GetProcTag() const { return ProcTag; }
 
@@ -92,6 +112,12 @@ protected:
 
 private:
 	bool Start(UObject* InReceiver, AActor* Beneficiary, const FRpgHarvestRequest& DirectRequest, const FRpgHarvestBurnParams& Params);
+
+	/**
+	 * Moves the remaining ticks on to the nearest other resource around this burn that its tool can work and that does
+	 * not burn for its player yet. Returns whether a burn took over.
+	 */
+	bool Wander();
 	int32 TicksFor(float DurationSeconds) const;
 	void Refresh(float DurationSeconds);
 	void Discharge(float Multiplier);
@@ -109,5 +135,8 @@ private:
 	int32 Item = INDEX_NONE;
 	float WorkPerSecond = 0.0f;
 	int32 RemainingTicks = 0;
+	float WanderRadius = 0.0f;
+	TEnumAsByte<ECollisionChannel> WanderChannel = ECC_Visibility;
+	TWeakObjectPtr<ARpgHarvestBurn> WanderedTo;
 	FTimerHandle BurnTimerHandle;
 };

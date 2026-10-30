@@ -1100,4 +1100,118 @@ bool FRpgHarvestRuneFlowRulesTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestSpreadRulesTest,
+	"SurvivalRpg.Harvesting.Work.SpreadStrikesEachResourceOnce",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestSpreadRulesTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+
+	// Resources on a line along Y, 300 cm apart, plus one 2000 cm away; the struck one sits at the origin.
+	struct FResource
+	{
+		UObject* Receiver = nullptr;
+		FVector Location = FVector::ZeroVector;
+	};
+	TArray<FResource> Resources;
+	for (const double Y : {0.0, 300.0, -450.0, 750.0, 2000.0})
+	{
+		Resources.Add({NewObject<URpgHarvestAutomationHarvestedListener>(GetTransientPackage()), FVector(0.0, Y, 0.0)});
+	}
+	auto MakeTarget = [](const FResource& Resource)
+	{
+		FRpgHarvestTargetEvaluation Target;
+		Target.Receiver = Resource.Receiver;
+		Target.Hit.ImpactPoint = Resource.Location;
+		Target.bInReach = true;
+		Target.Result.Outcome = ERpgHarvestOutcome::Harvested;
+		return Target;
+	};
+	// Every resource within 600 cm of the center, nearest first, as an area query would find them.
+	int32 Queries = 0;
+	auto Collect = [&Resources, &MakeTarget, &Queries](const FVector& Center, const int32 MaxTargets, TArray<FRpgHarvestTargetEvaluation>& OutCandidates)
+	{
+		++Queries;
+		TArray<FResource> InRange = Resources.FilterByPredicate([&Center](const FResource& Resource)
+		{
+			return FVector::Dist(Center, Resource.Location) <= 600.0;
+		});
+		InRange.Sort([&Center](const FResource& A, const FResource& B)
+		{
+			return FVector::DistSquared(Center, A.Location) < FVector::DistSquared(Center, B.Location);
+		});
+		for (const FResource& Resource : InRange)
+		{
+			if (MaxTargets > 0 && OutCandidates.Num() >= MaxTargets)
+			{
+				break;
+			}
+			OutCandidates.Add(MakeTarget(Resource));
+		}
+	};
+	// FHitResult starts with item 0, which the candidates keep.
+	const FRpgHarvestResourceId Struck{Resources[0].Receiver, 0};
+
+	// One target per jump: the chain moves on to the nearest resource it has not struck, never back.
+	TArray<FRpgHarvestLeapStrike> Leaps;
+	FRpgHarvestRuneFlow::PlanLeaps(Struck, Resources[0].Location, 2, 1, Collect, Leaps);
+	TestTrue(
+		TEXT("Two leaps go to the nearest resource, then on to the nearest one from there"),
+		Leaps.Num() == 2 && Leaps[0].Target.Receiver.Get() == Resources[1].Receiver && Leaps[0].Step == 0 &&
+			Leaps[1].Target.Receiver.Get() == Resources[3].Receiver && Leaps[1].Step == 1);
+
+	// Many jumps end once no resource is left in reach; none is struck twice and the struck one never.
+	Leaps.Reset();
+	Queries = 0;
+	FRpgHarvestRuneFlow::PlanLeaps(Struck, Resources[0].Location, 8, 1, Collect, Leaps);
+	TSet<const UObject*> StruckOnce;
+	for (const FRpgHarvestLeapStrike& Leap : Leaps)
+	{
+		StruckOnce.Add(Leap.Target.Receiver.Get());
+	}
+	TestTrue(
+		TEXT("The chain strikes each reachable resource once and ends early"),
+		Leaps.Num() == 2 && StruckOnce.Num() == 2 && !StruckOnce.Contains(Resources[0].Receiver) &&
+			!StruckOnce.Contains(Resources[4].Receiver));
+	TestEqual(TEXT("The chain stops asking once a step found nothing"), Queries, 3);
+
+	// Two targets per jump: the first step forks to the two nearest, the next goes on from the nearer one.
+	Leaps.Reset();
+	FRpgHarvestRuneFlow::PlanLeaps(Struck, Resources[0].Location, 2, 2, Collect, Leaps);
+	TestTrue(
+		TEXT("A forked step strikes the two nearest resources"),
+		Leaps.Num() == 3 && Leaps[0].Target.Receiver.Get() == Resources[1].Receiver &&
+			Leaps[1].Target.Receiver.Get() == Resources[2].Receiver && Leaps[2].Target.Receiver.Get() == Resources[3].Receiver &&
+			Leaps[2].Step == 1);
+	Leaps.Reset();
+	FRpgHarvestRuneFlow::PlanLeaps(Struck, Resources[0].Location, 0, 1, Collect, Leaps);
+	TestTrue(TEXT("Without jumps nothing leaps"), Leaps.IsEmpty());
+
+	// A pierce takes only resources ahead of the struck one, inside the cone around the hit's direction.
+	TArray<FRpgHarvestTargetEvaluation> Candidates;
+	for (const FResource& Resource : Resources)
+	{
+		Candidates.Add(MakeTarget(Resource));
+	}
+	FResource Beside{NewObject<URpgHarvestAutomationHarvestedListener>(GetTransientPackage()), FVector(400.0, 400.0, 0.0)};
+	Candidates.Insert(MakeTarget(Beside), 1);
+	TArray<FRpgHarvestTargetEvaluation> Pierced;
+	FRpgHarvestRuneFlow::PickPierceTargets(Candidates, Struck, FVector::ZeroVector, FVector(0.0, 1.0, 0.0), 35.0f, 1, Pierced);
+	TestTrue(TEXT("A pierce strikes the nearest resource ahead"), Pierced.Num() == 1 && Pierced[0].Receiver.Get() == Resources[1].Receiver);
+	Pierced.Reset();
+	FRpgHarvestRuneFlow::PickPierceTargets(Candidates, Struck, FVector::ZeroVector, FVector(0.0, 1.0, 0.0), 35.0f, 3, Pierced);
+	TestTrue(
+		TEXT("Further pierces skip resources beside and behind the hit"),
+		Pierced.Num() == 3 && Pierced[1].Receiver.Get() == Resources[3].Receiver && Pierced[2].Receiver.Get() == Resources[4].Receiver);
+	Pierced.Reset();
+	FRpgHarvestRuneFlow::PickPierceTargets(Candidates, Struck, FVector::ZeroVector, FVector(0.0, 1.0, 0.0), 50.0f, 1, Pierced);
+	TestTrue(TEXT("A wider cone takes the resource beside"), Pierced.Num() == 1 && Pierced[0].Receiver.Get() == Beside.Receiver);
+	Pierced.Reset();
+	FRpgHarvestRuneFlow::PickPierceTargets(Candidates, Struck, FVector::ZeroVector, FVector::UpVector, 35.0f, 1, Pierced);
+	TestTrue(TEXT("A hit without horizontal direction pierces nothing"), Pierced.IsEmpty());
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

@@ -333,6 +333,18 @@ public:
 		TransferStrikeClass = InTransferClass;
 		RuneFlowRadius = InRadius;
 	}
+	void ConfigureBurn(const TSubclassOf<ARpgHarvestBurn> InBurnClass) { BurnClass = InBurnClass; }
+	void ConfigureSpread(
+		const TSubclassOf<ARpgHarvestRuneStrike> InLeapClass,
+		const TSubclassOf<ARpgHarvestRuneStrike> InPierceClass,
+		const float InLeapRadius,
+		const float InPierceDepth)
+	{
+		LeapStrikeClass = InLeapClass;
+		PierceStrikeClass = InPierceClass;
+		LeapRadius = InLeapRadius;
+		PierceDepth = InPierceDepth;
+	}
 };
 
 /** Records preview notifications so tests can assert change-only broadcasting. */

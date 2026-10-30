@@ -43,6 +43,16 @@ void FRpgHarvestRuneFlow::PickFollowUpTargets(
 	const int32 MaxTargets,
 	TArray<FRpgHarvestTargetEvaluation>& OutTargets)
 {
+	const FRpgHarvestResourceId Excluded{ExcludeReceiver, ExcludeItem};
+	PickFollowUpTargets(Candidates, MakeArrayView(&Excluded, 1), MaxTargets, OutTargets);
+}
+
+void FRpgHarvestRuneFlow::PickFollowUpTargets(
+	const TArray<FRpgHarvestTargetEvaluation>& Candidates,
+	const TConstArrayView<FRpgHarvestResourceId> Excluded,
+	const int32 MaxTargets,
+	TArray<FRpgHarvestTargetEvaluation>& OutTargets)
+{
 	int32 Picked = 0;
 	for (const FRpgHarvestTargetEvaluation& Candidate : Candidates)
 	{
@@ -51,12 +61,88 @@ void FRpgHarvestRuneFlow::PickFollowUpTargets(
 			break;
 		}
 		if (!Candidate.WouldHarvest() || !Candidate.Receiver.IsValid() ||
-			(Candidate.Receiver.Get() == ExcludeReceiver && Candidate.Hit.Item == ExcludeItem))
+			Excluded.ContainsByPredicate([&Candidate](const FRpgHarvestResourceId& Resource) { return Resource.Matches(Candidate); }))
 		{
 			continue;
 		}
 		OutTargets.Add(Candidate);
 		++Picked;
+	}
+}
+
+void FRpgHarvestRuneFlow::PickPierceTargets(
+	const TArray<FRpgHarvestTargetEvaluation>& Candidates,
+	const FRpgHarvestResourceId& Excluded,
+	const FVector& Origin,
+	const FVector& Direction,
+	const float ConeHalfAngleDegrees,
+	const int32 MaxTargets,
+	TArray<FRpgHarvestTargetEvaluation>& OutTargets)
+{
+	const FVector Forward = Direction.GetSafeNormal2D();
+	if (Forward.IsNearlyZero() || MaxTargets <= 0)
+	{
+		return;
+	}
+	const double MinCos = FMath::Cos(FMath::DegreesToRadians(FMath::Clamp(ConeHalfAngleDegrees, 0.0f, 89.0f)));
+	int32 Picked = 0;
+	for (const FRpgHarvestTargetEvaluation& Candidate : Candidates)
+	{
+		if (Picked >= MaxTargets)
+		{
+			break;
+		}
+		if (!Candidate.WouldHarvest() || !Candidate.Receiver.IsValid() || Excluded.Matches(Candidate))
+		{
+			continue;
+		}
+		// Seen from above, the resource has to lie ahead of the struck one, inside the cone around the hit's direction.
+		const FVector ToCandidate = (Candidate.Hit.ImpactPoint - Origin) * FVector(1.0, 1.0, 0.0);
+		const double Distance = ToCandidate.Size();
+		if (Distance < UE_KINDA_SMALL_NUMBER || FVector::DotProduct(ToCandidate / Distance, Forward) < MinCos)
+		{
+			continue;
+		}
+		OutTargets.Add(Candidate);
+		++Picked;
+	}
+}
+
+void FRpgHarvestRuneFlow::PlanLeaps(
+	const FRpgHarvestResourceId& Struck,
+	const FVector& StruckPoint,
+	const int32 Jumps,
+	const int32 TargetsPerJump,
+	const TFunctionRef<void(const FVector& Center, int32 MaxTargets, TArray<FRpgHarvestTargetEvaluation>& OutCandidates)> CollectCandidates,
+	TArray<FRpgHarvestLeapStrike>& OutStrikes)
+{
+	if (Jumps <= 0 || TargetsPerJump <= 0)
+	{
+		return;
+	}
+
+	// Every struck resource stays excluded, so the chain only ever moves on and ends after Jumps steps at the latest.
+	TArray<FRpgHarvestResourceId, TInlineAllocator<16>> Visited;
+	Visited.Add(Struck);
+	FVector From = StruckPoint;
+	TArray<FRpgHarvestTargetEvaluation> Candidates;
+	TArray<FRpgHarvestTargetEvaluation> Picked;
+	for (int32 Step = 0; Step < Jumps; ++Step)
+	{
+		Candidates.Reset();
+		Picked.Reset();
+		CollectCandidates(From, Visited.Num() + TargetsPerJump, Candidates);
+		PickFollowUpTargets(Candidates, Visited, TargetsPerJump, Picked);
+		if (Picked.IsEmpty())
+		{
+			break;
+		}
+		for (FRpgHarvestTargetEvaluation& Target : Picked)
+		{
+			Visited.Add(FRpgHarvestResourceId{Target.Receiver.Get(), Target.Hit.Item});
+			OutStrikes.Add(FRpgHarvestLeapStrike{Target, Step});
+		}
+		From = Picked[0].Hit.ImpactPoint;
 	}
 }
 
@@ -87,7 +173,8 @@ ARpgHarvestRuneStrike* ARpgHarvestRuneStrike::Launch(
 	const FRpgHarvestRequest& DirectRequest,
 	const TSubclassOf<ARpgHarvestRuneStrike> StrikeClass,
 	const float WorkSections,
-	const bool bOtherResource)
+	const bool bOtherResource,
+	const float ExtraDelaySeconds)
 {
 	UWorld* World = Receiver ? Receiver->GetWorld() : nullptr;
 	if (!World || World->GetNetMode() == NM_Client || !StrikeClass || !IsValid(DirectRequest.Harvester) ||
@@ -109,7 +196,7 @@ ARpgHarvestRuneStrike* ARpgHarvestRuneStrike::Launch(
 		StrikeClass,
 		FTransform(TargetHit.ImpactPoint),
 		SpawnParameters);
-	if (RuneStrike && !RuneStrike->Start(Receiver, Beneficiary, TargetHit, DirectRequest, WorkSections, bOtherResource))
+	if (RuneStrike && !RuneStrike->Start(Receiver, Beneficiary, TargetHit, DirectRequest, WorkSections, bOtherResource, ExtraDelaySeconds))
 	{
 		RuneStrike->Destroy();
 		RuneStrike = nullptr;
@@ -132,7 +219,8 @@ bool ARpgHarvestRuneStrike::Start(
 	const FHitResult& TargetHit,
 	const FRpgHarvestRequest& DirectRequest,
 	const float WorkSections,
-	const bool bOtherResource)
+	const bool bOtherResource,
+	const float ExtraDelaySeconds)
 {
 	UWorld* World = GetWorld();
 	if (!HasAuthority() || !World || !InReceiver || !Beneficiary)
@@ -157,7 +245,8 @@ bool ARpgHarvestRuneStrike::Start(
 	Request.Provenance = DirectRequest.Provenance.MakeSecondary(ProcTag);
 	Request.ExpectedRevision = IRpgHarvestableTarget::Execute_GetHarvestRevision(InReceiver, TargetHit);
 
-	World->GetTimerManager().SetTimer(StrikeTimerHandle, this, &ThisClass::Strike, FMath::Max(0.01f, DelaySeconds), false);
+	const float Extra = FMath::IsFinite(ExtraDelaySeconds) ? FMath::Clamp(ExtraDelaySeconds, 0.0f, 8.0f) : 0.0f;
+	World->GetTimerManager().SetTimer(StrikeTimerHandle, this, &ThisClass::Strike, FMath::Max(0.01f, DelaySeconds + Extra), false);
 	return true;
 }
 

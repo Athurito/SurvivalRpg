@@ -4,11 +4,11 @@
 #include "GameFramework/Actor.h"
 #include "GameplayTagContainer.h"
 #include "Harvesting/RpgHarvestableTarget.h"
+#include "Harvesting/RpgHarvestTargeting.h"
+#include "Templates/Function.h"
 #include "TimerManager.h"
 
 #include "RpgHarvestRuneStrike.generated.h"
-
-struct FRpgHarvestTargetEvaluation;
 
 /**
  * Counts the accepted own hits that charge a rune's echo, such as the harvesting Echo rune: every HitsPerEcho own hits,
@@ -34,7 +34,30 @@ private:
 	double Deadline = -1.0;
 };
 
-/** Stateless rules of the Runenfluss runes Echo and Kraftuebertrag, shared by the harvest ability and its tests. */
+/** One harvestable resource as follow-up rules tell resources apart: instance Item of Receiver, or Receiver itself. */
+struct GF_HARVESTING_MAGIC_API FRpgHarvestResourceId
+{
+	const UObject* Receiver = nullptr;
+	int32 Item = INDEX_NONE;
+
+	/** Returns whether Target addresses this resource. */
+	bool Matches(const FRpgHarvestTargetEvaluation& Target) const
+	{
+		return Target.Receiver.Get() == Receiver && Target.Hit.Item == Item;
+	}
+};
+
+/** One planned leap strike of an Erntesprung: the resource it strikes and its step in the chain, from 0. */
+struct GF_HARVESTING_MAGIC_API FRpgHarvestLeapStrike
+{
+	FRpgHarvestTargetEvaluation Target;
+	int32 Step = 0;
+};
+
+/**
+ * Stateless rules of the harvesting runes that send follow-up work to resources: Echo and Kraftuebertrag (Runenfluss),
+ * Erntesprung and Durchschlag (Ausbreitung). Shared by the harvest ability and its tests.
+ */
 struct GF_HARVESTING_MAGIC_API FRpgHarvestRuneFlow
 {
 	/**
@@ -48,6 +71,42 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestRuneFlow
 		int32 ExcludeItem,
 		int32 MaxTargets,
 		TArray<FRpgHarvestTargetEvaluation>& OutTargets);
+
+	/** Like PickFollowUpTargets, leaving out every resource of Excluded. */
+	static void PickFollowUpTargets(
+		const TArray<FRpgHarvestTargetEvaluation>& Candidates,
+		TConstArrayView<FRpgHarvestResourceId> Excluded,
+		int32 MaxTargets,
+		TArray<FRpgHarvestTargetEvaluation>& OutTargets);
+
+	/**
+	 * Appends to OutTargets up to MaxTargets resources of Candidates behind Origin that a follow-up strike would
+	 * harvest, nearest first: those whose location lies, seen from above, within ConeHalfAngleDegrees of Direction
+	 * from Origin. Leaves out resource Excluded, the struck one. A Direction without horizontal length picks nothing.
+	 */
+	static void PickPierceTargets(
+		const TArray<FRpgHarvestTargetEvaluation>& Candidates,
+		const FRpgHarvestResourceId& Excluded,
+		const FVector& Origin,
+		const FVector& Direction,
+		float ConeHalfAngleDegrees,
+		int32 MaxTargets,
+		TArray<FRpgHarvestTargetEvaluation>& OutTargets);
+
+	/**
+	 * Plans the chain of an Erntesprung from resource Struck at StruckPoint: up to Jumps steps, each striking up to
+	 * TargetsPerJump of the nearest resources that CollectCandidates finds around the previous step's first resource
+	 * and that no step struck yet. The chain never strikes a resource twice, and it ends early when a step finds
+	 * nothing. CollectCandidates appends the candidates around Center, nearest first, up to MaxTargets the strike would
+	 * harvest.
+	 */
+	static void PlanLeaps(
+		const FRpgHarvestResourceId& Struck,
+		const FVector& StruckPoint,
+		int32 Jumps,
+		int32 TargetsPerJump,
+		TFunctionRef<void(const FVector& Center, int32 MaxTargets, TArray<FRpgHarvestTargetEvaluation>& OutCandidates)> CollectCandidates,
+		TArray<FRpgHarvestLeapStrike>& OutStrikes);
 
 	/**
 	 * Sections of work a Kraftuebertrag carries from a depleting hit: the actual overkill of Result times Fraction.
@@ -79,7 +138,8 @@ public:
 	 * Authority: spawns a strike of StrikeClass at TargetHit that works resource TargetHit.Item of Receiver with
 	 * WorkSections sections of work for DirectRequest's player, as follow-up work of DirectRequest's action. A strike on
 	 * another resource than the one DirectRequest struck (bOtherResource) is an area harvest, so protected resources
-	 * refuse it. Returns the strike, or null when there is nothing to strike.
+	 * refuse it. ExtraDelaySeconds, 0 to 8, waits on top of the class's DelaySeconds, for example for the later steps of
+	 * a leap. Returns the strike, or null when there is nothing to strike.
 	 */
 	static ARpgHarvestRuneStrike* Launch(
 		UObject* Receiver,
@@ -87,7 +147,8 @@ public:
 		const FRpgHarvestRequest& DirectRequest,
 		TSubclassOf<ARpgHarvestRuneStrike> StrikeClass,
 		float WorkSections,
-		bool bOtherResource);
+		bool bOtherResource,
+		float ExtraDelaySeconds = 0.0f);
 
 	/** Authority: the player state (or harvester) that receives the strike's rewards. */
 	AActor* GetBeneficiary() const { return Request.Harvester; }
@@ -132,7 +193,14 @@ protected:
 	FGameplayTag ProcTag;
 
 private:
-	bool Start(UObject* InReceiver, AActor* Beneficiary, const FHitResult& TargetHit, const FRpgHarvestRequest& DirectRequest, float WorkSections, bool bOtherResource);
+	bool Start(
+		UObject* InReceiver,
+		AActor* Beneficiary,
+		const FHitResult& TargetHit,
+		const FRpgHarvestRequest& DirectRequest,
+		float WorkSections,
+		bool bOtherResource,
+		float ExtraDelaySeconds);
 	void Strike();
 
 	/** The request the strike commits: secondary work of the triggering action, for the beneficiary. Authority. */

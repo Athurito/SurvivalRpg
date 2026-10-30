@@ -25,6 +25,7 @@ Behavior observed in this project's automation tests and PIE sessions on UE 5.8.
 - An ability still running when the test world is destroyed gets cancelled during cleanup, after game-instance subsystems such as the GameplayMessageSubsystem are gone. Skip delivery when `World->bIsTearingDown || World->IsBeingCleanedUp()`.
 - A UMG widget creates its MVVM view and runs `OnInitialized` only with a valid player context, unless its class sets `bCanCallInitializedWithoutPlayerContext`. Create `NewObject<ULocalPlayer>(GEngine)`, spawn an `APlayerController`, set `PC->Player` and `LocalPlayer->PlayerController`, call `World->AddController(PC)` (spawned actors never run `PostInitializeComponents` there, so the controller is not in the list), then `CreateWidget(PC, Class)`.
 - `ARpgCharacter::OnAbilitySystemInitialized` refills health to max on authority. Compare against the attributes after `InitializeAbilitySystemComponent`, not the spawn values.
+- A default `FHitResult` has `Item` 0, not `INDEX_NONE`. Synthetic hits that a test builds by hand therefore name instance 0; compare or exclude them by that item, not by `INDEX_NONE` (MST-09b).
 - `UGameplayAbility::GetCurrentSourceObject` and `GetCurrentAbilitySpecHandle` ensure on a CDO. In an `AbilityActivatedCallbacks` handler, check `IsInstantiated()` first and read the spec from the ASC.
 
 ## GameplayCues and prediction
