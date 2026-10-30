@@ -4,7 +4,14 @@ This runbook owns the reproducible network acceptance for remote-client melee at
 issue #57. GAS and the server remain authoritative for activation, attack-window timing, traces,
 hit deduplication, and damage. Montage notifies remain designer-authored presentation/gameplay
 signals, while the server derives its authoritative one-shot schedule from the same authored notify
-times.
+times. The server opens and closes its window on whichever comes first: its own notify, a check of
+its own montage position once per frame, or that schedule. It thus follows the authored times like
+the owner. A timer set during the activation frame fires one or two frames after the authored time,
+which at 60 Hz made the server miss hits the owner had predicted. A remote client's montage advances
+on the server with the client's moves, several in one frame at times, and some of its queued
+notifies never arrived there; the per-frame check covers those. The server accepts a notify only
+while the running step's own montage has reached the authored time, and a start notify only before
+the window has closed. The schedule remains the guarantee when the montage does not advance.
 
 The tests temporarily select `RpgPrototypeExperience` with the restored
 `/Game/SurvivalRpg/Core/Character/BP_Rpg_Character` pawn. A replicated static floor in
@@ -58,7 +65,8 @@ Topology and network profile:
 - every PIE world steps at most 1/120 s per frame (`FRpgScopedNetworkTestFrameTimeLimit`), the 100 to 120 fps the
   suite was validated at. When the editor renders slower, for example while another process holds the GPU, the
   worlds run slower than wall time instead of sampling the attack windows coarsely; the CQTest timeouts stay
-  wall-clock
+  wall-clock. At 1/60 s the server's window opens on time, but its per-frame trace chords can still miss: it
+  advances the remote client's montage with the client's moves, at times two or three frames at once
 
 The test performs 20 sequential remote-client attacks at the authored rate, one additional attack
 with a transient 1.5x montage-rate override, and one cancellation during the open authority
@@ -70,13 +78,17 @@ restored after complete cleanup. For each completed attack it requires:
 - exactly one authority window open and close
 - authority trace samples and at least 2 cm of live authority blade-center movement while the
   window remains open
+- a window-start event sent to the server after its window closed, while the attack recovers,
+  leaves the window closed
 - exactly one real health decrease with the expected weapon source, instigator, and causer
 - stable montage, timer, trace, hit-dedupe, and ability cleanup after completion
 
 The 1.5x timing/scaling case additionally requires the actual montage effective rate to match the
 override while the normal authority-window, trace, damage, and cleanup assertions still pass.
-Lifecycle logs record the derived authority schedule delays for review; automation does not assert
-their exact numeric values. The cancellation case requires one authority open and close, zero
+Lifecycle logs record the derived authority schedule delays and whether the server's notify
+(`AttackWindowStart.Notify`), its montage check (`AttackWindowStart.AuthorityMontage`) or the
+schedule (`AttackWindowStart.AuthoritySchedule`) opened the window, for review; automation does not
+assert their exact numeric values. The cancellation case requires one authority open and close, zero
 damage, no residual timers or attack state, and no mutation during the post-cleanup observation
 period.
 

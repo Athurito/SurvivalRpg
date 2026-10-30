@@ -161,6 +161,7 @@ bool URpgGameplayAbility_BasicWeaponAttack::HasPendingAttackTimersForTests() con
 	return TimerManager.TimerExists(TraceSampleTimerHandle) ||
 		TimerManager.TimerExists(AuthorityAttackWindowStartTimerHandle) ||
 		TimerManager.TimerExists(AuthorityAttackWindowEndTimerHandle) ||
+		TimerManager.TimerExists(AuthorityMontageWindowPollTimerHandle) ||
 		TimerManager.TimerExists(ComboWindowOpenTimerHandle) ||
 		TimerManager.TimerExists(ComboWindowCloseTimerHandle) ||
 		TimerManager.TimerExists(RecoveryCancelTimerHandle);
@@ -351,6 +352,7 @@ void URpgGameplayAbility_BasicWeaponAttack::ActivateAbility(
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
+	ActiveAttackWindowStartTime = AttackWindowStartTime;
 	ActiveAttackWindowEndTime = AttackWindowEndTime;
 
 	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
@@ -802,6 +804,7 @@ bool URpgGameplayAbility_BasicWeaponAttack::StartComboStep(FGameplayTag NextAtta
 
 	ActiveAttackDefinition = MoveTemp(NextStep);
 	ActiveAttackTag = NextAttackTag;
+	ActiveAttackWindowStartTime = WindowStart;
 	ActiveAttackWindowEndTime = WindowEnd;
 	++ComboStepIndex;
 	ApplyStepOwnerTags();
@@ -894,7 +897,8 @@ void URpgGameplayAbility_BasicWeaponAttack::EndAbility(
 	const bool bHasPendingTimers = TimerManager &&
 		(TimerManager->TimerExists(TraceSampleTimerHandle) ||
 		 TimerManager->TimerExists(AuthorityAttackWindowStartTimerHandle) ||
-		 TimerManager->TimerExists(AuthorityAttackWindowEndTimerHandle));
+		 TimerManager->TimerExists(AuthorityAttackWindowEndTimerHandle) ||
+		 TimerManager->TimerExists(AuthorityMontageWindowPollTimerHandle));
 	LogAttackLifecycleLazy(
 		TEXT("AbilityEnded"),
 		[this, bWasCancelled, bHasPendingTimers]()
@@ -917,6 +921,7 @@ void URpgGameplayAbility_BasicWeaponAttack::EndAbility(
 	ActiveMontageTask = nullptr;
 	ActiveAttackDefinition = FRpgWeaponAttackDefinition();
 	ActiveAttackTag = FGameplayTag();
+	ActiveAttackWindowStartTime = 0.0f;
 	ActiveAttackWindowEndTime = 0.0f;
 	ComboStepIndex = 0;
 	bComboWindowOpen = false;
@@ -954,14 +959,20 @@ void URpgGameplayAbility_BasicWeaponAttack::OnAttackWindowStarted(FGameplayEvent
 		return;
 	}
 
-	bReceivedAttackWindowStart = true;
-	LogAttackLifecycle(TEXT("AttackWindowStart.Notify"));
-	if (CurrentActorInfo && CurrentActorInfo->IsNetAuthority())
+	// The schedule, set during the activation frame, counts only from that frame's end and fires one or two frames after
+	// the authored start; the montage and the owner's notify do not wait. So authority opens on whichever of this notify,
+	// its montage poll and the schedule comes first. A notify counts only while this step's window is still scheduled
+	// and its own montage has reached the start: a late queued notify never reopens a closed window, and a replaced
+	// step's notify never opens the next step's.
+	const bool bAuthority = CurrentActorInfo && CurrentActorInfo->IsNetAuthority();
+	if (bAuthority && (!bAuthorityAttackWindowScheduled || !HasActiveMontageReached(ActiveAttackWindowStartTime)))
 	{
-		// Authority owns the deterministic timer schedule. The montage notify is telemetry only
-		// so a delayed queued notify can never reopen a window that authority already closed.
+		LogAttackLifecycle(TEXT("AttackWindowStart.NotifyIgnored"));
 		return;
 	}
+
+	bReceivedAttackWindowStart = true;
+	LogAttackLifecycle(TEXT("AttackWindowStart.Notify"));
 	OpenAttackWindow();
 }
 
@@ -972,13 +983,22 @@ void URpgGameplayAbility_BasicWeaponAttack::OnAttackWindowEnded(FGameplayEventDa
 		return;
 	}
 
-	bReceivedAttackWindowEnd = true;
-	LogAttackLifecycle(TEXT("AttackWindowEnd.Notify"));
-	if (CurrentActorInfo && CurrentActorInfo->IsNetAuthority())
+	// Authority closes on whichever comes first as well, so its window keeps the authored length.
+	const bool bAuthority = CurrentActorInfo && CurrentActorInfo->IsNetAuthority();
+	if (bAuthority && !HasActiveMontageReached(ActiveAttackWindowEndTime))
 	{
+		LogAttackLifecycle(TEXT("AttackWindowEnd.NotifyIgnored"));
 		return;
 	}
-	CloseAttackWindow(false);
+
+	bReceivedAttackWindowEnd = true;
+	LogAttackLifecycle(TEXT("AttackWindowEnd.Notify"));
+	// Closing clears the schedule. A window that is not open yet, because its start notify did not arrive, stays with
+	// the schedule, which still opens and closes it.
+	if (!bAuthority || bAttackWindowOpen)
+	{
+		CloseAttackWindow(false);
+	}
 }
 
 void URpgGameplayAbility_BasicWeaponAttack::OnMontageCompleted()
@@ -1050,13 +1070,36 @@ void URpgGameplayAbility_BasicWeaponAttack::OnAuthorityAttackWindowStarted()
 		return;
 	}
 
+	// A start notify or the montage poll that opened the window already cleared this timer.
 	bAuthorityWindowOpenedBySchedule = true;
 	LogAttackLifecycle(
 		TEXT("AttackWindowStart.AuthoritySchedule"),
-		bReceivedAttackWindowStart
-			? TEXT("Notify already arrived; start is idempotent.")
-			: TEXT("Notify had not arrived; authority fallback opened the window."));
+		TEXT("Neither the notify nor the montage had reached the start; authority fallback opened the window."));
 	OpenAttackWindow();
+}
+
+void URpgGameplayAbility_BasicWeaponAttack::OnAuthorityMontageWindowPoll()
+{
+	if (!IsActive() || !bAuthorityAttackWindowScheduled)
+	{
+		return;
+	}
+
+	if (!bAttackWindowOpen)
+	{
+		if (HasActiveMontageReached(ActiveAttackWindowStartTime))
+		{
+			LogAttackLifecycle(TEXT("AttackWindowStart.AuthorityMontage"));
+			OpenAttackWindow();
+		}
+		// A montage that passed the whole window this frame still gets one traced frame before it closes.
+		return;
+	}
+	if (HasActiveMontageReached(ActiveAttackWindowEndTime))
+	{
+		LogAttackLifecycle(TEXT("AttackWindowEnd.AuthorityMontage"));
+		CloseAttackWindow(false);
+	}
 }
 
 void URpgGameplayAbility_BasicWeaponAttack::OnAuthorityAttackWindowEnded()
@@ -1317,6 +1360,17 @@ bool URpgGameplayAbility_BasicWeaponAttack::ScheduleAuthorityAttackWindow()
 		EndDelay,
 		false);
 
+	// Timers tick after the movement and animation updates, so the poll reads each frame's final montage position.
+	FTimerManagerTimerParameters PollParameters;
+	PollParameters.bLoop = true;
+	PollParameters.bMaxOncePerFrame = true;
+	World->GetTimerManager().SetTimer(
+		AuthorityMontageWindowPollTimerHandle,
+		this,
+		&ThisClass::OnAuthorityMontageWindowPoll,
+		UE_KINDA_SMALL_NUMBER,
+		PollParameters);
+
 	if (StartDelay <= UE_SMALL_NUMBER)
 	{
 		OnAuthorityAttackWindowStarted();
@@ -1350,8 +1404,18 @@ void URpgGameplayAbility_BasicWeaponAttack::ClearAuthorityAttackWindowSchedule()
 	{
 		World->GetTimerManager().ClearTimer(AuthorityAttackWindowStartTimerHandle);
 		World->GetTimerManager().ClearTimer(AuthorityAttackWindowEndTimerHandle);
+		World->GetTimerManager().ClearTimer(AuthorityMontageWindowPollTimerHandle);
 	}
 	bAuthorityAttackWindowScheduled = false;
+}
+
+bool URpgGameplayAbility_BasicWeaponAttack::HasActiveMontageReached(const float MontageTime) const
+{
+	const UAnimMontage* Montage = ActiveAttackDefinition.Montage;
+	const UAnimInstance* AnimInstance = CurrentActorInfo ? CurrentActorInfo->GetAnimInstance() : nullptr;
+	// Montage_GetPosition reads the active instance; a replaced or stopping instance of the same montage is not it.
+	return Montage && AnimInstance && GetCurrentMontage() == Montage && AnimInstance->Montage_IsPlaying(Montage) &&
+		AnimInstance->Montage_GetPosition(Montage) + UE_KINDA_SMALL_NUMBER >= MontageTime;
 }
 
 void URpgGameplayAbility_BasicWeaponAttack::LogAttackLifecycle(
@@ -1561,7 +1625,8 @@ void URpgGameplayAbility_BasicWeaponAttack::BuildInterpolatedTracePointPairs(
 
 void URpgGameplayAbility_BasicWeaponAttack::OpenAttackWindow()
 {
-	// Owner (notify) and authority (schedule) each hold their own facing from the swing until the attack ends.
+	// Owner (notify) and authority (notify, montage poll or schedule) each hold their own facing from the swing until the
+	// attack ends.
 	HoldFacingCommitment();
 	if (bAttackWindowOpen)
 	{
