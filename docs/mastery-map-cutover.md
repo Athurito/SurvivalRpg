@@ -1,6 +1,6 @@
 # MST-09d: Catalog acceptance and cutover
 
-Task report for MST-09d in the [mastery map roadmap](mastery-map-roadmap.md). It closes the MST-09 umbrella of the [implementation plan](mastery-map-implementation-plan.md).
+Task report for MST-09d in the [mastery map roadmap](mastery-map-roadmap.md), [PR #328](https://github.com/Athurito/SurvivalRpg/pull/328). It closes the MST-09 umbrella of the [implementation plan](mastery-map-implementation-plan.md).
 
 The plan's acceptance for MST-09:
 - Every purchasable talent has implemented gameplay.
