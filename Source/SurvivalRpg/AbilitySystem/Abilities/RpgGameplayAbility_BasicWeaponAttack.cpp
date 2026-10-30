@@ -177,7 +177,7 @@ bool URpgGameplayAbility_BasicWeaponAttack::HasResidualAttackRuntimeStateForTest
 		bFinishingAttack ||
 		bAttackWindowOpen ||
 		bAuthorityAttackWindowScheduled ||
-		!PreviousTracePointLocations.IsEmpty() ||
+		!PreviousBladeSample.IsEmpty() ||
 		!HitActorsThisWindow.IsEmpty() ||
 		bRecordingSwing ||
 		!SwingRecord.Traces.IsEmpty() ||
@@ -334,8 +334,9 @@ void URpgGameplayAbility_BasicWeaponAttack::ActivateAbility(
 	AuthorityTracePointFailuresThisActivation = 0;
 	AuthorityDamageHitsThisActivation = 0;
 	AuthorityDuplicateHitsSkippedThisActivation = 0;
+	AuthorityMaxTraceSubstepsThisActivation = 0;
 	bLoggedTracePointFailureThisActivation = false;
-	PreviousTracePointLocations.Reset();
+	PreviousBladeSample.Reset();
 	HitActorsThisWindow.Reset();
 	ActiveAttackTag = EntryAttackTag;
 	ComboStepIndex = 0;
@@ -800,7 +801,7 @@ bool URpgGameplayAbility_BasicWeaponAttack::StartComboStep(FGameplayTag NextAtta
 	bAuthorityWindowOpenedBySchedule = false;
 	bAuthorityWindowClosedBySchedule = false;
 	HitActorsThisWindow.Reset();
-	PreviousTracePointLocations.Reset();
+	PreviousBladeSample.Reset();
 
 	ActiveAttackDefinition = MoveTemp(NextStep);
 	ActiveAttackTag = NextAttackTag;
@@ -943,8 +944,9 @@ void URpgGameplayAbility_BasicWeaponAttack::EndAbility(
 	AuthorityTracePointFailuresThisActivation = 0;
 	AuthorityDamageHitsThisActivation = 0;
 	AuthorityDuplicateHitsSkippedThisActivation = 0;
+	AuthorityMaxTraceSubstepsThisActivation = 0;
 	bLoggedTracePointFailureThisActivation = false;
-	PreviousTracePointLocations.Reset();
+	PreviousBladeSample.Reset();
 	HitActorsThisWindow.Reset();
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
@@ -1495,7 +1497,7 @@ FGameplayTag URpgGameplayAbility_BasicWeaponAttack::ResolveAttackDefinitionTag(c
 	return AttackDefinitionTag;
 }
 
-bool URpgGameplayAbility_BasicWeaponAttack::TryGetSocketLocationFromWeapon(const URpgWeaponInstance* WeaponInstance, FName SocketName, FVector& OutLocation) const
+bool URpgGameplayAbility_BasicWeaponAttack::TryGetSocketTransformFromWeapon(const URpgWeaponInstance* WeaponInstance, FName SocketName, FTransform& OutTransform) const
 {
 	if (!WeaponInstance || SocketName.IsNone())
 	{
@@ -1515,13 +1517,13 @@ bool URpgGameplayAbility_BasicWeaponAttack::TryGetSocketLocationFromWeapon(const
 		{
 			if (SceneComponent && SceneComponent->GetFName() == SocketName)
 			{
-				OutLocation = SceneComponent->GetComponentLocation();
+				OutTransform = SceneComponent->GetComponentTransform();
 				return true;
 			}
 
 			if (SceneComponent && SceneComponent->DoesSocketExist(SocketName))
 			{
-				OutLocation = SceneComponent->GetSocketLocation(SocketName);
+				OutTransform = SceneComponent->GetSocketTransform(SocketName);
 				return true;
 			}
 		}
@@ -1530,7 +1532,7 @@ bool URpgGameplayAbility_BasicWeaponAttack::TryGetSocketLocationFromWeapon(const
 	return false;
 }
 
-bool URpgGameplayAbility_BasicWeaponAttack::TryGetSocketLocationFromAvatar(FName SocketName, FVector& OutLocation) const
+bool URpgGameplayAbility_BasicWeaponAttack::TryGetSocketTransformFromAvatar(FName SocketName, FTransform& OutTransform) const
 {
 	if (SocketName.IsNone())
 	{
@@ -1540,23 +1542,32 @@ bool URpgGameplayAbility_BasicWeaponAttack::TryGetSocketLocationFromAvatar(FName
 	const USkeletalMeshComponent* Mesh = URpgPawnExtensionComponent::FindGameplayMesh(GetAvatarActorFromActorInfo());
 	if (Mesh && Mesh->DoesSocketExist(SocketName))
 	{
-		OutLocation = Mesh->GetSocketLocation(SocketName);
+		OutTransform = Mesh->GetSocketTransform(SocketName);
 		return true;
 	}
 
 	return false;
 }
 
-bool URpgGameplayAbility_BasicWeaponAttack::GatherTracePointLocations(TArray<FVector>& OutLocations)
+bool URpgGameplayAbility_BasicWeaponAttack::GatherBladeSample(RpgWeaponTraceInterpolation::FBladeSample& OutSample)
 {
-	OutLocations.Reset();
-	OutLocations.Reserve(ActiveAttackDefinition.TracePointSockets.Num());
+	OutSample.Reset();
+	const AActor* AvatarActor = GetAvatarActorFromActorInfo();
+	if (!AvatarActor)
+	{
+		return false;
+	}
+
+	// The gameplay mesh carries the body pose the blade swings against, including a listen server's mesh smoothing.
+	const USkeletalMeshComponent* Mesh = URpgPawnExtensionComponent::FindGameplayMesh(AvatarActor);
+	OutSample.BodyTransform = Mesh ? Mesh->GetComponentTransform() : AvatarActor->GetActorTransform();
+	OutSample.TracePointTransforms.Reserve(ActiveAttackDefinition.TracePointSockets.Num());
 
 	for (const FName SocketName : ActiveAttackDefinition.TracePointSockets)
 	{
-		FVector SocketLocation = FVector::ZeroVector;
-		if (!TryGetSocketLocationFromWeapon(ActiveWeaponInstance, SocketName, SocketLocation) &&
-			!TryGetSocketLocationFromAvatar(SocketName, SocketLocation))
+		FTransform SocketTransform = FTransform::Identity;
+		if (!TryGetSocketTransformFromWeapon(ActiveWeaponInstance, SocketName, SocketTransform) &&
+			!TryGetSocketTransformFromAvatar(SocketName, SocketTransform))
 		{
 			if (!bLoggedTracePointFailureThisActivation)
 			{
@@ -1569,13 +1580,14 @@ bool URpgGameplayAbility_BasicWeaponAttack::GatherTracePointLocations(TArray<FVe
 					*SocketName.ToString(),
 					*GetNameSafe(ActiveWeaponInstance));
 			}
+			OutSample.Reset();
 			return false;
 		}
 
-		OutLocations.Add(SocketLocation);
+		OutSample.TracePointTransforms.Add(SocketTransform);
 	}
 
-	return OutLocations.Num() >= 2;
+	return OutSample.TracePointTransforms.Num() >= 2;
 }
 
 void URpgGameplayAbility_BasicWeaponAttack::BuildInterpolatedTracePointPairs(
@@ -1647,7 +1659,7 @@ void URpgGameplayAbility_BasicWeaponAttack::OpenAttackWindow()
 
 	bAttackWindowOpen = true;
 	HitActorsThisWindow.Reset();
-	PreviousTracePointLocations.Reset();
+	PreviousBladeSample.Reset();
 
 	// Authority traces for damage; a remote owner traces the same window only to play its hit feedback without a round trip.
 	const bool bAuthority = CurrentActorInfo && CurrentActorInfo->IsNetAuthority();
@@ -1664,7 +1676,7 @@ void URpgGameplayAbility_BasicWeaponAttack::OpenAttackWindow()
 	}
 #endif
 
-	if (!GatherTracePointLocations(PreviousTracePointLocations) && bAuthority)
+	if (!GatherBladeSample(PreviousBladeSample) && bAuthority)
 	{
 		++AuthorityTracePointFailuresThisActivation;
 		UE_LOG(
@@ -1740,7 +1752,7 @@ void URpgGameplayAbility_BasicWeaponAttack::CloseAttackWindow(bool bLogMissingEn
 	}
 
 	bAttackWindowOpen = false;
-	PreviousTracePointLocations.Reset();
+	PreviousBladeSample.Reset();
 	FinishSwingRecord();
 
 	if (bWasOpen)
@@ -1750,8 +1762,9 @@ void URpgGameplayAbility_BasicWeaponAttack::CloseAttackWindow(bool bLogMissingEn
 			[this]()
 			{
 				return FString::Printf(
-					TEXT("TraceSamples=%d TracePointFailures=%d DamageHits=%d DuplicateHitsSkipped=%d"),
+					TEXT("TraceSamples=%d MaxTraceSubsteps=%d TracePointFailures=%d DamageHits=%d DuplicateHitsSkipped=%d"),
 					AuthorityTraceSamplesThisActivation,
+					AuthorityMaxTraceSubstepsThisActivation,
 					AuthorityTracePointFailuresThisActivation,
 					AuthorityDamageHitsThisActivation,
 					AuthorityDuplicateHitsSkippedThisActivation);
@@ -1785,8 +1798,8 @@ void URpgGameplayAbility_BasicWeaponAttack::PerformBladeTraceSample()
 	}
 
 	const bool bAuthority = CurrentActorInfo && CurrentActorInfo->IsNetAuthority();
-	TArray<FVector> CurrentTracePointLocations;
-	if (!GatherTracePointLocations(CurrentTracePointLocations))
+	RpgWeaponTraceInterpolation::FBladeSample CurrentBladeSample;
+	if (!GatherBladeSample(CurrentBladeSample))
 	{
 		if (bAuthority)
 		{
@@ -1795,11 +1808,17 @@ void URpgGameplayAbility_BasicWeaponAttack::PerformBladeTraceSample()
 		return;
 	}
 
-	if (PreviousTracePointLocations.Num() != CurrentTracePointLocations.Num())
+	if (PreviousBladeSample.TracePointTransforms.Num() != CurrentBladeSample.TracePointTransforms.Num())
 	{
-		PreviousTracePointLocations = CurrentTracePointLocations;
+		PreviousBladeSample = MoveTemp(CurrentBladeSample);
 		return;
 	}
+
+	// A pose that advanced several frames since the last sample, such as a remote client's montage on the server, which
+	// moves with every received move, is traced along its swing arc in sub-steps instead of one straight chord.
+	const int32 SubstepCount = RpgWeaponTraceInterpolation::ComputeSubstepCount(PreviousBladeSample, CurrentBladeSample);
+	TArray<TArray<FVector>> SubstepLocations;
+	RpgWeaponTraceInterpolation::BuildSubstepLocations(PreviousBladeSample, CurrentBladeSample, SubstepCount, SubstepLocations);
 
 	if (bAuthority)
 	{
@@ -1807,6 +1826,7 @@ void URpgGameplayAbility_BasicWeaponAttack::PerformBladeTraceSample()
 #if WITH_DEV_AUTOMATION_TESTS
 		++AuthorityTraceSampleCountForTests;
 #endif
+		AuthorityMaxTraceSubstepsThisActivation = FMath::Max(AuthorityMaxTraceSubstepsThisActivation, SubstepCount);
 		if (AuthorityTraceSamplesThisActivation == 1)
 		{
 			LogAttackLifecycle(TEXT("AuthorityTraceStarted"));
@@ -1816,21 +1836,30 @@ void URpgGameplayAbility_BasicWeaponAttack::PerformBladeTraceSample()
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(RpgBasicWeaponAttack), false, AvatarActor);
 	BuildTraceQueryParams(QueryParams);
 
-	switch (ActiveAttackDefinition.TraceMode)
+	// A hit may end the attack and close the window; later sub-steps then neither trace nor seed a new sample.
+	for (int32 SubstepIndex = 1; SubstepIndex < SubstepLocations.Num() && bAttackWindowOpen; ++SubstepIndex)
 	{
-	case ERpgWeaponAttackTraceMode::LineTrace:
-		PerformLineTraceRibbon(PreviousTracePointLocations, CurrentTracePointLocations, QueryParams);
-		break;
-	case ERpgWeaponAttackTraceMode::SphereSweep:
-	case ERpgWeaponAttackTraceMode::CapsuleSweep:
-	case ERpgWeaponAttackTraceMode::BoxSweep:
-		PerformSweepTraceRibbon(PreviousTracePointLocations, CurrentTracePointLocations, QueryParams);
-		break;
-	default:
-		break;
+		const TArray<FVector>& SubstepStartLocations = SubstepLocations[SubstepIndex - 1];
+		const TArray<FVector>& SubstepEndLocations = SubstepLocations[SubstepIndex];
+		switch (ActiveAttackDefinition.TraceMode)
+		{
+		case ERpgWeaponAttackTraceMode::LineTrace:
+			PerformLineTraceRibbon(SubstepStartLocations, SubstepEndLocations, QueryParams);
+			break;
+		case ERpgWeaponAttackTraceMode::SphereSweep:
+		case ERpgWeaponAttackTraceMode::CapsuleSweep:
+		case ERpgWeaponAttackTraceMode::BoxSweep:
+			PerformSweepTraceRibbon(SubstepStartLocations, SubstepEndLocations, QueryParams);
+			break;
+		default:
+			break;
+		}
 	}
 
-	PreviousTracePointLocations = CurrentTracePointLocations;
+	if (bAttackWindowOpen)
+	{
+		PreviousBladeSample = MoveTemp(CurrentBladeSample);
+	}
 }
 
 void URpgGameplayAbility_BasicWeaponAttack::PerformLineTraceRibbon(

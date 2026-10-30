@@ -138,7 +138,9 @@ struct SURVIVALRPG_API FRpgWeaponAttackDefinition
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trace")
 	TArray<FName> TracePointSockets;
 
-	// Server sample interval while the attack window is open. Lower values are more accurate but more expensive.
+	// Server sample interval while the attack window is open. Lower values are more accurate but more expensive. A blade
+	// that turned more than 15 degrees between two samples, for example a remote client's pose that jumped several frames,
+	// is traced along its swing arc in sub-steps.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trace", meta = (ClampMin = "0.001", ForceUnits = "s"))
 	float TraceSampleInterval = 0.016f;
 
