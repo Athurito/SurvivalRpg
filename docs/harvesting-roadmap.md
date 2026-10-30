@@ -900,7 +900,26 @@ to its authored values. Each tag names one value:
 | `Ability.Tuning.Harvest.WeakPointWork` | multiplier on a weak-point hit's bonus work, base 1 (MST-03b) | factor |
 | `Ability.Tuning.Harvest.FollowUpWork` | work multiplier of the next hit on a resource after a weak-point hit on it, base 1 (MST-03b) | factor |
 | `Ability.Tuning.Harvest.FollowUpWindow` | seconds that follow-up waits; base 0 turns it off (MST-03b) | s |
+| `Ability.Tuning.Harvest.BurnWork` | burn work per second as a fraction of the hit's work; base 0 lights none (Brand, MST-06b) | factor |
+| `Ability.Tuning.Harvest.BurnDuration` | burn time; base 0 lights none (Brand, MST-06b) | s |
+| `Ability.Tuning.Harvest.BurnRefresh` | above 0, a further hit restarts the player's burn (Lasting Power, MST-06c) | flag |
+| `Ability.Tuning.Harvest.BurnDischarge` | above 0, a further hit releases the burn at once times this value (Discharge, MST-06c) | factor |
+| `Ability.Tuning.Harvest.BurnWander` | above 0, a burn moves on when its resource runs empty (Wandering Effect, MST-09b) | flag |
+| `Ability.Tuning.Harvest.EchoWork` | echo work as a fraction of the hit's work; base 0 echoes nothing (Echo, MST-09a) | factor |
+| `Ability.Tuning.Harvest.EchoHits` | own hits per echo, rounded, 1 to 16; base from the ability (MST-09a) | hits |
+| `Ability.Tuning.Harvest.TransferWork` | share of a depleting hit's actual overkill carried on; base 0 (Kraftuebertrag, MST-09a) | factor |
+| `Ability.Tuning.Harvest.RuneFlowSplit` | above 0, echoes and transfers strike two resources at this share (Division, MST-09a) | factor |
+| `Ability.Tuning.Harvest.LeapWork` | work of each leap as a fraction of the hit's work; base 0 (Erntesprung, MST-09b) | factor |
+| `Ability.Tuning.Harvest.PierceWork` | work of the pierce as a fraction of the hit's work; base 0 (Durchschlag, MST-09b) | factor |
+| `Ability.Tuning.Harvest.SpreadReach` | multiplier on the reach of leaps, pierces and wandering burns, base 1 (Wide Paths, MST-09b) | factor |
+| `Ability.Tuning.Harvest.SpreadSplit` | above 0, every leap step and pierce strikes two resources at this share (Fork, MST-09b) | factor |
+| `Ability.Tuning.Harvest.WorkerWork` | work of each worker strike as a fraction of the hit's work; base 0 raises none (Totenarbeiter, MST-09c) | factor |
+| `Ability.Tuning.Harvest.WorkerCount` | workers that rise at once, rounded, 1 to 4 (Pack, MST-09c) | workers |
+| `Ability.Tuning.Harvest.WorkerHits` | own hits that raise the workers, rounded, 1 to 16 (Master Worker, MST-09c) | hits |
+| `Ability.Tuning.Harvest.WorkerLifetime` | seconds the workers keep working (Master Worker, MST-09c) | s |
 
+- Rune ranks add their rune's values, and talents add or multiply them, only while the node's runes sit in the tool
+  in hand (MST-06c). The [mastery map reports](mastery-map-roadmap.md) describe each rune and talent.
 - The preview resolves the values each time it evaluates. The server
   captures them, with the aim, when execution starts; learning or resetting a
   node during the swing changes nothing.

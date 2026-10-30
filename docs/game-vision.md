@@ -371,8 +371,9 @@ Für den First Playable reichen reduzierte Gruppen:
 Axt und Spitzhacke teilen sich seit MST-03b einen gemeinsamen Ernte-Baum (`docs/skill-trees.md`, `docs/mastery-map-implementation-plan.md`). Seine Punkte kommen aus der gemeinsamen Ernte-Meisterschaft, die jeder geerntete Abschnitt mit einem Werkzeug voranbringt; Holzfällen und Bergbau bleiben eigene Berufe. Die Talente sind passiv und werden später von Runen am Werkzeug geprägt.
 
 - Erster Zweig Wucht: Spaltkraft (jeder Treffer leistet mehr Arbeit), dann die Wahl zwischen Zertrümmern (Schwachpunkt-Treffer doppelt so stark) und Nachsetzen (der nächste Treffer nach einem Schwachpunkt-Treffer leistet mehr)
-- Weitere Zweige: Nachwirkung, Ausbreitung, Helfer und Runenfluss, je mit Rune als Kontext
-- Die früheren aktiven Werkzeugkräfte (Rissgriff, Totenwelle, Grabschwarm, ihre Formen und die Schreitende Welle) wurden mit MST-03b auf Entscheidung des Nutzers entfernt (27.10.2026). Bis die erste Rune Abbau verändert (MST-06), gibt es keine aktive magische Abbau-Kraft.
+- Weitere Zweige mit Rune als Kontext (MST-06 bis MST-09): Nachwirkung (Brand), Runenfluss (Echo oder Kraftübertragung), Ausbreitung (Erntesprung oder Durchschlag) und Helfer (Totenarbeiter). Zusammen sind es fünfzehn Talente; 20 Punkte reichen für einen Pfad durch jeden Zweig.
+- Die magische Seite des Abbaus kommt aus den sechs Ernterunen in den drei Sockeln von Axt und Spitzhacke: Brand lässt Ressourcen nachbrennen, Echo wiederholt Treffer, Kraftübertragung trägt Überschuss weiter, Erntesprung springt zu weiteren Ressourcen, Durchschlag trifft die Ressource dahinter, und Totenarbeiter ruft kurz einen toten Helfer. Alles davon ist Folgearbeit des eigenen Treffers, und Ertrag und XP gehen an den Spieler, der sie auslöste.
+- Die früheren aktiven Werkzeugkräfte (Rissgriff, Totenwelle, Grabschwarm, ihre Formen und die Schreitende Welle) wurden mit MST-03b auf Entscheidung des Nutzers entfernt (27.10.2026); ihre Präsentations-Cues folgten mit MST-09d.
 - Später: Astral Axe
 - Level 5: Wahl zwischen mehr Ertrag, schnellerem Harvesting oder selteneren Materialien
 - Level 10: Miner, Forager oder Arcane Lumberjack

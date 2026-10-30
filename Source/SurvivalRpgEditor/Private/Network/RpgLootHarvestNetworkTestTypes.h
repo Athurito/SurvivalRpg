@@ -210,7 +210,7 @@ public:
 	/** Area radius of the harvest in cm. */
 	static constexpr float AreaRadiusCm = 250.0f;
 
-	/** Cue the ability executes when it commits: the configured Ash Wave cue. */
+	/** Cue the ability executes when it commits: the project's generic area harvest cue. */
 	static FGameplayTag GetCueTag();
 
 	/** Cue the ability executes on every harvested resource: the configured Rift Grip strike cue. */

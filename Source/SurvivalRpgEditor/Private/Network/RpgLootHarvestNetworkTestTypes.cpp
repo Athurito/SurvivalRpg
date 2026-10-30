@@ -240,7 +240,7 @@ void URpgNetworkAutomationHarvestCueAbility::OnGiveAbility(
 
 FGameplayTag URpgNetworkAutomationHarvestCueAbility::GetCueTag()
 {
-	return FGameplayTag::RequestGameplayTag(TEXT("GameplayCue.Harvesting.AshWave"));
+	return FGameplayTag::RequestGameplayTag(TEXT("GameplayCue.Harvesting.AreaHarvest"));
 }
 
 FGameplayTag URpgNetworkAutomationHarvestCueAbility::GetTargetCueTag()
