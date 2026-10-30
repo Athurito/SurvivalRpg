@@ -1,6 +1,6 @@
 # MST-09c: Totenarbeiter and the Helper branch
 
-Task report for MST-09c in the [mastery map roadmap](mastery-map-roadmap.md). It adds the harvesting rune Totenarbeiter and the Helper branch (Helfer) of the [implementation plan](mastery-map-implementation-plan.md), section "Target content catalog": Gemeinsamer Hieb, then Rotte or Werkmeister. The plan's rules apply:
+Task report for MST-09c in the [mastery map roadmap](mastery-map-roadmap.md), [PR #327](https://github.com/Athurito/SurvivalRpg/pull/327). It adds the harvesting rune Totenarbeiter and the Helper branch (Helfer) of the [implementation plan](mastery-map-implementation-plan.md), section "Target content catalog": Gemeinsamer Hieb, then Rotte or Werkmeister. The plan's rules apply:
 - Own direct hits raise the workers.
 - Helpers do not summon helpers.
 - Beneficiary and rewards stay with the triggering player.
