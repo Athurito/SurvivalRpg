@@ -55,9 +55,10 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestWeakPoint
 	 * Returns whether Hit strikes this weak point. A traced hit counts when its aim ray passes within Radius of
 	 * Location and Location lies at most two radii beyond where the ray stopped: the marked point sits on the visible
 	 * surface, which can lie behind a coarser collision hull or a swept contact. Points deeper inside or behind the
-	 * resource never count. Hits without trace data count when ImpactPoint lies within Radius.
+	 * resource never count. Hits without trace data count when ImpactPoint lies within Radius. With bImpactOnly, as for
+	 * a tool swing's contact, only ImpactPoint within Radius counts.
 	 */
-	bool IsStruckBy(const FHitResult& Hit) const;
+	bool IsStruckBy(const FHitResult& Hit, bool bImpactOnly = false) const;
 };
 
 /**

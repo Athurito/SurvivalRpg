@@ -46,6 +46,12 @@ namespace RpgHarvestingMagicGameplayTags
 	/** Skill tree tuning of the most targets an area harvest takes. */
 	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_MaxTargets);
 
+	/** Tuning of how far in centimeters a tool swing's trace reaches beyond the tool tip; base 0. */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_SwingReach);
+
+	/** Tuning of how many harvestable contacts one tool swing commits; base 1. */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_SwingTargets);
+
 	/** Skill tree tuning of the stock sections taken per target, or per creature strike of a swarm. */
 	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_Sections);
 

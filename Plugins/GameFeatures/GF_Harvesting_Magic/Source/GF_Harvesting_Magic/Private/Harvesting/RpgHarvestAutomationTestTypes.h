@@ -351,6 +351,31 @@ public:
 		Worker = InWorker;
 		WorkerRadius = InRadius;
 	}
+	void ConfigureToolSwing(const FRpgSwingTraceParams& InSwingTrace, const FGameplayTag InNoYieldCue)
+	{
+		StrikeSource = ERpgHarvestStrikeSource::ToolSwing;
+		SwingTrace = InSwingTrace;
+		NoYieldGameplayCue = InNoYieldCue;
+	}
+
+	/** Trace the last swing started with, after its tuned reach; tests trace it themselves. */
+	const FRpgSwingTraceParams& GetPlayedSwingTrace() const { return PlayedSwingTrace; }
+
+	/** Swings started since the ability was granted. */
+	int32 GetPlayedSwingCount() const { return PlayedSwingCount; }
+
+protected:
+	/** Starts the swing without a montage or animated mesh; tests feed its hits through HandleToolSwingHitsForTests. */
+	virtual bool PlayToolSwing(const FRpgSwingTraceParams& Params) override
+	{
+		PlayedSwingTrace = Params;
+		++PlayedSwingCount;
+		return true;
+	}
+
+private:
+	FRpgSwingTraceParams PlayedSwingTrace;
+	int32 PlayedSwingCount = 0;
 };
 
 /** Records preview notifications so tests can assert change-only broadcasting. */

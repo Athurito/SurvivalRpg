@@ -8,6 +8,7 @@
 #include "Harvesting/RpgHarvestProfile.h"
 #include "Harvesting/RpgHarvestRewardService.h"
 #include "Harvesting/RpgHarvestStockRules.h"
+#include "Harvesting/RpgHarvestTargeting.h"
 #include "ProfilingDebugging/CpuProfilerTrace.h"
 #include "TimerManager.h"
 
@@ -21,6 +22,8 @@ URpgHarvestableInstancesComponent::URpgHarvestableInstancesComponent(const FObje
 	SetIsReplicatedByDefault(false);
 	// Harvesting traces instances; per-instance overlap events would only add a query per instance at BeginPlay.
 	SetGenerateOverlapEvents(false);
+	// Aim and area queries block on Visibility; tool swings find instances through the weapon overlap.
+	SetCollisionProfileName(FRpgHarvestTargeting::GetHarvestableCollisionProfileName());
 }
 
 int32 URpgHarvestableInstancesComponent::GetHarvestRevision_Implementation(const FHitResult& Hit) const

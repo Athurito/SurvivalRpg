@@ -11,6 +11,7 @@
 #include "Harvesting/RpgHarvestProfile.h"
 #include "Harvesting/RpgHarvestRewardService.h"
 #include "Harvesting/RpgHarvestRuneStrike.h"
+#include "Harvesting/RpgHarvestStockRules.h"
 #include "Harvesting/RpgHarvestSwarm.h"
 #include "Harvesting/RpgHarvestTargetingComponent.h"
 #include "SurvivalRpg/Animation/AnimNotify_RpgGameplayEvent.h"
@@ -68,6 +69,9 @@ UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestStrideTest_Cue, "GameplayCue.HarvestStr
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestFormCueTest_Plain, "GameplayCue.HarvestFormCueTest.Plain");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestFormCueTest_Form, "GameplayCue.HarvestFormCueTest.Form");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestTargetCueTest, "GameplayCue.HarvestTargetCueTest");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestSwingTest_Hit, "GameplayCue.HarvestSwingTest.Hit");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestSwingTest_NoYield, "GameplayCue.HarvestSwingTest.NoYield");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestSwingTest_Wide, "SkillTree.Node.HarvestSwingTest.Wide");
 
 namespace RpgHarvestAbilityTests
 {
@@ -4220,6 +4224,572 @@ bool FRpgHarvestAllRunesAbilityTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("The follow-ups completed sections beyond the hits"), Completed > 5);
 	TestEqual(TEXT("Every completed section rewarded the player exactly once"), CountMaterial(Harvester.PlayerState), Completed * YieldPerSection);
 	TestEqual(TEXT("A resource out of every reach is untouched"), Far->HarvestableNode->GetRemainingSections(), 4);
+	return true;
+}
+
+namespace RpgHarvestSwingTests
+{
+	using namespace RpgHarvestSpreadTests;
+
+	/** Records every executed cue of the swing tests with its location. */
+	struct FSwingCueRecorder
+	{
+		struct FCue
+		{
+			FGameplayTag Tag;
+			FVector Location = FVector::ZeroVector;
+		};
+
+		FSwingCueRecorder()
+		{
+			if (UGameplayCueManager* CueManager = UAbilitySystemGlobals::Get().GetGameplayCueManager())
+			{
+				Handle = CueManager->OnGameplayCueRouted().AddLambda(
+					[this](AActor*, const FGameplayTag Tag, const EGameplayCueEvent::Type Event,
+						const FGameplayCueParameters& CueParameters, EGameplayCueExecutionOptions)
+					{
+						if (Event == EGameplayCueEvent::Executed &&
+							(Tag == TAG_HarvestSwingTest_Hit.GetTag() || Tag == TAG_HarvestSwingTest_NoYield.GetTag()))
+						{
+							Cues.Add({Tag, FVector(CueParameters.Location)});
+						}
+					});
+			}
+		}
+
+		~FSwingCueRecorder()
+		{
+			if (UGameplayCueManager* CueManager = UAbilitySystemGlobals::Get().GetGameplayCueManager())
+			{
+				CueManager->OnGameplayCueRouted().Remove(Handle);
+			}
+		}
+
+		int32 Count(const FGameplayTag Tag) const
+		{
+			return Cues.FilterByPredicate([Tag](const FCue& Cue) { return Cue.Tag == Tag; }).Num();
+		}
+
+		TArray<FCue> Cues;
+		FDelegateHandle Handle;
+	};
+
+	/** A 12 cm sphere swept between two trace points on the weapon channel, as the axe and pickaxe swings trace. */
+	FRpgSwingTraceParams MakeSwingTrace()
+	{
+		FRpgSwingTraceParams Trace;
+		Trace.TraceMode = ERpgWeaponAttackTraceMode::SphereSweep;
+		Trace.TraceRadius = 12.0f;
+		Trace.bTraceBetweenSockets = true;
+		Trace.TraceInterpolationDistance = 12.0f;
+		Trace.TracePointSockets = {TEXT("TracePoint_Base"), TEXT("TracePoint_Tip")};
+		Trace.TraceChannel = Rpg_TraceChannel_Weapon;
+		return Trace;
+	}
+
+	/** Grants a tool swing from Source with the swing cues, one section per contact and Reach from the harvester. */
+	FGrantedAbility GrantSwing(URpgAbilitySystemComponent* AbilitySystem, UObject* Source, const float Reach = 250.0f)
+	{
+		FGrantedAbility Granted = GrantAbility(AbilitySystem, Source);
+		if (Granted.Instance)
+		{
+			FRpgHarvestTargetingParams Single;
+			Single.MaxReachFromAvatar = Reach;
+			Granted.Instance->ConfigureTargeting(Single);
+			Granted.Instance->ConfigureSections(1);
+			Granted.Instance->ConfigureToolSwing(MakeSwingTrace(), TAG_HarvestSwingTest_NoYield);
+			Granted.Instance->ConfigureSuccessCues(TAG_HarvestSwingTest_Hit, {});
+		}
+		return Granted;
+	}
+
+	/** A contact of the tool's sweep with Node at ImpactPoint, the tool coming from TraceStart. */
+	FHitResult MakeContact(ARpgHarvestAutomationCollidableNodeActor* Node, const FVector& ImpactPoint, const FVector& TraceStart)
+	{
+		FHitResult Hit(Node, Node ? Node->Collision.Get() : nullptr, ImpactPoint, (TraceStart - ImpactPoint).GetSafeNormal());
+		// A sweep against a single-body component reports no instance; the constructor leaves Item at 0.
+		Hit.Item = INDEX_NONE;
+		Hit.TraceStart = TraceStart;
+		Hit.TraceEnd = ImpactPoint + (ImpactPoint - TraceStart);
+		Hit.bBlockingHit = false;
+		return Hit;
+	}
+
+	/** Center of the face of a 40 cm node that looks at the harvester at the origin. */
+	FVector FrontFace(const ARpgHarvestAutomationCollidableNodeActor* Node)
+	{
+		return Node ? Node->GetActorLocation() - FVector(40.0, 0.0, 0.0) : FVector::ZeroVector;
+	}
+
+	/** Tool pose with its trace points from x = BaseX to x = TipX, pointing away from the harvester, at Y and Height. */
+	RpgWeaponTraceInterpolation::FBladeSample MakeToolPose(const double BaseX, const double TipX, const double Y, const double Height)
+	{
+		RpgWeaponTraceInterpolation::FBladeSample Sample;
+		Sample.TracePointTransforms = {FTransform(FVector(BaseX, Y, Height)), FTransform(FVector(TipX, Y, Height))};
+		return Sample;
+	}
+
+	/** Sweeps the running swing's trace from Previous to Current in World and feeds every query to the ability. */
+	void TraceSwing(
+		UWorld& World,
+		URpgHarvestAutomationTestAbility& Ability,
+		const RpgWeaponTraceInterpolation::FBladeSample& Previous,
+		const RpgWeaponTraceInterpolation::FBladeSample& Current)
+	{
+		FRpgSwingTraceSink Sink;
+		Sink.OnHits.BindLambda([&Ability](const TArray<FHitResult>& HitResults, const ERpgSwingTraceRole Role)
+		{
+			Ability.HandleToolSwingHitsForTests(HitResults, Role);
+		});
+		FRpgSwingTraceWindow Window;
+		Window.TraceSampleMotionForTests(World, Ability.GetPlayedSwingTrace(), Previous, Current, MoveTemp(Sink));
+	}
+
+	/** One-point Mining node like the Wide Swing spell: +150 cm swing reach and one more target per swing. */
+	URpgSkillTreeDefinition* MakeWideSwingTree()
+	{
+		using namespace RpgHarvestingMagicGameplayTags;
+
+		URpgSkillTreeDefinition* Tree = NewObject<URpgSkillTreeDefinition>(GetTransientPackage(), NAME_None, RF_Transient);
+		Tree->TreeTag = TAG_HarvestTuningTest_Tree;
+		Tree->MasterySkillTag = RpgTradeSkillGameplayTags::Skill_Gathering_Mining;
+		Tree->MaxPoints = 10;
+		FRpgSkillTreeNode& Node = Tree->Nodes.AddDefaulted_GetRef();
+		Node.NodeTag = TAG_HarvestSwingTest_Wide;
+		Node.AbilityTunings = {
+			MakeTuning(Ability_Tuning_Harvest_SwingReach, ERpgSkillTreeTuningOperation::Add, 150.0f),
+			MakeTuning(Ability_Tuning_Harvest_SwingTargets, ERpgSkillTreeTuningOperation::Add, 1.0f)};
+		return Tree;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestSwingFirstContactTest,
+	"SurvivalRpg.Harvesting.Swing.FirstContactCommitsOnce",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestSwingFirstContactTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestSwingTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	const double Eye = Harvester.Pawn->BaseEyeHeight;
+	ARpgHarvestAutomationCollidableNodeActor* First = SpawnNode(World, FVector(110.0, 0.0, Eye), MakeProfile(World, 4));
+	ARpgHarvestAutomationCollidableNodeActor* Second = SpawnNode(World, FVector(110.0, 100.0, Eye), MakeProfile(World, 4));
+	const FGrantedAbility Swing = GrantSwing(Harvester.AbilitySystem, nullptr);
+	if (!First || !Second || !TestNotNull(TEXT("Swing exists"), Swing.Instance))
+	{
+		return false;
+	}
+	URpgHarvestAutomationHarvestedListener* Harvested = NewObject<URpgHarvestAutomationHarvestedListener>();
+	First->HarvestableNode->OnHarvested.AddDynamic(Harvested, &URpgHarvestAutomationHarvestedListener::HandleHarvested);
+	FSwingCueRecorder Cues;
+	TestWorld.PrimeTimerManager();
+
+	TestTrue(TEXT("The swing activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	TestTrue(TEXT("The swing waits for its contacts"), Swing.Instance->IsActive());
+	TestEqual(TEXT("The swing starts its trace once"), Swing.Instance->GetPlayedSwingCount(), 1);
+	TestEqual(TEXT("A plain swing traces the authored tool"), Swing.Instance->GetPlayedSwingTrace().TipExtension, 0.0f);
+
+	// One query touches the ground first, then both resources; a later query touches the first resource again.
+	const FVector FirstImpact = FrontFace(First);
+	const FHitResult Ground(nullptr, nullptr, FVector(60.0, 0.0, 0.0), FVector::UpVector);
+	Swing.Instance->HandleToolSwingHitsForTests(
+		{Ground,
+			MakeContact(First, FirstImpact, FirstImpact - FVector(0.0, 40.0, 0.0)),
+			MakeContact(Second, FrontFace(Second), FVector(70.0, 60.0, Eye))},
+		ERpgSwingTraceRole::Authority);
+	Swing.Instance->HandleToolSwingHitsForTests(
+		{MakeContact(First, FirstImpact + FVector(0.0, 10.0, 0.0), FirstImpact)},
+		ERpgSwingTraceRole::Authority);
+
+	TestEqual(TEXT("The first contact takes one section"), First->HarvestableNode->GetRemainingSections(), 3);
+	TestEqual(
+		TEXT("The swing's one target is used up, so the second resource stays whole"),
+		Second->HarvestableNode->GetRemainingSections(),
+		4);
+	TestEqual(TEXT("The section is rewarded once"), CountMaterial(Harvester.PlayerState), YieldPerSection);
+	TestEqual(TEXT("Ground and repeated touches never count"), Swing.Instance->GetToolSwingContactCountForTests(), 1);
+	if (TestEqual(TEXT("The contact plays the hit cue once"), Cues.Count(TAG_HarvestSwingTest_Hit), 1))
+	{
+		TestTrue(TEXT("The hit cue plays at the impact"), Cues.Cues[0].Location.Equals(FirstImpact, 0.1));
+	}
+	TestEqual(TEXT("A harvesting contact plays no no-yield cue"), Cues.Count(TAG_HarvestSwingTest_NoYield), 0);
+	TestTrue(TEXT("The contact is the harvester's own hit"), Harvested->Results.Num() == 1 && Harvested->Results[0].IsAcceptedDirectHit());
+
+	// The swinging client's own trace only predicts; the server's contacts are the gameplay result.
+	Harvester.AbilitySystem->CancelAbilityHandle(Swing.Handle);
+	TestTrue(TEXT("A swing traced for feedback activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	Swing.Instance->HandleToolSwingHitsForTests(
+		{MakeContact(Second, FrontFace(Second), FVector(70.0, 60.0, Eye))},
+		ERpgSwingTraceRole::OwnerFeedback);
+	TestEqual(TEXT("The feedback trace counts its contact"), Swing.Instance->GetToolSwingContactCountForTests(), 1);
+	TestEqual(TEXT("Feedback contacts never commit"), Second->HarvestableNode->GetRemainingSections(), 4);
+
+	Harvester.AbilitySystem->CancelAbilityHandle(Swing.Handle);
+	TestTrue(TEXT("The next swing activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	Swing.Instance->HandleToolSwingHitsForTests(
+		{MakeContact(First, FirstImpact, FVector(70.0, -40.0, Eye))},
+		ERpgSwingTraceRole::Authority);
+	TestEqual(TEXT("Every swing strikes the resource anew"), First->HarvestableNode->GetRemainingSections(), 2);
+	TestTrue(
+		TEXT("Every swing is its own root action"),
+		Harvested->Results.Num() == 2 && Harvested->Results[0].Provenance.RootActionId > 0 &&
+			Harvested->Results[0].Provenance.RootActionId != Harvested->Results[1].Provenance.RootActionId);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestSwingRejectedContactTest,
+	"SurvivalRpg.Harvesting.Swing.RejectedContactConsumesSwing",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestSwingRejectedContactTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestSwingTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	const double Eye = Harvester.Pawn->BaseEyeHeight;
+	// The swing carries no tool, so the skinning-only resource rejects it; the plain resources accept any swing.
+	URpgHarvestProfile* SkinningOnly = MakeProfile(World, 4);
+	SkinningOnly->RequiredToolTag = RpgHarvestingMagicGameplayTags::Tool_Harvesting_Skinning;
+	ARpgHarvestAutomationCollidableNodeActor* WrongTool = SpawnNode(World, FVector(110.0, 0.0, Eye), SkinningOnly);
+	ARpgHarvestAutomationCollidableNodeActor* Single = SpawnNode(World, FVector(110.0, -100.0, Eye), MakeProfile(World, 1));
+	ARpgHarvestAutomationCollidableNodeActor* Behind = SpawnNode(World, FVector(110.0, 100.0, Eye), MakeProfile(World, 4));
+	const FGrantedAbility Swing = GrantSwing(Harvester.AbilitySystem, nullptr);
+	if (!WrongTool || !Single || !Behind || !TestNotNull(TEXT("Swing exists"), Swing.Instance))
+	{
+		return false;
+	}
+	FSwingCueRecorder Cues;
+	TestWorld.PrimeTimerManager();
+
+	TestTrue(TEXT("The swing activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	Swing.Instance->HandleToolSwingHitsForTests(
+		{MakeContact(WrongTool, FrontFace(WrongTool), FVector(70.0, -40.0, Eye)),
+			MakeContact(Behind, FrontFace(Behind), FVector(70.0, 60.0, Eye))},
+		ERpgSwingTraceRole::Authority);
+	TestEqual(TEXT("The wrong tool takes nothing"), WrongTool->HarvestableNode->GetRemainingSections(), 4);
+	TestEqual(TEXT("The rejected contact used up the swing"), Behind->HarvestableNode->GetRemainingSections(), 4);
+	TestEqual(TEXT("Nothing is rewarded"), CountMaterial(Harvester.PlayerState), 0);
+	if (TestEqual(TEXT("The rejected contact plays the no-yield cue once"), Cues.Count(TAG_HarvestSwingTest_NoYield), 1))
+	{
+		TestTrue(TEXT("The no-yield cue plays at the impact"), Cues.Cues[0].Location.Equals(FrontFace(WrongTool), 0.1));
+	}
+	TestEqual(TEXT("A rejected contact plays no hit cue"), Cues.Count(TAG_HarvestSwingTest_Hit), 0);
+
+	// An empty resource consumes the swing the same way.
+	Harvester.AbilitySystem->CancelAbilityHandle(Swing.Handle);
+	TestTrue(TEXT("A swing at the single-section resource activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	Swing.Instance->HandleToolSwingHitsForTests(
+		{MakeContact(Single, FrontFace(Single), FVector(70.0, -140.0, Eye))},
+		ERpgSwingTraceRole::Authority);
+	TestFalse(TEXT("The swing empties the single-section resource"), Single->HarvestableNode->IsHarvestable());
+	Harvester.AbilitySystem->CancelAbilityHandle(Swing.Handle);
+	TestTrue(TEXT("A swing at the empty resource activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	Swing.Instance->HandleToolSwingHitsForTests(
+		{MakeContact(Single, FrontFace(Single), FVector(70.0, -140.0, Eye)),
+			MakeContact(Behind, FrontFace(Behind), FVector(70.0, 60.0, Eye))},
+		ERpgSwingTraceRole::Authority);
+	TestEqual(TEXT("The empty resource used up the swing"), Behind->HarvestableNode->GetRemainingSections(), 4);
+	TestEqual(TEXT("The empty resource plays the no-yield cue"), Cues.Count(TAG_HarvestSwingTest_NoYield), 2);
+	TestEqual(TEXT("Only the emptying swing was rewarded"), CountMaterial(Harvester.PlayerState), YieldPerSection);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestSwingReachGuardTest,
+	"SurvivalRpg.Harvesting.Swing.ReachGuard",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestSwingReachGuardTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestSwingTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	const double Eye = Harvester.Pawn->BaseEyeHeight;
+	ARpgHarvestAutomationCollidableNodeActor* Far = SpawnNode(World, FVector(300.0, 0.0, Eye), MakeProfile(World, 4));
+	ARpgHarvestAutomationCollidableNodeActor* Near = SpawnNode(World, FVector(110.0, 0.0, Eye), MakeProfile(World, 4));
+	const FGrantedAbility Swing = GrantSwing(Harvester.AbilitySystem, nullptr, 150.0f);
+	if (!Far || !Near || !TestNotNull(TEXT("Swing exists"), Swing.Instance))
+	{
+		return false;
+	}
+	FSwingCueRecorder Cues;
+	TestWorld.PrimeTimerManager();
+
+	TestTrue(TEXT("The swing activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	// The far contact lies about 270 cm from the harvester, beyond its 150 cm reach, as a stale or forged pose would.
+	Swing.Instance->HandleToolSwingHitsForTests(
+		{MakeContact(Far, FrontFace(Far), FVector(250.0, -40.0, Eye)),
+			MakeContact(Near, FrontFace(Near), FVector(70.0, -40.0, Eye))},
+		ERpgSwingTraceRole::Authority);
+	TestEqual(TEXT("A contact beyond the reach takes nothing"), Far->HarvestableNode->GetRemainingSections(), 4);
+	TestEqual(TEXT("A contact beyond the reach does not use up the swing"), Near->HarvestableNode->GetRemainingSections(), 3);
+	TestEqual(TEXT("Only the reachable contact counts"), Swing.Instance->GetToolSwingContactCountForTests(), 1);
+	TestEqual(TEXT("A contact beyond the reach plays no cue"), Cues.Count(TAG_HarvestSwingTest_NoYield), 0);
+	TestEqual(TEXT("The reachable contact plays its hit cue"), Cues.Count(TAG_HarvestSwingTest_Hit), 1);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestSwingCancelTest,
+	"SurvivalRpg.Harvesting.Swing.CancelYieldsNothing",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestSwingCancelTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestSwingTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	const double Eye = Harvester.Pawn->BaseEyeHeight;
+	ARpgHarvestAutomationCollidableNodeActor* Node = SpawnNode(World, FVector(110.0, 0.0, Eye), MakeProfile(World, 4));
+	const FGrantedAbility Swing = GrantSwing(Harvester.AbilitySystem, nullptr);
+	if (!Node || !TestNotNull(TEXT("Swing exists"), Swing.Instance))
+	{
+		return false;
+	}
+	FSwingCueRecorder Cues;
+	TestWorld.PrimeTimerManager();
+	const FHitResult Contact = MakeContact(Node, FrontFace(Node), FVector(70.0, -40.0, Eye));
+
+	TestTrue(TEXT("The swing activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	Harvester.AbilitySystem->CancelAbilityHandle(Swing.Handle);
+	TestFalse(TEXT("Cancelling, for example by a dodge or a tool switch, ends the swing"), Swing.Instance->IsActive());
+	TestFalse(TEXT("The cancelled swing keeps no window or timers"), Swing.Instance->HasToolSwingResidualStateForTests());
+	// A sample that arrives after the cancel, such as the window's final one, finds the swing closed.
+	Swing.Instance->HandleToolSwingHitsForTests({Contact}, ERpgSwingTraceRole::Authority);
+	TestWorld.AdvanceTimers(2.0f);
+	TestEqual(TEXT("A cancelled swing takes nothing"), Node->HarvestableNode->GetRemainingSections(), 4);
+	TestEqual(TEXT("A cancelled swing rewards nothing"), CountMaterial(Harvester.PlayerState), 0);
+	TestEqual(TEXT("A cancelled swing plays no cue"), Cues.Cues.Num(), 0);
+
+	TestTrue(TEXT("A new swing activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	Swing.Instance->HandleToolSwingHitsForTests({Contact}, ERpgSwingTraceRole::Authority);
+	TestEqual(TEXT("A swing that is not cancelled takes its section"), Node->HarvestableNode->GetRemainingSections(), 3);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestSwingWeakPointTest,
+	"SurvivalRpg.Harvesting.Swing.WeakPointByImpact",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestSwingWeakPointTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestSwingTests;
+
+	// The rule itself: an aim ray through the weak point counts, a swing's sweep past it does not.
+	FRpgHarvestWeakPoint WeakPoint;
+	WeakPoint.Location = FVector(100.0, 0.0, 0.0);
+	WeakPoint.Radius = 20.0f;
+	FHitResult Passing;
+	Passing.TraceStart = FVector(100.0, -60.0, 0.0);
+	Passing.Location = FVector(100.0, 40.0, 0.0);
+	Passing.ImpactPoint = Passing.Location;
+	TestTrue(TEXT("An aim ray through the weak point strikes it"), WeakPoint.IsStruckBy(Passing));
+	TestFalse(TEXT("A swing's sweep past the weak point does not"), WeakPoint.IsStruckBy(Passing, true));
+	FHitResult OnIt;
+	OnIt.TraceStart = FVector(100.0, -60.0, 0.0);
+	OnIt.ImpactPoint = FVector(95.0, 12.0, 0.0);
+	OnIt.Location = OnIt.ImpactPoint;
+	TestTrue(TEXT("A swing whose impact lies within the radius strikes it"), WeakPoint.IsStruckBy(OnIt, true));
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	URpgHarvestProfile* Profile = MakeProfile(World, 4);
+	Profile->WeakPointBonusSections = 1;
+	ARpgHarvestAutomationCollidableNodeActor* Node =
+		SpawnNode(World, FVector(150.0, 0.0, Harvester.Pawn->BaseEyeHeight), Profile);
+	const FGrantedAbility Swing = GrantSwing(Harvester.AbilitySystem, nullptr);
+	if (!Node || !TestNotNull(TEXT("Swing exists"), Swing.Instance) ||
+		!TestTrue(
+			TEXT("Weak points are configured"),
+			RpgHarvestAutomation::ConfigureWeakPoints(
+				Node->HarvestableNode,
+				{FVector(-40.0, 0.0, 0.0), FVector(-40.0, 30.0, 60.0), FVector(-40.0, -30.0, -60.0)},
+				20.0f)))
+	{
+		return false;
+	}
+	Swing.Instance->ConfigureWeakPointHits(true);
+	URpgHarvestAutomationHarvestedListener* Harvested = NewObject<URpgHarvestAutomationHarvestedListener>();
+	Node->HarvestableNode->OnHarvested.AddDynamic(Harvested, &URpgHarvestAutomationHarvestedListener::HandleHarvested);
+	TestWorld.PrimeTimerManager();
+
+	FVector Active = FVector::ZeroVector;
+	float Radius = 0.0f;
+	TestTrue(TEXT("The node shows an active weak point"), Node->HarvestableNode->GetActiveWeakPoint(Active, Radius));
+	TestTrue(TEXT("The swing activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	Swing.Instance->HandleToolSwingHitsForTests(
+		{MakeContact(Node, Active + FVector(0.0, 12.0, 0.0), Active - FVector(0.0, 50.0, 0.0))},
+		ERpgSwingTraceRole::Authority);
+	TestEqual(TEXT("An impact on the weak point takes the bonus section"), Node->HarvestableNode->GetRemainingSections(), 2);
+
+	Harvester.AbilitySystem->CancelAbilityHandle(Swing.Handle);
+	TestTrue(TEXT("The moved weak point is active"), Node->HarvestableNode->GetActiveWeakPoint(Active, Radius));
+	TestTrue(TEXT("The next swing activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	// The tool sweeps through the weak point but meets the resource 40 cm beside it.
+	Swing.Instance->HandleToolSwingHitsForTests(
+		{MakeContact(Node, Active + FVector(0.0, 40.0, 0.0), Active - FVector(0.0, 40.0, 0.0))},
+		ERpgSwingTraceRole::Authority);
+	TestEqual(TEXT("An impact beside the weak point takes one section"), Node->HarvestableNode->GetRemainingSections(), 1);
+	TestTrue(
+		TEXT("Only the first swing reports a weak-point hit"),
+		Harvested->Results.Num() == 2 && Harvested->Results[0].bWeakPointHit && !Harvested->Results[1].bWeakPointHit);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestSwingPierceTest,
+	"SurvivalRpg.Harvesting.Swing.PierceFollowsHarvesterToImpact",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestSwingPierceTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestSwingTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	// The harvester faces the struck resource; Behind lies 3 m further on, Beside 3 m to the side, where the tool's
+	// sideways sweep points.
+	const double Eye = Harvester.Pawn->BaseEyeHeight;
+	ARpgHarvestAutomationCollidableNodeActor* Struck = SpawnNode(World, FVector(150.0, 0.0, Eye), MakeProfile(World, 6));
+	ARpgHarvestAutomationCollidableNodeActor* Behind = SpawnNode(World, FVector(450.0, 0.0, Eye), MakeProfile(World, 4));
+	ARpgHarvestAutomationCollidableNodeActor* Beside = SpawnNode(World, FVector(150.0, 300.0, Eye), MakeProfile(World, 4));
+	URpgSkillTreeDefinition* Tree = MakeSpreadTree();
+	FScopedTreeTool TreeTool(Tree);
+	URpgSkillTreeComponent* SkillTrees = PrepareSkillTree(Harvester, Tree);
+	URpgEquipmentInstance* Equipment = MakeTreeToolEquipment(Harvester);
+	const FGrantedAbility Swing = GrantSwing(Harvester.AbilitySystem, Equipment);
+	if (!Struck || !Behind || !Beside || !TestNotNull(TEXT("Skill trees are prepared"), SkillTrees) ||
+		!TestNotNull(TEXT("Swing exists"), Swing.Instance))
+	{
+		return false;
+	}
+	Swing.Instance->ConfigureSpread(ARpgHarvestRuneStrike::StaticClass(), ARpgHarvestRuneStrike::StaticClass(), 600.0f, 400.0f);
+	TestEqual(TEXT("Pierce is learned"),
+		SkillTrees->UnlockNode(TAG_HarvestTuningTest_Tree, TAG_HarvestSpreadTest_Pierce), ERpgSkillTreeUnlockResult::Unlockable);
+	TestWorld.PrimeTimerManager();
+
+	TestTrue(TEXT("The swing activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	// The blade meets the front face while it sweeps from left to right, along +Y.
+	const FVector Impact = FrontFace(Struck);
+	Swing.Instance->HandleToolSwingHitsForTests(
+		{MakeContact(Struck, Impact, Impact - FVector(0.0, 60.0, 0.0))},
+		ERpgSwingTraceRole::Authority);
+	TestEqual(TEXT("The swing takes its section"), Struck->HarvestableNode->GetRemainingSections(), 5);
+	TestWorld.AdvanceTimers(0.35f);
+	TestEqual(TEXT("The pierce drives on from the harvester through the impact"), Behind->HarvestableNode->GetRemainingSections(), 3);
+	TestTrue(
+		TEXT("The pierce does not follow the tool's sideways sweep"),
+		Beside->HarvestableNode->GetRemainingSections() == 4 && SectionWork(Beside) == 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestSwingReachTuningTest,
+	"SurvivalRpg.Harvesting.Swing.ReachTuningHitsTargetBehind",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestSwingReachTuningTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestSwingTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	// Front stands where the tool head swings past, Behind 1.6 m further on, beyond the authored 200 cm reach.
+	const double Eye = Harvester.Pawn->BaseEyeHeight;
+	ARpgHarvestAutomationCollidableNodeActor* Front = SpawnNode(World, FVector(100.0, 0.0, Eye), MakeProfile(World, 4));
+	ARpgHarvestAutomationCollidableNodeActor* Behind = SpawnNode(World, FVector(260.0, 0.0, Eye), MakeProfile(World, 4));
+	URpgSkillTreeDefinition* Tree = MakeWideSwingTree();
+	FScopedTreeTool TreeTool(Tree);
+	URpgSkillTreeComponent* SkillTrees = PrepareSkillTree(Harvester, Tree);
+	URpgEquipmentInstance* Equipment = MakeTreeToolEquipment(Harvester);
+	const FGrantedAbility Swing = GrantSwing(Harvester.AbilitySystem, Equipment, 200.0f);
+	if (!Front || !Behind || !TestNotNull(TEXT("Skill trees are prepared"), SkillTrees) ||
+		!TestNotNull(TEXT("Swing exists"), Swing.Instance))
+	{
+		return false;
+	}
+	TestWorld.PrimeTimerManager();
+	// The tool reaches from 40 to 110 cm in front of the harvester and sweeps from its left to its right.
+	const RpgWeaponTraceInterpolation::FBladeSample Left = MakeToolPose(40.0, 110.0, -100.0, Eye);
+	const RpgWeaponTraceInterpolation::FBladeSample Right = MakeToolPose(40.0, 110.0, 100.0, Eye);
+
+	TestTrue(TEXT("A plain swing activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	TraceSwing(*World, *Swing.Instance, Left, Right);
+	TestEqual(TEXT("The tool's own sweep takes the front resource"), Front->HarvestableNode->GetRemainingSections(), 3);
+	TestEqual(TEXT("The tool's own sweep never reaches the resource behind"), Behind->HarvestableNode->GetRemainingSections(), 4);
+
+	Harvester.AbilitySystem->CancelAbilityHandle(Swing.Handle);
+	TestEqual(TEXT("Wide Swing is learned"),
+		SkillTrees->UnlockNode(TAG_HarvestTuningTest_Tree, TAG_HarvestSwingTest_Wide), ERpgSkillTreeUnlockResult::Unlockable);
+	const FGameplayAbilitySpec* Spec = Harvester.AbilitySystem->FindAbilitySpecFromHandle(Swing.Handle);
+	FRpgHarvestTunedValues Values;
+	if (Spec)
+	{
+		Swing.Instance->ResolveTunedValues(*Spec, *Harvester.AbilitySystem->AbilityActorInfo, Values);
+	}
+	TestEqual(TEXT("The tuning extends the swing's reach"), Values.SwingReach, 150.0f);
+	TestEqual(TEXT("The tuning adds a target per swing"), Values.SwingTargets, 2);
+
+	TestTrue(TEXT("A wide swing activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	TestEqual(TEXT("The wide swing traces 150 cm past the tool tip"), Swing.Instance->GetPlayedSwingTrace().TipExtension, 150.0f);
+	TraceSwing(*World, *Swing.Instance, Left, Right);
+	TestEqual(TEXT("The wide swing takes the front resource"), Front->HarvestableNode->GetRemainingSections(), 2);
+	TestEqual(
+		TEXT("The wide swing also takes the resource behind, within its grown reach"),
+		Behind->HarvestableNode->GetRemainingSections(),
+		3);
+	TestEqual(TEXT("Both contacts count towards the two targets"), Swing.Instance->GetToolSwingContactCountForTests(), 2);
+	TestEqual(TEXT("Every taken section is rewarded"), CountMaterial(Harvester.PlayerState), 3 * YieldPerSection);
 	return true;
 }
 

@@ -7,6 +7,7 @@
 #include "RpgCombatNetworkTestTypes.generated.h"
 
 class AGameModeBase;
+class ARpgGameModeBase;
 class UBoxComponent;
 class UCapsuleComponent;
 class USceneComponent;
@@ -67,6 +68,32 @@ private:
 	void OnGameModeInitialized(AGameModeBase* GameMode);
 
 	FDelegateHandle Handle;
+};
+
+/**
+ * Keeps every authoritative PIE world created while this object lives off disk before its GameMode can load a save.
+ *
+ * ARpgGameModeBase loads and saves the world (harvest stock, storage, progression) in its slots. Each isolated GameMode
+ * gets disk persistence off and its own slot names, so a test never reads or overwrites a developer's save. Start it in
+ * BEFORE_EACH, before the network component creates its worlds, and keep it alive through network teardown.
+ */
+class FRpgScopedPIEWorldSaveIsolation final
+{
+public:
+	~FRpgScopedPIEWorldSaveIsolation();
+
+	/** Installs the InitGame hook; call once. */
+	void Start();
+
+	/** Whether World is a PIE world whose GameMode, if it owns one, was isolated by this object. */
+	bool IsWorldIsolated(UWorld* World) const;
+
+private:
+	void IsolateGameMode(AGameModeBase* InitializedGameMode);
+
+	FString SlotPrefix;
+	FDelegateHandle GameModeInitializedHandle;
+	TMap<TWeakObjectPtr<const ARpgGameModeBase>, FString> GameModeSlots;
 };
 
 /**

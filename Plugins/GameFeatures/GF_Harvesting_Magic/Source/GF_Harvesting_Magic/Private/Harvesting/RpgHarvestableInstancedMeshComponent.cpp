@@ -6,11 +6,11 @@
 #include "Harvesting/RpgHarvestProfile.h"
 #include "Harvesting/RpgHarvestRewardService.h"
 #include "Harvesting/RpgHarvestStockRules.h"
+#include "Harvesting/RpgHarvestTargeting.h"
 #include "Misc/ScopeExit.h"
 #include "Net/UnrealNetwork.h"
 #include "SurvivalRpg/Interaction/InteractionOption.h"
 #include "SurvivalRpg/Interaction/InteractionQuery.h"
-#include "SurvivalRpg/Physics/RpgCollisionChannels.h"
 #include "SurvivalRpg/System/RpgAssetManager.h"
 #include "SurvivalRpg/System/RpgGameData.h"
 
@@ -93,8 +93,8 @@ URpgHarvestableInstancedMeshComponent::URpgHarvestableInstancedMeshComponent(con
 {
 	PrimaryComponentTick.bCanEverTick = false;
 	SetIsReplicatedByDefault(true);
-	SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-	SetCollisionResponseToChannel(Rpg_TraceChannel_Interaction, ECR_Block);
+	// Blocks Visibility and Interaction for aim and manual harvesting; tool swings find it through the weapon overlap.
+	SetCollisionProfileName(FRpgHarvestTargeting::GetHarvestableCollisionProfileName());
 
 	InteractionPrompt.ActionText = NSLOCTEXT("RpgHarvestingMagic", "ManualHarvestAction", "Harvest");
 	InteractionPrompt.TargetText = NSLOCTEXT("RpgHarvestingMagic", "ResourceInstanceTarget", "Resource");

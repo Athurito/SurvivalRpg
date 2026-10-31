@@ -95,6 +95,17 @@ bool FRpgHarvestPreview::IsEquivalent(const FRpgHarvestPreview& Other, const flo
 	return true;
 }
 
+FName FRpgHarvestTargeting::GetHarvestableCollisionProfileName()
+{
+	static const FName ProfileName(TEXT("RpgHarvestable"));
+	return ProfileName;
+}
+
+TPair<const UObject*, int32> FRpgHarvestTargeting::MakeResourceKey(const UObject* Receiver, const FHitResult& Hit)
+{
+	return TPair<const UObject*, int32>(Receiver, Receiver && Receiver == Hit.GetComponent() ? Hit.Item : INDEX_NONE);
+}
+
 UObject* FRpgHarvestTargeting::FindReceiver(const FHitResult& Hit)
 {
 	// Instance identity belongs to the hit component. Prefer it before an actor-level
@@ -306,9 +317,8 @@ void FRpgHarvestTargeting::CollectAreaTargets(
 		}
 
 		// Several primitives of one actor-backed resource collapse into one target; instances stay distinct.
-		const int32 InstanceKey = Receiver == Component ? Overlap.ItemIndex : INDEX_NONE;
 		bool bAlreadySeen = false;
-		SeenTargets.Add(TPair<const UObject*, int32>(Receiver, InstanceKey), &bAlreadySeen);
+		SeenTargets.Add(MakeResourceKey(Receiver, Hit), &bAlreadySeen);
 		if (bAlreadySeen)
 		{
 			continue;

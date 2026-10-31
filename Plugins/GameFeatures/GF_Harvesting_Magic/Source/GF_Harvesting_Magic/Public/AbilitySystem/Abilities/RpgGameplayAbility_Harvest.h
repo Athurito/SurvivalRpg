@@ -4,6 +4,7 @@
 #include "Harvesting/RpgHarvestSwarm.h"
 #include "Harvesting/RpgHarvestTargeting.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_FromEquipment.h"
+#include "SurvivalRpg/Combat/RpgSwingTraceWindow.h"
 #include "TimerManager.h"
 
 #include "RpgGameplayAbility_Harvest.generated.h"
@@ -12,6 +13,26 @@ class ARpgHarvestBurn;
 class FRpgHarvestRewardBatch;
 class UAnimMontage;
 class URpgCameraMode;
+struct FGameplayEventData;
+
+/** How a harvest ability finds what its execution strikes. Designer choice on the ability. */
+UENUM(BlueprintType)
+enum class ERpgHarvestStrikeSource : uint8
+{
+	/**
+	 * The server selects the targets from the harvester's view with the ability's Targeting, at the commit notify of
+	 * the montage. For focused powers, area powers, swarms and strides.
+	 */
+	ViewRay,
+
+	/**
+	 * The swung tool's trace finds the targets, like a melee weapon: while the montage's attack window is open, every
+	 * harvestable the server's trace touches commits at contact, once per resource and up to the tuned SwingTargets per
+	 * swing. Needs the SingleTarget shape, a montage with an attack window pair, and SwingTrace trace points on the tool.
+	 * The commit notify does not gate it. For axe and pickaxe swings.
+	 */
+	ToolSwing
+};
 
 /**
  * Designer-tuned repetition of an area harvest around the harvester over time, for powers that keep harvesting while
@@ -63,6 +84,15 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestTunedValues
 {
 	/** Targeting with tuned area radius, target count and reach; the aim ray grows with the reach. */
 	FRpgHarvestTargetingParams Targeting;
+
+	/**
+	 * Tool swings only: centimeters the swing's trace reaches beyond the tool tip (Ability.Tuning.Harvest.SwingReach,
+	 * base 0, at most MaxSwingReach); the server's reach check grows by the same amount.
+	 */
+	float SwingReach = 0.0f;
+
+	/** Tool swings only: harvestable contacts one swing commits (Ability.Tuning.Harvest.SwingTargets, base 1, 1 to 8). */
+	int32 SwingTargets = 1;
 
 	/** Stock sections per target, or per creature strike of a swarm. */
 	int32 SectionsPerTarget = 1;
@@ -166,10 +196,16 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestTunedValues
  * configure identity, targeting, sections, montage, cues, cooldown, and unlock requirements.
  *
  * The native part owns what must not depend on Blueprint flow:
- * - Server-side target selection at the moment of extraction, with the same query the owning client previews.
- * - Exactly one commit per activation, at the authored montage notify time resolved from montage data,
- *   because server-side animation notifies are not authoritative.
- * - Cancel safety: ending or cancelling the ability before the commit, for example by switching tools, never yields loot.
+ * - View-ray strikes (ERpgHarvestStrikeSource::ViewRay): server-side target selection at the moment of extraction, with
+ *   the same query the owning client previews, and exactly one commit per activation at the authored montage notify
+ *   time resolved from montage data, because server-side animation notifies are not authoritative.
+ * - Tool swings (ERpgHarvestStrikeSource::ToolSwing): the server traces its own pose of the swung tool through the
+ *   montage's attack window (FRpgSwingTraceWindow) and commits each harvestable contact once, up to the tuned
+ *   SwingTargets per swing, after checking reach, tool and stock itself. A rejected contact plays the no-yield cue and
+ *   still counts. The swinging client traces the same window only to predict the success cue. Tools never damage pawns.
+ * - Both strike sources share how a selection resolves: rewards, stock, cues and rune follow-ups.
+ * - Cancel safety: ending or cancelling the ability before the commit or contact, for example by switching tools,
+ *   never yields loot.
  * - Optional hold-to-aim: the ability previews while its input is held and executes on release.
  *
  * - Optional stride: with the AreaAroundHarvester shape and a stride duration, the commit starts a stride that harvests
@@ -215,6 +251,44 @@ public:
 
 	/** Returns whether this ability previews while its input is held and executes on release. */
 	bool IsAimWhileInputHeld() const { return bAimWhileInputHeld; }
+
+	/** Returns how this ability finds what it strikes. */
+	ERpgHarvestStrikeSource GetStrikeSource() const { return StrikeSource; }
+
+	/** Returns whether the swung tool's trace finds this ability's targets instead of the view ray. */
+	bool UsesToolSwing() const { return StrikeSource == ERpgHarvestStrikeSource::ToolSwing; }
+
+	/** Returns the authored trace of this ability's tool swing, before the tuned reach. */
+	const FRpgSwingTraceParams& GetSwingTrace() const { return SwingTrace; }
+
+	/** Largest tuned swing reach in centimeters beyond the tool tip. */
+	static constexpr float MaxSwingReach = 400.0f;
+
+	/** Most harvestable contacts one swing may commit after tunings. */
+	static constexpr int32 MaxSwingTargets = 8;
+
+#if WITH_DEV_AUTOMATION_TESTS
+	/** Feeds one trace query's hits to the running swing as the swing window would on a machine with Role. */
+	void HandleToolSwingHitsForTests(const TArray<FHitResult>& HitResults, const ERpgSwingTraceRole Role)
+	{
+		HandleToolSwingHits(HitResults, Role);
+	}
+
+	/** Contacts the running swing counted so far, committed or rejected. */
+	int32 GetToolSwingContactCountForTests() const { return ToolSwingContacts; }
+
+	/** Server: tool swing contacts of this instance that harvested, over every activation. */
+	uint32 GetAuthorityToolSwingHarvestCountForTests() const { return AuthorityToolSwingHarvestCountForTests; }
+
+	/** Swinging client: success cues this instance predicted, over every activation. */
+	uint32 GetOwnerPredictedToolCueCountForTests() const { return OwnerPredictedToolCueCountForTests; }
+
+	/** Whether the swing window of this instance still holds timers or an open window. */
+	bool HasToolSwingResidualStateForTests() const
+	{
+		return ToolSwingWindow.HasPendingTimers() || ToolSwingWindow.HasResidualState();
+	}
+#endif
 
 	/** Returns whether this ability's swings can strike a resource's active weak point for bonus sections. */
 	bool CanHitWeakPoints() const { return bCanHitWeakPoints && Targeting.Shape == ERpgHarvestTargetShape::SingleTarget; }
@@ -303,16 +377,47 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Rpg|Harvesting", DisplayName = "On Harvest Resolved")
 	void K2_OnHarvestResolved(const TArray<FRpgHarvestTargetEvaluation>& Results);
 
+	/**
+	 * Tool swing: plays HarvestMontage and starts its trace window with Params, after the swing's state was reset.
+	 * Returns false when the montage or its attack window contract fails, or the server's window cannot be scheduled;
+	 * the swing then ends cancelled. Automation tests override it to drive the swing without an animated mesh.
+	 */
+	virtual bool PlayToolSwing(const FRpgSwingTraceParams& Params);
+
 	/** Stable semantic id below Ability.Harvesting sent with every request, for example Ability.Harvesting.PickaxeStrike. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting", meta = (Categories = "Ability.Harvesting"))
 	FGameplayTag HarvestAbilityId;
 
 	/**
+	 * How the execution finds its targets: the view ray at the commit notify, or the swung tool's trace through the
+	 * montage's attack window. ToolSwing needs the SingleTarget shape and no stride or swarm. Designer choice.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Targeting")
+	ERpgHarvestStrikeSource StrikeSource = ERpgHarvestStrikeSource::ViewRay;
+
+	/**
 	 * Target selection used by the server commit and by the owning client's preview. Skill tree nodes tune AreaRadius,
-	 * MaxTargets and MaxReachFromAvatar (Ability.Tuning.Harvest.AreaRadius, .MaxTargets, .Reach).
+	 * MaxTargets and MaxReachFromAvatar (Ability.Tuning.Harvest.AreaRadius, .MaxTargets, .Reach). A tool swing uses only
+	 * MaxReachFromAvatar, plus its tuned SwingReach, as the server's limit from the harvester to each contact.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Targeting")
 	FRpgHarvestTargetingParams Targeting;
+
+	/**
+	 * Trace of a tool swing: the trace points on the equipment's spawned tool actor (sockets such as TracePoint_Base and
+	 * TracePoint_Tip, base to tip), the shape, sampling and channel. Harvestables overlap the weapon channel, so a multi
+	 * trace on it reports them. The tuned SwingReach adds to TipExtension each swing. ToolSwing only; designer-tuned.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Tool Swing", meta = (EditCondition = "StrikeSource == ERpgHarvestStrikeSource::ToolSwing"))
+	FRpgSwingTraceParams SwingTrace;
+
+	/**
+	 * Yaw rate in deg/s at which a character with rotation modes may still turn toward the camera while the swing winds
+	 * up. From the attack window's start until the swing ends its facing is held, as for melee attacks. Zero holds from
+	 * the start. ToolSwing only; designer-tuned.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Tool Swing", meta = (ClampMin = "0.0", UIMax = "720.0", Units = "DegreesPerSecond", EditCondition = "StrikeSource == ERpgHarvestStrikeSource::ToolSwing"))
+	float SwingWindupSteeringRate = 360.0f;
 
 	/**
 	 * Stock sections this ability requests from each target; targets clamp it to their remaining stock. With a swarm,
@@ -360,7 +465,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Execution", meta = (EditCondition = "bAimWhileInputHeld"))
 	TSubclassOf<URpgCameraMode> AimCameraMode;
 
-	/** Montage played on execution. Must contain exactly one RPG Gameplay Event notify sending CommitEventTag. */
+	/**
+	 * Montage played on execution. A view-ray strike needs exactly one RPG Gameplay Event notify sending CommitEventTag;
+	 * a tool swing needs one attack window start/end notify pair, as a melee attack montage does.
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Execution")
 	TObjectPtr<UAnimMontage> HarvestMontage;
 
@@ -383,6 +491,9 @@ protected:
 	 * - Single-target swings: Location and Normal are the struck point.
 	 * - Area harvests: Location is the area's center (the aim point, or the harvester for an area around it), Normal
 	 *   points up, and RawMagnitude carries the tuned area radius in centimeters.
+	 * - Tool swings: one per harvested contact. The swinging client predicts it at its own contact
+	 *   (RpgCombatImpact::PlayPredictedImpact on the harvester), so its notify must be an Rpg Impact Burst
+	 *   (URpgGameplayCueNotify_Impact), which absorbs the server's copy there.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Feedback", meta = (Categories = "GameplayCue"))
 	FGameplayTag SuccessGameplayCue;
@@ -410,7 +521,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Feedback", meta = (Categories = "GameplayCue"))
 	FGameplayTag TargetGameplayCue;
 
-	/** Cosmetic cue executed on the server at the aim point when the commit harvested nothing, for example an empty node. */
+	/**
+	 * Cosmetic cue executed on the server at the aim point when the commit harvested nothing, for example an empty node;
+	 * for a tool swing at each rejected contact, such as the wrong tool. Every machine plays it from the server.
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Feedback", meta = (Categories = "GameplayCue"))
 	FGameplayTag NoYieldGameplayCue;
 
@@ -683,10 +797,54 @@ private:
 	/** Server: stops the stride, removes its cue, and delivers its rewards (or discards them while the world ends). */
 	void FinishStride();
 
-	/** Spends cost and cooldown, plays the montage, and schedules the authoritative commit. */
+	/** Spends cost and cooldown, plays the montage, and schedules the authoritative commit or starts the tool swing. */
 	void BeginHarvestExecution();
 	void ScheduleAuthorityCommit(float DelaySeconds);
+
+	/** Server, view-ray strike: selects the targets from the captured view, then resolves them. */
 	void ExecuteAuthorityCommit();
+
+	/**
+	 * Server: resolves a selection from either strike source. Commits its targets with one reward delivery
+	 * (CommitSelection, which also sends the rune follow-ups), executes the success or no-yield cue, and notifies On
+	 * Harvest Resolved.
+	 */
+	void ResolveSelection(
+		FRpgHarvestPreview& Selection,
+		const FRpgHarvestRequest& RequestTemplate,
+		const FRpgHarvestTunedValues& Values);
+
+	/** Tool swing: checks the swing's configuration, commits the facing, and plays it through PlayToolSwing. */
+	void BeginToolSwing();
+
+	/** Builds the swing's trace from SwingTrace and the captured tuned reach. */
+	FRpgSwingTraceParams MakeToolSwingParams() const;
+
+	FRpgSwingTraceSink MakeToolSwingSink();
+	void HandleToolSwingWindowOpened(ERpgSwingTraceRole Role);
+
+	/**
+	 * One trace query of the swing window. Each harvestable resource counts once per swing, in query order, until the
+	 * tuned SwingTargets are reached; contacts beyond the server's reach and anything not harvestable do not count. The
+	 * server commits each counted contact, and the swinging client predicts the success cue of the ones it would harvest.
+	 */
+	void HandleToolSwingHits(const TArray<FHitResult>& HitResults, ERpgSwingTraceRole Role);
+
+	/** Server: evaluates the contact against the resource's current stock and resolves it as a single-target selection. */
+	void CommitToolSwingContact(UObject* Receiver, const FHitResult& Hit);
+
+	/** Swinging client: plays the success cue at once when its own evaluation of the contact would harvest. */
+	void PredictToolSwingContact(UObject* Receiver, const FHitResult& Hit);
+
+	/** Whether Hit lies within the tuned reach plus swing reach of the harvester; the server never trusts more. */
+	bool IsToolSwingContactInReach(const FHitResult& Hit) const;
+
+	UFUNCTION()
+	void HandleToolSwingWindowStartEvent(FGameplayEventData Payload);
+
+	UFUNCTION()
+	void HandleToolSwingWindowEndEvent(FGameplayEventData Payload);
+
 	void SetLocalAimPreview(bool bAiming) const;
 	bool MeetsSkillRequirement(const FGameplayAbilityActorInfo& ActorInfo) const;
 	void BuildRequestTemplate(
@@ -715,9 +873,35 @@ private:
 	FRotator CommitViewRotation = FRotator::ZeroRotator;
 	bool bHasCommitView = false;
 
-	/** Authority-only tuned values captured when execution starts, so learning a node mid-swing changes nothing. */
+	/**
+	 * Tuned values captured when execution starts, so learning a node mid-swing changes nothing. On the server; for a
+	 * tool swing also on the swinging client, whose feedback trace uses the same reach, targets and cue.
+	 */
 	FRpgHarvestTunedValues CommitValues;
 	bool bHasCommitValues = false;
+
+	/** Attack window and tool trace of the current tool swing; the server traces for gameplay, the swinging client for feedback. */
+	FRpgSwingTraceWindow ToolSwingWindow;
+
+	/** Resources the current swing counted, committed or rejected, by receiver and instance (MakeResourceKey). */
+	TSet<TPair<TObjectKey<UObject>, int32>> ToolSwingStruck;
+
+	/** Contacts the current swing counted towards its SwingTargets. */
+	int32 ToolSwingContacts = 0;
+
+	/** Whether the current swing still takes contacts; false outside a swing and while the activation ends. */
+	bool bToolSwingTakesContacts = false;
+
+	/** Server: request template of the current swing with its root action, built at its first contact. */
+	UPROPERTY(Transient)
+	FRpgHarvestRequest ToolSwingRequest;
+
+	bool bHasToolSwingRequest = false;
+
+#if WITH_DEV_AUTOMATION_TESTS
+	uint32 AuthorityToolSwingHarvestCountForTests = 0;
+	uint32 OwnerPredictedToolCueCountForTests = 0;
+#endif
 
 	/**
 	 * Server-only follow-up armed by the last weak-point hit: the struck target, its instance index, and the world time

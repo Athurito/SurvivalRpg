@@ -142,6 +142,21 @@ bool FRpgSwingTraceParams::HasValidTraceData() const
 	}
 }
 
+void FRpgSwingTraceParams::ExtendTip(TArray<FTransform>& TracePointTransforms) const
+{
+	if (!FMath::IsFinite(TipExtension) || TipExtension <= UE_KINDA_SMALL_NUMBER || TracePointTransforms.Num() < 2)
+	{
+		return;
+	}
+
+	FTransform& Tip = TracePointTransforms.Last();
+	const FVector Axis = (Tip.GetLocation() - TracePointTransforms.Last(1).GetLocation()).GetSafeNormal();
+	if (!Axis.IsZero())
+	{
+		Tip.SetLocation(Tip.GetLocation() + Axis * TipExtension);
+	}
+}
+
 bool FRpgSwingTraceWindow::IsWindowEndBeforeAutoBlendOut(
 	const float MontageLength,
 	const float WindowEndTime,
@@ -857,6 +872,7 @@ bool FRpgSwingTraceWindow::GatherSample(RpgWeaponTraceInterpolation::FBladeSampl
 		OutSample.TracePointTransforms.Add(SocketTransform);
 	}
 
+	Params.ExtendTip(OutSample.TracePointTransforms);
 	return OutSample.TracePointTransforms.Num() >= 2;
 }
 
@@ -1152,9 +1168,14 @@ int32 FRpgSwingTraceWindow::TraceSampleMotionForTests(
 {
 	Params = InParams;
 	Sink = MoveTemp(InSink);
-	const int32 SubstepCount = RpgWeaponTraceInterpolation::ComputeSubstepCount(Previous, Current);
+	// The samples hold the authored trace points, as GatherSample reads them, before the tip extension.
+	RpgWeaponTraceInterpolation::FBladeSample ExtendedPrevious = Previous;
+	RpgWeaponTraceInterpolation::FBladeSample ExtendedCurrent = Current;
+	Params.ExtendTip(ExtendedPrevious.TracePointTransforms);
+	Params.ExtendTip(ExtendedCurrent.TracePointTransforms);
+	const int32 SubstepCount = RpgWeaponTraceInterpolation::ComputeSubstepCount(ExtendedPrevious, ExtendedCurrent);
 	TArray<TArray<FVector>> SubstepLocations;
-	RpgWeaponTraceInterpolation::BuildSubstepLocations(Previous, Current, SubstepCount, SubstepLocations);
+	RpgWeaponTraceInterpolation::BuildSubstepLocations(ExtendedPrevious, ExtendedCurrent, SubstepCount, SubstepLocations);
 
 	const FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(RpgSwingTraceWindow), false);
 	TGuardValue<bool> OpenGuard(bWindowOpen, true);

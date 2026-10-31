@@ -73,6 +73,16 @@ namespace RpgHarvestingMagicGameplayTags
 		"Most targets an area harvest takes, rounded to a whole number of at least one.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_SwingReach,
+		"Ability.Tuning.Harvest.SwingReach",
+		"Centimeters a tool swing's trace reaches beyond the tool tip, base 0; the server's reach check grows with it.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_SwingTargets,
+		"Ability.Tuning.Harvest.SwingTargets",
+		"Harvestable contacts one tool swing commits, base 1, rounded to a whole number from 1 to 8.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
 		Ability_Tuning_Harvest_Sections,
 		"Ability.Tuning.Harvest.Sections",
 		"Stock sections a harvest takes per target, or a swarm creature per strike; rounded, at least one.");

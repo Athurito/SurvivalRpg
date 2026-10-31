@@ -20,7 +20,7 @@ int32 FRpgHarvestProvenance::MakeRootActionId()
 	return LastRootActionId;
 }
 
-bool FRpgHarvestWeakPoint::IsStruckBy(const FHitResult& Hit) const
+bool FRpgHarvestWeakPoint::IsStruckBy(const FHitResult& Hit, const bool bImpactOnly) const
 {
 	if (Radius <= 0.0f)
 	{
@@ -30,6 +30,11 @@ bool FRpgHarvestWeakPoint::IsStruckBy(const FHitResult& Hit) const
 	if (FVector::DistSquared(Hit.ImpactPoint, Location) <= RadiusSquared)
 	{
 		return true;
+	}
+	// A swing's trace start is the tool's previous sample, not an aim; its path past the weak point says nothing.
+	if (bImpactOnly)
+	{
+		return false;
 	}
 
 	// Location is the sweep center at contact; for a line trace it equals ImpactPoint.
@@ -110,7 +115,7 @@ FRpgHarvestResult FRpgHarvestStockRules::Evaluate(
 		// Finishing takes exactly what is left, so it never manufactures overkill.
 		Work = RemainingWork;
 	}
-	else if (Request.bCanHitWeakPoint && ActiveWeakPoint && WeakPointBonus > 0 && ActiveWeakPoint->IsStruckBy(Request.Hit))
+	else if (Request.bCanHitWeakPoint && ActiveWeakPoint && WeakPointBonus > 0 && ActiveWeakPoint->IsStruckBy(Request.Hit, Request.bSwingStrike))
 	{
 		// The bonus only speeds extraction up; it comes from the same stock and is clamped below.
 		Result.bWeakPointHit = true;

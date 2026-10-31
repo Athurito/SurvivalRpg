@@ -8,6 +8,7 @@
 #include "Components/SceneComponent.h"
 #include "Harvesting/RpgHarvestableComponent.h"
 #include "Harvesting/RpgHarvestableCorpseComponent.h"
+#include "Harvesting/RpgHarvestTargeting.h"
 #include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
 #include "SurvivalRpg/Core/Corpse/RpgCorpseLifecycleComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
@@ -192,7 +193,8 @@ ARpgHarvestAutomationCollidableNodeActor::ARpgHarvestAutomationCollidableNodeAct
 	SetReplicateMovement(false);
 	Collision = CreateDefaultSubobject<UBoxComponent>(TEXT("Collision"));
 	Collision->InitBoxExtent(FVector(40.0f));
-	Collision->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
+	// The real harvestable profile: aim queries block on Visibility, tool swings overlap it on the weapon channel.
+	Collision->SetCollisionProfileName(FRpgHarvestTargeting::GetHarvestableCollisionProfileName());
 	SetRootComponent(Collision);
 	HarvestableNode = CreateDefaultSubobject<URpgHarvestableComponent>(TEXT("HarvestableNode"));
 }
