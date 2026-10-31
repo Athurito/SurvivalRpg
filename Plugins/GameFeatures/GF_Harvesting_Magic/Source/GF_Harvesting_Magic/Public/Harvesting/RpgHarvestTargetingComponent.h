@@ -68,6 +68,9 @@ struct FRpgHarvestTargetIndicator
  * UpdateRateHz with the same query the server uses at commit time:
  * - While a hold-to-aim harvest ability is held, that ability's area and targets are previewed.
  * - Otherwise the harvest ability bound to the active main-hand tool's primary input is previewed.
+ * - A tool swing (ERpgHarvestStrikeSource::ToolSwing) aims at nothing, so it runs no view query and marks nothing.
+ *   After the swing struck a resource (NoteStruckTarget), the preview shows that resource's current stock for
+ *   StruckTargetLingerSeconds instead; it reads the replicated stock, so the server's result corrects it.
  * OnPreviewChanged fires only when the presentation-relevant content changes. The preview never grants or
  * mutates anything; presentation Blueprints and widgets read it.
  *
@@ -143,6 +146,17 @@ public:
 	/** Called by hold-to-aim harvest abilities on the owning client while their input is held. */
 	void SetAimingAbility(FGameplayAbilitySpecHandle Handle, bool bAiming);
 
+	/**
+	 * Called by a tool swing on the owning client when it struck Receiver at Hit: from its own predicted contact on a
+	 * remote client, after the commit on a listen server. The preview then shows that resource for
+	 * StruckTargetLingerSeconds while SwingHandle stays the previewed primary swing. A further hit replaces the resource
+	 * and restarts the time. Does nothing on non-local controllers; never mutates anything.
+	 */
+	void NoteStruckTarget(FGameplayAbilitySpecHandle SwingHandle, UObject* Receiver, const FHitResult& Hit);
+
+	/** True while the preview shows the resource a tool swing struck rather than what the view would hit. */
+	bool IsPreviewStruckTarget() const { return bPreviewShowsStruckTarget; }
+
 	/** Cosmetic event for target highlights and indicators. Never grant loot from it. */
 	UPROPERTY(BlueprintAssignable, Category = "Rpg|Harvesting|Targeting")
 	FRpgHarvestPreviewChangedEvent OnPreviewChanged;
@@ -156,6 +170,13 @@ protected:
 	/** Preview evaluations per second on the local client; each runs one view query. Cosmetic tuning. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Targeting", meta = (ClampMin = "1.0", ClampMax = "60.0", UIMin = "5.0", UIMax = "30.0"))
 	float UpdateRateHz = 15.0f;
+
+	/**
+	 * Seconds the indicator stays on a resource after the player's tool swing struck it; every further hit restarts it.
+	 * Tool swings preview nothing else, so the indicator shows only for this time after each hit. Cosmetic, local.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Indicator", meta = (ClampMin = "0.1", UIMin = "1.0", UIMax = "10.0", Units = "s"))
+	float StruckTargetLingerSeconds = 3.0f;
 
 	/** Designer-owned widget shown over the primary target; empty disables the projected indicator. Cosmetic. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Indicator")
@@ -201,9 +222,20 @@ private:
 	void RemoveTargetIndicators();
 	void UpdateAreaMarker();
 	void DestroyAreaMarker();
+	void HandleStruckTargetExpired();
+	void ClearStruckTarget();
 
 	/** Latest local preview, compared on refresh to suppress redundant notifications. */
 	FRpgHarvestPreview CurrentPreview;
+
+	/** Whether CurrentPreview shows the resource a tool swing struck. */
+	bool bPreviewShowsStruckTarget = false;
+
+	/** Resource the latest tool swing struck, the hit that addressed it and that swing's spec; kept until the timer ends. */
+	TWeakObjectPtr<UObject> StruckReceiver;
+	FHitResult StruckHit;
+	FGameplayAbilitySpecHandle StruckSpecHandle;
+	FTimerHandle StruckTargetTimerHandle;
 
 	/** Hold-to-aim ability currently held on this client, if any. */
 	FGameplayAbilitySpecHandle AimingSpecHandle;

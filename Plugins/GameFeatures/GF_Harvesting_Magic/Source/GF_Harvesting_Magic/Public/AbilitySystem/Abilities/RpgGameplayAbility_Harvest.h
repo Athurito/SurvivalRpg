@@ -29,7 +29,10 @@ enum class ERpgHarvestStrikeSource : uint8
 	 * The swung tool's trace finds the targets, like a melee weapon: while the montage's attack window is open, every
 	 * harvestable the server's trace touches commits at contact, once per resource and up to the tuned SwingTargets per
 	 * swing. Needs the SingleTarget shape, a montage with an attack window pair, and SwingTrace trace points on the tool.
-	 * The commit notify does not gate it. For axe and pickaxe swings.
+	 * The commit notify does not gate it. Each swing ends at its montage's blend-out; with the WhileInputActive policy a
+	 * held input starts the next one, and the Exclusive_Replaceable group lets a dodge, attack or block replace it. The
+	 * owning client's stock indicator shows each struck resource for a while instead of a view-ray preview. For axe and
+	 * pickaxe swings.
 	 */
 	ToolSwing
 };
@@ -203,6 +206,9 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestTunedValues
  *   montage's attack window (FRpgSwingTraceWindow) and commits each harvestable contact once, up to the tuned
  *   SwingTargets per swing, after checking reach, tool and stock itself. A rejected contact plays the no-yield cue and
  *   still counts. The swinging client traces the same window only to predict the success cue. Tools never damage pawns.
+ * - Held tool swings: each swing ends at its montage's blend-out, so the WhileInputActive policy starts the next one
+ *   while the input is held. A cancelled hold, for example by a dodge or a tool switch, waits for the next press. The
+ *   server refuses a swing that a client starts sooner than the montage allows after cutting the previous one short.
  * - Both strike sources share how a selection resolves: rewards, stock, cues and rune follow-ups.
  * - Cancel safety: ending or cancelling the ability before the commit or contact, for example by switching tools,
  *   never yields loot.
@@ -240,6 +246,19 @@ public:
 		FRpgHarvestPreview& OutPreview) const;
 
 	/**
+	 * Evaluates the resource Receiver that a tool swing of Spec struck at Hit, as its stock stands now, without a view
+	 * query and without mutating anything: one target in reach, whose result reports the stock, the sections the next
+	 * swing there would take, or why it would take nothing. The stock indicator of the owning client reads it after a hit.
+	 * An invalid or non-harvestable Receiver leaves the preview without targets.
+	 */
+	void EvaluateStruckTarget(
+		const FGameplayAbilitySpec& Spec,
+		const FGameplayAbilityActorInfo& ActorInfo,
+		UObject* Receiver,
+		const FHitResult& Hit,
+		FRpgHarvestPreview& OutPreview) const;
+
+	/**
 	 * Resolves this ability's targeting, sections and swarm for Spec with the learned skill tree tunings of its source
 	 * weapon, and the yield conversions its owner's tags activate. Valid on the server and on the owning client, which
 	 * see the same tree state and tags.
@@ -267,7 +286,42 @@ public:
 	/** Most harvestable contacts one swing may commit after tunings. */
 	static constexpr int32 MaxSwingTargets = 8;
 
+	/**
+	 * Seconds by which the server lets a client's next tool swing start before the previous one's cycle is over, after
+	 * the client ended or cancelled that swing itself. Absorbs network jitter between the two activations.
+	 */
+	static constexpr float ToolSwingCadenceToleranceSeconds = 0.2f;
+
+	/**
+	 * Seconds from the start of Montage at EffectivePlayRate (ability rate times the montage's RateScale) until its auto
+	 * blend-out starts, where a tool swing ends and a held input starts the next. A montage without auto blend-out
+	 * lasts its whole length. Zero for no montage or an invalid rate.
+	 */
+	static float ResolveSwingCycleSeconds(const UAnimMontage* Montage, float EffectivePlayRate);
+
+	/**
+	 * Server: the owning client ended or cancelled this activation. A tool swing it cut short holds the next swing back
+	 * until the montage's cycle minus ToolSwingCadenceToleranceSeconds has passed since this one started, so a client
+	 * cannot swing faster than the montage by ending its swings early.
+	 */
+	virtual void SetRemoteInstanceHasEnded() override;
+
 #if WITH_DEV_AUTOMATION_TESTS
+	/** Ends the running swing as its montage's blend-out does, without an animated mesh. */
+	void HandleToolSwingBlendOutForTests() { HandleMontageCompleted(); }
+
+	/** Interrupts the running swing as another montage in its slot group does, without an animated mesh. */
+	void HandleToolSwingInterruptedForTests() { HandleMontageInterrupted(); }
+
+	/** Tool swings this instance started on this machine, over every activation. */
+	uint32 GetToolSwingStartCountForTests() const { return ToolSwingStartCountForTests; }
+
+	/** Server: seconds from the start of the current or last tool swing until its montage blends out. */
+	float GetToolSwingCycleSecondsForTests() const { return ToolSwingCycleSeconds; }
+
+	/** Server: world time before which the next tool swing is refused; below zero when none is held back. */
+	double GetToolSwingEarliestNextStartForTests() const { return ToolSwingEarliestNextStartTime; }
+
 	/** Feeds one trace query's hits to the running swing as the swing window would on a machine with Role. */
 	void HandleToolSwingHitsForTests(const TArray<FHitResult>& HitResults, const ERpgSwingTraceRole Role)
 	{
@@ -839,6 +893,9 @@ private:
 	/** Whether Hit lies within the tuned reach plus swing reach of the harvester; the server never trusts more. */
 	bool IsToolSwingContactInReach(const FHitResult& Hit) const;
 
+	/** Owning client: shows the stock of the resource this swing struck on the player's stock indicator for a while. */
+	void NoteStruckTargetLocally(UObject* Receiver, const FHitResult& Hit) const;
+
 	UFUNCTION()
 	void HandleToolSwingWindowStartEvent(FGameplayEventData Payload);
 
@@ -898,7 +955,18 @@ private:
 
 	bool bHasToolSwingRequest = false;
 
+	/** Server: world time when the current tool swing started, below zero outside a swing, and its montage cycle in seconds. */
+	double ToolSwingStartTime = -1.0;
+	float ToolSwingCycleSeconds = 0.0f;
+
+	/**
+	 * Server: world time before which this instance refuses the next tool swing, set when the owning client cut a swing
+	 * short (SetRemoteInstanceHasEnded). Below zero holds nothing back.
+	 */
+	double ToolSwingEarliestNextStartTime = -1.0;
+
 #if WITH_DEV_AUTOMATION_TESTS
+	uint32 ToolSwingStartCountForTests = 0;
 	uint32 AuthorityToolSwingHarvestCountForTests = 0;
 	uint32 OwnerPredictedToolCueCountForTests = 0;
 #endif

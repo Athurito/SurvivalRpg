@@ -42,8 +42,15 @@ public:
 	bool IsAimingPreview() const;
 
 	/**
+	 * True while the indicator shows the stock of a resource the player's tool swing struck, for a few seconds after the
+	 * hit, rather than a target the view aims at. The sections to take are then what the next swing there would take.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Harvesting|Indicator")
+	bool IsStruckTargetPreview() const;
+
+	/**
 	 * True while the previewed swing would strike the active weak point of the target this indicator marks; the
-	 * sections to take then include the weak-point bonus.
+	 * sections to take then include the weak-point bonus. Always false for a struck resource, which no swing aims at.
 	 */
 	UFUNCTION(BlueprintPure, Category = "Rpg|Harvesting|Indicator")
 	bool IsWeakPointTargeted() const;

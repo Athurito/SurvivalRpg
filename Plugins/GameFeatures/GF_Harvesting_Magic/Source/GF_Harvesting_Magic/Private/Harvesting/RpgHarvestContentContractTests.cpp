@@ -195,6 +195,13 @@ namespace RpgHarvestContentContractTests
 	{
 		const FString Name = GetNameSafe(Swing.GetClass());
 		Test.TestTrue(*FString::Printf(TEXT("%s strikes with its tool's trace, not the view ray"), *Name), Swing.UsesToolSwing());
+		// Holding the input keeps swinging, and a dodge, block or attack replaces a swing instead of waiting for it.
+		Test.TestTrue(
+			*FString::Printf(TEXT("%s keeps swinging while its input is held"), *Name),
+			Swing.GetActivationPolicy() == ERpgAbilityActivationPolicy::WhileInputActive);
+		Test.TestTrue(
+			*FString::Printf(TEXT("%s yields to other exclusive abilities"), *Name),
+			Swing.GetActivationGroup() == ERpgAbilityActivationGroup::Exclusive_Replaceable);
 		const FRpgSwingTraceParams& Trace = Swing.GetSwingTrace();
 		Test.TestTrue(*FString::Printf(TEXT("%s has a traceable swing"), *Name), Trace.HasValidTraceData());
 		Test.TestTrue(

@@ -13,6 +13,9 @@ namespace RpgHarvestingMagicGameplayTags
 	/** Activation failure reported when a harvest ability's trade-skill unlock level is not reached. */
 	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_ActivateFail_Harvesting_SkillLevel);
 
+	/** Activation failure reported by the server when a tool swing would start sooner than its montage allows. */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_ActivateFail_Harvesting_SwingCadence);
+
 	/** Server-only corpse-processing ability started through the interaction system. */
 	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Harvesting_Skinning);
 

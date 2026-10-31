@@ -358,6 +358,21 @@ public:
 		NoYieldGameplayCue = InNoYieldCue;
 	}
 
+	/** Montage whose cycle the server times the swing by; the test swing itself never plays it. */
+	void ConfigureMontage(UAnimMontage* InMontage) { HarvestMontage = InMontage; }
+
+	/**
+	 * Makes this ability repeat while its input is held and yield to other exclusive abilities, as the tool swing assets
+	 * do, or restores the native defaults. Input processing reads the class default, so tests call it on the class
+	 * default too and restore that when they finish. New instances of a native class do not copy a class default
+	 * changed at runtime, so the granted instance needs its own call.
+	 */
+	void ConfigureHoldToRepeat(const bool bHold)
+	{
+		ActivationPolicy = bHold ? ERpgAbilityActivationPolicy::WhileInputActive : ERpgAbilityActivationPolicy::OnInputTriggered;
+		ActivationGroup = bHold ? ERpgAbilityActivationGroup::Exclusive_Replaceable : ERpgAbilityActivationGroup::Exclusive_Blocking;
+	}
+
 	/** Trace the last swing started with, after its tuned reach; tests trace it themselves. */
 	const FRpgSwingTraceParams& GetPlayedSwingTrace() const { return PlayedSwingTrace; }
 
@@ -401,5 +416,6 @@ class URpgHarvestAutomationTargetingComponent final : public URpgHarvestTargetin
 public:
 	void ConfigureIndicator(const TSoftClassPtr<UUserWidget>& InWidgetClass) { IndicatorWidgetClass = InWidgetClass; }
 	void ConfigureAreaMarker(const TSoftClassPtr<AActor>& InMarkerClass) { AreaMarkerClass = InMarkerClass; }
+	void ConfigureStruckTargetLinger(const float InSeconds) { StruckTargetLingerSeconds = InSeconds; }
 	AActor* GetAreaMarkerForTest() const { return AreaMarker; }
 };

@@ -4287,10 +4287,17 @@ namespace RpgHarvestSwingTests
 		return Trace;
 	}
 
-	/** Grants a tool swing from Source with the swing cues, one section per contact and Reach from the harvester. */
-	FGrantedAbility GrantSwing(URpgAbilitySystemComponent* AbilitySystem, UObject* Source, const float Reach = 250.0f)
+	/**
+	 * Grants a tool swing from Source with the swing cues, one section per contact and Reach from the harvester, bound to
+	 * the primary input when bBindPrimaryInput is set (the input needs an equipment instance as Source).
+	 */
+	FGrantedAbility GrantSwing(
+		URpgAbilitySystemComponent* AbilitySystem,
+		UObject* Source,
+		const float Reach = 250.0f,
+		const bool bBindPrimaryInput = false)
 	{
-		FGrantedAbility Granted = GrantAbility(AbilitySystem, Source);
+		FGrantedAbility Granted = GrantAbility(AbilitySystem, Source, bBindPrimaryInput);
 		if (Granted.Instance)
 		{
 			FRpgHarvestTargetingParams Single;
@@ -4790,6 +4797,354 @@ bool FRpgHarvestSwingReachTuningTest::RunTest(const FString& Parameters)
 		3);
 	TestEqual(TEXT("Both contacts count towards the two targets"), Swing.Instance->GetToolSwingContactCountForTests(), 2);
 	TestEqual(TEXT("Every taken section is rewarded"), CountMaterial(Harvester.PlayerState), 3 * YieldPerSection);
+	return true;
+}
+
+namespace RpgHarvestHoldSwingTests
+{
+	using namespace RpgHarvestSwingTests;
+
+	const FGameplayTag& PrimaryInputTag()
+	{
+		static const FGameplayTag Tag = FGameplayTag::RequestGameplayTag(TEXT("InputTag.Weapon.Primary"));
+		return Tag;
+	}
+
+	/** One frame of the player controller's input processing. */
+	void ProcessInput(URpgAbilitySystemComponent& AbilitySystem)
+	{
+		AbilitySystem.ProcessAbilityInput(1.0f / 60.0f, false);
+	}
+
+	/** Makes the swing's class default a hold-to-repeat swing, as the tool swing assets are, until the test ends. */
+	struct FScopedHoldToRepeat
+	{
+		FScopedHoldToRepeat() { GetMutableDefault<URpgHarvestAutomationTestAbility>()->ConfigureHoldToRepeat(true); }
+		~FScopedHoldToRepeat() { GetMutableDefault<URpgHarvestAutomationTestAbility>()->ConfigureHoldToRepeat(false); }
+	};
+
+	/** Grants a hold-to-repeat tool swing from an axe on the primary input. */
+	FGrantedAbility GrantHeldSwing(URpgAbilitySystemComponent* AbilitySystem, APawn* Pawn)
+	{
+		FGrantedAbility Granted = GrantSwing(AbilitySystem, NewObject<URpgEquipmentInstance>(Pawn), 250.0f, true);
+		if (Granted.Instance)
+		{
+			Granted.Instance->ConfigureHoldToRepeat(true);
+		}
+		return Granted;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestSwingHoldTest,
+	"SurvivalRpg.Harvesting.Swing.HoldKeepsSwingingUntilRelease",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestSwingHoldTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestHoldSwingTests;
+
+	const FScopedHoldToRepeat HoldToRepeat;
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	const double Eye = Harvester.Pawn->BaseEyeHeight;
+	ARpgHarvestAutomationCollidableNodeActor* Node = SpawnNode(World, FVector(110.0, 0.0, Eye), MakeProfile(World, 8));
+	const FGrantedAbility Swing = GrantHeldSwing(Harvester.AbilitySystem, Harvester.Pawn);
+	if (!Node || !TestNotNull(TEXT("Swing exists"), Swing.Instance))
+	{
+		return false;
+	}
+	TestWorld.PrimeTimerManager();
+	URpgAbilitySystemComponent& AbilitySystem = *Harvester.AbilitySystem;
+	const FHitResult Contact = MakeContact(Node, FrontFace(Node), FVector(70.0, -40.0, Eye));
+
+	AbilitySystem.AbilityInputTagPressed(PrimaryInputTag());
+	ProcessInput(AbilitySystem);
+	TestTrue(TEXT("Pressing the input starts a swing"), Swing.Instance->IsActive());
+	Swing.Instance->HandleToolSwingHitsForTests({Contact}, ERpgSwingTraceRole::Authority);
+	ProcessInput(AbilitySystem);
+	ProcessInput(AbilitySystem);
+	TestEqual(TEXT("A held input never restarts a running swing"), Swing.Instance->GetPlayedSwingCount(), 1);
+	TestEqual(TEXT("The swing takes its section once"), Node->HarvestableNode->GetRemainingSections(), 7);
+
+	// The swing ends where its montage starts to blend out; the held input starts the next one in the next frame.
+	Swing.Instance->HandleToolSwingBlendOutForTests();
+	TestFalse(TEXT("The swing ends at its blend-out"), Swing.Instance->IsActive());
+	ProcessInput(AbilitySystem);
+	TestTrue(TEXT("The held input starts the next swing"), Swing.Instance->IsActive());
+	TestEqual(TEXT("The next swing is a swing of its own"), Swing.Instance->GetPlayedSwingCount(), 2);
+	TestEqual(TEXT("The next swing has counted no contact yet"), Swing.Instance->GetToolSwingContactCountForTests(), 0);
+	Swing.Instance->HandleToolSwingHitsForTests({Contact}, ERpgSwingTraceRole::Authority);
+	Swing.Instance->HandleToolSwingHitsForTests({Contact}, ERpgSwingTraceRole::Authority);
+	TestEqual(TEXT("Each held swing strikes the resource once"), Node->HarvestableNode->GetRemainingSections(), 6);
+
+	// Released mid-swing: the running swing finishes, and no further one starts.
+	AbilitySystem.AbilityInputTagReleased(PrimaryInputTag());
+	ProcessInput(AbilitySystem);
+	TestTrue(TEXT("Releasing the input lets the running swing finish"), Swing.Instance->IsActive());
+	Swing.Instance->HandleToolSwingBlendOutForTests();
+	ProcessInput(AbilitySystem);
+	ProcessInput(AbilitySystem);
+	TestFalse(TEXT("Without the input no further swing starts"), Swing.Instance->IsActive());
+	TestEqual(TEXT("Two held swings ran"), Swing.Instance->GetPlayedSwingCount(), 2);
+	TestEqual(TEXT("Both swings were rewarded once each"), CountMaterial(Harvester.PlayerState), 2 * YieldPerSection);
+	TestEqual(TEXT("The server timed both swings"), Swing.Instance->GetToolSwingStartCountForTests(), 2u);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestSwingCancelSuppressionTest,
+	"SurvivalRpg.Harvesting.Swing.CancelStopsHoldUntilPressedAgain",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestSwingCancelSuppressionTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestHoldSwingTests;
+
+	const FScopedHoldToRepeat HoldToRepeat;
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	const FGrantedAbility Swing = GrantHeldSwing(Harvester.AbilitySystem, Harvester.Pawn);
+	if (!TestNotNull(TEXT("Swing exists"), Swing.Instance))
+	{
+		return false;
+	}
+	TestWorld.PrimeTimerManager();
+	URpgAbilitySystemComponent& AbilitySystem = *Harvester.AbilitySystem;
+
+	AbilitySystem.AbilityInputTagPressed(PrimaryInputTag());
+	ProcessInput(AbilitySystem);
+	TestTrue(TEXT("Pressing the input starts a swing"), Swing.Instance->IsActive());
+
+	// A dodge, a block or an attack replaces the swing by cancelling it, as a tool switch does.
+	AbilitySystem.CancelAbilityHandle(Swing.Handle);
+	ProcessInput(AbilitySystem);
+	ProcessInput(AbilitySystem);
+	TestFalse(TEXT("A cancelled hold starts no new swing while the input stays held"), Swing.Instance->IsActive());
+	AbilitySystem.AbilityInputTagReleased(PrimaryInputTag());
+	ProcessInput(AbilitySystem);
+	TestFalse(TEXT("The release itself starts nothing"), Swing.Instance->IsActive());
+	AbilitySystem.AbilityInputTagPressed(PrimaryInputTag());
+	ProcessInput(AbilitySystem);
+	TestTrue(TEXT("A fresh press swings again"), Swing.Instance->IsActive());
+	TestEqual(TEXT("Two presses started two swings"), Swing.Instance->GetPlayedSwingCount(), 2);
+
+	// Another montage in the swing's slot group, such as a stagger, interrupts it the same way.
+	Swing.Instance->HandleToolSwingInterruptedForTests();
+	ProcessInput(AbilitySystem);
+	ProcessInput(AbilitySystem);
+	TestFalse(TEXT("An interrupted hold starts no new swing while the input stays held"), Swing.Instance->IsActive());
+	AbilitySystem.AbilityInputTagReleased(PrimaryInputTag());
+	ProcessInput(AbilitySystem);
+	AbilitySystem.AbilityInputTagPressed(PrimaryInputTag());
+	ProcessInput(AbilitySystem);
+	TestTrue(TEXT("After the release a press swings again"), Swing.Instance->IsActive());
+
+	// A swing that ends at its blend-out keeps the hold going.
+	Swing.Instance->HandleToolSwingBlendOutForTests();
+	ProcessInput(AbilitySystem);
+	TestTrue(TEXT("A swing that ended normally keeps the hold going"), Swing.Instance->IsActive());
+	TestEqual(TEXT("Every press and the held repeat started one swing each"), Swing.Instance->GetPlayedSwingCount(), 4);
+	AbilitySystem.AbilityInputTagReleased(PrimaryInputTag());
+	AbilitySystem.CancelAbilityHandle(Swing.Handle);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestSwingCadenceTest,
+	"SurvivalRpg.Harvesting.Swing.ClientCannotOutpaceTheMontage",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestSwingCadenceTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestHoldSwingTests;
+
+	// A 1.5 s montage blends out over its last 0.25 s, so one swing lasts 1.25 s.
+	UAnimMontage* Montage = MakeMontage({}, 1.5f);
+	Montage->BlendOut.SetBlendTime(0.25f);
+	TestTrue(
+		TEXT("A swing cycle lasts until the montage starts to blend out"),
+		FMath::IsNearlyEqual(URpgGameplayAbility_Harvest::ResolveSwingCycleSeconds(Montage, 1.0f), 1.25f, 0.001f));
+	TestTrue(
+		TEXT("A faster play rate shortens the cycle"),
+		FMath::IsNearlyEqual(URpgGameplayAbility_Harvest::ResolveSwingCycleSeconds(Montage, 2.0f), 0.5f, 0.001f));
+	TestEqual(TEXT("Without a montage there is no cycle"), URpgGameplayAbility_Harvest::ResolveSwingCycleSeconds(nullptr, 1.0f), 0.0f);
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	const FGrantedAbility Swing = GrantSwing(Harvester.AbilitySystem, nullptr);
+	if (!TestNotNull(TEXT("Swing exists"), Swing.Instance))
+	{
+		return false;
+	}
+	Swing.Instance->ConfigureMontage(Montage);
+	TestWorld.PrimeTimerManager();
+	URpgAbilitySystemComponent& AbilitySystem = *Harvester.AbilitySystem;
+	const double CycleSeconds = 1.25 - URpgGameplayAbility_Harvest::ToolSwingCadenceToleranceSeconds;
+
+	// The owning client ends its swing itself 0.3 s in, long before the montage would, and asks for the next one.
+	TestTrue(TEXT("The swing activates"), AbilitySystem.TryActivateAbility(Swing.Handle));
+	const double FirstStart = World->GetTimeSeconds();
+	TestWorld.AdvanceTimers(0.3f);
+	Swing.Instance->SetRemoteInstanceHasEnded();
+	AbilitySystem.CancelAbilityHandle(Swing.Handle);
+	TestTrue(
+		TEXT("The server holds the next swing back until the cut swing's cycle is over"),
+		FMath::IsNearlyEqual(Swing.Instance->GetToolSwingEarliestNextStartForTests(), FirstStart + CycleSeconds, 0.001));
+	TestFalse(TEXT("The client cannot swing again at once"), AbilitySystem.TryActivateAbility(Swing.Handle));
+	TestWorld.AdvanceTimers(0.5f);
+	TestFalse(TEXT("Nor before the montage's cycle is over"), AbilitySystem.TryActivateAbility(Swing.Handle));
+	TestWorld.AdvanceTimers(0.3f);
+	TestTrue(TEXT("Once the cycle is over the next swing starts"), AbilitySystem.TryActivateAbility(Swing.Handle));
+	TestEqual(TEXT("Refused swings never started"), Swing.Instance->GetToolSwingStartCountForTests(), 2u);
+	TestTrue(TEXT("A started swing holds nothing back"), Swing.Instance->GetToolSwingEarliestNextStartForTests() < 0.0);
+
+	// A swing the server ends itself, at its blend-out or through its own dodge, keeps the hold seamless.
+	Swing.Instance->HandleToolSwingBlendOutForTests();
+	TestTrue(TEXT("A swing ended at its blend-out is followed at once"), AbilitySystem.TryActivateAbility(Swing.Handle));
+	AbilitySystem.CancelAbilityHandle(Swing.Handle);
+	TestTrue(TEXT("A swing the server cancelled is followed at once"), AbilitySystem.TryActivateAbility(Swing.Handle));
+	AbilitySystem.CancelAbilityHandle(Swing.Handle);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestSwingStruckTargetIndicatorTest,
+	"SurvivalRpg.Harvesting.Swing.StruckTargetIndicatorLingers",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestSwingStruckTargetIndicatorTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestHoldSwingTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	// The resource sits where the view's centre would aim, at eye height straight ahead.
+	const double Eye = Harvester.Pawn->BaseEyeHeight;
+	ARpgHarvestAutomationCollidableNodeActor* Node = SpawnNode(World, FVector(150.0, 0.0, Eye), MakeProfile(World, 4));
+	URpgEquipmentInstance* Axe = NewObject<URpgEquipmentInstance>(Harvester.Pawn);
+	const FGrantedAbility Swing = GrantSwing(Harvester.AbilitySystem, Axe, 250.0f, true);
+	if (!Node || !TestNotNull(TEXT("Swing exists"), Swing.Instance))
+	{
+		return false;
+	}
+
+	// The local player's controller owns the harvester's state, so the swing finds the player's targeting component.
+	FActorSpawnParameters ControllerParameters;
+	ControllerParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	APlayerController* Controller = World->SpawnActor<APlayerController>(
+		APlayerController::StaticClass(),
+		FTransform::Identity,
+		ControllerParameters);
+	if (!TestNotNull(TEXT("Local controller exists"), Controller))
+	{
+		return false;
+	}
+	Controller->SetAsLocalPlayerController();
+	Controller->PlayerState = Harvester.PlayerState;
+	Harvester.PlayerState->SetOwner(Controller);
+	Harvester.AbilitySystem->InitAbilityActorInfo(Harvester.PlayerState, Harvester.Pawn);
+	URpgIndicatorManagerComponent* IndicatorManager = NewObject<URpgIndicatorManagerComponent>(Controller);
+	IndicatorManager->RegisterComponent();
+	URpgHarvestAutomationTargetingComponent* Targeting = NewObject<URpgHarvestAutomationTargetingComponent>(Controller);
+	Targeting->ConfigureIndicator(TSoftClassPtr<UUserWidget>(UUserWidget::StaticClass()));
+	Targeting->ConfigureStruckTargetLinger(3.0f);
+	Targeting->RegisterComponent();
+	TestWorld.PrimeTimerManager();
+
+	auto ExpectIndicatedStock = [this, IndicatorManager, Targeting, Node](const TCHAR* What, const int32 ExpectedRemaining)
+	{
+		if (!TestEqual(*FString::Printf(TEXT("%s: one indicator marks the struck resource"), What), IndicatorManager->GetIndicators().Num(), 1))
+		{
+			return;
+		}
+		const UIndicatorDescriptor* Indicator = IndicatorManager->GetIndicators()[0];
+		TestTrue(*FString::Printf(TEXT("%s: the indicator anchors to the struck resource"), What), Indicator->GetSceneComponent() == Node->Collision);
+		ERpgHarvestTargetStatus Status = ERpgHarvestTargetStatus::None;
+		int32 Remaining = 0;
+		int32 SectionCount = 0;
+		int32 ToTake = 0;
+		TestTrue(
+			*FString::Printf(TEXT("%s: the struck resource is summarized"), What),
+			Targeting->GetIndicatedTargetStatus(Indicator, Status, Remaining, SectionCount, ToTake));
+		TestTrue(*FString::Printf(TEXT("%s: the struck resource is harvestable"), What), Status == ERpgHarvestTargetStatus::Harvestable);
+		TestEqual(*FString::Printf(TEXT("%s: the indicator shows the stock"), What), Remaining, ExpectedRemaining);
+		TestEqual(*FString::Printf(TEXT("%s: the indicator shows the section count"), What), SectionCount, 4);
+		TestEqual(*FString::Printf(TEXT("%s: the next swing there takes one section"), What), ToTake, 1);
+		TestTrue(*FString::Printf(TEXT("%s: the preview is the struck resource"), What), Targeting->IsPreviewStruckTarget());
+	};
+
+	Targeting->RefreshPreview();
+	TestTrue(TEXT("The tool swing is previewed"), Targeting->GetCurrentPreview().HasAbility());
+	TestEqual(TEXT("A tool swing runs no aim query, so the resource ahead is not marked"), Targeting->GetCurrentPreview().Targets.Num(), 0);
+	TestEqual(TEXT("Nothing is indicated before a hit"), IndicatorManager->GetIndicators().Num(), 0);
+	TestFalse(TEXT("No struck resource is previewed before a hit"), Targeting->IsPreviewStruckTarget());
+
+	// The listen server's own swing: the stock shows at once, after the commit.
+	const FHitResult Contact = MakeContact(Node, FrontFace(Node), FVector(70.0, -40.0, Eye));
+	TestTrue(TEXT("The swing activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	Swing.Instance->HandleToolSwingHitsForTests({Contact}, ERpgSwingTraceRole::Authority);
+	TestEqual(TEXT("The hit takes a section"), Node->HarvestableNode->GetRemainingSections(), 3);
+	ExpectIndicatedStock(TEXT("After the server's own hit"), 3);
+
+	// It stays for the linger time, then hides; no aim query brings it back.
+	TestWorld.AdvanceTimers(2.5f);
+	Targeting->RefreshPreview();
+	ExpectIndicatedStock(TEXT("Within the linger time"), 3);
+	TestWorld.AdvanceTimers(0.6f);
+	TestEqual(TEXT("After the linger time the indicator hides"), IndicatorManager->GetIndicators().Num(), 0);
+	TestFalse(TEXT("After the linger time no struck resource is previewed"), Targeting->IsPreviewStruckTarget());
+	Targeting->RefreshPreview();
+	TestEqual(TEXT("A refresh does not bring the indicator back"), IndicatorManager->GetIndicators().Num(), 0);
+
+	// A remote owner's predicted contact shows the resource before the server's result, which corrects the stock.
+	Harvester.AbilitySystem->CancelAbilityHandle(Swing.Handle);
+	TestTrue(TEXT("A swing traced for feedback activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	Swing.Instance->HandleToolSwingHitsForTests({Contact}, ERpgSwingTraceRole::OwnerFeedback);
+	ExpectIndicatedStock(TEXT("After the predicted hit"), 3);
+	FRpgHarvestRequest ServerCommit;
+	ServerCommit.Harvester = Harvester.Pawn;
+	ServerCommit.AbilityId = RpgHarvestingMagicGameplayTags::Ability_Harvesting_Manual;
+	ServerCommit.Hit = Contact;
+	ServerCommit.ExpectedRevision = IRpgHarvestableTarget::Execute_GetHarvestRevision(Node->HarvestableNode, Contact);
+	TestTrue(TEXT("The server commits the contact"), Node->HarvestableNode->CommitHarvest_Implementation(ServerCommit).IsSuccess());
+	Targeting->RefreshPreview();
+	ExpectIndicatedStock(TEXT("After the server's result replicated"), 2);
+
+	// A further hit restarts the time.
+	TestWorld.AdvanceTimers(2.0f);
+	Harvester.AbilitySystem->CancelAbilityHandle(Swing.Handle);
+	TestTrue(TEXT("The next swing activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	Swing.Instance->HandleToolSwingHitsForTests({Contact}, ERpgSwingTraceRole::OwnerFeedback);
+	TestWorld.AdvanceTimers(2.0f);
+	ExpectIndicatedStock(TEXT("A further hit restarts the linger time"), 2);
+	TestWorld.AdvanceTimers(1.1f);
+	TestEqual(TEXT("The restarted time runs out as well"), IndicatorManager->GetIndicators().Num(), 0);
+	Harvester.AbilitySystem->CancelAbilityHandle(Swing.Handle);
 	return true;
 }
 
