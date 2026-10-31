@@ -5,6 +5,7 @@
 #include "GameplayEffect.h"
 #include "RpgEquipmentInstance.h"
 #include "SurvivalRpg/Camera/RpgCameraMode.h"
+#include "SurvivalRpg/Combat/RpgSwingTraceWindow.h"
 #include "SurvivalRpg/Runes/RpgWeaponSwingRecord.h"
 #include "Engine/TimerHandle.h"
 #include "UObject/ObjectKey.h"
@@ -14,22 +15,6 @@ class UAnimMontage;
 class UAnimInstance;
 class USkeleton;
 class URpgWeaponRuneDefinition;
-
-UENUM(BlueprintType)
-enum class ERpgWeaponAttackTraceMode : uint8
-{
-	// Thin continuous line ribbon. Best default for blades because it avoids large forgiving volumes.
-	LineTrace,
-
-	// Sphere swept along each trace point. Useful for blunt weapons, claws, fists, or forgiving prototype hits.
-	SphereSweep,
-
-	// Capsule swept along each trace point. Useful for long, thick hit volumes such as monster limbs.
-	CapsuleSweep,
-
-	// Box swept along each trace point. Useful when the hit area should feel broad and flat.
-	BoxSweep
-};
 
 USTRUCT(BlueprintType)
 struct FRpgConditionalAttackModifier
@@ -163,6 +148,8 @@ struct SURVIVALRPG_API FRpgWeaponAttackDefinition
 	FRpgWeaponAttackDefinition();
 	bool CanApplyDamage() const { return DamageEffect && (Damage > 0.0f || StaggerDamage > 0.0f); }
 	bool HasValidTraceData() const;
+	/** The swing window trace of this attack: its Trace fields on the weapon trace channel. */
+	FRpgSwingTraceParams MakeSwingTraceParams() const;
 };
 
 /**

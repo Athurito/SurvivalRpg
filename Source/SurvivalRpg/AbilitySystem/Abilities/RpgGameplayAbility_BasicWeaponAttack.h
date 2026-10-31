@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "RpgGameplayAbility_FromEquipment.h"
-#include "SurvivalRpg/Combat/RpgWeaponTraceInterpolation.h"
+#include "SurvivalRpg/Combat/RpgSwingTraceWindow.h"
 #include "SurvivalRpg/Equipment/RpgWeaponInstance.h"
 #include "RpgGameplayAbility_BasicWeaponAttack.generated.h"
 
@@ -14,7 +14,8 @@ class UAbilitySystemComponent;
  * Basic, data-driven weapon attack.
  *
  * The equipped URpgWeaponInstance supplies montage, damage GE, SetByCaller damage,
- * trace shape, and optional camera mode. Damage is applied only on authority. Learned skill tree nodes of the weapon's
+ * trace shape, and optional camera mode. FRpgSwingTraceWindow runs each step's attack window and blade trace; this
+ * ability de-duplicates its hits per window and applies damage only on authority. Learned skill tree nodes of the weapon's
  * tree tune the attack definition's Damage through Ability.Tuning.Attack.Damage.
  *
  * An attack definition with ComboNextAttack chains into that attack within the same activation: the owner buffers the
@@ -44,13 +45,13 @@ public:
 
 #if WITH_DEV_AUTOMATION_TESTS
 	/** Stable authority lifecycle counters used by rendered multiplayer contract tests. */
-	uint32 GetAuthorityWindowOpenCountForTests() const { return AuthorityWindowOpenCountForTests; }
-	uint32 GetAuthorityWindowCloseCountForTests() const { return AuthorityWindowCloseCountForTests; }
-	uint32 GetAuthorityTraceSampleCountForTests() const { return AuthorityTraceSampleCountForTests; }
+	uint32 GetAuthorityWindowOpenCountForTests() const { return SwingTrace.GetAuthorityWindowOpenCountForTests(); }
+	uint32 GetAuthorityWindowCloseCountForTests() const { return SwingTrace.GetAuthorityWindowCloseCountForTests(); }
+	uint32 GetAuthorityTraceSampleCountForTests() const { return SwingTrace.GetAuthorityTraceSampleCountForTests(); }
 	uint32 GetAuthorityDamageHitCountForTests() const { return AuthorityDamageHitCountForTests; }
 	/** Impact cues the owning client played from its own feedback trace, one per target and attack window. */
 	uint32 GetOwnerPredictedImpactCountForTests() const { return OwnerPredictedImpactCountForTests; }
-	bool IsAttackWindowOpenForTests() const { return bAttackWindowOpen; }
+	bool IsAttackWindowOpenForTests() const { return SwingTrace.IsWindowOpen(); }
 	/** Attack definition of the running combo step; empty while inactive. */
 	FGameplayTag GetActiveAttackTagForTests() const { return ActiveAttackTag; }
 	/** Zero-based index of the running combo step; zero for the entry attack. */
@@ -120,24 +121,6 @@ protected:
 	UFUNCTION()
 	void OnMontageCancelled();
 
-	/**
-	 * Opens the server-authoritative trace window from the one-shot authority schedule when neither the notify nor the
-	 * montage poll opened it first, for example while the server's montage does not advance.
-	 */
-	UFUNCTION()
-	void OnAuthorityAttackWindowStarted();
-
-	/** Closes the server-authoritative trace window from the authority schedule when nothing closed it first. */
-	UFUNCTION()
-	void OnAuthorityAttackWindowEnded();
-
-	/**
-	 * Authority, once per frame after the animation update while the window is scheduled: opens and closes the window
-	 * when the running step's own montage reaches the authored times. A remote client's montage advances with its moves,
-	 * several per server frame, and its queued notifies may then never arrive; the clock schedule lags the montage.
-	 */
-	void OnAuthorityMontageWindowPoll();
-
 	/** Opens the running step's combo window; chains a buffered press or a pending server request. */
 	UFUNCTION()
 	void OnComboWindowOpened();
@@ -177,68 +160,29 @@ private:
 	/** Server: removes the step tags this activation added. */
 	void RemoveStepOwnerTags();
 	FGameplayTag ResolveAttackDefinitionTag(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo) const;
-	bool TryGetSocketTransformFromWeapon(const URpgWeaponInstance* WeaponInstance, FName SocketName, FTransform& OutTransform) const;
-	bool TryGetSocketTransformFromAvatar(FName SocketName, FTransform& OutTransform) const;
-	/** Samples the body and every trace point's world transform; false while a trace point cannot be resolved. */
-	bool GatherBladeSample(RpgWeaponTraceInterpolation::FBladeSample& OutSample);
-	void BuildInterpolatedTracePointPairs(
-		const TArray<FVector>& PreviousSocketLocations,
-		const TArray<FVector>& CurrentSocketLocations,
-		TArray<FVector>& OutPreviousTraceLocations,
-		TArray<FVector>& OutCurrentTraceLocations) const;
-	static bool IsAttackWindowEndBeforeAutoBlendOut(
-		float MontageLength,
-		float WindowEndTime,
-		float EffectivePlayRate,
-		float AuthoredBlendOutTriggerTime,
-		float& OutRemainingPlayTime,
-		float& OutBlendOutTriggerSeconds);
-	bool ResolveAttackWindowTiming(
-		const FRpgWeaponAttackDefinition& AttackDefinition,
-		float EffectivePlayRate,
-		float& OutStartTime,
-		float& OutEndTime,
-		FString& OutFailureReason) const;
-	bool ScheduleAuthorityAttackWindow();
-	void ClearAuthorityAttackWindowSchedule();
-	/**
-	 * Whether the running step's own montage instance has played to MontageTime. False for a notify of a replaced step or
-	 * of an earlier instance of the same montage, which never reaches this step's window.
-	 */
-	bool HasActiveMontageReached(float MontageTime) const;
 	void LogAttackLifecycle(const TCHAR* Stage, const FString& Detail = FString()) const;
 	void LogAttackLifecycleLazy(const TCHAR* Stage, TFunctionRef<FString()> DetailBuilder) const;
 	void WriteAttackLifecycle(const TCHAR* Stage, const FString& Detail) const;
 	void HandleMontageEnded(const TCHAR* Stage, bool bWasCancelled);
-	void OpenAttackWindow();
-	void CloseAttackWindow(bool bLogMissingEndNotify);
+	/** Binds the running step's swing trace window to this ability's hit, record, facing and logging handlers. */
+	FRpgSwingTraceSink MakeSwingTraceSink();
+	/** Holds the facing and starts the window's hit set and swing record. */
+	void HandleSwingWindowOpened(ERpgSwingTraceRole Role);
+	/** Hands the window's swing record to the weapon. */
+	void HandleSwingWindowClosed(ERpgSwingTraceRole Role);
 	/**
-	 * Traces the blade's motion since the previous sample. Authority applies damage from it and a remote owner plays its
-	 * impact feedback; both trace a pose that turned more than a sub-step since the last sample along its swing arc.
+	 * Applies one trace query's hits once per target and window: authority applies damage and a remote owner plays its
+	 * impact feedback.
 	 */
-	void PerformBladeTraceSample();
-	void BuildTraceQueryParams(FCollisionQueryParams& QueryParams) const;
-	void PerformLineTraceRibbon(
-		const TArray<FVector>& PreviousSocketLocations,
-		const TArray<FVector>& CurrentSocketLocations,
-		const FCollisionQueryParams& QueryParams);
-	void PerformSweepTraceRibbon(
-		const TArray<FVector>& PreviousSocketLocations,
-		const TArray<FVector>& CurrentSocketLocations,
-		const FCollisionQueryParams& QueryParams);
-	void TraceDamageLine(const FVector& TraceStart, const FVector& TraceEnd, const FCollisionQueryParams& QueryParams);
-	void TraceDamageSweep(const FVector& TraceStart, const FVector& TraceEnd, const FCollisionQueryParams& QueryParams);
+	void HandleSwingHits(const TArray<FHitResult>& HitResults, ERpgSwingTraceRole Role);
 	/** Authority: starts recording the window's trace queries when the weapon wants swing records (runes). */
 	void BeginSwingRecord(bool bAuthority);
 	void RecordSwingTrace(const FVector& TraceStart, const FVector& TraceEnd, ERpgRecordedTraceShape Shape, const FVector& ShapeExtent);
 	/** Authority: hands the recorded window and whether it landed a hit to the weapon instance. */
 	void FinishSwingRecord();
-	void HandleTraceHitResults(const TArray<FHitResult>& HitResults);
 	void EvaluateConditionalModifiers(const UAbilitySystemComponent* TargetASC, float& Damage, float& StaggerDamage) const;
 	FGameplayEffectSpecHandle MakeWeaponDamageEffectSpec(const FHitResult& HitResult, const UAbilitySystemComponent* TargetASC) const;
 	void ApplyDamageToHitActor(AActor* TargetActor, const FHitResult& HitResult);
-	/** Whether this instance is a remote owner that traces its attack windows for local hit feedback only. */
-	bool ShouldPredictImpactFeedback() const;
 	/** Owner side: plays the impact cue the server will resolve for this hit, from the target's replicated state; presentation only. */
 	void PredictImpactFeedback(AActor* TargetActor, const FHitResult& HitResult);
 	void SendHitReactionEvent(AActor* TargetActor, const FHitResult& HitResult, const FGameplayEffectSpec* DamageSpec) const;
@@ -304,32 +248,14 @@ private:
 	FTimerHandle RecoveryCancelTimerHandle;
 	bool bWaitingForMontage = false;
 	bool bFinishingAttack = false;
-	bool bAttackWindowOpen = false;
-	bool bReceivedAttackWindowStart = false;
-	bool bReceivedAttackWindowEnd = false;
-	bool bAuthorityAttackWindowScheduled = false;
-	bool bAuthorityWindowOpenedBySchedule = false;
-	bool bAuthorityWindowClosedBySchedule = false;
-	int32 AuthorityTraceSamplesThisActivation = 0;
-	int32 AuthorityTracePointFailuresThisActivation = 0;
 	int32 AuthorityDamageHitsThisActivation = 0;
 	int32 AuthorityDuplicateHitsSkippedThisActivation = 0;
-	/** Most sub-steps one authority trace sample split its blade motion into; above 1 the pose jumped since the last sample. */
-	int32 AuthorityMaxTraceSubstepsThisActivation = 0;
-	bool bLoggedTracePointFailureThisActivation = false;
 
-	FTimerHandle TraceSampleTimerHandle;
-	FTimerHandle AuthorityAttackWindowStartTimerHandle;
-	FTimerHandle AuthorityAttackWindowEndTimerHandle;
-	FTimerHandle AuthorityMontageWindowPollTimerHandle;
-	/** Blade pose of the open window's last trace sample; the next sample traces the motion from it. */
-	RpgWeaponTraceInterpolation::FBladeSample PreviousBladeSample;
+	/** Attack window, schedule and blade trace of the running step. */
+	FRpgSwingTraceWindow SwingTrace;
 	TSet<TObjectKey<AActor>> HitActorsThisWindow;
 
 #if WITH_DEV_AUTOMATION_TESTS
-	uint32 AuthorityWindowOpenCountForTests = 0;
-	uint32 AuthorityWindowCloseCountForTests = 0;
-	uint32 AuthorityTraceSampleCountForTests = 0;
 	uint32 AuthorityDamageHitCountForTests = 0;
 	uint32 OwnerPredictedImpactCountForTests = 0;
 #endif

@@ -6,21 +6,16 @@
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
-#include "Components/SkeletalMeshComponent.h"
-#include "DrawDebugHelpers.h"
 #include "GameFramework/Controller.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Animation/AnimNotifyState_RpgComboWindow.h"
-#include "SurvivalRpg/Animation/AnimNotify_RpgWeaponAttackWindow.h"
 #include "SurvivalRpg/Camera/RpgCameraMode.h"
 #include "SurvivalRpg/Combat/RpgCombatImpact.h"
 #include "SurvivalRpg/Combat/RpgCombatDeveloperSettings.h"
 #include "SurvivalRpg/Core/Character/RpgHealthComponent.h"
-#include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/Itemization/RpgItemizationGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
-#include "SurvivalRpg/Physics/RpgCollisionChannels.h"
 #include "SurvivalRpg/SurvivalRpg.h"
 #include "TimerManager.h"
 
@@ -32,112 +27,6 @@ namespace
 		return Settings && Settings->bLogWeaponAttackLifecycle;
 	}
 }
-
-#if ENABLE_DRAW_DEBUG
-namespace
-{
-	float GetWeaponAttackTraceDebugDuration()
-	{
-		const URpgCombatDeveloperSettings* Settings = GetDefault<URpgCombatDeveloperSettings>();
-		return Settings ? FMath::Max(0.0f, Settings->WeaponAttackTraceDebugDuration) : 0.0f;
-	}
-
-	bool ShouldDrawWeaponAttackTraces()
-	{
-		const URpgCombatDeveloperSettings* Settings = GetDefault<URpgCombatDeveloperSettings>();
-		return Settings && Settings->bDrawWeaponAttackTraces;
-	}
-
-	FColor GetWeaponAttackTraceColor(const TArray<FHitResult>& HitResults)
-	{
-		return HitResults.IsEmpty() ? FColor::Green : FColor::Red;
-	}
-
-	void DrawWeaponAttackTraceLine(
-		UWorld* World,
-		const FVector& TraceStart,
-		const FVector& TraceEnd,
-		const TArray<FHitResult>& HitResults)
-	{
-		if (!World || !ShouldDrawWeaponAttackTraces())
-		{
-			return;
-		}
-
-		const float Duration = GetWeaponAttackTraceDebugDuration();
-		const FColor TraceColor = GetWeaponAttackTraceColor(HitResults);
-
-		DrawDebugLine(World, TraceStart, TraceEnd, TraceColor, false, Duration, 0, 1.5f);
-		DrawDebugPoint(World, TraceStart, 8.0f, FColor::Blue, false, Duration);
-		DrawDebugPoint(World, TraceEnd, 8.0f, FColor::Cyan, false, Duration);
-
-		for (const FHitResult& HitResult : HitResults)
-		{
-			DrawDebugPoint(World, HitResult.ImpactPoint, 18.0f, FColor::Yellow, false, Duration);
-		}
-	}
-
-	void DrawWeaponAttackTraceSweep(
-		UWorld* World,
-		const FVector& TraceStart,
-		const FVector& TraceEnd,
-		const FRpgWeaponAttackDefinition& AttackDefinition,
-		const TArray<FHitResult>& HitResults)
-	{
-		if (!World || !ShouldDrawWeaponAttackTraces())
-		{
-			return;
-		}
-
-		const float Duration = GetWeaponAttackTraceDebugDuration();
-		const FVector TraceDelta = TraceEnd - TraceStart;
-		const FColor TraceColor = GetWeaponAttackTraceColor(HitResults);
-
-		DrawDebugPoint(World, TraceStart, 12.0f, FColor::Blue, false, Duration);
-		DrawDebugPoint(World, TraceEnd, 12.0f, FColor::Cyan, false, Duration);
-		DrawDebugLine(World, TraceStart, TraceEnd, TraceColor, false, Duration, 0, 1.0f);
-
-		switch (AttackDefinition.TraceMode)
-		{
-		case ERpgWeaponAttackTraceMode::SphereSweep:
-		{
-			const float Radius = FMath::Max(1.0f, AttackDefinition.TraceRadius);
-			const FVector TraceCenter = (TraceStart + TraceEnd) * 0.5f;
-			const FQuat TraceRotation = TraceDelta.IsNearlyZero()
-				? FQuat::Identity
-				: FRotationMatrix::MakeFromZ(TraceDelta).ToQuat();
-			DrawDebugCapsule(World, TraceCenter, Radius + (TraceDelta.Size() * 0.5f), Radius, TraceRotation, TraceColor, false, Duration, 0, 1.5f);
-			break;
-		}
-		case ERpgWeaponAttackTraceMode::CapsuleSweep:
-		{
-			const float Radius = FMath::Max(1.0f, AttackDefinition.TraceRadius);
-			const float HalfHeight = FMath::Max(Radius, AttackDefinition.TraceCapsuleHalfHeight);
-			DrawDebugCapsule(World, TraceStart, HalfHeight, Radius, FQuat::Identity, TraceColor, false, Duration, 0, 1.0f);
-			DrawDebugCapsule(World, TraceEnd, HalfHeight, Radius, FQuat::Identity, TraceColor, false, Duration, 0, 1.0f);
-			break;
-		}
-		case ERpgWeaponAttackTraceMode::BoxSweep:
-		{
-			const FVector Extent(
-				FMath::Max(1.0f, FMath::Abs(AttackDefinition.TraceBoxExtent.X)),
-				FMath::Max(1.0f, FMath::Abs(AttackDefinition.TraceBoxExtent.Y)),
-				FMath::Max(1.0f, FMath::Abs(AttackDefinition.TraceBoxExtent.Z)));
-			DrawDebugBox(World, TraceStart, Extent, FQuat::Identity, TraceColor, false, Duration, 0, 1.0f);
-			DrawDebugBox(World, TraceEnd, Extent, FQuat::Identity, TraceColor, false, Duration, 0, 1.0f);
-			break;
-		}
-		default:
-			break;
-		}
-
-		for (const FHitResult& HitResult : HitResults)
-		{
-			DrawDebugPoint(World, HitResult.ImpactPoint, 18.0f, FColor::Yellow, false, Duration);
-		}
-	}
-}
-#endif
 
 URpgGameplayAbility_BasicWeaponAttack::URpgGameplayAbility_BasicWeaponAttack(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -158,10 +47,7 @@ bool URpgGameplayAbility_BasicWeaponAttack::HasPendingAttackTimersForTests() con
 	}
 
 	const FTimerManager& TimerManager = World->GetTimerManager();
-	return TimerManager.TimerExists(TraceSampleTimerHandle) ||
-		TimerManager.TimerExists(AuthorityAttackWindowStartTimerHandle) ||
-		TimerManager.TimerExists(AuthorityAttackWindowEndTimerHandle) ||
-		TimerManager.TimerExists(AuthorityMontageWindowPollTimerHandle) ||
+	return SwingTrace.HasPendingTimers() ||
 		TimerManager.TimerExists(ComboWindowOpenTimerHandle) ||
 		TimerManager.TimerExists(ComboWindowCloseTimerHandle) ||
 		TimerManager.TimerExists(RecoveryCancelTimerHandle);
@@ -175,9 +61,7 @@ bool URpgGameplayAbility_BasicWeaponAttack::HasResidualAttackRuntimeStateForTest
 		!AppliedStepOwnerTags.IsEmpty() ||
 		bWaitingForMontage ||
 		bFinishingAttack ||
-		bAttackWindowOpen ||
-		bAuthorityAttackWindowScheduled ||
-		!PreviousBladeSample.IsEmpty() ||
+		SwingTrace.HasResidualState() ||
 		!HitActorsThisWindow.IsEmpty() ||
 		bRecordingSwing ||
 		!SwingRecord.Traces.IsEmpty() ||
@@ -324,19 +208,9 @@ void URpgGameplayAbility_BasicWeaponAttack::ActivateAbility(
 	}
 	bWaitingForMontage = false;
 	bFinishingAttack = false;
-	bAttackWindowOpen = false;
-	bReceivedAttackWindowStart = false;
-	bReceivedAttackWindowEnd = false;
-	bAuthorityAttackWindowScheduled = false;
-	bAuthorityWindowOpenedBySchedule = false;
-	bAuthorityWindowClosedBySchedule = false;
-	AuthorityTraceSamplesThisActivation = 0;
-	AuthorityTracePointFailuresThisActivation = 0;
+	SwingTrace.Reset();
 	AuthorityDamageHitsThisActivation = 0;
 	AuthorityDuplicateHitsSkippedThisActivation = 0;
-	AuthorityMaxTraceSubstepsThisActivation = 0;
-	bLoggedTracePointFailureThisActivation = false;
-	PreviousBladeSample.Reset();
 	HitActorsThisWindow.Reset();
 	ActiveAttackTag = EntryAttackTag;
 	ComboStepIndex = 0;
@@ -503,8 +377,8 @@ bool URpgGameplayAbility_BasicWeaponAttack::PrepareAttackStep(
 	UAbilitySystemGlobals::NonShipping_ApplyGlobalAbilityScaler_Rate(ConfiguredTaskPlayRate);
 	const float ConfiguredEffectivePlayRate = ConfiguredTaskPlayRate *
 		OutStep.Montage->RateScale;
-	if (!ResolveAttackWindowTiming(
-			OutStep,
+	if (!FRpgSwingTraceWindow::ResolveWindowTiming(
+			OutStep.Montage,
 			ConfiguredEffectivePlayRate,
 			OutWindowStartTime,
 			OutWindowEndTime,
@@ -544,7 +418,12 @@ bool URpgGameplayAbility_BasicWeaponAttack::StartAttackMontage()
 		// The montage could not start, and its task already finished the attack.
 		return true;
 	}
-	if (!ScheduleAuthorityAttackWindow())
+	if (!SwingTrace.Begin(
+			*this,
+			ActiveWeaponInstance,
+			ActiveAttackDefinition.Montage,
+			ActiveAttackDefinition.MakeSwingTraceParams(),
+			MakeSwingTraceSink()))
 	{
 		LogAttackLifecycle(
 			TEXT("ActivationAborted.AuthoritySchedule"),
@@ -785,7 +664,7 @@ bool URpgGameplayAbility_BasicWeaponAttack::StartComboStep(FGameplayTag NextAtta
 
 	DetachAttackMontageTask();
 	// The owner chains after this step's damage window; a lagging server cuts at most its lead tolerance from it.
-	CloseAttackWindow(false);
+	SwingTrace.StopTracing(false);
 	ClearComboTimers();
 	if (bRecoveryCancelable)
 	{
@@ -796,12 +675,7 @@ bool URpgGameplayAbility_BasicWeaponAttack::StartComboStep(FGameplayTag NextAtta
 	bComboWindowClosed = false;
 	bComboInputBuffered = false;
 	bComboRequestPending = false;
-	bReceivedAttackWindowStart = false;
-	bReceivedAttackWindowEnd = false;
-	bAuthorityWindowOpenedBySchedule = false;
-	bAuthorityWindowClosedBySchedule = false;
 	HitActorsThisWindow.Reset();
-	PreviousBladeSample.Reset();
 
 	ActiveAttackDefinition = MoveTemp(NextStep);
 	ActiveAttackTag = NextAttackTag;
@@ -874,7 +748,7 @@ void URpgGameplayAbility_BasicWeaponAttack::EndAbility(
 		return;
 	}
 
-	CloseAttackWindow(false);
+	SwingTrace.StopTracing(false);
 	ClearComboTimers();
 	RemoveStepOwnerTags();
 	if (UAbilitySystemComponent* AbilitySystem = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr)
@@ -893,13 +767,7 @@ void URpgGameplayAbility_BasicWeaponAttack::EndAbility(
 	}
 	ComboInputPressedHandle.Reset();
 	ComboRequestHandle.Reset();
-	const UWorld* World = GetWorld();
-	const FTimerManager* TimerManager = World ? &World->GetTimerManager() : nullptr;
-	const bool bHasPendingTimers = TimerManager &&
-		(TimerManager->TimerExists(TraceSampleTimerHandle) ||
-		 TimerManager->TimerExists(AuthorityAttackWindowStartTimerHandle) ||
-		 TimerManager->TimerExists(AuthorityAttackWindowEndTimerHandle) ||
-		 TimerManager->TimerExists(AuthorityMontageWindowPollTimerHandle));
+	const bool bHasPendingTimers = SwingTrace.HasPendingTimers();
 	LogAttackLifecycleLazy(
 		TEXT("AbilityEnded"),
 		[this, bWasCancelled, bHasPendingTimers]()
@@ -907,12 +775,12 @@ void URpgGameplayAbility_BasicWeaponAttack::EndAbility(
 			return FString::Printf(
 				TEXT("Cancelled=%d NotifyStart=%d NotifyEnd=%d ScheduledOpen=%d ScheduledClose=%d TraceSamples=%d TracePointFailures=%d DamageHits=%d DuplicateHitsSkipped=%d PendingTimers=%d"),
 				bWasCancelled,
-				bReceivedAttackWindowStart,
-				bReceivedAttackWindowEnd,
-				bAuthorityWindowOpenedBySchedule,
-				bAuthorityWindowClosedBySchedule,
-				AuthorityTraceSamplesThisActivation,
-				AuthorityTracePointFailuresThisActivation,
+				SwingTrace.HasReceivedStartNotify(),
+				SwingTrace.HasReceivedEndNotify(),
+				SwingTrace.WasOpenedBySchedule(),
+				SwingTrace.WasClosedBySchedule(),
+				SwingTrace.GetAuthorityTraceSampleCount(),
+				SwingTrace.GetAuthorityTracePointFailureCount(),
 				AuthorityDamageHitsThisActivation,
 				AuthorityDuplicateHitsSkippedThisActivation,
 				bHasPendingTimers);
@@ -934,19 +802,9 @@ void URpgGameplayAbility_BasicWeaponAttack::EndAbility(
 	PendingComboPredictionKey = FPredictionKey();
 	bWaitingForMontage = false;
 	bFinishingAttack = false;
-	bAttackWindowOpen = false;
-	bReceivedAttackWindowStart = false;
-	bReceivedAttackWindowEnd = false;
-	bAuthorityAttackWindowScheduled = false;
-	bAuthorityWindowOpenedBySchedule = false;
-	bAuthorityWindowClosedBySchedule = false;
-	AuthorityTraceSamplesThisActivation = 0;
-	AuthorityTracePointFailuresThisActivation = 0;
+	SwingTrace.Reset();
 	AuthorityDamageHitsThisActivation = 0;
 	AuthorityDuplicateHitsSkippedThisActivation = 0;
-	AuthorityMaxTraceSubstepsThisActivation = 0;
-	bLoggedTracePointFailureThisActivation = false;
-	PreviousBladeSample.Reset();
 	HitActorsThisWindow.Reset();
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
@@ -961,21 +819,7 @@ void URpgGameplayAbility_BasicWeaponAttack::OnAttackWindowStarted(FGameplayEvent
 		return;
 	}
 
-	// The schedule, set during the activation frame, counts only from that frame's end and fires one or two frames after
-	// the authored start; the montage and the owner's notify do not wait. So authority opens on whichever of this notify,
-	// its montage poll and the schedule comes first. A notify counts only while this step's window is still scheduled
-	// and its own montage has reached the start: a late queued notify never reopens a closed window, and a replaced
-	// step's notify never opens the next step's.
-	const bool bAuthority = CurrentActorInfo && CurrentActorInfo->IsNetAuthority();
-	if (bAuthority && (!bAuthorityAttackWindowScheduled || !HasActiveMontageReached(ActiveAttackWindowStartTime)))
-	{
-		LogAttackLifecycle(TEXT("AttackWindowStart.NotifyIgnored"));
-		return;
-	}
-
-	bReceivedAttackWindowStart = true;
-	LogAttackLifecycle(TEXT("AttackWindowStart.Notify"));
-	OpenAttackWindow();
+	SwingTrace.HandleStartNotify();
 }
 
 void URpgGameplayAbility_BasicWeaponAttack::OnAttackWindowEnded(FGameplayEventData Payload)
@@ -985,22 +829,7 @@ void URpgGameplayAbility_BasicWeaponAttack::OnAttackWindowEnded(FGameplayEventDa
 		return;
 	}
 
-	// Authority closes on whichever comes first as well, so its window keeps the authored length.
-	const bool bAuthority = CurrentActorInfo && CurrentActorInfo->IsNetAuthority();
-	if (bAuthority && !HasActiveMontageReached(ActiveAttackWindowEndTime))
-	{
-		LogAttackLifecycle(TEXT("AttackWindowEnd.NotifyIgnored"));
-		return;
-	}
-
-	bReceivedAttackWindowEnd = true;
-	LogAttackLifecycle(TEXT("AttackWindowEnd.Notify"));
-	// Closing clears the schedule. A window that is not open yet, because its start notify did not arrive, stays with
-	// the schedule, which still opens and closes it.
-	if (!bAuthority || bAttackWindowOpen)
-	{
-		CloseAttackWindow(false);
-	}
+	SwingTrace.HandleEndNotify();
 }
 
 void URpgGameplayAbility_BasicWeaponAttack::OnMontageCompleted()
@@ -1029,15 +858,15 @@ void URpgGameplayAbility_BasicWeaponAttack::HandleMontageEnded(
 {
 	bWaitingForMontage = false;
 
-	if (bAttackWindowOpen)
+	if (SwingTrace.IsWindowOpen())
 	{
-		CloseAttackWindow(!bWasCancelled);
+		SwingTrace.StopTracing(!bWasCancelled);
 	}
-	else if (!bWasCancelled && !bReceivedAttackWindowStart)
+	else if (!bWasCancelled && !SwingTrace.HasReceivedStartNotify())
 	{
 		if (CurrentActorInfo && CurrentActorInfo->IsNetAuthority())
 		{
-			if (bAuthorityWindowOpenedBySchedule)
+			if (SwingTrace.WasOpenedBySchedule())
 			{
 				LogAttackLifecycle(
 					TEXT("MontageEnded.NotifyStartMissing"),
@@ -1065,88 +894,6 @@ void URpgGameplayAbility_BasicWeaponAttack::HandleMontageEnded(
 	FinishAttack(bWasCancelled);
 }
 
-void URpgGameplayAbility_BasicWeaponAttack::OnAuthorityAttackWindowStarted()
-{
-	if (!IsActive() || !CurrentActorInfo || !CurrentActorInfo->IsNetAuthority())
-	{
-		return;
-	}
-
-	// A start notify or the montage poll that opened the window already cleared this timer.
-	bAuthorityWindowOpenedBySchedule = true;
-	LogAttackLifecycle(
-		TEXT("AttackWindowStart.AuthoritySchedule"),
-		TEXT("Neither the notify nor the montage had reached the start; authority fallback opened the window."));
-	OpenAttackWindow();
-}
-
-void URpgGameplayAbility_BasicWeaponAttack::OnAuthorityMontageWindowPoll()
-{
-	if (!IsActive() || !bAuthorityAttackWindowScheduled)
-	{
-		return;
-	}
-
-	if (!bAttackWindowOpen)
-	{
-		if (HasActiveMontageReached(ActiveAttackWindowStartTime))
-		{
-			LogAttackLifecycle(TEXT("AttackWindowStart.AuthorityMontage"));
-			OpenAttackWindow();
-		}
-		// A montage that passed the whole window this frame still gets one traced frame before it closes.
-		return;
-	}
-	if (HasActiveMontageReached(ActiveAttackWindowEndTime))
-	{
-		LogAttackLifecycle(TEXT("AttackWindowEnd.AuthorityMontage"));
-		CloseAttackWindow(false);
-	}
-}
-
-void URpgGameplayAbility_BasicWeaponAttack::OnAuthorityAttackWindowEnded()
-{
-	if (!IsActive() || !CurrentActorInfo || !CurrentActorInfo->IsNetAuthority())
-	{
-		return;
-	}
-
-	bAuthorityWindowClosedBySchedule = true;
-	LogAttackLifecycle(
-		TEXT("AttackWindowEnd.AuthoritySchedule"),
-		bReceivedAttackWindowEnd
-			? TEXT("Notify already arrived; close is idempotent.")
-			: TEXT("Notify had not arrived; authority fallback closed the window."));
-	CloseAttackWindow(false);
-}
-
-bool URpgGameplayAbility_BasicWeaponAttack::IsAttackWindowEndBeforeAutoBlendOut(
-	const float MontageLength,
-	const float WindowEndTime,
-	const float EffectivePlayRate,
-	const float AuthoredBlendOutTriggerTime,
-	float& OutRemainingPlayTime,
-	float& OutBlendOutTriggerSeconds)
-{
-	OutRemainingPlayTime = -1.0f;
-	OutBlendOutTriggerSeconds = -1.0f;
-
-	if (!FMath::IsFinite(MontageLength) || MontageLength <= 0.0f ||
-		!FMath::IsFinite(WindowEndTime) || WindowEndTime < 0.0f || WindowEndTime > MontageLength ||
-		!FMath::IsFinite(EffectivePlayRate) || EffectivePlayRate <= UE_SMALL_NUMBER ||
-		!FMath::IsFinite(AuthoredBlendOutTriggerTime) || AuthoredBlendOutTriggerTime < 0.0f)
-	{
-		return false;
-	}
-
-	OutBlendOutTriggerSeconds = FMath::Max(
-		AuthoredBlendOutTriggerTime,
-		UE_KINDA_SMALL_NUMBER);
-	OutRemainingPlayTime = (MontageLength - WindowEndTime) / EffectivePlayRate;
-	return FMath::IsFinite(OutRemainingPlayTime) &&
-		OutRemainingPlayTime > OutBlendOutTriggerSeconds + UE_KINDA_SMALL_NUMBER;
-}
-
 #if WITH_DEV_AUTOMATION_TESTS
 bool URpgGameplayAbility_BasicWeaponAttack::IsAttackWindowEndBeforeAutoBlendOutForTests(
 	const float MontageLength,
@@ -1156,7 +903,7 @@ bool URpgGameplayAbility_BasicWeaponAttack::IsAttackWindowEndBeforeAutoBlendOutF
 {
 	float RemainingPlayTime = 0.0f;
 	float BlendOutTriggerSeconds = 0.0f;
-	return IsAttackWindowEndBeforeAutoBlendOut(
+	return FRpgSwingTraceWindow::IsWindowEndBeforeAutoBlendOut(
 		MontageLength,
 		WindowEndTime,
 		EffectivePlayRate,
@@ -1165,260 +912,6 @@ bool URpgGameplayAbility_BasicWeaponAttack::IsAttackWindowEndBeforeAutoBlendOutF
 		BlendOutTriggerSeconds);
 }
 #endif
-
-bool URpgGameplayAbility_BasicWeaponAttack::ResolveAttackWindowTiming(
-	const FRpgWeaponAttackDefinition& AttackDefinition,
-	const float EffectivePlayRate,
-	float& OutStartTime,
-	float& OutEndTime,
-	FString& OutFailureReason) const
-{
-	OutStartTime = 0.0f;
-	OutEndTime = 0.0f;
-	OutFailureReason.Reset();
-
-	const UAnimMontage* Montage = AttackDefinition.Montage;
-	if (!Montage)
-	{
-		OutFailureReason = TEXT("No attack montage is configured.");
-		return false;
-	}
-	if (!FMath::IsFinite(EffectivePlayRate) || EffectivePlayRate <= UE_SMALL_NUMBER)
-	{
-		OutFailureReason = FString::Printf(
-			TEXT("The effective montage play rate must be finite and positive; found %.6f (MontageRateScale=%.6f)."),
-			EffectivePlayRate,
-			Montage->RateScale);
-		return false;
-	}
-	if (Montage->TimeStretchCurve.IsValid())
-	{
-		OutFailureReason = TEXT("Attack montages with a time-stretch curve are unsupported by the one-shot authority schedule.");
-		return false;
-	}
-	if (Montage->CompositeSections.Num() != 1 ||
-		!Montage->CompositeSections[0].NextSectionName.IsNone() ||
-		!FMath::IsNearlyZero(Montage->CompositeSections[0].GetTime(), KINDA_SMALL_NUMBER))
-	{
-		OutFailureReason = FString::Printf(
-			TEXT("Attack montage must have exactly one section starting at zero with no section link or jump; found Sections=%d FirstStart=%.3f FirstNext=%s."),
-			Montage->CompositeSections.Num(),
-			Montage->CompositeSections.IsEmpty()
-				? -1.0f
-				: Montage->CompositeSections[0].GetTime(),
-			Montage->CompositeSections.IsEmpty()
-				? TEXT("None")
-				: *Montage->CompositeSections[0].NextSectionName.ToString());
-		return false;
-	}
-
-	const FAnimNotifyEvent* StartEvent = nullptr;
-	const FAnimNotifyEvent* EndEvent = nullptr;
-	int32 StartEventCount = 0;
-	int32 EndEventCount = 0;
-	for (const FAnimNotifyEvent& NotifyEvent : Montage->Notifies)
-	{
-		if (NotifyEvent.Notify && NotifyEvent.Notify->IsA<UAnimNotify_RpgWeaponAttackWindowStart>())
-		{
-			++StartEventCount;
-			StartEvent = &NotifyEvent;
-		}
-		else if (NotifyEvent.Notify && NotifyEvent.Notify->IsA<UAnimNotify_RpgWeaponAttackWindowEnd>())
-		{
-			++EndEventCount;
-			EndEvent = &NotifyEvent;
-		}
-	}
-
-	if (StartEventCount != 1 || EndEventCount != 1 || !StartEvent || !EndEvent)
-	{
-		OutFailureReason = FString::Printf(
-			TEXT("Expected exactly one direct AttackWindowStart/AttackWindowEnd notify pair, found Start=%d End=%d."),
-			StartEventCount,
-			EndEventCount);
-		return false;
-	}
-
-	auto HasReliableNotifyContract = [](const FAnimNotifyEvent& NotifyEvent)
-	{
-		return NotifyEvent.NotifyTriggerChance >= 1.0f - KINDA_SMALL_NUMBER &&
-			NotifyEvent.bTriggerOnDedicatedServer &&
-			NotifyEvent.NotifyFilterType == ENotifyFilterType::NoFiltering &&
-			NotifyEvent.MontageTickType == EMontageNotifyTickType::Queued;
-	};
-	if (!HasReliableNotifyContract(*StartEvent) || !HasReliableNotifyContract(*EndEvent))
-	{
-		OutFailureReason = TEXT("Attack-window notifies must be queued with 100% trigger chance, NotifyFilterType=NoFiltering, and dedicated-server delivery enabled.");
-		return false;
-	}
-
-	OutStartTime = StartEvent->GetTriggerTime();
-	OutEndTime = EndEvent->GetTriggerTime();
-	if (!FMath::IsFinite(OutStartTime) || !FMath::IsFinite(OutEndTime) ||
-		OutStartTime < 0.0f || OutEndTime <= OutStartTime || OutEndTime > Montage->GetPlayLength())
-	{
-		OutFailureReason = FString::Printf(
-			TEXT("Attack-window notify times are invalid or unordered: Start=%.3f End=%.3f MontageLength=%.3f."),
-			OutStartTime,
-			OutEndTime,
-			Montage->GetPlayLength());
-		return false;
-	}
-
-	if (Montage->bEnableAutoBlendOut)
-	{
-		const float AuthoredBlendOutTriggerTime = Montage->BlendOutTriggerTime >= 0.0f
-			? Montage->BlendOutTriggerTime
-			: Montage->BlendOut.GetBlendTime();
-		float RemainingPlayTimeAtWindowEnd = 0.0f;
-		float BlendOutTriggerSeconds = 0.0f;
-		if (!IsAttackWindowEndBeforeAutoBlendOut(
-				Montage->GetPlayLength(),
-				OutEndTime,
-				EffectivePlayRate,
-				AuthoredBlendOutTriggerTime,
-				RemainingPlayTimeAtWindowEnd,
-				BlendOutTriggerSeconds))
-		{
-			OutFailureReason = FString::Printf(
-				TEXT("Attack-window end %.3f leaves %.3f seconds at effective play rate %.3f; it must precede the %.3f-second auto-blend-out trigger."),
-				OutEndTime,
-				RemainingPlayTimeAtWindowEnd,
-				EffectivePlayRate,
-				BlendOutTriggerSeconds);
-			return false;
-		}
-	}
-
-	return true;
-}
-
-bool URpgGameplayAbility_BasicWeaponAttack::ScheduleAuthorityAttackWindow()
-{
-	if (!CurrentActorInfo || !IsActive())
-	{
-		return false;
-	}
-	if (!CurrentActorInfo->IsNetAuthority())
-	{
-		return true;
-	}
-
-	ClearAuthorityAttackWindowSchedule();
-	auto RejectSchedule = [this](const FString& Reason)
-	{
-		UE_LOG(
-			LogRpgWeapons,
-			Error,
-			TEXT("BasicWeaponAttack[%s] aborted accepted authority activation: %s"),
-			*GetNameSafe(this),
-			*Reason);
-		LogAttackLifecycle(TEXT("AuthorityScheduleRejected"), Reason);
-		return false;
-	};
-
-	UWorld* World = GetWorld();
-	UAnimInstance* AnimInstance = CurrentActorInfo->GetAnimInstance();
-	UAnimMontage* Montage = ActiveAttackDefinition.Montage;
-	if (!World || !AnimInstance || !Montage || GetCurrentMontage() != Montage || !AnimInstance->Montage_IsPlaying(Montage))
-	{
-		return RejectSchedule(TEXT("The accepted server activation did not start the configured montage."));
-	}
-
-	float StartTime = 0.0f;
-	float EndTime = 0.0f;
-	FString FailureReason;
-	const float EffectivePlayRate = AnimInstance->Montage_GetEffectivePlayRate(Montage);
-	if (!ResolveAttackWindowTiming(
-			ActiveAttackDefinition,
-			EffectivePlayRate,
-			StartTime,
-			EndTime,
-			FailureReason))
-	{
-		return RejectSchedule(FailureReason);
-	}
-
-	const float MontagePosition = AnimInstance->Montage_GetPosition(Montage);
-	if (!FMath::IsFinite(EffectivePlayRate) || EffectivePlayRate <= UE_SMALL_NUMBER ||
-		!FMath::IsFinite(MontagePosition) || MontagePosition >= EndTime)
-	{
-		return RejectSchedule(
-			FString::Printf(
-				TEXT("EffectivePlayRate=%.3f MontagePosition=%.3f WindowEnd=%.3f"),
-				EffectivePlayRate,
-				MontagePosition,
-				EndTime));
-	}
-
-	const float StartDelay = FMath::Max(0.0f, (StartTime - MontagePosition) / EffectivePlayRate);
-	const float EndDelay = FMath::Max(0.0f, (EndTime - MontagePosition) / EffectivePlayRate);
-	bAuthorityAttackWindowScheduled = true;
-
-	World->GetTimerManager().SetTimer(
-		AuthorityAttackWindowEndTimerHandle,
-		this,
-		&ThisClass::OnAuthorityAttackWindowEnded,
-		EndDelay,
-		false);
-
-	// Timers tick after the movement and animation updates, so the poll reads each frame's final montage position.
-	FTimerManagerTimerParameters PollParameters;
-	PollParameters.bLoop = true;
-	PollParameters.bMaxOncePerFrame = true;
-	World->GetTimerManager().SetTimer(
-		AuthorityMontageWindowPollTimerHandle,
-		this,
-		&ThisClass::OnAuthorityMontageWindowPoll,
-		UE_KINDA_SMALL_NUMBER,
-		PollParameters);
-
-	if (StartDelay <= UE_SMALL_NUMBER)
-	{
-		OnAuthorityAttackWindowStarted();
-	}
-	else
-	{
-		World->GetTimerManager().SetTimer(
-			AuthorityAttackWindowStartTimerHandle,
-			this,
-			&ThisClass::OnAuthorityAttackWindowStarted,
-			StartDelay,
-			false);
-	}
-
-	LogAttackLifecycleLazy(
-		TEXT("AuthorityScheduleCreated"),
-		[StartDelay, EndDelay, EffectivePlayRate]()
-		{
-			return FString::Printf(
-				TEXT("StartDelay=%.3f EndDelay=%.3f EffectivePlayRate=%.3f"),
-				StartDelay,
-				EndDelay,
-				EffectivePlayRate);
-		});
-	return true;
-}
-
-void URpgGameplayAbility_BasicWeaponAttack::ClearAuthorityAttackWindowSchedule()
-{
-	if (UWorld* World = GetWorld())
-	{
-		World->GetTimerManager().ClearTimer(AuthorityAttackWindowStartTimerHandle);
-		World->GetTimerManager().ClearTimer(AuthorityAttackWindowEndTimerHandle);
-		World->GetTimerManager().ClearTimer(AuthorityMontageWindowPollTimerHandle);
-	}
-	bAuthorityAttackWindowScheduled = false;
-}
-
-bool URpgGameplayAbility_BasicWeaponAttack::HasActiveMontageReached(const float MontageTime) const
-{
-	const UAnimMontage* Montage = ActiveAttackDefinition.Montage;
-	const UAnimInstance* AnimInstance = CurrentActorInfo ? CurrentActorInfo->GetAnimInstance() : nullptr;
-	// Montage_GetPosition reads the active instance; a replaced or stopping instance of the same montage is not it.
-	return Montage && AnimInstance && GetCurrentMontage() == Montage && AnimInstance->Montage_IsPlaying(Montage) &&
-		AnimInstance->Montage_GetPosition(Montage) + UE_KINDA_SMALL_NUMBER >= MontageTime;
-}
 
 void URpgGameplayAbility_BasicWeaponAttack::LogAttackLifecycle(
 	const TCHAR* Stage,
@@ -1497,503 +990,41 @@ FGameplayTag URpgGameplayAbility_BasicWeaponAttack::ResolveAttackDefinitionTag(c
 	return AttackDefinitionTag;
 }
 
-bool URpgGameplayAbility_BasicWeaponAttack::TryGetSocketTransformFromWeapon(const URpgWeaponInstance* WeaponInstance, FName SocketName, FTransform& OutTransform) const
+FRpgSwingTraceSink URpgGameplayAbility_BasicWeaponAttack::MakeSwingTraceSink()
 {
-	if (!WeaponInstance || SocketName.IsNone())
-	{
-		return false;
-	}
-
-	for (AActor* SpawnedActor : WeaponInstance->GetSpawnedActors())
-	{
-		if (!SpawnedActor)
-		{
-			continue;
-		}
-
-		TInlineComponentArray<USceneComponent*> SceneComponents;
-		SpawnedActor->GetComponents(SceneComponents);
-		for (const USceneComponent* SceneComponent : SceneComponents)
-		{
-			if (SceneComponent && SceneComponent->GetFName() == SocketName)
-			{
-				OutTransform = SceneComponent->GetComponentTransform();
-				return true;
-			}
-
-			if (SceneComponent && SceneComponent->DoesSocketExist(SocketName))
-			{
-				OutTransform = SceneComponent->GetSocketTransform(SocketName);
-				return true;
-			}
-		}
-	}
-
-	return false;
+	FRpgSwingTraceSink Sink;
+	Sink.OnHits.BindUObject(this, &ThisClass::HandleSwingHits);
+	Sink.OnTraceQuery.BindUObject(this, &ThisClass::RecordSwingTrace);
+	Sink.OnWindowOpened.BindUObject(this, &ThisClass::HandleSwingWindowOpened);
+	Sink.OnWindowClosed.BindUObject(this, &ThisClass::HandleSwingWindowClosed);
+	Sink.OnLifecycle.BindUObject(this, &ThisClass::LogAttackLifecycleLazy);
+	return Sink;
 }
 
-bool URpgGameplayAbility_BasicWeaponAttack::TryGetSocketTransformFromAvatar(FName SocketName, FTransform& OutTransform) const
-{
-	if (SocketName.IsNone())
-	{
-		return false;
-	}
-
-	const USkeletalMeshComponent* Mesh = URpgPawnExtensionComponent::FindGameplayMesh(GetAvatarActorFromActorInfo());
-	if (Mesh && Mesh->DoesSocketExist(SocketName))
-	{
-		OutTransform = Mesh->GetSocketTransform(SocketName);
-		return true;
-	}
-
-	return false;
-}
-
-bool URpgGameplayAbility_BasicWeaponAttack::GatherBladeSample(RpgWeaponTraceInterpolation::FBladeSample& OutSample)
-{
-	OutSample.Reset();
-	const AActor* AvatarActor = GetAvatarActorFromActorInfo();
-	if (!AvatarActor)
-	{
-		return false;
-	}
-
-	// The gameplay mesh carries the body pose the blade swings against, including a listen server's mesh smoothing.
-	const USkeletalMeshComponent* Mesh = URpgPawnExtensionComponent::FindGameplayMesh(AvatarActor);
-	OutSample.BodyTransform = Mesh ? Mesh->GetComponentTransform() : AvatarActor->GetActorTransform();
-	OutSample.TracePointTransforms.Reserve(ActiveAttackDefinition.TracePointSockets.Num());
-
-	for (const FName SocketName : ActiveAttackDefinition.TracePointSockets)
-	{
-		FTransform SocketTransform = FTransform::Identity;
-		if (!TryGetSocketTransformFromWeapon(ActiveWeaponInstance, SocketName, SocketTransform) &&
-			!TryGetSocketTransformFromAvatar(SocketName, SocketTransform))
-		{
-			if (!bLoggedTracePointFailureThisActivation)
-			{
-				bLoggedTracePointFailureThisActivation = true;
-				UE_LOG(
-					LogRpgWeapons,
-					Warning,
-					TEXT("BasicWeaponAttack[%s] could not resolve weapon trace point [%s] for [%s]; later authority samples will retry silently."),
-					*GetNameSafe(this),
-					*SocketName.ToString(),
-					*GetNameSafe(ActiveWeaponInstance));
-			}
-			OutSample.Reset();
-			return false;
-		}
-
-		OutSample.TracePointTransforms.Add(SocketTransform);
-	}
-
-	return OutSample.TracePointTransforms.Num() >= 2;
-}
-
-void URpgGameplayAbility_BasicWeaponAttack::BuildInterpolatedTracePointPairs(
-	const TArray<FVector>& PreviousSocketLocations,
-	const TArray<FVector>& CurrentSocketLocations,
-	TArray<FVector>& OutPreviousTraceLocations,
-	TArray<FVector>& OutCurrentTraceLocations) const
-{
-	OutPreviousTraceLocations.Reset();
-	OutCurrentTraceLocations.Reset();
-
-	if (PreviousSocketLocations.Num() != CurrentSocketLocations.Num() || PreviousSocketLocations.IsEmpty())
-	{
-		return;
-	}
-
-	if (!ActiveAttackDefinition.bTraceBetweenSockets)
-	{
-		OutPreviousTraceLocations = PreviousSocketLocations;
-		OutCurrentTraceLocations = CurrentSocketLocations;
-		return;
-	}
-
-	const float InterpolationDistance = FMath::Max(1.0f, ActiveAttackDefinition.TraceInterpolationDistance);
-	OutPreviousTraceLocations.Add(PreviousSocketLocations[0]);
-	OutCurrentTraceLocations.Add(CurrentSocketLocations[0]);
-
-	for (int32 SocketIndex = 0; SocketIndex < PreviousSocketLocations.Num() - 1; ++SocketIndex)
-	{
-		const FVector& PreviousA = PreviousSocketLocations[SocketIndex];
-		const FVector& PreviousB = PreviousSocketLocations[SocketIndex + 1];
-		const FVector& CurrentA = CurrentSocketLocations[SocketIndex];
-		const FVector& CurrentB = CurrentSocketLocations[SocketIndex + 1];
-
-		const float PreviousSegmentLength = FVector::Distance(PreviousA, PreviousB);
-		const float CurrentSegmentLength = FVector::Distance(CurrentA, CurrentB);
-		const int32 StepCount = FMath::Max(1, FMath::CeilToInt(FMath::Max(PreviousSegmentLength, CurrentSegmentLength) / InterpolationDistance));
-
-		for (int32 StepIndex = 1; StepIndex <= StepCount; ++StepIndex)
-		{
-			const float Alpha = static_cast<float>(StepIndex) / static_cast<float>(StepCount);
-			OutPreviousTraceLocations.Add(FMath::Lerp(PreviousA, PreviousB, Alpha));
-			OutCurrentTraceLocations.Add(FMath::Lerp(CurrentA, CurrentB, Alpha));
-		}
-	}
-}
-
-void URpgGameplayAbility_BasicWeaponAttack::OpenAttackWindow()
+void URpgGameplayAbility_BasicWeaponAttack::HandleSwingWindowOpened(const ERpgSwingTraceRole Role)
 {
 	// Owner (notify) and authority (notify, montage poll or schedule) each hold their own facing from the swing until the
 	// attack ends.
 	HoldFacingCommitment();
-	if (bAttackWindowOpen)
-	{
-		return;
-	}
-	if (CurrentActorInfo && CurrentActorInfo->IsNetAuthority() && bAuthorityWindowClosedBySchedule)
-	{
-		LogAttackLifecycle(
-			TEXT("AttackWindowStartIgnored"),
-			TEXT("The authority window already reached its terminal close edge."));
-		return;
-	}
-
-	if (UWorld* World = GetWorld())
-	{
-		World->GetTimerManager().ClearTimer(AuthorityAttackWindowStartTimerHandle);
-	}
-
-	bAttackWindowOpen = true;
 	HitActorsThisWindow.Reset();
-	PreviousBladeSample.Reset();
-
-	// Authority traces for damage; a remote owner traces the same window only to play its hit feedback without a round trip.
-	const bool bAuthority = CurrentActorInfo && CurrentActorInfo->IsNetAuthority();
-	BeginSwingRecord(bAuthority);
-	if (!bAuthority && !ShouldPredictImpactFeedback())
-	{
-		return;
-	}
-
-#if WITH_DEV_AUTOMATION_TESTS
-	if (bAuthority)
-	{
-		++AuthorityWindowOpenCountForTests;
-	}
-#endif
-
-	if (!GatherBladeSample(PreviousBladeSample) && bAuthority)
-	{
-		++AuthorityTracePointFailuresThisActivation;
-		UE_LOG(
-			LogRpgWeapons,
-			Warning,
-			TEXT("BasicWeaponAttack[%s] opened an attack window before valid trace points were available; authority will retry until the window closes."),
-			*GetNameSafe(this));
-	}
-
-	UWorld* World = GetWorld();
-	if (!World)
-	{
-		return;
-	}
-
-	const float SampleInterval = FMath::Max(0.001f, ActiveAttackDefinition.TraceSampleInterval);
-	World->GetTimerManager().SetTimer(
-		TraceSampleTimerHandle,
-		this,
-		&ThisClass::PerformBladeTraceSample,
-		SampleInterval,
-		true,
-		SampleInterval);
-
-	// Seed or sample immediately so short windows do not lose their first interval and a
-	// transient socket/actor readiness miss is retried instead of disabling the whole attack.
-	PerformBladeTraceSample();
-	LogAttackLifecycle(bAuthority ? TEXT("AttackWindowOpened.Authority") : TEXT("AttackWindowOpened.OwnerFeedback"));
+	BeginSwingRecord(Role == ERpgSwingTraceRole::Authority);
 }
 
-void URpgGameplayAbility_BasicWeaponAttack::CloseAttackWindow(bool bLogMissingEndNotify)
+void URpgGameplayAbility_BasicWeaponAttack::HandleSwingWindowClosed(ERpgSwingTraceRole Role)
 {
-	const bool bWasOpen = bAttackWindowOpen;
-	ClearAuthorityAttackWindowSchedule();
-
-	UWorld* World = GetWorld();
-	if (World)
-	{
-		World->GetTimerManager().ClearTimer(TraceSampleTimerHandle);
-	}
-
-	if (bWasOpen && ShouldPredictImpactFeedback())
-	{
-		PerformBladeTraceSample();
-	}
-	else if (bWasOpen && CurrentActorInfo && CurrentActorInfo->IsNetAuthority())
-	{
-		const int32 TraceSamplesBeforeFinalSample = AuthorityTraceSamplesThisActivation;
-		PerformBladeTraceSample();
-		LogAttackLifecycleLazy(
-			TEXT("AuthorityFinalTrace"),
-			[this, TraceSamplesBeforeFinalSample]()
-			{
-				return FString::Printf(
-					TEXT("SampleAdvanced=%d TotalSamples=%d"),
-					AuthorityTraceSamplesThisActivation > TraceSamplesBeforeFinalSample,
-					AuthorityTraceSamplesThisActivation);
-			});
-
-#if WITH_DEV_AUTOMATION_TESTS
-		++AuthorityWindowCloseCountForTests;
-#endif
-	}
-
-	if (bWasOpen && bLogMissingEndNotify && !bReceivedAttackWindowEnd)
-	{
-		UE_LOG(
-			LogRpgWeapons,
-			Warning,
-			TEXT("BasicWeaponAttack[%s] montage [%s] ended while the attack window was open; closing defensively. Check for missing AttackWindowEnd notify."),
-			*GetNameSafe(this),
-			*GetNameSafe(ActiveAttackDefinition.Montage));
-	}
-
-	bAttackWindowOpen = false;
-	PreviousBladeSample.Reset();
 	FinishSwingRecord();
-
-	if (bWasOpen)
-	{
-		LogAttackLifecycleLazy(
-			TEXT("AttackWindowClosed"),
-			[this]()
-			{
-				return FString::Printf(
-					TEXT("TraceSamples=%d MaxTraceSubsteps=%d TracePointFailures=%d DamageHits=%d DuplicateHitsSkipped=%d"),
-					AuthorityTraceSamplesThisActivation,
-					AuthorityMaxTraceSubstepsThisActivation,
-					AuthorityTracePointFailuresThisActivation,
-					AuthorityDamageHitsThisActivation,
-					AuthorityDuplicateHitsSkippedThisActivation);
-			});
-	}
-}
-
-void URpgGameplayAbility_BasicWeaponAttack::BuildTraceQueryParams(FCollisionQueryParams& QueryParams) const
-{
-	AActor* AvatarActor = GetAvatarActorFromActorInfo();
-	QueryParams.AddIgnoredActor(AvatarActor);
-	if (ActiveWeaponInstance)
-	{
-		for (AActor* SpawnedActor : ActiveWeaponInstance->GetSpawnedActors())
+	LogAttackLifecycleLazy(
+		TEXT("AttackWindowClosed"),
+		[this]()
 		{
-			if (SpawnedActor)
-			{
-				QueryParams.AddIgnoredActor(SpawnedActor);
-			}
-		}
-	}
-}
-
-void URpgGameplayAbility_BasicWeaponAttack::PerformBladeTraceSample()
-{
-	UWorld* World = GetWorld();
-	AActor* AvatarActor = GetAvatarActorFromActorInfo();
-	if (!World || !AvatarActor || !bAttackWindowOpen || !ActiveAttackDefinition.CanApplyDamage())
-	{
-		return;
-	}
-
-	const bool bAuthority = CurrentActorInfo && CurrentActorInfo->IsNetAuthority();
-	RpgWeaponTraceInterpolation::FBladeSample CurrentBladeSample;
-	if (!GatherBladeSample(CurrentBladeSample))
-	{
-		if (bAuthority)
-		{
-			++AuthorityTracePointFailuresThisActivation;
-		}
-		return;
-	}
-
-	if (PreviousBladeSample.TracePointTransforms.Num() != CurrentBladeSample.TracePointTransforms.Num())
-	{
-		PreviousBladeSample = MoveTemp(CurrentBladeSample);
-		return;
-	}
-
-	// A pose that advanced several frames since the last sample, such as a remote client's montage on the server, which
-	// moves with every received move, is traced along its swing arc in sub-steps instead of one straight chord.
-	const int32 SubstepCount = RpgWeaponTraceInterpolation::ComputeSubstepCount(PreviousBladeSample, CurrentBladeSample);
-	TArray<TArray<FVector>> SubstepLocations;
-	RpgWeaponTraceInterpolation::BuildSubstepLocations(PreviousBladeSample, CurrentBladeSample, SubstepCount, SubstepLocations);
-
-	if (bAuthority)
-	{
-		++AuthorityTraceSamplesThisActivation;
-#if WITH_DEV_AUTOMATION_TESTS
-		++AuthorityTraceSampleCountForTests;
-#endif
-		AuthorityMaxTraceSubstepsThisActivation = FMath::Max(AuthorityMaxTraceSubstepsThisActivation, SubstepCount);
-		if (AuthorityTraceSamplesThisActivation == 1)
-		{
-			LogAttackLifecycle(TEXT("AuthorityTraceStarted"));
-		}
-	}
-
-	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(RpgBasicWeaponAttack), false, AvatarActor);
-	BuildTraceQueryParams(QueryParams);
-
-	// A hit may end the attack and close the window; later sub-steps then neither trace nor seed a new sample.
-	for (int32 SubstepIndex = 1; SubstepIndex < SubstepLocations.Num() && bAttackWindowOpen; ++SubstepIndex)
-	{
-		const TArray<FVector>& SubstepStartLocations = SubstepLocations[SubstepIndex - 1];
-		const TArray<FVector>& SubstepEndLocations = SubstepLocations[SubstepIndex];
-		switch (ActiveAttackDefinition.TraceMode)
-		{
-		case ERpgWeaponAttackTraceMode::LineTrace:
-			PerformLineTraceRibbon(SubstepStartLocations, SubstepEndLocations, QueryParams);
-			break;
-		case ERpgWeaponAttackTraceMode::SphereSweep:
-		case ERpgWeaponAttackTraceMode::CapsuleSweep:
-		case ERpgWeaponAttackTraceMode::BoxSweep:
-			PerformSweepTraceRibbon(SubstepStartLocations, SubstepEndLocations, QueryParams);
-			break;
-		default:
-			break;
-		}
-	}
-
-	if (bAttackWindowOpen)
-	{
-		PreviousBladeSample = MoveTemp(CurrentBladeSample);
-	}
-}
-
-void URpgGameplayAbility_BasicWeaponAttack::PerformLineTraceRibbon(
-	const TArray<FVector>& PreviousSocketLocations,
-	const TArray<FVector>& CurrentSocketLocations,
-	const FCollisionQueryParams& QueryParams)
-{
-	if (PreviousSocketLocations.Num() != CurrentSocketLocations.Num() || PreviousSocketLocations.Num() < 2)
-	{
-		return;
-	}
-
-	TArray<FVector> PreviousTraceLocations;
-	TArray<FVector> CurrentTraceLocations;
-	BuildInterpolatedTracePointPairs(PreviousSocketLocations, CurrentSocketLocations, PreviousTraceLocations, CurrentTraceLocations);
-
-	for (int32 TracePointIndex = 0; TracePointIndex < PreviousTraceLocations.Num(); ++TracePointIndex)
-	{
-		TraceDamageLine(PreviousTraceLocations[TracePointIndex], CurrentTraceLocations[TracePointIndex], QueryParams);
-	}
-
-	if (!ActiveAttackDefinition.bTraceBetweenSockets)
-	{
-		return;
-	}
-
-	for (int32 SocketIndex = 0; SocketIndex < PreviousSocketLocations.Num() - 1; ++SocketIndex)
-	{
-		const FVector& PreviousA = PreviousSocketLocations[SocketIndex];
-		const FVector& PreviousB = PreviousSocketLocations[SocketIndex + 1];
-		const FVector& CurrentA = CurrentSocketLocations[SocketIndex];
-		const FVector& CurrentB = CurrentSocketLocations[SocketIndex + 1];
-
-		TraceDamageLine(PreviousA, PreviousB, QueryParams);
-		TraceDamageLine(CurrentA, CurrentB, QueryParams);
-
-		// Diagonals approximate the swept quad between neighboring sockets without needing mesh collision.
-		TraceDamageLine(PreviousA, CurrentB, QueryParams);
-		TraceDamageLine(PreviousB, CurrentA, QueryParams);
-	}
-}
-
-void URpgGameplayAbility_BasicWeaponAttack::PerformSweepTraceRibbon(
-	const TArray<FVector>& PreviousSocketLocations,
-	const TArray<FVector>& CurrentSocketLocations,
-	const FCollisionQueryParams& QueryParams)
-{
-	TArray<FVector> PreviousTraceLocations;
-	TArray<FVector> CurrentTraceLocations;
-	BuildInterpolatedTracePointPairs(PreviousSocketLocations, CurrentSocketLocations, PreviousTraceLocations, CurrentTraceLocations);
-
-	for (int32 TracePointIndex = 0; TracePointIndex < PreviousTraceLocations.Num(); ++TracePointIndex)
-	{
-		TraceDamageSweep(PreviousTraceLocations[TracePointIndex], CurrentTraceLocations[TracePointIndex], QueryParams);
-	}
-}
-
-void URpgGameplayAbility_BasicWeaponAttack::TraceDamageLine(
-	const FVector& TraceStart,
-	const FVector& TraceEnd,
-	const FCollisionQueryParams& QueryParams)
-{
-	UWorld* World = GetWorld();
-	if (!World)
-	{
-		return;
-	}
-
-	TArray<FHitResult> HitResults;
-	World->LineTraceMultiByChannel(HitResults, TraceStart, TraceEnd, Rpg_TraceChannel_Weapon, QueryParams);
-	RecordSwingTrace(TraceStart, TraceEnd, ERpgRecordedTraceShape::Line, FVector::ZeroVector);
-
-#if ENABLE_DRAW_DEBUG
-	DrawWeaponAttackTraceLine(World, TraceStart, TraceEnd, HitResults);
-#endif
-
-	HandleTraceHitResults(HitResults);
-}
-
-void URpgGameplayAbility_BasicWeaponAttack::TraceDamageSweep(
-	const FVector& TraceStart,
-	const FVector& TraceEnd,
-	const FCollisionQueryParams& QueryParams)
-{
-	UWorld* World = GetWorld();
-	if (!World)
-	{
-		return;
-	}
-
-	FCollisionShape Shape;
-	switch (ActiveAttackDefinition.TraceMode)
-	{
-	case ERpgWeaponAttackTraceMode::SphereSweep:
-		Shape = FCollisionShape::MakeSphere(FMath::Max(1.0f, ActiveAttackDefinition.TraceRadius));
-		break;
-	case ERpgWeaponAttackTraceMode::CapsuleSweep:
-		Shape = FCollisionShape::MakeCapsule(
-			FMath::Max(1.0f, ActiveAttackDefinition.TraceRadius),
-			FMath::Max(ActiveAttackDefinition.TraceRadius, ActiveAttackDefinition.TraceCapsuleHalfHeight));
-		break;
-	case ERpgWeaponAttackTraceMode::BoxSweep:
-		Shape = FCollisionShape::MakeBox(FVector(
-			FMath::Max(1.0f, FMath::Abs(ActiveAttackDefinition.TraceBoxExtent.X)),
-			FMath::Max(1.0f, FMath::Abs(ActiveAttackDefinition.TraceBoxExtent.Y)),
-			FMath::Max(1.0f, FMath::Abs(ActiveAttackDefinition.TraceBoxExtent.Z))));
-		break;
-	default:
-		return;
-	}
-
-	TArray<FHitResult> HitResults;
-	World->SweepMultiByChannel(HitResults, TraceStart, TraceEnd, FQuat::Identity, Rpg_TraceChannel_Weapon, Shape, QueryParams);
-	switch (ActiveAttackDefinition.TraceMode)
-	{
-	case ERpgWeaponAttackTraceMode::SphereSweep:
-		RecordSwingTrace(TraceStart, TraceEnd, ERpgRecordedTraceShape::Sphere, FVector(Shape.GetSphereRadius(), 0.0, 0.0));
-		break;
-	case ERpgWeaponAttackTraceMode::CapsuleSweep:
-		RecordSwingTrace(TraceStart, TraceEnd, ERpgRecordedTraceShape::Capsule,
-			FVector(Shape.GetCapsuleRadius(), Shape.GetCapsuleHalfHeight(), 0.0));
-		break;
-	case ERpgWeaponAttackTraceMode::BoxSweep:
-		RecordSwingTrace(TraceStart, TraceEnd, ERpgRecordedTraceShape::Box, Shape.GetBox());
-		break;
-	default:
-		break;
-	}
-
-#if ENABLE_DRAW_DEBUG
-	DrawWeaponAttackTraceSweep(World, TraceStart, TraceEnd, ActiveAttackDefinition, HitResults);
-#endif
-
-	HandleTraceHitResults(HitResults);
+			return FString::Printf(
+				TEXT("TraceSamples=%d MaxTraceSubsteps=%d TracePointFailures=%d DamageHits=%d DuplicateHitsSkipped=%d"),
+				SwingTrace.GetAuthorityTraceSampleCount(),
+				SwingTrace.GetAuthorityMaxTraceSubstepCount(),
+				SwingTrace.GetAuthorityTracePointFailureCount(),
+				AuthorityDamageHitsThisActivation,
+				AuthorityDuplicateHitsSkippedThisActivation);
+		});
 }
 
 void URpgGameplayAbility_BasicWeaponAttack::BeginSwingRecord(const bool bAuthority)
@@ -2046,9 +1077,10 @@ void URpgGameplayAbility_BasicWeaponAttack::FinishSwingRecord()
 	SwingRecord = FRpgWeaponSwingRecord();
 }
 
-void URpgGameplayAbility_BasicWeaponAttack::HandleTraceHitResults(const TArray<FHitResult>& HitResults)
+void URpgGameplayAbility_BasicWeaponAttack::HandleSwingHits(const TArray<FHitResult>& HitResults, const ERpgSwingTraceRole Role)
 {
 	AActor* AvatarActor = GetAvatarActorFromActorInfo();
+	const bool bAuthority = Role == ERpgSwingTraceRole::Authority;
 	for (const FHitResult& HitResult : HitResults)
 	{
 		AActor* TargetActor = HitResult.GetActor();
@@ -2060,7 +1092,7 @@ void URpgGameplayAbility_BasicWeaponAttack::HandleTraceHitResults(const TArray<F
 		if (HitActorsThisWindow.Contains(TargetKey))
 		{
 			++AuthorityDuplicateHitsSkippedThisActivation;
-			if (AuthorityDuplicateHitsSkippedThisActivation == 1 && CurrentActorInfo && CurrentActorInfo->IsNetAuthority())
+			if (AuthorityDuplicateHitsSkippedThisActivation == 1 && bAuthority)
 			{
 				LogAttackLifecycleLazy(
 					TEXT("AuthorityDuplicateHitSkipped"),
@@ -2073,7 +1105,7 @@ void URpgGameplayAbility_BasicWeaponAttack::HandleTraceHitResults(const TArray<F
 		}
 
 		HitActorsThisWindow.Add(TargetKey);
-		if (CurrentActorInfo && CurrentActorInfo->IsNetAuthority())
+		if (bAuthority)
 		{
 			ApplyDamageToHitActor(TargetActor, HitResult);
 		}
@@ -2232,11 +1264,6 @@ void URpgGameplayAbility_BasicWeaponAttack::ApplyDamageToHitActor(AActor* Target
 					*GetNameSafe(TargetActor));
 			});
 	}
-}
-
-bool URpgGameplayAbility_BasicWeaponAttack::ShouldPredictImpactFeedback() const
-{
-	return CurrentActorInfo && !CurrentActorInfo->IsNetAuthority() && CurrentActorInfo->IsLocallyControlled();
 }
 
 void URpgGameplayAbility_BasicWeaponAttack::PredictImpactFeedback(AActor* TargetActor, const FHitResult& HitResult)
