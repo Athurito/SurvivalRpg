@@ -52,7 +52,7 @@ how a hit is found, not what a hit does.
 | ID | Scope | Status |
 | --- | --- | --- |
 | HRW-01 | Tool animations and meshes: migrate the 505 chop and pickaxe clips, one-cycle montages in the `UpperBody` slot with attack-window notifies, work-axe and pickaxe meshes with trace sockets; hit model unchanged | Planned |
-| HRW-02 | Extract the core swing window and trace (`FRpgSwingTraceWindow`) from the melee attack ability without behaviour change | Planned |
+| HRW-02 | Extract the core swing window and trace (`FRpgSwingTraceWindow`) from the melee attack ability without behaviour change | In review: #334 |
 | HRW-03 | Tool swing hits: harvest abilities trace the tool swing instead of the camera ray; tunable reach and targets per swing; collision profile for harvestables; weak points and pierce from the impact point | Planned |
 | HRW-04 | Hold to keep swinging and a stock indicator that appears after a hit instead of the aim highlight | Planned |
 | HRW-05 | Focus meter and harvesting spells chosen in the skill tree, first spell Wide Swing; redesign of the tree and the runes | Planned |
@@ -113,7 +113,7 @@ how a hit is found, not what a hit does.
   may end the ability inside the window's own trace loop. Three warnings now
   read `SwingTraceWindow[…]` instead of `BasicWeaponAttack[…]`; the lifecycle
   stages are unchanged.
-- **Commits:** `2a4da481` refactor and tests, then documentation.
+- **Commits:** `2a4da481` refactor and tests, `52c461f8` report and skill notes, then this status row (PR #334).
 - **Validation** (`ue.py`, headless, no MCP editor of this worktree; the
   HRW-01 editor shared the GPU at about 80 %):
   - `build`: 0 errors, 0 warnings, before and after the change.
