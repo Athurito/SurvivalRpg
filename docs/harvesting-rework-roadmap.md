@@ -54,7 +54,7 @@ how a hit is found, not what a hit does.
 | HRW-01 | Tool animations and meshes: migrate the 505 chop and pickaxe clips, one-cycle montages in the `UpperBody` slot with attack-window notifies, work-axe and pickaxe meshes with trace sockets; hit model unchanged | Merged: [#335](https://github.com/Athurito/SurvivalRpg/pull/335) |
 | HRW-02 | Extract the core swing window and trace (`FRpgSwingTraceWindow`) from the melee attack ability without behaviour change | Merged: [#334](https://github.com/Athurito/SurvivalRpg/pull/334) |
 | HRW-03 | Tool swing hits: harvest abilities trace the tool swing instead of the camera ray; tunable reach and targets per swing; collision profile for harvestables; weak points and pierce from the impact point | In review: [#337](https://github.com/Athurito/SurvivalRpg/pull/337) |
-| HRW-04 | Hold to keep swinging and a stock indicator that appears after a hit instead of the aim highlight | Planned |
+| HRW-04 | Hold to keep swinging and a stock indicator that appears after a hit instead of the aim highlight | In review: [#339](https://github.com/Athurito/SurvivalRpg/pull/339) |
 | HRW-05 | Focus meter and harvesting spells chosen in the skill tree, first spell Wide Swing; redesign of the tree and the runes | Planned |
 
 ## Task scope
@@ -205,6 +205,57 @@ All through `ue.py`, with the MCP server's autostart off for test runs; the MCP 
   blend-out, and stop until the next press after a cancel such as a dodge.
 - The aim query and highlight go away for tool swings. The stock indicator
   shows the last struck resource for a few seconds.
+
+#### HRW-04 report
+
+Branch `claude/hrw-04-hold-to-swing`, PR [#339](https://github.com/Athurito/SurvivalRpg/pull/339): `5f654ae6` implementation, assets and tests, then this report with the skill notes and the status row. Holding the harvest button keeps swinging the axe or pickaxe while the player moves, and the stock of a struck resource shows for three seconds after each hit instead of an aim marker.
+
+- **Hold loop:** `GA_Harvest_AxeChop` and `GA_Harvest_PickaxeStrike` use the `WhileInputActive` policy, as Block does, so `URpgAbilitySystemComponent::ProcessAbilityInput` starts the next swing while the input is held. A tool swing now ends at its montage's blend-out (`OnBlendOut`): after 1.317 s for the axe and 1.75 s for the pickaxe. The next swing's montage replaces the one blending out in the `UpperBody` slot group, and `ABP_RpgGasp_CMC_Manny` keeps the legs on locomotion while moving (HRW-01). The ability only holds the facing; movement stays free.
+- **Cancels:** a cancelled activation of a `WhileInputActive` harvest ability calls `SuppressAbilityInputUntilRelease`, so after a dodge, block, attack, tool switch, stagger or another montage in the slot group the next swing waits for a fresh press. A rejected prediction ends without a cancel and retries in the next frame, as Block does.
+- **Activation group (finding):** both swings inherited `Exclusive_Blocking` from `URpgGameplayAbility_Harvest`. That blocks every exclusive activation, so the dodge (`GA_Combat_Dodge`, also exclusive) could not start during a swing at all, contrary to what the HRW-01 and HRW-03 playtest notes assumed; with the hold loop it would have been locked out for as long as the button was held. Both swing assets are now `Exclusive_Replaceable`: a dodge, block or melee attack replaces a swing. Harvesting powers keep `Exclusive_Blocking`.
+- **Server authority:** the owning client predicts each activation, and the server validates each one as before (hand role, skill, tool). Every swing is its own activation with its own contact set, `SwingTargets` count and root action, and `EndAbility` closes the window without its final sample, so a held loop commits at most once per resource and swing. A client may end or cancel its own activation (`ServerEndAbility`), which the server honours. The server therefore records in `SetRemoteInstanceHasEnded` when the next swing may start, the swing's start plus its montage cycle minus 0.2 s of jitter tolerance (`ToolSwingCadenceToleranceSeconds`), and `CanActivateAbility` refuses an earlier swing with `Ability.ActivateFail.Harvesting.SwingCadence`. Swings that the server ends itself, at its blend-out or through its own dodge, hold nothing back.
+- **Stock indicator:** `URpgHarvestTargetingComponent` runs no view query for a tool swing and marks nothing before a hit. The swinging client calls `NoteStruckTarget` with the struck resource at its predicted contact, a listen server after its commit. The preview then shows that resource for `StruckTargetLingerSeconds` (3 s, designer-tuned on the component), and each further hit restarts the time. The 15 Hz refresh re-evaluates it from the replicated stock without a trace (`URpgGameplayAbility_Harvest::EvaluateStruckTarget`), so the server's commit or rejection corrects what the client shows. View-ray powers keep their aim query and indicators. `WBP_HarvestTargetIndicator` needed no change: outside an aim preview it shows the stock ("3/4" and a conversion suffix) or the status ("Wrong tool", "Depleted"). The widget base reports no weak point for a struck resource and gained the read-only `IsStruckTargetPreview`.
+
+##### Tests
+
+- Native `SurvivalRpg.Harvesting.Swing.*`: `HoldKeepsSwingingUntilRelease` (through the real input processing: a held input restarts the swing at its blend-out, never while it runs; a release lets the running swing finish), `CancelStopsHoldUntilPressedAgain` (a cancel or an interrupting montage stops the hold until release and a new press), `ClientCannotOutpaceTheMontage` (the cycle helper, a client-cut swing holds the next one back until the cycle is over, server-side ends hold nothing back) and `StruckTargetIndicatorLingers` (no aim query or indicator before a hit, the stock appears at the hit, stays 3 s and hides, a predicted contact is corrected by the replicated result, a further hit restarts the time). The existing indicator tests are unchanged and use view-ray abilities.
+- Asset contracts: `AxeToolContract` and `PickaxeToolContract` also require `WhileInputActive` and `Exclusive_Replaceable`.
+- PIE `SurvivalRpg.Network.HarvestSwingPIE` gained `RemoteHoldSwingsOnceEachUntilDodgeAndPressesAgain`: a remote client holds the real axe's input on a listen server with 60 ms lag and swings three times, each taking one section once. Each held swing starts on the server between the cycle minus the tolerance and the cycle plus 0.35 s after the one before; measured 1.304, 1.327 and 1.273 s against the 1.317 s cycle. Before the first hit the client's preview marks nothing; after it, the indicator shows the struck resource with the replicated stock. A real dodge during the fourth windup cancels that swing on both machines, and no further swing starts for 3 s while the input stays held. After release and a new press, one swing commits once. Finally the client walks away from the field while holding: two more swings run while it moves (up to 600 cm/s), the server moves the character too, and no swing commits twice. The field has six sections now.
+- The PIE fixture now keeps the swing that `ED_Tool_Axe` grants with the main-hand slot and asserts it is the only one. It used to grant `AS_Tool_Axe` a second time, which `TryActivateAbility` by handle hid; with a real press both swings activated and the second replaced the first at once.
+
+##### Validation
+
+All through `ue.py`, native and PIE suites in separate calls, with the MCP server's autostart off for test runs; the MCP editor of this worktree was closed for every build and test.
+
+- `build`: passed, 0 errors, 0 warnings, after the C++ changes and after each test fix.
+- `test SurvivalRpg.Harvesting.Swing SurvivalRpg.Harvesting.Content.AxeToolContract SurvivalRpg.Harvesting.Content.PickaxeToolContract SurvivalRpg.Harvesting.Ability.TargetStatusAndIndicatorLifecycle --null-rhi`: first 13 / 14. `CancelStopsHoldUntilPressedAgain` failed because the test changed the native test ability's class default at runtime, which the granted instance did not copy (fixed in the test, noted in the GAS test pitfalls). Then **14 / 14 passed**.
+- `test SurvivalRpg.Harvesting SurvivalRpg.Interaction.Harvesting SurvivalRpg.Combat --null-rhi`: **169 / 169 passed** (12 with warnings).
+- `test SurvivalRpg.Network.HarvestSwingPIE` (rendered): first 1 / 2. The new hold step timed out: a temporary log showed one server activation of the tracked swing, cancelled 63 ms after the press, while the stock still dropped every 1.32 s, because the fixture's second axe swing had replaced it. With the fixture fixed **2 / 2 passed**.
+- `test SurvivalRpg.Network.HarvestSwingPIE SurvivalRpg.Network.LootHarvestPIE SurvivalRpg.Network.HarvestCuePIE SurvivalRpg.Network.CombatRemoteMeleePIE SurvivalRpg.Combat.Block` (rendered, separate call): **44 / 44 passed** (28 with the usual PIE log warnings), no "no more RPCs" line, no rerun needed. Held swings started 1.318, 1.332 and 1.306 s apart (cycle 1.317 s); owner predictions 4 of 4 and 2 of 2 tool hits.
+- Editor (MCP, port 8000): both swing assets read back `WhileInputActive` and `Exclusive_Replaceable` after compile and save. `WBP_HarvestTargetIndicator` was only read; reading its graph dirtied it, so it was saved to close the editor cleanly and restored from git.
+- `python Build/Tools/AgentSkills/sync.py` and `--check`: consistent.
+
+##### Limits
+
+- No agent PIE check by eye on the real trees and veins of `Lvl_HarvestPickaxe`; the PIE test strikes a 100 cm cube with the real axe, montage, AnimBP and dodge. The indicator's text is covered through the widget's read model, not a screenshot.
+- The pickaxe's hold is covered by its asset contract only, not by a PIE swing.
+- The cadence tolerance is 0.2 s, so a client that cuts its swings short can still swing about 15 % faster than the montage (the axe every 1.117 s instead of 1.317 s).
+- When the server rejects a held swing's prediction, the client's swing ends without a cancel and the held input tries again in the next frame, as Block does; a lasting mismatch keeps sending activations while the button is held.
+- A remote client's indicator shows the resource its own trace struck. When the server's trace struck another one, it shows the predicted resource with its unchanged stock; when only the server's trace struck, that client shows nothing.
+- A dodge that starts in the single frame between two held swings cancels no swing, so the held input swings again once the dodge allows it. Not observed.
+- `Exclusive_Replaceable` also lets other exclusive abilities, such as block, attack or item use, replace a swing, and a swing press can replace the replaceable recovery of another ability, as a melee attack can.
+- The hold step watches the swinger from the listen server only; no second client sees the held swings as a simulated proxy. They replicate as single swings do, which the late joiner of the other `HarvestSwingPIE` case covers.
+- A dedicated server is not tested separately, as before.
+
+##### Playtest
+
+1. Open `Lvl_HarvestPickaxe` and pick up the axe. Look anywhere near a dead pine: nothing marks it.
+2. Stand an arm's length from the pine and hold the left mouse button: the chops repeat without a pause, each takes one section, and "3/4" (then "2/4" and so on) appears over the pine at each hit. About 3 s after the last hit it disappears.
+3. Hold the button and run past a row of pines: the arms keep chopping while the legs run, and each pine in reach shows its stock when it is hit.
+4. Release the button during a chop: that chop finishes, and no further one starts.
+5. Hold the button and dodge during a chop's wind-up: the dodge starts at once, that chop takes nothing, and no new chop starts while the button stays held. Release it and press again: chopping resumes.
+6. Pick up the pickaxe and hold the button at an iron vein: strikes repeat about every 1.75 s, and the ore's stock shows after each strike. Strike a pine with it: "Wrong tool" shows over the pine.
+7. **Multiplayer:** play as listen server with two players. The client holds the button at a pine while the host watches: both see every chop once with one dust puff, the stock drops by one section per chop on both screens, and the client's own "x/4" appears at its hit. The client dodges while holding: on both screens the chopping stops until the client presses again.
 
 ### HRW-05: focus meter and harvesting spells
 

@@ -15,7 +15,7 @@ Behavior observed in this project's automation tests and PIE sessions on UE 5.8.
 
 - `FTimerManager::Tick` fires a timer only when the time is strictly past its expire time. Stepping exactly onto a deadline, such as `AdvanceTimers(0.5f)` for a 0.5 s timer, fires it one step late, and a looping timer may then fire twice. Step slightly past each deadline (0.55, then 0.5 each), as the harvesting tests do.
 - `FTimerManager::Tick` runs once per `GFrameCounter`; a second tick in the same frame does nothing. Guard the counter with `TGuardValue<uint64> FrameGuard(GFrameCounter, GFrameCounter)` and increment it before each tick.
-- A timer set outside a tick is pending: it gets its expire time only at the end of the next tick, so that tick's delta does not count toward it. Tick once with 0 before advancing time.
+- A timer set outside a tick is pending: it gets its expire time only at the end of the next tick, so that tick's delta does not count toward it. Tick once with 0 before advancing time. After that tick, and after every `AdvanceTimers`, a timer set in the same `GFrameCounter` frame is active at once (`HasBeenTickedThisFrame`), so `AdvanceTimers(2.5f)` then `AdvanceTimers(0.6f)` fires a 3 s timer set after `PrimeTimerManager` (HRW-04).
 
 ## Standalone test worlds
 
@@ -30,6 +30,7 @@ Behavior observed in this project's automation tests and PIE sessions on UE 5.8.
 - A default `FHitResult` has `Item` 0, not `INDEX_NONE`. Synthetic hits that a test builds by hand therefore name instance 0; compare or exclude them by that item, not by `INDEX_NONE` (MST-09b).
   - Real line traces, sweeps and overlaps on a single-body component report `INDEX_NONE`. A synthetic contact that stands for such a hit must set `Item = INDEX_NONE`, or code that matches the struck resource by receiver and item, such as the pierce exclusion `FRpgHarvestResourceId::Matches`, treats the struck node as another resource (HRW-03).
 - `FRpgSwingTraceWindow::TraceSampleMotionForTests` sweeps two hand-built tool poses through a standalone world on the real trace channel, so a test can prove which collision a swing reports without an animated mesh. A test ability can override `URpgGameplayAbility_Harvest::PlayToolSwing` to start the swing without a montage and feed the window's hits to it (HRW-03).
+- A new object of a native class copies only those class default properties that already differed from its constructor when the class was linked (`CustomPropertyListForPostConstruction`). A test that changes a native test ability's class default at runtime, such as its activation policy, therefore does not reach the instance that `GiveAbility` creates. Input processing reads the class default and the ability reads its instance, so set both (HRW-04).
 - `UGameplayAbility::GetCurrentSourceObject` and `GetCurrentAbilitySpecHandle` ensure on a CDO. In an `AbilityActivatedCallbacks` handler, check `IsInstantiated()` first and read the spec from the ASC.
 
 ## GameplayCues and prediction
@@ -43,6 +44,8 @@ Behavior observed in this project's automation tests and PIE sessions on UE 5.8.
 
 ## PIE network tests
 
+- An equipment definition grants its `SlotAbilitySetsToGrant` when `EquipItemInSlot` equips it, as `ED_Tool_Axe` grants `AS_Tool_Axe`. Granting the same set again in a test leaves two specs on one input. `TryActivateAbility` by handle hides that, but a press activates both, and the second `Exclusive_Replaceable` swing cancels the first at once (HRW-04). Use the equipment's own grant and assert that exactly one spec answers the input.
+- Held input: call `AbilityInputTagPressed` once on the owning client's ASC; that client's player controller calls `ProcessAbilityInput` every frame until `AbilityInputTagReleased`, so `WhileInputActive` abilities repeat as for a held key (HRW-04 `HarvestSwingPIE`). Count server activations with `AbilityActivatedCallbacks` and cancels with `OnAbilityEnded`, because the command steps of the other machine do not run every frame.
 - Real client predictions: give the ability on the server and call `TryActivateAbility` on the owning client. The avatar must be an autonomous actor; a PlayerState is a simulated proxy on clients, and GAS activates nothing on a simulated avatar, so bind the pawn with `InitAbilityActorInfo(PlayerState, PlayerState->GetPawn())` on every machine.
 - A FastArray whose replicated array gets re-sorted crashed the server (`FixedShadowIndex > Index`) once a move rotated three or more entries. Disable FastArray delta struct serialization for such a list, as `FRpgInventoryList` does; `SurvivalRpg.Network.InventoryReorderPIE` covers it.
 - Late joiners: when presentation depends on whether a machine saw an earlier state, remember on each machine that it saw that state. Comparing replicated timestamps with the GameState server time fails, because a joining client has not synced the server clock when the state arrives.
