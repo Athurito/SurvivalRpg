@@ -28,7 +28,7 @@ The foundation must prove that attack input triggers the correct ability, the mo
 Inspect the repository instead of relying on remembered document or class names. Read what is relevant:
 
 - `docs/game-vision.md`, especially sections 8 to 10 and 12
-- `docs/combat-mastery-reference.md` for the combat loop, mastery, and skill-group model
+- `docs/skill-trees.md` for mastery, skill trees, and talents
 - `docs/combat-network-smoke.md`, `docs/rpg-baseline.md`, and `docs/inventory-refactor-plan.md` when networking, the baseline Experience, or inventory are involved
 - `docs/gasp-cmc-sprint.md` and `docs/gasp-block-locomotion.md` when stamina, sprint, or block movement are involved
 
@@ -136,7 +136,7 @@ Keep definitions fragment-friendly rather than monolithic weapon classes. Use ta
 
 ## Progression and mastery
 
-Use the hybrid model from `docs/game-vision.md` section 9 and `docs/combat-mastery-reference.md`: use-based growth, automatic unlocks for basics, milestone choices for build identity, and runes and equipment for further shaping. Layered mastery (roughly 70 % general, 20 % category or style, 10 % weapon familiarity) keeps weapon switches from feeling like a reset.
+Use the hybrid model from `docs/game-vision.md` section 9: use-based growth, automatic unlocks for basics, milestone choices for build identity, and runes and equipment for further shaping. Layered mastery (roughly 70 % general, 20 % category or style, 10 % weapon familiarity) keeps weapon switches from feeling like a reset.
 
 Skill unlocks grant or modify AbilitySets (preferred for active skills), GameplayEffects (persistent passives), GameplayTags (ability upgrades checked at runtime), input bindings, and passive bonuses.
 

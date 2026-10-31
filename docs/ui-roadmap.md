@@ -104,6 +104,11 @@ None. The character XP curve, the last finding here, is now assigned; see
 
 ## Skill screen concept (UI-01b)
 
+> **Superseded (2026-10-31):** the mastery map replaced this skill screen.
+> Since MST-02 the Skills tab shows the map, and since MST-03c it has no
+> profession list, tree grid or Q/E/R bar ([skill-trees.md](skill-trees.md),
+> [mastery map roadmap](mastery-map-roadmap.md)).
+
 ![Skill screen concept](assets/ui/skill-screen-concept.webp)
 
 The user's concept (2026-10-07) is the target for the skill screen and the

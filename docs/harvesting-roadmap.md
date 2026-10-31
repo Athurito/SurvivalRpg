@@ -1,5 +1,23 @@
 # Harvesting roadmap
 
+> **Status 2026-10-31: complete, partly superseded.** Every HARV task is
+> merged. The [harvesting rework roadmap](harvesting-rework-roadmap.md)
+> replaces the hit model, and MST-03b
+> ([shared harvesting](mastery-map-shared-harvesting.md)) retired the tool
+> trees and their powers.
+>
+> - **Still binding:** the runtime contract (HARV-01), weak points (HARV-05,
+>   placed from the impact point since HRW-03), the PCG resource bridge
+>   (HARV-06), area rewards and protection (HARV-07), the shared material pool
+>   (HARV-09f), resource persistence (HARV-10a), root groves (HARV-10b), co-op
+>   load (HARV-10c) and the performance guardrails.
+> - **Superseded:** target preview by camera ray (HARV-02, replaced by HRW-03
+>   and HRW-04); Rift Grip (HARV-04), Death Wave (HARV-07), Grave Swarm
+>   (HARV-08), the tool trees and Q/E/R powers (HARV-09b), power forms
+>   (HARV-09c), Ash Wave (HARV-09d), Striding Wave (HARV-09e) and the
+>   harvest-time table of HARV-09f, all retired by MST-03b. The skill tree
+>   foundation (HARV-09a) continues in [skill-trees.md](skill-trees.md).
+
 This roadmap maps the harvesting design plan (version 0.1, 2026-10-03) onto the
 existing `GF_Harvesting_Magic` feature. It records accepted decisions, the
 runtime contract, and the task sequence. Product tracking stays in issue

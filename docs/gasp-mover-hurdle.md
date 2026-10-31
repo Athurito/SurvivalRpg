@@ -257,7 +257,7 @@ existing interface is insufficient; no new class is prescribed up front.
   changed assets and document the source-target and reference comparison.
 - Record the manual visual test and remaining limits in the PR and handoff.
 
-Entry points at the time: [CMC Hurdle](gasp-hurdle-integration.md),
+Entry points at the time: [CMC Hurdle](gasp-mantle-integration.md#hurdle),
 [Mover Vault](gasp-mover-vault.md),
 [traversal presentation](gasp-mover-traversal-presentation.md),
 `Source/SurvivalRpg/Traversal/RpgGameplayAbility_Mantle.cpp` and

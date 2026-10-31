@@ -1,5 +1,7 @@
 # MST-09d: Catalog acceptance and cutover
 
+> **To be replaced (2026-10-31):** HRW-05 of the [harvesting rework roadmap](harvesting-rework-roadmap.md) redesigns the harvesting runes and rune-gated talents, and the mastery map roadmap marks this playtest superseded. Until HRW-05 merges, this report still describes the running code.
+
 Task report for MST-09d in the [mastery map roadmap](mastery-map-roadmap.md), [PR #328](https://github.com/Athurito/SurvivalRpg/pull/328). It closes the MST-09 umbrella of the [implementation plan](mastery-map-implementation-plan.md).
 
 The plan's acceptance for MST-09:

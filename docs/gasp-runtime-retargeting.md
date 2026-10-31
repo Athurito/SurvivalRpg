@@ -1,5 +1,10 @@
 # Optional GASP runtime retargeting
 
+> **Superseded in part (2026-10-31):** since `GASP-15` the CMC pawns need no
+> runtime follower ([Manny gameplay mesh](gasp-manny-gameplay-mesh.md)). The
+> optional profile remains only on the Mover, which keeps UEFN as its gameplay
+> mesh.
+
 This slice adds configurable runtime retargeting to the existing CMC traversal
 Experience. UEFN remains the visible default and the gameplay mesh. Selecting a
 specific replacement character, adjusting equipment for different body

@@ -1,5 +1,7 @@
 # MST-09b: Erntesprung, Durchschlag, Spread and Wandering Effect
 
+> **To be replaced (2026-10-31):** HRW-05 of the [harvesting rework roadmap](harvesting-rework-roadmap.md) redesigns the harvesting runes and rune-gated talents, and the mastery map roadmap marks this playtest superseded. Until HRW-05 merges, this report still describes the running code.
+
 Task report for MST-09b in the [mastery map roadmap](mastery-map-roadmap.md), [PR #326](https://github.com/Athurito/SurvivalRpg/pull/326). It adds the harvesting runes Erntesprung and Durchschlag, the Spread branch (Ausbreitung) of the [implementation plan](mastery-map-implementation-plan.md), section "Target content catalog": Weite Bahnen, then Gabelung or Tiefer Riss. It also adds the last Aftermath choice, Wandernde Wirkung. The plan's rules apply:
 - Propagation is finite.
 - No resource takes the same follow-up twice.

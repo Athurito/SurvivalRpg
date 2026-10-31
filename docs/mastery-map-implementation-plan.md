@@ -1,5 +1,7 @@
 # Mastery map implementation plan
 
+> **Status 2026-10-31: delivered, runes and talents to be replaced.** Every MST task is merged. The map, its trees and the choice swap stay. The harvesting talents, the runes and rune-gated talents are redesigned in HRW-05 of the [harvesting rework roadmap](harvesting-rework-roadmap.md); until that merges, this plan still describes the running code.
+
 Date: 2026-10-26. Status: documented design; implementation started on 2026-10-27 with MST-01, after CMB-01 to CMB-07 merged.
 
 Scheduling, task status, and the next implementation step live in the separate [mastery map roadmap](mastery-map-roadmap.md). User decision, 2026-10-26: finish CMB first, then start this system. Publishing these documents does not start implementation or change the [combat roadmap](combat-roadmap.md).

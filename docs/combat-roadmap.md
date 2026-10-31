@@ -1,5 +1,9 @@
 # Combat roadmap
 
+> **Status 2026-10-31: complete.** CMB-01 to CMB-07 are merged. "Current
+> state" below records the state before CMB-01; the task reports describe what
+> changed since. "Later (not planned)" remains the combat backlog.
+
 Status, rules and tasks for combat feel, enemies and the first rune on the way
 to the first playable. Each task is one bounded PR on a
 `claude/cmb-<nn>-<slug>` or `codex/cmb-<nn>-<slug>` branch. A task records its
@@ -193,8 +197,7 @@ several players hit the same target:
 
 ## Related documents
 
-- [Combat mastery reference](combat-mastery-reference.md): combat loop, mastery
-  and skill groups.
+- [Skill trees](skill-trees.md): mastery, talents and the combat tree.
 - [Combat network smoke](combat-network-smoke.md): remote melee acceptance.
 - [GAS ability content](gas-ability-content.md): native ability families and
   their content.

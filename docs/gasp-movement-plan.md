@@ -1,5 +1,7 @@
 # GASP movement plan (CMC)
 
+> **Status 2026-10-31: complete.** Every package of this plan, `GASP-09` to `GASP-17`, is merged. The [roadmap](gasp-integration-roadmap.md) holds the accepted state; the status line below records the plan's start.
+
 Status: planning document, 2026-10-11. `GASP-08` is merged ([#228](https://github.com/Athurito/SurvivalRpg/pull/228)); the user decided **Pass** on 2026-10-11. Every other package here is **Planned**. Each package gets its own task report and PR when it starts. This page holds the shared findings, the design rules, the package outlines, and their order.
 
 ## Design rules

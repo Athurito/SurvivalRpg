@@ -57,6 +57,6 @@ directory scans and cook inclusion remain separate audit obligations. The
 27.09.2026 capture covers all 6964 tracked project assets, but that observed result
 must be checked again in another checkout. `Saved/` evidence is local; the
 versioned manifest preserves the exact package mapping, hashes and baseline-map
-reference paths. See `docs/gasp-import-cleanup-audit.md` for the decision and
-remaining work. Do not remove originals before the required load/compile/cook
+reference paths. See the audit section of `docs/gasp-original-import-removal.md`
+for the decision and remaining work. Do not remove originals before the required load/compile/cook
 validation of an explicitly bounded removal step.

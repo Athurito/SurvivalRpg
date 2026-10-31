@@ -348,5 +348,5 @@ eines optionalen Retarget-Followers vor Umsetzung festlegen.
 und Late Join ohne übrig gebliebene Collision-, Montage- oder Input-Ownership.
 Aktive Abhängigkeiten projektlokal; Asset-Lade-/Compile- und passende Build-/Netz-
 Tests sowie Sichttest nachweisen. Historische Physics-Control-Warnungen aus
-[diesem Bericht](gasp-physics-control-followup.md) einbeziehen, ihre Ursache aber
+[diesem Bericht](https://github.com/Athurito/SurvivalRpg/blob/dcc0d5cb12556da7dee58fbc4ddf04fd976af160/docs/gasp-physics-control-followup.md) einbeziehen, ihre Ursache aber
 nicht ohne neue Evidenz als gelöst oder erneut vorhanden behaupten.

@@ -313,7 +313,7 @@ Die Ergebnisse von [VAL-03](gasp-buffered-traversal-replay.md) sind historisch
 und wurden für diesen Auditstart nicht wiederholt. Dessen ältere Pending-
 Fixture-Timingempfindlichkeit, VAL-01/02 und die NET-03-Rekonstruktionsgrenze
 bleiben offen. Historische Physics-Control-Befunde aus dem
-[Follow-up](gasp-physics-control-followup.md) müssen gegen aktuelle Quellen
+[Follow-up](https://github.com/Athurito/SurvivalRpg/blob/dcc0d5cb12556da7dee58fbc4ddf04fd976af160/docs/gasp-physics-control-followup.md) müssen gegen aktuelle Quellen
 geprüft werden; der Auditstart bestätigt weder deren Fortbestand noch Behebung.
 
 ## Roadmap-Auftrag
