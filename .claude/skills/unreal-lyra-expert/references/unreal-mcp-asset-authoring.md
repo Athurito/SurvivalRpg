@@ -95,9 +95,10 @@ A `GameplayCueNotify_Burst` `OnBurst` override is const, so it cannot call the B
 
 - `read_graph_dsl` returns nothing for an AnimGraph. Find nodes with `find_nodes`, read wiring with `get_node_infos`, and edit with `create_node`, `break_pins` and `connect_pins`. Pose node type ids include `Animation|Montage|Slot'DefaultSlot'`, `Animation|Blends|Layeredblendperbone`, `Animation|Poses|AdditiveIdentityPose` and `Animation|Blends|ApplyAdditive`.
 - A pose node's settings live in its `Node` struct, which `ObjectTools` does not write. In Python, `node = unreal.find_object(None, '<AnimBP path>:AnimGraph.<node name>')`, then `anim_node = node.get_editor_property('node')`, change it (`slot_name`, `layer_setup` with `unreal.InputBlendPose` and `unreal.BranchFilter`), and `node.set_editor_property('node', anim_node)`.
-- No tool creates a *Use cached pose* node. For an additive slot masked to part of the body, use an additive identity pose into the slot, a *Layered blend per bone* with another additive identity as its base, and *Apply Additive* onto the main pose (CMB-04 `HitFlinch` in `ABP_RpgGasp_CMC_Manny`).
-- A montage's slot track is not writable from Python (`slot_anim_tracks` edits land on a copy). Set `SlotAnimTracks` through `ObjectTools.set_properties`.
-- No tool links montage sections: `CompositeSections` and `SequenceLength` are not readable or writable through `ObjectTools` or Python, and `AnimationAssetTools.set_montage_section_sequences` leaves every section unlinked. A segment added through `SlotAnimTracks` does not extend `SequenceLength`, so playback still ends after the first one. Loops and chained sections need a new tool on the native helper.
+- The engine tools create *Save cached pose* but no *Use cached pose* node, because the editor indexes that action only after a refresh. `AnimationAssetTools.create_cached_pose_node(graph_path, cache_name, use)` creates both; wire them with `connect_pins` (HRW-01 `UpperBody` path in `ABP_RpgGasp_CMC_Manny`). For an additive slot masked to part of the body, use an additive identity pose into the slot, a *Layered blend per bone* with another additive identity as its base, and *Apply Additive* onto the main pose (CMB-04 `HitFlinch`).
+- `unreal.find_object(None, '<AnimBP path>:AnimGraph.<node>')` returns `None` until the AnimBP is loaded in the session; call `unreal.load_asset` first.
+- A montage's slot track element edited in place lands on a copy. Read `slot_anim_tracks`, change the element, put it back into the list and set the whole list with `set_editor_property` (HRW-01), or use `ObjectTools.set_properties`.
+- No tool links montage sections: `CompositeSections` and `SequenceLength` are not readable or writable through `ObjectTools` or Python, and `AnimationAssetTools.set_montage_section_sequences` leaves every section unlinked. A segment added through `SlotAnimTracks` does not extend `SequenceLength`, so playback still ends after the first one. To play one cycle of a longer clip, `AnimationAssetTools.trim_montage_range` sets the single segment's range and the length natively; loops and chained sections still need a new tool on the native helper.
 - `AnimationAssetTools.set_blend_space_samples` rejects the whole set when one coordinate lies outside an axis range, even by 0.2.
 
 ### GameplayAbility
@@ -156,6 +157,17 @@ A `GameplayCueNotify_Burst` `OnBurst` override is const, so it cannot call the B
 - Attribute trimming (`bTrimAttributes`) can drop an attribute that the spawn script writes and only an HLSL expression input in a CPU emitter's update script reads. The emitter then falls back to defaults or vanishes. Turn trimming off for such systems and confirm the attributes with `fx.DumpParticleData 1`.
 - Edit and rebuild systems only with PIE stopped. Edits made during Simulate applied only partly, and the save failed.
 
+### Static meshes and simple props
+
+Observed in HRW-01 (editor Python run as [Editor sessions and PIE](editor-session-and-pie.md#launch-an-editor) describes):
+
+- Sockets: `sockets` is protected. Create `unreal.StaticMeshSocket(mesh)`, set `socket_name` and `relative_location`, then `mesh.add_socket(socket)`; `find_socket` and `remove_socket` read and replace.
+- A simple self-built prop, such as the pickaxe: build a `unreal.DynamicMesh` with `GeometryScript_Primitives` (`append_cylinder`, `append_box`, `append_simple_swept_polygon`, whose sweep path is a list of `Vector`s), one `material_id` per part through `GeometryScriptPrimitiveOptions`. Create the asset with `GeometryScript_NewAssetUtils.create_new_static_mesh_asset_from_mesh`, then name and fill the material slots with `GeometryScript_AssetUtils.copy_mesh_to_static_mesh` (`replace_materials`, `new_materials`, `new_material_slot_names`).
+- Read a mesh's vertices with `copy_mesh_from_static_mesh` and `GeometryScript_MeshQueries.get_all_vertex_positions`, which returns a tuple; convert its `GeometryScriptVectorList` with `GeometryScript_List.convert_vector_list_to_array`.
+- `MaterialInstanceConstantFactoryNew` exposes no `initial_parent` to Python; create the instance, then call `MaterialEditingLibrary.set_material_instance_parent`.
+- Blueprint components without `ActorTools`: `SubobjectDataSubsystem.k2_gather_subobject_data_for_blueprint` lists each component twice; `delete_subobject(actor_handle, handle, blueprint)`, `add_new_subobject(unreal.AddNewSubobjectParams(...))` and `rename_subobject` edit them, followed by a compile.
+- `Texture2D.blueprint_get_size_x` reports the resident mip (32 px) of a texture that has not streamed; read the source size from the asset registry tag `Dimensions`.
+
 ### Save and validate
 
 - Save explicitly with `AssetTools.save_assets(asset_paths)` and the changed paths. An empty list saves every dirty package, which can include another agent's work in a shared editor.
@@ -192,7 +204,9 @@ Each toolset is named `Game.Build.Tools.Unreal.<module>.<Class>`:
 - `AnimationAssetTools` in `Build/Tools/Unreal/animation_asset_tools.py`: animation asset structure.
   - AnimBPs and layers: `create_anim_blueprint`, `set_anim_blueprint_abstract`, `create_animation_layer_interface`, `implement_animation_layer_interface`, `add_animation_layer`, `create_linked_animation_layer_node`, and `configure_linked_animation_layer`.
   - Blueprint metadata: `set_local_function_thread_safety` and `set_variable_tooltip`.
-  - Montages and notifies: `create_montage_from_sequence`, `set_montage_section_sequences` (one unlinked section per sequence, for directional variants), `retime_montage_range` (plays a time range of a single-segment montage slower, for example a held wind-up as an enemy telegraph; later notifies move with it), `register_animation_slot` (an optional `group_name` puts the slot in its own group, so its montages do not stop montages of the default group), `add_animation_notifies`, and `animation_notify_contract`.
+  - Montages and notifies: `create_montage_from_sequence`, `set_montage_section_sequences` (one unlinked section per sequence, for directional variants), `retime_montage_range` (plays a time range of a single-segment montage slower, for example a held wind-up as an enemy telegraph; later notifies move with it), `trim_montage_range` (plays only one time range of a single-segment montage from time 0, for example one cycle of a looping clip), `register_animation_slot` (an optional `group_name` puts the slot in its own group, so its montages do not stop montages of the default group), `add_animation_notifies`, and `animation_notify_contract`. `add_animation_notifies` uses class defaults; set a notify's own fields, such as the `EventTag` of `AnimNotify_RpgGameplayEvent`, afterwards with `ObjectTools.set_properties` on `<montage>:<notify object name>` from its result.
+  - Sequences: `rotate_sequence_root` turns an in-place clip's root keys about Z, for a clip that faces another direction than its owner.
+  - AnimGraph nodes: `create_cached_pose_node` (see [AnimBP graphs](#animbp-graphs)).
   - Skeletons: `copy_skeleton_blend_profiles`.
   - BlendSpaces and Choosers: `create_blend_space`, `set_blend_space_samples`, `create_chooser`, `configure_chooser`, and `set_chooser_disabled_rows` (also for embedded tables).
 - `AIAssetTools` in `Build/Tools/Unreal/ai_asset_tools.py`: `build_state_tree` writes a StateTree's evaluators, global tasks, states, conditions and transitions from a JSON description and compiles it; the engine's `StateTreeTools` only inspect. Keep the description next to the task report, so the tree can be rebuilt and reviewed as text.

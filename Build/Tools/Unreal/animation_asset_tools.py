@@ -485,6 +485,60 @@ class AnimationAssetTools(unreal.ToolsetDefinition):
 
     @toolset_registry.tool_call
     @staticmethod
+    def trim_montage_range(asset_path: str, start_time: float, end_time: float) -> float:
+        """Play only start_time..end_time (seconds) of a single-segment montage's animation, from montage time 0; does not save.
+
+        For one cycle cut from a looping clip. Notifies keep their animation frame and move earlier by start_time; a
+        notify outside the range refuses the trim. Returns the new montage length.
+        """
+        _guard()
+        values = (start_time, end_time)
+        if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in values):
+            raise RuntimeError('Times must be finite numbers')
+        length = unreal.RpgAnimationAssetTools.trim_montage_to_range(
+            _asset(asset_path, unreal.AnimMontage), float(start_time), float(end_time))
+        if length < 0.0:
+            raise RuntimeError('Montage or range does not qualify: one unscaled segment, at most one section, every notify inside the range')
+        return length
+
+    @toolset_registry.tool_call
+    @staticmethod
+    def rotate_sequence_root(asset_path: str, yaw_degrees: float) -> bool:
+        """Turn every root bone key of an in-place sequence by yaw_degrees about Z; does not save.
+
+        Re-orients a clip that faces another direction than its owner, for example a mocap swing that lands to one
+        side. Root translation keys turn with it; other bones keep their local keys. Refused with root motion enabled.
+        """
+        _guard()
+        if isinstance(yaw_degrees, bool) or not isinstance(yaw_degrees, (int, float)) or not math.isfinite(yaw_degrees):
+            raise RuntimeError('Yaw must be a finite number of degrees')
+        if not unreal.RpgAnimationAssetTools.rotate_sequence_root(_asset(asset_path, unreal.AnimSequence), float(yaw_degrees)):
+            raise RuntimeError('Sequence refused the rotation: project content, a root bone track, root motion off')
+        return True
+
+    @toolset_registry.tool_call
+    @staticmethod
+    def create_cached_pose_node(graph_path: str, cache_name: str, use: bool) -> str:
+        """Add a Save Cached Pose node named cache_name (use false) or a Use Cached Pose node reading it (use true).
+
+        graph_path is the AnimBP graph object path, for example '<AnimBP path>:AnimGraph'. Save names are unique per
+        AnimBP. The editor's action index offers Use Cached Pose only after it refreshes. Returns the node path;
+        connect pins and compile afterwards. Does not save.
+        """
+        _guard()
+        graph = unreal.find_object(None, graph_path)
+        if not isinstance(graph, unreal.EdGraph):
+            raise RuntimeError('Graph not found: ' + graph_path)
+        if use:
+            node = unreal.RpgAnimationAssetTools.create_use_cached_pose_node(graph, cache_name)
+        else:
+            node = unreal.RpgAnimationAssetTools.create_save_cached_pose_node(graph, cache_name)
+        if not node:
+            raise RuntimeError('Cached pose node refused: project AnimBP graph, unique save name, existing save for a use')
+        return node.get_path_name()
+
+    @toolset_registry.tool_call
+    @staticmethod
     def create_chooser(asset_path: str) -> str:
         """Create an empty root Chooser using the engine factory, then configure its signature/rows explicitly."""
         _guard()

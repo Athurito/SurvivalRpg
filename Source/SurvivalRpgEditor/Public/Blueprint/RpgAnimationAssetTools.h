@@ -6,6 +6,8 @@
 
 class UAnimBlueprint;
 class UAnimGraphNode_LinkedAnimLayer;
+class UAnimGraphNode_SaveCachedPose;
+class UAnimGraphNode_UseCachedPose;
 class UAnimInstance;
 class UAnimLayerInterface;
 class UAnimMontage;
@@ -112,4 +114,36 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
 	static float RetimeMontageRange(UAnimMontage* Montage, float StartTime, float EndTime, float PlayRate);
+
+	/**
+	 * Plays only the animation range StartTime..EndTime (seconds) of a project montage, from montage time zero, for
+	 * example one cycle cut from a looping clip. The montage must still be one unscaled segment of one sequence with at
+	 * most one section, which stays at zero. Notifies keep their animation frame and move earlier by StartTime; a notify
+	 * outside the range refuses the trim. Returns the new montage length in seconds, or a negative value when the montage
+	 * or the range does not qualify. Records undo, never saves.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
+	static float TrimMontageToRange(UAnimMontage* Montage, float StartTime, float EndTime);
+
+	/**
+	 * Rotates every key of a project sequence's root bone track by YawDegrees about the vertical axis, so an in-place clip
+	 * faces another direction relative to its owner; root translation keys turn with it. Other bones keep their local
+	 * keys. Refused for sequences with root motion enabled. Records undo, never saves.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
+	static bool RotateSequenceRoot(UAnimSequence* Sequence, float YawDegrees);
+
+	/**
+	 * Adds a Save Cached Pose node named CacheName to an AnimBP graph, as the editor's "New Save cached pose" action does.
+	 * The name must be unique among the AnimBP's cached poses. Returns the node or null. Records undo; no compile or save.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
+	static UAnimGraphNode_SaveCachedPose* CreateSaveCachedPoseNode(UEdGraph* Graph, const FString& CacheName);
+
+	/**
+	 * Adds a Use Cached Pose node reading the AnimBP's Save Cached Pose node named CacheName. The editor offers this
+	 * action only after its action index refreshes. Returns the node or null. Records undo; no compile or save.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
+	static UAnimGraphNode_UseCachedPose* CreateUseCachedPoseNode(UEdGraph* Graph, const FString& CacheName);
 };
