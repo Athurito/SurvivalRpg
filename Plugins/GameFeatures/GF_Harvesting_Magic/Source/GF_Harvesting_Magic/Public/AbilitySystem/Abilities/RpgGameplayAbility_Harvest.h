@@ -31,8 +31,8 @@ enum class ERpgHarvestStrikeSource : uint8
 	 * swing. Needs the SingleTarget shape, a montage with an attack window pair, and SwingTrace trace points on the tool.
 	 * The commit notify does not gate it. Each swing ends at its montage's blend-out; with the WhileInputActive policy a
 	 * held input starts the next one, and the Exclusive_Replaceable group lets a dodge, attack or block replace it. The
-	 * owning client's stock indicator shows each struck resource for a while instead of a view-ray preview. For axe and
-	 * pickaxe swings.
+	 * owning client's stock indicator shows each struck resource for a while instead of a view-ray preview. The swinger's
+	 * own montage may freeze briefly at the first contact (ToolSwingHitstopMilliseconds). For axe and pickaxe swings.
 	 */
 	ToolSwing
 };
@@ -209,6 +209,8 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestTunedValues
  * - Held tool swings: each swing ends at its montage's blend-out, so the WhileInputActive policy starts the next one
  *   while the input is held. A cancelled hold, for example by a dodge or a tool switch, waits for the next press. The
  *   server refuses a swing that a client starts sooner than the montage allows after cutting the previous one short.
+ * - Local hitstop: the locally controlled swinger's montage freezes for a tuned moment at its first resource contact of
+ *   a swing. The server's copy of a remote swinger never freezes, so simulated proxies and the cadence keep their timing.
  * - Both strike sources share how a selection resolves: rewards, stock, cues and rune follow-ups.
  * - Cancel safety: ending or cancelling the ability before the commit or contact, for example by switching tools,
  *   never yields loot.
@@ -280,6 +282,16 @@ public:
 	/** Returns the authored trace of this ability's tool swing, before the tuned reach. */
 	const FRpgSwingTraceParams& GetSwingTrace() const { return SwingTrace; }
 
+	/** Seconds the swinger's own montage freezes at a tool swing's first resource contact; zero freezes nothing. */
+	float GetToolSwingHitstopSeconds() const { return FMath::Max(0.0f, ToolSwingHitstopMilliseconds) * 0.001f; }
+
+	/**
+	 * Largest montage position difference in seconds that the ability system lets a simulated proxy keep before it moves
+	 * the proxy's montage to the replicated position. A listen-server host's hitstop times its swing's effective play
+	 * rate must stay below it, or observers of the host snap back after each hit.
+	 */
+	static constexpr float SimulatedMontageCorrectionSeconds = 0.1f;
+
 	/** Largest tuned swing reach in centimeters beyond the tool tip. */
 	static constexpr float MaxSwingReach = 400.0f;
 
@@ -336,6 +348,12 @@ public:
 
 	/** Swinging client: success cues this instance predicted, over every activation. */
 	uint32 GetOwnerPredictedToolCueCountForTests() const { return OwnerPredictedToolCueCountForTests; }
+
+	/** Local hitstops this instance froze its swing montage for on this machine, over every activation. */
+	uint32 GetToolSwingHitstopCountForTests() const { return ToolSwingHitstopCountForTests; }
+
+	/** Whether this instance's swing montage is frozen for a hitstop right now. */
+	bool IsToolSwingHitstopActiveForTests() const { return bToolSwingHitstopActive; }
 
 	/** Whether the swing window of this instance still holds timers or an open window. */
 	bool HasToolSwingResidualStateForTests() const
@@ -438,6 +456,13 @@ protected:
 	 */
 	virtual bool PlayToolSwing(const FRpgSwingTraceParams& Params);
 
+	/**
+	 * Freezes (bPaused) or resumes the running swing's montage on this machine for the local hitstop, without changing
+	 * its play rate, so the ability system keeps replicating the authored rate. Returns whether a montage was frozen or
+	 * resumed. Automation tests override it to record the hitstop without an animated mesh.
+	 */
+	virtual bool SetToolSwingMontagePaused(bool bPaused);
+
 	/** Stable semantic id below Ability.Harvesting sent with every request, for example Ability.Harvesting.PickaxeStrike. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting", meta = (Categories = "Ability.Harvesting"))
 	FGameplayTag HarvestAbilityId;
@@ -472,6 +497,17 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Tool Swing", meta = (ClampMin = "0.0", UIMax = "720.0", Units = "DegreesPerSecond", EditCondition = "StrikeSource == ERpgHarvestStrikeSource::ToolSwing"))
 	float SwingWindupSteeringRate = 360.0f;
+
+	/**
+	 * Milliseconds the swinger's own montage freezes when the tool meets its first resource of a swing, so the impact
+	 * reads with weight. Only the locally controlled swinger freezes: the owning client at its predicted contact, a
+	 * listen-server host at its own contact, whose window schedule waits as long. The server's montage of a remote
+	 * swinger, simulated proxies and the server's swing cadence keep their timing; the swinger's own swing ends that
+	 * much later. Keep it times the effective play rate below SimulatedMontageCorrectionSeconds, or observers of a host
+	 * snap back. Zero freezes nothing; combat attacks never freeze. ToolSwing only; designer-tuned static data.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Tool Swing", meta = (ClampMin = "0.0", ClampMax = "200.0", UIMax = "120.0", Units = "ms", EditCondition = "StrikeSource == ERpgHarvestStrikeSource::ToolSwing"))
+	float ToolSwingHitstopMilliseconds = 0.0f;
 
 	/**
 	 * Stock sections this ability requests from each target; targets clamp it to their remaining stock. With a swarm,
@@ -896,6 +932,15 @@ private:
 	/** Owning client: shows the stock of the resource this swing struck on the player's stock indicator for a while. */
 	void NoteStruckTargetLocally(UObject* Receiver, const FHitResult& Hit) const;
 
+	/**
+	 * Locally controlled swinger, first counted contact of a swing: freezes the swing's montage for the tuned hitstop. On
+	 * a listen-server host the window's clock schedule waits as long, because its montage is the authority's.
+	 */
+	void StartToolSwingHitstop();
+
+	/** Resumes a montage the hitstop froze; its timer and the end of the swing call it. */
+	void EndToolSwingHitstop();
+
 	UFUNCTION()
 	void HandleToolSwingWindowStartEvent(FGameplayEventData Payload);
 
@@ -965,10 +1010,20 @@ private:
 	 */
 	double ToolSwingEarliestNextStartTime = -1.0;
 
+	/** Locally controlled swinger: ends the current swing's hitstop. */
+	FTimerHandle ToolSwingHitstopTimerHandle;
+
+	/** Whether the current swing already froze for its hitstop; each swing freezes once. */
+	bool bToolSwingHitstopUsed = false;
+
+	/** Whether the hitstop holds the swing's montage frozen right now. */
+	bool bToolSwingHitstopActive = false;
+
 #if WITH_DEV_AUTOMATION_TESTS
 	uint32 ToolSwingStartCountForTests = 0;
 	uint32 AuthorityToolSwingHarvestCountForTests = 0;
 	uint32 OwnerPredictedToolCueCountForTests = 0;
+	uint32 ToolSwingHitstopCountForTests = 0;
 #endif
 
 	/**

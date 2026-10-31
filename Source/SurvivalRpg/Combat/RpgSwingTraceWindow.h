@@ -200,6 +200,13 @@ public:
 	void HandleEndNotify();
 
 	/**
+	 * Authority: the running montage holds still for Seconds, for example during a listen-server host's own local
+	 * hitstop, so the clock schedule's pending open and close move back by the same time. The montage poll follows the
+	 * montage anyway. Nothing happens without a schedule or on another machine.
+	 */
+	void DelayAuthoritySchedule(float Seconds);
+
+	/**
 	 * Closes an open window after its final sample and clears the authority schedule. bLogMissingEndNotify warns when the
 	 * window was still open without its end notify, for example at the montage's end.
 	 */

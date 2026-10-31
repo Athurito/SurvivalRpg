@@ -4274,7 +4274,7 @@ namespace RpgHarvestSwingTests
 		FDelegateHandle Handle;
 	};
 
-	/** A 12 cm sphere swept between two trace points on the weapon channel, as the axe and pickaxe swings trace. */
+	/** A 12 cm sphere swept from the tool's grip over its head to the tip on the weapon channel, as the axe and pickaxe swings trace. */
 	FRpgSwingTraceParams MakeSwingTrace()
 	{
 		FRpgSwingTraceParams Trace;
@@ -4282,7 +4282,7 @@ namespace RpgHarvestSwingTests
 		Trace.TraceRadius = 12.0f;
 		Trace.bTraceBetweenSockets = true;
 		Trace.TraceInterpolationDistance = 12.0f;
-		Trace.TracePointSockets = {TEXT("TracePoint_Base"), TEXT("TracePoint_Tip")};
+		Trace.TracePointSockets = {TEXT("TracePoint_Grip"), TEXT("TracePoint_Base"), TEXT("TracePoint_Tip")};
 		Trace.TraceChannel = Rpg_TraceChannel_Weapon;
 		return Trace;
 	}
@@ -4333,6 +4333,21 @@ namespace RpgHarvestSwingTests
 	{
 		RpgWeaponTraceInterpolation::FBladeSample Sample;
 		Sample.TracePointTransforms = {FTransform(FVector(BaseX, Y, Height)), FTransform(FVector(TipX, Y, Height))};
+		return Sample;
+	}
+
+	/**
+	 * Tool pose of a flat swing around the harvester at the origin: at Yaw and Height, one trace point at each of
+	 * Distances out from the harvester, each turned with the tool, so sub-steps follow the swing's arc.
+	 */
+	RpgWeaponTraceInterpolation::FBladeSample MakeRadialToolPose(const double Yaw, const double Height, const TArray<double>& Distances)
+	{
+		RpgWeaponTraceInterpolation::FBladeSample Sample;
+		const FRotator Rotation(0.0, Yaw, 0.0);
+		for (const double Distance : Distances)
+		{
+			Sample.TracePointTransforms.Add(FTransform(Rotation, Rotation.Vector() * Distance + FVector(0.0, 0.0, Height)));
+		}
 		return Sample;
 	}
 
@@ -4800,6 +4815,157 @@ bool FRpgHarvestSwingReachTuningTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestSwingCloseContactTest,
+	"SurvivalRpg.Harvesting.Swing.CloseContactHitsWithTheHandle",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestSwingCloseContactTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestSwingTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	// A 40 cm trunk whose face is 50 cm in front of the harvester, as when the player stands close to a tree.
+	const double Height = Harvester.Pawn->BaseEyeHeight - 40.0;
+	ARpgHarvestAutomationCollidableNodeActor* Trunk = SpawnNode(World, FVector(70.0, 0.0, Height), MakeProfile(World, 4));
+	const FGrantedAbility Swing = GrantSwing(Harvester.AbilitySystem, nullptr);
+	if (!Trunk || !TestNotNull(TEXT("Swing exists"), Swing.Instance))
+	{
+		return false;
+	}
+	Trunk->Collision->SetBoxExtent(FVector(20.0, 20.0, 200.0));
+	TestWorld.PrimeTimerManager();
+
+	// The tool sweeps flat from the harvester's right to its left. The grip is 40 cm out and the head reaches from 110 to
+	// 125 cm, so the head passes beyond the trunk's far corners (92 cm) while the handle crosses the trunk.
+	const TArray<double> HeadOnly = {110.0, 125.0};
+	const TArray<double> WholeTool = {40.0, 110.0, 125.0};
+
+	TestTrue(TEXT("The swing activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	TraceSwing(*World, *Swing.Instance, MakeRadialToolPose(-70.0, Height, HeadOnly), MakeRadialToolPose(70.0, Height, HeadOnly));
+	TestEqual(TEXT("Up close, a trace of the head alone passes beyond the trunk"), Trunk->HarvestableNode->GetRemainingSections(), 4);
+	TestEqual(TEXT("The head alone touches nothing"), Swing.Instance->GetToolSwingContactCountForTests(), 0);
+
+	TraceSwing(*World, *Swing.Instance, MakeRadialToolPose(-70.0, Height, WholeTool), MakeRadialToolPose(70.0, Height, WholeTool));
+	TestEqual(TEXT("The trace over the whole tool meets the trunk with its handle"), Trunk->HarvestableNode->GetRemainingSections(), 3);
+	TestEqual(TEXT("The handle's contact counts once"), Swing.Instance->GetToolSwingContactCountForTests(), 1);
+	TestEqual(TEXT("The section is rewarded once"), CountMaterial(Harvester.PlayerState), YieldPerSection);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestSwingHitstopTest,
+	"SurvivalRpg.Harvesting.Swing.LocalHitstopKeepsTheCadence",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestSwingHitstopTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestSwingTests;
+
+	// A 1.5 s montage that blends out over its last 0.25 s: the server times a 1.25 s cycle.
+	UAnimMontage* Montage = MakeMontage({}, 1.5f);
+	Montage->BlendOut.SetBlendTime(0.25f);
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	const double Eye = Harvester.Pawn->BaseEyeHeight;
+	ARpgHarvestAutomationCollidableNodeActor* Front = SpawnNode(World, FVector(110.0, 0.0, Eye), MakeProfile(World, 8));
+	ARpgHarvestAutomationCollidableNodeActor* Beside = SpawnNode(World, FVector(110.0, 100.0, Eye), MakeProfile(World, 8));
+	// Wide Swing lets one swing take two contacts.
+	URpgSkillTreeDefinition* Tree = MakeWideSwingTree();
+	FScopedTreeTool TreeTool(Tree);
+	URpgSkillTreeComponent* SkillTrees = PrepareSkillTree(Harvester, Tree);
+	URpgEquipmentInstance* Equipment = MakeTreeToolEquipment(Harvester);
+	const FGrantedAbility Swing = GrantSwing(Harvester.AbilitySystem, Equipment);
+	if (!Front || !Beside || !TestNotNull(TEXT("Skill trees are prepared"), SkillTrees) ||
+		!TestNotNull(TEXT("Swing exists"), Swing.Instance))
+	{
+		return false;
+	}
+	TestEqual(TEXT("Wide Swing is learned"),
+		SkillTrees->UnlockNode(TAG_HarvestTuningTest_Tree, TAG_HarvestSwingTest_Wide), ERpgSkillTreeUnlockResult::Unlockable);
+	Swing.Instance->ConfigureMontage(Montage);
+	Swing.Instance->ConfigureHitstop(60.0f);
+	TestWorld.PrimeTimerManager();
+	URpgHarvestAutomationTestAbility& Ability = *Swing.Instance;
+	const FHitResult FrontContact = MakeContact(Front, FrontFace(Front), FVector(70.0, -40.0, Eye));
+	const FHitResult BesideContact = MakeContact(Beside, FrontFace(Beside), FVector(70.0, 60.0, Eye));
+
+	// The test harvester is the server's own, locally controlled player, as a listen-server host is.
+	TestTrue(TEXT("The swing activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	const double SwingStart = World->GetTimeSeconds();
+	TestWorld.AdvanceTimers(0.3f);
+	TestTrue(TEXT("Nothing freezes before a contact"), Ability.GetMontagePauseTimes().IsEmpty());
+	Ability.HandleToolSwingHitsForTests({FrontContact}, ERpgSwingTraceRole::Authority);
+	const double ContactTime = World->GetTimeSeconds();
+	if (TestEqual(TEXT("The host's contact freezes its own montage once"), Ability.GetMontagePauseTimes().Num(), 1))
+	{
+		TestTrue(TEXT("The montage freezes at the contact"), FMath::IsNearlyEqual(Ability.GetMontagePauseTimes()[0], ContactTime, 0.001));
+	}
+	TestTrue(TEXT("The hitstop holds the montage"), Ability.IsToolSwingHitstopActiveForTests());
+	TestEqual(TEXT("The contact takes its section during the freeze"), Front->HarvestableNode->GetRemainingSections(), 7);
+	Ability.HandleToolSwingHitsForTests({BesideContact}, ERpgSwingTraceRole::Authority);
+	TestEqual(TEXT("The swing's second contact counts"), Ability.GetToolSwingContactCountForTests(), 2);
+	TestEqual(TEXT("A further contact of the same swing freezes nothing more"), Ability.GetMontagePauseTimes().Num(), 1);
+
+	TestWorld.AdvanceTimers(0.05f);
+	TestTrue(TEXT("50 ms after the contact the montage is still frozen"), Ability.IsToolSwingHitstopActiveForTests());
+	TestWorld.AdvanceTimers(0.011f);
+	TestFalse(TEXT("After the tuned 60 ms the montage plays on"), Ability.IsToolSwingHitstopActiveForTests());
+	if (TestEqual(TEXT("The montage resumes once"), Ability.GetMontageResumeTimes().Num(), 1))
+	{
+		TestTrue(
+			TEXT("The montage froze for the tuned 60 ms"),
+			FMath::IsNearlyEqual(Ability.GetMontageResumeTimes()[0] - ContactTime, 0.061, 0.002));
+	}
+
+	// The server times the swing from its montage alone; the freeze neither shortens nor stretches the cadence.
+	TestTrue(TEXT("The cycle is the montage's"), FMath::IsNearlyEqual(Ability.GetToolSwingCycleSecondsForTests(), 1.25f, 0.001f));
+	Ability.SetRemoteInstanceHasEnded();
+	TestTrue(
+		TEXT("A swing cut short holds the next one back by the montage's cycle, as without a hitstop"),
+		FMath::IsNearlyEqual(
+			Ability.GetToolSwingEarliestNextStartForTests(),
+			SwingStart + 1.25 - URpgGameplayAbility_Harvest::ToolSwingCadenceToleranceSeconds,
+			0.001));
+	Harvester.AbilitySystem->CancelAbilityHandle(Swing.Handle);
+	TestWorld.AdvanceTimers(1.0f);
+
+	// A remote owning client freezes at its predicted contact; a cancel during the freeze resumes the montage at once.
+	TestTrue(TEXT("The next swing activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	Ability.HandleToolSwingHitsForTests({FrontContact}, ERpgSwingTraceRole::OwnerFeedback);
+	TestEqual(TEXT("The owner's predicted contact freezes its montage"), Ability.GetMontagePauseTimes().Num(), 2);
+	TestEqual(TEXT("The predicted contact takes nothing"), Front->HarvestableNode->GetRemainingSections(), 7);
+	TestWorld.AdvanceTimers(0.02f);
+	Harvester.AbilitySystem->CancelAbilityHandle(Swing.Handle);
+	TestFalse(TEXT("A cancel during the freeze ends it"), Ability.IsToolSwingHitstopActiveForTests());
+	TestEqual(TEXT("The cancel resumes the montage at once, so it can blend out"), Ability.GetMontageResumeTimes().Num(), 2);
+	TestWorld.AdvanceTimers(0.1f);
+	TestEqual(TEXT("No stale timer resumes it again"), Ability.GetMontageResumeTimes().Num(), 2);
+
+	// Without a tuned hitstop nothing freezes.
+	Ability.ConfigureHitstop(0.0f);
+	TestTrue(TEXT("A swing without hitstop activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	Ability.HandleToolSwingHitsForTests({FrontContact}, ERpgSwingTraceRole::Authority);
+	TestEqual(TEXT("The contact still takes its section"), Front->HarvestableNode->GetRemainingSections(), 6);
+	TestEqual(TEXT("A swing without hitstop freezes nothing"), Ability.GetMontagePauseTimes().Num(), 2);
+	Harvester.AbilitySystem->CancelAbilityHandle(Swing.Handle);
+	return true;
+}
+
 namespace RpgHarvestHoldSwingTests
 {
 	using namespace RpgHarvestSwingTests;
@@ -4860,6 +5026,7 @@ bool FRpgHarvestSwingHoldTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
+	Swing.Instance->ConfigureHitstop(60.0f);
 	TestWorld.PrimeTimerManager();
 	URpgAbilitySystemComponent& AbilitySystem = *Harvester.AbilitySystem;
 	const FHitResult Contact = MakeContact(Node, FrontFace(Node), FVector(70.0, -40.0, Eye));
@@ -4872,6 +5039,9 @@ bool FRpgHarvestSwingHoldTest::RunTest(const FString& Parameters)
 	ProcessInput(AbilitySystem);
 	TestEqual(TEXT("A held input never restarts a running swing"), Swing.Instance->GetPlayedSwingCount(), 1);
 	TestEqual(TEXT("The swing takes its section once"), Node->HarvestableNode->GetRemainingSections(), 7);
+	TestEqual(TEXT("The swing's contact freezes its montage once"), Swing.Instance->GetMontagePauseTimes().Num(), 1);
+	TestWorld.AdvanceTimers(0.1f);
+	TestEqual(TEXT("The hitstop ends before the swing does"), Swing.Instance->GetMontageResumeTimes().Num(), 1);
 
 	// The swing ends where its montage starts to blend out; the held input starts the next one in the next frame.
 	Swing.Instance->HandleToolSwingBlendOutForTests();
@@ -4883,6 +5053,7 @@ bool FRpgHarvestSwingHoldTest::RunTest(const FString& Parameters)
 	Swing.Instance->HandleToolSwingHitsForTests({Contact}, ERpgSwingTraceRole::Authority);
 	Swing.Instance->HandleToolSwingHitsForTests({Contact}, ERpgSwingTraceRole::Authority);
 	TestEqual(TEXT("Each held swing strikes the resource once"), Node->HarvestableNode->GetRemainingSections(), 6);
+	TestEqual(TEXT("Each held swing freezes once at its contact"), Swing.Instance->GetMontagePauseTimes().Num(), 2);
 
 	// Released mid-swing: the running swing finishes, and no further one starts.
 	AbilitySystem.AbilityInputTagReleased(PrimaryInputTag());

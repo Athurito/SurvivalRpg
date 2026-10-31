@@ -116,11 +116,12 @@ public:
 	static float RetimeMontageRange(UAnimMontage* Montage, float StartTime, float EndTime, float PlayRate);
 
 	/**
-	 * Plays only the animation range StartTime..EndTime (seconds) of a project montage, from montage time zero, for
-	 * example one cycle cut from a looping clip. The montage must still be one unscaled segment of one sequence with at
-	 * most one section, which stays at zero. Notifies keep their animation frame and move earlier by StartTime; a notify
-	 * outside the range refuses the trim. Returns the new montage length in seconds, or a negative value when the montage
-	 * or the range does not qualify. Records undo, never saves.
+	 * Plays only the range StartTime..EndTime (seconds of the current montage time) of a project montage, from montage
+	 * time zero, for example one cycle cut from a looping clip, or a montage cut shorter again. The montage must be one
+	 * unscaled segment of one sequence with at most one section, which stays at zero; on an untrimmed montage the range is
+	 * animation time. Notifies keep their animation frame and move earlier by StartTime; a notify outside the range
+	 * refuses the trim. Returns the new montage length in seconds, or a negative value when the montage or the range does
+	 * not qualify. Records undo, never saves.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
 	static float TrimMontageToRange(UAnimMontage* Montage, float StartTime, float EndTime);

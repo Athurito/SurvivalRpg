@@ -5,6 +5,7 @@
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "Abilities/Tasks/AbilityTask_WaitInputRelease.h"
+#include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "CollisionQueryParams.h"
 #include "Components/InstancedStaticMeshComponent.h"
@@ -186,6 +187,9 @@ void URpgGameplayAbility_Harvest::EndAbility(
 		}
 	}
 	ToolSwingStartTime = -1.0;
+
+	// A frozen montage resumes before the montage task stops it, so it blends out instead of holding its pose.
+	EndToolSwingHitstop();
 
 	// A stride that ends early, for example through a tool switch or death, still delivers what it harvested.
 	FinishStride();
@@ -517,6 +521,7 @@ void URpgGameplayAbility_Harvest::BeginToolSwing()
 	ToolSwingRequest = FRpgHarvestRequest();
 	bHasToolSwingRequest = false;
 	bToolSwingTakesContacts = true;
+	bToolSwingHitstopUsed = false;
 
 	// The server times the swing's cycle, so a client that cuts it short cannot start the next one any sooner.
 	if (HasAuthority(&CurrentActivationInfo))
@@ -681,6 +686,9 @@ void URpgGameplayAbility_Harvest::HandleToolSwingHits(const TArray<FHitResult>& 
 		ToolSwingStruck.Add(StruckKey);
 		++ToolSwingContacts;
 
+		// The tool met a resource: the swinger's own montage freezes for a moment, whatever the contact yields.
+		StartToolSwingHitstop();
+
 		if (Role == ERpgSwingTraceRole::Authority)
 		{
 			CommitToolSwingContact(Receiver, Hit);
@@ -717,6 +725,74 @@ void URpgGameplayAbility_Harvest::NoteStruckTargetLocally(UObject* Receiver, con
 	{
 		TargetingComponent->NoteStruckTarget(CurrentSpecHandle, Receiver, Hit);
 	}
+}
+
+void URpgGameplayAbility_Harvest::StartToolSwingHitstop()
+{
+	// Only the swinger's own machine freezes: the owning client at its predicted contact, a listen-server host at its own.
+	// The server's copy of a remote swinger never does, so simulated proxies and the swing cadence keep their timing.
+	const float HitstopSeconds = GetToolSwingHitstopSeconds();
+	UWorld* World = GetWorld();
+	if (bToolSwingHitstopUsed || HitstopSeconds <= 0.0f || !World || !IsActive() || !IsLocallyControlled())
+	{
+		return;
+	}
+	bToolSwingHitstopUsed = true;
+	if (!SetToolSwingMontagePaused(true))
+	{
+		return;
+	}
+	bToolSwingHitstopActive = true;
+	World->GetTimerManager().SetTimer(ToolSwingHitstopTimerHandle, this, &ThisClass::EndToolSwingHitstop, HitstopSeconds, false);
+
+	// A host's montage is also the authority's: its window's clock schedule waits as long, so the window keeps the
+	// authored part of the motion after the freeze.
+	if (HasAuthority(&CurrentActivationInfo))
+	{
+		ToolSwingWindow.DelayAuthoritySchedule(HitstopSeconds);
+	}
+#if WITH_DEV_AUTOMATION_TESTS
+	++ToolSwingHitstopCountForTests;
+#endif
+}
+
+void URpgGameplayAbility_Harvest::EndToolSwingHitstop()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ToolSwingHitstopTimerHandle);
+	}
+	if (bToolSwingHitstopActive)
+	{
+		bToolSwingHitstopActive = false;
+		SetToolSwingMontagePaused(false);
+	}
+}
+
+bool URpgGameplayAbility_Harvest::SetToolSwingMontagePaused(const bool bPaused)
+{
+	UAnimInstance* AnimInstance = CurrentActorInfo ? CurrentActorInfo->GetAnimInstance() : nullptr;
+	if (!AnimInstance || !HarvestMontage)
+	{
+		return false;
+	}
+
+	// Pausing keeps the instance's play rate, which the ability system replicates; only the position falls behind.
+	if (bPaused)
+	{
+		if (GetCurrentMontage() != HarvestMontage || !AnimInstance->Montage_IsPlaying(HarvestMontage))
+		{
+			return false;
+		}
+		AnimInstance->Montage_Pause(HarvestMontage);
+		return true;
+	}
+	if (!AnimInstance->Montage_IsActive(HarvestMontage))
+	{
+		return false;
+	}
+	AnimInstance->Montage_Resume(HarvestMontage);
+	return true;
 }
 
 void URpgGameplayAbility_Harvest::CommitToolSwingContact(UObject* Receiver, const FHitResult& Hit)

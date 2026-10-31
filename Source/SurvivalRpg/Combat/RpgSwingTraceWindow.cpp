@@ -549,6 +549,27 @@ bool FRpgSwingTraceWindow::ScheduleAuthorityWindow()
 	return true;
 }
 
+void FRpgSwingTraceWindow::DelayAuthoritySchedule(const float Seconds)
+{
+	UWorld* World = GetWorld();
+	if (!bAuthorityScheduled || !World || !IsAuthority() || !FMath::IsFinite(Seconds) || Seconds <= 0.0f)
+	{
+		return;
+	}
+
+	FTimerManager& TimerManager = World->GetTimerManager();
+	auto Delay = [this, &TimerManager, Seconds](FTimerHandle& Handle, void (FRpgSwingTraceWindow::*Callback)())
+	{
+		if (TimerManager.IsTimerActive(Handle))
+		{
+			SetWindowTimer(Handle, Callback, FMath::Max(0.0f, TimerManager.GetTimerRemaining(Handle)) + Seconds);
+		}
+	};
+	Delay(AuthorityStartTimerHandle, &FRpgSwingTraceWindow::OnAuthorityScheduleStarted);
+	Delay(AuthorityEndTimerHandle, &FRpgSwingTraceWindow::OnAuthorityScheduleEnded);
+	LogLifecycleLazy(TEXT("AuthorityScheduleDelayed"), [Seconds]() { return FString::Printf(TEXT("Delay=%.3f"), Seconds); });
+}
+
 void FRpgSwingTraceWindow::ClearAuthoritySchedule()
 {
 	if (UWorld* World = GetWorld())
