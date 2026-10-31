@@ -7,6 +7,11 @@ runtime contract, and the task sequence. Product tracking stays in issue
 harvesting abilities into Blueprint content belongs to issue
 [#86](https://github.com/Athurito/SurvivalRpg/issues/86).
 
+> **Superseded in part (2026-10-31):** the hit model (camera aiming) and the
+> harvesting powers are replaced by the
+> [harvesting rework roadmap](harvesting-rework-roadmap.md) and by MST-03b. The
+> stock core, the PCG bridge, persistence and co-op load below still hold.
+
 ## Design goals
 
 - The player starts with a pickaxe and an axe. The tool then awakens into a

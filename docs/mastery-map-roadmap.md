@@ -1,6 +1,6 @@
 # Mastery map roadmap
 
-Updated: 2026-10-30. Status: **Complete**; MST-09d merged, and every task of this roadmap is merged. The playtest backlog waits for the user.
+Updated: 2026-10-31. Status: **Complete**; MST-09d merged, and every task of this roadmap is merged. The user stopped the playtest on 2026-10-31; harvesting and runes continue in the [harvesting rework roadmap](harvesting-rework-roadmap.md).
 
 This is the execution roadmap for the [mastery map implementation plan](mastery-map-implementation-plan.md): a zoomable shared harvesting mastery map, meaningful talent choices, and the rune loot/crafting/upgrade loop. The plan owns design, architecture, and detailed acceptance contracts; this roadmap owns task status, order, and the current handoff.
 
@@ -90,27 +90,29 @@ Each task uses the detailed contracts in the implementation plan. Run relevant c
 
 Playtests of merged MST steps that wait for the user's batch test. Remove a row once tested; findings go into later PRs.
 
+On 2026-10-31 the user tested the skill map, harvesting and the combat switch (16 of 57 steps), then stopped: harvesting and runes are reworked in the [harvesting rework roadmap](harvesting-rework-roadmap.md), and crafting stays as it is for now. Rows marked "Superseded" are not tested again.
+
 | Task | Playtest | Status |
 | --- | --- | --- |
-| MST-02 | [Playtest](mastery-map-skill-screen.md#playtest): H, wheel and drag, select, Learn/Refund with points, zoom levels, reopen, keyboard/gamepad, two players | Waiting for the user |
-| MST-03a | [Playtest](mastery-map-harvest-work.md#playtest): regression only, harvesting unchanged; pickaxe, axe, groves, swarm, two players on one vein | Waiting for the user |
-| MST-03b | [Playtest](mastery-map-shared-harvesting.md#playtest): one Harvesting tree for axe and pickaxe, mastery XP, Cleaving Force, Shatter or Follow Through, no Q/E/R powers, two players | Waiting for the user |
-| MST-03c | [Playtest](mastery-map-single-map.md#playtest): full-tab map and top bar, node card that follows its node, F/R and X/Y learn and refund, gamepad zoom, reopen, two players | Waiting for the user |
-| MST-04 | [Playtest](mastery-map-choice-swap.md#playtest): Switch from Bulwark to Riposte with no free point, blocking follows, Shatter and Follow Through, two players | Waiting for the user |
-| MST-05 | [Playtest](mastery-map-rune-sockets.md#playtest): a Brand rune in the pockets, axe and pickaxe unchanged in pockets, backpack and chests, two players; socketing comes with MST-06 | Waiting for the user |
-| MST-06a | [Playtest](mastery-map-socket-ui.md#playtest): axe in Weapon I or II shows three sockets, drag Brand in and out, other items refused, two players | Waiting for the user |
-| MST-06b | [Playtest](mastery-map-brand-burn.md#playtest): socketed Brand sets struck veins and pines glowing for about 4 s and works them further, nothing without Brand, two players | Waiting for the user |
-| MST-06c | [Playtest](mastery-map-rune-talents.md#playtest): learn Lasting Power without Brand (sleeping), wake it by socketing Brand, longer burns, Discharge releases the burn, two players | Waiting for the user |
-| MST-06d | [Playtest](mastery-map-rune-bar.md#playtest): the rune bar shows the tool in Weapon I and its sockets, clicking Brand frames its talents violet, the bar follows socket changes, two players | Waiting for the user |
-| MST-07a | [Playtest](mastery-map-rune-recipes.md#playtest): the Kiln offers Brand Rune once a player carries Brand, 4 ore and 2 charcoal in the chest craft a new rank-I Brand, both players see the recipe | Waiting for the user |
-| MST-07b | [Playtest](mastery-map-rune-rewards.md#playtest): Harvesting level 3 shows a Brand reward on the Character tab, claiming adds a rune, a full inventory keeps the reward, veins and pines sometimes drop Brand, two players | Waiting for the user |
-| MST-07c | [Playtest](mastery-map-portal-rewards.md#playtest): closing the Root Grove portal in `Lvl_ResourceParity` after its boss gives every realm participant and the closer "Brand (Portal)", two players | Waiting for the user |
-| MST-08a | [Playtest](mastery-map-rune-shrine.md#playtest): the Runenschrein in `Lvl_HarvestPickaxe` salvages Brand into essence and upgrades it in place with essence, ore and charcoal, two players | Waiting for the user |
-| MST-08b | [Playtest](mastery-map-rune-shrine-screen.md#playtest): the Runenschrein opens its own screen with the rune list, rank preview, costs with chest counts, upgrade and salvage; the Kiln keeps the crafting screen, two players | Waiting for the user |
-| MST-09a | [Playtest](mastery-map-rune-flow.md#playtest): Echo flashes on every third hit, Kraftübertragung carries overkill to the next vein, the Rune Flow talents divide or condense, two players | Waiting for the user |
-| MST-09b | [Playtest](mastery-map-spread.md#playtest): Erntesprung leaps green to two more veins, Durchschlag strikes red into the vein behind, Spread forks or deepens them, a burn wanders on with Wandering Effect, two players | Waiting for the user |
-| MST-09c | [Playtest](mastery-map-helpers.md#playtest): every fifth hit with Totenarbeiter raises a wisp that works nearby veins for 5 s, one crew at a time, Pack or Master Worker, two players | Waiting for the user |
-| MST-09d | [Playtest](mastery-map-cutover.md#playtest): all six runes with their own icons and effects, three at a time in the pickaxe, the wisp's strike burst, the whole Harvesting tree of five branches, two players | Waiting for the user |
+| MST-02 | [Playtest](mastery-map-skill-screen.md#playtest): H, wheel and drag, select, Learn/Refund with points, zoom levels, reopen, keyboard/gamepad, two players | Tested 2026-10-31: works; open finding A3, the node card stays open and covers other buttons, and a second click on the node should close it |
+| MST-03a | [Playtest](mastery-map-harvest-work.md#playtest): regression only, harvesting unchanged; pickaxe, axe, groves, swarm, two players on one vein | Superseded by the harvesting rework |
+| MST-03b | [Playtest](mastery-map-shared-harvesting.md#playtest): one Harvesting tree for axe and pickaxe, mastery XP, Cleaving Force, Shatter or Follow Through, no Q/E/R powers, two players | Superseded by the harvesting rework; tested 2026-10-31: mastery XP worked, Cleaving Force showed no visible difference on a four-section pine (finding B4) |
+| MST-03c | [Playtest](mastery-map-single-map.md#playtest): full-tab map and top bar, node card that follows its node, F/R and X/Y learn and refund, gamepad zoom, reopen, two players | Tested 2026-10-31: works; open finding A1, the top-bar category buttons overflow the edge and are not needed |
+| MST-04 | [Playtest](mastery-map-choice-swap.md#playtest): Switch from Bulwark to Riposte with no free point, blocking follows, Shatter and Follow Through, two players | Tested 2026-10-31: switching works; block and perfect-block stamina not tested (no enemy at hand) |
+| MST-05 | [Playtest](mastery-map-rune-sockets.md#playtest): a Brand rune in the pockets, axe and pickaxe unchanged in pockets, backpack and chests, two players; socketing comes with MST-06 | Superseded: runes are redesigned in HRW-05 |
+| MST-06a | [Playtest](mastery-map-socket-ui.md#playtest): axe in Weapon I or II shows three sockets, drag Brand in and out, other items refused, two players | Superseded: runes are redesigned in HRW-05 |
+| MST-06b | [Playtest](mastery-map-brand-burn.md#playtest): socketed Brand sets struck veins and pines glowing for about 4 s and works them further, nothing without Brand, two players | Superseded: runes are redesigned in HRW-05 |
+| MST-06c | [Playtest](mastery-map-rune-talents.md#playtest): learn Lasting Power without Brand (sleeping), wake it by socketing Brand, longer burns, Discharge releases the burn, two players | Superseded: runes are redesigned in HRW-05 |
+| MST-06d | [Playtest](mastery-map-rune-bar.md#playtest): the rune bar shows the tool in Weapon I and its sockets, clicking Brand frames its talents violet, the bar follows socket changes, two players | Superseded: runes are redesigned in HRW-05 |
+| MST-07a | [Playtest](mastery-map-rune-recipes.md#playtest): the Kiln offers Brand Rune once a player carries Brand, 4 ore and 2 charcoal in the chest craft a new rank-I Brand, both players see the recipe | Superseded: runes are redesigned in HRW-05 |
+| MST-07b | [Playtest](mastery-map-rune-rewards.md#playtest): Harvesting level 3 shows a Brand reward on the Character tab, claiming adds a rune, a full inventory keeps the reward, veins and pines sometimes drop Brand, two players | Superseded: runes are redesigned in HRW-05 |
+| MST-07c | [Playtest](mastery-map-portal-rewards.md#playtest): closing the Root Grove portal in `Lvl_ResourceParity` after its boss gives every realm participant and the closer "Brand (Portal)", two players | Superseded: runes are redesigned in HRW-05 |
+| MST-08a | [Playtest](mastery-map-rune-shrine.md#playtest): the Runenschrein in `Lvl_HarvestPickaxe` salvages Brand into essence and upgrades it in place with essence, ore and charcoal, two players | Superseded: runes are redesigned in HRW-05 |
+| MST-08b | [Playtest](mastery-map-rune-shrine-screen.md#playtest): the Runenschrein opens its own screen with the rune list, rank preview, costs with chest counts, upgrade and salvage; the Kiln keeps the crafting screen, two players | Superseded: runes are redesigned in HRW-05 |
+| MST-09a | [Playtest](mastery-map-rune-flow.md#playtest): Echo flashes on every third hit, Kraftübertragung carries overkill to the next vein, the Rune Flow talents divide or condense, two players | Superseded: runes are redesigned in HRW-05 |
+| MST-09b | [Playtest](mastery-map-spread.md#playtest): Erntesprung leaps green to two more veins, Durchschlag strikes red into the vein behind, Spread forks or deepens them, a burn wanders on with Wandering Effect, two players | Superseded: runes are redesigned in HRW-05 |
+| MST-09c | [Playtest](mastery-map-helpers.md#playtest): every fifth hit with Totenarbeiter raises a wisp that works nearby veins for 5 s, one crew at a time, Pack or Master Worker, two players | Superseded: runes are redesigned in HRW-05 |
+| MST-09d | [Playtest](mastery-map-cutover.md#playtest): all six runes with their own icons and effects, three at a time in the pickaxe, the wisp's strike burst, the whole Harvesting tree of five branches, two players | Superseded: runes are redesigned in HRW-05 |
 
 ## Current handoff
 
@@ -125,6 +127,6 @@ Playtests of merged MST steps that wait for the user's batch test. Remove a row 
   - One map for every tree. After the MST-03c review, MST-10a and MST-10b come before MST-04, with Combat as the second cluster, and the game window has a minimum size of 1280 x 720.
   - Combat talents as proposed: Kampfrhythmus (+10 % base damage), then Konter (perfect block +50 % stagger damage, more stamina back) or Bollwerk (block 25 % less stamina, 15 % more damage stopped). Combat mastery XP comes from kills.
   - For MST-03b, the retired tool trees and powers and the Impact talents as recorded in its report.
-- **Next MST action:** none planned; only the playtest backlog remains. New work needs a user decision.
+- **Next MST action:** none planned. The open skill-map findings A1 and A3 wait for a user decision; harvesting and runes continue in the [harvesting rework roadmap](harvesting-rework-roadmap.md).
 - **Rune contract:** rechecked for MST-05. CMB-07's engraved weapon runes and the combat Echo stay unchanged; harvesting runes are separate rune items in `GF_Harvesting_Magic`.
 - **Later content decisions:** production XP and cost curves and the starter and guaranteed-reward pacing remain authored tuning. Rune drop chances, milestone levels and the portal reward are authored content; the 2 % Brand drop is first tuning.
