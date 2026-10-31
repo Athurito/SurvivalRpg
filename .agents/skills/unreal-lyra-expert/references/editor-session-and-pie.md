@@ -41,6 +41,7 @@ Behavior observed in this project's UE 5.8 editor sessions on the primary workst
 
 - A test editor started by `ue.py test` opens its own MCP server on port 8000 when no editor holds it. An outside MCP client then logs `Call to unknown method "server/discover"` as an error, which fails the running test. Pass `--ue-arg=-ini:EditorPerProjectUserSettings:[/Script/ModelContextProtocolEngine.ModelContextProtocolSettings]:bAutoStartServer=False` for regression runs; the same override keeps `ue.py cook` from failing on a held port.
 - Stopping a background test loop does not always stop its process tree on Windows. Kill the descendants (bash, python, `UnrealEditor-Cmd.exe`) and confirm that none remain.
+- Do not combine `SurvivalRpg.Harvesting` with PIE network tests in one `ue.py test` call: a `Harvesting.Persistence` test leaves its `HarvestRenewableAreaTest` world referenced, and the next PIE test's `NewMap` crashes the editor with "World Memory Leaks" (HRW-01). Run them in separate calls.
 - A/B against master content: `git checkout origin/master -- <asset>` runs a suite on the old asset, and `git checkout HEAD -- <asset>` inside a `trap ... EXIT` restores it.
 - Importing the project toolsets writes a `__pycache__` folder under `Build/Tools/Unreal`, which `.gitignore` does not cover; delete it before committing.
 
