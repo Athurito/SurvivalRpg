@@ -1,5 +1,7 @@
 # VFX-07: Rift Grip
 
+> **Superseded in part (2026-10-31):** MST-03b retired the Rift Grip power ([shared harvesting](mastery-map-shared-harvesting.md)). The strike effect, its cue and the gallery demo below still exist, and VFX-12 plans to build its chain lightning on them.
+
 Task report for VFX-07 in the [VFX roadmap](vfx-roadmap.md). Rift Grip is the pickaxe's awakened power: hold Q to aim, release to rip three sections from up to three ore veins ([harvesting-roadmap.md](harvesting-roadmap.md), HARV-04). Until now it had no effect of its own. With this task a short lightning strike hits every harvested vein, which bursts into rock debris, dust and sparks with a thunder crack and rattling stone.
 
 ## Behavior

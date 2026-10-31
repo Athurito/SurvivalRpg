@@ -1,5 +1,7 @@
 # GASP CMC traversal: Mantle, Vault and Hurdle
 
+> **Superseded in part (2026-10-31):** these slices ran on the UEFN gameplay mesh. Since `GASP-15` the CMC pawns play Manny with Manny traversal copies ([Manny gameplay mesh](gasp-manny-gameplay-mesh.md)). The test map `Lvl_RpgGaspMantle` and its presentation still apply.
+
 The CMC traversal Experience gained its three grounded actions in three slices: contextual Mantle, then Vault, then Hurdle. Each section below is the report of one slice; they share the traversal Ability, query, chooser and test map `Lvl_RpgGaspMantle`.
 
 ## Mantle

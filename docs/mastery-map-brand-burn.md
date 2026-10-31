@@ -1,5 +1,7 @@
 # MST-06b: Brand's burn
 
+> **To be replaced (2026-10-31):** HRW-05 of the [harvesting rework roadmap](harvesting-rework-roadmap.md) redesigns the harvesting runes and rune-gated talents, and the mastery map roadmap marks this playtest superseded. Until HRW-05 merges, this report still describes the running code.
+
 Task report for MST-06b in the [mastery map roadmap](mastery-map-roadmap.md), [PR #317](https://github.com/Athurito/SurvivalRpg/pull/317). The user split MST-06 and accepted the Brand design on 2026-10-28; both decisions are in the [MST-06a report](mastery-map-socket-ui.md#user-decisions-2026-10-28). This task delivers the rune's own effect. The talents Anhaltende Macht and Entladung follow in MST-06c.
 
 ## C++ boundary decision

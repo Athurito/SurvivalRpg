@@ -1,5 +1,7 @@
 # MST-09a: Echo, Kraftübertragung and Rune Flow
 
+> **To be replaced (2026-10-31):** HRW-05 of the [harvesting rework roadmap](harvesting-rework-roadmap.md) redesigns the harvesting runes and rune-gated talents, and the mastery map roadmap marks this playtest superseded. Until HRW-05 merges, this report still describes the running code.
+
 Task report for MST-09a in the [mastery map roadmap](mastery-map-roadmap.md), [PR #325](https://github.com/Athurito/SurvivalRpg/pull/325). It adds the harvesting runes Echo and Kraftübertragung and the Rune Flow branch (Runenfluss) of the [implementation plan](mastery-map-implementation-plan.md), section "Target content catalog": Runenresonanz, then Teilung or Verdichtung. The plan's rules apply:
 - Own direct hits drive Echo.
 - Follow-up work carries provenance and a finite chain budget.

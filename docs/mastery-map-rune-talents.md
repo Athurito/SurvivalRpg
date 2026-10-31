@@ -1,5 +1,7 @@
 # MST-06c: Rune-bound talents
 
+> **To be replaced (2026-10-31):** HRW-05 of the [harvesting rework roadmap](harvesting-rework-roadmap.md) redesigns the harvesting runes and rune-gated talents, and the mastery map roadmap marks this playtest superseded. Until HRW-05 merges, this report still describes the running code.
+
 Task report for MST-06c in the [mastery map roadmap](mastery-map-roadmap.md), [PR #318](https://github.com/Athurito/SurvivalRpg/pull/318). It adds the source-tool activation rule of the [implementation plan](mastery-map-implementation-plan.md), section "Shared harvesting progression", and Brand's talents Anhaltende Macht (Lasting Power) and Entladung (Discharge), as the user accepted on 2026-10-28 ([MST-06a report](mastery-map-socket-ui.md#user-decisions-2026-10-28)). It builds on Brand's burn from [MST-06b](mastery-map-brand-burn.md).
 
 ## Scope change

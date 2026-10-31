@@ -1,5 +1,7 @@
 # MST-05: Rune items, ranks and tool sockets
 
+> **To be replaced (2026-10-31):** HRW-05 of the [harvesting rework roadmap](harvesting-rework-roadmap.md) redesigns the harvesting runes and rune-gated talents, and the mastery map roadmap marks this playtest superseded. Until HRW-05 merges, this report still describes the running code.
+
 Task report for MST-05 in the [mastery map roadmap](mastery-map-roadmap.md), [PR #314](https://github.com/Athurito/SurvivalRpg/pull/314). The design is in the [implementation plan](mastery-map-implementation-plan.md), section "Physical runes and the workstation loop". It builds on the inventory graph of the [inventory refactor](inventory-refactor-plan.md) and on the equipment grants that [MST-04](mastery-map-choice-swap.md) and the skill trees use.
 
 ## Rune contract re-inspection

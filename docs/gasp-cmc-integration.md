@@ -1,5 +1,10 @@
 # GASP CMC experience
 
+> **Superseded in part (2026-10-31):** this report describes the CMC on the
+> hidden UEFN gameplay mesh. Since `GASP-15` the CMC pawns play the Lyra Manny
+> skeleton natively ([Manny gameplay mesh](gasp-manny-gameplay-mesh.md)); read
+> the mesh and skeleton details below as history.
+
 Work branch: `codex/gasp-rpg-cmc-experience`, starting at the merged asset
 foundation `3eda9d93`. This slice connects the project-owned GASP animation
 assets to the RPG pawn. Traversal and additional visible skeletons follow

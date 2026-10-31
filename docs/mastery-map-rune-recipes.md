@@ -1,5 +1,7 @@
 # MST-07a: Rune recipes known to the world
 
+> **To be replaced (2026-10-31):** HRW-05 of the [harvesting rework roadmap](harvesting-rework-roadmap.md) redesigns the harvesting runes and rune-gated talents, and the mastery map roadmap marks this playtest superseded. Until HRW-05 merges, this report still describes the running code.
+
 Task report for MST-07a in the [mastery map roadmap](mastery-map-roadmap.md), [PR #320](https://github.com/Athurito/SurvivalRpg/pull/320). It covers the recipe part of the [implementation plan](mastery-map-implementation-plan.md), section "Physical runes and the workstation loop":
 - Discovering a rune unlocks its base recipe without consuming the rune.
 - Crafting produces a new rank-I instance.

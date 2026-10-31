@@ -1,5 +1,7 @@
 # VFX-06: Ash Wave
 
+> **Superseded in part (2026-10-31):** MST-03b retired Death Wave and its forms ([shared harvesting](mastery-map-shared-harvesting.md)). The Niagara systems, `BP_HarvestBurnArea` and the gallery demo below still exist.
+
 Task report for VFX-06 in the [VFX roadmap](vfx-roadmap.md). Ash Wave is the Death Wave form that turns the felled wood into charcoal ([harvesting-roadmap.md](harvesting-roadmap.md), HARV-09d). This task gives it a look: the trees burn and char as they fall, and a burned area stays behind. Death Wave without the form looks as before.
 
 ## Behavior
