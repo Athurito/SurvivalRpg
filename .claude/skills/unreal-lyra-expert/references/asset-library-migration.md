@@ -36,6 +36,7 @@ Purchased content lives in the asset library listed under "Local environment" in
 
 ## Props and weapons
 
+- Weapon and tool meshes follow the sword's convention: the pivot is the right hand's grip point on the handle axis, the handle or blade runs along +Z toward the head or tip, and +X points toward the cutting edge or pick. The skeleton keeps one socket per grip type, the equipment definition's attach transform stays identity, and the actor's mesh component holds only the item's grip rotation, so a designer turns it about the hand. Re-pivot a migrated mesh that differs, and transform its sockets and simple collision with the vertices; [Static meshes and simple props](unreal-mcp-asset-authoring.md#static-meshes-and-simple-props) has the recipe. `SurvivalRpg.Harvesting.Content.AxeToolContract` and `PickaxeToolContract` check the convention for the harvesting tools (HRW-04c).
 - The `SkeletonCharacter` pack's `MM_MedievalMelee` defaults its texture parameters to `T_Sword_02_Clean_*`. Point the `MaterialExpressionTextureSampleParameter2D_<n>` subobjects at the migrated item's own textures, recompile and leave the sword textures behind (HRW-01, `SM_Axe_02`).
 - To judge library props, copy candidates with their closure into a temporary `/Game` folder, render them with `EditorAppToolset.CaptureAssetImage`, and delete the rejects before moving the chosen one; the thumbnail may show untextured grey until textures stream.
 

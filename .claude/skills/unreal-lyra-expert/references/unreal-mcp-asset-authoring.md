@@ -172,6 +172,12 @@ Observed in HRW-01 (editor Python run as [Editor sessions and PIE](editor-sessio
 - `MaterialInstanceConstantFactoryNew` exposes no `initial_parent` to Python; create the instance, then call `MaterialEditingLibrary.set_material_instance_parent`.
 - Blueprint components without `ActorTools`: `SubobjectDataSubsystem.k2_gather_subobject_data_for_blueprint` lists each component twice; `delete_subobject(actor_handle, handle, blueprint)`, `add_new_subobject(unreal.AddNewSubobjectParams(...))` and `rename_subobject` edit them, followed by a compile.
 - `Texture2D.blueprint_get_size_x` reports the resident mip (32 px) of a texture that has not streamed; read the source size from the asset registry tag `Dimensions`.
+- Move a mesh pivot without changing the placed result (HRW-04c, `SM_Axe_02` and `SM_Tool_Pickaxe`). With the new pivot frame P given in old mesh space:
+  - Copy each source LOD that has a mesh description (`get_static_mesh_description(lod)` is not `None`) with `copy_mesh_from_static_mesh`, `apply_build_settings` off and `lod_type` `SOURCE_MODEL`. Apply `transform_mesh` with P's inverse and write it back with `copy_mesh_to_static_mesh` and `use_original_vertex_order`. Reduction LODs rebuild from LOD0 on their own.
+  - `copy_mesh_to_static_mesh` writes its `enable_recompute_normals`, `enable_recompute_tangents` and `enable_remove_degenerates` into the target LOD's build settings, so pass the LOD's current values. Leave `replace_materials` and `apply_nanite_settings` off.
+  - Sockets and simple collision stay in old mesh space. Transform each socket's location and rotation with P's inverse (`MathLibrary.compose_transforms(socket, inverse)`), and each box center the same way; a quarter turn about Z swaps the box's X and Y extents.
+  - Set each component that shows the mesh to `compose_transforms(P, old relative transform)`, then compile its Blueprint.
+  - Verify in actor space, not with the mesh bounds, which are axis-aligned in mesh space: compare every socket and every triangle's corners, normals and UVs from `RENDER_DATA` per LOD before and after. Match triangles by centroid and winding normal, because back-to-back triangles share a centroid. The generated lightmap UVs moved by up to 0.002 there; everything else matched within 0.0001 cm and 0.0001°.
 
 ### PCG graphs
 

@@ -244,6 +244,27 @@ namespace RpgHarvestContentContractTests
 			Test.TestTrue(
 				*FString::Printf(TEXT("The trace of %s spans the tool from the grip to the tip (%.0f cm)"), *Name, Span),
 				Span >= 40.0);
+
+			// The mesh pivot is the right hand's grip with the handle along +Z and the edge or pick toward +X, so the
+			// ToolMesh transform turns the tool about the hand. The grip point lies on the handle axis within a hand's
+			// width above the pivot, and the head lies well up the handle.
+			const FVector Grip = ToolMesh->GetSocketTransform(Points[0], RTS_Component).GetLocation();
+			const FVector Tip = ToolMesh->GetSocketTransform(Points.Last(), RTS_Component).GetLocation();
+			Test.TestTrue(
+				*FString::Printf(
+					TEXT("The mesh of %s has its pivot at the grip, with the grip point on +Z close above it (%s)"),
+					*Name,
+					*Grip.ToCompactString()),
+				FVector2D(Grip.X, Grip.Y).Size() <= 1.0 && Grip.Z >= 0.0 && Grip.Z <= 10.0);
+			bool bHeadUpTheHandle = true;
+			for (int32 Index = 1; Index < Points.Num(); ++Index)
+			{
+				bHeadUpTheHandle &= ToolMesh->GetSocketTransform(Points[Index], RTS_Component).GetLocation().Z >= Grip.Z + 30.0;
+			}
+			Test.TestTrue(*FString::Printf(TEXT("The head of %s lies up the handle along +Z"), *Name), bHeadUpTheHandle);
+			Test.TestTrue(
+				*FString::Printf(TEXT("The edge or pick of %s leads toward +X (%s)"), *Name, *Tip.ToCompactString()),
+				Tip.X > 0.0 && FMath::Abs(Tip.Y) <= 5.0);
 		}
 
 		const FStructProperty* SuccessCueProperty =
