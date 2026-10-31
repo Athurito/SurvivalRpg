@@ -57,6 +57,7 @@ how a hit is found, not what a hit does.
 | HRW-03 | Tool swing hits: harvest abilities trace the tool swing instead of the camera ray; tunable reach and targets per swing; collision profile for harvestables; weak points and pierce from the impact point | Merged: [#337](https://github.com/Athurito/SurvivalRpg/pull/337) |
 | HRW-04 | Hold to keep swinging and a stock indicator that appears after a hit instead of the aim highlight | Merged: [#339](https://github.com/Athurito/SurvivalRpg/pull/339) |
 | HRW-04b | Swing feel after the first playtest: faster swing without the pull-out, local harvesting hitstop, stronger impact feedback, trace over the whole tool | Merged: [#341](https://github.com/Athurito/SurvivalRpg/pull/341) |
+| HRW-04c | Tool mesh pivots at the grip, so the user can tune the grip by turning the `ToolMesh` about the hand; in-hand look and trace unchanged | In review: [#343](https://github.com/Athurito/SurvivalRpg/pull/343) |
 | HRW-05 | Focus meter and harvesting spells chosen in the skill tree, first spell Wide Swing; redesign of the tree and the runes | Planned |
 
 ## Task scope
@@ -342,6 +343,57 @@ In my own editor on port 8020, standalone PIE in `Lvl_HarvestPickaxe` with the r
 4. Pick up the pickaxe and hold at an iron vein: a strike about every 0.8 s, grey stone chips and a metallic pick sound. A pine struck with the pickaxe still shows "Wrong tool".
 5. Release during a swing: the swing finishes and the arms blend back to the idle pose.
 6. **Multiplayer:** play as listen server with two players. The client holds the button at a pine while the host watches: the host sees the client's chops at normal speed without a pause, hears each chop and sees the chips once; the client's own arms pause briefly at each hit. Then the host chops while the client watches: the client sees the host's swing play smoothly, without a jump after the hits.
+
+### HRW-04c: tool mesh pivots at the grip
+
+The user likes the axe after HRW-04b but finds its grip slightly off, and wants to tune the `ToolMesh` transform in paused PIE. Both tool meshes had their origin below the right hand, so every rotation swung the head around a point below it. Decision of the master chat (2026-10-31): the skeleton keeps one socket per grip type, item-specific grip data lives on the item, and weapon and tool meshes keep their pivot at the grip like the sword. This task only moves the pivots; the in-hand result and the trace stay the same, and the fine-tuning stays with the user.
+
+#### HRW-04c report
+
+Branch `claude/hrw-04c-tool-pivots`, PR [#343](https://github.com/Athurito/SurvivalRpg/pull/343): `129d68ea` assets and contract, then this report with the skill notes and the status row.
+
+- **Measured first** (old mesh space): both handles run along +Z through the origin (the axe within 0.3° and 0.05 cm, from 18 cm below the origin into the head at 48 to 64 cm). The attach socket `Grip_OneHand_R` sits exactly on that axis, at (0, 0, 10) for the axe and (0, 0, 13) for the pickaxe. The axe's cutting edge pointed along +Y, the pick along +X.
+- **Pivot frames** P in old mesh space: the axe at (0, 0, 10) with a quarter turn about Z, so the edge leads along +X; the pickaxe at (0, 0, 13) without rotation.
+- **Meshes:** `SM_Axe_02` and `SM_Tool_Pickaxe` re-baked by P⁻¹ through Geometry Script from their source LOD0; the axe's LOD1 to LOD5 are reduction LODs (`HighDetail`) and rebuilt from it. UVs, material slots, build and reduction settings, Nanite (off) and collision complexity are unchanged. The axe's box collision moved with the vertices (centre (11.95, 0, 13.14) cm, X and Y extents swapped). Mesh sockets:
+
+  | Socket | Axe (cm) | Pickaxe (cm) |
+  | --- | --- | --- |
+  | `TracePoint_Grip` | (0, 0, 14) → (0, 0, 4) | (0, 0, 14) → (0, 0, 1) |
+  | `TracePoint_Neck` | (0, 0, 58) → (0, 0, 48) | — |
+  | `TracePoint_Base` | (0, 22.76, 50.17) → (22.76, 0, 40.17) | (0, 0, 66) → (0, 0, 53) |
+  | `TracePoint_Tip` | (0, 22.76, 60.18) → (22.76, 0, 50.18) | (26, 0, 61.4) → (26, 0, 48.4) |
+
+  The axe's sockets carry yaw −90°, so their world rotation is unchanged; the trace reads only their locations.
+- **Actors:** each `ToolMesh` takes P * OldRel. Both now sit at (0, 0, 0). The axe turns (roll 26.24°, pitch 3.76°, yaw −120.40°) instead of (−4.19°, 26.17°, 147.74°) at (−4.11, 1.73, −8.95) cm; the pickaxe keeps (40.17°, 12.26°, −155.10°) without its (−5.44, 6.72, −9.71) cm offset. Skeleton sockets, attach sockets and attach transforms in `ED_Tool_Axe` and `ED_Tool_Pickaxe` are unchanged; only the two actors referenced the meshes.
+- **Contract:** `AxeToolContract` and `PickaxeToolContract` check the convention without freezing transforms: the grip trace point lies on +Z within 10 cm above the pivot, every later trace point at least 30 cm up the handle, and the tip leads toward +X.
+- **Notes:** the convention in [asset library migration](../.agents/skills/unreal-lyra-expert/references/asset-library-migration.md#props-and-weapons), the re-pivot recipe in [Unreal MCP asset authoring](../.agents/skills/unreal-lyra-expert/references/unreal-mcp-asset-authoring.md#static-meshes-and-simple-props), staged pose captures in [editor sessions and PIE](../.agents/skills/unreal-lyra-expert/references/editor-session-and-pie.md#captures), and [weapon grips](combat-weapon-grips.md) no longer suggests a per-item attach transform.
+
+##### Validation
+
+All builds and tests through `ue.py`, with the MCP autostart off for test runs; my own editor (port 8020; port 8000 untouched) was closed for every build and test.
+
+- **Numeric**, in my editor with each actor spawned at identity, after reloading the saved assets: every socket's actor-space location 0.000000 cm off (0.05 cm allowed), rotation at most 0.000002°. Every triangle of every LOD matched: corner positions within 0.00003 cm, normals within 0.0001°, UV0 identical, the generated lightmap UVs within 0.002, actor-space bounds identical. The auto-computed LOD screen sizes changed in the sixth digit.
+- **Staged capture:** posed `SKM_Manny_Simple` mannequins (chop clip at 1.10 s, pickaxe clip at 1.70 s) holding the tool actors at `Grip_OneHand_R`, four fixed views before and after. After versus before differs only by the edge shimmer that two before captures also show; no outline moved.
+- **PIE**, standalone `Lvl_HarvestPickaxe` with the real character and axe (the HRW-04b driver under `slomo 0.2`): close to the trunk the dead pine went 4 → 0 in eight swings, at arm's length 4 → 0 in eight swings, and wood arrived.
+- `build`: passed, 0 errors, 0 warnings.
+- **A/B:** with master's two meshes swapped in, `AxeToolContract` and `PickaxeToolContract` failed as intended (grip point at z 14 cm, axe tip along +Y); the new meshes were restored byte for byte.
+- `test SurvivalRpg.Harvesting.Content SurvivalRpg.Harvesting.Swing SurvivalRpg.Combat.EquipmentAttachSocketContract --null-rhi`: **32 / 32 passed**.
+- `test SurvivalRpg.Network.HarvestSwingPIE SurvivalRpg.Network.LootHarvestPIE` (rendered, separate call): **10 / 10 passed**, all with the usual NetGUID log warnings.
+- `python Build/Tools/AgentSkills/sync.py` and `--check`: consistent.
+
+##### Limits
+
+- The grip itself is unchanged and still needs the user's fine-tuning, which now turns about the right hand.
+- The pickaxe was not swung in PIE; the numeric check, the staged capture and its contract cover it.
+- No two-player PIE by eye. The change is asset-only; `HarvestSwingPIE` swings the real axe from a listen-server client.
+- The generated lightmap UVs moved by up to 0.002; the tools are movable components without baked lighting.
+
+##### Playtest
+
+1. Open `Lvl_HarvestPickaxe` and pick up the axe: it sits in the hand exactly as before, and chopping a dead pine takes sections as before.
+2. Pick up the pickaxe and strike an iron vein: it sits and strikes as before.
+3. Pause PIE and select the held axe's `ToolMesh`: its location reads 0, 0, 0, and rotating it turns the axe about the right hand. Keep a good value by setting it on the `ToolMesh` of `BP_Tool_AxeActor`.
+4. **Multiplayer:** play as listen server with two players. Each player sees the other's axe and pickaxe where they were before, and both players' chops take sections from the same pine.
 
 ### HRW-05: focus meter and harvesting spells
 

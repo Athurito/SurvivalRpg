@@ -101,6 +101,11 @@ Behavior observed in this project's UE 5.8 editor sessions on the primary workst
 - Never capture the whole desktop; it once captured the user's private mail window. Read the editor log, use `CaptureEditorImage`, or use `SlateInspectorToolset.SlateInspectorToolset` with `Windows` (action `list`, then `select` by index) and `Screenshot` (`ref: ""`) for a PIE client window titled `... [NetMode: Client 1]`. Capture packaged or `-game` processes with `PrintWindow` on their own window handle.
 - `CaptureViewport` renders the editor world only, also during PIE.
 - A map without lights captures black, and `viewmode unlit` does not affect `CaptureViewport`. Spawn temporary lights for a shot and delete them before saving.
+- `CaptureViewport` with a `captureTransform` renders the editor world from a fixed pose. Through the MCP endpoint it rejects a call without `annotations`; pass one with every value 0 (HRW-04c).
+- A pose comparison without PIE, such as an item in the hand before and after an asset change (HRW-04c):
+  - Spawn a `SkeletalMeshActor` in the editor world, call `set_update_animation_in_editor(True)` and `override_animation_data(anim, False, False, time, 0)` on its mesh, and attach the item actor to the grip socket.
+  - Actors spawned with `transient=True` are missing from `get_all_level_actors`; keep their paths to destroy them.
+  - Two captures of an unchanged scene already differ at edges through antialiasing and swaying foliage. Compare an after capture with two before captures, not with zero.
 
 ## Profiling
 

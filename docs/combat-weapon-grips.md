@@ -44,7 +44,7 @@ Three skeleton sockets carry the grip, so the equipment definitions stay skeleto
 - `ED_BasicSword`, `ED_Tool_Axe` and `ED_Tool_Pickaxe`: `Grip_OneHand_R`, off hand `Grip_OneHand_L`.
 - `ED_BasicTwoHandedSword`: `Grip_OneHand_R`. Its attack is still the placeholder `MM_Attack_01`; a real two-handed grip comes with two-handed clips.
 - `ED_BasicShield`: `Grip_Shield_L` for every slot.
-- Attach transforms stay identity. A later weapon whose mesh pivot is not at its grip sets its own attach transform relative to the socket.
+- Attach transforms stay identity. Weapon and tool meshes keep their pivot at the grip like the sword, with the handle or blade along +Z and the edge toward +X; a migrated mesh that differs is re-pivoted together with its sockets ([asset library migration](../.agents/skills/unreal-lyra-expert/references/asset-library-migration.md#props-and-weapons)). An item-specific grip correction lives in the relative transform of the actor's mesh component, never in a per-item attach transform or skeleton socket. HRW-04c re-pivoted the axe and pickaxe this way.
 - The sword's trace sockets live on the sword mesh, so the attack trace now follows the blade where the animation puts it.
 
 New contract test `SurvivalRpg.Combat.EquipmentAttachSocketContract`: every attach name any project equipment definition authors must exist as a socket or bone on both gameplay skeletons. A missing socket would otherwise attach silently to the mesh origin.
