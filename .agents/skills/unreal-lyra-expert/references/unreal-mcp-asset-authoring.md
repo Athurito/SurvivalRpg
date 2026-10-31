@@ -73,6 +73,7 @@ The task lists use these short toolset names:
 
 - Find and classify assets with `AssetTools.find_assets`, `exists`, `get_asset_class`, `get_dependencies`, and `get_referencers`.
 - Read reflected state with `ObjectTools.get_class`, `search_subclasses`, `list_properties`, and `get_properties`. A Blueprint argument resolves to its class default object (CDO).
+- `ActorTools.get_components` takes an actor Blueprint's class default object (`<asset>.Default__<Name>_C`), not the Blueprint asset. It returns native components under the CDO and a parent Blueprint's components as SCS templates (`<parent asset>.<Parent>_C:<Variable>_GEN_VARIABLE`), whose `BodyInstance` `ObjectTools` reads and writes (HRW-03).
 - Read Blueprints with `BlueprintTools.get_parent`, `list_graphs`, `list_variables`, `list_functions`, `find_nodes`, `get_node_infos`, and `read_graph_dsl`.
 - Confirm the asset kind on a sibling before creating one. Experiences, ItemDefinitions, EquipmentDefinitions, GameplayAbilities, and GameplayEffects are Blueprint classes; AbilitySets and PawnData are DataAsset instances.
 
@@ -85,6 +86,7 @@ The task lists use these short toolset names:
 3. Add members with `add_variable`, `add_struct_variable`, `add_object_variable`, `set_variable_replication`, `add_function_graph`, `add_event`, or `add_component_bound_event`.
 4. For graphs, read `get_graph_dsl_docs` once, then use `read_graph_dsl` and `write_graph_dsl` (which also compiles) for whole graphs, or `find_node_types`, `create_node`, `connect_pins`, and `set_pin_value` for single nodes. A rewrite leaves stale nodes behind and `read_graph_dsl` is lossy; read [Blueprint graph pitfalls](mcp-blueprint-graph-pitfalls.md) first, and leave the graph structured, arranged, and commented as its [Readable graphs](mcp-blueprint-graph-pitfalls.md#readable-graphs) section describes.
 5. Change components with `ActorTools.add_component` and `remove_component`. To edit an inherited component template, first get a child-owned override from `AssetContractTools.editable_blueprint_component`. It matches the template's object name: `<Variable>_GEN_VARIABLE` for a component a parent Blueprint added, the subobject name (`StaticMeshComponent0`, `DisplayMesh`) for a native one.
+   - A collision change belongs on the parent's template when every child should follow it. Read the whole `BodyInstance`, change `collisionProfileName`, `objectType`, `collisionEnabled` and `collisionResponses` together, and set the struct back. After compiling the parent, a child's inherited template and the placed instances in a loaded map had the new profile; the child Blueprint did not change on disk (HRW-03, `BP_HarvestNode_StaticMeshBase` and `BP_HarvestNode_IronVein`).
 6. Compile with `BlueprintTools.compile_blueprint(blueprint, warnings_as_errors=true)`.
 
 A `GameplayCueNotify_Burst` `OnBurst` override is const, so it cannot call the Blueprint's own functions, and no tool sets a function's const flag. Write its logic inline and split independent parts with `Utilities|FlowControl|Sequence` and `(:then_0 ...)`, `(:then_1 ...)`.
@@ -165,6 +167,14 @@ Observed in HRW-01 (editor Python run as [Editor sessions and PIE](editor-sessio
 - `MaterialInstanceConstantFactoryNew` exposes no `initial_parent` to Python; create the instance, then call `MaterialEditingLibrary.set_material_instance_parent`.
 - Blueprint components without `ActorTools`: `SubobjectDataSubsystem.k2_gather_subobject_data_for_blueprint` lists each component twice; `delete_subobject(actor_handle, handle, blueprint)`, `add_new_subobject(unreal.AddNewSubobjectParams(...))` and `rename_subobject` edit them, followed by a compile.
 - `Texture2D.blueprint_get_size_x` reports the resident mip (32 px) of a texture that has not streamed; read the source size from the asset registry tag `Dimensions`.
+
+### PCG graphs
+
+Observed in HRW-03:
+
+- A Static Mesh Spawner's mesh entries carry their own instance descriptor, including a full `BodyInstance`. It overrides the collision that the descriptor's component class sets in its constructor, so a spawner authored with `BlockAll` kept it after the class changed.
+- Edit it on the spawner's selector, `<graph>:<SpawnerNode>.PCGStaticMeshSpawnerSettings_1.DefaultSelectorInstance`: read `MeshEntries`, change `descriptor.bodyInstance`, and set the whole array back with `ObjectTools.set_properties`. Node names come from `PCGToolset.GetGraphStructure`.
+- Save the graph, then run `PCGToolset.ExecuteGraphInstance` for every volume from `ListGraphInstances` in each map that uses it, check the generated components with `ActorTools.get_components` on the volume, and save the map. Generation finishes asynchronously; wait a few seconds before reading. Unchanged seeds produced the same instance counts and transforms, so harvest stock keys stayed valid.
 
 ### Save and validate
 

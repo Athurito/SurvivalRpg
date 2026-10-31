@@ -147,6 +147,58 @@ how a hit is found, not what a hit does.
 - Weak points count the impact point inside their radius; pierce runs from the
   harvester through the impact point.
 
+#### HRW-03 report
+
+Branch `claude/hrw-03-tool-swing-hits`. Axe and pickaxe swings now find resources with their tool's trace; nothing aims at the screen centre any more.
+
+- **Strike source:** `URpgGameplayAbility_Harvest` gained `ERpgHarvestStrikeSource` (`ViewRay`, `ToolSwing`), the `SwingTrace` trace parameters, `SwingWindupSteeringRate` and an `FRpgSwingTraceWindow`. `ViewRay` keeps the old path for focused and area powers. The old commit is split: `ExecuteAuthorityCommit` (view ray) and `CommitToolSwingContact` (one swing contact) find the target, and the shared `ResolveSelection` does rewards, `CommitSelection` with the rune follow-ups, cues and On Harvest Resolved. A test ability overrides the new `PlayToolSwing` hook to run the swing without an animated mesh.
+- **Hit rule:** the server counts each harvestable contact once per swing, keyed by receiver and instance (`FRpgHarvestTargeting::MakeResourceKey`, so PCG instances count separately), until the tuned `SwingTargets` are reached. Ground, pawns and other actors never count; tools damage no pawn. A counted contact is evaluated against the stock at that moment: the server checks reach (`MaxReachFromAvatar` plus `SwingReach`) itself, and tool, skill and stock through the target. A rejected contact plays the no-yield cue and still uses up the swing; a contact beyond the reach is ignored. Every swing is one root action.
+- **Commit timing (decision):** the window's authority hits commit directly at contact, as melee damage does. The `GameplayEvent.Harvesting.Commit` notify stays in both montages as the authored impact frame inside the window (`SwingMontageContract` checks it) but gates nothing for a tool swing. Cancelling before the window yields nothing, and `EndAbility` closes the window without taking its final sample's contacts.
+- **Tunings:** `Ability.Tuning.Harvest.SwingReach` (cm, base 0, at most 400) adds to the new `FRpgSwingTraceParams::TipExtension`, which moves the last trace point beyond the tip along the tool axis; `Ability.Tuning.Harvest.SwingTargets` (base 1, 1 to 8). Both resolve through `GetTunedValueForSpec` with the other tunings, on the server and on the swinging client, and are captured when the swing starts. HRW-05's Wide Swing can set them.
+- **Weak points and pierce:** `FRpgHarvestRequest::bSwingStrike` marks a swing contact. A weak point then counts only when the impact point lies within its radius (`FRpgHarvestWeakPoint::IsStruckBy(Hit, bImpactOnly)`); a pierce drives on horizontally from the harvester through the impact point instead of along the tool's sideways sweep.
+- **Feedback:** the new `GameplayCue.Harvesting.ToolHit` with `GCN_Harvest_ToolHit` (an `Rpg Impact Burst`: smoke puff, light camera shake for the swinger only) is the success cue of both swings. The swinging client traces the same window for feedback and, when its own evaluation would harvest, plays the cue at once through `RpgCombatImpact::PlayPredictedImpact` on its avatar; the notify absorbs the server's copy there, so every machine plays each hit once. Neither swing has a no-yield cue asset yet.
+- **Facing:** like a melee attack, the windup may still turn toward the camera at `SwingWindupSteeringRate` (360 deg/s), and the window holds the facing. No aim-assist turn was built.
+- **Collision:** new profile `RpgHarvestable` in `Config/DefaultEngine.ini` (WorldStatic, Visibility and Interaction block, weapon channel overlap). The constructors of `URpgHarvestableInstancesComponent` and `URpgHarvestableInstancedMeshComponent` use it, so `BPC_HarvestInstances_*` and the ISM node Blueprints (`BP_HarvestNode_Bush`, `_Mining`, `_Tree`) inherit it. `BP_HarvestNode_StaticMeshBase`'s `ResourceMesh` (and so `BP_HarvestNode_IronVein`) moved from `BlockAllDynamic` to it. The Static Mesh Spawners of `PCG_HarvestIronVeins` and `PCG_HarvestDeadPines` had their own `BlockAll` descriptor; they now use the profile, and the PCG volumes of `Lvl_HarvestPickaxe` and `Lvl_ResourceParity` were regenerated (same 9, 12 and 12 instances) and saved.
+- **Assets:** `GA_Harvest_AxeChop` and `GA_Harvest_PickaxeStrike` use `ToolSwing` with a 12 cm sphere sweep between `TracePoint_Base` and `TracePoint_Tip` on the weapon channel and the tool hit cue.
+- **Supporting changes:** `GameplayEvent.Weapon.Attack.Window.Start/End` are exported from the core module for GameFeature modules. The PIE world-save isolation of the combat PIE tests moved to `FRpgScopedPIEWorldSaveIsolation` in `RpgCombatNetworkTestTypes`, and the network instance field fixture uses the harvestable profile.
+
+##### Tests
+
+- Native `SurvivalRpg.Harvesting.Swing.*`: `FirstContactCommitsOnce`, `RejectedContactConsumesSwing`, `ReachGuard`, `CancelYieldsNothing`, `WeakPointByImpact`, `PierceFollowsHarvesterToImpact`, `ReachTuningHitsTargetBehind` (a real sphere sweep through two hand-built tool poses in a test world).
+- Asset contracts: `AxeToolContract` and `PickaxeToolContract` check the tool swing trace, the sockets on the tool mesh and the impact notify of the hit cue; `SwingMontageContract` checks the window contract and the impact inside it; new `HarvestableCollisionContract`.
+- PIE `SurvivalRpg.Network.HarvestSwingPIE`: a remote client swings the real axe at a one-instance field on a listen server with 60 ms lag. One commit per swing, each machine plays the hit once, a swing cancelled before its window takes nothing, and a late joiner sees the stock and replays no hit, then plays the next hit once.
+
+##### Validation
+
+All through `ue.py`, with the MCP server's autostart off for test runs; the MCP editor of this worktree was closed for every build and test.
+
+- `build`: passed, 0 errors, 0 warnings. A first build failed to link: the window event tags were not exported from the core module (fixed).
+- `test SurvivalRpg.Harvesting.Swing --null-rhi` before the asset work: 6 / 7; `PierceFollowsHarvesterToImpact` failed because the test's synthetic contact kept `Item` 0 (fixed in the test, noted in the GAS test pitfalls).
+- `test SurvivalRpg.Harvesting SurvivalRpg.Interaction.Harvesting SurvivalRpg.Combat --null-rhi`: **165 / 165 passed** (12 with warnings), including the seven `Harvesting.Swing.*` tests, the tool and collision contracts and the unchanged view-ray tests.
+- `test SurvivalRpg.Network.HarvestSwingPIE` (rendered): 1 / 1 on its first run, owner predictions 2 of 2 hits.
+- `test SurvivalRpg.Network.HarvestSwingPIE SurvivalRpg.Network.LootHarvestPIE SurvivalRpg.Network.HarvestCuePIE SurvivalRpg.Network.CombatRemoteMeleePIE SurvivalRpg.Network.CombatImpactCuesPIE` (rendered, separate call from the native suites): **17 / 17 passed** (all with the usual PIE log warnings), no "no more RPCs" line; owner predictions 2 of 2 tool hits and 4 of 4 melee hits. No rerun was needed.
+- `test SurvivalRpg.AI` (enemies attack through the melee ability, which shares the window): 6 / 6 passed.
+- Editor (MCP, port 8000): the generated components of both maps report `RpgHarvestable` with 9, 12 and 12 instances, as before; the placed iron veins of `Lvl_HarvestPickaxe` picked up the profile from their parent Blueprint.
+- `python Build/Tools/AgentSkills/sync.py` and `--check`: consistent.
+
+##### Limits
+
+- No swing was watched by eye in PIE on the real trees and veins; the PIE test strikes a 100 cm cube with the real axe, character, montage and tool sockets. The axe reaches about 1.1 m, so a player standing farther from a 55 cm trunk now misses where the camera ray used to hit. An aim-assist turn toward the nearest resource in reach is a possible follow-up if the trees are hard to hit; none was built.
+- The pickaxe swing is covered by its asset contract only, not by a PIE swing.
+- Neither tool has a no-yield cue asset; a rejected contact is silent apart from the swing.
+- The targeting preview and highlight still follow the camera ray for tool swings; HRW-04 replaces them with the stock indicator.
+- The ISM component constructors now set `RpgHarvestable`, which also changes their object type from WorldDynamic to WorldStatic; no query in the project filters harvestables by object type.
+- A dedicated server is not tested separately, as before.
+
+##### Playtest
+
+1. Open `Lvl_HarvestPickaxe`, pick up the axe, walk up to a dead pine until the trunk is about an arm's length ahead and click. Wood arrives at the moment the axe meets the trunk, with a small dust puff; the camera's centre does not need to point at the trunk. From about 2 m away the swing misses and takes nothing.
+2. Chop beside a second pine: one swing takes one section of one tree only.
+3. Swing the pickaxe at an iron vein near the ground: ore arrives on the strike. Strike a pine with the pickaxe: nothing, and the swing is used up.
+4. Start a chop and dodge before the axe lands: nothing is taken.
+5. Hit a sword at a pine: the blade passes through the trunk; an enemy behind it still takes the hit.
+6. **Multiplayer:** play as listen server with two players. The client chops a pine the host is watching: the host sees the swing and the dust puff once, the client sees its own puff once without delay, and both see the stock drop by one section. Let a third player join late: the pine shows the reduced stock.
+
 ### HRW-04: hold to swing and stock indicator
 
 - Both swing abilities activate while the input is held, end at montage
