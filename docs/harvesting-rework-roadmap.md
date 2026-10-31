@@ -53,7 +53,7 @@ how a hit is found, not what a hit does.
 | --- | --- | --- |
 | HRW-01 | Tool animations and meshes: migrate the 505 chop and pickaxe clips, one-cycle montages in the `UpperBody` slot with attack-window notifies, work-axe and pickaxe meshes with trace sockets; hit model unchanged | Merged: [#335](https://github.com/Athurito/SurvivalRpg/pull/335) |
 | HRW-02 | Extract the core swing window and trace (`FRpgSwingTraceWindow`) from the melee attack ability without behaviour change | Merged: [#334](https://github.com/Athurito/SurvivalRpg/pull/334) |
-| HRW-03 | Tool swing hits: harvest abilities trace the tool swing instead of the camera ray; tunable reach and targets per swing; collision profile for harvestables; weak points and pierce from the impact point | Planned |
+| HRW-03 | Tool swing hits: harvest abilities trace the tool swing instead of the camera ray; tunable reach and targets per swing; collision profile for harvestables; weak points and pierce from the impact point | In review: [#337](https://github.com/Athurito/SurvivalRpg/pull/337) |
 | HRW-04 | Hold to keep swinging and a stock indicator that appears after a hit instead of the aim highlight | Planned |
 | HRW-05 | Focus meter and harvesting spells chosen in the skill tree, first spell Wide Swing; redesign of the tree and the runes | Planned |
 
@@ -149,7 +149,7 @@ how a hit is found, not what a hit does.
 
 #### HRW-03 report
 
-Branch `claude/hrw-03-tool-swing-hits`. Axe and pickaxe swings now find resources with their tool's trace; nothing aims at the screen centre any more.
+Branch `claude/hrw-03-tool-swing-hits`, PR [#337](https://github.com/Athurito/SurvivalRpg/pull/337): `9826dbe3` implementation, assets and tests, `26da0250` report and skill notes, then this status row. Axe and pickaxe swings now find resources with their tool's trace; nothing aims at the screen centre any more.
 
 - **Strike source:** `URpgGameplayAbility_Harvest` gained `ERpgHarvestStrikeSource` (`ViewRay`, `ToolSwing`), the `SwingTrace` trace parameters, `SwingWindupSteeringRate` and an `FRpgSwingTraceWindow`. `ViewRay` keeps the old path for focused and area powers. The old commit is split: `ExecuteAuthorityCommit` (view ray) and `CommitToolSwingContact` (one swing contact) find the target, and the shared `ResolveSelection` does rewards, `CommitSelection` with the rune follow-ups, cues and On Harvest Resolved. A test ability overrides the new `PlayToolSwing` hook to run the swing without an animated mesh.
 - **Hit rule:** the server counts each harvestable contact once per swing, keyed by receiver and instance (`FRpgHarvestTargeting::MakeResourceKey`, so PCG instances count separately), until the tuned `SwingTargets` are reached. Ground, pawns and other actors never count; tools damage no pawn. A counted contact is evaluated against the stock at that moment: the server checks reach (`MaxReachFromAvatar` plus `SwingReach`) itself, and tool, skill and stock through the target. A rejected contact plays the no-yield cue and still uses up the swing; a contact beyond the reach is ignored. Every swing is one root action.
