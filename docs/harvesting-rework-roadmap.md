@@ -53,8 +53,8 @@ how a hit is found, not what a hit does.
 | --- | --- | --- |
 | HRW-01 | Tool animations and meshes: migrate the 505 chop and pickaxe clips, one-cycle montages in the `UpperBody` slot with attack-window notifies, work-axe and pickaxe meshes with trace sockets; hit model unchanged | Merged: [#335](https://github.com/Athurito/SurvivalRpg/pull/335) |
 | HRW-02 | Extract the core swing window and trace (`FRpgSwingTraceWindow`) from the melee attack ability without behaviour change | Merged: [#334](https://github.com/Athurito/SurvivalRpg/pull/334) |
-| HRW-03 | Tool swing hits: harvest abilities trace the tool swing instead of the camera ray; tunable reach and targets per swing; collision profile for harvestables; weak points and pierce from the impact point | In review: [#337](https://github.com/Athurito/SurvivalRpg/pull/337) |
-| HRW-04 | Hold to keep swinging and a stock indicator that appears after a hit instead of the aim highlight | In review: [#339](https://github.com/Athurito/SurvivalRpg/pull/339) |
+| HRW-03 | Tool swing hits: harvest abilities trace the tool swing instead of the camera ray; tunable reach and targets per swing; collision profile for harvestables; weak points and pierce from the impact point | Merged: [#337](https://github.com/Athurito/SurvivalRpg/pull/337) |
+| HRW-04 | Hold to keep swinging and a stock indicator that appears after a hit instead of the aim highlight | Merged: [#339](https://github.com/Athurito/SurvivalRpg/pull/339) |
 | HRW-05 | Focus meter and harvesting spells chosen in the skill tree, first spell Wide Swing; redesign of the tree and the runes | Planned |
 
 ## Task scope
