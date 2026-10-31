@@ -85,6 +85,8 @@ Behavior observed while building this project's VFX library on UE 5.8. Read it t
 - `unreal.Rotator(a, b, c)` is (roll, pitch, yaw); pass keywords.
 - `EditorValidatorSubsystem.validate_assets_with_settings(assets, settings)` returns a tuple.
 - `GameplayCueParameters.location` needs an `unreal.Vector_NetQuantize10`. Build a tag with `tag = unreal.GameplayTag(); tag.import_text('(TagName="...")')`.
+- `CreateNiagaraSystem` with an existing project system as `templateSystem` copies its emitters with their SetParameters expressions. To reuse one emitter, remove the others with `RemoveEmitter` and rewrite its entries with `SetStackInputData`, struct `/Script/NiagaraEditor.NiagaraExt_StackInputData_HlslExpression`, `inputNameStack` the entry name such as `Particles.Velocity`; remove user variables the new expressions no longer read (HRW-04b tool chips from the Rift Grip debris).
+- A burst notify spawns its particle systems at the cue's `Location`, rotated to `Normal.Rotation()` unless the placement overrides the rotation, so `Engine.Owner.SystemXAxis` is the impact normal in a world-space emitter (HRW-04b).
 - `CreateCueNotifyAsset` makes only Static or Actor notifies; reparent to `GameplayCueNotify_Burst` with `set_parent`. `GetCueInfo` and `FindCueNotifyAssets` do not see GameFeature cue paths.
 - `GameplayCueNotify_Looping` with `AttachToTarget` plus `SnapToTarget` applied the target's world location again as a relative offset; use `KeepWorld`. Its particle and sound info structs are EditDefaultsOnly, so build the whole effects struct with `import_text` and assign it.
 - Exporting flipbooks with `TextureExporterTGA` asserted and killed the editor; export PNG or EXR headlessly as [Asset library migration](asset-library-migration.md) describes.

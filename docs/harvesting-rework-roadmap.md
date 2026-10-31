@@ -40,6 +40,7 @@ steps. Harvesting felt bad:
 | Assets | Chop and pickaxe clips come from the 505 Survival Mocap pack in the asset library. The axe uses a library mesh if one fits a work axe; the pickaxe gets a simple self-built mesh, because the library has none. |
 | Target picture | Modelled on Enshrouded: a skill-tree choice selects a harvesting spell, harvesting fills a focus meter, and a full meter activates the spell for a limited time. The first spell is Wide Swing (extended trace). This replaces rune-gated talents. |
 | Deferred | The skill tree, runes and rune-gated talents are redesigned with HRW-05. Crafting stays as it is for now. |
+| Harvesting hitstop | User decision, 2026-10-31: tool swings get a short local hitstop (about 60 ms, designer-tuned on the swing ability). Only the swinger's own montage freezes, at its first resource contact of a swing; simulated proxies and the server's authority timing stay unaffected. This is an exception for harvesting only: combat attacks keep the 2026-10-25 decision of [combat-roadmap.md](combat-roadmap.md) and freeze nothing. |
 
 ## What stays
 
@@ -55,6 +56,7 @@ how a hit is found, not what a hit does.
 | HRW-02 | Extract the core swing window and trace (`FRpgSwingTraceWindow`) from the melee attack ability without behaviour change | Merged: [#334](https://github.com/Athurito/SurvivalRpg/pull/334) |
 | HRW-03 | Tool swing hits: harvest abilities trace the tool swing instead of the camera ray; tunable reach and targets per swing; collision profile for harvestables; weak points and pierce from the impact point | Merged: [#337](https://github.com/Athurito/SurvivalRpg/pull/337) |
 | HRW-04 | Hold to keep swinging and a stock indicator that appears after a hit instead of the aim highlight | Merged: [#339](https://github.com/Athurito/SurvivalRpg/pull/339) |
+| HRW-04b | Swing feel after the first playtest: faster swing without the pull-out, local harvesting hitstop, stronger impact feedback, trace over the whole tool | In review: [#341](https://github.com/Athurito/SurvivalRpg/pull/341) |
 | HRW-05 | Focus meter and harvesting spells chosen in the skill tree, first spell Wide Swing; redesign of the tree and the runes | Planned |
 
 ## Task scope
@@ -256,6 +258,90 @@ All through `ue.py`, native and PIE suites in separate calls, with the MCP serve
 5. Hold the button and dodge during a chop's wind-up: the dodge starts at once, that chop takes nothing, and no new chop starts while the button stays held. Release it and press again: chopping resumes.
 6. Pick up the pickaxe and hold the button at an iron vein: strikes repeat about every 1.75 s, and the ore's stock shows after each strike. Strike a pine with it: "Wrong tool" shows over the pine.
 7. **Multiplayer:** play as listen server with two players. The client holds the button at a pine while the host watches: both see every chop once with one dust puff, the stock drops by one section per chop on both screens, and the client's own "x/4" appears at its hit. The client dodges while holding: on both screens the chopping stops until the client presses again.
+
+### HRW-04b: swing feel after the first playtest
+
+The user's first playtest of the axe in `Lvl_HarvestPickaxe` (2026-10-31): the swing is too slow, it has no weight and its hit and pull-out look artificial, and the trace of the head alone misses a tree right in front. User decisions of the same day:
+
+- Keep the 505 clips. Play them about 1.4 to 1.6 times as fast, end each montage shortly after the strike and blend quickly into the next wind-up; the notifies move with the cut, and the server's cadence follows the new cycle. The pickaxe is treated the same way.
+- Stronger feedback on the existing tool hit cue: wood chips, a stronger shake for the swinger, a chop sound from the asset library.
+- A local hitstop for harvesting only (see Decisions).
+- The trace covers the tool from the grip to the head; the server's reach check and the rule that tools never hit pawns stay.
+
+#### HRW-04b report
+
+Branch `claude/hrw-04b-swing-feel`, PR [#341](https://github.com/Athurito/SurvivalRpg/pull/341): `1af2380f` implementation, assets and tests, then this report with the skill notes and the status row. Axe and pickaxe now strike about twice as often, end at the strike instead of pulling the tool out, freeze the swinger for 60 ms at the hit, spray chips with a hit sound, and hit with the handle when the player stands close.
+
+- **Why the swings felt slow:** sampling the clips' hand positions frame by frame (`AssetContractTools.animation_pose_contract`) showed where the time went. The chop meets the trunk at clip 1.13 s, then the hands stay in the trunk for 0.55 s and yank the axe out until 2.17 s. The pickaxe strikes at 1.70 to 1.77 s, then settles and pulls out slowly for 0.9 s.
+- **Montages:** `AM_Harvest_AxeChop` now plays 0.66 s (clip 0.60 to 1.26 s, 0.1 s after the hands stop in the trunk), `AM_Harvest_PickaxeStrike` 1.18 s (clip 0.667 to 1.847 s). Only the end moved, so the window and impact notifies keep their times (axe 0.367 to 0.567 s, impact 0.5 s; pickaxe 0.733 to 1.1 s, impact 1.033 s). Both blend out at their end (`BlendOutTriggerTime` 0, blend-out 0.25 s when the hold stops) and blend in over 0.18 s instead of 0.25 s, so a held swing crosses from the strike straight into the next wind-up. `GA_Harvest_AxeChop` and `GA_Harvest_PickaxeStrike` play at `MontagePlayRate` 1.5.
+
+  | Swing | Strike after | Cycle before | Cycle now |
+  | --- | --- | --- | --- |
+  | Axe | 0.33 s | 1.317 s | 0.44 s |
+  | Pickaxe | 0.69 s | 1.75 s | 0.79 s |
+
+  The server's cadence follows on its own: `ResolveSwingCycleSeconds` reads the montage and the rate, and the 0.2 s tolerance stays.
+- **Local hitstop:** `URpgGameplayAbility_Harvest::ToolSwingHitstopMilliseconds` (ms, 0 to 200, designer-tuned static data, native default 0; both swings 60). At the first counted resource contact of a swing only the locally controlled swinger freezes its swing montage: a remote owner at its predicted contact, a listen-server host or standalone player at its own contact, whatever the contact yields. It pauses the montage (`Montage_Pause`, `Montage_Resume`) instead of setting the play rate to 0, because the ability system copies a host's montage play rate into its replicated montage info every tick and its simulated proxies would freeze too. A pause only lets the host's montage position fall behind, which proxies correct only beyond 0.1 s of montage time (`SimulatedMontageCorrectionSeconds`; 60 ms at 1.5 is 0.09 s). On authority the swing window's clock schedule waits as long (new `FRpgSwingTraceWindow::DelayAuthoritySchedule`), so a host's window keeps the motion after the freeze. Ending or cancelling the swing resumes the montage first. The server's copy of a remote swinger never freezes, and its cadence ignores the hitstop; the swinger's own next swing simply starts that much later. Combat attacks have no such setting.
+- **Impact feedback:**
+  - `GCN_Harvest_ToolHit` (axe): new `NS_Harvest_ToolChips_Wood` (ten light-brown chips, mesh particles of the project's rock chunk flattened into splinters, sprayed along the impact normal), the smoke puff smaller (scale 0.3 to 0.22), and the swinger-only `CS_FX_RockBurst` shake at 0.45 instead of 0.15.
+  - A new `OnBurst` graph plays one sound of the designer list `HitSounds` at the impact point at 0.92 to 1.08 pitch, on every machine that plays the cue; the axe lists three wood chops.
+  - Wood chips on ore would be wrong, so the pickaxe got its own cue: the Blueprint child `GCN_Harvest_ToolHit_Stone` with the new child tag `GameplayCue.Harvesting.ToolHit.Stone`, `NS_Harvest_ToolChips_Stone` (eight grey chips) and three pick hits. `GA_Harvest_PickaxeStrike` plays it; the child keeps the parent's graph and its impact-notify prediction.
+  - Sounds: *All In One Survival* `Woodcutting_hit_1`, `_4`, `_5` and `Pickaxe_hit_1`, `_2`, `_4`, chosen from five each by their attack time (2 to 36 ms), as `SW_Harvest_WoodChop_01`–`03` and `SW_Harvest_PickaxeHit_01`–`03` in `Audio/Sounds/Harvesting` with `SFX_Effects` and `ATT_FX_World`; [third-party notices](third-party-notices.md) lists them.
+- **Trace over the whole tool:** both tool meshes got `TracePoint_Grip` on the handle (14 cm up from the mesh origin, just above the upper hand), the axe also `TracePoint_Neck` where the handle enters the head. The axe traces `Grip`, `Neck`, `Base`, `Tip` (handle, across the head, then the edge), the pickaxe `Grip`, `Base`, `Tip`, with the same 12 cm sphere. A tuned `SwingReach` still extends the last segment, the axe's edge or the pick. The server's reach check and the rule that only harvestables count are unchanged.
+- **Editor tool:** `RpgAnimationAssetTools::TrimMontageToRange` (`trim_montage_range`) also cuts an already trimmed montage now, in that montage's own time; an untrimmed montage behaves as before.
+
+##### Tests
+
+- Native `SurvivalRpg.Harvesting.Swing.CloseContactHitsWithTheHandle` (new): a 40 cm trunk 50 cm in front of the harvester, swept flat from its right to its left with hand-built tool poses. The head alone (110 to 125 cm out) passes beyond the trunk and touches nothing; the whole tool with its grip at 40 cm takes one section once.
+- Native `SurvivalRpg.Harvesting.Swing.LocalHitstopKeepsTheCadence` (new): a host's contact freezes its montage once per swing, also when Wide Swing gives the swing a second contact, for the tuned 60 ms; the cycle and the hold-back of a cut swing are the montage's; an owner's predicted contact freezes too; a cancel during the freeze resumes at once and leaves no timer; 0 ms freezes nothing. The server's copy of a remote swinger needs a network session (PIE below).
+- `HoldKeepsSwingingUntilRelease` runs with a hitstop now: each held swing freezes once at its contact and resumes before it ends. `ClientCannotOutpaceTheMontage` needed no change; it already derives the cycle from montage and rate.
+- Asset contracts: `AxeToolContract` and `PickaxeToolContract` require a trace from `TracePoint_Grip` to `TracePoint_Base` and `TracePoint_Tip`, all sockets on the tool mesh, spanning at least 40 cm, and a tool hit cue (the stone one for the pickaxe) that is an impact notify with that tag. `SwingMontageContract` also requires the blend-out at most 0.25 s after the impact (axe 0.107 s, pickaxe 0.098 s) and a hitstop above 0 that stays below the proxies' correction threshold.
+- `SurvivalRpg.Animation.TrimMontageToRange.KeepsTheRangeAndItsNotifies` cuts the trimmed montage a second time.
+- PIE `SurvivalRpg.Network.HarvestSwingPIE`: every round checks that the server's copy of the swing never froze and that the client froze at least once per predicted hit; the hold step accepts the shorter cycle.
+
+##### Validation
+
+All builds and tests through `ue.py`; the MCP server's autostart was off for test runs, and my own editor (port 8020; port 8000 untouched) was closed for every build and test.
+
+- `build`: passed, 0 errors, 0 warnings, after the native change, after the trim tool change and after the test changes.
+- `test SurvivalRpg.Harvesting.Swing SurvivalRpg.Animation.TrimMontageToRange --null-rhi`, before the asset work: **14 / 14 passed**.
+- `test SurvivalRpg.Harvesting SurvivalRpg.Interaction.Harvesting SurvivalRpg.Combat SurvivalRpg.Animation.TrimMontageToRange --null-rhi`: **172 / 172 passed** (12 with warnings).
+- `test SurvivalRpg.Network.HarvestSwingPIE SurvivalRpg.Network.LootHarvestPIE SurvivalRpg.Network.HarvestCuePIE SurvivalRpg.Network.CombatRemoteMeleePIE` (rendered, separate call): **17 / 17 passed** on the first run (all with the usual PIE log warnings), no "no more RPCs" line. Held swings started 0.483, 0.500 and 0.533 s apart on the server against its 0.44 s cycle; the client's own 60 ms hitstop and the 60 ms lag make up the difference. Owner predictions 2 of 2 and 4 of 4 hits, owner hitstops 4, and the server's copy of the swing never froze. Swings ran while walking at up to 600 cm/s. Another application shared the GPU during the run (8.0 GB, 83 % at the start).
+- Editor (MCP, port 8020): both swing abilities, both cue notifies and the stone child compiled and read back their values after saving. Both chip systems compiled without errors or warnings; one engine version-upgrade note.
+- `python Build/Tools/AgentSkills/sync.py` and `--check`: consistent.
+
+##### Agent check by eye
+
+In my own editor on port 8020, standalone PIE in `Lvl_HarvestPickaxe` with the real character, AnimBP, axe and dead pines, captured from my editor window only. Another application held almost the whole GPU (11.8 of 12 GB, 99 %), so the editor ran at about 9 fps ("Video memory has been exhausted"). A first run at 3 to 5 fps stepped through a whole swing per frame and missed at arm's length, so the check ran under `slomo 0.2`, which keeps each game step near 1/60 s.
+
+- **Close**, trunk face about 48 cm ahead: every swing hit until the pine was empty, 4 to 0 in eight swings. The trace's debug draw marked hits along the trunk's side next to the hands, where only the handle reaches.
+- **Arm's length**, trunk face 95 cm ahead: 4 to 0 in seven swings.
+- **Strafing** past a pine 58 cm away at 375 cm/s: the legs ran and the arms chopped, but the chop landed to the left of the facing, because the mesh-space upper body turns with the strafing hips. One of six swings hit.
+- Swings followed each other every 0.47 to 0.55 s of game time (0.44 s cycle plus the 60 ms freeze). The montage stood still for 55 to 80 ms at each first hit, at a sampling step of about 20 ms.
+- The captures show small light-brown splinters flying off the trunk with a small dust puff, and the stock indicator counting down.
+- Not judged: the motion at full speed, the sounds (no audio capture) and the pickaxe.
+- A mouse button held through `set_pie_input_key` swung only once per hold in the unfocused editor, with and without the hitstop, also when the press was sent every tick. The loops above therefore started each swing through the ability system as soon as the previous one ended, as a held button does. `HoldKeepsSwingingUntilRelease` and the PIE hold step cover the hold itself.
+
+##### Limits
+
+- The feel still needs the user's playtest. I judged the motion from slow-motion stills, not at full speed, and did not hear the sounds. Play rate (1.5), blend-in (0.18 s), hitstop (60 ms), shake (0.45), chip counts and sounds are designer values on the abilities, montages, cue and systems.
+- A held axe now chops about twice per second. That is faster than the 1.4 to 1.6 times play rate alone, because the 0.55 s in the trunk and the pull-out are gone. If it reads hasty, lower `MontagePlayRate` on the swing.
+- A strafing chop lands beside the facing, because of the HRW-01 upper-body layering; one of six swings hit a pine passed sideways. This PR does not change it.
+- A host's hitstop is covered by the native test and the standalone check by eye, not by a two-player PIE step. Observers see the host's montage up to 0.09 s behind, below the 0.1 s at which they would snap.
+- With more than one target per swing (HRW-05 Wide Swing), a swing still freezes only once, at its first contact.
+- The pickaxe has its asset contracts and its timing analysis only; no pickaxe swing was watched.
+- The chips reuse the project's rock chunk mesh, flattened into splinters; there is no dedicated chip mesh.
+- `Config/DefaultGame.ini` turns on the weapon trace debug draw (`bDrawWeaponAttackTraces`), so playtests and the captures show the swept spheres. This PR leaves that unchanged.
+- A dedicated server is not tested separately, as before.
+
+##### Playtest
+
+1. Open `Lvl_HarvestPickaxe`, pick up the axe and stand right at a dead pine, the trunk almost touching. Hold the left mouse button: about two chops per second, each one takes a section ("3/4", "2/4" …), light chips fly off the trunk with a short chop sound, the camera shakes a little, and the arms stop for a moment at each hit. After the strike the axe goes straight back into the next wind-up without pulling out.
+2. Step back to an arm's length and hold again: every chop still lands.
+3. Run sideways past a pine while holding: the arms keep chopping over the running legs; a chop that reaches the trunk takes a section.
+4. Pick up the pickaxe and hold at an iron vein: a strike about every 0.8 s, grey stone chips and a metallic pick sound. A pine struck with the pickaxe still shows "Wrong tool".
+5. Release during a swing: the swing finishes and the arms blend back to the idle pose.
+6. **Multiplayer:** play as listen server with two players. The client holds the button at a pine while the host watches: the host sees the client's chops at normal speed without a pause, hears each chop and sees the chips once; the client's own arms pause briefly at each hit. Then the host chops while the client watches: the client sees the host's swing play smoothly, without a jump after the hits.
 
 ### HRW-05: focus meter and harvesting spells
 
