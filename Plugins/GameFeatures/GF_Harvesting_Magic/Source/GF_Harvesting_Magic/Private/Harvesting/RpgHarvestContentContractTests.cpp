@@ -7,7 +7,9 @@
 #include "GameFeatureData.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/GameStateBase.h"
+#include "Components/StaticMeshComponent.h"
 #include "Engine/BlueprintGeneratedClass.h"
+#include "Engine/CollisionProfile.h"
 #include "Engine/SCS_Node.h"
 #include "Engine/SimpleConstructionScript.h"
 #include "GameplayTags/RpgHarvestingMagicGameplayTags.h"
@@ -17,8 +19,10 @@
 #include "Harvesting/RpgHarvestChainComponent.h"
 #include "Harvesting/RpgHarvestProfile.h"
 #include "Harvesting/RpgHarvestableComponent.h"
+#include "Harvesting/RpgHarvestableInstancedMeshComponent.h"
 #include "Harvesting/RpgHarvestableInstancesComponent.h"
 #include "Harvesting/RpgHarvestInstanceStockComponent.h"
+#include "Harvesting/RpgHarvestTargeting.h"
 #include "Inventory/RpgInventoryFragment_HarvestingTool.h"
 #include "SurvivalRpg/Crafting/RpgCraftingRecipeDefinition.h"
 #include "SurvivalRpg/Crafting/RpgCraftingStationActor.h"
@@ -28,11 +32,13 @@
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
 #include "SurvivalRpg/Animation/AnimNotify_RpgWeaponAttackWindow.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/Combat/RpgGameplayCueNotify_Impact.h"
 #include "SurvivalRpg/Equipment/RpgAbilityBindingResolver.h"
 #include "SurvivalRpg/Equipment/RpgWeaponAbilityLoadoutComponent.h"
 #include "SurvivalRpg/GameFeatures/RpgGameFeatureAction_AddComponents.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemContainer.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_SkillTree.h"
+#include "SurvivalRpg/Physics/RpgCollisionChannels.h"
 #include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeComponent.h"
 #include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeDefinition.h"
 #include "SurvivalRpg/Progression/Rewards/RpgRewardClaimDefinition.h"
@@ -70,6 +76,15 @@ namespace RpgHarvestContentContractTests
 	const TCHAR* AxeChopAbilityClassPath = TEXT("/GF_Harvesting_Magic/GAS/Abilities/GA_Harvest_AxeChop.GA_Harvest_AxeChop_C");
 	const TCHAR* PickaxeStrikeAbilityClassPath =
 		TEXT("/GF_Harvesting_Magic/GAS/Abilities/GA_Harvest_PickaxeStrike.GA_Harvest_PickaxeStrike_C");
+	const TCHAR* AxeActorClassPath = TEXT("/GF_Harvesting_Magic/Equipment/Tools/BP_Tool_AxeActor.BP_Tool_AxeActor_C");
+	const TCHAR* PickaxeActorClassPath = TEXT("/GF_Harvesting_Magic/Equipment/Tools/BP_Tool_PickaxeActor.BP_Tool_PickaxeActor_C");
+	const TCHAR* ToolHitCueClassPath = TEXT("/GF_Harvesting_Magic/GameplayCues/GCN_Harvest_ToolHit.GCN_Harvest_ToolHit_C");
+	const TCHAR* HarvestNodeClassPaths[] = {
+		TEXT("/GF_Harvesting_Magic/Harvesting/Nodes/BP_HarvestNode_Bush.BP_HarvestNode_Bush_C"),
+		TEXT("/GF_Harvesting_Magic/Harvesting/Nodes/BP_HarvestNode_IronVein.BP_HarvestNode_IronVein_C"),
+		TEXT("/GF_Harvesting_Magic/Harvesting/Nodes/BP_HarvestNode_Mining.BP_HarvestNode_Mining_C"),
+		TEXT("/GF_Harvesting_Magic/Harvesting/Nodes/BP_HarvestNode_StaticMeshBase.BP_HarvestNode_StaticMeshBase_C"),
+		TEXT("/GF_Harvesting_Magic/Harvesting/Nodes/BP_HarvestNode_Tree.BP_HarvestNode_Tree_C")};
 
 	const FGameplayAbilitySpec* FindSpecWithId(const URpgAbilitySystemComponent& AbilitySystem, const FGameplayTag AbilityId)
 	{
@@ -158,6 +173,66 @@ namespace RpgHarvestContentContractTests
 		return Tree;
 	}
 
+	/** Spawns ClassPath in World for an inspection of its components; null when it does not load. */
+	AActor* SpawnForInspection(UWorld* World, const TCHAR* ClassPath)
+	{
+		UClass* ActorClass = LoadClass<AActor>(nullptr, ClassPath);
+		FActorSpawnParameters SpawnParameters;
+		SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		return World && ActorClass ? World->SpawnActor<AActor>(ActorClass, FTransform::Identity, SpawnParameters) : nullptr;
+	}
+
+	/**
+	 * A tool swing sweeps a sphere of about 12 cm between the tool head's trace sockets on the weapon channel, which
+	 * harvestables overlap, and plays a hit cue the swinging client can predict: an impact notify that absorbs the
+	 * server's copy there.
+	 */
+	void ExpectToolSwingTrace(
+		FAutomationTestBase& Test,
+		UWorld* World,
+		const URpgGameplayAbility_Harvest& Swing,
+		const TCHAR* ToolActorClassPath)
+	{
+		const FString Name = GetNameSafe(Swing.GetClass());
+		Test.TestTrue(*FString::Printf(TEXT("%s strikes with its tool's trace, not the view ray"), *Name), Swing.UsesToolSwing());
+		const FRpgSwingTraceParams& Trace = Swing.GetSwingTrace();
+		Test.TestTrue(*FString::Printf(TEXT("%s has a traceable swing"), *Name), Trace.HasValidTraceData());
+		Test.TestTrue(
+			*FString::Printf(TEXT("%s sweeps a sphere of 8 to 16 cm"), *Name),
+			Trace.TraceMode == ERpgWeaponAttackTraceMode::SphereSweep && Trace.TraceRadius >= 8.0f && Trace.TraceRadius <= 16.0f);
+		Test.TestTrue(
+			*FString::Printf(TEXT("%s traces the weapon channel, which harvestables overlap"), *Name),
+			Trace.TraceChannel == Rpg_TraceChannel_Weapon);
+		Test.TestTrue(
+			*FString::Printf(TEXT("%s traces the tool head from base to tip"), *Name),
+			Trace.TracePointSockets == TArray<FName>({TEXT("TracePoint_Base"), TEXT("TracePoint_Tip")}));
+
+		// The trace points are sockets of the tool mesh the equipment spawns in the hand.
+		const AActor* ToolActor = SpawnForInspection(World, ToolActorClassPath);
+		bool bHasSockets = false;
+		if (ToolActor)
+		{
+			TInlineComponentArray<UStaticMeshComponent*> Meshes(ToolActor);
+			for (const UStaticMeshComponent* Mesh : Meshes)
+			{
+				bHasSockets |= Mesh->DoesSocketExist(TEXT("TracePoint_Base")) && Mesh->DoesSocketExist(TEXT("TracePoint_Tip"));
+			}
+		}
+		Test.TestTrue(*FString::Printf(TEXT("The tool mesh of %s carries both trace sockets"), *Name), bHasSockets);
+
+		const FStructProperty* SuccessCueProperty =
+			FindFProperty<FStructProperty>(URpgGameplayAbility_Harvest::StaticClass(), TEXT("SuccessGameplayCue"));
+		const FGameplayTag SuccessCue = SuccessCueProperty ? *SuccessCueProperty->ContainerPtrToValuePtr<FGameplayTag>(&Swing) : FGameplayTag();
+		Test.TestTrue(
+			*FString::Printf(TEXT("%s plays the tool hit cue"), *Name),
+			SuccessCue == FGameplayTag::RequestGameplayTag(TEXT("GameplayCue.Harvesting.ToolHit")));
+		const UClass* CueClass = LoadClass<UGameplayCueNotify_Static>(nullptr, ToolHitCueClassPath);
+		const UGameplayCueNotify_Static* Cue = CueClass ? GetDefault<UGameplayCueNotify_Static>(CueClass) : nullptr;
+		Test.TestTrue(
+			TEXT("The tool hit cue is an impact notify, so the swinging client's prediction absorbs the server's copy"),
+			Cue && CueClass->IsChildOf<URpgGameplayCueNotify_Impact>() && Cue->GameplayCueTag == SuccessCue);
+	}
+
 	/** Paths of the profiles of the resources harvesting tools take; each advances the shared harvesting mastery. */
 	const TCHAR* ToolResourceProfilePaths[] = {
 		TEXT("/GF_Harvesting_Magic/Harvesting/Profiles/HP_IronVein.HP_IronVein"),
@@ -187,6 +262,10 @@ bool FRpgHarvestPickaxeToolContractTest::RunTest(const FString& Parameters)
 		*this, *AbilitySystem, PickaxeAbilitySetPath, FGameplayTag::RequestGameplayTag(TEXT("Ability.Harvesting.PickaxeStrike")));
 	TestTrue(TEXT("Pickaxe Strike executes on press"), Strike && !Strike->IsAimWhileInputHeld());
 	TestTrue(TEXT("Pickaxe Strike can strike weak points"), Strike && Strike->CanHitWeakPoints());
+	if (Strike)
+	{
+		ExpectToolSwingTrace(*this, TestWorld.GetWorld(), *Strike, PickaxeActorClassPath);
+	}
 
 	return true;
 }
@@ -422,6 +501,10 @@ bool FRpgHarvestAxeToolContractTest::RunTest(const FString& Parameters)
 	const URpgGameplayAbility_Harvest* Chop = ExpectToolSwing(*this, *AbilitySystem, AxeAbilitySetPath, ChopId);
 	TestTrue(TEXT("Axe Chop executes on press"), Chop && !Chop->IsAimWhileInputHeld());
 	TestTrue(TEXT("Axe Chop sends its own ability id"), Chop && Chop->GetHarvestAbilityId() == ChopId);
+	if (Chop)
+	{
+		ExpectToolSwingTrace(*this, TestWorld.GetWorld(), *Chop, AxeActorClassPath);
+	}
 
 	// The axe item supplies the tool category that dead pines require.
 	const UClass* AxeClass = LoadClass<URpgInventoryItemDefinition>(nullptr, AxeItemClassPath);
@@ -474,52 +557,100 @@ bool FRpgHarvestSwingMontageContractTest::RunTest(const FString& Parameters)
 		const UAnimMontage* Montage = Cast<UAnimMontage>(MontageProperty->GetObjectPropertyValue_InContainer(Swing));
 		const FGameplayTag CommitTag = *CommitTagProperty->ContainerPtrToValuePtr<FGameplayTag>(Swing);
 		const float PlayRate = PlayRateProperty->GetFloatingPointPropertyValue(PlayRateProperty->ContainerPtrToValuePtr<void>(Swing));
-		float CommitDelay = 0.0f;
+
+		// A tool swing traces its tool through the montage's attack window, as a melee attack does: one queued window
+		// pair that the server also receives, ending before the auto blend-out.
+		float WindowStartTime = 0.0f;
+		float WindowEndTime = 0.0f;
 		FString Failure;
 		if (!TestTrue(
-				*FString::Printf(TEXT("%s schedules its commit from the authored notify"), SwingPath),
-				URpgGameplayAbility_Harvest::ResolveCommitDelay(Montage, CommitTag, PlayRate, CommitDelay, Failure)))
+				*FString::Printf(TEXT("%s traces inside one valid attack window"), SwingPath),
+				FRpgSwingTraceWindow::ResolveWindowTiming(
+					Montage,
+					PlayRate * (Montage ? Montage->RateScale : 1.0f),
+					WindowStartTime,
+					WindowEndTime,
+					Failure)))
 		{
 			AddInfo(Failure);
 			continue;
 		}
 
-		// The tool trace of a swing runs inside one queued attack window around the commit, ending before blend-out.
-		const FAnimNotifyEvent* WindowStart = nullptr;
-		const FAnimNotifyEvent* WindowEnd = nullptr;
-		int32 WindowNotifies = 0;
-		for (const FAnimNotifyEvent& Event : Montage->Notifies)
+		// The impact notify gates nothing for a tool swing; it marks the authored impact, which the window must cover.
+		float ImpactDelay = 0.0f;
+		if (TestTrue(
+				*FString::Printf(TEXT("%s marks its impact with one notify"), SwingPath),
+				URpgGameplayAbility_Harvest::ResolveCommitDelay(Montage, CommitTag, PlayRate, ImpactDelay, Failure)))
 		{
-			if (Event.Notify && Event.Notify->IsA<UAnimNotify_RpgWeaponAttackWindowStart>())
-			{
-				WindowStart = &Event;
-				++WindowNotifies;
-			}
-			else if (Event.Notify && Event.Notify->IsA<UAnimNotify_RpgWeaponAttackWindowEnd>())
-			{
-				WindowEnd = &Event;
-				++WindowNotifies;
-			}
+			const float ImpactTime = ImpactDelay * PlayRate * Montage->RateScale;
+			TestTrue(
+				*FString::Printf(TEXT("%s strikes inside its attack window"), SwingPath),
+				WindowStartTime < ImpactTime && ImpactTime < WindowEndTime);
 		}
-		if (!TestTrue(*FString::Printf(TEXT("%s has exactly one attack window"), SwingPath), WindowNotifies == 2 && WindowStart && WindowEnd))
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestableCollisionContractTest,
+	"SurvivalRpg.Harvesting.Content.HarvestableCollisionContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestableCollisionContractTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestContentContractTests;
+
+	// Resources stop the view ray, interaction traces and walking pawns, and let weapon traces pass: melee traces stop on
+	// no trunk, while the tool swing's multi trace reports them as overlaps.
+	const FName ProfileName = FRpgHarvestTargeting::GetHarvestableCollisionProfileName();
+	FCollisionResponseTemplate Profile;
+	if (!TestTrue(TEXT("The harvestable collision profile exists"), UCollisionProfile::Get()->GetProfileTemplate(ProfileName, Profile)))
+	{
+		return false;
+	}
+	TestEqual(TEXT("Harvestables collide for queries and physics"), Profile.CollisionEnabled.GetValue(), ECollisionEnabled::QueryAndPhysics);
+	TestEqual(TEXT("Harvestables block the view ray"), Profile.ResponseToChannels.GetResponse(ECC_Visibility), ECR_Block);
+	TestEqual(TEXT("Harvestables block interaction traces"), Profile.ResponseToChannels.GetResponse(Rpg_TraceChannel_Interaction), ECR_Block);
+	TestEqual(TEXT("Harvestables block walking pawns"), Profile.ResponseToChannels.GetResponse(ECC_Pawn), ECR_Block);
+	TestEqual(TEXT("Harvestables overlap weapon traces"), Profile.ResponseToChannels.GetResponse(Rpg_TraceChannel_Weapon), ECR_Overlap);
+
+	auto ExpectHarvestableCollision = [this, ProfileName](const UPrimitiveComponent* Component, const FString& Name)
+	{
+		TestTrue(
+			*FString::Printf(TEXT("%s uses the harvestable collision profile"), *Name),
+			Component && Component->GetCollisionProfileName() == ProfileName &&
+				Component->GetCollisionResponseToChannel(Rpg_TraceChannel_Weapon) == ECR_Overlap &&
+				Component->GetCollisionResponseToChannel(ECC_Visibility) == ECR_Block);
+	};
+	ExpectHarvestableCollision(GetDefault<URpgHarvestableInstancesComponent>(), TEXT("The native PCG instances component"));
+	ExpectHarvestableCollision(GetDefault<URpgHarvestableInstancedMeshComponent>(), TEXT("The native instanced mesh resource"));
+	for (const TCHAR* InstancesPath : {DeadPineInstancesClassPath, IronVeinInstancesClassPath})
+	{
+		UClass* InstancesClass = LoadClass<URpgHarvestableInstancesComponent>(nullptr, InstancesPath);
+		ExpectHarvestableCollision(InstancesClass ? GetDefault<URpgHarvestableInstancesComponent>(InstancesClass) : nullptr, InstancesPath);
+	}
+
+	// Actor nodes: every part that stops the view ray is the resource's collision and lets weapon traces pass.
+	RpgHarvestAutomation::FScopedTestWorld TestWorld;
+	for (const TCHAR* NodePath : HarvestNodeClassPaths)
+	{
+		const AActor* Node = SpawnForInspection(TestWorld.GetWorld(), NodePath);
+		if (!TestNotNull(*FString::Printf(TEXT("%s spawns"), NodePath), Node))
 		{
 			continue;
 		}
-		for (const FAnimNotifyEvent* Event : {WindowStart, WindowEnd})
+		int32 ResourceParts = 0;
+		TInlineComponentArray<UPrimitiveComponent*> Primitives(Node);
+		for (const UPrimitiveComponent* Primitive : Primitives)
 		{
-			TestTrue(
-				*FString::Printf(TEXT("%s delivers its window notifies reliably on the server"), SwingPath),
-				Event->MontageTickType == EMontageNotifyTickType::Queued && Event->NotifyTriggerChance >= 1.0f &&
-					Event->bTriggerOnDedicatedServer && Event->NotifyFilterType == ENotifyFilterType::NoFiltering);
+			if (Primitive->IsQueryCollisionEnabled() && Primitive->GetCollisionResponseToChannel(ECC_Visibility) == ECR_Block)
+			{
+				++ResourceParts;
+				ExpectHarvestableCollision(Primitive, FString::Printf(TEXT("%s.%s"), NodePath, *Primitive->GetName()));
+			}
 		}
-		const float CommitTime = CommitDelay * PlayRate * Montage->RateScale;
-		TestTrue(
-			*FString::Printf(TEXT("%s commits inside its attack window"), SwingPath),
-			WindowStart->GetTriggerTime() < CommitTime && CommitTime < WindowEnd->GetTriggerTime());
-		const float BlendOutTrigger = Montage->BlendOutTriggerTime >= 0.0f ? Montage->BlendOutTriggerTime : Montage->BlendOut.GetBlendTime();
-		TestTrue(
-			*FString::Printf(TEXT("%s closes its window before the auto blend-out"), SwingPath),
-			!Montage->bEnableAutoBlendOut || Montage->GetPlayLength() - WindowEnd->GetTriggerTime() > BlendOutTrigger);
+		TestTrue(*FString::Printf(TEXT("%s has a collision a swing can reach"), NodePath), ResourceParts > 0);
 	}
 	return true;
 }

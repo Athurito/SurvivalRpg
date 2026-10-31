@@ -4,9 +4,9 @@
 #include "Harvesting/RpgHarvestableComponent.h"
 #include "Harvesting/RpgHarvestableInstancedMeshComponent.h"
 #include "Harvesting/RpgHarvestableInstancesComponent.h"
-#include "Engine/CollisionProfile.h"
 #include "GameplayTags/RpgHarvestingMagicGameplayTags.h"
 #include "Harvesting/RpgHarvestProfile.h"
+#include "Harvesting/RpgHarvestTargeting.h"
 #include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
@@ -136,7 +136,8 @@ ARpgNetworkAutomationHarvestInstancesFixture::ARpgNetworkAutomationHarvestInstan
 	// Like a PCG partition actor: loaded on every machine, never replicated. The stock replicates via the GameState.
 	bReplicates = false;
 	HarvestableInstances = CreateDefaultSubobject<URpgHarvestableInstancesComponent>(TEXT("HarvestableInstances"));
-	HarvestableInstances->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
+	// The collision of real PCG resources: the view ray stops on it, tool swings overlap it on the weapon channel.
+	HarvestableInstances->SetCollisionProfileName(FRpgHarvestTargeting::GetHarvestableCollisionProfileName());
 	SetRootComponent(HarvestableInstances);
 }
 

@@ -8,10 +8,12 @@
 #include "GameFramework/PlayerStart.h"
 #include "GameFramework/WorldSettings.h"
 #include "GameplayEffect.h"
+#include "Misc/Guid.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgDefenseSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Character/RpgHealthComponent.h"
+#include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
 #include "SurvivalRpg/Physics/RpgCollisionChannels.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgCombatNetworkTestTypes)
@@ -86,6 +88,63 @@ void FRpgScopedNetworkTestGround::OnGameModeInitialized(AGameModeBase* GameMode)
 		const double LaneY = (Index - 0.5 * (GroundPlayerStartCount - 1)) * GroundLaneSpacing;
 		World->SpawnActor<APlayerStart>(FVector(0.0, LaneY, GroundPlayerStartHeight), FRotator::ZeroRotator, Spawn);
 	}
+}
+
+FRpgScopedPIEWorldSaveIsolation::~FRpgScopedPIEWorldSaveIsolation()
+{
+	FGameModeEvents::OnGameModeInitializedEvent().Remove(GameModeInitializedHandle);
+	// The actual test actors stay isolated through Logout/EndPlay, even after an aborted test.
+}
+
+void FRpgScopedPIEWorldSaveIsolation::Start()
+{
+	check(!GameModeInitializedHandle.IsValid());
+	SlotPrefix = TEXT("SurvivalRpg_CombatPIETest_") + FGuid::NewGuid().ToString(EGuidFormats::Digits);
+	GameModeInitializedHandle = FGameModeEvents::OnGameModeInitializedEvent().AddRaw(
+		this, &FRpgScopedPIEWorldSaveIsolation::IsolateGameMode);
+}
+
+bool FRpgScopedPIEWorldSaveIsolation::IsWorldIsolated(UWorld* World) const
+{
+	if (!IsValid(World) || World->WorldType != EWorldType::PIE)
+	{
+		return false;
+	}
+
+	// Network clients never own a GameMode; the authoritative world owns all world persistence.
+	if (World->GetNetMode() == NM_Client)
+	{
+		return World->GetAuthGameMode() == nullptr;
+	}
+
+	const ARpgGameModeBase* GameMode = World->GetAuthGameMode<ARpgGameModeBase>();
+	const FString* IsolatedSlot = GameMode ? GameModeSlots.Find(GameMode) : nullptr;
+	return GameMode && IsolatedSlot && !GameMode->bEnableDiskPersistence &&
+		GameMode->WorldSaveSlotName == *IsolatedSlot &&
+		GameMode->WorldSaveBackupSlotName == *IsolatedSlot + TEXT("_Backup") &&
+		GameMode->WorldSaveRecoverySlotName == *IsolatedSlot + TEXT("_Recovery");
+}
+
+void FRpgScopedPIEWorldSaveIsolation::IsolateGameMode(AGameModeBase* InitializedGameMode)
+{
+	ARpgGameModeBase* GameMode = Cast<ARpgGameModeBase>(InitializedGameMode);
+	if (!GameMode || !GameMode->GetWorld() || GameMode->GetWorld()->WorldType != EWorldType::PIE)
+	{
+		return;
+	}
+
+	// AGameModeBase broadcasts inside Super::InitGame, before ARpgGameModeBase loads world saves.
+	// This applies to every authoritative PIE world, including entry/travel/late-join setup worlds.
+	// Editing only the Blueprint CDO did not isolate the instance in the previous PIE save incident.
+	FString& IsolatedSlot = GameModeSlots.FindOrAdd(GameMode);
+	if (IsolatedSlot.IsEmpty())
+	{
+		IsolatedSlot = FString::Printf(TEXT("%s_%u"), *SlotPrefix, GameMode->GetUniqueID());
+	}
+	GameMode->bEnableDiskPersistence = false;
+	GameMode->WorldSaveSlotName = IsolatedSlot;
+	GameMode->WorldSaveBackupSlotName = IsolatedSlot + TEXT("_Backup");
+	GameMode->WorldSaveRecoverySlotName = IsolatedSlot + TEXT("_Recovery");
 }
 
 FRpgScopedNetworkTestFrameTimeLimit::~FRpgScopedNetworkTestFrameTimeLimit()

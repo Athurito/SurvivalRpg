@@ -1,7 +1,9 @@
 #include "AbilitySystem/Abilities/RpgGameplayAbility_Harvest.h"
 
 #include "AbilitySystemComponent.h"
+#include "AbilitySystemGlobals.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
+#include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "Abilities/Tasks/AbilityTask_WaitInputRelease.h"
 #include "Animation/AnimMontage.h"
 #include "CollisionQueryParams.h"
@@ -22,6 +24,7 @@
 #include "Inventory/RpgInventoryFragment_HarvestingTool.h"
 #include "SurvivalRpg/Animation/AnimNotify_RpgGameplayEvent.h"
 #include "SurvivalRpg/Camera/RpgCameraMode.h"
+#include "SurvivalRpg/Combat/RpgCombatImpact.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentInstance.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
@@ -134,6 +137,8 @@ void URpgGameplayAbility_Harvest::ActivateAbility(
 {
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 	bCommitPending = false;
+	bToolSwingTakesContacts = false;
+	ToolSwingWindow.Reset();
 
 	if (bAimWhileInputHeld)
 	{
@@ -170,6 +175,15 @@ void URpgGameplayAbility_Harvest::EndAbility(
 	bHasCommitView = false;
 	bHasCommitValues = false;
 	SetLocalAimPreview(false);
+
+	// A swing that ends takes no contact any more, not even from its window's final sample.
+	bToolSwingTakesContacts = false;
+	ToolSwingWindow.StopTracing(false);
+	ToolSwingWindow.Reset();
+	ToolSwingStruck.Reset();
+	ToolSwingContacts = 0;
+	ToolSwingRequest = FRpgHarvestRequest();
+	bHasToolSwingRequest = false;
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
@@ -224,6 +238,11 @@ void URpgGameplayAbility_Harvest::HandleAimInputReleased(const float TimeHeld)
 
 void URpgGameplayAbility_Harvest::HandleMontageCompleted()
 {
+	// A tool swing's window ends before the blend-out; one still open traces its last motion and warns.
+	if (ToolSwingWindow.IsWindowOpen())
+	{
+		ToolSwingWindow.StopTracing(true);
+	}
 	// The swing's facing ends with it; a stride lets the harvester move freely.
 	EndFacingCommitment();
 	// A stride outlasts its montage; the server ends the activation when the stride is over.
@@ -244,14 +263,18 @@ void URpgGameplayAbility_Harvest::HandleMontageInterrupted()
 
 void URpgGameplayAbility_Harvest::BeginHarvestExecution()
 {
+	const bool bAuthority = HasAuthority(&CurrentActivationInfo);
+
 	// What the player aimed at when committing to the harvest is what the authoritative commit selects from,
-	// even though the commit happens later in the swing and the aim camera blends back right away.
-	bHasCommitView = HasAuthority(&CurrentActivationInfo) && CurrentActorInfo &&
+	// even though the commit happens later in the swing and the aim camera blends back right away. A tool swing
+	// strikes whatever its tool meets instead.
+	bHasCommitView = !UsesToolSwing() && bAuthority && CurrentActorInfo &&
 		GetViewPoint(*CurrentActorInfo, CommitViewLocation, CommitViewRotation);
 
-	// The tuned values are captured at the same moment, so learning or resetting a node mid-swing changes nothing.
+	// The tuned values are captured at the same moment, so learning or resetting a node mid-swing changes nothing. The
+	// swinging client traces its tool with the same reach and targets, and predicts the same cue.
 	const FGameplayAbilitySpec* Spec = GetCurrentAbilitySpec();
-	bHasCommitValues = HasAuthority(&CurrentActivationInfo) && CurrentActorInfo && Spec;
+	bHasCommitValues = (bAuthority || (UsesToolSwing() && IsLocallyControlled())) && CurrentActorInfo && Spec;
 	if (bHasCommitValues)
 	{
 		ResolveTunedValues(*Spec, *CurrentActorInfo, CommitValues);
@@ -264,7 +287,12 @@ void URpgGameplayAbility_Harvest::BeginHarvestExecution()
 		return;
 	}
 
-	const bool bAuthority = HasAuthority(&CurrentActivationInfo);
+	if (UsesToolSwing())
+	{
+		BeginToolSwing();
+		return;
+	}
+
 	if (!HarvestMontage)
 	{
 		// Without a montage the server ends the activation after its commit and replicates the end.
@@ -381,6 +409,18 @@ void URpgGameplayAbility_Harvest::ExecuteAuthorityCommit()
 		return;
 	}
 
+	ResolveSelection(Selection, RequestTemplate, Values);
+	if (!HarvestMontage && IsActive())
+	{
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
+	}
+}
+
+void URpgGameplayAbility_Harvest::ResolveSelection(
+	FRpgHarvestPreview& Selection,
+	const FRpgHarvestRequest& RequestTemplate,
+	const FRpgHarvestTunedValues& Values)
+{
 	// Every target extracts its own stock, but their rewards reach the harvester as one delivery: one atomic
 	// inventory batch, or one drop when it does not fit.
 	const FRpgHarvestTargetEvaluation* FirstHarvested = nullptr;
@@ -415,10 +455,281 @@ void URpgGameplayAbility_Harvest::ExecuteAuthorityCommit()
 	}
 
 	K2_OnHarvestResolved(Selection.Targets);
-	if (!HarvestMontage && IsActive())
+}
+
+void URpgGameplayAbility_Harvest::BeginToolSwing()
+{
+	const TCHAR* FailureReason = nullptr;
+	if (Targeting.Shape != ERpgHarvestTargetShape::SingleTarget || HasStride() || SummonsSwarm())
 	{
-		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
+		FailureReason = TEXT("a tool swing needs the SingleTarget shape without a stride or swarm");
 	}
+	else if (!SwingTrace.HasValidTraceData())
+	{
+		FailureReason = TEXT("SwingTrace needs two trace points, a positive sample interval and a valid shape");
+	}
+	if (FailureReason)
+	{
+		UE_LOG(LogRpgHarvesting, Error, TEXT("%s cannot swing its tool: %s."), *GetNameSafe(GetClass()), FailureReason);
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		return;
+	}
+
+	ToolSwingWindow.Reset();
+	ToolSwingStruck.Reset();
+	ToolSwingContacts = 0;
+	ToolSwingRequest = FRpgHarvestRequest();
+	bHasToolSwingRequest = false;
+	bToolSwingTakesContacts = true;
+
+	// As a melee attack does, the windup may still turn toward the camera and the window holds the facing; nothing aims
+	// at the screen centre.
+	BeginFacingCommitment(SwingWindupSteeringRate);
+	if (!PlayToolSwing(MakeToolSwingParams()) && IsActive())
+	{
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+	}
+}
+
+bool URpgGameplayAbility_Harvest::PlayToolSwing(const FRpgSwingTraceParams& Params)
+{
+	float PlayRate = MontagePlayRate;
+	UAbilitySystemGlobals::NonShipping_ApplyGlobalAbilityScaler_Rate(PlayRate);
+	float WindowStartTime = 0.0f;
+	float WindowEndTime = 0.0f;
+	FString FailureReason = TEXT("No harvest montage is configured.");
+	if (!HarvestMontage ||
+		!FRpgSwingTraceWindow::ResolveWindowTiming(
+			HarvestMontage,
+			PlayRate * HarvestMontage->RateScale,
+			WindowStartTime,
+			WindowEndTime,
+			FailureReason))
+	{
+		UE_LOG(
+			LogRpgHarvesting,
+			Error,
+			TEXT("%s cannot swing montage %s: %s"),
+			*GetNameSafe(GetClass()),
+			*GetNameSafe(HarvestMontage),
+			*FailureReason);
+		return false;
+	}
+
+	UAbilityTask_WaitGameplayEvent* WindowStartTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
+		this,
+		RpgGameplayTags::GameplayEvent_Weapon_Attack_Window_Start,
+		nullptr,
+		false,
+		true);
+	WindowStartTask->EventReceived.AddDynamic(this, &ThisClass::HandleToolSwingWindowStartEvent);
+	WindowStartTask->ReadyForActivation();
+
+	UAbilityTask_WaitGameplayEvent* WindowEndTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
+		this,
+		RpgGameplayTags::GameplayEvent_Weapon_Attack_Window_End,
+		nullptr,
+		false,
+		true);
+	WindowEndTask->EventReceived.AddDynamic(this, &ThisClass::HandleToolSwingWindowEndEvent);
+	WindowEndTask->ReadyForActivation();
+
+	UAbilityTask_PlayMontageAndWait* MontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
+		this,
+		NAME_None,
+		HarvestMontage,
+		MontagePlayRate);
+	MontageTask->OnCompleted.AddDynamic(this, &ThisClass::HandleMontageCompleted);
+	MontageTask->OnInterrupted.AddDynamic(this, &ThisClass::HandleMontageInterrupted);
+	MontageTask->OnCancelled.AddDynamic(this, &ThisClass::HandleMontageInterrupted);
+	MontageTask->ReadyForActivation();
+	if (!IsActive())
+	{
+		// The montage could not start, and its task already ended the swing.
+		return true;
+	}
+
+	// The server opens the window from its own montage; the swinging client opens it from the montage's notifies.
+	return ToolSwingWindow.Begin(*this, GetAssociatedEquipment(), HarvestMontage, Params, MakeToolSwingSink());
+}
+
+FRpgSwingTraceParams URpgGameplayAbility_Harvest::MakeToolSwingParams() const
+{
+	FRpgSwingTraceParams Params = SwingTrace;
+	const float TunedReach = bHasCommitValues ? CommitValues.SwingReach : 0.0f;
+	Params.TipExtension = FMath::Max(0.0f, SwingTrace.TipExtension) + TunedReach;
+	return Params;
+}
+
+FRpgSwingTraceSink URpgGameplayAbility_Harvest::MakeToolSwingSink()
+{
+	FRpgSwingTraceSink Sink;
+	Sink.OnHits.BindUObject(this, &ThisClass::HandleToolSwingHits);
+	Sink.OnWindowOpened.BindUObject(this, &ThisClass::HandleToolSwingWindowOpened);
+	return Sink;
+}
+
+void URpgGameplayAbility_Harvest::HandleToolSwingWindowOpened(const ERpgSwingTraceRole Role)
+{
+	(void)Role;
+	// The owner (notify) and the server (notify, montage poll or schedule) each hold their facing from here on.
+	HoldFacingCommitment();
+}
+
+void URpgGameplayAbility_Harvest::HandleToolSwingWindowStartEvent(FGameplayEventData Payload)
+{
+	(void)Payload;
+	if (IsActive())
+	{
+		ToolSwingWindow.HandleStartNotify();
+	}
+}
+
+void URpgGameplayAbility_Harvest::HandleToolSwingWindowEndEvent(FGameplayEventData Payload)
+{
+	(void)Payload;
+	if (IsActive())
+	{
+		ToolSwingWindow.HandleEndNotify();
+	}
+}
+
+void URpgGameplayAbility_Harvest::HandleToolSwingHits(const TArray<FHitResult>& HitResults, const ERpgSwingTraceRole Role)
+{
+	if (Role == ERpgSwingTraceRole::None)
+	{
+		return;
+	}
+
+	const int32 MaxContacts = bHasCommitValues ? CommitValues.SwingTargets : 1;
+	for (const FHitResult& Hit : HitResults)
+	{
+		// A commit may end the activation, after which the swing takes no contact.
+		if (!bToolSwingTakesContacts || !IsActive() || ToolSwingContacts >= MaxContacts)
+		{
+			return;
+		}
+
+		// Ground, pawns and anything else that is not a resource neither counts nor takes damage from a tool.
+		UObject* Receiver = FRpgHarvestTargeting::FindReceiver(Hit);
+		if (!Receiver)
+		{
+			continue;
+		}
+
+		// Every resource counts once per swing; instances of one PCG component are separate resources.
+		const TPair<const UObject*, int32> ResourceKey = FRpgHarvestTargeting::MakeResourceKey(Receiver, Hit);
+		const TPair<TObjectKey<UObject>, int32> StruckKey(TObjectKey<UObject>(ResourceKey.Key), ResourceKey.Value);
+		if (ToolSwingStruck.Contains(StruckKey) || !IsToolSwingContactInReach(Hit))
+		{
+			continue;
+		}
+		ToolSwingStruck.Add(StruckKey);
+		++ToolSwingContacts;
+
+		if (Role == ERpgSwingTraceRole::Authority)
+		{
+			CommitToolSwingContact(Receiver, Hit);
+		}
+		else
+		{
+			PredictToolSwingContact(Receiver, Hit);
+		}
+	}
+}
+
+bool URpgGameplayAbility_Harvest::IsToolSwingContactInReach(const FHitResult& Hit) const
+{
+	const AActor* Avatar = GetAvatarActorFromActorInfo();
+	if (!Avatar)
+	{
+		return false;
+	}
+	const float Reach = bHasCommitValues
+		? CommitValues.Targeting.MaxReachFromAvatar + CommitValues.SwingReach
+		: Targeting.MaxReachFromAvatar;
+	return FVector::DistSquared(Avatar->GetActorLocation(), Hit.ImpactPoint) <=
+		FMath::Square(static_cast<double>(FMath::Max(0.0f, Reach)));
+}
+
+void URpgGameplayAbility_Harvest::CommitToolSwingContact(UObject* Receiver, const FHitResult& Hit)
+{
+	const FGameplayAbilitySpec* Spec = GetCurrentAbilitySpec();
+	if (!Receiver || !CurrentActorInfo || !Spec)
+	{
+		return;
+	}
+
+	FRpgHarvestTunedValues Values = CommitValues;
+	if (!bHasCommitValues)
+	{
+		ResolveTunedValues(*Spec, *CurrentActorInfo, Values);
+	}
+	// Every contact of one swing shares one root action, as the targets of one view-ray commit do.
+	if (!bHasToolSwingRequest)
+	{
+		BuildRequestTemplate(*Spec, *CurrentActorInfo, Values, ToolSwingRequest);
+		ToolSwingRequest.Provenance.RootActionId = FRpgHarvestProvenance::MakeRootActionId();
+		bHasToolSwingRequest = true;
+	}
+	const FRpgHarvestRequest RequestTemplate = ToolSwingRequest;
+
+	// The server's own contact is evaluated against the stock as it is now: tool, skill and stock decide here, and a
+	// rejected contact resolves as a harvest that yielded nothing.
+	FRpgHarvestPreview Selection;
+	Selection.AbilityId = HarvestAbilityId;
+	Selection.AimPoint = Hit.ImpactPoint;
+	Selection.YieldConversions = Values.YieldConversions;
+	FRpgHarvestTargetEvaluation& Target = Selection.Targets.AddDefaulted_GetRef();
+	Target.Receiver = Receiver;
+	Target.Hit = Hit;
+	Target.bInReach = true;
+	FRpgHarvestRequest Request = RequestTemplate;
+	Request.Hit = Hit;
+	Request.TraceOrigin = Hit.TraceStart;
+	Request.ExpectedRevision = IRpgHarvestableTarget::Execute_GetHarvestRevision(Receiver, Hit);
+	Target.Result = IRpgHarvestableTarget::Execute_EvaluateHarvest(Receiver, Request);
+
+	ResolveSelection(Selection, RequestTemplate, Values);
+#if WITH_DEV_AUTOMATION_TESTS
+	if (Selection.Targets.ContainsByPredicate([](const FRpgHarvestTargetEvaluation& Result) { return Result.Result.IsSuccess(); }))
+	{
+		++AuthorityToolSwingHarvestCountForTests;
+	}
+#endif
+}
+
+void URpgGameplayAbility_Harvest::PredictToolSwingContact(UObject* Receiver, const FHitResult& Hit)
+{
+	AActor* Avatar = GetAvatarActorFromActorInfo();
+	const FGameplayAbilitySpec* Spec = GetCurrentAbilitySpec();
+	if (!Receiver || !Avatar || !CurrentActorInfo || !Spec || !bHasCommitValues || !CommitValues.SuccessGameplayCue.IsValid())
+	{
+		return;
+	}
+
+	// The swinging client sees the replicated stock and its own tool. When its contact would harvest, it plays the
+	// success cue at once; the cue's impact notify absorbs the server's copy, so the hit plays once here as well. A
+	// contact the server then rejects plays its no-yield cue from the server.
+	FRpgHarvestRequest Request;
+	BuildRequestTemplate(*Spec, *CurrentActorInfo, CommitValues, Request);
+	Request.Hit = Hit;
+	Request.TraceOrigin = Hit.TraceStart;
+	Request.ExpectedRevision = IRpgHarvestableTarget::Execute_GetHarvestRevision(Receiver, Hit);
+	if (!IRpgHarvestableTarget::Execute_EvaluateHarvest(Receiver, Request).IsSuccess())
+	{
+		return;
+	}
+
+	FGameplayCueParameters CueParameters;
+	CueParameters.Instigator = Avatar;
+	CueParameters.EffectCauser = Avatar;
+	CueParameters.Location = Hit.ImpactPoint;
+	CueParameters.Normal = Hit.ImpactNormal;
+	RpgCombatImpact::PlayPredictedImpact(Avatar, CommitValues.SuccessGameplayCue, CueParameters);
+#if WITH_DEV_AUTOMATION_TESTS
+	++OwnerPredictedToolCueCountForTests;
+#endif
 }
 
 const FRpgHarvestTargetEvaluation* URpgGameplayAbility_Harvest::CommitSelection(
@@ -743,7 +1054,19 @@ void URpgGameplayAbility_Harvest::SendSpreadStrikes(
 	if (PierceStrikeClass && Values.PierceWork > 0.0f)
 	{
 		FVector Direction = StruckRequest.Hit.TraceEnd - StruckRequest.Hit.TraceStart;
-		if (Direction.IsNearlyZero(1.0))
+		if (StruckRequest.bSwingStrike)
+		{
+			// A swing's trace runs along the tool's arc, sideways; the pierce drives on from the harvester through the
+			// impact point, level with the ground.
+			const AActor* Striker = StruckRequest.GetStrikingActor();
+			Direction = StruckRequest.Hit.ImpactPoint - (Striker ? Striker->GetActorLocation() : StruckRequest.TraceOrigin);
+			Direction.Z = 0.0;
+			if (Direction.IsNearlyZero(1.0) && Striker)
+			{
+				Direction = Striker->GetActorForwardVector();
+			}
+		}
+		else if (Direction.IsNearlyZero(1.0))
 		{
 			Direction = StruckRequest.Hit.ImpactPoint - StruckRequest.TraceOrigin;
 		}
@@ -1132,6 +1455,9 @@ void URpgGameplayAbility_Harvest::ResolveTunedValues(
 		OutValues.Targeting.AreaRadius = FMath::Max(0.0f, Tune(Ability_Tuning_Harvest_AreaRadius, Targeting.AreaRadius));
 		OutValues.Targeting.MaxTargets = TuneCount(Ability_Tuning_Harvest_MaxTargets, Targeting.MaxTargets, 1, 64);
 	}
+	// Spells such as Wide Swing reach farther past the tool and strike the resources behind the first.
+	OutValues.SwingReach = FMath::Clamp(Tune(Ability_Tuning_Harvest_SwingReach, 0.0f), 0.0f, MaxSwingReach);
+	OutValues.SwingTargets = TuneCount(Ability_Tuning_Harvest_SwingTargets, 1, 1, MaxSwingTargets);
 	OutValues.SectionsPerTarget = TuneCount(Ability_Tuning_Harvest_Sections, FMath::Max(1, SectionsPerTarget), 1, 64);
 	OutValues.WorkScale = FMath::Clamp(Tune(Ability_Tuning_Harvest_Work, 1.0f), 0.01f, RpgHarvestWork::MaxWorkScale);
 	OutValues.WeakPointWorkScale = FMath::Clamp(Tune(Ability_Tuning_Harvest_WeakPointWork, 1.0f), 0.0f, RpgHarvestWork::MaxWorkScale);
@@ -1351,6 +1677,7 @@ void URpgGameplayAbility_Harvest::BuildRequestTemplate(
 	OutRequest.WeakPointWorkScale = Values.WeakPointWorkScale;
 	OutRequest.YieldConversions = Values.YieldConversions;
 	OutRequest.bCanHitWeakPoint = bCanHitWeakPoints && Targeting.Shape == ERpgHarvestTargetShape::SingleTarget;
+	OutRequest.bSwingStrike = UsesToolSwing();
 	OutRequest.bAreaHarvest = HarvestsArea();
 
 	float ToolPower = 1.0f;

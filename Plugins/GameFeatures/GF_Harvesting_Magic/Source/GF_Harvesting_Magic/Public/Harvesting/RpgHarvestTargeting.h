@@ -162,8 +162,21 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestPreview
 /** Stateless target query shared by harvest abilities on the server and previews on owning clients. */
 struct GF_HARVESTING_MAGIC_API FRpgHarvestTargeting
 {
+	/**
+	 * Collision profile of harvestable resource meshes (Config/DefaultEngine.ini): blocks Visibility and the interaction
+	 * channel, and overlaps the weapon trace channel, so melee traces pass trunks while tool swings, whose multi traces
+	 * report overlaps, still find them.
+	 */
+	static FName GetHarvestableCollisionProfileName();
+
 	/** Returns the IRpgHarvestableTarget addressed by Hit: the hit component first, then its actor, then other components. */
 	static UObject* FindReceiver(const FHitResult& Hit);
+
+	/**
+	 * Returns the key that identifies Hit's resource within one swing: the receiver, and the instance index when the hit
+	 * component itself is the receiver. Several primitives of one actor-backed resource share a key; instances do not.
+	 */
+	static TPair<const UObject*, int32> MakeResourceKey(const UObject* Receiver, const FHitResult& Hit);
 
 	/**
 	 * Selects targets from the view and evaluates RequestTemplate against each without mutating anything.

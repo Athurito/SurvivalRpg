@@ -229,6 +229,14 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestRequest
 	bool bCanHitWeakPoint = false;
 
 	/**
+	 * True when the tool's swing trace found Hit, not an aim ray. The trace start is then only where the tool was one
+	 * sample earlier, so a weak point counts only when Hit.ImpactPoint lies within its radius, and a pierce drives on
+	 * from the harvester through the impact point. Server-side, set by the swinging ability.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Harvesting")
+	bool bSwingStrike = false;
+
+	/**
 	 * True for area powers and other harvests that affect every resource in a region instead of one the player singled
 	 * out. Resources inside a URpgHarvestProtectionComponent box reject such requests as Protected.
 	 */

@@ -89,6 +89,14 @@ struct SURVIVALRPG_API FRpgSwingTraceParams
 	TArray<FName> TracePointSockets;
 
 	/**
+	 * Centimeters by which every sample moves the last trace point beyond the tip, along the line from the
+	 * second-to-last trace point through it, so the swing reaches farther than the swung mesh. Zero traces the authored
+	 * points. Tool swings add their tuned reach (Ability.Tuning.Harvest.SwingReach) per swing.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trace", meta = (ClampMin = "0.0", UIMax = "400.0", ForceUnits = "cm"))
+	float TipExtension = 0.0f;
+
+	/**
 	 * Seconds between samples while the window is open, at least 0.001 s. Lower values are more accurate but more
 	 * expensive. A blade that turned more than RpgWeaponTraceInterpolation::MaxSubstepAngleDegrees between two samples is
 	 * traced along its swing arc in sub-steps.
@@ -102,6 +110,9 @@ struct SURVIVALRPG_API FRpgSwingTraceParams
 
 	/** Whether the trace points, sample interval and the selected shape's extents can be traced. */
 	bool HasValidTraceData() const;
+
+	/** Moves the last of TracePointTransforms TipExtension beyond the tip; nothing without an extension or two points. */
+	void ExtendTip(TArray<FTransform>& TracePointTransforms) const;
 };
 
 /**
@@ -221,7 +232,8 @@ public:
 
 	/**
 	 * Traces the motion from Previous to Current in World as an authority sample would, without an ability or equipment;
-	 * nothing is ignored. Returns the sub-step count.
+	 * the samples hold the authored trace points, and InParams' tip extension applies. Nothing is ignored. Returns the
+	 * sub-step count.
 	 */
 	int32 TraceSampleMotionForTests(
 		UWorld& World,
