@@ -1,6 +1,8 @@
 #include "Blueprint/RpgAnimationAssetTools.h"
 
 #include "Animation/AnimBlueprint.h"
+#include "Animation/AnimData/IAnimationDataController.h"
+#include "Animation/AnimData/IAnimationDataModel.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimLayerInterface.h"
 #include "Animation/AnimMontage.h"
@@ -12,6 +14,8 @@
 #include "AnimationGraphSchema.h"
 #include "AnimGraphNode_LinkedAnimLayer.h"
 #include "AnimGraphNode_LinkedInputPose.h"
+#include "AnimGraphNode_SaveCachedPose.h"
+#include "AnimGraphNode_UseCachedPose.h"
 #include "Chooser.h"
 #include "ChooserPropertyAccess.h"
 #include "Dom/JsonObject.h"
@@ -574,6 +578,179 @@ float URpgAnimationAssetTools::RetimeMontageRange(UAnimMontage* Montage, const f
 		{
 			const float NewEnd = RemapTime(OldTimes[Index].End);
 			Notify.SetDuration(NewEnd - NewStart);
+			Notify.EndLink.Link(Montage, NewEnd, Notify.GetSlotIndex());
+			Notify.RefreshEndTriggerOffset(Montage->CalculateOffsetForNotify(NewEnd));
+		}
+	}
+
+	Montage->RefreshCacheData();
+	Montage->PostEditChange();
+	Montage->MarkPackageDirty();
+	return Montage->GetPlayLength();
+}
+
+namespace
+{
+	UAnimGraphNode_SaveCachedPose* FindSaveCachedPoseNode(const UBlueprint* Blueprint, const FString& CacheName)
+	{
+		TArray<UAnimGraphNode_SaveCachedPose*> Nodes;
+		FBlueprintEditorUtils::GetAllNodesOfClass<UAnimGraphNode_SaveCachedPose>(Blueprint, Nodes);
+		UAnimGraphNode_SaveCachedPose* const* Found = Nodes.FindByPredicate([&CacheName](const UAnimGraphNode_SaveCachedPose* Node)
+		{
+			return Node && Node->CacheName == CacheName;
+		});
+		return Found ? *Found : nullptr;
+	}
+
+	UAnimBlueprint* EditableAnimGraphBlueprint(UEdGraph* Graph)
+	{
+		UAnimBlueprint* Blueprint = Graph ? Cast<UAnimBlueprint>(FBlueprintEditorUtils::FindBlueprintForGraph(Graph)) : nullptr;
+		return CanEdit(Blueprint) && Graph->GetSchema() && Graph->GetSchema()->IsA<UAnimationGraphSchema>() ? Blueprint : nullptr;
+	}
+}
+
+bool URpgAnimationAssetTools::RotateSequenceRoot(UAnimSequence* Sequence, const float YawDegrees)
+{
+	if (!CanEdit(Sequence) || !Sequence->GetSkeleton() || Sequence->HasRootMotion() || !FMath::IsFinite(YawDegrees))
+	{
+		return false;
+	}
+	const IAnimationDataModel* Model = Sequence->GetDataModel();
+	const FName RootName = Sequence->GetSkeleton()->GetReferenceSkeleton().GetBoneName(0);
+	if (!Model || RootName.IsNone() || !Model->IsValidBoneTrackName(RootName))
+	{
+		return Fail(FString::Printf(TEXT("%s has no root bone track to rotate"), *GetNameSafe(Sequence)));
+	}
+
+	TArray<FTransform> Keys;
+	Model->GetBoneTrackTransforms(RootName, Keys);
+	if (Keys.IsEmpty())
+	{
+		return false;
+	}
+	const FQuat Turn(FVector::UpVector, FMath::DegreesToRadians(YawDegrees));
+	TArray<FVector3f> Positions;
+	TArray<FQuat4f> Rotations;
+	TArray<FVector3f> Scales;
+	for (const FTransform& Key : Keys)
+	{
+		Positions.Add(FVector3f(Turn.RotateVector(Key.GetLocation())));
+		Rotations.Add(FQuat4f((Turn * Key.GetRotation()).GetNormalized()));
+		Scales.Add(FVector3f(Key.GetScale3D()));
+	}
+
+	const FScopedTransaction Transaction(NSLOCTEXT("RpgAnimationAssetTools", "RotateSequenceRoot", "Rotate Sequence Root"));
+	Sequence->Modify();
+	IAnimationDataController& Controller = Sequence->GetController();
+	IAnimationDataController::FScopedBracket Bracket(Controller, NSLOCTEXT("RpgAnimationAssetTools", "RotateSequenceRootBracket", "Rotate Sequence Root"));
+	if (!Controller.SetBoneTrackKeys(RootName, Positions, Rotations, Scales))
+	{
+		return Fail(FString::Printf(TEXT("%s refused the rotated root keys"), *GetNameSafe(Sequence)));
+	}
+	Sequence->MarkPackageDirty();
+	return true;
+}
+
+UAnimGraphNode_SaveCachedPose* URpgAnimationAssetTools::CreateSaveCachedPoseNode(UEdGraph* Graph, const FString& CacheName)
+{
+	UAnimBlueprint* Blueprint = EditableAnimGraphBlueprint(Graph);
+	if (!Blueprint || CacheName.IsEmpty() || FindSaveCachedPoseNode(Blueprint, CacheName))
+	{
+		return nullptr;
+	}
+	const FScopedTransaction Transaction(NSLOCTEXT("RpgAnimationAssetTools", "CreateSaveCachedPose", "Add Save Cached Pose Node"));
+	Blueprint->Modify();
+	Graph->Modify();
+	FGraphNodeCreator<UAnimGraphNode_SaveCachedPose> Creator(*Graph);
+	UAnimGraphNode_SaveCachedPose* Node = Creator.CreateNode();
+	Creator.Finalize();
+	// The rename path refreshes the cached title along with the name.
+	Node->OnRenameNode(CacheName);
+	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+	return Node->CacheName == CacheName ? Node : nullptr;
+}
+
+UAnimGraphNode_UseCachedPose* URpgAnimationAssetTools::CreateUseCachedPoseNode(UEdGraph* Graph, const FString& CacheName)
+{
+	UAnimBlueprint* Blueprint = EditableAnimGraphBlueprint(Graph);
+	UAnimGraphNode_SaveCachedPose* SaveNode = Blueprint ? FindSaveCachedPoseNode(Blueprint, CacheName) : nullptr;
+	if (!SaveNode)
+	{
+		return nullptr;
+	}
+	const FScopedTransaction Transaction(NSLOCTEXT("RpgAnimationAssetTools", "CreateUseCachedPose", "Add Use Cached Pose Node"));
+	Blueprint->Modify();
+	Graph->Modify();
+	FGraphNodeCreator<UAnimGraphNode_UseCachedPose> Creator(*Graph);
+	UAnimGraphNode_UseCachedPose* Node = Creator.CreateNode();
+	Node->SaveCachedPoseNode = SaveNode;
+	Creator.Finalize();
+	// The title records the cache name, which the compiler uses to relink the node after a reload.
+	Node->GetNodeTitle(ENodeTitleType::FullTitle);
+	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+	return Node;
+}
+
+float URpgAnimationAssetTools::TrimMontageToRange(UAnimMontage* Montage, const float StartTime, const float EndTime)
+{
+	if (!Montage || !IsProjectContentPackage(Montage->GetOutermost()->GetName()) || Montage->SlotAnimTracks.IsEmpty()
+		|| Montage->CompositeSections.Num() > 1 || !FMath::IsFinite(StartTime) || !FMath::IsFinite(EndTime))
+	{
+		return -1.0f;
+	}
+
+	// Only an untouched single-segment montage has montage time equal to animation time.
+	FAnimTrack& Track = Montage->SlotAnimTracks[0].AnimTrack;
+	if (Track.AnimSegments.Num() != 1)
+	{
+		return -1.0f;
+	}
+	FAnimSegment& Segment = Track.AnimSegments[0];
+	if (!FMath::IsNearlyEqual(Segment.AnimPlayRate, 1.0f) || Segment.LoopingCount != 1 || !FMath::IsNearlyZero(Segment.StartPos)
+		|| !FMath::IsNearlyZero(Segment.AnimStartTime) || StartTime < 0.0f || EndTime <= StartTime + UE_KINDA_SMALL_NUMBER
+		|| EndTime > Segment.AnimEndTime + UE_KINDA_SMALL_NUMBER)
+	{
+		return -1.0f;
+	}
+	const float RangeEnd = FMath::Min(EndTime, Segment.AnimEndTime);
+
+	// Read every notify's times before the segment changes; each must stay inside the kept range.
+	struct FNotifyTimes
+	{
+		float Start = 0.0f;
+		float End = 0.0f;
+	};
+	TArray<FNotifyTimes> OldTimes;
+	OldTimes.Reserve(Montage->Notifies.Num());
+	for (const FAnimNotifyEvent& Notify : Montage->Notifies)
+	{
+		const FNotifyTimes Times{ Notify.GetTime(), Notify.GetTime() + Notify.GetDuration() };
+		if (Times.Start < StartTime - UE_KINDA_SMALL_NUMBER || Times.End > RangeEnd + UE_KINDA_SMALL_NUMBER)
+		{
+			return -1.0f;
+		}
+		OldTimes.Add(Times);
+	}
+
+	const FScopedTransaction Transaction(NSLOCTEXT("RpgAnimationAssetTools", "TrimMontageToRange", "Trim Montage To Range"));
+	Montage->Modify();
+	Segment.AnimStartTime = StartTime;
+	Segment.AnimEndTime = RangeEnd;
+	Montage->SetCompositeLength(RangeEnd - StartTime);
+	if (Montage->CompositeSections.Num() == 1)
+	{
+		Montage->CompositeSections[0].Link(Montage, 0.0f);
+	}
+
+	for (int32 Index = 0; Index < Montage->Notifies.Num(); ++Index)
+	{
+		FAnimNotifyEvent& Notify = Montage->Notifies[Index];
+		const float NewStart = OldTimes[Index].Start - StartTime;
+		Notify.Link(Montage, NewStart, Notify.GetSlotIndex());
+		Notify.RefreshTriggerOffset(Montage->CalculateOffsetForNotify(NewStart));
+		if (Notify.NotifyStateClass)
+		{
+			const float NewEnd = OldTimes[Index].End - StartTime;
 			Notify.EndLink.Link(Montage, NewEnd, Notify.GetSlotIndex());
 			Notify.RefreshEndTriggerOffset(Montage->CalculateOffsetForNotify(NewEnd));
 		}

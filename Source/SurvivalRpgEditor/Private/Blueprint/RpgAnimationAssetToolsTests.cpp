@@ -57,4 +57,62 @@ bool FRpgRetimeMontageRangeTest::RunTest(const FString& Parameters)
 	return !HasAnyErrors();
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgTrimMontageToRangeTest,
+	"SurvivalRpg.Animation.TrimMontageToRange.KeepsTheRangeAndItsNotifies",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgTrimMontageToRangeTest::RunTest(const FString& Parameters)
+{
+	// The same combo step; its notifies give the range bounds that keep or refuse them.
+	const UAnimMontage* Source = LoadObject<UAnimMontage>(nullptr,
+		TEXT("/GF_Combat_Core/Animations/Combo/SwordShield/AM_SwordShieldCombo01_Step1.AM_SwordShieldCombo01_Step1"));
+	if (!TestNotNull(TEXT("The source montage loads"), Source) || !TestTrue(TEXT("The source has notifies"), !Source->Notifies.IsEmpty()))
+	{
+		return false;
+	}
+	UPackage* Package = CreatePackage(TEXT("/Game/RpgAutomation/AM_TrimMontageToRangeTest"));
+	Package->SetFlags(RF_Transient);
+	UAnimMontage* Montage = DuplicateObject<UAnimMontage>(Source, Package, TEXT("AM_TrimMontageToRangeTest"));
+	ON_SCOPE_EXIT
+	{
+		Montage->MarkAsGarbage();
+		Package->MarkAsGarbage();
+	};
+
+	float FirstNotify = TNumericLimits<float>::Max();
+	float LastNotifyEnd = 0.0f;
+	TArray<float> OldStarts;
+	for (const FAnimNotifyEvent& Notify : Montage->Notifies)
+	{
+		OldStarts.Add(Notify.GetTime());
+		FirstNotify = FMath::Min(FirstNotify, Notify.GetTime());
+		LastNotifyEnd = FMath::Max(LastNotifyEnd, Notify.GetTime() + Notify.GetDuration());
+	}
+	const float OldLength = Montage->GetPlayLength();
+	TestTrue(TEXT("A range that cuts off a notify is refused"),
+		URpgAnimationAssetTools::TrimMontageToRange(Montage, FirstNotify + 0.01f, OldLength) < 0.0f);
+	TestEqual(TEXT("A refused trim leaves the length"), Montage->GetPlayLength(), OldLength, 1.0e-4f);
+
+	const float RangeStart = FirstNotify * 0.5f;
+	const float RangeEnd = FMath::Max(LastNotifyEnd, (LastNotifyEnd + OldLength) * 0.5f);
+	const float NewLength = URpgAnimationAssetTools::TrimMontageToRange(Montage, RangeStart, RangeEnd);
+	TestEqual(TEXT("The montage plays only the range"), NewLength, RangeEnd - RangeStart, 1.0e-3f);
+	const FAnimSegment& Segment = Montage->SlotAnimTracks[0].AnimTrack.AnimSegments[0];
+	TestEqual(TEXT("The segment starts at the range start"), Segment.AnimStartTime, RangeStart, 1.0e-4f);
+	TestEqual(TEXT("The segment ends at the range end"), Segment.AnimEndTime, RangeEnd, 1.0e-4f);
+	TestTrue(TEXT("The section still starts at zero"),
+		Montage->CompositeSections.Num() <= 1 &&
+			(Montage->CompositeSections.IsEmpty() || FMath::IsNearlyZero(Montage->CompositeSections[0].GetTime())));
+	for (int32 Index = 0; Index < Montage->Notifies.Num(); ++Index)
+	{
+		TestEqual(*FString::Printf(TEXT("Notify %d keeps its animation frame"), Index),
+			Montage->Notifies[Index].GetTime(), OldStarts[Index] - RangeStart, 1.0e-3f);
+	}
+
+	TestTrue(TEXT("A second trim refuses the trimmed montage"),
+		URpgAnimationAssetTools::TrimMontageToRange(Montage, 0.0f, NewLength) < 0.0f);
+	return !HasAnyErrors();
+}
+
 #endif
