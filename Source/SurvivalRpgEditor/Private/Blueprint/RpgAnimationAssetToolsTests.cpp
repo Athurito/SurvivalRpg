@@ -110,8 +110,19 @@ bool FRpgTrimMontageToRangeTest::RunTest(const FString& Parameters)
 			Montage->Notifies[Index].GetTime(), OldStarts[Index] - RangeStart, 1.0e-3f);
 	}
 
-	TestTrue(TEXT("A second trim refuses the trimmed montage"),
-		URpgAnimationAssetTools::TrimMontageToRange(Montage, 0.0f, NewLength) < 0.0f);
+	// A trimmed montage can be cut again, in its own montage time: here its tail after the last notify.
+	TestTrue(TEXT("A second trim beyond the montage's end is refused"),
+		URpgAnimationAssetTools::TrimMontageToRange(Montage, 0.0f, NewLength + 0.1f) < 0.0f);
+	const float SecondEnd = FMath::Max(LastNotifyEnd - RangeStart, NewLength * 0.9f);
+	const float ShorterLength = URpgAnimationAssetTools::TrimMontageToRange(Montage, 0.0f, SecondEnd);
+	TestEqual(TEXT("The second trim plays the shorter range"), ShorterLength, SecondEnd, 1.0e-3f);
+	TestEqual(TEXT("The segment keeps its animation start"), Segment.AnimStartTime, RangeStart, 1.0e-4f);
+	TestEqual(TEXT("The segment ends at the second range's end in animation time"), Segment.AnimEndTime, RangeStart + SecondEnd, 1.0e-4f);
+	for (int32 Index = 0; Index < Montage->Notifies.Num(); ++Index)
+	{
+		TestEqual(*FString::Printf(TEXT("Notify %d keeps its animation frame after the second trim"), Index),
+			Montage->Notifies[Index].GetTime(), OldStarts[Index] - RangeStart, 1.0e-3f);
+	}
 	return !HasAnyErrors();
 }
 

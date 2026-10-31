@@ -486,10 +486,11 @@ class AnimationAssetTools(unreal.ToolsetDefinition):
     @toolset_registry.tool_call
     @staticmethod
     def trim_montage_range(asset_path: str, start_time: float, end_time: float) -> float:
-        """Play only start_time..end_time (seconds) of a single-segment montage's animation, from montage time 0; does not save.
+        """Play only start_time..end_time (seconds of the current montage time) of a single-segment montage, from montage time 0; does not save.
 
-        For one cycle cut from a looping clip. Notifies keep their animation frame and move earlier by start_time; a
-        notify outside the range refuses the trim. Returns the new montage length.
+        For one cycle cut from a looping clip, or a trimmed montage cut shorter again; on an untrimmed montage the range
+        is animation time. Notifies keep their animation frame and move earlier by start_time; a notify outside the range
+        refuses the trim. Returns the new montage length.
         """
         _guard()
         values = (start_time, end_time)

@@ -79,6 +79,8 @@ namespace RpgHarvestContentContractTests
 	const TCHAR* AxeActorClassPath = TEXT("/GF_Harvesting_Magic/Equipment/Tools/BP_Tool_AxeActor.BP_Tool_AxeActor_C");
 	const TCHAR* PickaxeActorClassPath = TEXT("/GF_Harvesting_Magic/Equipment/Tools/BP_Tool_PickaxeActor.BP_Tool_PickaxeActor_C");
 	const TCHAR* ToolHitCueClassPath = TEXT("/GF_Harvesting_Magic/GameplayCues/GCN_Harvest_ToolHit.GCN_Harvest_ToolHit_C");
+	const TCHAR* StoneToolHitCueClassPath =
+		TEXT("/GF_Harvesting_Magic/GameplayCues/GCN_Harvest_ToolHit_Stone.GCN_Harvest_ToolHit_Stone_C");
 	const TCHAR* HarvestNodeClassPaths[] = {
 		TEXT("/GF_Harvesting_Magic/Harvesting/Nodes/BP_HarvestNode_Bush.BP_HarvestNode_Bush_C"),
 		TEXT("/GF_Harvesting_Magic/Harvesting/Nodes/BP_HarvestNode_IronVein.BP_HarvestNode_IronVein_C"),
@@ -183,15 +185,17 @@ namespace RpgHarvestContentContractTests
 	}
 
 	/**
-	 * A tool swing sweeps a sphere of about 12 cm between the tool head's trace sockets on the weapon channel, which
-	 * harvestables overlap, and plays a hit cue the swinging client can predict: an impact notify that absorbs the
-	 * server's copy there.
+	 * A tool swing sweeps a sphere of about 12 cm over the whole tool on the weapon channel, which harvestables overlap:
+	 * from a grip point on the handle near the hands to the head's trace sockets, so a resource right in front of the
+	 * player meets the handle. It plays a hit cue of the tool hit family that the swinging client can predict: an impact
+	 * notify (CueClassPath) that absorbs the server's copy there.
 	 */
 	void ExpectToolSwingTrace(
 		FAutomationTestBase& Test,
 		UWorld* World,
 		const URpgGameplayAbility_Harvest& Swing,
-		const TCHAR* ToolActorClassPath)
+		const TCHAR* ToolActorClassPath,
+		const TCHAR* CueClassPath)
 	{
 		const FString Name = GetNameSafe(Swing.GetClass());
 		Test.TestTrue(*FString::Printf(TEXT("%s strikes with its tool's trace, not the view ray"), *Name), Swing.UsesToolSwing());
@@ -210,33 +214,50 @@ namespace RpgHarvestContentContractTests
 		Test.TestTrue(
 			*FString::Printf(TEXT("%s traces the weapon channel, which harvestables overlap"), *Name),
 			Trace.TraceChannel == Rpg_TraceChannel_Weapon);
+		const TArray<FName>& Points = Trace.TracePointSockets;
 		Test.TestTrue(
-			*FString::Printf(TEXT("%s traces the tool head from base to tip"), *Name),
-			Trace.TracePointSockets == TArray<FName>({TEXT("TracePoint_Base"), TEXT("TracePoint_Tip")}));
+			*FString::Printf(TEXT("%s traces from the grip on the handle to the head's base and tip"), *Name),
+			Points.Num() >= 3 && Points[0] == TEXT("TracePoint_Grip") && Points.Last(1) == TEXT("TracePoint_Base") &&
+				Points.Last() == TEXT("TracePoint_Tip"));
 
-		// The trace points are sockets of the tool mesh the equipment spawns in the hand.
+		// The trace points are sockets of the tool mesh the equipment spawns in the hand, and they span the tool.
 		const AActor* ToolActor = SpawnForInspection(World, ToolActorClassPath);
-		bool bHasSockets = false;
+		const UStaticMeshComponent* ToolMesh = nullptr;
 		if (ToolActor)
 		{
 			TInlineComponentArray<UStaticMeshComponent*> Meshes(ToolActor);
 			for (const UStaticMeshComponent* Mesh : Meshes)
 			{
-				bHasSockets |= Mesh->DoesSocketExist(TEXT("TracePoint_Base")) && Mesh->DoesSocketExist(TEXT("TracePoint_Tip"));
+				if (Points.ContainsByPredicate([Mesh](const FName Socket) { return !Mesh->DoesSocketExist(Socket); }))
+				{
+					continue;
+				}
+				ToolMesh = Mesh;
 			}
 		}
-		Test.TestTrue(*FString::Printf(TEXT("The tool mesh of %s carries both trace sockets"), *Name), bHasSockets);
+		if (Test.TestNotNull(*FString::Printf(TEXT("The tool mesh of %s carries every trace socket"), *Name), ToolMesh) &&
+			!Points.IsEmpty())
+		{
+			const double Span = FVector::Dist(
+				ToolMesh->GetSocketTransform(Points[0], RTS_Component).GetLocation(),
+				ToolMesh->GetSocketTransform(Points.Last(), RTS_Component).GetLocation());
+			Test.TestTrue(
+				*FString::Printf(TEXT("The trace of %s spans the tool from the grip to the tip (%.0f cm)"), *Name, Span),
+				Span >= 40.0);
+		}
 
 		const FStructProperty* SuccessCueProperty =
 			FindFProperty<FStructProperty>(URpgGameplayAbility_Harvest::StaticClass(), TEXT("SuccessGameplayCue"));
 		const FGameplayTag SuccessCue = SuccessCueProperty ? *SuccessCueProperty->ContainerPtrToValuePtr<FGameplayTag>(&Swing) : FGameplayTag();
 		Test.TestTrue(
-			*FString::Printf(TEXT("%s plays the tool hit cue"), *Name),
-			SuccessCue == FGameplayTag::RequestGameplayTag(TEXT("GameplayCue.Harvesting.ToolHit")));
-		const UClass* CueClass = LoadClass<UGameplayCueNotify_Static>(nullptr, ToolHitCueClassPath);
+			*FString::Printf(TEXT("%s plays a tool hit cue"), *Name),
+			SuccessCue.MatchesTag(FGameplayTag::RequestGameplayTag(TEXT("GameplayCue.Harvesting.ToolHit"))));
+		const UClass* CueClass = LoadClass<UGameplayCueNotify_Static>(nullptr, CueClassPath);
 		const UGameplayCueNotify_Static* Cue = CueClass ? GetDefault<UGameplayCueNotify_Static>(CueClass) : nullptr;
 		Test.TestTrue(
-			TEXT("The tool hit cue is an impact notify, so the swinging client's prediction absorbs the server's copy"),
+			*FString::Printf(
+				TEXT("The hit cue of %s is an impact notify, so the swinging client's prediction absorbs the server's copy"),
+				*Name),
 			Cue && CueClass->IsChildOf<URpgGameplayCueNotify_Impact>() && Cue->GameplayCueTag == SuccessCue);
 	}
 
@@ -271,7 +292,8 @@ bool FRpgHarvestPickaxeToolContractTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Pickaxe Strike can strike weak points"), Strike && Strike->CanHitWeakPoints());
 	if (Strike)
 	{
-		ExpectToolSwingTrace(*this, TestWorld.GetWorld(), *Strike, PickaxeActorClassPath);
+		// The pickaxe strikes stone: its hit cue is the stone variant of the tool hit.
+		ExpectToolSwingTrace(*this, TestWorld.GetWorld(), *Strike, PickaxeActorClassPath, StoneToolHitCueClassPath);
 	}
 
 	return true;
@@ -510,7 +532,7 @@ bool FRpgHarvestAxeToolContractTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Axe Chop sends its own ability id"), Chop && Chop->GetHarvestAbilityId() == ChopId);
 	if (Chop)
 	{
-		ExpectToolSwingTrace(*this, TestWorld.GetWorld(), *Chop, AxeActorClassPath);
+		ExpectToolSwingTrace(*this, TestWorld.GetWorld(), *Chop, AxeActorClassPath, ToolHitCueClassPath);
 	}
 
 	// The axe item supplies the tool category that dead pines require.
@@ -593,7 +615,26 @@ bool FRpgHarvestSwingMontageContractTest::RunTest(const FString& Parameters)
 			TestTrue(
 				*FString::Printf(TEXT("%s strikes inside its attack window"), SwingPath),
 				WindowStartTime < ImpactTime && ImpactTime < WindowEndTime);
+
+			// The swing ends shortly after the impact, without pulling the tool back out, so a held input blends into
+			// the next wind-up (HRW-04b). Seconds of play at the ability's rate.
+			const float CycleSeconds = URpgGameplayAbility_Harvest::ResolveSwingCycleSeconds(Montage, PlayRate * Montage->RateScale);
+			const float ImpactSeconds = ImpactDelay;
+			TestTrue(
+				*FString::Printf(
+					TEXT("%s blends out at most 0.25 s after its impact (%.3f s after it)"),
+					SwingPath,
+					CycleSeconds - ImpactSeconds),
+				CycleSeconds > ImpactSeconds && CycleSeconds - ImpactSeconds <= 0.25f);
 		}
+
+		// The swinger's own montage freezes briefly at a hit. On a listen-server host that freeze shows in the replicated
+		// montage position, which observers only correct beyond the ability system's threshold.
+		const float HitstopSeconds = Swing->GetToolSwingHitstopSeconds();
+		TestTrue(
+			*FString::Printf(TEXT("%s freezes the swinger briefly at a hit (%.0f ms)"), SwingPath, HitstopSeconds * 1000.0f),
+			HitstopSeconds > 0.0f &&
+				HitstopSeconds * PlayRate * Montage->RateScale < URpgGameplayAbility_Harvest::SimulatedMontageCorrectionSeconds);
 	}
 	return true;
 }

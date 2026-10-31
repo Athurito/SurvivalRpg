@@ -594,7 +594,7 @@ NETWORK_TEST_CLASS(HarvestSwingPIE, "SurvivalRpg.Network")
 				},
 				NetworkTimeout());
 		}
-		Network.ThenClient(Describe(FString::Printf(TEXT("Round %d: the swinger predicted at most its own hit"), Round)), 0,
+		Network.ThenClient(Describe(FString::Printf(TEXT("Round %d: the swinger predicted at most its own hit and froze for it"), Round)), 0,
 			[this, Round](FNetworkState& State)
 			{
 				URpgAbilitySystemComponent* AbilitySystem = nullptr;
@@ -603,6 +603,17 @@ NETWORK_TEST_CLASS(HarvestSwingPIE, "SurvivalRpg.Network")
 				// Its own hit plays once either way: from its prediction, or late from the server when its own trace missed.
 				TotalOwnerPredictions = Swing ? Swing->GetOwnerPredictedToolCueCountForTests() : 0;
 				ASSERT_THAT(IsTrue(TotalOwnerPredictions <= static_cast<uint32>(Round + 1)));
+				// The swinger's own montage freezes at each contact its trace found, at most once per swing.
+				ASSERT_THAT(IsTrue(Swing->GetToolSwingHitstopCountForTests() >= TotalOwnerPredictions));
+				ASSERT_THAT(IsTrue(Swing->GetToolSwingHitstopCountForTests() <= static_cast<uint32>(Round + 1)));
+			});
+		Network.ThenServer(Describe(FString::Printf(TEXT("Round %d: the server's copy of the swing never froze"), Round)),
+			[this](FNetworkState& State)
+			{
+				URpgAbilitySystemComponent* AbilitySystem = nullptr;
+				const URpgGameplayAbility_Harvest* Swing = FindSwing(State.World, AbilitySystem);
+				ASSERT_THAT(IsNotNull(Swing));
+				ASSERT_THAT(AreEqual(0u, Swing->GetToolSwingHitstopCountForTests()));
 			});
 	}
 
@@ -819,9 +830,11 @@ NETWORK_TEST_CLASS(HarvestSwingPIE, "SurvivalRpg.Network")
 					ASSERT_THAT(AreEqual(HeldSwings + 1, ServerSwingStartTimes.Num()));
 					ASSERT_THAT(AreEqual(1, ServerSwingCancelledEnds));
 					ASSERT_THAT(AreEqual(HeldSwings, CountPlayedHits(State.World)));
-					// Each held swing followed the last one at its blend-out: never sooner, and without a pause.
+					// Each held swing followed the last one at its blend-out: never sooner, and without a pause. The
+					// swinger's local hitstop delays its own swing a little; the server's copy never freezes.
 					const double Cycle = Swing->GetToolSwingCycleSecondsForTests();
-					ASSERT_THAT(IsTrue(Cycle > 1.0));
+					ASSERT_THAT(IsTrue(Cycle > 0.2));
+					ASSERT_THAT(AreEqual(0u, Swing->GetToolSwingHitstopCountForTests()));
 					for (int32 Index = 1; Index < ServerSwingStartTimes.Num(); ++Index)
 					{
 						const double Interval = ServerSwingStartTimes[Index] - ServerSwingStartTimes[Index - 1];
@@ -952,7 +965,12 @@ NETWORK_TEST_CLASS(HarvestSwingPIE, "SurvivalRpg.Network")
 					ASSERT_THAT(IsNotNull(Swing));
 					TotalOwnerPredictions = Swing->GetOwnerPredictedToolCueCountForTests();
 					ASSERT_THAT(IsTrue(TotalOwnerPredictions <= static_cast<uint32>(HeldSwings + 1)));
-					TestRunner->AddInfo(FString::Printf(TEXT("Owner predictions: %u of %d hits"), TotalOwnerPredictions, HeldSwings + 1));
+					ASSERT_THAT(IsTrue(Swing->GetToolSwingHitstopCountForTests() >= TotalOwnerPredictions));
+					TestRunner->AddInfo(FString::Printf(
+						TEXT("Owner predictions: %u of %d hits; owner hitstops: %u"),
+						TotalOwnerPredictions,
+						HeldSwings + 1,
+						Swing->GetToolSwingHitstopCountForTests()));
 				});
 
 		// Movement stays free: the swinger walks away from the field while holding, and the swings keep repeating.

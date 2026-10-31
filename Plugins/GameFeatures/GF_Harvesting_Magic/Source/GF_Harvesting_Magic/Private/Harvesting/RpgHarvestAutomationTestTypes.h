@@ -361,6 +361,13 @@ public:
 	/** Montage whose cycle the server times the swing by; the test swing itself never plays it. */
 	void ConfigureMontage(UAnimMontage* InMontage) { HarvestMontage = InMontage; }
 
+	/** Milliseconds the swinger's own montage freezes at a swing's first resource contact. */
+	void ConfigureHitstop(const float InMilliseconds) { ToolSwingHitstopMilliseconds = InMilliseconds; }
+
+	/** World times at which the hitstop froze and resumed the swing's montage, in order; the test swing plays none. */
+	const TArray<double>& GetMontagePauseTimes() const { return MontagePauseTimes; }
+	const TArray<double>& GetMontageResumeTimes() const { return MontageResumeTimes; }
+
 	/**
 	 * Makes this ability repeat while its input is held and yield to other exclusive abilities, as the tool swing assets
 	 * do, or restores the native defaults. Input processing reads the class default, so tests call it on the class
@@ -388,9 +395,19 @@ protected:
 		return true;
 	}
 
+	/** Records the hitstop's freeze and resume instead of pausing a montage. */
+	virtual bool SetToolSwingMontagePaused(const bool bPaused) override
+	{
+		const UWorld* World = GetWorld();
+		(bPaused ? MontagePauseTimes : MontageResumeTimes).Add(World ? World->GetTimeSeconds() : 0.0);
+		return true;
+	}
+
 private:
 	FRpgSwingTraceParams PlayedSwingTrace;
 	int32 PlayedSwingCount = 0;
+	TArray<double> MontagePauseTimes;
+	TArray<double> MontageResumeTimes;
 };
 
 /** Records preview notifications so tests can assert change-only broadcasting. */

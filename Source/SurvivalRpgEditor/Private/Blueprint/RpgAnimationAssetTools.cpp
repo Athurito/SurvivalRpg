@@ -699,7 +699,8 @@ float URpgAnimationAssetTools::TrimMontageToRange(UAnimMontage* Montage, const f
 		return -1.0f;
 	}
 
-	// Only an untouched single-segment montage has montage time equal to animation time.
+	// In one unscaled segment that starts at montage time zero, montage time maps onto the animation from the segment's
+	// start, so a montage trimmed before can be cut again.
 	FAnimTrack& Track = Montage->SlotAnimTracks[0].AnimTrack;
 	if (Track.AnimSegments.Num() != 1)
 	{
@@ -707,12 +708,14 @@ float URpgAnimationAssetTools::TrimMontageToRange(UAnimMontage* Montage, const f
 	}
 	FAnimSegment& Segment = Track.AnimSegments[0];
 	if (!FMath::IsNearlyEqual(Segment.AnimPlayRate, 1.0f) || Segment.LoopingCount != 1 || !FMath::IsNearlyZero(Segment.StartPos)
-		|| !FMath::IsNearlyZero(Segment.AnimStartTime) || StartTime < 0.0f || EndTime <= StartTime + UE_KINDA_SMALL_NUMBER
-		|| EndTime > Segment.AnimEndTime + UE_KINDA_SMALL_NUMBER)
+		|| StartTime < 0.0f || EndTime <= StartTime + UE_KINDA_SMALL_NUMBER
+		|| Segment.AnimStartTime + EndTime > Segment.AnimEndTime + UE_KINDA_SMALL_NUMBER)
 	{
 		return -1.0f;
 	}
-	const float RangeEnd = FMath::Min(EndTime, Segment.AnimEndTime);
+	const float AnimationStart = Segment.AnimStartTime + StartTime;
+	const float AnimationEnd = FMath::Min(Segment.AnimStartTime + EndTime, Segment.AnimEndTime);
+	const float RangeEnd = AnimationEnd - Segment.AnimStartTime;
 
 	// Read every notify's times before the segment changes; each must stay inside the kept range.
 	struct FNotifyTimes
@@ -734,9 +737,9 @@ float URpgAnimationAssetTools::TrimMontageToRange(UAnimMontage* Montage, const f
 
 	const FScopedTransaction Transaction(NSLOCTEXT("RpgAnimationAssetTools", "TrimMontageToRange", "Trim Montage To Range"));
 	Montage->Modify();
-	Segment.AnimStartTime = StartTime;
-	Segment.AnimEndTime = RangeEnd;
-	Montage->SetCompositeLength(RangeEnd - StartTime);
+	Segment.AnimStartTime = AnimationStart;
+	Segment.AnimEndTime = AnimationEnd;
+	Montage->SetCompositeLength(AnimationEnd - AnimationStart);
 	if (Montage->CompositeSections.Num() == 1)
 	{
 		Montage->CompositeSections[0].Link(Montage, 0.0f);
