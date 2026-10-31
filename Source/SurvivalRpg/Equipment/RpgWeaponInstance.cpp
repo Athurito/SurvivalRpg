@@ -59,24 +59,22 @@ FRpgWeaponAttackDefinition::FRpgWeaponAttackDefinition()
 
 bool FRpgWeaponAttackDefinition::HasValidTraceData() const
 {
-	if (TracePointSockets.Num() < 2 || TraceSampleInterval <= 0.0f)
-	{
-		return false;
-	}
+	return MakeSwingTraceParams().HasValidTraceData();
+}
 
-	switch (TraceMode)
-	{
-	case ERpgWeaponAttackTraceMode::LineTrace:
-		return !bTraceBetweenSockets || TraceInterpolationDistance > 0.0f;
-	case ERpgWeaponAttackTraceMode::SphereSweep:
-		return TraceRadius > 0.0f;
-	case ERpgWeaponAttackTraceMode::CapsuleSweep:
-		return TraceRadius > 0.0f && TraceCapsuleHalfHeight > 0.0f;
-	case ERpgWeaponAttackTraceMode::BoxSweep:
-		return TraceBoxExtent.GetAbsMin() > 0.0f;
-	default:
-		return false;
-	}
+FRpgSwingTraceParams FRpgWeaponAttackDefinition::MakeSwingTraceParams() const
+{
+	FRpgSwingTraceParams Params;
+	Params.TraceMode = TraceMode;
+	Params.bTraceBetweenSockets = bTraceBetweenSockets;
+	Params.TraceInterpolationDistance = TraceInterpolationDistance;
+	Params.TraceRadius = TraceRadius;
+	Params.TraceCapsuleHalfHeight = TraceCapsuleHalfHeight;
+	Params.TraceBoxExtent = TraceBoxExtent;
+	Params.TracePointSockets = TracePointSockets;
+	Params.TraceSampleInterval = TraceSampleInterval;
+	Params.TraceChannel = Rpg_TraceChannel_Weapon;
+	return Params;
 }
 
 bool FRpgConditionalAttackModifier::MatchesTargetTags(const FGameplayTagContainer& TargetTags) const

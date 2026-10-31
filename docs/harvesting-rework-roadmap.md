@@ -52,7 +52,7 @@ how a hit is found, not what a hit does.
 | ID | Scope | Status |
 | --- | --- | --- |
 | HRW-01 | Tool animations and meshes: migrate the 505 chop and pickaxe clips, one-cycle montages in the `UpperBody` slot with attack-window notifies, work-axe and pickaxe meshes with trace sockets; hit model unchanged | Planned |
-| HRW-02 | Extract the core swing window and trace (`FRpgSwingTraceWindow`) from the melee attack ability without behaviour change | Planned |
+| HRW-02 | Extract the core swing window and trace (`FRpgSwingTraceWindow`) from the melee attack ability without behaviour change | In review: #334 |
 | HRW-03 | Tool swing hits: harvest abilities trace the tool swing instead of the camera ray; tunable reach and targets per swing; collision profile for harvestables; weak points and pierce from the impact point | Planned |
 | HRW-04 | Hold to keep swinging and a stock indicator that appears after a hit instead of the aim highlight | Planned |
 | HRW-05 | Focus meter and harvesting spells chosen in the skill tree, first spell Wide Swing; redesign of the tree and the runes | Planned |
@@ -87,6 +87,51 @@ how a hit is found, not what a hit does.
 - The melee ability keeps combos, damage, its per-window hit set, echo records
   and facing. `FRpgWeaponAttackDefinition` keeps its fields, so no weapon asset
   changes.
+
+#### HRW-02 report
+
+- **Result:** `FRpgSwingTraceWindow` now holds the window contract
+  (`ResolveWindowTiming`, `IsWindowEndBeforeAutoBlendOut`), the authority
+  schedule, sampling from the equipment's spawned actors or the avatar mesh,
+  the arc sub-steps, the line and sweep ribbons on `FRpgSwingTraceParams::TraceChannel`
+  (default weapon channel), the debug draw and the trace counters. An ability
+  drives it with `Begin`, `HandleStartNotify`/`HandleEndNotify`, `StopTracing`
+  and `Reset`, and receives hits, trace queries, window open/close and
+  lifecycle records through `FRpgSwingTraceSink` delegates with a role
+  (`Authority`, `OwnerFeedback`, `None`). The window neither de-duplicates nor
+  damages. `URpgGameplayAbility_BasicWeaponAttack` keeps combos, step tags,
+  damage, its per-window hit set, Echo records, facing and lifecycle logging;
+  its `…ForTests` getters forward. `FRpgWeaponAttackDefinition` keeps every
+  field and gains `MakeSwingTraceParams()`. `ERpgWeaponAttackTraceMode` moved
+  unchanged into the new header (same module and name, so assets load as
+  before).
+- **Decisions:** the facing hold moved from every open attempt to the moment
+  the window opens; a repeated attempt was a no-op and a refused one cannot
+  happen, because closing clears the schedule, the poll and the start timer.
+  The per-sample `CanApplyDamage()` guard left the trace, since a step that
+  cannot apply damage never starts. The sink survives `Reset`, because a hit
+  may end the ability inside the window's own trace loop. Three warnings now
+  read `SwingTraceWindow[…]` instead of `BasicWeaponAttack[…]`; the lifecycle
+  stages are unchanged.
+- **Commits:** `2a4da481` refactor and tests, `52c461f8` report and skill notes, then this status row (PR #334).
+- **Validation** (`ue.py`, headless, no MCP editor of this worktree; the
+  HRW-01 editor shared the GPU at about 80 %):
+  - `build`: 0 errors, 0 warnings, before and after the change.
+  - `test SurvivalRpg.Combat --null-rhi`: 56 / 56, including the new
+    `SwingTrace.WindowTiming` and `SwingTrace.RibbonHitsBetweenSamples`,
+    `WeaponTrace.*`, `Runes.Echo.*` and `WeaponAttackAssetContract`.
+  - `test SurvivalRpg.Network.CombatRemoteMeleePIE SurvivalRpg.Network.CombatImpactCuesPIE`
+    (rendered, 1/60 s frame cap): 6 / 6 on the first run. The remote client's
+    authority windows still traced 4 to 9 sub-steps and landed their hits.
+  - `test SurvivalRpg.GASP.CMC.GaspCMCExperiencePIE.RemoteMovementLateJoinAndEquipmentMontage SurvivalRpg.GASP.Mover.Gameplay SurvivalRpg.GASP.Mover.Lifecycle`
+    with `np.ForceReconcile 0` and `t.MaxFPS 30`, the tests that read the
+    attack counters: 9 / 9.
+  - `test SurvivalRpg.AI` (enemies attack through the same ability): 6 / 6.
+- **Limits:** no manual two-player playtest; the listen-server PIE tests cover
+  owner, authority and remote client. A dedicated server is not tested
+  separately, as before. Three warnings changed their prefix and the scene
+  query stat is now `RpgSwingTraceWindow`. No harvest ability uses the window
+  yet (HRW-03).
 
 ### HRW-03: tool swing hits
 
