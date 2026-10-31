@@ -3,6 +3,7 @@
 #include "Misc/AutomationTest.h"
 
 #include "AbilitySystem/Abilities/RpgGameplayAbility_Harvest.h"
+#include "Animation/AnimMontage.h"
 #include "GameFeatureData.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/GameStateBase.h"
@@ -25,6 +26,7 @@
 #include "SurvivalRpg/Inventory/Loot/RpgLootTable.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
+#include "SurvivalRpg/Animation/AnimNotify_RpgWeaponAttackWindow.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Equipment/RpgAbilityBindingResolver.h"
 #include "SurvivalRpg/Equipment/RpgWeaponAbilityLoadoutComponent.h"
@@ -434,6 +436,91 @@ bool FRpgHarvestAxeToolContractTest::RunTest(const FString& Parameters)
 	}
 	TestTrue(TEXT("Dead pines require a tool"), DeadPine->RequiredToolTag.IsValid());
 	TestTrue(TEXT("The axe meets the dead pine's tool requirement"), AxeTool->ToolTag.MatchesTag(DeadPine->RequiredToolTag));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestSwingMontageContractTest,
+	"SurvivalRpg.Harvesting.Content.SwingMontageContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestSwingMontageContractTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestContentContractTests;
+
+	// The authored values are protected designer data; read them as the ability's own reflected properties.
+	const FObjectPropertyBase* MontageProperty =
+		FindFProperty<FObjectPropertyBase>(URpgGameplayAbility_Harvest::StaticClass(), TEXT("HarvestMontage"));
+	const FStructProperty* CommitTagProperty =
+		FindFProperty<FStructProperty>(URpgGameplayAbility_Harvest::StaticClass(), TEXT("CommitEventTag"));
+	const FFloatProperty* PlayRateProperty =
+		FindFProperty<FFloatProperty>(URpgGameplayAbility_Harvest::StaticClass(), TEXT("MontagePlayRate"));
+	if (!TestNotNull(TEXT("HarvestMontage is reflected"), MontageProperty) ||
+		!TestNotNull(TEXT("CommitEventTag is reflected"), CommitTagProperty) ||
+		!TestNotNull(TEXT("MontagePlayRate is reflected"), PlayRateProperty))
+	{
+		return false;
+	}
+
+	for (const TCHAR* SwingPath : {AxeChopAbilityClassPath, PickaxeStrikeAbilityClassPath})
+	{
+		UClass* SwingClass = LoadClass<URpgGameplayAbility_Harvest>(nullptr, SwingPath);
+		const URpgGameplayAbility_Harvest* Swing = SwingClass ? GetDefault<URpgGameplayAbility_Harvest>(SwingClass) : nullptr;
+		if (!TestNotNull(*FString::Printf(TEXT("%s loads"), SwingPath), Swing))
+		{
+			continue;
+		}
+		const UAnimMontage* Montage = Cast<UAnimMontage>(MontageProperty->GetObjectPropertyValue_InContainer(Swing));
+		const FGameplayTag CommitTag = *CommitTagProperty->ContainerPtrToValuePtr<FGameplayTag>(Swing);
+		const float PlayRate = PlayRateProperty->GetFloatingPointPropertyValue(PlayRateProperty->ContainerPtrToValuePtr<void>(Swing));
+		float CommitDelay = 0.0f;
+		FString Failure;
+		if (!TestTrue(
+				*FString::Printf(TEXT("%s schedules its commit from the authored notify"), SwingPath),
+				URpgGameplayAbility_Harvest::ResolveCommitDelay(Montage, CommitTag, PlayRate, CommitDelay, Failure)))
+		{
+			AddInfo(Failure);
+			continue;
+		}
+
+		// The tool trace of a swing runs inside one queued attack window around the commit, ending before blend-out.
+		const FAnimNotifyEvent* WindowStart = nullptr;
+		const FAnimNotifyEvent* WindowEnd = nullptr;
+		int32 WindowNotifies = 0;
+		for (const FAnimNotifyEvent& Event : Montage->Notifies)
+		{
+			if (Event.Notify && Event.Notify->IsA<UAnimNotify_RpgWeaponAttackWindowStart>())
+			{
+				WindowStart = &Event;
+				++WindowNotifies;
+			}
+			else if (Event.Notify && Event.Notify->IsA<UAnimNotify_RpgWeaponAttackWindowEnd>())
+			{
+				WindowEnd = &Event;
+				++WindowNotifies;
+			}
+		}
+		if (!TestTrue(*FString::Printf(TEXT("%s has exactly one attack window"), SwingPath), WindowNotifies == 2 && WindowStart && WindowEnd))
+		{
+			continue;
+		}
+		for (const FAnimNotifyEvent* Event : {WindowStart, WindowEnd})
+		{
+			TestTrue(
+				*FString::Printf(TEXT("%s delivers its window notifies reliably on the server"), SwingPath),
+				Event->MontageTickType == EMontageNotifyTickType::Queued && Event->NotifyTriggerChance >= 1.0f &&
+					Event->bTriggerOnDedicatedServer && Event->NotifyFilterType == ENotifyFilterType::NoFiltering);
+		}
+		const float CommitTime = CommitDelay * PlayRate * Montage->RateScale;
+		TestTrue(
+			*FString::Printf(TEXT("%s commits inside its attack window"), SwingPath),
+			WindowStart->GetTriggerTime() < CommitTime && CommitTime < WindowEnd->GetTriggerTime());
+		const float BlendOutTrigger = Montage->BlendOutTriggerTime >= 0.0f ? Montage->BlendOutTriggerTime : Montage->BlendOut.GetBlendTime();
+		TestTrue(
+			*FString::Printf(TEXT("%s closes its window before the auto blend-out"), SwingPath),
+			!Montage->bEnableAutoBlendOut || Montage->GetPlayLength() - WindowEnd->GetTriggerTime() > BlendOutTrigger);
+	}
 	return true;
 }
 
