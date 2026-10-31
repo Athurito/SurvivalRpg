@@ -120,6 +120,60 @@ how a hit is found, not what a hit does.
 - Covers the "magical harvesting ability" of the first playable in
   [game-vision.md](game-vision.md) §12, open since Rift Grip was retired.
 
+## HRW-01 report
+
+Branch `claude/hrw-01-tool-animations`. The hit model is unchanged: swings still commit through the camera-aim query.
+
+### Assets
+
+- **Clips:** `IP_Chop_Loop_01` and `IP_Pick_axe_hit_01` from `505_Survival_Mocap_Animations/Animations_UE5/IP` in `GF_Harvesting_Magic/Content/Animations/505_Survival_Mocap`. The pack skeleton has the same 161 bones, order and reference pose as the project's `SK_Mannequin`, so the clips were re-pointed without retargeting; the pack skeleton and mesh stayed in the library. Both clips keep the root at the origin, so no root lock is needed.
+- **Chop direction:** the mocap chop lands 54.5° to the right of the character's forward (a side-on stance at the trunk). A tool trace in HRW-03 would miss a tree the player faces, so the chop's root keys were turned by -54.5°: the head now strikes 1.05 m straight ahead at hip height. The standing pose keeps the side-on stance.
+- **Montages** (one `Default` section at 0, slot `UpperBody`, blend 0.25/0.25 s, one cycle cut from the clip with the new `trim_montage_range` tool):
+
+  | Montage | Clip range | Length | Window start | Commit | Window end |
+  | --- | --- | --- | --- | --- | --- |
+  | `AM_Harvest_AxeChop` | 0.600-2.167 s (frames 18-65; starts and ends in the same wind-up pose, so repeated swings loop) | 1.567 s | 0.367 s | 0.500 s (axe enters the trunk) | 0.567 s |
+  | `AM_Harvest_PickaxeStrike` | 0.667-2.667 s (frames 20-80) | 2.000 s | 0.733 s | 1.033 s (pick stops in the rock) | 1.100 s |
+
+  The window notifies are queued, 100 %, server-delivered and end at least 0.9 s before the auto blend-out. `GA_Harvest_AxeChop` and `GA_Harvest_PickaxeStrike` use them; `AM_Harvest_PickaxeSwing` and `MM_Harvest_PickaxeSwing` had no other referencers and are deleted.
+- **Moving while swinging:** `ABP_RpgGasp_CMC_Manny` had no `UpperBody` slot (block uses linked layers since GASP-06), so it got one between the block layer and `DefaultSlot`: cached poses `RpgPreUpperBodyMontage` and `RpgUpperBodyMontage`, the `UpperBody` slot (source kept updating), a layered blend from `spine_01` with mesh-space rotation, and a bool blend on the AnimBP's thread-safe `IsMoving()` (0.2 s): moving keeps the locomotion legs, standing plays the whole montage. Without an `UpperBody` montage the pose passes through unchanged, so block, `DefaultSlot` priority and the snapshots stay as they were. `UpperBody` shares `DefaultGroup` with `DefaultSlot`, so a dodge still interrupts a swing. The harvest ability only holds the facing during the swing; it never locked movement. The Mover AnimBP runs on the UEFN skeleton, which these montages do not target, and is unchanged.
+- **Tool meshes:** the axe is the library's `SM_Axe_02` (single-bit head, straight wooden handle) with its material in `Equipment/Tools/SkeletonCharacter`; the master's texture defaults now point at the axe textures, so the sword textures stayed in the library. The pickaxe `SM_Tool_Pickaxe` is built with Geometry Script (wooden handle, iron head with pick and blunt back, 192 vertices) with `M_Tool_Basic` and two instances in `Equipment/Tools/Meshes`. Both have `TracePoint_Base` and `TracePoint_Tip`: the axe along its cutting edge (z 50 to 60 cm on the edge), the pickaxe from the head centre to the pick point.
+- **Grip:** both tool actors now hold one `ToolMesh` instead of the cube/cylinder placeholders, under `Grip_OneHand_R` as before. Its rotation puts the handle through the left hand's grip of the clip (26° and 42° from the socket's Z) with the edge or pick leading at impact, and the right palm 10 or 13 cm up the handle.
+- **Editor tooling:** `RpgAnimationAssetTools` gained `TrimMontageToRange`, `RotateSequenceRoot` and `CreateSave/UseCachedPoseNode`, with `AnimationAssetTools` wrappers; `SurvivalRpg.Animation.TrimMontageToRange.KeepsTheRangeAndItsNotifies` tests the trim.
+
+### Validation
+
+- `ue.py build`: passed, 0 errors, 0 warnings (after the tool additions and after the contract test).
+- `ue.py test SurvivalRpg.Harvesting SurvivalRpg.Animation SurvivalRpg.Interaction.Harvesting SurvivalRpg.Combat.Block SurvivalRpg.GASP.CMC SurvivalRpg.Movement.CMC --null-rhi`: **169/169 passed** (21 with warnings), including `Harvesting.Ability.CommitDelayFromAuthoredNotify`, the axe and pickaxe tool contracts, `Animation.TrimMontageToRange` and `RetimeMontageRange`.
+- `ue.py test SurvivalRpg.Harvesting.Content SurvivalRpg.Network.LootHarvestPIE SurvivalRpg.Network.HarvestCuePIE SurvivalRpg.Network.CombatRemoteMeleePIE SurvivalRpg.GASP.CMC SurvivalRpg.GASP.Mantle SurvivalRpg.GASP.Vault SurvivalRpg.GASP.Hurdle SurvivalRpg.Combat.BlockLocomotion SurvivalRpg.Combat.WeaponHold` (rendered): **97/98 passed** (69 with warnings), including the new `Harvesting.Content.SwingMontageContract`, both harvest network tests, the CMC experience, host-view and sprint tests, mantle, vault, hurdle, block locomotion and weapon hold. Failed: `CombatRemoteMeleePIE.RemoteClientRecoveryYieldsToBlockAndDodgeButNotTheSwing`, timed out after 90 s waiting for the owner's sword swing to open its attack window. Rerun alone (`ue.py test SurvivalRpg.Network.CombatRemoteMeleePIE`): **5/5 passed**, that case included. The GASP handoff already lists this test as time-dependent; the step polls for a short window.
+- The Mover tests did not run: the Mover AnimBP and its UEFN skeleton are unchanged and do not play these montages.
+- **Agent PIE check** in `Lvl_HarvestPickaxe`, listen server with two players in one process, driven by editor Python and `set_pie_input_key`, sampled every frame:
+  - Host with the axe, client with the pickaxe (picked up with F after clearing the sword and shield); both tools sit in the right hand on both machines.
+  - Host chopping while running: 375 cm/s through the whole swing, `UpperBody` weight 1, `DefaultSlot` 0, the feet kept stepping; the client's copy played `AM_Harvest_AxeChop` at the same time. Screenshot: running legs under the chop.
+  - Client striking while blocked by a vein (speed 0): the full-body overhead strike; the host's copy played it too.
+  - Yield through the unchanged camera aim: the client's pickaxe took 6 ore from a vein, then 6 more on a strike while walking in; the host's chop, run in at a dead pine with the trunk at the screen centre, took 5 wood (the pine fell), and a standing chop on another pine took one section (4/4 to 3/4) with the wood toast. From the side, the client's screen showed the host's standing chop with the axe straight ahead.
+  - Off-centre aim showed "Out of reach" for a trunk beside the screen centre; that is the HRW-03 problem, not a regression.
+  - Under screenshot stalls of the game thread, the client's copy of a swing once ran 0.36 s ahead and then resynced to the server's position.
+
+### Limits
+
+- The axe hit still comes from the camera ray: from 2.2 m the player harvests although the axe stops short of the trunk, and a trunk off the screen centre reads "Out of reach". HRW-03 replaces this with the tool trace.
+- The pickaxe and chop speeds are the mocap's (commit after 0.5 s and 1.03 s); `MontagePlayRate` on the abilities stays 1.
+- The carry pose holds the tool tilted to fit the two-handed swing grip; a dedicated tool hold layer is not part of this task.
+- Standing to moving switches the leg source over 0.2 s. The standing chop stance is side-on, so its blend-out turns the feet back to the locomotion pose; how that reads was not judged by eye.
+- A dodge interrupting a swing follows from the shared slot group but was not checked in PIE.
+- Mantle and jump do not check the `UpperBody` slot (they check `DefaultSlot`), so a traversal can start during a swing and overrides it visually.
+- The world pickups `BP_Pickup_Axe` and `BP_Pickup_Pickaxe` still show the lying cylinder; their display mesh also carries the interaction collision.
+- No comment boxes in the AnimGraph: the 5.8 tools cannot author them; node names carry the meaning.
+
+### Playtest
+
+1. Open `Lvl_HarvestPickaxe` and pick up the axe (look at it, F). It sits in the right hand with the head up.
+2. Run at a dead pine and click while running: the arms chop while the legs keep running; the swing lands straight ahead. Stand still and click: the whole body takes the side-on chop stance. With the trunk at the screen centre, wood arrives on the strike.
+3. Pick up the pickaxe instead, walk at an iron vein and click: an overhead strike while walking; ore arrives on the strike.
+4. Dodge during a swing: the dodge interrupts it.
+5. **Multiplayer:** play as listen server with two players. The host chops a pine while running, the client strikes a vein. Each screen shows the other player's swing, running legs while moving and the full stance while standing.
+
 ## Order
 
 - HRW-01 and HRW-02 share no files and can run in parallel.

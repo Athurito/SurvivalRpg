@@ -9,6 +9,7 @@ Purchased content lives in the asset library listed under "Local environment" in
 - [Rules](#rules)
 - [Reading and copying assets](#reading-and-copying-assets)
 - [Animations](#animations)
+- [Props and weapons](#props-and-weapons)
 - [Characters](#characters)
 - [Sounds](#sounds)
 - [MetaHumans](#metahumans)
@@ -30,6 +31,13 @@ Purchased content lives in the asset library listed under "Local environment" in
 - Some packs ship UE4 and UE5 variants: in Sword_and_Shield, Sword_Animations, and Mage the UE5 set is `Sequence2`; Archer and Spear are UE5 only; 505_Survival_Mocap keeps UE5 under `Animations_UE5`.
 - Migrate only UE5 variants and re-point them to SurvivalRpg's `SK_Mannequin`, so demo skeletons and meshes stay behind.
 - Sword_and_Shield combat loops (`Walk_Combat_Loop_*`, `Run_Combat_Loop_*`, `Run_Fast_Combat_Loop`) carry their travel in the root bone with root motion off. In a blend space they slide the mesh off the capsule; CMB-05 set `force_root_lock` on the 17 loops it uses.
+- 505_Survival_Mocap (HRW-01): its UE5 skeleton `Retargeting/Characters/Mannequins/Meshes/SK_Mannequin` has the same 161 bones, order and reference pose as the project's Lyra `SK_Mannequin`, so the clips re-point without retargeting. The `IP_*` clips keep the root at the origin. Some clips reference the pack's `SKM_Manny` through `RetargetSourceAsset`, a soft reference: Python reports it as `None` once the mesh is missing, and `set_editor_property(..., None)` leaves it in the package. Clear it with `ObjectTools.set_properties` and `{"RetargetSourceAsset": null}`, then check `get_dependencies`.
+- Check where a mocap strike lands before authoring montages: compose the hand bone with the grip socket per frame (`AnimPoseExtensions.get_anim_pose_at_time`) and measure the tool-head point at impact. `IP_Chop_Loop_01` chops a trunk 54° to the right of the character's forward (mesh +Y); HRW-01 turned its root keys by -54.5° with `rotate_sequence_root`, so the swing lands straight ahead. `IP_Chop_Loop_02` splits wood on the ground.
+
+## Props and weapons
+
+- The `SkeletonCharacter` pack's `MM_MedievalMelee` defaults its texture parameters to `T_Sword_02_Clean_*`. Point the `MaterialExpressionTextureSampleParameter2D_<n>` subobjects at the migrated item's own textures, recompile and leave the sword textures behind (HRW-01, `SM_Axe_02`).
+- To judge library props, copy candidates with their closure into a temporary `/Game` folder, render them with `EditorAppToolset.CaptureAssetImage`, and delete the rejects before moving the chosen one; the thumbnail may show untextured grey until textures stream.
 
 ## Characters
 
