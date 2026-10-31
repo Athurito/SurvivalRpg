@@ -193,8 +193,7 @@ several players hit the same target:
 
 ## Related documents
 
-- [Combat mastery reference](combat-mastery-reference.md): combat loop, mastery
-  and skill groups.
+- [Skill trees](skill-trees.md): mastery, talents and the combat tree.
 - [Combat network smoke](combat-network-smoke.md): remote melee acceptance.
 - [GAS ability content](gas-ability-content.md): native ability families and
   their content.
