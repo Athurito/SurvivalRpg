@@ -46,6 +46,12 @@ bool URpgHarvestTargetIndicatorWidget::IsAimingPreview() const
 	return TargetingComponent && TargetingComponent->IsPreviewAiming();
 }
 
+bool URpgHarvestTargetIndicatorWidget::IsStruckTargetPreview() const
+{
+	const URpgHarvestTargetingComponent* TargetingComponent = Targeting.Get();
+	return TargetingComponent && TargetingComponent->IsPreviewStruckTarget();
+}
+
 bool URpgHarvestTargetIndicatorWidget::GetYieldConversion(FText& OutOutputName, int32& OutInputPerOutput) const
 {
 	OutOutputName = FText::GetEmpty();
@@ -72,7 +78,9 @@ bool URpgHarvestTargetIndicatorWidget::GetYieldConversion(FText& OutOutputName, 
 bool URpgHarvestTargetIndicatorWidget::IsWeakPointTargeted() const
 {
 	const URpgHarvestTargetingComponent* TargetingComponent = Targeting.Get();
-	const FRpgHarvestTargetEvaluation* Target =
-		TargetingComponent ? TargetingComponent->FindIndicatedTarget(BoundIndicator.Get()) : nullptr;
+	// A struck resource is shown after the hit; no swing aims at its weak point.
+	const FRpgHarvestTargetEvaluation* Target = TargetingComponent && !TargetingComponent->IsPreviewStruckTarget()
+		? TargetingComponent->FindIndicatedTarget(BoundIndicator.Get())
+		: nullptr;
 	return Target && Target->WouldHarvest() && Target->Result.bWeakPointHit;
 }

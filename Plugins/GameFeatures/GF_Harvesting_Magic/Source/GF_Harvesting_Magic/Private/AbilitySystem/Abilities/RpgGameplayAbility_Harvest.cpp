@@ -22,6 +22,7 @@
 #include "Harvesting/RpgHarvestStockRules.h"
 #include "Harvesting/RpgHarvestTargetingComponent.h"
 #include "Inventory/RpgInventoryFragment_HarvestingTool.h"
+#include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Animation/AnimNotify_RpgGameplayEvent.h"
 #include "SurvivalRpg/Camera/RpgCameraMode.h"
 #include "SurvivalRpg/Combat/RpgCombatImpact.h"
@@ -126,6 +127,18 @@ bool URpgGameplayAbility_Harvest::CanActivateAbility(
 		}
 		return false;
 	}
+
+	// A client that cut its last swing short starts the next one no sooner than that swing's montage would have ended.
+	const UWorld* World = GetWorld();
+	if (UsesToolSwing() && ToolSwingEarliestNextStartTime >= 0.0 && ActorInfo->IsNetAuthority() && World &&
+		World->GetTimeSeconds() < ToolSwingEarliestNextStartTime)
+	{
+		if (OptionalRelevantTags)
+		{
+			OptionalRelevantTags->AddTag(RpgHarvestingMagicGameplayTags::Ability_ActivateFail_Harvesting_SwingCadence);
+		}
+		return false;
+	}
 	return true;
 }
 
@@ -163,6 +176,17 @@ void URpgGameplayAbility_Harvest::EndAbility(
 	const bool bReplicateEndAbility,
 	const bool bWasCancelled)
 {
+	// A cancelled hold, for example by a dodge, a tool switch or another montage in the slot group, consumes this
+	// physical hold: the next swing waits for a fresh press. Only the locally controlled machine tracks input.
+	if (bWasCancelled && IsActive() && GetActivationPolicy() == ERpgAbilityActivationPolicy::WhileInputActive)
+	{
+		if (URpgAbilitySystemComponent* AbilitySystem = GetRpgAbilitySystemComponentFromActorInfo())
+		{
+			AbilitySystem->SuppressAbilityInputUntilRelease(Handle);
+		}
+	}
+	ToolSwingStartTime = -1.0;
+
 	// A stride that ends early, for example through a tool switch or death, still delivers what it harvested.
 	FinishStride();
 
@@ -186,6 +210,17 @@ void URpgGameplayAbility_Harvest::EndAbility(
 	bHasToolSwingRequest = false;
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
+}
+
+void URpgGameplayAbility_Harvest::SetRemoteInstanceHasEnded()
+{
+	// The owning client ended or cancelled this swing itself, which it may do early. Its next swing waits for the rest of
+	// this one's cycle either way; a client that ends at its own blend-out loses nothing but the jitter tolerance.
+	if (UsesToolSwing() && IsActive() && ToolSwingStartTime >= 0.0 && CurrentActorInfo && CurrentActorInfo->IsNetAuthority())
+	{
+		ToolSwingEarliestNextStartTime = ToolSwingStartTime + ToolSwingCycleSeconds - ToolSwingCadenceToleranceSeconds;
+	}
+	Super::SetRemoteInstanceHasEnded();
 }
 
 void URpgGameplayAbility_Harvest::ApplyCooldown(
@@ -238,7 +273,8 @@ void URpgGameplayAbility_Harvest::HandleAimInputReleased(const float TimeHeld)
 
 void URpgGameplayAbility_Harvest::HandleMontageCompleted()
 {
-	// A tool swing's window ends before the blend-out; one still open traces its last motion and warns.
+	// A tool swing ends when its montage starts to blend out, so a held input starts the next swing over this one's
+	// blend-out. Its window ended before; one still open traces its last motion and warns.
 	if (ToolSwingWindow.IsWindowOpen())
 	{
 		ToolSwingWindow.StopTracing(true);
@@ -482,6 +518,22 @@ void URpgGameplayAbility_Harvest::BeginToolSwing()
 	bHasToolSwingRequest = false;
 	bToolSwingTakesContacts = true;
 
+	// The server times the swing's cycle, so a client that cuts it short cannot start the next one any sooner.
+	if (HasAuthority(&CurrentActivationInfo))
+	{
+		const UWorld* World = GetWorld();
+		float PlayRate = MontagePlayRate;
+		UAbilitySystemGlobals::NonShipping_ApplyGlobalAbilityScaler_Rate(PlayRate);
+		ToolSwingStartTime = World ? World->GetTimeSeconds() : 0.0;
+		ToolSwingCycleSeconds = ResolveSwingCycleSeconds(
+			HarvestMontage,
+			PlayRate * (HarvestMontage ? HarvestMontage->RateScale : 1.0f));
+		ToolSwingEarliestNextStartTime = -1.0;
+	}
+#if WITH_DEV_AUTOMATION_TESTS
+	++ToolSwingStartCountForTests;
+#endif
+
 	// As a melee attack does, the windup may still turn toward the camera and the window holds the facing; nothing aims
 	// at the screen centre.
 	BeginFacingCommitment(SwingWindupSteeringRate);
@@ -539,6 +591,8 @@ bool URpgGameplayAbility_Harvest::PlayToolSwing(const FRpgSwingTraceParams& Para
 		NAME_None,
 		HarvestMontage,
 		MontagePlayRate);
+	// The swing ends where its montage starts to blend out, so a held input blends the next swing in over it.
+	MontageTask->OnBlendOut.AddDynamic(this, &ThisClass::HandleMontageCompleted);
 	MontageTask->OnCompleted.AddDynamic(this, &ThisClass::HandleMontageCompleted);
 	MontageTask->OnInterrupted.AddDynamic(this, &ThisClass::HandleMontageInterrupted);
 	MontageTask->OnCancelled.AddDynamic(this, &ThisClass::HandleMontageInterrupted);
@@ -652,6 +706,19 @@ bool URpgGameplayAbility_Harvest::IsToolSwingContactInReach(const FHitResult& Hi
 		FMath::Square(static_cast<double>(FMath::Max(0.0f, Reach)));
 }
 
+void URpgGameplayAbility_Harvest::NoteStruckTargetLocally(UObject* Receiver, const FHitResult& Hit) const
+{
+	if (!Receiver || !IsLocallyControlled())
+	{
+		return;
+	}
+	if (URpgHarvestTargetingComponent* TargetingComponent =
+			URpgHarvestTargetingComponent::FindForController(GetControllerFromActorInfo()))
+	{
+		TargetingComponent->NoteStruckTarget(CurrentSpecHandle, Receiver, Hit);
+	}
+}
+
 void URpgGameplayAbility_Harvest::CommitToolSwingContact(UObject* Receiver, const FHitResult& Hit)
 {
 	const FGameplayAbilitySpec* Spec = GetCurrentAbilitySpec();
@@ -691,6 +758,8 @@ void URpgGameplayAbility_Harvest::CommitToolSwingContact(UObject* Receiver, cons
 	Target.Result = IRpgHarvestableTarget::Execute_EvaluateHarvest(Receiver, Request);
 
 	ResolveSelection(Selection, RequestTemplate, Values);
+	// A listen server's own swing shows the struck resource's stock after the commit.
+	NoteStruckTargetLocally(Receiver, Hit);
 #if WITH_DEV_AUTOMATION_TESTS
 	if (Selection.Targets.ContainsByPredicate([](const FRpgHarvestTargetEvaluation& Result) { return Result.Result.IsSuccess(); }))
 	{
@@ -701,6 +770,10 @@ void URpgGameplayAbility_Harvest::CommitToolSwingContact(UObject* Receiver, cons
 
 void URpgGameplayAbility_Harvest::PredictToolSwingContact(UObject* Receiver, const FHitResult& Hit)
 {
+	// The stock indicator shows the struck resource at once. It reads the replicated stock, so the server's commit or
+	// rejection of this contact corrects what it shows.
+	NoteStruckTargetLocally(Receiver, Hit);
+
 	AActor* Avatar = GetAvatarActorFromActorInfo();
 	const FGameplayAbilitySpec* Spec = GetCurrentAbilitySpec();
 	if (!Receiver || !Avatar || !CurrentActorInfo || !Spec || !bHasCommitValues || !CommitValues.SuccessGameplayCue.IsValid())
@@ -1428,6 +1501,38 @@ void URpgGameplayAbility_Harvest::EvaluateTargets(
 	EvaluateTargetsFromView(Spec, ActorInfo, Values, ViewLocation, ViewRotation, OutPreview, true);
 }
 
+void URpgGameplayAbility_Harvest::EvaluateStruckTarget(
+	const FGameplayAbilitySpec& Spec,
+	const FGameplayAbilityActorInfo& ActorInfo,
+	UObject* Receiver,
+	const FHitResult& Hit,
+	FRpgHarvestPreview& OutPreview) const
+{
+	OutPreview = FRpgHarvestPreview();
+	OutPreview.AbilityId = HarvestAbilityId;
+	if (!IsValid(Receiver) || !Receiver->GetClass()->ImplementsInterface(URpgHarvestableTarget::StaticClass()))
+	{
+		return;
+	}
+
+	FRpgHarvestTunedValues Values;
+	ResolveTunedValues(Spec, ActorInfo, Values);
+	OutPreview.AimPoint = Hit.ImpactPoint;
+	OutPreview.YieldConversions = Values.YieldConversions;
+
+	// The request the swing's contact sends, evaluated against the stock as it is now; the contact was in reach.
+	FRpgHarvestRequest Request;
+	BuildRequestTemplate(Spec, ActorInfo, Values, Request);
+	Request.Hit = Hit;
+	Request.TraceOrigin = Hit.TraceStart;
+	Request.ExpectedRevision = IRpgHarvestableTarget::Execute_GetHarvestRevision(Receiver, Hit);
+	FRpgHarvestTargetEvaluation& Target = OutPreview.Targets.AddDefaulted_GetRef();
+	Target.Receiver = Receiver;
+	Target.Hit = Hit;
+	Target.bInReach = true;
+	Target.Result = IRpgHarvestableTarget::Execute_EvaluateHarvest(Receiver, Request);
+}
+
 void URpgGameplayAbility_Harvest::ResolveTunedValues(
 	const FGameplayAbilitySpec& Spec,
 	const FGameplayAbilityActorInfo& ActorInfo,
@@ -1630,6 +1735,22 @@ bool URpgGameplayAbility_Harvest::ResolveCommitDelay(
 
 	OutDelaySeconds = CommitTime / EffectivePlayRate;
 	return true;
+}
+
+float URpgGameplayAbility_Harvest::ResolveSwingCycleSeconds(const UAnimMontage* Montage, const float EffectivePlayRate)
+{
+	if (!Montage || !FMath::IsFinite(EffectivePlayRate) || EffectivePlayRate <= UE_SMALL_NUMBER)
+	{
+		return 0.0f;
+	}
+
+	// The engine starts the auto blend-out when the remaining play time reaches the trigger time, in seconds of play.
+	const float PlaySeconds = Montage->GetPlayLength() / EffectivePlayRate;
+	const float BlendOutTriggerSeconds = !Montage->bEnableAutoBlendOut
+		? 0.0f
+		: (Montage->BlendOutTriggerTime >= 0.0f ? Montage->BlendOutTriggerTime : Montage->BlendOut.GetBlendTime());
+	const float CycleSeconds = PlaySeconds - FMath::Max(0.0f, BlendOutTriggerSeconds);
+	return FMath::IsFinite(CycleSeconds) ? FMath::Max(0.0f, CycleSeconds) : 0.0f;
 }
 
 void URpgGameplayAbility_Harvest::SetLocalAimPreview(const bool bAiming) const

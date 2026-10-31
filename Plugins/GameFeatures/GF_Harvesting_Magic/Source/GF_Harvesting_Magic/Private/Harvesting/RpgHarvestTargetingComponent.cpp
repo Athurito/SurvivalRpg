@@ -112,6 +112,7 @@ void URpgHarvestTargetingComponent::EndPlay(const EEndPlayReason::Type EndPlayRe
 	{
 		World->GetTimerManager().ClearTimer(RefreshTimerHandle);
 	}
+	ClearStruckTarget();
 	AimingSpecHandle = FGameplayAbilitySpecHandle();
 	RemoveTargetIndicators();
 	DestroyAreaMarker();
@@ -126,6 +127,7 @@ void URpgHarvestTargetingComponent::RefreshPreview()
 	}
 
 	FRpgHarvestPreview NewPreview;
+	bPreviewShowsStruckTarget = false;
 	if (UAbilitySystemComponent* AbilitySystem = FindAbilitySystem())
 	{
 		bool bAiming = false;
@@ -139,8 +141,25 @@ void URpgHarvestTargetingComponent::RefreshPreview()
 		}
 		if (Ability && AbilitySystem->AbilityActorInfo.IsValid())
 		{
-			Ability->EvaluateTargets(*Spec, *AbilitySystem->AbilityActorInfo, NewPreview);
-			NewPreview.bIsAiming = bAiming;
+			if (!bAiming && Ability->UsesToolSwing())
+			{
+				// A tool swing aims at nothing: no view query, only the resource its last hit struck, for a while.
+				UObject* Receiver = StruckReceiver.Get();
+				if (Receiver && Spec->Handle == StruckSpecHandle)
+				{
+					Ability->EvaluateStruckTarget(*Spec, *AbilitySystem->AbilityActorInfo, Receiver, StruckHit, NewPreview);
+					bPreviewShowsStruckTarget = !NewPreview.Targets.IsEmpty();
+				}
+				else
+				{
+					NewPreview.AbilityId = Ability->GetHarvestAbilityId();
+				}
+			}
+			else
+			{
+				Ability->EvaluateTargets(*Spec, *AbilitySystem->AbilityActorInfo, NewPreview);
+				NewPreview.bIsAiming = bAiming;
+			}
 		}
 	}
 
@@ -402,6 +421,47 @@ void URpgHarvestTargetingComponent::SetAimingAbility(const FGameplayAbilitySpecH
 		AimingSpecHandle = FGameplayAbilitySpecHandle();
 	}
 	RefreshPreview();
+}
+
+void URpgHarvestTargetingComponent::NoteStruckTarget(
+	const FGameplayAbilitySpecHandle SwingHandle,
+	UObject* Receiver,
+	const FHitResult& Hit)
+{
+	UWorld* World = GetWorld();
+	if (!Receiver || !World || !IsLocallyControlled())
+	{
+		return;
+	}
+
+	StruckReceiver = Receiver;
+	StruckHit = Hit;
+	StruckSpecHandle = SwingHandle;
+	World->GetTimerManager().SetTimer(
+		StruckTargetTimerHandle,
+		this,
+		&ThisClass::HandleStruckTargetExpired,
+		FMath::Max(0.1f, StruckTargetLingerSeconds),
+		false);
+	// The stock shows at the moment of the hit, not at the next periodic refresh.
+	RefreshPreview();
+}
+
+void URpgHarvestTargetingComponent::HandleStruckTargetExpired()
+{
+	ClearStruckTarget();
+	RefreshPreview();
+}
+
+void URpgHarvestTargetingComponent::ClearStruckTarget()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(StruckTargetTimerHandle);
+	}
+	StruckReceiver.Reset();
+	StruckHit = FHitResult();
+	StruckSpecHandle = FGameplayAbilitySpecHandle();
 }
 
 bool URpgHarvestTargetingComponent::IsLocallyControlled() const

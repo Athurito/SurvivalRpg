@@ -7,7 +7,9 @@
 
 #include "AbilitySystem/Abilities/RpgGameplayAbility_Harvest.h"
 #include "AbilitySystemGlobals.h"
+#include "Animation/AnimInstance.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Engine/NetDriver.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
@@ -20,6 +22,8 @@
 #include "Harvesting/RpgHarvestableInstancesComponent.h"
 #include "Harvesting/RpgHarvestInstanceStockComponent.h"
 #include "Harvesting/RpgHarvestProfile.h"
+#include "Harvesting/RpgHarvestTargetingComponent.h"
+#include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_Dodge.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Combat/RpgCombatImpact.h"
@@ -48,7 +52,13 @@ namespace RpgHarvestSwingPIETests
 	constexpr float MaxSimulatedFrameTime = 1.0f / 60.0f;
 
 	/** Sections of the field's one resource; each committed swing takes one. */
-	constexpr int32 FieldSections = 4;
+	constexpr int32 FieldSections = 6;
+
+	/** Swings the hold step lets the held input repeat before the swinger dodges. */
+	constexpr int32 HeldSwings = 3;
+
+	/** Montage position in seconds before which a swing is still winding up; the axe's window opens at 0.367 s. */
+	constexpr float WindupPositionSeconds = 0.2f;
 
 	/** Seconds the test waits after a result for late copies of cues or commits. */
 	constexpr double QuietSeconds = 1.5;
@@ -71,6 +81,44 @@ namespace RpgHarvestSwingPIETests
 	{
 		static const FGameplayTag Tag = FGameplayTag::RequestGameplayTag(TEXT("GameplayCue.Harvesting.ToolHit"));
 		return Tag;
+	}
+
+	const FGameplayTag& PrimaryInputTag()
+	{
+		static const FGameplayTag Tag = FGameplayTag::RequestGameplayTag(TEXT("InputTag.Weapon.Primary"));
+		return Tag;
+	}
+
+	const FGameplayTag& DodgeInputTag()
+	{
+		static const FGameplayTag Tag = FGameplayTag::RequestGameplayTag(TEXT("InputTag.Ability.Dodge"));
+		return Tag;
+	}
+
+	/** The dodge the Prototype Experience grants on the dodge input, or an invalid handle. */
+	FGameplayAbilitySpecHandle FindDodgeHandle(URpgAbilitySystemComponent* AbilitySystem)
+	{
+		if (AbilitySystem)
+		{
+			for (const FGameplayAbilitySpec& Spec : AbilitySystem->GetActivatableAbilities())
+			{
+				if (Spec.Ability && Spec.Ability->IsA<URpgGameplayAbility_Dodge>() &&
+					Spec.GetDynamicSpecSourceTags().HasTagExact(DodgeInputTag()))
+				{
+					return Spec.Handle;
+				}
+			}
+		}
+		return FGameplayAbilitySpecHandle();
+	}
+
+	/** Position of the montage Character plays, or a negative value when it plays none. */
+	float GetMontagePosition(const ARpgCharacter* Character)
+	{
+		const USkeletalMeshComponent* Mesh = Character ? Character->GetMesh() : nullptr;
+		const UAnimInstance* AnimInstance = Mesh ? Mesh->GetAnimInstance() : nullptr;
+		const UAnimMontage* Montage = AnimInstance ? AnimInstance->GetCurrentActiveMontage() : nullptr;
+		return Montage ? AnimInstance->Montage_GetPosition(Montage) : -1.0f;
 	}
 
 	ARpgCharacter* FindLocalCharacter(const UWorld* World)
@@ -207,6 +255,17 @@ NETWORK_TEST_CLASS(HarvestSwingPIE, "SurvivalRpg.Network")
 	uint32 TotalOwnerPredictions = 0;
 	double ResultTime = -1.0;
 
+	/** Hold step: the swinger's dodge, its client's swing count at the press, and the server's swing log. */
+	FGameplayAbilitySpecHandle DodgeHandle;
+	uint32 ClientSwingBaseline = 0;
+	FVector WalkStart = FVector::ZeroVector;
+	double FastestSwingingSpeed = 0.0;
+	TArray<double> ServerSwingStartTimes;
+	int32 ServerSwingCancelledEnds = 0;
+	TWeakObjectPtr<URpgAbilitySystemComponent> ServerSwingSystem;
+	FDelegateHandle ServerSwingActivatedHandle;
+	FDelegateHandle ServerSwingEndedHandle;
+
 	const TCHAR* Describe(const FString& Description)
 	{
 		TSharedPtr<FString> Stored = MakeShared<FString>(Description);
@@ -233,6 +292,39 @@ NETWORK_TEST_CLASS(HarvestSwingPIE, "SurvivalRpg.Network")
 		OutAbilitySystem = Character ? Character->GetRpgAbilitySystemComponent() : nullptr;
 		FGameplayAbilitySpec* Spec = OutAbilitySystem ? OutAbilitySystem->FindAbilitySpecFromHandle(SwingHandle) : nullptr;
 		return Spec ? Cast<URpgGameplayAbility_Harvest>(Spec->GetPrimaryInstance()) : nullptr;
+	}
+
+	/** Server: records when each of the swinger's swings starts and how many were cancelled, as they happen. */
+	void StartServerSwingLog(URpgAbilitySystemComponent* AbilitySystem)
+	{
+		StopServerSwingLog();
+		ServerSwingStartTimes.Reset();
+		ServerSwingCancelledEnds = 0;
+		ServerSwingSystem = AbilitySystem;
+		ServerSwingActivatedHandle = AbilitySystem->AbilityActivatedCallbacks.AddLambda([this](UGameplayAbility* Ability)
+		{
+			const UWorld* World = Ability ? Ability->GetWorld() : nullptr;
+			if (World && Ability->IsInstantiated() && Ability->GetCurrentAbilitySpecHandle() == SwingHandle)
+			{
+				ServerSwingStartTimes.Add(World->GetTimeSeconds());
+			}
+		});
+		ServerSwingEndedHandle = AbilitySystem->OnAbilityEnded.AddLambda([this](const FAbilityEndedData& Data)
+		{
+			ServerSwingCancelledEnds += Data.AbilitySpecHandle == SwingHandle && Data.bWasCancelled ? 1 : 0;
+		});
+	}
+
+	void StopServerSwingLog()
+	{
+		if (URpgAbilitySystemComponent* AbilitySystem = ServerSwingSystem.Get())
+		{
+			AbilitySystem->AbilityActivatedCallbacks.Remove(ServerSwingActivatedHandle);
+			AbilitySystem->OnAbilityEnded.Remove(ServerSwingEndedHandle);
+		}
+		ServerSwingSystem.Reset();
+		ServerSwingActivatedHandle.Reset();
+		ServerSwingEndedHandle.Reset();
 	}
 
 	/** Whether the swing on this machine is idle: granted, instanced, not running and without window state. */
@@ -305,6 +397,7 @@ NETWORK_TEST_CLASS(HarvestSwingPIE, "SurvivalRpg.Network")
 		{
 			CueManager->OnGameplayCueRouted().Remove(CueRoutedHandle);
 		}
+		StopServerSwingLog();
 		GetMutableDefault<URpgDeveloperSettings>()->ExperienceOverride = OriginalExperienceOverride;
 	}
 
@@ -355,24 +448,36 @@ NETWORK_TEST_CLASS(HarvestSwingPIE, "SurvivalRpg.Network")
 						{
 							continue;
 						}
-						// The axe's ability set comes with the item; the test grants it from the equipped axe directly.
 						URpgEquipmentManagerComponent* EquipmentManager = Character->FindComponentByClass<URpgEquipmentManagerComponent>();
 						URpgAbilitySystemComponent* AbilitySystem = Character->GetRpgAbilitySystemComponent();
 						ASSERT_THAT(IsTrue(EquipmentManager && AbilitySystem));
 						EquipmentManager->UnequipItemInSlot(ERpgEquipmentSlot::MainHand);
 						URpgEquipmentInstance* Axe = EquipmentManager->EquipItemInSlot(AxeDefinition, ERpgEquipmentSlot::MainHand);
 						ASSERT_THAT(IsNotNull(Axe));
-						FRpgAbilitySet_GrantedHandles Granted;
-						AxeAbilities->GiveToAbilitySystem(AbilitySystem, &Granted, Axe);
-						for (const FGameplayAbilitySpec& Spec : AbilitySystem->GetActivatableAbilities())
+						auto FindAxeSwings = [AbilitySystem, Axe]()
 						{
-							const URpgGameplayAbility_Harvest* Swing = Cast<URpgGameplayAbility_Harvest>(Spec.Ability);
-							if (Swing && Swing->UsesToolSwing() && Spec.SourceObject.Get() == Axe)
+							TArray<FGameplayAbilitySpecHandle> Handles;
+							for (const FGameplayAbilitySpec& Spec : AbilitySystem->GetActivatableAbilities())
 							{
-								SwingHandle = Spec.Handle;
+								const URpgGameplayAbility_Harvest* Swing = Cast<URpgGameplayAbility_Harvest>(Spec.Ability);
+								if (Swing && Swing->UsesToolSwing() && Spec.SourceObject.Get() == Axe)
+								{
+									Handles.Add(Spec.Handle);
+								}
 							}
+							return Handles;
+						};
+						// The axe's equipment grants its ability set with the main-hand slot; grant it directly only where it did not.
+						TArray<FGameplayAbilitySpecHandle> AxeSwings = FindAxeSwings();
+						if (AxeSwings.IsEmpty())
+						{
+							FRpgAbilitySet_GrantedHandles Granted;
+							AxeAbilities->GiveToAbilitySystem(AbilitySystem, &Granted, Axe);
+							AxeSwings = FindAxeSwings();
 						}
-						ASSERT_THAT(IsTrue(SwingHandle.IsValid()));
+						// A second swing on the primary input would replace the first one whenever a press activates both.
+						ASSERT_THAT(AreEqual(1, AxeSwings.Num()));
+						SwingHandle = AxeSwings[0];
 					}
 				})
 			.ThenClient(TEXT("The swinger keeps looking along its lane after the teleport"), 0,
@@ -606,6 +711,309 @@ NETWORK_TEST_CLASS(HarvestSwingPIE, "SurvivalRpg.Network")
 				(void)State;
 				TestRunner->AddInfo(FString::Printf(TEXT("Owner predictions: %u of 2 hits"), TotalOwnerPredictions));
 			});
+	}
+
+	TEST_METHOD(RemoteHoldSwingsOnceEachUntilDodgeAndPressesAgain)
+	{
+		using namespace RpgHarvestSwingPIETests;
+
+		QueueSwingerReady();
+		Network
+			.ThenServer(TEXT("Hold: the server logs the swinger's swings"),
+				[this](FNetworkState& State)
+				{
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					const URpgGameplayAbility_Harvest* Swing = FindSwing(State.World, AbilitySystem);
+					ASSERT_THAT(IsTrue(Swing && AbilitySystem));
+					HarvestCountBaseline = Swing->GetAuthorityToolSwingHarvestCountForTests();
+					StartServerSwingLog(AbilitySystem);
+				})
+			.ThenClient(TEXT("Hold: nothing is marked before a hit, and the swinger holds the primary input"), 0,
+				[this](FNetworkState& State)
+				{
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					const URpgGameplayAbility_Harvest* Swing = FindSwing(State.World, AbilitySystem);
+					ASSERT_THAT(IsTrue(Swing && AbilitySystem));
+					const URpgHarvestTargetingComponent* Targeting =
+						URpgHarvestTargetingComponent::FindForController(State.World->GetFirstPlayerController());
+					ASSERT_THAT(IsNotNull(Targeting));
+					// The resource is right ahead, where the view looks, yet a tool swing aims at nothing.
+					ASSERT_THAT(AreEqual(0, Targeting->GetCurrentPreview().Targets.Num()));
+					DodgeHandle = FindDodgeHandle(AbilitySystem);
+					ASSERT_THAT(IsTrue(DodgeHandle.IsValid()));
+					ClientSwingBaseline = Swing->GetToolSwingStartCountForTests();
+					// Held from here on: the player controller processes the held input every frame.
+					AbilitySystem->AbilityInputTagPressed(PrimaryInputTag());
+				})
+			.UntilServer(Describe(FString::Printf(TEXT("Hold: the held input swung %d times, each taking one section"), HeldSwings)),
+				[this](FNetworkState& State)
+				{
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					const URpgGameplayAbility_Harvest* Swing = FindSwing(State.World, AbilitySystem);
+					return Swing && Swing->GetAuthorityToolSwingHarvestCountForTests() >= HarvestCountBaseline + HeldSwings &&
+						GetRemainingSections(State) == FieldSections - HeldSwings;
+				},
+				NetworkTimeout())
+			.UntilClient(TEXT("Hold: the next held swing winds up on the client"), 0,
+				[this](FNetworkState& State)
+				{
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					const URpgGameplayAbility_Harvest* Swing = FindSwing(State.World, AbilitySystem);
+					const float Position = GetMontagePosition(FindLocalCharacter(State.World));
+					return Swing && Swing->IsActive() &&
+						Swing->GetToolSwingStartCountForTests() >= ClientSwingBaseline + HeldSwings + 1 &&
+						Position >= 0.0f && Position < WindupPositionSeconds;
+				},
+				NetworkTimeout())
+			.ThenClient(TEXT("Hold: the stock indicator shows the struck resource, and the swinger dodges while holding"), 0,
+				[this](FNetworkState& State)
+				{
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					const URpgGameplayAbility_Harvest* Swing = FindSwing(State.World, AbilitySystem);
+					ASSERT_THAT(IsTrue(Swing && AbilitySystem));
+					TotalOwnerPredictions = Swing->GetOwnerPredictedToolCueCountForTests();
+					const URpgHarvestTargetingComponent* Targeting =
+						URpgHarvestTargetingComponent::FindForController(State.World->GetFirstPlayerController());
+					ASSERT_THAT(IsNotNull(Targeting));
+					// The last predicted hit is less than the linger time ago; the stock shown is the replicated one.
+					if (TotalOwnerPredictions > 0)
+					{
+						ERpgHarvestTargetStatus Status = ERpgHarvestTargetStatus::None;
+						int32 Remaining = 0;
+						int32 SectionCount = 0;
+						int32 ToTake = 0;
+						ASSERT_THAT(IsTrue(Targeting->IsPreviewStruckTarget()));
+						ASSERT_THAT(IsTrue(Targeting->GetPrimaryTargetStatus(Status, Remaining, SectionCount, ToTake)));
+						ASSERT_THAT(AreEqual(FieldSections - HeldSwings, Remaining));
+						ASSERT_THAT(AreEqual(FieldSections, SectionCount));
+					}
+					// The dodge replaces the swing during its windup, before the window opens.
+					ASSERT_THAT(IsTrue(AbilitySystem->TryActivateAbility(DodgeHandle)));
+					ASSERT_THAT(IsFalse(Swing->IsActive()));
+				})
+			.UntilServer(TEXT("Hold: the server's dodge replaced its swing"),
+				[this](FNetworkState& State)
+				{
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					FindSwing(State.World, AbilitySystem);
+					const FGameplayAbilitySpec* Spec = AbilitySystem ? AbilitySystem->FindAbilitySpecFromHandle(SwingHandle) : nullptr;
+					if (!Spec || Spec->IsActive() || ServerSwingCancelledEnds < 1)
+					{
+						return false;
+					}
+					ResultTime = State.World->GetTimeSeconds();
+					return true;
+				},
+				NetworkTimeout())
+			.UntilServer(TEXT("Hold: the input stays held for longer than a swing"),
+				[this](FNetworkState& State) { return State.World->GetTimeSeconds() - ResultTime >= 2.0 * QuietSeconds; },
+				NetworkTimeout())
+			.ThenServer(TEXT("Hold: every held swing committed once, at the montage's pace, and the dodged one took nothing"),
+				[this](FNetworkState& State)
+				{
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					const URpgGameplayAbility_Harvest* Swing = FindSwing(State.World, AbilitySystem);
+					ASSERT_THAT(IsNotNull(Swing));
+					ASSERT_THAT(AreEqual(HarvestCountBaseline + HeldSwings, Swing->GetAuthorityToolSwingHarvestCountForTests()));
+					ASSERT_THAT(AreEqual(FieldSections - HeldSwings, GetRemainingSections(State)));
+					ASSERT_THAT(AreEqual(HeldSwings + 1, ServerSwingStartTimes.Num()));
+					ASSERT_THAT(AreEqual(1, ServerSwingCancelledEnds));
+					ASSERT_THAT(AreEqual(HeldSwings, CountPlayedHits(State.World)));
+					// Each held swing followed the last one at its blend-out: never sooner, and without a pause.
+					const double Cycle = Swing->GetToolSwingCycleSecondsForTests();
+					ASSERT_THAT(IsTrue(Cycle > 1.0));
+					for (int32 Index = 1; Index < ServerSwingStartTimes.Num(); ++Index)
+					{
+						const double Interval = ServerSwingStartTimes[Index] - ServerSwingStartTimes[Index - 1];
+						TestRunner->AddInfo(FString::Printf(TEXT("Held swing %d started %.3f s after the one before (cycle %.3f s)"), Index, Interval, Cycle));
+						ASSERT_THAT(IsTrue(Interval >= Cycle - URpgGameplayAbility_Harvest::ToolSwingCadenceToleranceSeconds));
+						ASSERT_THAT(IsTrue(Interval <= Cycle + 0.35));
+					}
+				})
+			.UntilClient(TEXT("Hold: the client stays idle while holding and played every hit once"), 0,
+				[this](FNetworkState& State)
+				{
+					return IsSwingIdle(State.World) && GetRemainingSections(State) == FieldSections - HeldSwings &&
+						CountPlayedHits(State.World) == HeldSwings;
+				},
+				NetworkTimeout())
+			.ThenClient(TEXT("Hold: the dodged hold started no further swing, and the swinger releases"), 0,
+				[this](FNetworkState& State)
+				{
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					const URpgGameplayAbility_Harvest* Swing = FindSwing(State.World, AbilitySystem);
+					ASSERT_THAT(IsTrue(Swing && AbilitySystem));
+					ASSERT_THAT(AreEqual(ClientSwingBaseline + HeldSwings + 1, Swing->GetToolSwingStartCountForTests()));
+					AbilitySystem->AbilityInputTagReleased(PrimaryInputTag());
+				})
+			.ThenServer(TEXT("Hold: the swinger returns to its lane after the dodge"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Character = FindCharacterByPlayerId(State.World, SwingerId);
+					ASSERT_THAT(IsNotNull(Character));
+					Character->TeleportTo(SwingerLocation, FRotator::ZeroRotator);
+					Character->GetCharacterMovement()->StopMovementImmediately();
+					Character->ForceNetUpdate();
+				})
+			.ThenClient(TEXT("Hold: the swinger looks along its lane again"), 0,
+				[](FNetworkState& State)
+				{
+					if (APlayerController* PlayerController = State.World->GetFirstPlayerController())
+					{
+						PlayerController->SetControlRotation(FRotator::ZeroRotator);
+					}
+				})
+			.UntilServer(TEXT("Hold: the swinger stands in its lane with its dodge over"),
+				[this](FNetworkState& State)
+				{
+					const ARpgCharacter* Character = FindCharacterByPlayerId(State.World, SwingerId);
+					const URpgAbilitySystemComponent* AbilitySystem = Character ? Character->GetRpgAbilitySystemComponent() : nullptr;
+					const FGameplayAbilitySpec* Dodge = AbilitySystem ? AbilitySystem->FindAbilitySpecFromHandle(DodgeHandle) : nullptr;
+					return Character && Dodge && !Dodge->IsActive() && IsSwingIdle(State.World) &&
+						FVector::Dist2D(Character->GetActorLocation(), SwingerLocation) < 5.0 &&
+						Character->GetCharacterMovement()->IsMovingOnGround();
+				},
+				NetworkTimeout())
+			.UntilClient(TEXT("Hold: the client stands in its lane, ready to swing"), 0,
+				[this](FNetworkState& State)
+				{
+					const ARpgCharacter* Character = FindLocalCharacter(State.World);
+					URpgAbilitySystemComponent* AbilitySystem = Character ? Character->GetRpgAbilitySystemComponent() : nullptr;
+					const FGameplayAbilitySpec* Dodge = AbilitySystem ? AbilitySystem->FindAbilitySpecFromHandle(DodgeHandle) : nullptr;
+					return Character && Dodge && !Dodge->IsActive() && IsSwingIdle(State.World) &&
+						FVector::Dist2D(Character->GetActorLocation(), SwingerLocation) < 5.0 &&
+						Character->GetCharacterMovement()->IsMovingOnGround();
+				},
+				NetworkTimeout())
+			.ThenClient(TEXT("Hold: a fresh press swings again"), 0,
+				[this](FNetworkState& State)
+				{
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					ASSERT_THAT(IsNotNull(FindSwing(State.World, AbilitySystem)));
+					if (APlayerController* PlayerController = State.World->GetFirstPlayerController())
+					{
+						PlayerController->SetControlRotation(FRotator::ZeroRotator);
+					}
+					AbilitySystem->AbilityInputTagPressed(PrimaryInputTag());
+				})
+			.UntilClient(TEXT("Hold: the pressed swing runs, and the swinger lets go"), 0,
+				[this](FNetworkState& State)
+				{
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					const URpgGameplayAbility_Harvest* Swing = FindSwing(State.World, AbilitySystem);
+					if (!Swing || !Swing->IsActive())
+					{
+						return false;
+					}
+					AbilitySystem->AbilityInputTagReleased(PrimaryInputTag());
+					return true;
+				},
+				NetworkTimeout())
+			.UntilServer(TEXT("Hold: the pressed swing took one section and ended"),
+				[this](FNetworkState& State)
+				{
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					const URpgGameplayAbility_Harvest* Swing = FindSwing(State.World, AbilitySystem);
+					if (!Swing || GetRemainingSections(State) != FieldSections - HeldSwings - 1 || !IsSwingIdle(State.World))
+					{
+						return false;
+					}
+					ResultTime = State.World->GetTimeSeconds();
+					return true;
+				},
+				NetworkTimeout())
+			.UntilServer(TEXT("Hold: a further swing would have had time to start"),
+				[this](FNetworkState& State) { return State.World->GetTimeSeconds() - ResultTime >= QuietSeconds; },
+				NetworkTimeout())
+			.ThenServer(TEXT("Hold: the press swung once and committed once"),
+				[this](FNetworkState& State)
+				{
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					const URpgGameplayAbility_Harvest* Swing = FindSwing(State.World, AbilitySystem);
+					ASSERT_THAT(IsNotNull(Swing));
+					ASSERT_THAT(AreEqual(HarvestCountBaseline + HeldSwings + 1, Swing->GetAuthorityToolSwingHarvestCountForTests()));
+					ASSERT_THAT(AreEqual(FieldSections - HeldSwings - 1, GetRemainingSections(State)));
+					ASSERT_THAT(AreEqual(HeldSwings + 2, ServerSwingStartTimes.Num()));
+					ASSERT_THAT(AreEqual(HeldSwings + 1, CountPlayedHits(State.World)));
+					ASSERT_THAT(AreEqual(0, RpgCombatImpact::GetAbsorbedImpactCountForTests(State.World)));
+				})
+			.UntilClient(TEXT("Hold: the client shows the stock and played every hit once"), 0,
+				[this](FNetworkState& State)
+				{
+					return IsSwingIdle(State.World) && GetRemainingSections(State) == FieldSections - HeldSwings - 1 &&
+						CountPlayedHits(State.World) == HeldSwings + 1;
+				},
+				NetworkTimeout())
+			.ThenClient(TEXT("Hold: report the swinger's predictions"), 0,
+				[this](FNetworkState& State)
+				{
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					const URpgGameplayAbility_Harvest* Swing = FindSwing(State.World, AbilitySystem);
+					ASSERT_THAT(IsNotNull(Swing));
+					TotalOwnerPredictions = Swing->GetOwnerPredictedToolCueCountForTests();
+					ASSERT_THAT(IsTrue(TotalOwnerPredictions <= static_cast<uint32>(HeldSwings + 1)));
+					TestRunner->AddInfo(FString::Printf(TEXT("Owner predictions: %u of %d hits"), TotalOwnerPredictions, HeldSwings + 1));
+				});
+
+		// Movement stays free: the swinger walks away from the field while holding, and the swings keep repeating.
+		Network
+			.ThenClient(TEXT("Walk: the swinger holds the input again and starts walking"), 0,
+				[this](FNetworkState& State)
+				{
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					const URpgGameplayAbility_Harvest* Swing = FindSwing(State.World, AbilitySystem);
+					const ARpgCharacter* Character = FindLocalCharacter(State.World);
+					ASSERT_THAT(IsTrue(Swing && AbilitySystem && Character));
+					ClientSwingBaseline = Swing->GetToolSwingStartCountForTests();
+					WalkStart = Character->GetActorLocation();
+					FastestSwingingSpeed = 0.0;
+					AbilitySystem->AbilityInputTagPressed(PrimaryInputTag());
+				})
+			.UntilClient(TEXT("Walk: two swings ran while the swinger walked at speed"), 0,
+				[this](FNetworkState& State)
+				{
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					const URpgGameplayAbility_Harvest* Swing = FindSwing(State.World, AbilitySystem);
+					ARpgCharacter* Character = FindLocalCharacter(State.World);
+					if (!Swing || !Character)
+					{
+						return false;
+					}
+					Character->AddMovementInput(FVector(-1.0, 0.0, 0.0), 1.0f);
+					if (Swing->IsActive())
+					{
+						FastestSwingingSpeed = FMath::Max(FastestSwingingSpeed, Character->GetVelocity().Size2D());
+					}
+					return Swing->GetToolSwingStartCountForTests() >= ClientSwingBaseline + 2 && FastestSwingingSpeed > 150.0 &&
+						FVector::Dist2D(Character->GetActorLocation(), WalkStart) > 150.0;
+				},
+				NetworkTimeout())
+			.ThenClient(TEXT("Walk: the swinger lets go"), 0,
+				[this](FNetworkState& State)
+				{
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					ASSERT_THAT(IsNotNull(FindSwing(State.World, AbilitySystem)));
+					AbilitySystem->AbilityInputTagReleased(PrimaryInputTag());
+					TestRunner->AddInfo(FString::Printf(TEXT("Fastest ground speed while swinging: %.0f cm/s"), FastestSwingingSpeed));
+				})
+			.UntilServer(TEXT("Walk: the server ran the walking swings and moved the swinger"),
+				[this](FNetworkState& State)
+				{
+					const ARpgCharacter* Character = FindCharacterByPlayerId(State.World, SwingerId);
+					return Character && IsSwingIdle(State.World) && ServerSwingStartTimes.Num() >= HeldSwings + 4 &&
+						FVector::Dist2D(Character->GetActorLocation(), SwingerLocation) > 150.0;
+				},
+				NetworkTimeout())
+			.ThenServer(TEXT("Walk: no swing committed more than once"),
+				[this](FNetworkState& State)
+				{
+					URpgAbilitySystemComponent* AbilitySystem = nullptr;
+					const URpgGameplayAbility_Harvest* Swing = FindSwing(State.World, AbilitySystem);
+					ASSERT_THAT(IsNotNull(Swing));
+					const int32 Harvests = static_cast<int32>(Swing->GetAuthorityToolSwingHarvestCountForTests() - HarvestCountBaseline);
+					ASSERT_THAT(IsTrue(Harvests <= ServerSwingStartTimes.Num() - ServerSwingCancelledEnds));
+					ASSERT_THAT(AreEqual(FieldSections - Harvests, GetRemainingSections(State)));
+				});
 	}
 };
 

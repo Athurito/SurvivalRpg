@@ -18,6 +18,11 @@ namespace RpgHarvestingMagicGameplayTags
 		"A harvest ability is locked until its required trade-skill level is reached.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_ActivateFail_Harvesting_SwingCadence,
+		"Ability.ActivateFail.Harvesting.SwingCadence",
+		"The server refused a tool swing that would start before the previous one's montage allows.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
 		Ability_Harvesting_Skinning,
 		"Ability.Harvesting.Skinning",
 		"Server-only ability that processes a reserved animal corpse with a valid skinning tool.");
