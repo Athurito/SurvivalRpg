@@ -24,7 +24,7 @@ Most marketplace characters, armor, and animation packs target UE5 Manny. Keepin
 - **Proportion mismatch.** Grips, sockets, and physics live on a hidden body whose proportions differ from the visible character.
 - **Runtime cost.** Each character pays for runtime retargeting, which does not scale to groups of humanoid enemies.
 
-The archived native port ([archive](gasp-native-port-archive.md)) failed partly because it reimplemented GASP logic and retargeting. This pilot changes no GASP logic. It runs Epic's retargeter through the engine's batch workflow and copies Epic's databases and graph unchanged except for the skeleton.
+The archived native port ([archive branch](https://github.com/Athurito/SurvivalRpg/tree/codex/archive-gasp-native-port-2026-09-06), [notes](https://github.com/Athurito/SurvivalRpg/blob/dcc0d5cb12556da7dee58fbc4ddf04fd976af160/docs/gasp-native-port-archive.md)) failed partly because it reimplemented GASP logic and retargeting. This pilot changes no GASP logic. It runs Epic's retargeter through the engine's batch workflow and copies Epic's databases and graph unchanged except for the skeleton.
 
 ## Scope
 

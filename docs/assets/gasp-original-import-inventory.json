@@ -11,13 +11,13 @@
         "commit": "9d6316256e6986888db29c4dc3dc8445194d04a3",
         "added_asset_packages": 2299,
         "included_original_packages": 2297,
-        "documentation": "docs/gasp-migration-dependencies.md: Verification actually performed (2297 imported assets)"
+        "documentation": "https://github.com/Athurito/SurvivalRpg/blob/dcc0d5cb12556da7dee58fbc4ddf04fd976af160/docs/gasp-migration-dependencies.md: Verification actually performed (2297 imported assets)"
       },
       {
         "commit": "68601da84a969a07327cc6f8992ce02d9102c23e",
         "included_original_packages": 1,
         "repository_path": "Content/Blueprints/AC_VisualOverrideManager.uasset",
-        "documentation": "docs/gasp-migration-dependencies.md: Sources and changes"
+        "documentation": "https://github.com/Athurito/SurvivalRpg/blob/dcc0d5cb12556da7dee58fbc4ddf04fd976af160/docs/gasp-migration-dependencies.md: Sources and changes"
       }
     ],
     "excluded_project_packages": [
@@ -53,8 +53,8 @@
       "/Game/Levels/LevelPrototyping/LevelBlock"
     ],
     "documentation": [
-      "docs/gasp-warning-audit.md",
-      "docs/gasp-physics-control-followup.md"
+      "https://github.com/Athurito/SurvivalRpg/blob/dcc0d5cb12556da7dee58fbc4ddf04fd976af160/docs/gasp-warning-audit.md",
+      "https://github.com/Athurito/SurvivalRpg/blob/dcc0d5cb12556da7dee58fbc4ddf04fd976af160/docs/gasp-physics-control-followup.md"
     ],
     "meaning": "Documented migration fixes after initial import; none belongs to the 142 unmapped originals."
   },
