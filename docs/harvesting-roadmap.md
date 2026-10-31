@@ -7,6 +7,11 @@ runtime contract, and the task sequence. Product tracking stays in issue
 harvesting abilities into Blueprint content belongs to issue
 [#86](https://github.com/Athurito/SurvivalRpg/issues/86).
 
+> **Superseded in part (2026-10-31):** the hit model (camera aiming) and the
+> harvesting powers are replaced by the
+> [harvesting rework roadmap](harvesting-rework-roadmap.md) and by MST-03b. The
+> stock core, the PCG bridge, persistence and co-op load below still hold.
+
 ## Design goals
 
 - The player starts with a pickaxe and an axe. The tool then awakens into a
@@ -1734,7 +1739,7 @@ Unreal Insights trace:
 | HARV-09f | Resource parity across combat styles and a build target that stronger harvesting makes easier; shared pool, parity bench, Kiln Kit, harvest times | Merged: [#194](https://github.com/Athurito/SurvivalRpg/pull/194) |
 | HARV-10a | M5 resource persistence: saved stock per map with stable IDs and remaining respawn times, core world save seam for GameFeatures | Merged: [#195](https://github.com/Athurito/SurvivalRpg/pull/195) |
 | HARV-10b | M5 portal variant: root groves in a portal realm, where felling one tree fells the grove; renewable portal areas | Merged: [#196](https://github.com/Athurito/SurvivalRpg/pull/196) |
-| HARV-10c | M5 co-op load: stock shards for late joins beyond 2,048 changed instances, navigation updates once per tick, co-op PIE load tests with latency and loss; profiles of large target groups, effects and swarms | In review: [#197](https://github.com/Athurito/SurvivalRpg/pull/197) |
+| HARV-10c | M5 co-op load: stock shards for late joins beyond 2,048 changed instances, navigation updates once per tick, co-op PIE load tests with latency and loss; profiles of large target groups, effects and swarms | Merged: [#197](https://github.com/Athurito/SurvivalRpg/pull/197) |
 
 ## Open questions
 
