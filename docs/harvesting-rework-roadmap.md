@@ -88,6 +88,51 @@ how a hit is found, not what a hit does.
   and facing. `FRpgWeaponAttackDefinition` keeps its fields, so no weapon asset
   changes.
 
+#### HRW-02 report
+
+- **Result:** `FRpgSwingTraceWindow` now holds the window contract
+  (`ResolveWindowTiming`, `IsWindowEndBeforeAutoBlendOut`), the authority
+  schedule, sampling from the equipment's spawned actors or the avatar mesh,
+  the arc sub-steps, the line and sweep ribbons on `FRpgSwingTraceParams::TraceChannel`
+  (default weapon channel), the debug draw and the trace counters. An ability
+  drives it with `Begin`, `HandleStartNotify`/`HandleEndNotify`, `StopTracing`
+  and `Reset`, and receives hits, trace queries, window open/close and
+  lifecycle records through `FRpgSwingTraceSink` delegates with a role
+  (`Authority`, `OwnerFeedback`, `None`). The window neither de-duplicates nor
+  damages. `URpgGameplayAbility_BasicWeaponAttack` keeps combos, step tags,
+  damage, its per-window hit set, Echo records, facing and lifecycle logging;
+  its `…ForTests` getters forward. `FRpgWeaponAttackDefinition` keeps every
+  field and gains `MakeSwingTraceParams()`. `ERpgWeaponAttackTraceMode` moved
+  unchanged into the new header (same module and name, so assets load as
+  before).
+- **Decisions:** the facing hold moved from every open attempt to the moment
+  the window opens; a repeated attempt was a no-op and a refused one cannot
+  happen, because closing clears the schedule, the poll and the start timer.
+  The per-sample `CanApplyDamage()` guard left the trace, since a step that
+  cannot apply damage never starts. The sink survives `Reset`, because a hit
+  may end the ability inside the window's own trace loop. Three warnings now
+  read `SwingTraceWindow[…]` instead of `BasicWeaponAttack[…]`; the lifecycle
+  stages are unchanged.
+- **Commits:** `2a4da481` refactor and tests, then documentation.
+- **Validation** (`ue.py`, headless, no MCP editor of this worktree; the
+  HRW-01 editor shared the GPU at about 80 %):
+  - `build`: 0 errors, 0 warnings, before and after the change.
+  - `test SurvivalRpg.Combat --null-rhi`: 56 / 56, including the new
+    `SwingTrace.WindowTiming` and `SwingTrace.RibbonHitsBetweenSamples`,
+    `WeaponTrace.*`, `Runes.Echo.*` and `WeaponAttackAssetContract`.
+  - `test SurvivalRpg.Network.CombatRemoteMeleePIE SurvivalRpg.Network.CombatImpactCuesPIE`
+    (rendered, 1/60 s frame cap): 6 / 6 on the first run. The remote client's
+    authority windows still traced 4 to 9 sub-steps and landed their hits.
+  - `test SurvivalRpg.GASP.CMC.GaspCMCExperiencePIE.RemoteMovementLateJoinAndEquipmentMontage SurvivalRpg.GASP.Mover.Gameplay SurvivalRpg.GASP.Mover.Lifecycle`
+    with `np.ForceReconcile 0` and `t.MaxFPS 30`, the tests that read the
+    attack counters: 9 / 9.
+  - `test SurvivalRpg.AI` (enemies attack through the same ability): 6 / 6.
+- **Limits:** no manual two-player playtest; the listen-server PIE tests cover
+  owner, authority and remote client. A dedicated server is not tested
+  separately, as before. Three warnings changed their prefix and the scene
+  query stat is now `RpgSwingTraceWindow`. No harvest ability uses the window
+  yet (HRW-03).
+
 ### HRW-03: tool swing hits
 
 - `URpgGameplayAbility_Harvest` gets a strike source (`ViewRay` or
