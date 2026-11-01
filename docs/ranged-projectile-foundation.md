@@ -1,6 +1,6 @@
 # RNG-01: Shared combat projectile
 
-Task report for RNG-01 in the [ranged combat roadmap](ranged-combat-roadmap.md), PR_LINK. One native, server-authoritative projectile carries arrows and spells: the combat roadmap's "Projectile foundation". It flies on every machine, hits exactly once on the server, applies its damage through a GameplayEffect, blocks on a shield from the incoming flight direction, and plays one impact cue on every machine. Any ability, NPC or system can launch it without equipment. The VFX-05 fireball ([vfx-fireball.md](vfx-fireball.md)) is its first content. Bow, ammunition, aiming and recovery follow in RNG-02 to RNG-06.
+Task report for RNG-01 in the [ranged combat roadmap](ranged-combat-roadmap.md), [PR #364](https://github.com/Athurito/SurvivalRpg/pull/364). One native, server-authoritative projectile carries arrows and spells: the combat roadmap's "Projectile foundation". It flies on every machine, hits exactly once on the server, applies its damage through a GameplayEffect, blocks on a shield from the incoming flight direction, and plays one impact cue on every machine. Any ability, NPC or system can launch it without equipment. The VFX-05 fireball ([vfx-fireball.md](vfx-fireball.md)) is its first content. Bow, ammunition, aiming and recovery follow in RNG-02 to RNG-06.
 
 ## C++ boundary decision
 
