@@ -319,6 +319,8 @@ void URpgGameplayAbility_Harvest::BeginHarvestExecution()
 	{
 		ResolveTunedValues(*Spec, *CurrentActorInfo, CommitValues);
 	}
+	// Each execution fills focus at most once, however many resources it strikes; every held swing is a new execution.
+	bFocusFilledThisExecution = false;
 	SetLocalAimPreview(false);
 	ClearCameraMode();
 	if (!CommitAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo))
@@ -485,6 +487,8 @@ void URpgGameplayAbility_Harvest::ResolveSelection(
 		}
 	}
 
+	FillFocus(Selection, Values);
+
 	if (FirstHarvested)
 	{
 		ExecuteSuccessCue(Values, Selection, *FirstHarvested);
@@ -495,6 +499,47 @@ void URpgGameplayAbility_Harvest::ResolveSelection(
 	}
 
 	K2_OnHarvestResolved(Selection.Targets);
+}
+
+bool URpgGameplayAbility_Harvest::HasAcceptedDirectHit(const TArray<FRpgHarvestTargetEvaluation>& Results)
+{
+	return Results.ContainsByPredicate([](const FRpgHarvestTargetEvaluation& Target)
+	{
+		return Target.Result.IsAcceptedDirectHit();
+	});
+}
+
+void URpgGameplayAbility_Harvest::FillFocus(const FRpgHarvestPreview& Selection, const FRpgHarvestTunedValues& Values)
+{
+	UAbilitySystemComponent* AbilitySystem = CurrentActorInfo ? CurrentActorInfo->AbilitySystemComponent.Get() : nullptr;
+	if (bFocusFilledThisExecution || !FocusGainEffect || Values.FocusGain <= 0.0f || !AbilitySystem ||
+		!CurrentActorInfo->IsNetAuthority() || !HasAcceptedDirectHit(Selection.Targets))
+	{
+		return;
+	}
+	// Later contacts of the same swing do not fill again, also when the effect's own tag requirements refused this one.
+	bFocusFilledThisExecution = true;
+
+	const FGameplayEffectSpecHandle GainSpec = MakeOutgoingGameplayEffectSpec(FocusGainEffect, GetAbilityLevel());
+	if (!GainSpec.IsValid())
+	{
+		return;
+	}
+	GainSpec.Data->SetSetByCallerMagnitude(RpgHarvestingMagicGameplayTags::SetByCaller_Harvest_FocusGain, Values.FocusGain);
+
+	// A commit without a montage runs inside the owning client's predicted activation, but no client predicts the fill;
+	// the owner receives the server's focus by replication alone.
+	FScopedPredictionWindow UnpredictedFill(AbilitySystem, FPredictionKey(), false);
+	const FActiveGameplayEffectHandle Applied =
+		AbilitySystem->ApplyGameplayEffectSpecToSelf(*GainSpec.Data, AbilitySystem->GetPredictionKeyForNewAction());
+#if WITH_DEV_AUTOMATION_TESTS
+	if (Applied.WasSuccessfullyApplied())
+	{
+		++AuthorityFocusFillCountForTests;
+	}
+#else
+	(void)Applied;
+#endif
 }
 
 void URpgGameplayAbility_Harvest::BeginToolSwing()
@@ -1639,6 +1684,8 @@ void URpgGameplayAbility_Harvest::ResolveTunedValues(
 	// Spells such as Wide Swing reach farther past the tool and strike the resources behind the first.
 	OutValues.SwingReach = FMath::Clamp(Tune(Ability_Tuning_Harvest_SwingReach, 0.0f), 0.0f, MaxSwingReach);
 	OutValues.SwingTargets = TuneCount(Ability_Tuning_Harvest_SwingTargets, 1, 1, MaxSwingTargets);
+	// A talent such as a faster meter is tree data on this tuning; the focus set clamps the meter itself.
+	OutValues.FocusGain = FMath::Max(0.0f, Tune(Ability_Tuning_Harvest_FocusGain, FMath::Max(0.0f, FocusGainPerSwing)));
 	OutValues.SectionsPerTarget = TuneCount(Ability_Tuning_Harvest_Sections, FMath::Max(1, SectionsPerTarget), 1, 64);
 	OutValues.WorkScale = FMath::Clamp(Tune(Ability_Tuning_Harvest_Work, 1.0f), 0.01f, RpgHarvestWork::MaxWorkScale);
 	OutValues.WeakPointWorkScale = FMath::Clamp(Tune(Ability_Tuning_Harvest_WeakPointWork, 1.0f), 0.0f, RpgHarvestWork::MaxWorkScale);

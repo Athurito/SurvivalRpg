@@ -15,6 +15,7 @@
 #include "Harvesting/RpgHarvestSwarm.h"
 #include "Harvesting/RpgHarvestTargetingComponent.h"
 #include "SurvivalRpg/Animation/AnimNotify_RpgGameplayEvent.h"
+#include "SurvivalRpg/AbilitySystem/Attributes/RpgFocusSet.h"
 #include "SurvivalRpg/AbilitySystem/Effects/RpgAbilityTuningEffectComponent.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentInstance.h"
@@ -74,6 +75,7 @@ UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestTargetCueTest, "GameplayCue.HarvestTarg
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestSwingTest_Hit, "GameplayCue.HarvestSwingTest.Hit");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestSwingTest_NoYield, "GameplayCue.HarvestSwingTest.NoYield");
 UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestSwingTest_Wide, "SkillTree.Node.HarvestSwingTest.Wide");
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_HarvestFocusTest_Spell, "Harvest.Spell.AutomationTest");
 
 namespace RpgHarvestAbilityTests
 {
@@ -5434,6 +5436,397 @@ bool FRpgHarvestSwingStruckTargetIndicatorTest::RunTest(const FString& Parameter
 	TestWorld.AdvanceTimers(1.1f);
 	TestEqual(TEXT("The restarted time runs out as well"), IndicatorManager->GetIndicators().Num(), 0);
 	Harvester.AbilitySystem->CancelAbilityHandle(Swing.Handle);
+	return true;
+}
+
+namespace RpgHarvestFocusTests
+{
+	using namespace RpgHarvestSwingTests;
+
+	/** Focus a test swing adds per landed swing, as the axe and pickaxe swings do. */
+	constexpr float GainPerSwing = 4.0f;
+
+	/** Gives the harvester's ability system the focus set, as GF_Harvesting_Magic grants it to the player state. */
+	bool GrantFocus(const FHarvesterFixture& Harvester)
+	{
+		Harvester.AbilitySystem->AddAttributeSetSubobject(NewObject<URpgFocusSet>(Harvester.PlayerState, NAME_None, RF_Transient));
+		return Harvester.AbilitySystem->HasAttributeSetForAttribute(URpgFocusSet::GetFocusAttribute());
+	}
+
+	float GetFocus(const FHarvesterFixture& Harvester)
+	{
+		return Harvester.AbilitySystem->GetNumericAttribute(URpgFocusSet::GetFocusAttribute());
+	}
+
+	/** Grants a tool swing that fills GainPerSwing focus through the test gain effect. */
+	FGrantedAbility GrantFillingSwing(const FHarvesterFixture& Harvester)
+	{
+		FGrantedAbility Swing = GrantSwing(Harvester.AbilitySystem, nullptr);
+		if (Swing.Instance)
+		{
+			Swing.Instance->ConfigureFocusGain(URpgHarvestAutomationTestFocusGainEffect::StaticClass(), GainPerSwing);
+		}
+		return Swing;
+	}
+
+	/** Applies a timed effect with Tunings for every ability of the harvester, as a spell does. */
+	FActiveGameplayEffectHandle ApplyTunings(const FHarvesterFixture& Harvester, const TArray<FRpgSkillTreeAbilityTuning>& Tunings)
+	{
+		const UGameplayEffect* Effect = URpgAbilityTuningEffectComponent::MakeTransientEffectForTests(Tunings);
+		return Harvester.AbilitySystem->ApplyGameplayEffectToSelf(Effect, 1.0f, Harvester.AbilitySystem->MakeEffectContext());
+	}
+
+	/** Restores the class-default ignored tag of the test gain effect when a test ends. */
+	struct FScopedIgnoredFocusTag
+	{
+		explicit FScopedIgnoredFocusTag(const FGameplayTag Tag)
+		{
+			URpgHarvestAutomationTestFocusGainEffect::SetIgnoredTargetTag(Tag);
+		}
+
+		~FScopedIgnoredFocusTag()
+		{
+			URpgHarvestAutomationTestFocusGainEffect::SetIgnoredTargetTag(FGameplayTag());
+		}
+	};
+
+	FRpgHarvestTargetEvaluation MakeResult(const ERpgHarvestOutcome Outcome, const int32 WorkApplied, const ERpgHarvestWorkSource Source)
+	{
+		FRpgHarvestTargetEvaluation Target;
+		Target.Result.Outcome = Outcome;
+		Target.Result.WorkApplied = WorkApplied;
+		Target.Result.Provenance.Source = Source;
+		return Target;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestFocusOncePerSwingTest,
+	"SurvivalRpg.Harvesting.Focus.SwingFillsOncePerSwing",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestFocusOncePerSwingTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestFocusTests;
+	using namespace RpgHarvestingMagicGameplayTags;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()) ||
+		!TestTrue(TEXT("The harvester has focus"), GrantFocus(Harvester)))
+	{
+		return false;
+	}
+	const double Eye = Harvester.Pawn->BaseEyeHeight;
+	ARpgHarvestAutomationCollidableNodeActor* Left = SpawnNode(World, FVector(110.0, -100.0, Eye), MakeProfile(World, 4));
+	ARpgHarvestAutomationCollidableNodeActor* Middle = SpawnNode(World, FVector(110.0, 0.0, Eye), MakeProfile(World, 4));
+	ARpgHarvestAutomationCollidableNodeActor* Right = SpawnNode(World, FVector(110.0, 100.0, Eye), MakeProfile(World, 4));
+	const FGrantedAbility Swing = GrantFillingSwing(Harvester);
+	if (!Left || !Middle || !Right || !TestNotNull(TEXT("Swing exists"), Swing.Instance))
+	{
+		return false;
+	}
+	auto Contact = [](ARpgHarvestAutomationCollidableNodeActor* Node)
+	{
+		return MakeContact(Node, FrontFace(Node), FrontFace(Node) - FVector(40.0, 0.0, 0.0));
+	};
+	// Four targets per swing, as a spell such as Wide Swing gives.
+	TestTrue(
+		TEXT("The wide swing effect applies"),
+		ApplyTunings(Harvester, {MakeTuning(Ability_Tuning_Harvest_SwingTargets, ERpgSkillTreeTuningOperation::Add, 3.0f)}).IsValid());
+	TestWorld.PrimeTimerManager();
+
+	TestEqual(TEXT("The meter starts empty"), GetFocus(Harvester), 0.0f);
+	TestTrue(TEXT("The swing activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	Swing.Instance->HandleToolSwingHitsForTests({Contact(Left), Contact(Middle)}, ERpgSwingTraceRole::Authority);
+	Swing.Instance->HandleToolSwingHitsForTests({Contact(Right)}, ERpgSwingTraceRole::Authority);
+	TestTrue(
+		TEXT("The swing takes a section from every resource it meets"),
+		Left->HarvestableNode->GetRemainingSections() == 3 && Middle->HarvestableNode->GetRemainingSections() == 3 &&
+			Right->HarvestableNode->GetRemainingSections() == 3);
+	TestEqual(TEXT("Three accepted contacts fill the meter once"), GetFocus(Harvester), GainPerSwing);
+	TestEqual(TEXT("The swing applied its gain once"), Swing.Instance->GetAuthorityFocusFillCountForTests(), 1u);
+
+	// The swinging client's own trace only predicts; it never fills.
+	Harvester.AbilitySystem->CancelAbilityHandle(Swing.Handle);
+	TestTrue(TEXT("A swing traced for feedback activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	Swing.Instance->HandleToolSwingHitsForTests({Contact(Middle)}, ERpgSwingTraceRole::OwnerFeedback);
+	TestEqual(TEXT("A feedback contact fills nothing"), GetFocus(Harvester), GainPerSwing);
+
+	Harvester.AbilitySystem->CancelAbilityHandle(Swing.Handle);
+	TestTrue(TEXT("The next swing activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	Swing.Instance->HandleToolSwingHitsForTests({Contact(Middle)}, ERpgSwingTraceRole::Authority);
+	TestEqual(TEXT("Every landed swing fills anew"), GetFocus(Harvester), 2.0f * GainPerSwing);
+
+	// A talent such as a faster meter tunes the gain; the swing captures it when it starts.
+	Harvester.AbilitySystem->CancelAbilityHandle(Swing.Handle);
+	TestTrue(
+		TEXT("The faster meter effect applies"),
+		ApplyTunings(Harvester, {MakeTuning(Ability_Tuning_Harvest_FocusGain, ERpgSkillTreeTuningOperation::Add, 2.0f)}).IsValid());
+	TestTrue(TEXT("A tuned swing activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	Swing.Instance->HandleToolSwingHitsForTests({Contact(Middle)}, ERpgSwingTraceRole::Authority);
+	TestEqual(TEXT("The tuned gain fills"), GetFocus(Harvester), 3.0f * GainPerSwing + 2.0f);
+	TestEqual(TEXT("Each landed swing applied its gain once"), Swing.Instance->GetAuthorityFocusFillCountForTests(), 3u);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestFocusRejectedTest,
+	"SurvivalRpg.Harvesting.Focus.RejectedContactsNeverFill",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestFocusRejectedTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestFocusTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()) ||
+		!TestTrue(TEXT("The harvester has focus"), GrantFocus(Harvester)))
+	{
+		return false;
+	}
+	const double Eye = Harvester.Pawn->BaseEyeHeight;
+	// The swing carries no tool, so the skinning-only resource rejects it.
+	URpgHarvestProfile* SkinningOnly = MakeProfile(World, 4);
+	SkinningOnly->RequiredToolTag = RpgHarvestingMagicGameplayTags::Tool_Harvesting_Skinning;
+	ARpgHarvestAutomationCollidableNodeActor* WrongTool = SpawnNode(World, FVector(110.0, 0.0, Eye), SkinningOnly);
+	ARpgHarvestAutomationCollidableNodeActor* Single = SpawnNode(World, FVector(110.0, -100.0, Eye), MakeProfile(World, 1));
+	const FGrantedAbility Swing = GrantFillingSwing(Harvester);
+	if (!WrongTool || !Single || !TestNotNull(TEXT("Swing exists"), Swing.Instance))
+	{
+		return false;
+	}
+	TestWorld.PrimeTimerManager();
+
+	TestTrue(TEXT("A swing at the wrong resource activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	Swing.Instance->HandleToolSwingHitsForTests(
+		{MakeContact(WrongTool, FrontFace(WrongTool), FVector(70.0, -40.0, Eye))},
+		ERpgSwingTraceRole::Authority);
+	TestEqual(TEXT("The wrong tool takes nothing"), WrongTool->HarvestableNode->GetRemainingSections(), 4);
+	TestEqual(TEXT("A rejected contact fills nothing"), GetFocus(Harvester), 0.0f);
+
+	Harvester.AbilitySystem->CancelAbilityHandle(Swing.Handle);
+	TestTrue(TEXT("A swing at the single-section resource activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	Swing.Instance->HandleToolSwingHitsForTests(
+		{MakeContact(Single, FrontFace(Single), FVector(70.0, -140.0, Eye))},
+		ERpgSwingTraceRole::Authority);
+	TestFalse(TEXT("The swing empties the single-section resource"), Single->HarvestableNode->IsHarvestable());
+	TestEqual(TEXT("The emptying swing fills"), GetFocus(Harvester), GainPerSwing);
+
+	Harvester.AbilitySystem->CancelAbilityHandle(Swing.Handle);
+	TestTrue(TEXT("A swing at the empty resource activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	Swing.Instance->HandleToolSwingHitsForTests(
+		{MakeContact(Single, FrontFace(Single), FVector(70.0, -140.0, Eye))},
+		ERpgSwingTraceRole::Authority);
+	TestEqual(TEXT("A contact with an empty resource fills nothing"), GetFocus(Harvester), GainPerSwing);
+	TestEqual(TEXT("Only the landed swing applied its gain"), Swing.Instance->GetAuthorityFocusFillCountForTests(), 1u);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestFocusSecondaryWorkTest,
+	"SurvivalRpg.Harvesting.Focus.SecondaryWorkNeverFills",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestFocusSecondaryWorkTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestFocusTests;
+	using namespace RpgHarvestingMagicGameplayTags;
+
+	// Only an accepted own hit counts: work a rejection or a follow-up did is never the player's swing.
+	const ERpgHarvestWorkSource Direct = ERpgHarvestWorkSource::Direct;
+	const ERpgHarvestWorkSource Secondary = ERpgHarvestWorkSource::Secondary;
+	TestTrue(
+		TEXT("An accepted own hit fills"),
+		URpgGameplayAbility_Harvest::HasAcceptedDirectHit({MakeResult(ERpgHarvestOutcome::Harvested, 100, Direct)}));
+	TestFalse(
+		TEXT("Accepted secondary work never fills"),
+		URpgGameplayAbility_Harvest::HasAcceptedDirectHit({MakeResult(ERpgHarvestOutcome::Harvested, 100, Secondary)}));
+	TestFalse(
+		TEXT("A rejected own hit never fills"),
+		URpgGameplayAbility_Harvest::HasAcceptedDirectHit({MakeResult(ERpgHarvestOutcome::WrongTool, 0, Direct)}));
+	TestFalse(
+		TEXT("An own hit without accepted work never fills"),
+		URpgGameplayAbility_Harvest::HasAcceptedDirectHit({MakeResult(ERpgHarvestOutcome::Harvested, 0, Direct)}));
+	TestTrue(
+		TEXT("One accepted own hit among chained resources fills"),
+		URpgGameplayAbility_Harvest::HasAcceptedDirectHit(
+			{MakeResult(ERpgHarvestOutcome::Harvested, 100, Secondary), MakeResult(ERpgHarvestOutcome::Harvested, 100, Direct)}));
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()) ||
+		!TestTrue(TEXT("The harvester has focus"), GrantFocus(Harvester)))
+	{
+		return false;
+	}
+	// An echo on every own hit, as a socketed Echo rune with its talent does; the echo strikes later as secondary work.
+	const double Eye = Harvester.Pawn->BaseEyeHeight;
+	ARpgHarvestAutomationCollidableNodeActor* Struck = SpawnNode(World, FVector(150.0, 0.0, Eye), MakeProfile(World, 6));
+	const FGrantedAbility Power = GrantAbility(Harvester.AbilitySystem);
+	if (!Struck || !TestNotNull(TEXT("Power exists"), Power.Instance))
+	{
+		return false;
+	}
+	Power.Instance->ConfigureFocusGain(URpgHarvestAutomationTestFocusGainEffect::StaticClass(), GainPerSwing);
+	Power.Instance->ConfigureRuneFlow(ARpgHarvestRuneStrike::StaticClass(), ARpgHarvestRuneStrike::StaticClass(), 800.0f);
+	TestTrue(
+		TEXT("The echo effect applies"),
+		ApplyTunings(
+			Harvester,
+			{MakeTuning(Ability_Tuning_Harvest_EchoWork, ERpgSkillTreeTuningOperation::Set, 0.5f),
+				MakeTuning(Ability_Tuning_Harvest_EchoHits, ERpgSkillTreeTuningOperation::Set, 1.0f)})
+			.IsValid());
+	TestWorld.PrimeTimerManager();
+
+	TestTrue(TEXT("The own hit activates"), Harvester.AbilitySystem->TryActivateAbility(Power.Handle));
+	TestEqual(TEXT("The own hit takes its section"), Struck->HarvestableNode->GetRemainingSections(), 5);
+	TestEqual(TEXT("The own hit fills once"), GetFocus(Harvester), GainPerSwing);
+	TestWorld.AdvanceTimers(0.35f);
+	TestEqual(
+		TEXT("The echo strikes the resource with half the work"),
+		static_cast<int32>(Struck->HarvestableNode->GetHarvestState().SectionWork),
+		50);
+	TestEqual(TEXT("The echo's secondary work fills nothing"), GetFocus(Harvester), GainPerSwing);
+	TestEqual(TEXT("The execution applied its gain once"), Power.Instance->GetAuthorityFocusFillCountForTests(), 1u);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestFocusStrideTest,
+	"SurvivalRpg.Harvesting.Focus.StridePulsesNeverFill",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestFocusStrideTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestFocusTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()) ||
+		!TestTrue(TEXT("The harvester can walk"), RpgHarvestStrideTests::MakeWalkable(Harvester)) ||
+		!TestTrue(TEXT("The harvester has focus"), GrantFocus(Harvester)))
+	{
+		return false;
+	}
+	ARpgHarvestAutomationCollidableNodeActor* Near = SpawnNode(World, FVector(200.0, 0.0, 0.0), MakeProfile(World, 4));
+	const FGrantedAbility Stride = RpgHarvestStrideTests::GrantStrideAbility(Harvester.AbilitySystem, 4, 1);
+	if (!Near || !TestNotNull(TEXT("Stride ability exists"), Stride.Instance))
+	{
+		return false;
+	}
+	Stride.Instance->ConfigureFocusGain(URpgHarvestAutomationTestFocusGainEffect::StaticClass(), GainPerSwing);
+	TestWorld.PrimeTimerManager();
+
+	TestTrue(TEXT("The stride activates"), Harvester.AbilitySystem->TryActivateAbility(Stride.Handle));
+	TestEqual(TEXT("The first pulse harvests at once"), Near->HarvestableNode->GetRemainingSections(), 3);
+	TestWorld.AdvanceTimers(0.55f);
+	TestEqual(TEXT("A later pulse harvests again"), Near->HarvestableNode->GetRemainingSections(), 2);
+	TestWorld.AdvanceTimers(2.0f);
+	TestFalse(TEXT("The stride ends"), Stride.Instance->IsStriding());
+	TestEqual(TEXT("Stride pulses fill nothing"), GetFocus(Harvester), 0.0f);
+	TestEqual(TEXT("The stride applied no gain"), Stride.Instance->GetAuthorityFocusFillCountForTests(), 0u);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestFocusUnconfiguredTest,
+	"SurvivalRpg.Harvesting.Focus.ZeroGainNeverFills",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestFocusUnconfiguredTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestFocusTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()) ||
+		!TestTrue(TEXT("The harvester has focus"), GrantFocus(Harvester)))
+	{
+		return false;
+	}
+	const double Eye = Harvester.Pawn->BaseEyeHeight;
+	ARpgHarvestAutomationCollidableNodeActor* Node = SpawnNode(World, FVector(110.0, 0.0, Eye), MakeProfile(World, 4));
+	const FGrantedAbility Swing = GrantSwing(Harvester.AbilitySystem, nullptr);
+	if (!Node || !TestNotNull(TEXT("Swing exists"), Swing.Instance))
+	{
+		return false;
+	}
+	TestEqual(TEXT("Harvest abilities fill nothing by default"), GetDefault<URpgHarvestAutomationTestAbility>()->GetFocusGainPerSwing(), 0.0f);
+	TestWorld.PrimeTimerManager();
+	const FHitResult Contact = MakeContact(Node, FrontFace(Node), FVector(70.0, -40.0, Eye));
+
+	// The gain effect alone, with the default gain of zero.
+	Swing.Instance->ConfigureFocusGain(URpgHarvestAutomationTestFocusGainEffect::StaticClass(), 0.0f);
+	TestTrue(TEXT("A swing without gain activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	Swing.Instance->HandleToolSwingHitsForTests({Contact}, ERpgSwingTraceRole::Authority);
+	TestEqual(TEXT("The swing without gain harvests"), Node->HarvestableNode->GetRemainingSections(), 3);
+	TestEqual(TEXT("A gain of zero fills nothing"), GetFocus(Harvester), 0.0f);
+
+	// A gain without an effect to apply it.
+	Harvester.AbilitySystem->CancelAbilityHandle(Swing.Handle);
+	Swing.Instance->ConfigureFocusGain(nullptr, GainPerSwing);
+	TestTrue(TEXT("A swing without gain effect activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	Swing.Instance->HandleToolSwingHitsForTests({Contact}, ERpgSwingTraceRole::Authority);
+	TestEqual(TEXT("The swing without gain effect harvests"), Node->HarvestableNode->GetRemainingSections(), 2);
+	TestEqual(TEXT("Without a gain effect nothing fills"), GetFocus(Harvester), 0.0f);
+	TestEqual(TEXT("Neither swing applied a gain"), Swing.Instance->GetAuthorityFocusFillCountForTests(), 0u);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestFocusIgnoredTagTest,
+	"SurvivalRpg.Harvesting.Focus.GainWaitsWhileItsIgnoredTagIsOwned",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestFocusIgnoredTagTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestFocusTests;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()) ||
+		!TestTrue(TEXT("The harvester has focus"), GrantFocus(Harvester)))
+	{
+		return false;
+	}
+	const double Eye = Harvester.Pawn->BaseEyeHeight;
+	ARpgHarvestAutomationCollidableNodeActor* Node = SpawnNode(World, FVector(110.0, 0.0, Eye), MakeProfile(World, 4));
+	const FGrantedAbility Swing = GrantFillingSwing(Harvester);
+	if (!Node || !TestNotNull(TEXT("Swing exists"), Swing.Instance))
+	{
+		return false;
+	}
+	// The gain ignores a running spell, as GE_HarvestFocus_Gain ignores Harvest.Spell.Active.
+	FScopedIgnoredFocusTag IgnoredTag(TAG_HarvestFocusTest_Spell);
+	TestWorld.PrimeTimerManager();
+	const FHitResult Contact = MakeContact(Node, FrontFace(Node), FVector(70.0, -40.0, Eye));
+
+	Harvester.AbilitySystem->AddLooseGameplayTag(TAG_HarvestFocusTest_Spell);
+	TestTrue(TEXT("A swing during the spell activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	Swing.Instance->HandleToolSwingHitsForTests({Contact}, ERpgSwingTraceRole::Authority);
+	TestEqual(TEXT("The swing during the spell harvests"), Node->HarvestableNode->GetRemainingSections(), 3);
+	TestEqual(TEXT("The swing during the spell fills nothing"), GetFocus(Harvester), 0.0f);
+	TestEqual(TEXT("The refused gain is not counted as applied"), Swing.Instance->GetAuthorityFocusFillCountForTests(), 0u);
+
+	Harvester.AbilitySystem->CancelAbilityHandle(Swing.Handle);
+	Harvester.AbilitySystem->RemoveLooseGameplayTag(TAG_HarvestFocusTest_Spell);
+	TestTrue(TEXT("A swing after the spell activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	Swing.Instance->HandleToolSwingHitsForTests({Contact}, ERpgSwingTraceRole::Authority);
+	TestEqual(TEXT("A swing after the spell fills again"), GetFocus(Harvester), GainPerSwing);
 	return true;
 }
 

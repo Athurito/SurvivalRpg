@@ -11,6 +11,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Misc/AutomationTest.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgDefenseSet.h"
+#include "SurvivalRpg/AbilitySystem/Attributes/RpgFocusSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgManaSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgStaminaSet.h"
@@ -315,6 +316,100 @@ bool FRpgCharacterStatsViewModelManaAndHudContextTest::RunTest(const FString& Pa
 	TestFalse(TEXT("Unbinding ends combat"), ReadBool(ViewModel, TEXT("bInCombat")));
 	TestFalse(TEXT("Unbinding clears mana"), ReadBool(ViewModel, TEXT("bHasMana")));
 	TestFalse(TEXT("Without an ability system the vitals are not full"), ReadBool(ViewModel, TEXT("bVitalsFull")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCharacterStatsViewModelFocusTest,
+	"SurvivalRpg.UI.CharacterStats.FocusFollowsGrantedSet",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCharacterStatsViewModelFocusTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCharacterStatsViewModelTests;
+
+	FScopedWorld ScopedWorld;
+	if (!TestNotNull(TEXT("A standalone test world exists"), ScopedWorld.World))
+	{
+		return false;
+	}
+
+	APawn* Pawn = ScopedWorld.World->SpawnActor<APawn>();
+	URpgAbilitySystemComponent* AbilitySystem = NewObject<URpgAbilitySystemComponent>(Pawn, NAME_None, RF_Transient);
+	Pawn->AddInstanceComponent(AbilitySystem);
+	AbilitySystem->RegisterComponent();
+	URpgHealthSet* HealthSet = NewObject<URpgHealthSet>(Pawn, NAME_None, RF_Transient);
+	HealthSet->InitHealth(100.0f);
+	HealthSet->InitMaxHealth(100.0f);
+	URpgStaminaSet* StaminaSet = NewObject<URpgStaminaSet>(Pawn, NAME_None, RF_Transient);
+	StaminaSet->InitStamina(80.0f);
+	StaminaSet->InitMaxStamina(80.0f);
+	AbilitySystem->AddAttributeSetSubobject(HealthSet);
+	AbilitySystem->AddAttributeSetSubobject(StaminaSet);
+	AbilitySystem->InitAbilityActorInfo(Pawn, Pawn);
+
+	URpgCharacterStatsViewModel* ViewModel = NewObject<URpgCharacterStatsViewModel>();
+	auto CountNotifications = [ViewModel](const TCHAR* FieldName, int32& Counter)
+	{
+		const UE::FieldNotification::FFieldId Field =
+			ViewModel->GetFieldNotificationDescriptor().GetField(ViewModel->GetClass(), FieldName);
+		ViewModel->AddFieldValueChangedDelegate(
+			Field,
+			INotifyFieldValueChanged::FFieldValueChangedDelegate::CreateLambda(
+				[&Counter](UObject*, UE::FieldNotification::FFieldId) { ++Counter; }));
+		return Field.IsValid();
+	};
+	int32 HasFocusNotifications = 0;
+	int32 ProgressNotifications = 0;
+	int32 FullNotifications = 0;
+	TestTrue(TEXT("bHasFocus is a field-notify field"), CountNotifications(TEXT("bHasFocus"), HasFocusNotifications));
+	TestTrue(TEXT("FocusProgress is a field-notify field"), CountNotifications(TEXT("FocusProgress"), ProgressNotifications));
+	TestTrue(TEXT("bFocusFull is a field-notify field"), CountNotifications(TEXT("bFocusFull"), FullNotifications));
+
+	ViewModel->BindAbilitySystem(AbilitySystem);
+	TestFalse(TEXT("Without a focus set there is no focus"), ReadBool(ViewModel, TEXT("bHasFocus")));
+	TestEqual(TEXT("Without a focus set the maximum is zero"), ReadFloat(ViewModel, TEXT("MaxFocus")), 0.0f);
+	TestFalse(TEXT("Without a focus set the meter is not full"), ReadBool(ViewModel, TEXT("bFocusFull")));
+
+	// A GameFeature grants the set on the server after the HUD bound, changes no value, and announces the grant.
+	URpgFocusSet* FocusSet = NewObject<URpgFocusSet>(Pawn, NAME_None, RF_Transient);
+	AbilitySystem->AddAttributeSetSubobject(FocusSet);
+	TestFalse(TEXT("The grant alone changes no field yet"), ReadBool(ViewModel, TEXT("bHasFocus")));
+	FGameplayEventData AbilitiesChanged;
+	AbilitiesChanged.EventTag = FGameplayTag::RequestGameplayTag(TEXT("Event.Abilities.Changed"));
+	AbilitySystem->HandleGameplayEvent(AbilitiesChanged.EventTag, &AbilitiesChanged);
+	TestTrue(TEXT("The grant event shows the focus set"), ReadBool(ViewModel, TEXT("bHasFocus")));
+	TestEqual(TEXT("The set's appearance notifies once"), HasFocusNotifications, 1);
+	TestEqual(TEXT("A new meter is empty"), ReadFloat(ViewModel, TEXT("Focus")), 0.0f);
+	TestEqual(TEXT("A new meter holds the set's maximum"), ReadFloat(ViewModel, TEXT("MaxFocus")), 100.0f);
+	TestFalse(TEXT("An empty meter stays hidden"), ReadBool(ViewModel, TEXT("bShowFocus")));
+	TestTrue(TEXT("Full health and stamina still count as full vitals"), ReadBool(ViewModel, TEXT("bVitalsFull")));
+
+	AbilitySystem->SetNumericAttributeBase(URpgFocusSet::GetFocusAttribute(), 40.0f);
+	TestEqual(TEXT("Focus follows the attribute"), ReadFloat(ViewModel, TEXT("Focus")), 40.0f);
+	TestEqual(TEXT("Focus progress is current over maximum"), ReadFloat(ViewModel, TEXT("FocusProgress")), 0.4f);
+	TestEqual(TEXT("A focus change notifies the progress"), ProgressNotifications, 1);
+	TestFalse(TEXT("A partial meter is not full"), ReadBool(ViewModel, TEXT("bFocusFull")));
+	TestTrue(TEXT("A meter holding focus shows"), ReadBool(ViewModel, TEXT("bShowFocus")));
+	TestTrue(TEXT("A partial meter leaves the vitals full"), ReadBool(ViewModel, TEXT("bVitalsFull")));
+	TestFalse(TEXT("Focus alone does not show the vitals"), ReadBool(ViewModel, TEXT("bShowVitals")));
+	TestFalse(TEXT("Gaining focus is no combat"), ReadBool(ViewModel, TEXT("bInCombat")));
+
+	AbilitySystem->SetNumericAttributeBase(URpgFocusSet::GetFocusAttribute(), 100.0f);
+	TestTrue(TEXT("A full meter reads full"), ReadBool(ViewModel, TEXT("bFocusFull")));
+	TestEqual(TEXT("Becoming full notifies once"), FullNotifications, 1);
+	TestEqual(TEXT("A full meter's progress is 1"), ReadFloat(ViewModel, TEXT("FocusProgress")), 1.0f);
+
+	AbilitySystem->SetNumericAttributeBase(URpgFocusSet::GetFocusAttribute(), 0.0f);
+	TestFalse(TEXT("A spent meter is no longer full"), ReadBool(ViewModel, TEXT("bFocusFull")));
+	TestEqual(TEXT("Spending notifies the full flag again"), FullNotifications, 2);
+	TestFalse(TEXT("A spent meter hides again"), ReadBool(ViewModel, TEXT("bShowFocus")));
+
+	ViewModel->UnbindAbilitySystem();
+	TestFalse(TEXT("Unbinding clears focus"), ReadBool(ViewModel, TEXT("bHasFocus")));
+	TestEqual(TEXT("Unbinding clears the maximum"), ReadFloat(ViewModel, TEXT("MaxFocus")), 0.0f);
+	AbilitySystem->HandleGameplayEvent(AbilitiesChanged.EventTag, &AbilitiesChanged);
+	TestFalse(TEXT("An unbound view model ignores later grant events"), ReadBool(ViewModel, TEXT("bHasFocus")));
 	return true;
 }
 

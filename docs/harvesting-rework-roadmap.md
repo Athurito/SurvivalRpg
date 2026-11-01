@@ -66,7 +66,7 @@ how a hit is found, not what a hit does.
 | HRW-04d | Second playtest: thin the dust that hides a falling tree, and give the pickaxe the axe's quick swing | Merged: [#346](https://github.com/Athurito/SurvivalRpg/pull/346) |
 | HRW-04e | Third playtest: a dull stone sound for the pickaxe, and a swing that winds up overhead and strikes down fast | Merged: [#348](https://github.com/Athurito/SurvivalRpg/pull/348) |
 | HRW-05a | Ability tunings from active GameplayEffects: an Ability Tunings effect component that `GetTunedValueForSpec` folds after the tree and runes; native only, no assets | In review: [#352](https://github.com/Athurito/SurvivalRpg/pull/352) |
-| HRW-05b | Focus resource and fill: `URpgFocusSet` on the PlayerState, a server fill once per landed swing, the gain effect, read-only view-model fields and the HUD meter | Planned |
+| HRW-05b | Focus resource and fill: `URpgFocusSet` on the PlayerState, a server fill once per landed swing, the gain effect, read-only view-model fields and the HUD meter | In review: [#353](https://github.com/Athurito/SurvivalRpg/pull/353) |
 | HRW-05c | Wide Swing on Q, closing the first playable's magical harvesting ability: spell ability, cost and spell effects, cues, tree node, failure toast row, asset contracts and a spell PIE test | Planned |
 | HRW-05d | Split the harvesting tree per tool (axe on Logging, pickaxe on Mining) with their own spells, and visible talents in place of the rune-gated ones | Planned |
 | HRW-05e | Runes as spell modifiers: tag-gated modifier effects applied with the spell, the ranks' always-on tunings cleared, rune bar and dormancy UI reworked | Planned |
@@ -679,6 +679,170 @@ All through `ue.py` with the MCP autostart off. No editor ran in this worktree, 
 ##### Playtest
 
 None: nothing observable changes until HRW-05c ships the spell.
+
+### HRW-05b: focus resource and fill
+
+Landed tool swings fill a server-authoritative, owner-only focus meter that the
+HUD shows right of Q/E/R. Nothing spends it until HRW-05c.
+
+#### HRW-05b report
+
+Branch `claude/hrw-05b-focus`, PR [#353](https://github.com/Athurito/SurvivalRpg/pull/353):
+
+- `821a1408`: the focus set, the fill hook, the view model fields and their native tests.
+- `0c39b658`: the assets, `bShowFocus`, the HUD slot, the asset contract, the PIE test, the docs and the skill references.
+- A third commit records the PR in the status row and adds this report.
+
+- **Focus set:** `URpgFocusSet` (`Source/SurvivalRpg/AbilitySystem/Attributes`)
+  holds `Focus` (starts at 0) and `MaxFocus` (100).
+  - Both replicate `COND_OwnerOnly` with `REPNOTIFY_Always`.
+  - `Focus` is clamped to 0..MaxFocus and follows a lowered `MaxFocus`, as
+    `URpgManaSet` does; `MaxFocus` stays at least 1.
+  - `GF_Harvesting_Magic` grants it to `ARpgBasePlayerState` through a second
+    AttributeSetGrant on its existing AddAbilities entry.
+- **Fill:** `URpgGameplayAbility_Harvest::FillFocus` runs in `ResolveSelection`
+  after `CommitSelection`, on authority only.
+  - When `HasAcceptedDirectHit` finds an accepted own hit, it applies
+    `FocusGainEffect` to the harvester's own ability system.
+  - The magnitude is `SetByCaller.Harvest.FocusGain`: the captured tuning
+    `Ability.Tuning.Harvest.FocusGain`, whose base is `FocusGainPerSwing`
+    (default 0).
+  - It applies under an empty prediction key.
+  - `bFocusFilledThisExecution` is reset in `BeginHarvestExecution`, so each
+    swing fills once, even when its gain was refused.
+  - Stride pulses, swarms, chains, rune strikes and the owner's feedback trace
+    never reach the hook.
+- **Assets** (Unreal MCP, own editor on port 8020):
+  - `GE_HarvestFocus_Gain` (`GAS/Effects`) is an instant `AddBase` of
+    SetByCaller on `Focus`. Its Target Tag Requirements ignore
+    `Harvest.Spell.Active`, a new config tag.
+  - `GA_Harvest_AxeChop` and `GA_Harvest_PickaxeStrike` set the effect and a
+    gain of 4.
+  - `CUI_HarvestFocusMeter` (`UI`) is an 18 × 64 vertical gauge in a 34 × 72
+    box. It holds a track, a `BottomToTop` bar with `MI_UI_ResourceBar_Focus`,
+    and the `MI_UI_FocusFullGlow` pulse.
+  - Its bindings to `URpgCharacterStatsViewModel`:
+    - the box's visibility to `bHasFocus`;
+    - the content's to `bShowFocus`;
+    - the bar to `FocusProgress`;
+    - the glow to `bFocusFull`.
+  - A new Add Rpg Widgets action on the GameFeatureData registers the meter into
+    `UI.HUD.Slot.AbilityResource`.
+- **HUD:** `CUI_HudBottomBar` wraps `BarsFade` in `BottomBarRow`, with the
+  `UI.HUD.Slot.AbilityResource` point (Automatic size) after it. Meters keep
+  full opacity when the bars dim.
+- **Style:**
+  - Palette role 20, Focus (`#4F8C86`): a new `MPC_UI_Palette` vector and a
+    21-entry `MF_UI_PaletteRole`.
+  - `M_UI_Panel` gains `PulseRate` and `PulseDepth`, both 0 by default.
+  - Documented in [ui-style-guide.md](ui-style-guide.md) and
+    [ui-roadmap.md](ui-roadmap.md).
+- **View model:** `bHasFocus`, `Focus`, `MaxFocus`, `FocusProgress`,
+  `bFocusFull` and `bShowFocus`, all outside `bVitalsFull`. The model refreshes
+  on `Event.Abilities.Changed`, so a listen-server host notices a set granted
+  after the HUD bound.
+
+##### Tests
+
+- `SurvivalRpg.AbilitySystem.Attributes.FocusSet`:
+  - `ClampsAndFollowsLoweredMax`;
+  - `ReplicatesToOwnerOnly`, which checks conditions and notifies;
+  - `GainIgnoresItsBlockingTag`: an instant gain with an ignore tag is refused
+    while the tag is owned.
+- `SurvivalRpg.Harvesting.Focus`:
+  - `SwingFillsOncePerSwing`: three accepted contacts in one swing fill once;
+    feedback contacts never fill; a tuning effect raises the gain.
+  - `RejectedContactsNeverFill`: wrong tool and empty resource.
+  - `SecondaryWorkNeverFills`: the predicate cases, and an Echo follow-up that
+    lands later.
+  - `StridePulsesNeverFill`.
+  - `ZeroGainNeverFills`: gain 0, and no effect.
+  - `GainWaitsWhileItsIgnoredTagIsOwned`.
+- `SurvivalRpg.Harvesting.Content.FocusFillContract`, which freezes no
+  numbers:
+  - both swings name a gain effect and a gain above 0;
+  - the effect is an instant SetByCaller add on `Focus` that ignores
+    `Harvest.Spell.Active`;
+  - the GameFeatureData grants the set once to a player state;
+  - the meter registers into a slot that `CUI_HudBottomBar` exposes.
+- `SurvivalRpg.UI.CharacterStats.FocusFollowsGrantedSet`:
+  - the set's grant event, a focus change and the full meter each notify once;
+  - `bShowFocus` follows the focus;
+  - the vitals stay full.
+- `SurvivalRpg.Network.HarvestFocusPIE.ClientSwingsFillOnlyItsOwnFocus`
+  (listen server and client, rendered):
+  - two landed client swings fill once each on the server and replicate to the
+    client;
+  - the client's view model reads the value;
+  - the host's focus, given 30 on the server, reads 0 of 100 on the client.
+
+##### Validation
+
+All through `ue.py` with the MCP autostart off and my editor closed. The user's
+editor on port 8000 was not touched.
+
+- `build`: passed, 0 errors and 0 warnings, after each C++ change.
+- `test SurvivalRpg.AbilitySystem.Attributes.FocusSet SurvivalRpg.Harvesting.Focus SurvivalRpg.UI.CharacterStats --null-rhi`
+  on the first slice: **13 / 13 passed**.
+- `test SurvivalRpg.AbilitySystem SurvivalRpg.Harvesting SurvivalRpg.UI SurvivalRpg.GameFeatures SurvivalRpg.Progression.SkillTrees SurvivalRpg.Runes --null-rhi`:
+  **216 / 216 passed**. One had a warning: `UI.Respawn.CommonUIComposition`,
+  a compiler note on the untouched `CUI_RespawnScreen`.
+- `test SurvivalRpg.Network.HarvestFocusPIE SurvivalRpg.Network.HarvestSwingPIE SurvivalRpg.Network.LootHarvestPIE SurvivalRpg.Network.HarvestCuePIE`
+  (rendered, separate call): **13 / 13 passed**, with only the usual
+  `LogNetPackageMap` and `AdvancedFriendsInterfaceLog` warnings.
+- `python Build/Tools/AgentSkills/sync.py --check`: consistent.
+- **Agent PIE check** in `Lvl_HarvestPickaxe`, listen server with two players
+  in one process. A Python driver pressed the real keys (adapted from the
+  HRW-04d driver).
+  - Three client strikes on an iron vein gave the client 12 focus on server
+    and client. The host stayed at 0 on every machine.
+  - Two host chops gave the host 8; the client's copy of the host still read 0.
+  - The server then filled the client to 100.
+  - Each window showed only its own meter right of R. The full glow's green
+    channel varied from 78 to 87 across six frames.
+  - On the final layout both meters kept full opacity while the bars dimmed.
+    In that second run the client's pickaxe pickup failed (driver timing),
+    so its meter came only from the server-applied effect.
+
+##### Failed attempts
+
+- **ActionBar slot:** an Add Rpg Widgets entry on the GameFeatureData into
+  `UI.HUD.Slot.ActionBar` reached the HUD.
+  - The point's Fill entry rule gave the 34-unit meter and the bottom bar
+    equal halves of the width, which squeezed the quickbar.
+  - GameFeature actions register before the Experience's, so the meter
+    landed left of the quickbar.
+  - The dedicated `AbilityResource` slot replaced it.
+- **Inside the fade:** the meter in `BarsFade` dimmed to 40 % out of combat
+  and was nearly invisible, so it moved outside the fade.
+
+##### Limits
+
+- Nothing spends focus until HRW-05c. HRW-05c also brings the
+  `Harvest.Spell.Known` gate and the "focus not full" toast row.
+- The fill is not predicted; the owner sees new focus one round trip after the
+  server's commit.
+- The meter's look was judged only on screenshots of small PIE windows, and
+  the pulse by brightness, not watched at full speed. The user has not
+  reviewed size, colour or placement.
+- The reserved meter slot moves the centred bottom bar 17 units left while the
+  harvesting feature is active.
+- The palette and panel edits recompiled every UI master. Panels multiply by
+  an exact pulse factor of 1, checked only in the HUD.
+- Focus surviving death and tool switches follows from the player state; no
+  test covers it.
+
+##### Playtest
+
+1. Open `Lvl_HarvestPickaxe`, pick up the axe and chop a dead pine. After the
+   first landed chop a slim teal gauge appears right of R and rises with every
+   landed chop, about 25 to fill. A miss or an empty stump adds nothing.
+2. Strike an iron vein with the pickaxe: the same meter keeps filling.
+3. Fill it: a teal glow pulses around the gauge. Nothing else happens until
+   HRW-05c puts the spell on Q.
+4. **Multiplayer:** play as listen server with two players. The client chops
+   while the host watches: only the client's meter rises, and the host's stays
+   hidden. Swap roles: only the chopping player's meter fills.
 
 ## HRW-01 report
 

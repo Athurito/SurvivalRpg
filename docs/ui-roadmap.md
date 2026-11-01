@@ -615,6 +615,11 @@ colours and styles; texts stay English.
   by `CharacterXP`; `SetManaShown` collapses the mana row without a mana set.
 - `CUI_HudBottomBar`: `BarsFade` (hidden opacity 0.4) pinned by `bInCombat`
   around the fixed-width quickbar (8 × 72) and ability bar (3 × 72).
+  - Since HRW-05b, `BottomBarRow` holds `BarsFade` and, right of it and
+    outside the fade, the `UI.HUD.Slot.AbilityResource` extension point
+    (automatic entry size). Resource meters of the Q/E/R abilities, such as
+    the harvesting focus meter of `GF_Harvesting_Magic`, register there and
+    keep full opacity out of combat.
 - `CUI_ActionBarSlotEntry` and `CUI_WeaponAbilityBarSlot`: 64-unit slots with
   the gear slot fill, `T_UI_Gear_Frame_Cell`, the key glyph top left and the
   stack count bottom right.

@@ -4,7 +4,12 @@
 
 #include "AbilitySystem/Abilities/RpgGameplayAbility_Harvest.h"
 #include "Animation/AnimMontage.h"
+#include "Blueprint/UserWidget.h"
+#include "Blueprint/WidgetBlueprintGeneratedClass.h"
+#include "Blueprint/WidgetTree.h"
 #include "GameFeatureData.h"
+#include "GameplayEffect.h"
+#include "GameplayEffectComponents/TargetTagRequirementsGameplayEffectComponent.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/GameStateBase.h"
 #include "Components/StaticMeshComponent.h"
@@ -29,12 +34,15 @@
 #include "SurvivalRpg/Crafting/RpgCraftingStationComponent.h"
 #include "SurvivalRpg/Inventory/Loot/RpgLootTable.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
+#include "SurvivalRpg/AbilitySystem/Attributes/RpgFocusSet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
 #include "SurvivalRpg/Animation/AnimNotify_RpgWeaponAttackWindow.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Combat/RpgGameplayCueNotify_Impact.h"
 #include "SurvivalRpg/Equipment/RpgAbilityBindingResolver.h"
 #include "SurvivalRpg/Equipment/RpgWeaponAbilityLoadoutComponent.h"
+#include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
+#include "SurvivalRpg/GameFeatures/RpgGameFeatureAction_AddAbilities.h"
 #include "SurvivalRpg/GameFeatures/RpgGameFeatureAction_AddComponents.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemContainer.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_SkillTree.h"
@@ -1448,6 +1456,152 @@ bool FRpgHarvestCatalogContractTest::RunTest(const FString& Parameters)
 			Swing && Swing->GetBurnClass() && Swing->GetEchoStrikeClass() && Swing->GetTransferStrikeClass() &&
 				Swing->GetLeapStrikeClass() && Swing->GetPierceStrikeClass() && Swing->GetWorkerSwarmClass());
 	}
+	return true;
+}
+
+namespace RpgHarvestFocusContractTests
+{
+	const TCHAR* HudBottomBarClassPath = TEXT("/Game/SurvivalRpg/UI/Hud/CUI_HudBottomBar.CUI_HudBottomBar_C");
+
+	/** Every entry of the Add Rpg Widgets actions of FeatureData as (widget class path, slot tag), read by reflection. */
+	TArray<TPair<FSoftObjectPath, FGameplayTag>> CollectWidgetRegistrations(const UGameFeatureData& FeatureData)
+	{
+		TArray<TPair<FSoftObjectPath, FGameplayTag>> Registrations;
+		for (const UGameFeatureAction* Action : FeatureData.GetActions())
+		{
+			const FArrayProperty* WidgetsProperty = Action && Action->GetClass()->GetName() == TEXT("RpgGameFeatureAction_AddWidgets")
+				? FindFProperty<FArrayProperty>(Action->GetClass(), TEXT("Widgets"))
+				: nullptr;
+			const FStructProperty* EntryProperty = WidgetsProperty ? CastField<FStructProperty>(WidgetsProperty->Inner) : nullptr;
+			const FSoftClassProperty* ClassProperty =
+				EntryProperty ? FindFProperty<FSoftClassProperty>(EntryProperty->Struct, TEXT("WidgetClass")) : nullptr;
+			const FStructProperty* SlotProperty = EntryProperty ? FindFProperty<FStructProperty>(EntryProperty->Struct, TEXT("SlotTag")) : nullptr;
+			if (!ClassProperty || !SlotProperty)
+			{
+				continue;
+			}
+			FScriptArrayHelper Entries(WidgetsProperty, WidgetsProperty->ContainerPtrToValuePtr<void>(Action));
+			for (int32 Index = 0; Index < Entries.Num(); ++Index)
+			{
+				const uint8* Entry = Entries.GetRawPtr(Index);
+				Registrations.Emplace(
+					ClassProperty->GetPropertyValue_InContainer(Entry).ToSoftObjectPath(),
+					*SlotProperty->ContainerPtrToValuePtr<FGameplayTag>(Entry));
+			}
+		}
+		return Registrations;
+	}
+
+	/** Extension point tags the widget tree of WidgetClass exposes, read by reflection. */
+	TArray<FGameplayTag> CollectExtensionPointTags(const UClass* WidgetClass)
+	{
+		TArray<FGameplayTag> Tags;
+		const UWidgetBlueprintGeneratedClass* GeneratedClass = Cast<UWidgetBlueprintGeneratedClass>(WidgetClass);
+		const UWidgetTree* WidgetTree = GeneratedClass ? GeneratedClass->GetWidgetTreeArchetype() : nullptr;
+		if (WidgetTree)
+		{
+			WidgetTree->ForEachWidget([&Tags](const UWidget* Widget)
+			{
+				const FStructProperty* TagProperty = Widget && Widget->GetClass()->GetName() == TEXT("UIExtensionPointWidget")
+					? FindFProperty<FStructProperty>(Widget->GetClass(), TEXT("ExtensionPointTag"))
+					: nullptr;
+				if (TagProperty)
+				{
+					Tags.Add(*TagProperty->ContainerPtrToValuePtr<FGameplayTag>(Widget));
+				}
+			});
+		}
+		return Tags;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestFocusContractTest,
+	"SurvivalRpg.Harvesting.Content.FocusFillContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestFocusContractTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestContentContractTests;
+	using namespace RpgHarvestFocusContractTests;
+
+	// Both tool swings fill focus through a gain effect: an instant SetByCaller add on Focus that a running spell blocks.
+	const FGameplayTag SpellActive = FGameplayTag::RequestGameplayTag(TEXT("Harvest.Spell.Active"));
+	for (const TCHAR* SwingPath : {AxeChopAbilityClassPath, PickaxeStrikeAbilityClassPath})
+	{
+		UClass* SwingClass = LoadClass<URpgGameplayAbility_Harvest>(nullptr, SwingPath);
+		const URpgGameplayAbility_Harvest* Swing = SwingClass ? GetDefault<URpgGameplayAbility_Harvest>(SwingClass) : nullptr;
+		if (!TestNotNull(*FString::Printf(TEXT("%s loads"), SwingPath), Swing))
+		{
+			continue;
+		}
+		TestTrue(*FString::Printf(TEXT("%s fills focus per landed swing"), SwingPath), Swing->GetFocusGainPerSwing() > 0.0f);
+		const UGameplayEffect* Gain = Swing->GetFocusGainEffect() ? Swing->GetFocusGainEffect()->GetDefaultObject<UGameplayEffect>() : nullptr;
+		if (!TestNotNull(*FString::Printf(TEXT("%s names a focus gain effect"), SwingPath), Gain))
+		{
+			continue;
+		}
+		TestTrue(
+			*FString::Printf(TEXT("%s's gain is instant"), SwingPath),
+			Gain->DurationPolicy == EGameplayEffectDurationType::Instant);
+		TestTrue(
+			*FString::Printf(TEXT("%s's gain adds its SetByCaller.Harvest.FocusGain magnitude to Focus"), SwingPath),
+			Gain->Modifiers.ContainsByPredicate([](const FGameplayModifierInfo& Modifier)
+			{
+				return Modifier.Attribute == URpgFocusSet::GetFocusAttribute() && Modifier.ModifierOp == EGameplayModOp::Additive &&
+					Modifier.ModifierMagnitude.GetMagnitudeCalculationType() == EGameplayEffectMagnitudeCalculation::SetByCaller &&
+					Modifier.ModifierMagnitude.GetSetByCallerFloat().DataTag ==
+						RpgHarvestingMagicGameplayTags::SetByCaller_Harvest_FocusGain.GetTag();
+			}));
+		const UTargetTagRequirementsGameplayEffectComponent* Requirements =
+			Gain->FindComponent<UTargetTagRequirementsGameplayEffectComponent>();
+		TestTrue(
+			*FString::Printf(TEXT("%s's gain ignores a running spell, so the spell never refills its meter"), SwingPath),
+			Requirements && Requirements->ApplicationTagRequirements.IgnoreTags.HasTagExact(SpellActive));
+	}
+
+	// The harvesting GameFeature gives every player state the focus set and puts the meter into an authored HUD slot.
+	const UGameFeatureData* FeatureData = LoadObject<UGameFeatureData>(nullptr, HarvestingFeatureDataPath);
+	if (!TestNotNull(TEXT("The harvesting GameFeature data loads"), FeatureData))
+	{
+		return false;
+	}
+	int32 FocusSetGrants = 0;
+	for (const UGameFeatureAction* Action : FeatureData->GetActions())
+	{
+		const URpgGameFeatureAction_AddAbilities* AddAbilities = Cast<URpgGameFeatureAction_AddAbilities>(Action);
+		for (const FRpgGameFeatureAbilitiesEntry& Entry : AddAbilities ? AddAbilities->AbilitiesList : TArray<FRpgGameFeatureAbilitiesEntry>())
+		{
+			for (const FRpgGameFeatureAttributeSetGrant& Grant : Entry.GrantedAttributes)
+			{
+				if (Grant.AttributeSetType.ToSoftObjectPath() != FSoftObjectPath(URpgFocusSet::StaticClass()))
+				{
+					continue;
+				}
+				++FocusSetGrants;
+				const UClass* ActorClass = Entry.ActorClass.LoadSynchronous();
+				TestTrue(TEXT("The focus set lands on the player state"), ActorClass && ActorClass->IsChildOf<ARpgBasePlayerState>());
+			}
+		}
+	}
+	TestEqual(TEXT("The GameFeature grants the focus set exactly once"), FocusSetGrants, 1);
+
+	const TArray<FGameplayTag> HudSlots = CollectExtensionPointTags(LoadClass<UUserWidget>(nullptr, HudBottomBarClassPath));
+	int32 MeterRegistrations = 0;
+	for (const TPair<FSoftObjectPath, FGameplayTag>& Registration : CollectWidgetRegistrations(*FeatureData))
+	{
+		const UClass* WidgetClass = LoadClass<UUserWidget>(nullptr, *Registration.Key.ToString());
+		if (!WidgetClass || !WidgetClass->GetName().Contains(TEXT("FocusMeter")))
+		{
+			continue;
+		}
+		++MeterRegistrations;
+		TestTrue(
+			*FString::Printf(TEXT("The HUD bottom bar exposes the meter's slot %s"), *Registration.Value.ToString()),
+			HudSlots.Contains(Registration.Value));
+	}
+	TestEqual(TEXT("The GameFeature registers one focus meter widget"), MeterRegistrations, 1);
 	return true;
 }
 
