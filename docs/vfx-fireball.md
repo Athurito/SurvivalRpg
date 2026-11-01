@@ -31,7 +31,7 @@ The roadmap originally grouped seal break, rift bolt, ash fetter and Rift Sense 
   - `Location`: the impact point;
   - `Normal`: the surface normal;
   - `RawMagnitude`: the blast radius in cm, where 0 uses the cue default of 300 cm.
-- **Sender:** the projectile executes it on authority through the instigator's ability system, and GAS multicasts it to every client. The gallery demo executes it locally.
+- **Sender:** the projectile (`ARpgCombatProjectile`, RNG-01) executes it on authority through the GameState's ability system, and GAS multicasts it to every client. The GameState stays relevant and keeps its avatar, so the cue also plays after the shooter died. The gallery demo executes it locally.
 - **Registration:** `GF_Combat_Magic` now registers its `/GameplayCues` folder through `RpgGameFeatureAction_AddGameplayCuePath`. It had no content before.
 
 `GCN_Spell_Fireball_Impact` (burst notify) runs locally on every machine:

@@ -47,6 +47,7 @@ Behavior observed in this project's automation tests and PIE sessions on UE 5.8.
 - A range loop over `GetActiveGameplayEffects()` already skips effects pending removal. After a removal or expiry, `GetActiveGameplayEffect(Handle)` returns null.
 - A duration effect expires on the world timer manager. Step the timers past the duration as in [Timers in test worlds](#timers-in-test-worlds).
 - Every application of an effect shares its components, because the effect asset is their outer. Keep per-application state out of a component.
+- `FGameplayEffectContext::AddHitResult(Hit, bReset)` sets the context's world origin to `Hit.TraceStart` whenever no origin is set, and `bReset` with an earlier hit clears the origin first. Code that keeps its own origin, such as a projectile's launch point for range and defense, must call `AddOrigin` after `AddHitResult`, never before (RNG-01 `SurvivalRpg.Combat.Projectile.ImpactAppliesOnce`).
 
 ## GameplayCues and prediction
 
@@ -64,6 +65,7 @@ Behavior observed in this project's automation tests and PIE sessions on UE 5.8.
   - Replaying an effect cue next to the engine's pass plays it twice where a notify keeps the default `bAllowMultipleWhileActiveEvents = true`; looping notifies set it to false.
   - A death removes every loose cue (`RemoveAllGameplayCues` in `URpgPawnExtensionComponent::UninitializeAbilitySystem` and in `ResetForRevive`), so only effect cues return on the respawned pawn.
   - A late-join or respawn check must look for the cue actor or count routed WhileActive events, not only the tag.
+- A cue that only needs a world location, such as a projectile impact, can go through the ability system of `ARpgGameStateBase` instead of the instigator's. The GameState is always relevant and is its own avatar, so the cue still plays on every machine after the shooter died or while its pawn is not relevant. Execute it with a cleared prediction key as above; `ARpgCombatProjectile::ExecuteImpactCue` does, and `SurvivalRpg.Network.CombatProjectilePIE` covers an orphaned shot (RNG-01).
 
 ## PIE network tests
 
@@ -77,6 +79,9 @@ Behavior observed in this project's automation tests and PIE sessions on UE 5.8.
 - Running a PIE network test after `SurvivalRpg.Harvesting` in one session crashed at the PIE world-leak check; run those suites separately.
 - A harvest profile clamps `SectionCount` to 16, so a test field built with more fails its first stock assertion (HRW-05c).
 - Starter-inventory components of the Experience's GameFeatures fill the player's Pockets before a test grants anything: in `RpgGaspMantleExperience`, the skinning knife and the six harvesting starter runes take seven 1x1 cells. A test that granted five armor pieces at once lost the 2x2 boots, because first-fit placement left no free 2x2 area. Grant and equip one piece at a time (`CharacterPartsListenServerPIE`), or size the test's demand against the Pockets' free space after the starter grants.
+- CQTest's `ASSERT_THAT` expands to `if (!this->Assert...) { return; }`, so a step lambda that uses it must capture `this` (`[this](FNetworkState& State) { ... }`) and return void; an `Until` predicate returns its condition instead.
+- `ARpgPlayerState` has only a default constructor. A test subclass declares a default constructor too; passing an `FObjectInitializer` to `Super` does not compile (RNG-01 `ARpgNetworkAutomationProjectileShooterState`).
+- A test that needs real RPG player states and the GameState ability system without loading an Experience can use its own light game mode (`GameStateClass = ARpgGameStateBase`, a test `ARpgPlayerState` subclass), as `ARpgNetworkAutomationProjectileGameMode` does.
 - `URpgGameplayAbility` overrides `CheckCost` as protected. A test calls it through a `const UGameplayAbility*`, whose override is public (HRW-05c `WideSwingSpellContract`).
 - Owner-server agreement of captured values: record each machine's value per swing start (`GetToolSwingStartCountForTests` with `GetLastCapturedSwingTargetsForTests`) from one client step that also reads the server world kept from an earlier server step, then compare them per swing (HRW-05c `HarvestSpellPIE`).
 - Rendered PIE shares the GPU with every other process. A game or other editors holding most of the 12 GB GPU dropped the test editor to about 10 fps, and four combat PIE tests timed out on master and on older commits alike, which looked like a regression. At that rate the authority samples a melee attack window only about twice, and its trace chords pass beside the target. Before suspecting a commit, compare per-test frame rates from the `[frame]` counters in `editor.log` with a passing run, check `nvidia-smi`, and rerun with `--null-rhi` as a control. `CombatRemoteMeleePIE` and `CombatImpactCuesPIE` cap each PIE world step at 1/60 s, the rate of a real server, with `FRpgScopedNetworkTestFrameTimeLimit` (`AWorldSettings::MaxUndilatedFrameTime`), so slow frames slow the worlds down instead of taking larger steps. Under GPU load the worlds then step exactly at the cap, which is the stress case these tests guard. A global `-UseFixedTimeStep` also runs the game faster than real time on fast machines; avoid it.
