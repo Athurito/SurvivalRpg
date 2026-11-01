@@ -160,7 +160,8 @@ protected:
 	FTimerHandle NetVisibilityRetryTimerHandle;
 	FTimerHandle ClientDeferredUnloadTimerHandle;
 	FTimerHandle ServerResumeCheckTimerHandle;
-	TObjectPtr<ARpgPortalActor> PendingUnloadPortal;
+	/** Exit portal of a deferred client unload, only named in the timeout log; weak so the retry timers never read a collected portal. */
+	TWeakObjectPtr<ARpgPortalActor> PendingUnloadPortal;
 	FString PendingUnloadLevelInstanceName;
 	int32 PendingUnloadRequestId = 0;
 	double ClientDeferredUnloadStartTime = 0.0;
