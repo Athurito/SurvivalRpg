@@ -190,6 +190,30 @@ bool FRpgBlockInputReleaseTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgBlockPublishesBlockableDamageTypesTest,
+	"SurvivalRpg.Combat.Block.Lifecycle.PublishesBlockableDamageTypesWhileBlocking",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgBlockPublishesBlockableDamageTypesTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgBlockLifecycleTests;
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this)) return false;
+	TestTrue(TEXT("Nothing is blockable before a block"), Fixture.ASC->GetActiveBlockableDamageTypes().IsEmpty());
+
+	// The damage execution reads this container for projectile blocks, so it must be exactly the source's list.
+	const FGameplayAbilitySpecHandle Handle = Fixture.Grant();
+	if (!Fixture.Press(*this, Handle)) return false;
+	const FGameplayTagContainer& SourceTypes = Fixture.Weapon->GetBlockDefinition().BlockableDamageTypeTags;
+	TestFalse(TEXT("The test weapon's block lists damage types"), SourceTypes.IsEmpty());
+	TestTrue(TEXT("An active block publishes its source's blockable damage types"),
+		Fixture.ASC->GetActiveBlockableDamageTypes() == SourceTypes);
+
+	Fixture.Release();
+	TestTrue(TEXT("Ending the block clears the blockable damage types"), Fixture.ASC->GetActiveBlockableDamageTypes().IsEmpty());
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRpgBlockRemovedDefenseSetTest,
 	"SurvivalRpg.Combat.Block.Lifecycle.RemovedDefenseSetBeforeGrantRemoval",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

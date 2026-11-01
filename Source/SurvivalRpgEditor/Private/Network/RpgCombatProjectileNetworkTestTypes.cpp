@@ -44,9 +44,15 @@ ARpgNetworkAutomationTestProjectile::ARpgNetworkAutomationTestProjectile(const F
 	GravityScale = 0.0f;
 	CollisionRadius = 5.0f;
 	MaxFlightSeconds = 5.0f;
-	ImpactLingerSeconds = 1.0f;
+	ImpactLingerSeconds = 2.0f;
 	ImpactCueTag = FGameplayTag::RequestGameplayTag(TEXT("GameplayCue.Spell.Fireball.Impact"), false);
 	ImpactCueMagnitude = 300.0f;
+}
+
+ARpgNetworkAutomationFallingTestProjectile::ARpgNetworkAutomationFallingTestProjectile(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	GravityScale = 1.0f;
 }
 
 URpgNetworkAutomationProjectileAbility::URpgNetworkAutomationProjectileAbility(const FObjectInitializer& ObjectInitializer)

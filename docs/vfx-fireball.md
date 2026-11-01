@@ -159,7 +159,7 @@ The sounds were chosen by measurement: 87 candidates were exported as WAV and th
   - The lights run from Medium up, not only from High as in earlier tasks: the light of a fireball is its main read in the dark. They are single particles.
   - The impact overrides only the visibility settings of its Effect Type, because it leaves marks for 22 s ([vfx-roadmap.md](vfx-roadmap.md), Performance).
 - **Bounds:** fixed. Impact ±26 m horizontally, −10 m to +36 m vertically; flight ±35 m, for the trail it leaves in world space.
-- **Network:** one unreliable multicast per impact, on the instigator's ability system.
+- **Network:** one unreliable multicast per impact, on the GameState's ability system (RNG-01), so it survives the shooter's death.
 
 ## Validation
 
@@ -203,7 +203,7 @@ The sounds were chosen by measurement: 87 candidates were exported as WAV and th
 
 - **Presentation only:** there is no cast ability, projectile, damage or mana. The projectile foundation and combat magic follow as their own tasks.
 - **No hand charge:** the launch burst sits in the flight system. A charge-up at the caster's hand needs the cast animation of combat magic.
-- **Demo not replicated:** the replicated path was checked through the cue, not through a projectile. There is no automated network test, because no gameplay sends the cue yet. The projectile foundation should add one.
+- **Demo not replicated:** the replicated path was checked through the cue, not through a projectile. There is no automated network test, because no gameplay sends the cue yet. The projectile foundation should add one; RNG-01 added `SurvivalRpg.Network.CombatProjectilePIE` ([ranged-projectile-foundation.md](ranged-projectile-foundation.md)).
 - **Sounds not heard:** they were chosen by measured envelope and spectrum and checked only for playback, not by ear. The project owner has not listened to them yet.
 - **Ground:** debris and sparks bounce on a flat plane at the height found below the impact. Small fires and the scorch assume that plane too.
 - **GPU numbers:** taken with other gallery effects in view, so they show the range, not an isolated cost.

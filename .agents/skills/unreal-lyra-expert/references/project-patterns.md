@@ -46,6 +46,9 @@ Held tool swings (HRW-04) repeat through the input policy, not through a loop in
 
 RPG adaptations layered on the inventory/equipment root include rarity, item level, affixes, sockets, durability, class or stat requirements, generated loot, crafting data, vendor and economy data, stat aggregation, progression scaling, and persistence mapping.
 
+Custom collision channels (RNG-01, [ranged projectile foundation](../../../../docs/ranged-projectile-foundation.md)):
+- **Naming a free slot:** components save each non-default response under the channel's display name. An unnamed slot's name is its enum name, such as `GameTraceChannel10`. Once the slot gets a name in `DefaultEngine.ini`, those saved entries no longer resolve and the new channel's default applies instead: a PCG volume brush that saved Ignore started blocking every projectile. Before naming a slot, search maps and assets for its default name, and add `+CollisionChannelRedirects=(OldName="GameTraceChannelN",NewName="<new name>")` under `[/Script/Engine.CollisionProfile]`. `FCollisionResponse::SetResponsesArray` with the old name checks the redirect in a test (`SurvivalRpg.Combat.Projectile.CollisionProfiles`).
+
 AI movement looks jerky when it stops dead, which `AAIController::MoveTo` does more often than it seems (CMB-06, [enemy AI](../../../../docs/combat-enemy-ai.md)):
 - **Immediate finish:** a request that fails, for example on a goal off the navmesh, or that counts as already reached, measured with the capsule radius added, finishes at once and zeroes the velocity. So does every `StopMovement`.
 - **Stop on finish:** every abort sets the path following's stop-on-finish flag again, so a reached goal stops dead after the next stop.
