@@ -9,8 +9,10 @@
 #include "GameplayEffect.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgStaminaSet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/Combat/RpgCombatProjectile.h"
 #include "SurvivalRpg/Equipment/RpgRangedWeaponInstance.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/SurvivalRpg.h"
 #include "TimerManager.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgAbilityTask_ProjectileShot)
@@ -348,6 +350,8 @@ void URpgAbilityTask_ProjectileShot::FinishReleased(const float DrawFraction, AR
 	bResolved = true;
 	Result = ERpgProjectileShotResult::Released;
 	ReleaseBindings();
+	UE_LOG(LogRpgAbilitySystem, Verbose, TEXT("Projectile shot of %s released at draw %.2f (%s)."),
+		*GetNameSafe(Ability), DrawFraction, Projectile ? *Projectile->GetName() : TEXT("predicted"));
 	if (ShouldBroadcastAbilityTaskDelegates())
 	{
 		OnReleased.Broadcast(DrawFraction, Projectile);
@@ -360,6 +364,8 @@ void URpgAbilityTask_ProjectileShot::FinishCancelled(const ERpgProjectileShotRes
 	bResolved = true;
 	Result = Reason;
 	ReleaseBindings();
+	UE_LOG(LogRpgAbilitySystem, Verbose, TEXT("Projectile shot of %s ended without a projectile: %s."),
+		*GetNameSafe(Ability), *UEnum::GetValueAsString(Reason));
 	if (ShouldBroadcastAbilityTaskDelegates())
 	{
 		OnCancelled.Broadcast(Reason);

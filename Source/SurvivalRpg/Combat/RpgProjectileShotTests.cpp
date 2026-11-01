@@ -18,6 +18,7 @@
 #include "SurvivalRpg/AbilitySystem/Tasks/RpgAbilityTask_ProjectileShot.h"
 #include "SurvivalRpg/Combat/RpgCombatProjectile.h"
 #include "SurvivalRpg/Combat/RpgProjectileShotAutomationTestTypes.h"
+#include "SurvivalRpg/Equipment/RpgRangedWeaponInstance.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
@@ -487,6 +488,73 @@ bool FRpgProjectileShotHoldDrainTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("It never fires on its own"), Fixture.CountLiveProjectiles(), 0);
 	TestEqual(TEXT("It consumes no arrow"), Fixture.GetArrows(), StartingArrows);
 	TestEqual(TEXT("The paid drain stays paid"), Fixture.GetStamina(), 0.0f, 0.01f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgProjectileShotBowContentTest,
+	"SurvivalRpg.Combat.ProjectileShot.BowContentShootsTheStandardArrow",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgProjectileShotBowContentTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgProjectileShotTests;
+	UClass* ShotClass = LoadClass<UGameplayAbility>(nullptr, TEXT("/GF_Combat_Ranged/GAS/Abilities/GA_BowShot.GA_BowShot_C"));
+	UClass* BowClass = LoadClass<URpgRangedWeaponInstance>(nullptr,
+		TEXT("/GF_Combat_Ranged/Equipment/Bow/BP_WeaponInstance_Bow.BP_WeaponInstance_Bow_C"));
+	UClass* ArrowClass = LoadClass<URpgInventoryItemDefinition>(nullptr, TEXT("/GF_Combat_Ranged/Items/ID_Arrow_Standard.ID_Arrow_Standard_C"));
+	UClass* ArrowProjectileClass = LoadClass<ARpgCombatProjectile>(nullptr,
+		TEXT("/GF_Combat_Ranged/Projectiles/BP_Projectile_Arrow.BP_Projectile_Arrow_C"));
+	if (!TestTrue(TEXT("The bow content loads"), ShotClass && BowClass && ArrowClass && ArrowProjectileClass)) return false;
+
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this) || !Fixture.AddArrows(3, ArrowClass)) return false;
+
+	// The equipped bow is the shot's source, as the equipment manager grants it.
+	URpgRangedWeaponInstance* Bow = NewObject<URpgRangedWeaponInstance>(Fixture.Pawn, BowClass);
+	FGameplayAbilitySpec Spec(ShotClass, 1, INDEX_NONE, Bow);
+	Spec.GetDynamicSpecSourceTags().AddTag(RpgGameplayTags::InputTag_Weapon_Primary);
+	Fixture.Handle = Fixture.ASC->GiveAbility(Spec);
+	const FRpgProjectileShotDefinition& Shot = Bow->GetShotDefinition();
+	const auto Press = [&Fixture]()
+	{
+		Fixture.ASC->AbilityInputTagPressed(RpgGameplayTags::InputTag_Weapon_Primary);
+		Fixture.ASC->ProcessAbilityInput(0.0f, false);
+	};
+	const auto Release = [&Fixture]()
+	{
+		Fixture.ASC->AbilityInputTagReleased(RpgGameplayTags::InputTag_Weapon_Primary);
+		Fixture.ASC->ProcessAbilityInput(0.0f, false);
+	};
+
+	// A tap shorter than the nock lowers the bow without cost.
+	Press();
+	TestTrue(TEXT("Pressing the attack draws the bow"), Fixture.IsActive());
+	Fixture.Advance(Shot.MinimumNockSeconds * 0.5f);
+	Release();
+	TestFalse(TEXT("An early release ends the draw"), Fixture.IsActive());
+	TestEqual(TEXT("An early release shoots nothing"), Fixture.CountLiveProjectiles(), 0);
+	TestEqual(TEXT("An early release costs no arrow"), Fixture.GetArrows(ArrowClass), 3);
+	TestEqual(TEXT("An early release costs no stamina"), Fixture.GetStamina(), StartingStamina);
+
+	// A full draw shoots one standard arrow at the bow's top speed and pays once.
+	Press();
+	Fixture.Advance(Shot.FullDrawSeconds + 0.5f);
+	Release();
+	TestFalse(TEXT("The release ends the shot"), Fixture.IsActive());
+	ARpgCombatProjectile* Arrow = nullptr;
+	for (TActorIterator<ARpgCombatProjectile> It(Fixture.World); It; ++It)
+	{
+		Arrow = IsValid(*It) ? *It : Arrow;
+	}
+	if (!TestNotNull(TEXT("The release launches an arrow"), Arrow)) return false;
+	TestTrue(TEXT("It is the standard arrow's projectile"), Arrow->IsA(ArrowProjectileClass));
+	const float TopSpeed = Shot.LaunchSpeedByDrawFraction.GetRichCurveConst()->Eval(1.0f);
+	TestEqual(TEXT("A full draw shoots at the bow curve's top speed"), Arrow->GetProjectileMovement()->Velocity.Size(), static_cast<double>(TopSpeed), 1.0);
+	TestEqual(TEXT("The bow curve sets the damage"), GetSetByCaller(Arrow, RpgGameplayTags::SetByCaller_Damage),
+		Shot.DamageByDrawFraction.GetRichCurveConst()->Eval(1.0f), 0.01f);
+	TestEqual(TEXT("The shot consumes one arrow"), Fixture.GetArrows(ArrowClass), 2);
+	TestEqual(TEXT("The shot pays the bow's release cost once"), Fixture.GetStamina(), StartingStamina - Shot.ReleaseStaminaCost, 0.01f);
 	return true;
 }
 
