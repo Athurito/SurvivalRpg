@@ -11,6 +11,7 @@ class FArchive;
 class IRpgAbilitySourceInterface;
 class UObject;
 class UPhysicalMaterial;
+enum class ERpgCombatImpactOutcome : uint8;
 
 USTRUCT()
 struct FRpgGameplayEffectContext : public FGameplayEffectContext
@@ -59,6 +60,15 @@ struct FRpgGameplayEffectContext : public FGameplayEffectContext
 	/** Returns the physical material from the hit result if there is one */
 	const UPhysicalMaterial* GetPhysicalMaterial() const;
 
+	/**
+	 * Server only, never replicated: the defense outcome URpgDamageExecution resolved for this context's latest
+	 * application. Unset when the execution applied nothing (an evaded hit, a faction-filtered target, or no damage).
+	 * An applier such as ARpgCombatProjectile resets it, applies once and reads it right afterwards.
+	 */
+	void SetImpactOutcome(ERpgCombatImpactOutcome InOutcome) { ImpactOutcome = InOutcome; }
+	void ResetImpactOutcome() { ImpactOutcome.Reset(); }
+	TOptional<ERpgCombatImpactOutcome> GetImpactOutcome() const { return ImpactOutcome; }
+
 public:
 	/** ID to allow the identification of multiple bullets that were part of the same cartridge */
 	UPROPERTY()
@@ -68,6 +78,9 @@ protected:
 	/** Ability Source object (should implement IRpgAbilitySourceInterface). NOT replicated currently */
 	UPROPERTY()
 	TWeakObjectPtr<const UObject> AbilitySourceObject;
+
+	/** See GetImpactOutcome. Server only and not serialized, like CartridgeID. */
+	TOptional<ERpgCombatImpactOutcome> ImpactOutcome;
 };
 
 template<>

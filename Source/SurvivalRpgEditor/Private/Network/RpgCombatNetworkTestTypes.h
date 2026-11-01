@@ -143,7 +143,7 @@ public:
 	virtual FGenericTeamId GetGenericTeamId() const override;
 	virtual void PostInitializeComponents() override;
 
-	/** Query-only primitive that blocks the production weapon trace channel. */
+	/** Query-only primitive that blocks the production weapon and projectile trace channels. */
 	UCapsuleComponent* GetHitCollision() const { return HitCollision; }
 
 	URpgAbilitySystemComponent* GetRpgAbilitySystemComponent() const

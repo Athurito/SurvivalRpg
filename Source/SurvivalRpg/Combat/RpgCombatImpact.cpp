@@ -40,6 +40,26 @@ namespace
 
 	bool bPlayingPredictedImpact = false;
 
+	/** The shared block rules once the cone test is decided: the perfect-block window first, then the block stamina. */
+	ERpgCombatImpactOutcome ResolveBlockInsideCone(const UAbilitySystemComponent& TargetASC, const bool bInsideCone)
+	{
+		if (!bInsideCone)
+		{
+			return ERpgCombatImpactOutcome::Hit;
+		}
+
+		if (TargetASC.HasMatchingGameplayTag(RpgGameplayTags::State_PerfectBlockWindow))
+		{
+			return ERpgCombatImpactOutcome::PerfectBlock;
+		}
+
+		const float StaminaCost = FMath::Max(0.0f, TargetASC.GetNumericAttribute(URpgDefenseSet::GetBlockStaminaCostAttribute()));
+		const float CurrentStamina = TargetASC.GetNumericAttribute(URpgStaminaSet::GetStaminaAttribute());
+		return StaminaCost <= 0.0f || CurrentStamina >= StaminaCost
+			? ERpgCombatImpactOutcome::Block
+			: ERpgCombatImpactOutcome::Hit;
+	}
+
 #if WITH_DEV_AUTOMATION_TESTS
 	TMap<TWeakObjectPtr<const UWorld>, int32>& GetAbsorbedImpactCounts()
 	{
@@ -115,6 +135,16 @@ namespace RpgCombatImpact
 			return false;
 		}
 
+		return IsDirectionInsideBlockCone(TargetActor, SourceActor->GetActorLocation() - TargetActor->GetActorLocation(), BlockAngleDegrees);
+	}
+
+	bool IsDirectionInsideBlockCone(const AActor* TargetActor, const FVector& ToSourceDirection, float BlockAngleDegrees)
+	{
+		if (!TargetActor)
+		{
+			return false;
+		}
+
 		const float ClampedAngle = FMath::Clamp(BlockAngleDegrees, 0.0f, 360.0f);
 		if (ClampedAngle >= 359.0f)
 		{
@@ -122,7 +152,7 @@ namespace RpgCombatImpact
 		}
 
 		const FVector TargetForward = TargetActor->GetActorForwardVector().GetSafeNormal2D();
-		const FVector ToSource = (SourceActor->GetActorLocation() - TargetActor->GetActorLocation()).GetSafeNormal2D();
+		const FVector ToSource = ToSourceDirection.GetSafeNormal2D();
 		if (TargetForward.IsNearlyZero() || ToSource.IsNearlyZero())
 		{
 			return false;
@@ -140,21 +170,36 @@ namespace RpgCombatImpact
 		}
 
 		const float BlockAngleDegrees = TargetASC->GetNumericAttribute(URpgDefenseSet::GetBlockAngleDegreesAttribute());
-		if (!IsInsideBlockCone(TargetActor, SourceActor, BlockAngleDegrees))
+		return ResolveBlockInsideCone(*TargetASC, IsInsideBlockCone(TargetActor, SourceActor, BlockAngleDegrees));
+	}
+
+	ERpgCombatImpactOutcome ResolveProjectileOutcome(const UAbilitySystemComponent* TargetASC, const AActor* TargetActor, const FVector& IncomingDirection)
+	{
+		if (!TargetASC || !TargetActor || !TargetASC->HasMatchingGameplayTag(RpgGameplayTags::State_Blocking))
 		{
 			return ERpgCombatImpactOutcome::Hit;
 		}
 
-		if (TargetASC->HasMatchingGameplayTag(RpgGameplayTags::State_PerfectBlockWindow))
+		// A projectile arrives from where it flew from, so the direction toward its source is the reversed flight.
+		const float BlockAngleDegrees = TargetASC->GetNumericAttribute(URpgDefenseSet::GetBlockAngleDegreesAttribute());
+		return ResolveBlockInsideCone(*TargetASC, IsDirectionInsideBlockCone(TargetActor, -IncomingDirection, BlockAngleDegrees));
+	}
+
+	FVector GetIncomingDirection(const FGameplayEffectContextHandle& Context)
+	{
+		const FHitResult* HitResult = Context.GetHitResult();
+		if (!HitResult)
 		{
-			return ERpgCombatImpactOutcome::PerfectBlock;
+			return FVector::ZeroVector;
 		}
 
-		const float StaminaCost = FMath::Max(0.0f, TargetASC->GetNumericAttribute(URpgDefenseSet::GetBlockStaminaCostAttribute()));
-		const float CurrentStamina = TargetASC->GetNumericAttribute(URpgStaminaSet::GetStaminaAttribute());
-		return StaminaCost <= 0.0f || CurrentStamina >= StaminaCost
-			? ERpgCombatImpactOutcome::Block
-			: ERpgCombatImpactOutcome::Hit;
+		const FVector TraceDirection = HitResult->TraceEnd - HitResult->TraceStart;
+		if (!TraceDirection.IsNearlyZero())
+		{
+			return TraceDirection.GetSafeNormal();
+		}
+
+		return Context.HasOrigin() ? (HitResult->ImpactPoint - Context.GetOrigin()).GetSafeNormal() : FVector::ZeroVector;
 	}
 
 	FGameplayTag FindHitCueTag(const FGameplayEffectSpec& Spec)

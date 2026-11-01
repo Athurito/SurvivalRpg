@@ -28,3 +28,8 @@
 
 // Allocated to aim assist by the ShooterCore game feature
 // ECC_GameTraceChannel5
+
+// Server flight sweep of ARpgCombatProjectile. Blocks by default, so walls, terrain and character meshes stop
+// projectiles; pawn capsules, triggers and overlap-only volumes ignore it. Slot 10 avoids the pre-GASP slots 1-4,
+// whose old meanings may still be saved with component instances.
+#define Rpg_TraceChannel_Projectile					ECC_GameTraceChannel10

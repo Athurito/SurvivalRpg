@@ -11,14 +11,14 @@ struct FGameplayEffectContextHandle;
 struct FGameplayEffectSpec;
 struct FHitResult;
 
-/** How a melee impact resolves against the target's defense; the server's damage execution decides it. */
+/** How a melee or projectile impact resolves against the target's defense; the server's damage execution decides it. */
 enum class ERpgCombatImpactOutcome : uint8
 {
 	/** No defense applies; the impact deals its full damage and stagger. */
 	Hit,
 	/** A paid normal block: reduced damage and stagger for the block stamina cost. */
 	Block,
-	/** A perfect block: no damage, and the attacker takes posture damage. */
+	/** A perfect block: no damage; a melee attacker takes posture damage. */
 	PerfectBlock,
 };
 
@@ -40,8 +40,27 @@ namespace RpgCombatImpact
 	/** Whether SourceActor stands inside TargetActor's frontal block cone; BlockAngleDegrees is the full cone width, 359 or more blocks all around. */
 	SURVIVALRPG_API bool IsInsideBlockCone(const AActor* TargetActor, const AActor* SourceActor, float BlockAngleDegrees);
 
+	/**
+	 * Whether the planar direction ToSourceDirection (from TargetActor toward the attack) lies inside TargetActor's frontal
+	 * block cone; BlockAngleDegrees is the full cone width, 359 or more blocks all around.
+	 */
+	SURVIVALRPG_API bool IsDirectionInsideBlockCone(const AActor* TargetActor, const FVector& ToSourceDirection, float BlockAngleDegrees);
+
 	/** Resolves a melee impact from the target's block state; outside the cone, or without stamina for the block, it is a hit. */
 	SURVIVALRPG_API ERpgCombatImpactOutcome ResolveMeleeOutcome(const UAbilitySystemComponent* TargetASC, const AActor* TargetActor, const AActor* SourceActor);
+
+	/**
+	 * Resolves a projectile impact from the target's block state and IncomingDirection, the world flight direction toward
+	 * the target. The shooter's position never matters, so a dead or moved shooter changes nothing. Without a direction,
+	 * outside the cone, or without stamina for the block, it is a hit.
+	 */
+	SURVIVALRPG_API ERpgCombatImpactOutcome ResolveProjectileOutcome(const UAbilitySystemComponent* TargetASC, const AActor* TargetActor, const FVector& IncomingDirection);
+
+	/**
+	 * The incoming flight direction a projectile put into Context: its hit result's trace segment, otherwise the context
+	 * origin toward the impact point. Zero when the context carries neither.
+	 */
+	SURVIVALRPG_API FVector GetIncomingDirection(const FGameplayEffectContextHandle& Context);
 
 	/** The body-hit cue an attack put on its damage spec (a GameplayCue.Combat.Hit tag); invalid when the spec plays no impact cues. */
 	SURVIVALRPG_API FGameplayTag FindHitCueTag(const FGameplayEffectSpec& Spec);

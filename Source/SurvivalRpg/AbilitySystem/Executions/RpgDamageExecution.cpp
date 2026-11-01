@@ -8,6 +8,7 @@
 #include "GameFramework/Actor.h"
 #include "HAL/IConsoleManager.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySourceInterface.h"
+#include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/AbilitySystem/RpgGameplayEffectContext.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgCombatSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgDefenseSet.h"
@@ -206,14 +207,26 @@ void URpgDamageExecution::Execute_Implementation(const FGameplayEffectCustomExec
 		return;
 	}
 
-	if (const FRpgGameplayEffectContext* RpgContext = FRpgGameplayEffectContext::ExtractEffectContext(Spec.GetEffectContext()))
+	const FGameplayEffectContextHandle EffectContext = Spec.GetEffectContext();
+	const bool bIsMeleeDamage = RpgCombatImpact::HasDamageType(Spec, RpgGameplayTags::Damage_Type_Melee);
+	const bool bIsProjectileDamage = !bIsMeleeDamage && RpgCombatImpact::HasDamageType(Spec, RpgGameplayTags::Damage_Type_Projectile);
+	// A projectile's defense and feedback come from the projectile (the effect causer), never from the shooter's current
+	// pawn, which may have moved, died or respawned since the launch.
+	AActor* ImpactSourceActor = bIsProjectileDamage && EffectContext.GetEffectCauser() ? EffectContext.GetEffectCauser() : SourceActor;
+
+	if (const FRpgGameplayEffectContext* RpgContext = FRpgGameplayEffectContext::ExtractEffectContext(EffectContext))
 	{
 		if (const IRpgAbilitySourceInterface* AbilitySource = RpgContext->GetAbilitySource())
 		{
 			float Distance = 0.0f;
 			if (const FHitResult* HitResult = RpgContext->GetHitResult())
 			{
-				if (const AActor* ContextSourceActor = RpgContext->GetEffectCauser())
+				if (bIsProjectileDamage && RpgContext->HasOrigin())
+				{
+					// A projectile's range counts from its launch point.
+					Distance = FVector::Dist(RpgContext->GetOrigin(), HitResult->ImpactPoint);
+				}
+				else if (const AActor* ContextSourceActor = RpgContext->GetEffectCauser())
 				{
 					Distance = FVector::Dist(ContextSourceActor->GetActorLocation(), HitResult->ImpactPoint);
 				}
@@ -276,14 +289,25 @@ void URpgDamageExecution::Execute_Implementation(const FGameplayEffectCustomExec
 	// -------------------------
 	// 4) Block / Perfect Block
 	// -------------------------
-	// The owner's hit feedback prediction resolves the outcome with the same shared rules from replicated state.
-	const bool bIsMeleeDamage = RpgCombatImpact::HasDamageType(Spec, RpgGameplayTags::Damage_Type_Melee);
+	// The owner's hit feedback prediction resolves a melee outcome with the same shared rules from replicated state.
+	// A projectile meets only a block whose source lists projectiles (a shield, not a sword); the block ability publishes
+	// that on the server, and the block cone faces the incoming flight, not the shooter.
 	const bool bIsBlocking = TargetASC && TargetASC->HasMatchingGameplayTag(RpgGameplayTags::State_Blocking);
+	const URpgAbilitySystemComponent* RpgTargetASC = Cast<URpgAbilitySystemComponent>(TargetASC);
+	const bool bCanBlockProjectile = bIsProjectileDamage && RpgTargetASC
+		&& RpgTargetASC->GetActiveBlockableDamageTypes().HasTag(RpgGameplayTags::Damage_Type_Projectile);
 	const ERpgCombatImpactOutcome ImpactOutcome = bIsMeleeDamage
 		? RpgCombatImpact::ResolveMeleeOutcome(TargetASC, TargetActor, SourceActor)
-		: ERpgCombatImpactOutcome::Hit;
+		: bCanBlockProjectile
+			? RpgCombatImpact::ResolveProjectileOutcome(TargetASC, TargetActor, RpgCombatImpact::GetIncomingDirection(EffectContext))
+			: ERpgCombatImpactOutcome::Hit;
 
-	if (ImpactOutcome != ERpgCombatImpactOutcome::Hit || (bIsMeleeDamage && bIsBlocking))
+	if (FRpgGameplayEffectContext* RpgContext = FRpgGameplayEffectContext::ExtractEffectContext(EffectContext))
+	{
+		RpgContext->SetImpactOutcome(ImpactOutcome);
+	}
+
+	if (ImpactOutcome != ERpgCombatImpactOutcome::Hit || ((bIsMeleeDamage || bCanBlockProjectile) && bIsBlocking))
 	{
 		const float DamageBeforeBlock = Damage;
 		const float StaggerDamageBeforeBlock = StaggerDamage;
@@ -293,7 +317,10 @@ void URpgDamageExecution::Execute_Implementation(const FGameplayEffectCustomExec
 		if (ImpactOutcome == ERpgCombatImpactOutcome::PerfectBlock)
 		{
 			const float StaminaRestore = FMath::Max(0.0f, TargetASC->GetNumericAttribute(URpgDefenseSet::GetPerfectBlockStaminaRestoreAttribute()));
-			const float SourceStaggerDamage = FMath::Max(0.0f, TargetASC->GetNumericAttribute(URpgDefenseSet::GetPerfectBlockStaggerDamageAttribute()));
+			// A perfect block staggers a melee attacker in reach, never a distant shooter.
+			const float SourceStaggerDamage = bIsMeleeDamage
+				? FMath::Max(0.0f, TargetASC->GetNumericAttribute(URpgDefenseSet::GetPerfectBlockStaggerDamageAttribute()))
+				: 0.0f;
 
 			Damage = 0.0f;
 			StaggerDamage = 0.0f;
@@ -324,7 +351,7 @@ void URpgDamageExecution::Execute_Implementation(const FGameplayEffectCustomExec
 			}
 
 			ApplyStaggerToSource(SourceASC, SourceActor, TargetActor, Spec, SourceStaggerDamage);
-			SendCombatEvent(TargetActor, SourceActor, RpgGameplayTags::GameplayEvent_PerfectBlock, Spec, SourceStaggerDamage);
+			SendCombatEvent(TargetActor, ImpactSourceActor, RpgGameplayTags::GameplayEvent_PerfectBlock, Spec, SourceStaggerDamage);
 		}
 		else if (ImpactOutcome == ERpgCombatImpactOutcome::Block)
 		{
@@ -368,7 +395,7 @@ void URpgDamageExecution::Execute_Implementation(const FGameplayEffectCustomExec
 				);
 			}
 
-			SendCombatEvent(TargetActor, SourceActor, RpgGameplayTags::GameplayEvent_Block, Spec, StaminaCost);
+			SendCombatEvent(TargetActor, ImpactSourceActor, RpgGameplayTags::GameplayEvent_Block, Spec, StaminaCost);
 		}
 		else if (ShouldDebugBlock())
 		{
@@ -418,10 +445,9 @@ void URpgDamageExecution::Execute_Implementation(const FGameplayEffectCustomExec
 	const bool bImpactLanded = ImpactOutcome != ERpgCombatImpactOutcome::Hit || Damage > 0.f || StaggerDamage > 0.f;
 	if (HitCueTag.IsValid() && TargetASC && bImpactLanded)
 	{
-		const FGameplayEffectContextHandle EffectContext = Spec.GetEffectContext();
 		const FGameplayCueParameters CueParameters = RpgCombatImpact::MakeCueParameters(
 			EffectContext,
-			SourceActor,
+			ImpactSourceActor,
 			TargetASC,
 			EffectContext.GetHitResult(),
 			Damage,

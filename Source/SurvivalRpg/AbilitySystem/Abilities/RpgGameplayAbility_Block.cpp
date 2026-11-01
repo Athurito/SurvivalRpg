@@ -354,6 +354,7 @@ bool URpgGameplayAbility_Block::ApplyBlockState(const FRpgWeaponBlockDefinition&
 	}
 
 	bAppliedBlockState = true;
+	ASC->SetActiveBlockableDamageTypes(BlockDefinition.BlockableDamageTypeTags);
 	SetReplicatedLooseTagCount(RpgGameplayTags::State_Blocking, 1);
 	if (!OwnsAttributes()) return false;
 
@@ -404,6 +405,7 @@ void URpgGameplayAbility_Block::ClearBlockState()
 
 	if (URpgAbilitySystemComponent* ASC = SavedASC.Get())
 	{
+		ASC->SetActiveBlockableDamageTypes(FGameplayTagContainer());
 		ASC->SetLooseGameplayTagCount(RpgGameplayTags::State_Blocking, 0, EGameplayTagReplicationState::TagAndCountToAll);
 		ASC->SetLooseGameplayTagCount(RpgGameplayTags::State_PerfectBlockWindow, 0, EGameplayTagReplicationState::TagAndCountToAll);
 	}
