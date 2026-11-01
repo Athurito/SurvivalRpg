@@ -6,6 +6,8 @@ aiming with tool swings. Each task is one bounded PR on a
 commits, validation, failed attempts and limits in its PR and in its own
 section below, and updates only its own row in the task table.
 
+**Status: stopped by the user on 2026-11-01 after HRW-05c.** HRW-01 to HRW-05c are merged; HRW-05d, 05e and 05f are dropped. No further task of this roadmap is scheduled.
+
 The older [harvesting roadmap](harvesting-roadmap.md) predates the mastery map.
 It stays the history and the contract for what still holds: the stock core,
 the PCG bridge, persistence and co-op load. Its hit model and its powers are
@@ -46,7 +48,7 @@ steps. Harvesting felt bad:
 | Spell trees | Superseded by "Skill redesign dropped". User decision, 2026-11-01 morning: split the harvesting tree per tool in HRW-05d, an axe tree on Logging and a pickaxe tree on Mining, each with its own spells; focus stays shared. |
 | Runes | Superseded by "Skill redesign dropped". User decision, 2026-11-01 morning: runes become spell modifiers in HRW-05e. A socketed rune changes the active spell and does nothing outside it. Sockets, recipes and the Runenschrein stay. |
 | Skill redesign dropped | User decision, 2026-11-01 evening, after the Wide Swing playtest: the harvesting skills stay as they are. Wide Swing remains the only harvesting spell, in the shared tree. HRW-05d and HRW-05e are dropped; the user will rethink the skill and rune design from scratch, outside this roadmap. A stopped HRW-05d draft remains as the unpushed local branch `claude/hrw-05d-tool-trees` (`fd33491e`) for reference only. |
-| Forest density | User decision, 2026-11-01: forests get dense stands like the HRW-05c test grove (HRW-05f). In the current stands, trunks 6.5 to 8 m apart and veins 3.3 to 5.5 m, no reach inside the 400 cm clamp hits a second resource. In the test grove, trunks 2.2 to 2.8 m apart, Wide Swing at +300 cm saves about a third of the swings and walks. |
+| Forest density | Dropped with the rework stop (user, 2026-11-01). Earlier the same day the user chose: forests get dense stands like the HRW-05c test grove (HRW-05f). In the current stands, trunks 6.5 to 8 m apart and veins 3.3 to 5.5 m, no reach inside the 400 cm clamp hits a second resource. In the test grove, trunks 2.2 to 2.8 m apart, Wide Swing at +300 cm saves about a third of the swings and walks. |
 | HRW-05 C++ boundary | Two new native classes over all of HRW-05. `URpgAbilityTuningEffectComponent` (HRW-05a), because Blueprint cannot extend tuning resolution and every ability must resolve identically on the server and its owner. `URpgFocusSet` (HRW-05b), because attributes are native and focus needs owner-only replication, a predicted `CheckCost` and the cost toast. Everything concrete is assets in `GF_Harvesting_Magic`: the spell ability, its effects, cues and ability set, the tree node, the meter widget and the toast row. |
 
 ## What stays
@@ -72,7 +74,7 @@ how a hit is found, not what a hit does.
 | HRW-05c | Wide Swing on Q, closing the first playable's magical harvesting ability: spell ability, cost and spell effects, cues, tree node, failure toast row, asset contracts and a spell PIE test | Merged: [#358](https://github.com/Athurito/SurvivalRpg/pull/358) |
 | HRW-05d | Split the harvesting tree per tool (axe on Logging, pickaxe on Mining) with their own spells, and visible talents in place of the rune-gated ones | Dropped (user, 2026-11-01): skill redesign rethought from scratch |
 | HRW-05e | Runes as spell modifiers: tag-gated modifier effects applied with the spell, the ranks' always-on tunings cleared, rune bar and dormancy UI reworked | Dropped (user, 2026-11-01): skill redesign rethought from scratch |
-| HRW-05f | Dense forest stands: PCG pine stands with trunks 2 to 3 m apart in the playable levels, so Wide Swing pays off; keep frame cost, stock persistence and the `Lvl_ResourceParity` counts in view | Planned |
+| HRW-05f | Dense forest stands: PCG pine stands with trunks 2 to 3 m apart in the playable levels, so Wide Swing pays off; keep frame cost, stock persistence and the `Lvl_ResourceParity` counts in view | Dropped (user, 2026-11-01): rework stopped before work began |
 
 ## Task scope
 
