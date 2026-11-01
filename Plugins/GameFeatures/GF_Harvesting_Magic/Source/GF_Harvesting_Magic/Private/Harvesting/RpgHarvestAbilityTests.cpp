@@ -15,6 +15,7 @@
 #include "Harvesting/RpgHarvestSwarm.h"
 #include "Harvesting/RpgHarvestTargetingComponent.h"
 #include "SurvivalRpg/Animation/AnimNotify_RpgGameplayEvent.h"
+#include "SurvivalRpg/AbilitySystem/Effects/RpgAbilityTuningEffectComponent.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentInstance.h"
 #include "SurvivalRpg/Inventory/Loot/RpgLootTable.h"
@@ -38,6 +39,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayCueManager.h"
+#include "GameplayEffect.h"
 #include "Misc/ScopeExit.h"
 #include "NativeGameplayTags.h"
 #include "UObject/UnrealType.h"
@@ -2175,7 +2177,12 @@ bool FRpgHarvestTuningCaptureTest::RunTest(const FString& Parameters)
 		return false;
 	}
 	RpgHarvestAutomation::AddInstanceStock(World);
-	ARpgHarvestAutomationInstancesActor* Grove = SpawnGrove(World, Harvester.Pawn->BaseEyeHeight);
+	// The grove of SpawnGrove with eight sections per tree, so no tree falls and the aim stays on the nearest one.
+	ARpgHarvestAutomationInstancesActor* Grove = RpgHarvestAutomation::SpawnInstances(
+		World,
+		MakeProfile(World, 8),
+		{FVector(0.0, 0.0, 0.0), FVector(0.0, 300.0, 0.0), FVector(300.0, 0.0, 0.0)},
+		FVector(300.0, 0.0, Harvester.Pawn->BaseEyeHeight));
 	URpgSkillTreeDefinition* Tree = MakePowerTree();
 	FScopedTreeTool TreeTool(Tree);
 	URpgSkillTreeComponent* SkillTrees = PrepareSkillTree(Harvester, Tree);
@@ -2196,7 +2203,7 @@ bool FRpgHarvestTuningCaptureTest::RunTest(const FString& Parameters)
 	TestWorld.AdvanceTimers(0.6f);
 	TestTrue(
 		TEXT("The swing commits with the values from its start"),
-		RemainingSections(Grove, 3) == TArray<int32>({3, 4, 4}));
+		RemainingSections(Grove, 3) == TArray<int32>({7, 8, 8}));
 
 	// Resetting the tree during the next swing does not take the upgrade away from it.
 	TestTrue(TEXT("The second swing starts"), Harvester.AbilitySystem->TryActivateAbility(Power.Handle));
@@ -2204,7 +2211,39 @@ bool FRpgHarvestTuningCaptureTest::RunTest(const FString& Parameters)
 	TestWorld.AdvanceTimers(0.6f);
 	TestTrue(
 		TEXT("The upgraded swing keeps its area, targets and sections"),
-		RemainingSections(Grove, 3) == TArray<int32>({1, 2, 2}));
+		RemainingSections(Grove, 3) == TArray<int32>({5, 6, 6}));
+
+	// A spell effect with the same tunings as Wide, applied during a swing, waits for the next swing.
+	const FRpgSkillTreeNode* WideNode = Tree->FindNode(TAG_HarvestTuningTest_Wide);
+	const UGameplayEffect* Spell = WideNode
+		? URpgAbilityTuningEffectComponent::MakeTransientEffectForTests(WideNode->AbilityTunings, 0.8f)
+		: nullptr;
+	if (!TestNotNull(TEXT("The spell effect carries Wide's tunings"), Spell))
+	{
+		return false;
+	}
+	TestTrue(TEXT("The third swing starts"), Harvester.AbilitySystem->TryActivateAbility(Power.Handle));
+	TestTrue(TEXT("The spell effect applies during the swing"),
+		Harvester.AbilitySystem->ApplyGameplayEffectToSelf(Spell, 1.0f, Harvester.AbilitySystem->MakeEffectContext()).IsValid());
+	TestWorld.AdvanceTimers(0.6f);
+	TestTrue(
+		TEXT("The swing the spell started in commits without it"),
+		RemainingSections(Grove, 3) == TArray<int32>({4, 6, 6}));
+
+	// The spell expiring during the next swing does not take the upgrade away from it.
+	TestTrue(TEXT("The fourth swing starts"), Harvester.AbilitySystem->TryActivateAbility(Power.Handle));
+	TestWorld.AdvanceTimers(0.3f);
+	const FGameplayAbilitySpec* PowerSpec = Harvester.AbilitySystem->FindAbilitySpecFromHandle(Power.Handle);
+	FRpgHarvestTunedValues Expired;
+	if (PowerSpec)
+	{
+		Power.Instance->ResolveTunedValues(*PowerSpec, *Harvester.AbilitySystem->AbilityActorInfo, Expired);
+	}
+	TestEqual(TEXT("The spell has expired before the commit"), Expired.Targeting.AreaRadius, 200.0f);
+	TestWorld.AdvanceTimers(0.3f);
+	TestTrue(
+		TEXT("The swing that started inside the spell keeps its area, targets and sections"),
+		RemainingSections(Grove, 3) == TArray<int32>({2, 4, 4}));
 	return true;
 }
 
@@ -4812,6 +4851,85 @@ bool FRpgHarvestSwingReachTuningTest::RunTest(const FString& Parameters)
 		3);
 	TestEqual(TEXT("Both contacts count towards the two targets"), Swing.Instance->GetToolSwingContactCountForTests(), 2);
 	TestEqual(TEXT("Every taken section is rewarded"), CountMaterial(Harvester.PlayerState), 3 * YieldPerSection);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestSwingEffectReachTest,
+	"SurvivalRpg.Harvesting.Swing.EffectReachHitsTargetBehind",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestSwingEffectReachTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestSwingTests;
+	using namespace RpgHarvestingMagicGameplayTags;
+
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	FHarvesterFixture Harvester = SpawnHarvester(World);
+	if (!TestTrue(TEXT("Harvester fixture exists"), Harvester.IsValid()))
+	{
+		return false;
+	}
+	// The layout of ReachTuningHitsTargetBehind; a timed effect like the Wide Swing spell replaces the tree node, and
+	// the swing has no source item, so no tree or rune could tune it.
+	const double Eye = Harvester.Pawn->BaseEyeHeight;
+	ARpgHarvestAutomationCollidableNodeActor* Front = SpawnNode(World, FVector(100.0, 0.0, Eye), MakeProfile(World, 4));
+	ARpgHarvestAutomationCollidableNodeActor* Behind = SpawnNode(World, FVector(260.0, 0.0, Eye), MakeProfile(World, 4));
+	const FGrantedAbility Swing = GrantSwing(Harvester.AbilitySystem, nullptr, 200.0f);
+	FGameplayAbilitySpec* SwingSpec = Harvester.AbilitySystem->FindAbilitySpecFromHandle(Swing.Handle);
+	if (!Front || !Behind || !TestNotNull(TEXT("Swing exists"), Swing.Instance) || !SwingSpec)
+	{
+		return false;
+	}
+	const FGameplayTag AxeChop = FGameplayTag::RequestGameplayTag(TEXT("Ability.Harvesting.AxeChop"));
+	const FGameplayTag PickaxeStrike = FGameplayTag::RequestGameplayTag(TEXT("Ability.Harvesting.PickaxeStrike"));
+	SwingSpec->GetDynamicSpecSourceTags().AddTag(AxeChop);
+	auto MakeSwingTuning = [](const FGameplayTag AbilityId, const FGameplayTag TuningTag, const float Value)
+	{
+		FRpgSkillTreeAbilityTuning Tuning = MakeTuning(TuningTag, ERpgSkillTreeTuningOperation::Add, Value);
+		Tuning.AbilityIdTag = AbilityId;
+		return Tuning;
+	};
+	const UGameplayEffect* WideSwing = URpgAbilityTuningEffectComponent::MakeTransientEffectForTests({
+		MakeSwingTuning(AxeChop, Ability_Tuning_Harvest_SwingReach, 150.0f),
+		MakeSwingTuning(AxeChop, Ability_Tuning_Harvest_SwingTargets, 2.0f),
+		MakeSwingTuning(PickaxeStrike, Ability_Tuning_Harvest_SwingReach, 150.0f),
+		MakeSwingTuning(PickaxeStrike, Ability_Tuning_Harvest_SwingTargets, 2.0f)});
+	TestWorld.PrimeTimerManager();
+	const RpgWeaponTraceInterpolation::FBladeSample Left = MakeToolPose(40.0, 110.0, -100.0, Eye);
+	const RpgWeaponTraceInterpolation::FBladeSample Right = MakeToolPose(40.0, 110.0, 100.0, Eye);
+
+	TestTrue(TEXT("A plain swing activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	TraceSwing(*World, *Swing.Instance, Left, Right);
+	TestEqual(TEXT("The plain swing takes the front resource"), Front->HarvestableNode->GetRemainingSections(), 3);
+	TestEqual(TEXT("The plain swing never reaches the resource behind"), Behind->HarvestableNode->GetRemainingSections(), 4);
+
+	Harvester.AbilitySystem->CancelAbilityHandle(Swing.Handle);
+	const FActiveGameplayEffectHandle SpellHandle =
+		Harvester.AbilitySystem->ApplyGameplayEffectToSelf(WideSwing, 1.0f, Harvester.AbilitySystem->MakeEffectContext());
+	TestTrue(TEXT("The Wide Swing effect applies"), SpellHandle.IsValid());
+	FRpgHarvestTunedValues Values;
+	Swing.Instance->ResolveTunedValues(*SwingSpec, *Harvester.AbilitySystem->AbilityActorInfo, Values);
+	TestEqual(TEXT("The effect extends the swing's reach"), Values.SwingReach, 150.0f);
+	TestEqual(TEXT("The effect adds two targets per swing"), Values.SwingTargets, 3);
+
+	TestTrue(TEXT("A wide swing activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	TestEqual(TEXT("The wide swing traces 150 cm past the tool tip"), Swing.Instance->GetPlayedSwingTrace().TipExtension, 150.0f);
+	TraceSwing(*World, *Swing.Instance, Left, Right);
+	TestEqual(TEXT("The wide swing takes the front resource"), Front->HarvestableNode->GetRemainingSections(), 2);
+	TestEqual(TEXT("The wide swing also takes the resource behind"), Behind->HarvestableNode->GetRemainingSections(), 3);
+	TestEqual(TEXT("Both contacts count"), Swing.Instance->GetToolSwingContactCountForTests(), 2);
+
+	Harvester.AbilitySystem->CancelAbilityHandle(Swing.Handle);
+	TestTrue(TEXT("The Wide Swing effect ends"), Harvester.AbilitySystem->RemoveActiveGameplayEffect(SpellHandle));
+	TestTrue(TEXT("A swing after the spell activates"), Harvester.AbilitySystem->TryActivateAbility(Swing.Handle));
+	TestEqual(TEXT("After the spell the swing traces to the tool tip"), Swing.Instance->GetPlayedSwingTrace().TipExtension, 0.0f);
+	TraceSwing(*World, *Swing.Instance, Left, Right);
+	TestEqual(TEXT("After the spell the swing takes the front resource"), Front->HarvestableNode->GetRemainingSections(), 1);
+	TestEqual(TEXT("After the spell the resource behind is out of reach again"), Behind->HarvestableNode->GetRemainingSections(), 3);
+	TestEqual(TEXT("Every taken section is rewarded"), CountMaterial(Harvester.PlayerState), 4 * YieldPerSection);
 	return true;
 }
 

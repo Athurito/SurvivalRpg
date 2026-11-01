@@ -594,36 +594,37 @@ void URpgSkillTreeComponent::AccumulateAbilityTuning(
 	}
 }
 
-float URpgSkillTreeComponent::ResolveAbilityTuningForSpec(
+void URpgSkillTreeComponent::CollectTuningAbilityIds(const FGameplayAbilitySpec& Spec, FGameplayTagContainer& OutAbilityIds)
+{
+	const FGameplayTag AbilityRoot = FGameplayTag::RequestGameplayTag(TEXT("Ability"), false);
+	for (const FGameplayTag& SourceTag : Spec.GetDynamicSpecSourceTags())
+	{
+		if (AbilityRoot.IsValid() && SourceTag.MatchesTag(AbilityRoot))
+		{
+			OutAbilityIds.AddTag(SourceTag);
+		}
+	}
+	if (Spec.Ability)
+	{
+		OutAbilityIds.AppendTags(Spec.Ability->GetAssetTags());
+	}
+}
+
+void URpgSkillTreeComponent::AccumulateItemTuningsForSpec(
 	const FGameplayAbilitySpec& Spec,
 	const FGameplayAbilityActorInfo& ActorInfo,
+	const FGameplayTagContainer& AbilityIds,
 	const FGameplayTag TuningTag,
-	const float BaseValue)
+	FRpgAbilityTuningAccumulator& Accumulator)
 {
 	const URpgEquipmentInstance* Equipment = Cast<URpgEquipmentInstance>(Spec.SourceObject.Get());
 	const URpgInventoryItemInstance* SourceItem =
 		Equipment ? Cast<URpgInventoryItemInstance>(Equipment->GetInstigator()) : nullptr;
 	if (!SourceItem || !TuningTag.IsValid())
 	{
-		return BaseValue;
+		return;
 	}
 
-	// The same ids the Q/E/R resolver uses: Ability.* spec-source tags and the ability's asset tags.
-	FGameplayTagContainer AbilityIds;
-	const FGameplayTag AbilityRoot = FGameplayTag::RequestGameplayTag(TEXT("Ability"), false);
-	for (const FGameplayTag& SourceTag : Spec.GetDynamicSpecSourceTags())
-	{
-		if (AbilityRoot.IsValid() && SourceTag.MatchesTag(AbilityRoot))
-		{
-			AbilityIds.AddTag(SourceTag);
-		}
-	}
-	if (Spec.Ability)
-	{
-		AbilityIds.AppendTags(Spec.Ability->GetAssetTags());
-	}
-
-	FRpgAbilityTuningAccumulator Accumulator;
 	const URpgSkillTreeDefinition* Tree = URpgInventoryFragment_SkillTree::FindSkillTreeOfItem(SourceItem);
 	URpgSkillTreeComponent* SkillTrees = FindForActor(ActorInfo.OwnerActor.Get());
 	if (!SkillTrees)
@@ -642,6 +643,23 @@ float URpgSkillTreeComponent::ResolveAbilityTuningForSpec(
 
 	// Runes socketed in the source item tune its abilities by their current rank, never another item's.
 	URpgInventoryFragment_Rune::AccumulateSocketedTunings(*SourceItem, AbilityIds, TuningTag, Accumulator);
+}
+
+float URpgSkillTreeComponent::ResolveAbilityTuningForSpec(
+	const FGameplayAbilitySpec& Spec,
+	const FGameplayAbilityActorInfo& ActorInfo,
+	const FGameplayTag TuningTag,
+	const float BaseValue)
+{
+	if (!TuningTag.IsValid())
+	{
+		return BaseValue;
+	}
+
+	FGameplayTagContainer AbilityIds;
+	CollectTuningAbilityIds(Spec, AbilityIds);
+	FRpgAbilityTuningAccumulator Accumulator;
+	AccumulateItemTuningsForSpec(Spec, ActorInfo, AbilityIds, TuningTag, Accumulator);
 	return Accumulator.Resolve(BaseValue);
 }
 

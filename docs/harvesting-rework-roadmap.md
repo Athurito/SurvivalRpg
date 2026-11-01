@@ -41,6 +41,11 @@ steps. Harvesting felt bad:
 | Target picture | Modelled on Enshrouded: a skill-tree choice selects a harvesting spell, harvesting fills a focus meter, and a full meter activates the spell for a limited time. The first spell is Wide Swing (extended trace). This replaces rune-gated talents. |
 | Deferred | The skill tree, runes and rune-gated talents are redesigned with HRW-05. Crafting stays as it is for now. |
 | Harvesting hitstop | User decision, 2026-10-31: tool swings get a short local hitstop (about 60 ms, designer-tuned on the swing ability). Only the swinger's own montage freezes, at its first resource contact of a swing; simulated proxies and the server's authority timing stay unaffected. This is an exception for harvesting only: combat attacks keep the 2026-10-25 decision of [combat-roadmap.md](combat-roadmap.md) and freeze nothing. |
+| Spell activation | User decision, 2026-11-01: the spell sits on the tool's Q slot through the existing skill-tree route (the node's ability set, the first free slot of the tree, the weapon ability loadout). A full meter waits for the press. No new input asset. |
+| Focus rhythm | User decision, 2026-11-01: medium. About 25 landed swings fill the meter (gain 4 of 100), and the spell lasts 10 s. Retuned after the playtest. |
+| Spell trees | User decision, 2026-11-01: the harvesting tree is split per tool in HRW-05d, an axe tree on Logging and a pickaxe tree on Mining, each with its own spells. Focus stays shared. |
+| Runes | User decision, 2026-11-01: runes become spell modifiers in HRW-05e. A socketed rune changes the active spell and does nothing outside it. Sockets, recipes and the Runenschrein stay. |
+| HRW-05 C++ boundary | Two new native classes over all of HRW-05. `URpgAbilityTuningEffectComponent` (HRW-05a), because Blueprint cannot extend tuning resolution and every ability must resolve identically on the server and its owner. `URpgFocusSet` (HRW-05b), because attributes are native and focus needs owner-only replication, a predicted `CheckCost` and the cost toast. Everything concrete is assets in `GF_Harvesting_Magic`: the spell ability, its effects, cues and ability set, the tree node, the meter widget and the toast row. |
 
 ## What stays
 
@@ -60,7 +65,11 @@ how a hit is found, not what a hit does.
 | HRW-04c | Tool mesh pivots at the grip, so the user can tune the grip by turning the `ToolMesh` about the hand; in-hand look and trace unchanged | Merged: [#343](https://github.com/Athurito/SurvivalRpg/pull/343) |
 | HRW-04d | Second playtest: thin the dust that hides a falling tree, and give the pickaxe the axe's quick swing | Merged: [#346](https://github.com/Athurito/SurvivalRpg/pull/346) |
 | HRW-04e | Third playtest: a dull stone sound for the pickaxe, and a swing that winds up overhead and strikes down fast | Merged: [#348](https://github.com/Athurito/SurvivalRpg/pull/348) |
-| HRW-05 | Focus meter and harvesting spells chosen in the skill tree, first spell Wide Swing; redesign of the tree and the runes | Planned |
+| HRW-05a | Ability tunings from active GameplayEffects: an Ability Tunings effect component that `GetTunedValueForSpec` folds after the tree and runes; native only, no assets | In review: [#352](https://github.com/Athurito/SurvivalRpg/pull/352) |
+| HRW-05b | Focus resource and fill: `URpgFocusSet` on the PlayerState, a server fill once per landed swing, the gain effect, read-only view-model fields and the HUD meter | Planned |
+| HRW-05c | Wide Swing on Q, closing the first playable's magical harvesting ability: spell ability, cost and spell effects, cues, tree node, failure toast row, asset contracts and a spell PIE test | Planned |
+| HRW-05d | Split the harvesting tree per tool (axe on Logging, pickaxe on Mining) with their own spells, and visible talents in place of the rune-gated ones | Planned |
+| HRW-05e | Runes as spell modifiers: tag-gated modifier effects applied with the spell, the ranks' always-on tunings cleared, rune bar and dormancy UI reworked | Planned |
 
 ## Task scope
 
@@ -516,14 +525,160 @@ In my own editor in `Lvl_HarvestPickaxe` with the real character, pickaxe and ir
 
 ### HRW-05: focus meter and harvesting spells
 
-- Starts with a short design round with the user: fill rate, key, duration and
-  further spells.
 - The focus value is server-authoritative runtime state replicated to its
   owner; the UI only reads it. Spells are `GA_*` Blueprints with timed
   GameplayEffects. Ability tunings must also come from active timed effects,
   not only from the skill tree.
 - Covers the "magical harvesting ability" of the first playable in
-  [game-vision.md](game-vision.md) §12, open since Rift Grip was retired.
+  [game-vision.md](game-vision.md) §12, open since Rift Grip was retired, and
+  shows that gathering feels better than tool spamming.
+- The design round of 2026-11-01 settled activation, rhythm, trees and runes
+  (see Decisions) and split the work into HRW-05a to HRW-05e.
+
+#### Design
+
+- **Loop:** every landed own tool swing adds focus on the server. A full
+  meter waits, without decay, until the player presses Q. Q runs
+  `GA_HarvestSpell_WideSwing`, which spends the whole meter and applies a timed
+  effect whose Ability Tunings widen both swings.
+- **Focus fill (HRW-05b):** `URpgFocusSet` (`Focus`, `MaxFocus` 100) on the
+  PlayerState ability system, `COND_OwnerOnly`, granted by the existing
+  AddAbilities action of `GF_Harvesting_Magic`, as `URpgGatheringSet` is.
+  - The server fills once per swing execution in
+    `URpgGameplayAbility_Harvest::ResolveSelection`, when any result is an
+    accepted direct hit.
+  - The amount is the captured tuning `Ability.Tuning.Harvest.FocusGain`.
+    Its base `FocusGainPerSwing` is 0, so other harvest abilities never fill;
+    both swings set 4.
+  - Rejected contacts, secondary follow-up work and stride pulses never fill.
+  - The gain effect ignores `Harvest.Spell.Active`, so the spell does not
+    refill its own meter. From HRW-05c it also requires `Harvest.Spell.Known`.
+  - Focus survives tool switches and death and is not saved.
+- **Spell (HRW-05c):** `GA_HarvestSpell_WideSwing` is a Blueprint on
+  `URpgGameplayAbility`: LocalPredicted, Independent, no montage.
+  - Its cost is an instant effect of minus `MaxFocus`, so it passes only on a
+    full meter.
+  - `GE_HarvestSpell_WideSwing` lasts 10 s, does not stack and carries the
+    tunings `SwingReach` +150 cm and `SwingTargets` +2, for
+    `Ability.Harvesting.AxeChop` and `Ability.Harvesting.PickaxeStrike`. The
+    pickaxe entries are dropped if its strike misses veins behind.
+  - The effect grants `Harvest.Spell.Active` and `Harvest.Spell.WideSwing`,
+    clears on respawn and plays a looping cue.
+  - The values stay inside the native clamps (reach at most 400 cm, 1 to 8
+    targets). Every extra contact is a direct hit on the same fixed stock, so
+    the spell saves swings and walking, not material.
+- **Tree node (HRW-05c):** `SkillTree.Node.Harvesting.WideSwing`, the entry
+  of a Spells region.
+  - It costs 1 point and is an Active node.
+  - Its ability set grants the spell with an ability id and no input tag, so
+    the first free slot puts it on Q. Its granted tag is `Harvest.Spell.Known`.
+  - HRW-05d moves it to the axe tree.
+- **Ownership:** see the HRW-05 C++ boundary decision.
+  - The two native classes come with small native edits: the fill hook,
+    read-only focus and spell fields on `URpgCharacterStatsViewModel`, and a
+    remaining-time-by-tag helper on `URpgAbilitySystemComponent`.
+  - The meter is a CommonUI widget in `GF_Harvesting_Magic`.
+- **Multiplayer:** the server alone fills focus and commits contacts, from
+  its own captured values.
+  - The spell's cost and effect are predicted on the owner and confirmed by
+    GAS.
+  - Under Mixed replication the effect reaches the owner in full and the
+    other clients as tags and the cue. Partners and late joiners see the cue
+    but never another player's focus.
+  - The reliable activation RPC puts the spell before the next swing, so
+    owner and server agree from the first wide swing.
+  - A swing that starts inside the spell finishes wide.
+- **Risks to measure:**
+  - The real montages' reach geometry for both tools (HRW-05c).
+  - Rejected contacts using up spell targets.
+  - Power creep: at this rhythm the spell runs for roughly 40 to 50 % of
+    steady chopping.
+  - Rune follow-ups firing per extra contact until HRW-05e; playtest with the
+    runes unsocketed.
+  - The expiry gap of at most one swing, which the PIE test must bound.
+  - Extra contacts ignore harvest protection boxes.
+  - The cost of the effect scan per tuned read.
+
+### HRW-05a: ability tunings from active effects
+
+`GetTunedValueForSpec` read only the source item's tree and runes, so no timed
+effect could change a tuning. HRW-05a adds that seam alone, native only, with
+no assets.
+
+#### HRW-05a report
+
+Branch `claude/hrw-05a-effect-tunings`, PR [#352](https://github.com/Athurito/SurvivalRpg/pull/352): `6e4f3e52` the seam, its tests, the docs and this report, then a commit that records the PR in the status row and here.
+
+- **Component:** `URpgAbilityTuningEffectComponent`
+  (`Source/SurvivalRpg/AbilitySystem/Effects`), shown as "Ability Tunings" in
+  the effect editor. It holds `TArray<FRpgSkillTreeAbilityTuning>
+  AbilityTunings`, the schema of tree nodes and rune ranks.
+  - `IsDataValid` rejects an entry without a tag under `Ability.Tuning`, a
+    non-finite value and an Instant owning effect.
+  - It warns on an entry without `AbilityIdTag`, on a stacking owning effect
+    and on a Set entry.
+- **Composition** in `URpgGameplayAbility::GetTunedValueForSpec`:
+  1. It returns the base for an invalid tag.
+  2. It collects the ability ids once.
+  3. It folds the source item's tree, then its runes.
+  4. It folds every active effect of `ActorInfo.AbilitySystemComponent` that
+     carries the component and is neither inhibited nor pending removal, in
+     container order.
+  5. It resolves.
+  - The effect source also applies without a source item.
+  - Each effect counts once, whatever its stack count.
+  - Effects fold last, so their Set wins over tree and rune Sets.
+- **Resolver split:** `URpgSkillTreeComponent::CollectTuningAbilityIds` and
+  `AccumulateItemTuningsForSpec`. `ResolveAbilityTuningForSpec` stays as the
+  item-only wrapper.
+- **Stat:** a cycle counter, `Rpg Ability Tunings From Effects` in
+  `stat AbilitySystem`, wraps the effect scan.
+- **Docs:** the `Ability.Tuning` tag comment, the `GetTunedValue` and tuning
+  schema comments, [skill-trees.md](skill-trees.md) (rules and a recipe for
+  tuning from a timed effect), and the harvest tunings table in
+  [harvesting-roadmap.md](harvesting-roadmap.md#harvest-tunings), which now
+  also lists `SwingReach` and `SwingTargets`.
+- **Test seam:** `URpgAbilityTuningEffectComponent::MakeTransientEffectForTests`,
+  compiled only with dev automation tests.
+
+##### Tests
+
+- `SurvivalRpg.AbilitySystem.Tuning.ActiveEffectTunings`:
+  - `EffectTunesWhileActive`: an applied duration effect tunes an ability without source item; removal and expiry restore the base; an effect without the component changes nothing.
+  - `InhibitedEffectIsIgnored`: unmet `OngoingTagRequirements` inhibit the effect, and the gate tag switches it on and off.
+  - `AbilityIdFilterIsExact`: an entry tunes only its named id, not a child id, another ability or an ability without id; an entry without id tunes all.
+  - `StackCountIsIgnored`: three stacks tune once.
+  - `FoldAfterTreeAndRunes`: with a source item, the effect's Set beats the tree's and the rune's, and Adds sum across all three. The item-only resolver ignores the effect.
+  - `DataValidation`: the rejections and warnings above.
+- `SurvivalRpg.Harvesting.Swing.EffectReachHitsTargetBehind`: a Wide Swing effect on a swing without source item traces 150 cm past the tip and takes the resource behind. After removal the reach is back.
+- `SurvivalRpg.Harvesting.Tuning.ValuesCapturedAtExecutionStart`, extended on an eight-section grove: a spell effect applied during a swing waits for the next swing, and one that expires during a swing leaves it wide.
+
+##### Validation
+
+All through `ue.py` with the MCP autostart off. No editor ran in this worktree, and the user's editor on port 8000 was not touched.
+
+- `build`: passed, 0 errors, 0 warnings.
+- `test SurvivalRpg.AbilitySystem SurvivalRpg.Progression.SkillTrees SurvivalRpg.Runes SurvivalRpg.Harvesting --null-rhi`: **143 / 143 passed**, none with warnings. This includes the six new seam tests, both harvest tests above, `ReachTuningHitsTargetBehind`, `TuningsChangeAbilityValues`, `SocketedRuneTunesItsTool` and `RuneBoundNodesSleepWithoutTheirRune`.
+- `test SurvivalRpg.Network.HarvestSwingPIE SurvivalRpg.Network.LootHarvestPIE SurvivalRpg.Network.HarvestCuePIE SurvivalRpg.Network.CombatRemoteMeleePIE` (rendered, separate call): **17 / 17 passed**. All 17 logged only the usual `FNetGUIDCache` warnings, and no ensure fired.
+- `python Build/Tools/AgentSkills/sync.py --check`: consistent.
+
+##### Limits
+
+- Nothing uses the component yet: no effect asset carries it, and it was not
+  opened in an editor. Its editor validation ran only through `IsDataValid`
+  in the tests.
+- A predicted effect and its server copy can both be on the owner for a moment,
+  as for attribute modifiers in GAS; tunings would then count it twice. GAS
+  usually removes the predicted copy in the same network update. Not measured;
+  the HRW-05c spell PIE test bounds the owner-server mismatch.
+- The cost of the scan is not measured; the stat is in place for the HRW-05c
+  two-player check.
+- An entry without ability id tunes every reader of its tag on the player,
+  combat attacks included. The validator warns; content names ids.
+
+##### Playtest
+
+None: nothing observable changes until HRW-05c ships the spell.
 
 ## HRW-01 report
 
@@ -585,5 +740,8 @@ Branch `claude/hrw-01-tool-animations`. The hit model is unchanged: swings still
 - HRW-01 and HRW-02 share no files and can run in parallel.
 - HRW-03 starts when both are merged; HRW-04 follows HRW-03, and HRW-05 follows
   HRW-04.
+- HRW-05a and HRW-05b share no code; editor sessions and binary assets still
+  run one at a time. HRW-05c needs both, HRW-05d follows HRW-05c, and HRW-05e
+  follows HRW-05d.
 - Every gameplay task runs the listen-server PIE tests and adds a two-player
   step to its playtest.
