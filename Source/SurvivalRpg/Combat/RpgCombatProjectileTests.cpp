@@ -266,6 +266,7 @@ bool FRpgCombatProjectileImpactAppliesOnceTest::RunTest(const FString& Parameter
 	TestEqual(TEXT("The projectile keeps the shooter's faction"), Projectile->GetGenericTeamId().GetId(), static_cast<uint8>(1));
 	TestEqual(TEXT("The projectile keeps its shot identity"), Projectile->GetShotId(), 7);
 	TestTrue(TEXT("The projectile flies from its origin"), Projectile->GetActorLocation().Equals(Origin));
+	TestFalse(TEXT("The projectile's own components never collide"), Projectile->GetActorEnableCollision());
 	const FGameplayEffectContextHandle Context = Projectile->GetDamageSpecForTests().Data->GetContext();
 	TestEqual(TEXT("The projectile is the damage's effect causer"), Context.GetEffectCauser(), static_cast<AActor*>(Projectile));
 	TestEqual(TEXT("The shooter stays the damage's instigator"), Context.GetOriginalInstigator(), static_cast<AActor*>(Fixture.Shooter.Pawn));

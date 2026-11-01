@@ -49,7 +49,7 @@ There was no projectile. Spells and the planned bow had no way to fly, hit, dama
   - A projectile meets only a block whose source lists `Damage.Type.Projectile`. The block cone faces the incoming flight (`RpgCombatImpact::ResolveProjectileOutcome`, `GetIncomingDirection`), never the shooter's position.
   - A perfect block stops all damage and never staggers the distant shooter. Block events and hit cues name the projectile as their source.
   - Melee blocking is unchanged.
-- **Collision:** `Rpg_TraceChannel_Projectile` blocks by default, so world geometry, character meshes and ragdolls stop projectiles. Pawn capsules (`RpgPawnCapsule`, `CharacterCapsule`, `Pawn`), triggers and the overlap profiles ignore it, so projectiles hit the visible body and never stop on invisible volumes.
+- **Collision:** `Rpg_TraceChannel_Projectile` blocks by default, so world geometry, character meshes and ragdolls stop projectiles. Pawn capsules (`RpgPawnCapsule`, `CharacterCapsule`, `Pawn`), triggers and the overlap profiles ignore it, so projectiles hit the visible body and never stop on invisible volumes. The projectile disables its own actor collision, so meshes a subclass attaches never block pawns, cameras or other projectiles.
 - **Dev command:** `Rpg.Combat.LaunchProjectile <ClassPath> [Speed] [Damage]` launches a projectile along the host's view without equipment (server only, non-shipping builds).
 
 ### Content
@@ -62,28 +62,26 @@ There was no projectile. Spells and the planned bow had no way to fly, hit, dama
 
 ## Validation (2026-11-01, on `master` `0e45c7c3` plus this change)
 
-Runs in the task worktree:
+Final runs in the task worktree, on the code of this PR:
 
 - **Build:** `ue.py build` passed, 0 errors, 0 warnings.
 - **Native tests:** `ue.py test SurvivalRpg.Combat.Projectile --null-rhi --expect-tests 6` passed 6 / 6:
   - `DirectionalBlock`: the block cone faces the incoming flight, not the shooter; perfect-block window; all-around block; the incoming direction from the hit segment or from origin to impact.
-  - `ImpactAppliesOnce`: launch without equipment or an ability; faction, shot identity and effect causer are kept; a second impact report deals no second damage; the launch origin survives `AddHitResult`.
+  - `ImpactAppliesOnce`: launch without equipment or an ability; faction, shot identity and effect causer are kept; the projectile's own components never collide; a second impact report deals no second damage; the launch origin survives `AddHitResult`.
   - `ShieldBlock`: a shield blocks a frontal projectile with reduced damage, a shot into the back hits although the shooter stands in front, a melee-only block takes full damage, a perfect block takes none and never staggers the shooter.
   - `LaunchState`: damage uses the shooter's stats from the launch, after the stats changed and the shooter was destroyed.
   - `FlightSweep`: the sweep passes the shooter, hits the target, flies through a dodging target and keeps it passed.
   - `CollisionProfiles`: world, mesh, ragdoll and harvestable profiles block the projectile channel; capsule, pawn, trigger and overlap profiles ignore it.
-- **Skills:** `python Build/Tools/AgentSkills/sync.py --check` passed.
-
-Runs in the master checkout on the same code, before the move to this worktree:
-
 - **Regression:** `ue.py test SurvivalRpg.Combat.Block.Lifecycle SurvivalRpg.Combat.HitFeedback SurvivalRpg.Combat.Dodge SurvivalRpg.Combat.ReactionProfile SurvivalRpg.Combat.Runes SurvivalRpg.Combat.SwingTrace SurvivalRpg.Combat.AbilityContent SurvivalRpg.Combat.HyperArmor SurvivalRpg.AbilitySystem SurvivalRpg.Combat.Projectile --null-rhi` passed 48 / 48.
-- **PIE network tests** (listen server with two clients; `--ue-arg=-ini:Engine:[ConsoleVariables]:TestFramework.CQTest.CommandTimeout.Network=90`):
-  - `SurvivalRpg.Network.CombatProjectilePIE --expect-tests 3` passed 3 / 3:
-    - `ReplicatedFlightHitsOnceWithOneImpactCuePerMachine`: every client sees the projectile in flight, the target takes one hit, and each machine plays exactly one impact cue at the target.
-    - `PointBlankAndOrphanedProjectilesStillHitOnce`: a projectile that hits before it first replicates, and one whose shooter is destroyed in flight, each hit once with one cue per machine and leave every machine.
-    - `PredictedAbilityLaunchesWithoutEquipment`: a client-predicted ability without equipment launches through `LaunchFromAbility`; the hit names the predicting player as instigator, and the predicting client plays the impact cue too.
-  - `SurvivalRpg.Network.CombatRemoteMeleePIE SurvivalRpg.Network.CombatImpactCuesPIE SurvivalRpg.Network.KillXPCuePIE` passed 7 / 7. The `LogNetPackageMap ... PersistentLevel NOT Supported` warnings are baseline noise of every PIE test.
-- **Manual PIE, `Lvl_ThirdPerson`:** `Rpg.Combat.LaunchProjectile` with `BP_Projectile_Fireball` flew along the view and exploded at the wall with the fireball impact cue.
+- **PIE network tests:** `ue.py test SurvivalRpg.Network.CombatProjectilePIE SurvivalRpg.Network.CombatRemoteMeleePIE SurvivalRpg.Network.CombatImpactCuesPIE SurvivalRpg.Network.KillXPCuePIE --expect-tests 10 --ue-arg=-ini:Engine:[ConsoleVariables]:TestFramework.CQTest.CommandTimeout.Network=90` passed 10 / 10. The projectile tests run a listen server with two clients:
+  - `ReplicatedFlightHitsOnceWithOneImpactCuePerMachine`: every client sees the projectile in flight, the target takes one hit, and each machine plays exactly one impact cue at the target.
+  - `PointBlankAndOrphanedProjectilesStillHitOnce`: a projectile that hits before it first replicates, and one whose shooter is destroyed in flight, each hit once with one cue per machine and leave every machine.
+  - `PredictedAbilityLaunchesWithoutEquipment`: a client-predicted ability without equipment launches through `LaunchFromAbility`; the hit names the predicting player as instigator, and the predicting client plays the impact cue too.
+  - The warnings of every test are the baseline `LogNetPackageMap` package-map messages and, in the melee and impact-cue tests, `AdvancedFriendsInterfaceLog` without a voice interface; none comes from the projectile.
+- **Skills:** `python Build/Tools/AgentSkills/sync.py --check` passed.
+- **Earlier runs:** the same suites passed in the master checkout before the work moved to this worktree (48 / 48, 3 / 3 and 7 / 7), on the code before the collision hardening below.
+- **Manual PIE, `Lvl_ThirdPerson`** (master checkout, before the collision hardening): `Rpg.Combat.LaunchProjectile` with `BP_Projectile_Fireball` flew along the view and exploded at the wall with the fireball impact cue. Captures: `Saved/RNG01/fireball-flight.png`, `fireball-impact.png` (ignored, local evidence).
+- **Review:** a focused review of the diff found no correctness defect. It added the native collision hardening (`SetActorEnableCollision(false)`, so content meshes under `VisualRoot` never block pawns, cameras or other projectiles) and recorded the impact cue budget and the client launch-sound position as limits.
 
 ## Playtest
 

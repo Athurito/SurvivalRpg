@@ -63,6 +63,9 @@ ARpgCombatProjectile::ARpgCombatProjectile(const FObjectInitializer& ObjectIniti
 	SetReplicatingMovement(true);
 	SetNetCullDistanceSquared(FMath::Square(RpgCombatProjectile::NetCullDistance));
 	SetNetUpdateFrequency(30.0f);
+	// The server's sweep is the only collision. Meshes a subclass attaches under VisualRoot never block pawns, cameras or
+	// other projectiles, in flight or while the stopped projectile lingers.
+	SetActorEnableCollision(false);
 
 	CollisionSphere = CreateDefaultSubobject<USphereComponent>(TEXT("CollisionSphere"));
 	CollisionSphere->InitSphereRadius(CollisionRadius);

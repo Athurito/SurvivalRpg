@@ -206,7 +206,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Projectile")
 	TObjectPtr<USphereComponent> CollisionSphere;
 
-	/** Parent for all flight presentation (meshes, Niagara, audio). Clients smooth network corrections through it. */
+	/**
+	 * Parent for all flight presentation (meshes, Niagara, audio). Clients smooth network corrections through it. Nothing
+	 * under it collides: the projectile disables its actor collision, so only the server's sweep detects impacts.
+	 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Projectile")
 	TObjectPtr<USceneComponent> VisualRoot;
 
