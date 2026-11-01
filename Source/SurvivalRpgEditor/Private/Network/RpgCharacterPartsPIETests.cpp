@@ -214,19 +214,19 @@ namespace RpgCharacterPartsPIETests
 		}
 		return false;
 	}
-	/** Grants the first Count armor items to the player's inventory on the authority. */
-	void GrantArmor(UWorld* World, int32 PlayerId, int32 Count, FAutomationTestBase& Test)
+	/**
+	 * Grants the armor item at Index to the player's inventory on the authority. Starter items of other features
+	 * share the pockets, so callers equip each piece before granting the next instead of holding all five at once.
+	 */
+	void GrantArmorPiece(UWorld* World, int32 PlayerId, int32 Index, FAutomationTestBase& Test)
 	{
 		URpgInventoryManagerComponent* Inventory = InventoryOf(World, PlayerId);
-		Test.TestNotNull(TEXT("The player's inventory exists on the server"), Inventory);
-		for (int32 Index = 0; Inventory && Index < Count; ++Index)
+		if (!Test.TestNotNull(TEXT("The player's inventory exists on the server"), Inventory)) return;
+		UClass* ItemClass = LoadClass<URpgInventoryItemDefinition>(nullptr, ArmorItemPaths[Index]);
+		Test.TestNotNull(*FString::Printf(TEXT("%s loads"), ArmorItemPaths[Index]), ItemClass);
+		if (ItemClass)
 		{
-			UClass* ItemClass = LoadClass<URpgInventoryItemDefinition>(nullptr, ArmorItemPaths[Index]);
-			Test.TestNotNull(*FString::Printf(TEXT("%s loads"), ArmorItemPaths[Index]), ItemClass);
-			if (ItemClass)
-			{
-				Test.TestNotNull(*FString::Printf(TEXT("%s is granted"), ArmorItemPaths[Index]), Inventory->GrantItemDefinition(ItemClass));
-			}
+			Test.TestNotNull(*FString::Printf(TEXT("%s is granted"), ArmorItemPaths[Index]), Inventory->GrantItemDefinition(ItemClass));
 		}
 	}
 	/** True when the local controller's inventory replica holds the first Count armor items. */
@@ -330,15 +330,15 @@ NETWORK_TEST_CLASS(CharacterPartsListenServerPIE, "SurvivalRpg.Cosmetics.Charact
 				ARpgCharacter* Remote = PlayerCharacter(State.World, SubjectId);
 				ARpgCharacter* Host = LocalCharacter(State.World);
 				return Ready(State.World, Remote) && WearsPaladin(Remote, 0, false) && Ready(State.World, Host) && WearsPaladin(Host, 0, false);
-			}, Timeout())
-			.ThenServer(TEXT("Grant the five Paladin items to the remote owner"), [this](FState& State)
-				{ GrantArmor(State.World, SubjectId, ArmorCount, *TestRunner); })
-			.UntilClient(TEXT("The owner's inventory replica receives every armor item"), 0, [](FState& State)
-				{ return OwnerHoldsArmor(State.World, ArmorCount); }, Timeout());
-		// One intent per step, as a player equips piece by piece in the inventory UI.
+			}, Timeout());
+		// One grant and one intent per step, as a player picks up a piece and equips it in the inventory UI.
 		for (int32 Index = 0; Index < ArmorCount; ++Index)
 		{
-			Network.ThenClient(TEXT("Owner equips the next piece through the inventory equipment intent"), 0, [this, Index](FState& State)
+			Network.ThenServer(TEXT("Grant the next Paladin piece to the remote owner"), [this, Index](FState& State)
+					{ GrantArmorPiece(State.World, SubjectId, Index, *TestRunner); })
+				.UntilClient(TEXT("The owner's inventory replica receives that piece"), 0, [Index](FState& State)
+					{ return OwnerHoldsArmor(State.World, Index + 1); }, Timeout())
+				.ThenClient(TEXT("Owner equips that piece through the inventory equipment intent"), 0, [this, Index](FState& State)
 					{ RequestEquipmentIntent(State.World, ArmorItemPaths[Index], ERpgInventoryEquipmentIntentOperation::EquipDefaultAndActivate, *TestRunner); })
 				.UntilServer(TEXT("The owner's loadout equips that piece"), [this, Index](FState& State)
 					{ return SlotEquipped(PlayerCharacter(State.World, SubjectId), ArmorSlots[Index]); }, Timeout());
@@ -407,12 +407,12 @@ NETWORK_TEST_CLASS(CharacterPartsListenServerPIE, "SurvivalRpg.Cosmetics.Charact
 			{
 				ARpgCharacter* Character = PlayerCharacter(State.World, SubjectId);
 				return Ready(State.World, Character) && Character != State.PawnBeforeDeath.Get() && WearsPaladin(Character, ArmorCount - 1, false);
-			}, Timeout())
-			.ThenServer(TEXT("Grant the five Paladin items to the listen-server host"), [this](FState& State)
-				{ GrantArmor(State.World, State.World->GetFirstPlayerController()->GetPlayerState<APlayerState>()->GetPlayerId(), ArmorCount, *TestRunner); });
+			}, Timeout());
 		for (int32 Index = 0; Index < ArmorCount; ++Index)
 		{
-			Network.ThenServer(TEXT("Host equips the next piece through the inventory equipment intent"), [this, Index](FState& State)
+			Network.ThenServer(TEXT("Grant the next Paladin piece to the listen-server host"), [this, Index](FState& State)
+					{ GrantArmorPiece(State.World, State.World->GetFirstPlayerController()->GetPlayerState<APlayerState>()->GetPlayerId(), Index, *TestRunner); })
+				.ThenServer(TEXT("Host equips that piece through the inventory equipment intent"), [this, Index](FState& State)
 					{ RequestEquipmentIntent(State.World, ArmorItemPaths[Index], ERpgInventoryEquipmentIntentOperation::EquipDefaultAndActivate, *TestRunner); })
 				.UntilServer(TEXT("The host's loadout equips that piece"), [Index](FState& State)
 					{ return SlotEquipped(LocalCharacter(State.World), ArmorSlots[Index]); }, Timeout());
@@ -478,7 +478,8 @@ NETWORK_TEST_CLASS(CharacterPartsDedicatedServerPIE, "SurvivalRpg.Cosmetics.Char
 			.ThenServer(TEXT("Grant helmet and chest on the dedicated server"), [this](FState& State)
 			{
 				ASSERT_THAT(IsTrue(State.World->GetNetMode() == NM_DedicatedServer && Isolation.IsIsolated(State.World)));
-				GrantArmor(State.World, SubjectId, 2, *TestRunner);
+				GrantArmorPiece(State.World, SubjectId, 0, *TestRunner);
+				GrantArmorPiece(State.World, SubjectId, 1, *TestRunner);
 			})
 			.UntilClient(TEXT("Client inventory replica receives both items"), 0, [](FState& State)
 				{ return OwnerHoldsArmor(State.World, 2); }, Timeout());
