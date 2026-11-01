@@ -58,6 +58,7 @@ how a hit is found, not what a hit does.
 | HRW-04 | Hold to keep swinging and a stock indicator that appears after a hit instead of the aim highlight | Merged: [#339](https://github.com/Athurito/SurvivalRpg/pull/339) |
 | HRW-04b | Swing feel after the first playtest: faster swing without the pull-out, local harvesting hitstop, stronger impact feedback, trace over the whole tool | Merged: [#341](https://github.com/Athurito/SurvivalRpg/pull/341) |
 | HRW-04c | Tool mesh pivots at the grip, so the user can tune the grip by turning the `ToolMesh` about the hand; in-hand look and trace unchanged | Merged: [#343](https://github.com/Athurito/SurvivalRpg/pull/343) |
+| HRW-04d | Second playtest: thin the dust that hides a falling tree, and give the pickaxe the axe's quick swing | In review: [#346](https://github.com/Athurito/SurvivalRpg/pull/346) |
 | HRW-05 | Focus meter and harvesting spells chosen in the skill tree, first spell Wide Swing; redesign of the tree and the runes | Planned |
 
 ## Task scope
@@ -394,6 +395,66 @@ All builds and tests through `ue.py`, with the MCP autostart off for test runs; 
 2. Pick up the pickaxe and strike an iron vein: it sits and strikes as before.
 3. Pause PIE and select the held axe's `ToolMesh`: its location reads 0, 0, 0, and rotating it turns the axe about the right hand. Keep a good value by setting it on the `ToolMesh` of `BP_Tool_AxeActor`.
 4. **Multiplayer:** play as listen server with two players. Each player sees the other's axe and pickaxe where they were before, and both players' chops take sections from the same pine.
+
+### HRW-04d: felling smoke and the pickaxe swing
+
+In the second playtest (2026-11-01) the axe feels right. Two points remain: the smoke is too thick while a felled tree is falling, and the pickaxe still looks like the original slow animation.
+
+#### HRW-04d report
+
+Branch `claude/hrw-04d-fell-smoke-pickaxe`, PR [#346](https://github.com/Athurito/SurvivalRpg/pull/346): `fb6adae0` assets, then this report with the skill notes and the status row. Asset changes only; no native code changed.
+
+- **Smoke, cause:** in standalone PIE in `Lvl_HarvestPickaxe`, the real axe felled a dead pine while every active Niagara component was listed at each shot. While the pine falls, only the tool hit cue's systems run; `BP_HarvestFallingTree` spawns a system only when Ash Wave ignites it. `GCN_Harvest_ToolHit` spawned `NS_FX_Tpl_SmokePuff`: five lit puffs of 45 to 80 cm that grow ×2.2 over 1.6 to 2.4 s. The cue's scale 0.22 from HRW-04b shrank only the spawn sphere, because the template's sprite size ignores the component scale. A held axe chops about twice per second, so the last chops stacked up to four of these bursts at the trunk, and the cloud hung over the trunk for about 2 s of its fall. The stone cue for the pickaxe used the same puff.
+- **Smoke, change:** the new `NS_Harvest_ToolDust` (`GF_Harvesting_Magic/FX`), a copy of the template with 3 puffs of 20 to 34 cm that live 0.5 to 0.85 s from a 6 cm sphere. Velocity, buoyancy, drag, colour, alpha curve and material are the template's. `GCN_Harvest_ToolHit` and its child `GCN_Harvest_ToolHit_Stone` play it at scale 1 instead of the template. Chips, sounds, shake and hitstop are unchanged, and so is the core template, which the VFX gallery also uses.
+- **Pickaxe, verified on master:** standalone PIE with the level's own pickaxe pickup on `Harvest_IronVein_2`, the first swing through the real mouse button. `AM_Harvest_PickaxeStrike` played at 1.18 s and rate 1.5, without the pull-out. Each first contact froze the montage for 62 ms, the stone chips spawned, and the vein went 4 to 0 in four swings. Everything was wired. It still read slow because HRW-04b trimmed only the end. The montage started mid-raise (clip 0.667 s), the hands reach the top of the raise at about 1.13 s, and the strike lands at 1.6 to 1.7 s, so contact came 0.60 s after the swing began. The axe montage starts near the top of its wind-up.
+- **Pickaxe, change:** `TrimMontageToRange` cut 0.333 s from the start: clip 1.0 to 1.847 s, 0.847 s long, attack window 0.40 to 0.767 s, impact notify 0.70 s. Blend-in 0.18 s, blend-out 0.25 s at the end, rate 1.5 and hitstop 60 ms are unchanged, so the proxies' 0.1 s correction margin stays as in HRW-04b. As with the axe, the blend-in from the previous strike now forms the short raise. The server's cadence follows the montage through `ResolveSwingCycleSeconds`.
+
+  | Swing | Contact after | Cycle (montage / rate) | Held swings in PIE |
+  | --- | --- | --- | --- |
+  | Pickaxe before | 0.60 to 0.63 s | 0.787 s | every 0.85 s |
+  | Pickaxe now | 0.38 to 0.43 s | 0.565 s | every 0.63 to 0.69 s |
+  | Axe (HRW-04b) | about 0.33 s | 0.44 s | every 0.47 to 0.55 s |
+
+  The held-swing times include the 60 ms hitstop and one frame of the driver's re-trigger.
+- **Pickaxe grip:** posed `SKM_Manny_Simple` mannequins held the real pickaxe actor at clip 0.8 to 1.7 s. The left hand's middle knuckle stays 0.5 to 8.6 cm from the handle axis (the axe at its master rotation: 3 cm). The pick sits overhead at the top of the raise, leads in the downstroke and points down and forward at impact. Since it is not clearly off, its `ToolMesh` rotation is unchanged, and the user can fine-tune it like the axe. `BP_Tool_AxeActor` is untouched (PR #345).
+
+##### Validation
+
+All tests through `ue.py`, with the MCP autostart off and my own editor (port 8020; port 8000 untouched) closed.
+
+- `build` before the asset work: passed, 0 errors, 1 engine warning in `ChaosMoverSimulation.cpp`.
+- `test SurvivalRpg.Harvesting SurvivalRpg.Interaction.Harvesting --null-rhi`: **115 / 115 passed**, including `SwingMontageContract` (window, impact inside it, blend-out at most 0.25 s after the impact, hitstop below the proxies' threshold), `PickaxeToolContract`, `AxeToolContract`, `LocalHitstopKeepsTheCadence` and `ClientCannotOutpaceTheMontage`.
+- `test SurvivalRpg.Network.HarvestSwingPIE SurvivalRpg.Network.LootHarvestPIE SurvivalRpg.Network.HarvestCuePIE` (rendered, separate call): **12 / 12 passed**, all with the usual `FNetGUIDCache` log warnings and no ensure.
+- Editor (MCP, port 8020): `NS_Harvest_ToolDust` compiled with 0 errors and 0 warnings; both cues compiled and read back the new particle entry after saving; no dirty packages before closing.
+- `python Build/Tools/AgentSkills/sync.py` and `--check`: consistent.
+
+##### Agent check by eye
+
+In my own editor, standalone PIE in `Lvl_HarvestPickaxe` with the real character, tools, pines and veins under `slomo 0.25`. Frames come from `HighResShot` of the PIE viewport only; the trace debug draw was off in memory for the shots.
+
+- **Felling, before:** at the felling chop four smoke puff systems were active, still two at 1.6 s into the fall. The frames show a grey cloud about 1.2 m wide over the trunk from 0.3 to 1.6 s into the fall.
+- **Felling, after:** two dust systems at the felling chop, one at 0.9 s, none from 1.2 s. No cloud is visible, and the trunk falls in clear view.
+- **Hit burst A/B** at the same point in front of a pine, with the pawn hidden: the old puff is about 0.5 m at 0.05 s, passes 1 m and is still dense at 1.5 s. The new dust is a small puff from 0.05 to 0.4 s, faint at 0.7 s and gone at 1.0 s; the chips are unchanged. A first version (14 to 24 cm, 0.45 to 0.75 s) was barely visible at the hit and was enlarged.
+- **Pickaxe, after:** contacts at montage 0.57 to 0.64 s, each first contact froze the montage for 61 ms, stone chips and dust spawned, and the vein went 4 to 0 in four swings. The frames show the pick overhead 0.16 s after the swing starts and the strike at 0.40 s.
+- **Listen server**, host and one client in one process, at normal speed:
+  - The client mined a vein with the pickaxe through its mouse button. Its own montage froze 59 to 77 ms per contact. The host's copy played at rate 1.5 and did not freeze. Stone chips and dust spawned in both worlds, and the vein went 4 to 0.
+  - The host felled a pine with the axe. The host's montage froze 73 to 83 ms per contact, and the client's simulated proxy never froze. On the client, the falling tree appeared, two dust systems were left 0.3 s into the fall and none at 1.5 s.
+- **Failed attempt:** the first two-player driver started the client's swings with `try_activate_ability_by_class` from the editor's Slate tick. The server RPC ran locally on the client's ability system and recursed until my editor crashed with a stack overflow. The driver then pressed the mouse button in the client's world instead; [editor sessions and PIE](../.agents/skills/unreal-lyra-expert/references/editor-session-and-pie.md#pie-sessions) records it.
+
+##### Limits
+
+- The feel needs the user's playtest. I judged the motion from slow-motion frames and numbers, and did not hear the sounds.
+- The pickaxe stays a little heavier than the axe: contact after 0.40 s instead of 0.33 s, and a cycle of 0.565 s instead of 0.44 s. If it still reads slow, raise `MontagePlayRate` on `GA_Harvest_PickaxeStrike`; up to 1.66 keeps a 60 ms hitstop below the proxies' 0.1 s threshold.
+- From HRW-04b, unchanged here: a host's pause ends on a frame boundary and measured 73 to 83 ms at about 55 fps, which is 0.11 to 0.12 s of montage time at rate 1.5 and above the 0.1 s threshold. Once in four host chops the client's proxy reached the montage end first and replayed its tail before the next swing arrived.
+- The dust was judged against the bright test sky and the pale grid only, not in darker scenes.
+- The pickaxe grip is unchanged.
+
+##### Playtest
+
+1. Open `Lvl_HarvestPickaxe`, pick up the axe and hold the left mouse button at a dead pine until it falls. Each chop throws chips and a small dust puff. When the tree falls, the dust is gone within about a second and the trunk falls in clear view.
+2. Pick up the pickaxe and hold at an iron vein. The pick goes up and strikes about 0.4 s after the press, roughly every 0.6 s while held, with grey chips, a small dust puff, a pick sound and a brief stop at each hit.
+3. Look at the pickaxe in the hand. If the grip looks off, turn the `ToolMesh` of `BP_Tool_PickaxeActor` about the hand in paused PIE, as for the axe.
+4. **Multiplayer:** play as listen server with two players. The client mines a vein while the host watches: the host sees the quicker strikes at a steady pace with chips and dust, without the client's pauses. Then the host fells a pine while the client watches: the client sees smooth chops and the tree falling without a lingering cloud.
 
 ### HRW-05: focus meter and harvesting spells
 
