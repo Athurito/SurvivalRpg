@@ -45,6 +45,8 @@ steps. Harvesting felt bad:
 | Focus rhythm | User decision, 2026-11-01: medium. About 25 landed swings fill the meter (gain 4 of 100), and the spell lasts 10 s. Retuned after the playtest. |
 | Spell trees | User decision, 2026-11-01: the harvesting tree is split per tool in HRW-05d, an axe tree on Logging and a pickaxe tree on Mining, each with its own spells. Focus stays shared. |
 | Runes | User decision, 2026-11-01: runes become spell modifiers in HRW-05e. A socketed rune changes the active spell and does nothing outside it. Sockets, recipes and the Runenschrein stay. |
+| Skill design pause | User decision, 2026-11-01, after the Wide Swing playtest: the harvesting skills stay as they are for now. Wide Swing remains the only harvesting spell, in the shared tree. HRW-05d and HRW-05e are on hold until the user has settled the skill and rune design; the "Spell trees" and "Runes" decisions above stay as direction but are not scheduled. |
+| Forest density | User decision, 2026-11-01: forests get dense stands like the HRW-05c test grove (HRW-05f). In the current stands, trunks 6.5 to 8 m apart and veins 3.3 to 5.5 m, no reach inside the 400 cm clamp hits a second resource. In the test grove, trunks 2.2 to 2.8 m apart, Wide Swing at +300 cm saves about a third of the swings and walks. |
 | HRW-05 C++ boundary | Two new native classes over all of HRW-05. `URpgAbilityTuningEffectComponent` (HRW-05a), because Blueprint cannot extend tuning resolution and every ability must resolve identically on the server and its owner. `URpgFocusSet` (HRW-05b), because attributes are native and focus needs owner-only replication, a predicted `CheckCost` and the cost toast. Everything concrete is assets in `GF_Harvesting_Magic`: the spell ability, its effects, cues and ability set, the tree node, the meter widget and the toast row. |
 
 ## What stays
@@ -68,8 +70,9 @@ how a hit is found, not what a hit does.
 | HRW-05a | Ability tunings from active GameplayEffects: an Ability Tunings effect component that `GetTunedValueForSpec` folds after the tree and runes; native only, no assets | Merged: [#352](https://github.com/Athurito/SurvivalRpg/pull/352) |
 | HRW-05b | Focus resource and fill: `URpgFocusSet` on the PlayerState, a server fill once per landed swing, the gain effect, read-only view-model fields and the HUD meter | Merged: [#353](https://github.com/Athurito/SurvivalRpg/pull/353) |
 | HRW-05c | Wide Swing on Q, closing the first playable's magical harvesting ability: spell ability, cost and spell effects, cues, tree node, failure toast row, asset contracts and a spell PIE test | Merged: [#358](https://github.com/Athurito/SurvivalRpg/pull/358) |
-| HRW-05d | Split the harvesting tree per tool (axe on Logging, pickaxe on Mining) with their own spells, and visible talents in place of the rune-gated ones | Planned |
-| HRW-05e | Runes as spell modifiers: tag-gated modifier effects applied with the spell, the ranks' always-on tunings cleared, rune bar and dormancy UI reworked | Planned |
+| HRW-05d | Split the harvesting tree per tool (axe on Logging, pickaxe on Mining) with their own spells, and visible talents in place of the rune-gated ones | On hold (user, 2026-11-01): skill design pause |
+| HRW-05e | Runes as spell modifiers: tag-gated modifier effects applied with the spell, the ranks' always-on tunings cleared, rune bar and dormancy UI reworked | On hold (user, 2026-11-01): skill design pause |
+| HRW-05f | Dense forest stands: PCG pine stands with trunks 2 to 3 m apart in the playable levels, so Wide Swing pays off; keep frame cost, stock persistence and the `Lvl_ResourceParity` counts in view | Planned |
 
 ## Task scope
 
