@@ -8,6 +8,7 @@
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Blueprint/WidgetTree.h"
 #include "GameFeatureData.h"
+#include "GameplayCueNotify_Actor.h"
 #include "GameplayEffect.h"
 #include "GameplayEffectComponents/TargetTagRequirementsGameplayEffectComponent.h"
 #include "GameFramework/Actor.h"
@@ -38,6 +39,7 @@
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
 #include "SurvivalRpg/Animation/AnimNotify_RpgWeaponAttackWindow.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/AbilitySystem/Effects/RpgAbilityTuningEffectComponent.h"
 #include "SurvivalRpg/Combat/RpgGameplayCueNotify_Impact.h"
 #include "SurvivalRpg/Equipment/RpgAbilityBindingResolver.h"
 #include "SurvivalRpg/Equipment/RpgWeaponAbilityLoadoutComponent.h"
@@ -290,6 +292,49 @@ namespace RpgHarvestContentContractTests
 			Cue && CueClass->IsChildOf<URpgGameplayCueNotify_Impact>() && Cue->GameplayCueTag == SuccessCue);
 	}
 
+	/** Region of the shared tree that holds harvesting spells; every other region holds passive talents. */
+	const FName SpellsRegion(TEXT("Spells"));
+
+	bool IsSpellNode(const FRpgSkillTreeNode& Node)
+	{
+		return Node.RegionId == SpellsRegion;
+	}
+
+	/**
+	 * A spell node is an Active node whose set grants exactly one ability, with an Ability.Harvesting.Spell id and no
+	 * input tag, so learning it fills the first free Q/E/R slot; it also grants Harvest.Spell.Known, which starts the
+	 * focus meter. Returns the spell's ability class, or null.
+	 */
+	TSubclassOf<URpgGameplayAbility> ExpectSpellNode(FAutomationTestBase& Test, const FRpgSkillTreeNode& Node)
+	{
+		const FString Name = Node.NodeTag.ToString();
+		Test.TestTrue(
+			*FString::Printf(TEXT("%s is an Active node"), *Name),
+			Node.KindTag == FGameplayTag::RequestGameplayTag(TEXT("SkillTree.NodeKind.Active")));
+		Test.TestTrue(
+			*FString::Printf(TEXT("%s grants Harvest.Spell.Known, which starts the focus meter"), *Name),
+			Node.GrantedTags.HasTagExact(FGameplayTag::RequestGameplayTag(TEXT("Harvest.Spell.Known"))));
+		Test.TestTrue(*FString::Printf(TEXT("%s needs no rune"), *Name), Node.RequiredRunes.IsEmpty());
+		if (!Test.TestNotNull(*FString::Printf(TEXT("%s grants an ability set"), *Name), Node.AbilitySet.Get()))
+		{
+			return nullptr;
+		}
+		const TArray<FRpgAbilitySet_GameplayAbility>& Abilities = Node.AbilitySet->GetGrantedGameplayAbilities();
+		Test.TestTrue(*FString::Printf(TEXT("%s grants no effect"), *Name), Node.AbilitySet->GetGrantedGameplayEffects().IsEmpty());
+		if (!Test.TestEqual(*FString::Printf(TEXT("%s grants exactly one ability"), *Name), Abilities.Num(), 1))
+		{
+			return nullptr;
+		}
+		const FRpgAbilitySet_GameplayAbility& Spell = Abilities[0];
+		const FGameplayTag SpellRoot = FGameplayTag::RequestGameplayTag(TEXT("Ability.Harvesting.Spell"));
+		Test.TestTrue(
+			*FString::Printf(TEXT("%s's ability has an Ability.Harvesting.Spell id (%s)"), *Name, *Spell.AbilityIdTag.ToString()),
+			Spell.AbilityIdTag.MatchesTag(SpellRoot) && Spell.AbilityIdTag != SpellRoot);
+		Test.TestFalse(*FString::Printf(TEXT("%s's ability has no input tag; the free slot binds it"), *Name), Spell.InputTag.IsValid());
+		Test.TestNotNull(*FString::Printf(TEXT("%s's ability class is set"), *Name), Spell.Ability.Get());
+		return Spell.Ability;
+	}
+
 	/** Paths of the profiles of the resources harvesting tools take; each advances the shared harvesting mastery. */
 	const TCHAR* ToolResourceProfilePaths[] = {
 		TEXT("/GF_Harvesting_Magic/Harvesting/Profiles/HP_IronVein.HP_IronVein"),
@@ -352,15 +397,24 @@ bool FRpgHarvestSharedTreeContractTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("The shared tree is a free-position map"), Tree.LayoutMode == ERpgSkillTreeLayoutMode::FreePosition);
 	TestTrue(TEXT("The shared tree frames a default region"), Tree.FindRegion(Tree.DefaultRegionId) != nullptr);
 
-	// Talents are passive tunings; nothing occupies the tool's Q/E/R anymore. Every branch (region) has one entry
-	// talent, and its other talents build on it.
+	// Talents are passive tunings that occupy no Q/E/R. Spells, in their own region, each grant one ability that
+	// learning places on the first free slot. Every branch (region) has one entry node, and its other nodes build on it.
 	TMap<FName, const FRpgSkillTreeNode*> Entries;
 	TSet<FName> ChoiceGroups;
+	int32 SpellNodes = 0;
 	for (const FRpgSkillTreeNode& Node : Tree.Nodes)
 	{
 		const FString Name = Node.NodeTag.ToString();
-		TestTrue(*FString::Printf(TEXT("%s grants no ability"), *Name), Node.AbilitySet == nullptr);
-		TestFalse(*FString::Printf(TEXT("%s changes harvesting through tunings"), *Name), Node.AbilityTunings.IsEmpty());
+		if (IsSpellNode(Node))
+		{
+			++SpellNodes;
+			ExpectSpellNode(*this, Node);
+		}
+		else
+		{
+			TestTrue(*FString::Printf(TEXT("%s grants no ability"), *Name), Node.AbilitySet == nullptr);
+			TestFalse(*FString::Printf(TEXT("%s changes harvesting through tunings"), *Name), Node.AbilityTunings.IsEmpty());
+		}
 		TestTrue(*FString::Printf(TEXT("%s belongs to a branch"), *Name), Tree.FindRegion(Node.RegionId) != nullptr);
 		if (Node.Prerequisites.IsEmpty())
 		{
@@ -411,6 +465,8 @@ bool FRpgHarvestSharedTreeContractTest::RunTest(const FString& Parameters)
 	}
 	TestTrue(TEXT("The tree has the Aftermath branch"), bHasAftermath);
 	TestFalse(TEXT("The tree offers an exclusive choice"), ChoiceGroups.IsEmpty());
+	TestTrue(TEXT("The tree frames a Spells region"), Tree.FindRegion(SpellsRegion) != nullptr);
+	TestTrue(TEXT("The tree teaches at least one spell"), SpellNodes > 0);
 
 	// Every resource of a harvesting tool advances the shared mastery once per section.
 	for (const TCHAR* ProfilePath : ToolResourceProfilePaths)
@@ -1332,16 +1388,26 @@ bool FRpgHarvestCatalogContractTest::RunTest(const FString& Parameters)
 	}
 	TestTrue(TEXT("The axe carries the same tree"), LoadToolSkillTree(*this, AxeItemClassPath, TreeTag, Mastery) == Tree);
 
-	// The plan's catalog: five branches of a one-point entry and two exclusive three-point choices, fifteen talents,
-	// and exactly enough points for one path through every branch.
+	// The plan's catalog: five talent branches of a one-point entry and two exclusive three-point choices, fifteen
+	// talents, and exactly enough points for one path through every branch plus every spell.
 	TMap<FName, TArray<const FRpgSkillTreeNode*>> Branches;
+	int32 PathCost = 0;
 	for (const FRpgSkillTreeNode& Node : Tree->Nodes)
 	{
+		if (IsSpellNode(Node))
+		{
+			PathCost += Node.Cost;
+			continue;
+		}
 		Branches.FindOrAdd(Node.RegionId).Add(&Node);
 	}
-	TestEqual(TEXT("The tree has fifteen talents"), Tree->Nodes.Num(), 15);
-	TestEqual(TEXT("The tree has five branches"), Branches.Num(), 5);
-	int32 PathCost = 0;
+	int32 Talents = 0;
+	for (const TPair<FName, TArray<const FRpgSkillTreeNode*>>& Branch : Branches)
+	{
+		Talents += Branch.Value.Num();
+	}
+	TestEqual(TEXT("The tree has fifteen talents"), Talents, 15);
+	TestEqual(TEXT("The tree has five talent branches"), Branches.Num(), 5);
 	for (const TPair<FName, TArray<const FRpgSkillTreeNode*>>& Branch : Branches)
 	{
 		const FString Name = Branch.Key.ToString();
@@ -1374,7 +1440,7 @@ bool FRpgHarvestCatalogContractTest::RunTest(const FString& Parameters)
 		}
 		PathCost += 1 + 3;
 	}
-	TestEqual(TEXT("One path through every branch spends exactly the tree's points"), PathCost, Tree->MaxPoints);
+	TestEqual(TEXT("One path through every branch and every spell spend exactly the tree's points"), PathCost, Tree->MaxPoints);
 
 	// Every talent has gameplay: it tunes at least one value the harvest ability reads.
 	const TSet<FGameplayTag> ReadTunings = {
@@ -1390,6 +1456,10 @@ bool FRpgHarvestCatalogContractTest::RunTest(const FString& Parameters)
 		Ability_Tuning_Harvest_WorkerHits, Ability_Tuning_Harvest_WorkerLifetime};
 	for (const FRpgSkillTreeNode& Node : Tree->Nodes)
 	{
+		if (IsSpellNode(Node))
+		{
+			continue;
+		}
 		TestFalse(*FString::Printf(TEXT("%s tunes something"), *Node.NodeTag.ToString()), Node.AbilityTunings.IsEmpty());
 		for (const FRpgSkillTreeAbilityTuning& Tuning : Node.AbilityTunings)
 		{
@@ -1526,8 +1596,10 @@ bool FRpgHarvestFocusContractTest::RunTest(const FString& Parameters)
 	using namespace RpgHarvestContentContractTests;
 	using namespace RpgHarvestFocusContractTests;
 
-	// Both tool swings fill focus through a gain effect: an instant SetByCaller add on Focus that a running spell blocks.
+	// Both tool swings fill focus through a gain effect: an instant SetByCaller add on Focus that needs a known spell and
+	// that a running spell blocks.
 	const FGameplayTag SpellActive = FGameplayTag::RequestGameplayTag(TEXT("Harvest.Spell.Active"));
+	const FGameplayTag SpellKnown = FGameplayTag::RequestGameplayTag(TEXT("Harvest.Spell.Known"));
 	for (const TCHAR* SwingPath : {AxeChopAbilityClassPath, PickaxeStrikeAbilityClassPath})
 	{
 		UClass* SwingClass = LoadClass<URpgGameplayAbility_Harvest>(nullptr, SwingPath);
@@ -1559,6 +1631,9 @@ bool FRpgHarvestFocusContractTest::RunTest(const FString& Parameters)
 		TestTrue(
 			*FString::Printf(TEXT("%s's gain ignores a running spell, so the spell never refills its meter"), SwingPath),
 			Requirements && Requirements->ApplicationTagRequirements.IgnoreTags.HasTagExact(SpellActive));
+		TestTrue(
+			*FString::Printf(TEXT("%s's gain requires a known spell, so the meter starts with the first spell"), SwingPath),
+			Requirements && Requirements->ApplicationTagRequirements.RequireTags.HasTagExact(SpellKnown));
 	}
 
 	// The harvesting GameFeature gives every player state the focus set and puts the meter into an authored HUD slot.
@@ -1602,6 +1677,227 @@ bool FRpgHarvestFocusContractTest::RunTest(const FString& Parameters)
 			HudSlots.Contains(Registration.Value));
 	}
 	TestEqual(TEXT("The GameFeature registers one focus meter widget"), MeterRegistrations, 1);
+	return true;
+}
+
+namespace RpgHarvestSpellContractTests
+{
+	const TCHAR* WideSwingEffectClassPath = TEXT("/GF_Harvesting_Magic/GAS/Effects/GE_HarvestSpell_WideSwing.GE_HarvestSpell_WideSwing_C");
+	const TCHAR* WideSwingCueClassPath =
+		TEXT("/GF_Harvesting_Magic/GameplayCues/GCN_Harvest_Spell_WideSwing.GCN_Harvest_Spell_WideSwing_C");
+	const TCHAR* SpectralToolHitCueClassPath =
+		TEXT("/GF_Harvesting_Magic/GameplayCues/GCN_Harvest_ToolHit_Spectral.GCN_Harvest_ToolHit_Spectral_C");
+	const TCHAR* SpectralStoneToolHitCueClassPath =
+		TEXT("/GF_Harvesting_Magic/GameplayCues/GCN_Harvest_ToolHit_Stone_Spectral.GCN_Harvest_ToolHit_Stone_Spectral_C");
+
+	/** Reads a protected property of Object by name; null when it does not exist. */
+	template <typename TValue>
+	const TValue* ReadProperty(const UObject& Object, const UClass* DeclaringClass, const TCHAR* PropertyName)
+	{
+		const FProperty* Property = FindFProperty<FProperty>(DeclaringClass, PropertyName);
+		return Property ? Property->ContainerPtrToValuePtr<TValue>(&Object) : nullptr;
+	}
+
+	/** The first native class above Class, so a Blueprint family base between them does not matter. */
+	const UClass* GetNativeBase(const UClass* Class)
+	{
+		while (Class && !Class->IsNative())
+		{
+			Class = Class->GetSuperClass();
+		}
+		return Class;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgHarvestWideSwingContractTest,
+	"SurvivalRpg.Harvesting.Content.WideSwingSpellContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgHarvestWideSwingContractTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgHarvestContentContractTests;
+	using namespace RpgHarvestSpellContractTests;
+	using namespace RpgHarvestingMagicGameplayTags;
+
+	// Wide Swing is the Spells node of the shared tree whose ability carries the spell's id.
+	const FGameplayTag TreeTag = FGameplayTag::RequestGameplayTag(TEXT("SkillTree.Tree.Harvesting"));
+	const URpgSkillTreeDefinition* Tree =
+		LoadToolSkillTree(*this, AxeItemClassPath, TreeTag, RpgTradeSkillGameplayTags::Skill_Mastery_Harvesting);
+	if (!Tree)
+	{
+		return false;
+	}
+	const FGameplayTag WideSwingId = FGameplayTag::RequestGameplayTag(TEXT("Ability.Harvesting.Spell.WideSwing"));
+	const FRpgSkillTreeNode* Node = Tree->Nodes.FindByPredicate([WideSwingId](const FRpgSkillTreeNode& Candidate)
+	{
+		TArray<FGameplayTag> Ids;
+		Candidate.GetGrantedAbilityIds(Ids);
+		return Ids.Contains(WideSwingId);
+	});
+	if (!TestNotNull(TEXT("A node of the shared tree teaches Wide Swing"), Node))
+	{
+		return false;
+	}
+	TestTrue(TEXT("Wide Swing is a Spells node"), IsSpellNode(*Node));
+	TestTrue(TEXT("Wide Swing needs no other node"), Node->Prerequisites.IsEmpty());
+	const TSubclassOf<URpgGameplayAbility> SpellClass = ExpectSpellNode(*this, *Node);
+	const URpgGameplayAbility* Spell = SpellClass ? GetDefault<URpgGameplayAbility>(SpellClass) : nullptr;
+	if (!TestNotNull(TEXT("The Wide Swing ability loads"), Spell))
+	{
+		return false;
+	}
+
+	// A Blueprint on the native ability base that its caster predicts, beside the held swing and never cancelling it.
+	TestFalse(TEXT("Wide Swing is a Blueprint ability, not a native leaf"), SpellClass->IsNative());
+	TestTrue(TEXT("Wide Swing's native base is URpgGameplayAbility"), GetNativeBase(SpellClass) == URpgGameplayAbility::StaticClass());
+	TestTrue(
+		TEXT("Wide Swing is predicted by its caster"),
+		Spell->GetNetExecutionPolicy() == EGameplayAbilityNetExecutionPolicy::LocalPredicted);
+	TestTrue(
+		TEXT("Wide Swing runs independently of the held swing"),
+		Spell->GetActivationGroup() == ERpgAbilityActivationGroup::Independent);
+	const FGameplayTagContainer* BlockedTags =
+		ReadProperty<FGameplayTagContainer>(*Spell, UGameplayAbility::StaticClass(), TEXT("ActivationBlockedTags"));
+	TestTrue(
+		TEXT("A running harvesting spell blocks Wide Swing"),
+		BlockedTags && BlockedTags->HasTagExact(FGameplayTag::RequestGameplayTag(TEXT("Harvest.Spell.Active"))));
+
+	// Its cost is an instant spend of Focus that passes only on a full meter.
+	const UGameplayEffect* Cost = Spell->GetCostGameplayEffect();
+	if (TestNotNull(TEXT("Wide Swing has a cost effect"), Cost))
+	{
+		TestTrue(TEXT("The cost is instant"), Cost->DurationPolicy == EGameplayEffectDurationType::Instant);
+		TestTrue(
+			TEXT("The cost spends Focus"),
+			Cost->Modifiers.ContainsByPredicate([](const FGameplayModifierInfo& Modifier)
+			{
+				return Modifier.Attribute == URpgFocusSet::GetFocusAttribute();
+			}));
+	}
+	RpgHarvestAutomation::FScopedTestWorld TestWorld;
+	URpgAbilitySystemComponent* AbilitySystem = MakeTestAbilitySystem(*this, TestWorld.GetWorld());
+	if (AbilitySystem && Cost)
+	{
+		AbilitySystem->AddAttributeSetSubobject(NewObject<URpgFocusSet>(AbilitySystem->GetOwner(), NAME_None, RF_Transient));
+		const FGameplayAbilitySpecHandle SpellHandle = AbilitySystem->GiveAbility(FGameplayAbilitySpec(SpellClass));
+		const FGameplayAbilityActorInfo* ActorInfo = AbilitySystem->AbilityActorInfo.Get();
+		// The engine's cost check is public; the project's override narrows its access.
+		const UGameplayAbility* SpellBase = Spell;
+		const float MaxFocus = AbilitySystem->GetNumericAttribute(URpgFocusSet::GetMaxFocusAttribute());
+		AbilitySystem->SetNumericAttributeBase(URpgFocusSet::GetFocusAttribute(), MaxFocus - 1.0f);
+		TestFalse(TEXT("A meter one point short of full cannot pay for Wide Swing"), SpellBase->CheckCost(SpellHandle, ActorInfo));
+		AbilitySystem->SetNumericAttributeBase(URpgFocusSet::GetFocusAttribute(), MaxFocus);
+		TestTrue(TEXT("A full meter pays for Wide Swing"), SpellBase->CheckCost(SpellHandle, ActorInfo));
+	}
+
+	// The spell's effect: timed, unstacked, cleared on respawn, and widening the tool swings inside the native clamps.
+	const UClass* EffectClass = LoadClass<UGameplayEffect>(nullptr, WideSwingEffectClassPath);
+	const UGameplayEffect* Effect = EffectClass ? GetDefault<UGameplayEffect>(EffectClass) : nullptr;
+	if (!TestNotNull(TEXT("The Wide Swing effect loads"), Effect))
+	{
+		return false;
+	}
+	float DurationSeconds = 0.0f;
+	TestTrue(
+		TEXT("The Wide Swing effect lasts a fixed time above 0"),
+		Effect->DurationPolicy == EGameplayEffectDurationType::HasDuration &&
+			Effect->DurationMagnitude.GetStaticMagnitudeIfPossible(1.0f, DurationSeconds) && DurationSeconds > 0.0f);
+	TestTrue(TEXT("The Wide Swing effect does not stack"), Effect->GetStackingType() == EGameplayEffectStackingType::None);
+	TestTrue(
+		TEXT("The Wide Swing effect grants the running-spell tag"),
+		Effect->GetGrantedTags().HasTagExact(FGameplayTag::RequestGameplayTag(TEXT("Harvest.Spell.Active"))));
+	TestTrue(
+		TEXT("The Wide Swing effect grants its own tag, which selects the spectral hits"),
+		Effect->GetGrantedTags().HasTagExact(FGameplayTag::RequestGameplayTag(TEXT("Harvest.Spell.WideSwing"))));
+	TestTrue(
+		TEXT("Respawn clears the Wide Swing effect"),
+		Effect->GetAssetTags().HasTagExact(FGameplayTag::RequestGameplayTag(TEXT("Effect.Behavior.ClearOnRespawn"))));
+	const FGameplayTag LoopingCue = FGameplayTag::RequestGameplayTag(TEXT("GameplayCue.Harvesting.Spell.WideSwing"));
+	TestTrue(
+		TEXT("The Wide Swing effect plays its looping cue while active"),
+		Effect->GameplayCues.ContainsByPredicate([LoopingCue](const FGameplayEffectCue& Cue)
+		{
+			return Cue.GameplayCueTags.HasTagExact(LoopingCue);
+		}));
+	const URpgAbilityTuningEffectComponent* Tunings = Effect->FindComponent<URpgAbilityTuningEffectComponent>();
+	if (TestNotNull(TEXT("The Wide Swing effect carries Ability Tunings"), Tunings))
+	{
+		const FGameplayTag AxeChop = FGameplayTag::RequestGameplayTag(TEXT("Ability.Harvesting.AxeChop"));
+		const FGameplayTag PickaxeStrike = FGameplayTag::RequestGameplayTag(TEXT("Ability.Harvesting.PickaxeStrike"));
+		bool bAxeReach = false;
+		bool bAxeTargets = false;
+		for (const FRpgSkillTreeAbilityTuning& Tuning : Tunings->AbilityTunings)
+		{
+			const FString Entry = FString::Printf(TEXT("%s on %s"), *Tuning.TuningTag.ToString(), *Tuning.AbilityIdTag.ToString());
+			TestTrue(
+				*FString::Printf(TEXT("%s names a tool swing"), *Entry),
+				Tuning.AbilityIdTag == AxeChop || Tuning.AbilityIdTag == PickaxeStrike);
+			TestTrue(*FString::Printf(TEXT("%s adds, so talents can stack on it"), *Entry), Tuning.Operation == ERpgSkillTreeTuningOperation::Add);
+			if (Tuning.TuningTag == Ability_Tuning_Harvest_SwingReach)
+			{
+				TestTrue(
+					*FString::Printf(TEXT("%s reaches farther, at most %.0f cm"), *Entry, URpgGameplayAbility_Harvest::MaxSwingReach),
+					Tuning.Value > 0.0f && Tuning.Value <= URpgGameplayAbility_Harvest::MaxSwingReach);
+				bAxeReach |= Tuning.AbilityIdTag == AxeChop;
+			}
+			else if (Tuning.TuningTag == Ability_Tuning_Harvest_SwingTargets)
+			{
+				TestTrue(
+					*FString::Printf(TEXT("%s strikes more resources, at most %d"), *Entry, URpgGameplayAbility_Harvest::MaxSwingTargets),
+					Tuning.Value >= 1.0f && 1.0f + Tuning.Value <= URpgGameplayAbility_Harvest::MaxSwingTargets);
+				bAxeTargets |= Tuning.AbilityIdTag == AxeChop;
+			}
+			else
+			{
+				AddError(FString::Printf(TEXT("%s is neither swing reach nor swing targets"), *Entry));
+			}
+		}
+		TestTrue(TEXT("Wide Swing widens the axe's reach"), bAxeReach);
+		TestTrue(TEXT("Wide Swing lets the axe strike more resources"), bAxeTargets);
+	}
+
+	// The caster wears a looping cue that every machine sees.
+	const UClass* LoopingCueClass = LoadClass<AGameplayCueNotify_Actor>(nullptr, WideSwingCueClassPath);
+	TestTrue(
+		TEXT("The looping Wide Swing cue is an actor notify for its tag"),
+		LoopingCueClass && GetDefault<AGameplayCueNotify_Actor>(LoopingCueClass)->GameplayCueTag == LoopingCue);
+
+	// While it runs, both swings play a spectral variant of their hit: a form cue keyed on Harvest.Spell.WideSwing, an
+	// impact notify the swinging client can predict.
+	const FGameplayTag WideSwingOwned = FGameplayTag::RequestGameplayTag(TEXT("Harvest.Spell.WideSwing"));
+	const TPair<const TCHAR*, const TCHAR*> SwingCues[] = {
+		{AxeChopAbilityClassPath, SpectralToolHitCueClassPath},
+		{PickaxeStrikeAbilityClassPath, SpectralStoneToolHitCueClassPath}};
+	for (const TPair<const TCHAR*, const TCHAR*>& SwingCue : SwingCues)
+	{
+		UClass* SwingClass = LoadClass<URpgGameplayAbility_Harvest>(nullptr, SwingCue.Key);
+		const URpgGameplayAbility_Harvest* Swing = SwingClass ? GetDefault<URpgGameplayAbility_Harvest>(SwingClass) : nullptr;
+		if (!TestNotNull(*FString::Printf(TEXT("%s loads"), SwingCue.Key), Swing))
+		{
+			continue;
+		}
+		const FGameplayTag* SuccessCue =
+			ReadProperty<FGameplayTag>(*Swing, URpgGameplayAbility_Harvest::StaticClass(), TEXT("SuccessGameplayCue"));
+		const TArray<FRpgHarvestFormGameplayCue>* FormCues = ReadProperty<TArray<FRpgHarvestFormGameplayCue>>(
+			*Swing, URpgGameplayAbility_Harvest::StaticClass(), TEXT("FormSuccessGameplayCues"));
+		const FRpgHarvestFormGameplayCue* SpectralForm = FormCues
+			? FormCues->FindByPredicate([WideSwingOwned](const FRpgHarvestFormGameplayCue& Form) { return Form.RequiredOwnerTag == WideSwingOwned; })
+			: nullptr;
+		if (!TestNotNull(*FString::Printf(TEXT("%s has a form cue for Wide Swing"), SwingCue.Key), SpectralForm) || !SuccessCue)
+		{
+			continue;
+		}
+		TestTrue(
+			*FString::Printf(TEXT("%s's Wide Swing cue %s is a variant of its hit cue"), SwingCue.Key, *SpectralForm->GameplayCue.ToString()),
+			SpectralForm->GameplayCue.MatchesTag(*SuccessCue) && SpectralForm->GameplayCue != *SuccessCue);
+		const UClass* CueClass = LoadClass<UGameplayCueNotify_Static>(nullptr, SwingCue.Value);
+		TestTrue(
+			*FString::Printf(TEXT("The Wide Swing hit of %s is an impact notify, so the swinging client predicts it"), SwingCue.Key),
+			CueClass && CueClass->IsChildOf<URpgGameplayCueNotify_Impact>() &&
+				GetDefault<UGameplayCueNotify_Static>(CueClass)->GameplayCueTag == SpectralForm->GameplayCue);
+	}
 	return true;
 }
 

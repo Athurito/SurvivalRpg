@@ -155,9 +155,31 @@ protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Character Stats|Focus", meta = (AllowPrivateAccess = "true"))
 	bool bFocusFull = false;
 
-	/** Whether the HUD should show the focus meter: the focus set exists and holds focus. An empty meter stays hidden. */
+	/**
+	 * Whether the HUD should show the focus meter: the focus set exists and holds focus or a focus spell runs. An empty
+	 * meter stays hidden.
+	 */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Character Stats|Focus", meta = (AllowPrivateAccess = "true"))
 	bool bShowFocus = false;
+
+	/**
+	 * Whether a spell that spent the focus meter runs: the ability system owns URpgUISettings::HudFocusSpellTag. The
+	 * meter then drains with FocusSpellProgress. Read-only mirror of the owner's replicated or predicted effect.
+	 */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Character Stats|Focus", meta = (AllowPrivateAccess = "true"))
+	bool bFocusSpellActive = false;
+
+	/** Seconds the running focus spell has left, refreshed several times a second while it runs; zero without one. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Character Stats|Focus", meta = (AllowPrivateAccess = "true", Units = "s"))
+	float FocusSpellRemainingTime = 0.0f;
+
+	/** Full duration of the running focus spell's effect; zero without one. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Character Stats|Focus", meta = (AllowPrivateAccess = "true", Units = "s"))
+	float FocusSpellDuration = 0.0f;
+
+	/** FocusSpellRemainingTime / FocusSpellDuration in [0, 1]: 1 when the spell starts, falling to 0 as it ends. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Character Stats|Focus", meta = (AllowPrivateAccess = "true"))
+	float FocusSpellProgress = 0.0f;
 
 	/** Armour attribute of the defense set. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Character Stats|Defense", meta = (AllowPrivateAccess = "true"))
@@ -216,12 +238,14 @@ private:
 
 	void HandleAttributeChanged(const FOnAttributeChangeData& ChangeData);
 	void HandleAbilitiesChanged(const FGameplayEventData* EventData);
+	void HandleFocusSpellTagChanged(const FGameplayTag Tag, int32 NewCount);
 	void HandleAbilityActivated(UGameplayAbility* Ability);
 	void HandleEquipmentLoadoutChanged(FGameplayTag Channel, const FRpgEquipmentLoadoutSlotsChangedMessage& Message);
 
 	void ReleaseAbilitySystem();
 	void ReleaseProgression();
 	void RefreshAttributes();
+	void RefreshFocusSpell();
 	void RefreshProgression();
 	void ApplyEquipmentLoad(float NewLoad, float NewHeavyThreshold, ERpgEquipmentLoadTier NewTier);
 	void BindProgressionOfPlayerState(const APlayerController* PlayerController, const UAbilitySystemComponent* AbilitySystem);
@@ -238,6 +262,9 @@ private:
 	TArray<TPair<FGameplayAttribute, FDelegateHandle>> AttributeHandles;
 	FDelegateHandle AbilityActivatedHandle;
 	FDelegateHandle AbilitiesChangedHandle;
+	FDelegateHandle FocusSpellTagHandle;
+	FGameplayTag ObservedFocusSpellTag;
 	FGameplayMessageListenerHandle LoadoutChangedHandle;
 	FTimerHandle CombatTimerHandle;
+	FTimerHandle FocusSpellTimerHandle;
 };

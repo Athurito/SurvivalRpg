@@ -5,7 +5,11 @@
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "AbilitySystemGlobals.h"
 #include "GameFramework/Actor.h"
+#include "GameFramework/Pawn.h"
+#include "GameplayCueManager.h"
+#include "GameplayEffect.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
@@ -70,6 +74,8 @@ namespace RpgAbilitySetAuthorityTests
 			}
 			return false;
 		}
+
+		UWorld* GetWorld() const { return World; }
 
 		URpgAbilitySystemComponent* AbilitySystem = nullptr;
 		URpgAbilitySet* AbilitySet = nullptr;
@@ -140,6 +146,70 @@ bool FRpgAbilitySetNonAuthorityGrantTest::RunTest(const FString& Parameters)
 	Fixture.SetOwnerRole(ROLE_Authority);
 	TestTrue(TEXT("The server removes the set"), Fixture.AbilitySystem->RemoveAbilitySet(Fixture.AbilitySet));
 	TestFalse(TEXT("The removed ability is gone"), Fixture.HasGrantedAbility());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgAbilitySystemFirstAvatarCueTest,
+	"SurvivalRpg.AbilitySystem.Cues.ActiveCuesReachTheFirstAvatar",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgAbilitySystemFirstAvatarCueTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RpgAbilitySetAuthorityTests;
+
+	FFixture Fixture;
+	UGameplayCueManager* CueManager = UAbilitySystemGlobals::Get().GetGameplayCueManager();
+	if (!TestNotNull(TEXT("A test world exists"), Fixture.GetWorld()) || !TestNotNull(TEXT("The cue manager exists"), CueManager))
+	{
+		return false;
+	}
+
+	// A player state's ability system before its pawn: an owner without an avatar.
+	AActor* Owner = Fixture.GetWorld()->SpawnActor<AActor>();
+	URpgAbilitySystemComponent* AbilitySystem = NewObject<URpgAbilitySystemComponent>(Owner, NAME_None, RF_Transient);
+	Owner->AddInstanceComponent(AbilitySystem);
+	AbilitySystem->RegisterComponent();
+	AbilitySystem->InitAbilityActorInfo(Owner, nullptr);
+
+	TMap<FGameplayTag, int32> WhileActiveOnAvatar;
+	const APawn* Avatar = nullptr;
+	const FDelegateHandle Routed = CueManager->OnGameplayCueRouted().AddLambda(
+		[&WhileActiveOnAvatar, &Avatar](AActor* Target, const FGameplayTag Tag, const EGameplayCueEvent::Type Event,
+			const FGameplayCueParameters&, EGameplayCueExecutionOptions)
+		{
+			if (Event == EGameplayCueEvent::WhileActive && Target && Target == Avatar)
+			{
+				++WhileActiveOnAvatar.FindOrAdd(Tag);
+			}
+		});
+
+	// A cue added outside effects and the looping cue of a timed effect both start while there is nowhere to show them.
+	const FGameplayTag LooseCue = FGameplayTag::RequestGameplayTag(TEXT("GameplayCue.Combat.Swing"));
+	const FGameplayTag EffectCue = FGameplayTag::RequestGameplayTag(TEXT("GameplayCue.Combat.Telegraph"));
+	AbilitySystem->AddGameplayCue(LooseCue);
+	UGameplayEffect* Effect = NewObject<UGameplayEffect>(GetTransientPackage(), NAME_None, RF_Transient);
+	Effect->DurationPolicy = EGameplayEffectDurationType::HasDuration;
+	Effect->DurationMagnitude = FGameplayEffectModifierMagnitude(FScalableFloat(10.0f));
+	Effect->GameplayCues.Add(FGameplayEffectCue(EffectCue, 0.0f, 0.0f));
+	TestTrue(TEXT("The timed effect applies without an avatar"),
+		AbilitySystem->ApplyGameplayEffectToSelf(Effect, 1.0f, AbilitySystem->MakeEffectContext()).IsValid());
+	TestTrue(TEXT("Both cues are active"), AbilitySystem->IsGameplayCueActive(LooseCue) && AbilitySystem->IsGameplayCueActive(EffectCue));
+
+	// The first pawn shows each active cue once.
+	APawn* Pawn = Fixture.GetWorld()->SpawnActor<APawn>();
+	Avatar = Pawn;
+	AbilitySystem->InitAbilityActorInfo(Owner, Pawn);
+	TestEqual(TEXT("The first avatar shows the loose cue once"), WhileActiveOnAvatar.FindRef(LooseCue), 1);
+	TestEqual(TEXT("The first avatar shows the effect's cue once"), WhileActiveOnAvatar.FindRef(EffectCue), 1);
+
+	// Binding the same pawn again replays nothing.
+	AbilitySystem->InitAbilityActorInfo(Owner, Pawn);
+	TestEqual(TEXT("A repeated binding does not replay the loose cue"), WhileActiveOnAvatar.FindRef(LooseCue), 1);
+	TestEqual(TEXT("A repeated binding does not replay the effect's cue"), WhileActiveOnAvatar.FindRef(EffectCue), 1);
+
+	CueManager->OnGameplayCueRouted().Remove(Routed);
 	return true;
 }
 

@@ -318,6 +318,9 @@ void URpgGameplayAbility_Harvest::BeginHarvestExecution()
 	if (bHasCommitValues)
 	{
 		ResolveTunedValues(*Spec, *CurrentActorInfo, CommitValues);
+#if WITH_DEV_AUTOMATION_TESTS
+		LastCapturedSwingTargetsForTests = CommitValues.SwingTargets;
+#endif
 	}
 	// Each execution fills focus at most once, however many resources it strikes; every held swing is a new execution.
 	bFocusFilledThisExecution = false;

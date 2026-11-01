@@ -481,6 +481,11 @@ NETWORK_TEST_CLASS(HarvestFocusPIE, "SurvivalRpg.Network")
 					const ARpgCharacter* Host = FindCharacter(State.World, SwingerId, true);
 					URpgAbilitySystemComponent* HostSystem = Host ? Host->GetRpgAbilitySystemComponent() : nullptr;
 					ASSERT_THAT(IsNotNull(HostSystem));
+					// The gain needs a known spell, as a learned spell node grants it. Only the server applies the gain,
+					// so a server-side loose tag stands in for the node here.
+					const FGameplayTag SpellKnown = FGameplayTag::RequestGameplayTag(TEXT("Harvest.Spell.Known"));
+					SwingerSystem->AddLooseGameplayTag(SpellKnown);
+					HostSystem->AddLooseGameplayTag(SpellKnown);
 					ASSERT_THAT(IsNear(0.0f, GetFocus(FindCharacter(State.World, SwingerId)), 0.01f));
 					ASSERT_THAT(IsNear(0.0f, GetFocus(Host), 0.01f));
 

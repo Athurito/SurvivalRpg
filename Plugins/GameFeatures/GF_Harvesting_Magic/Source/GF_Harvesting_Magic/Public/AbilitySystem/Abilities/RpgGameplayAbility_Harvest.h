@@ -373,6 +373,9 @@ public:
 	/** Server: focus gain effects this instance applied successfully, over every activation. */
 	uint32 GetAuthorityFocusFillCountForTests() const { return AuthorityFocusFillCountForTests; }
 
+	/** SwingTargets this machine captured when its last execution started; 0 before the first capture. */
+	int32 GetLastCapturedSwingTargetsForTests() const { return LastCapturedSwingTargetsForTests; }
+
 	/** Local hitstops this instance froze its swing montage for on this machine, over every activation. */
 	uint32 GetToolSwingHitstopCountForTests() const { return ToolSwingHitstopCountForTests; }
 
@@ -1076,6 +1079,7 @@ private:
 	uint32 OwnerPredictedToolCueCountForTests = 0;
 	uint32 ToolSwingHitstopCountForTests = 0;
 	uint32 AuthorityFocusFillCountForTests = 0;
+	int32 LastCapturedSwingTargetsForTests = 0;
 #endif
 
 	/**

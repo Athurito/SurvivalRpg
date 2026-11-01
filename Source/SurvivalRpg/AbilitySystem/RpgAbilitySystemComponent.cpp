@@ -88,6 +88,7 @@ void URpgAbilitySystemComponent::InitAbilityActorInfo(AActor* InOwnerActor, AAct
 	check(InOwnerActor);
 
 	const bool bHasNewPawnAvatar = Cast<APawn>(InAvatarActor) && (InAvatarActor != ActorInfo->AvatarActor);
+	const bool bHadAvatar = ActorInfo->AvatarActor.IsValid();
 	if (ActorInfo->AvatarActor.Get() != InAvatarActor)
 	{
 		ResetSprintMovement();
@@ -160,6 +161,12 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 		}
 
 		TryActivateAbilitiesOnSpawn();
+
+		// Cues that started while there was no avatar played nowhere; show them on the first one.
+		if (!bHadAvatar)
+		{
+			ReinvokeActiveGameplayCuesForNewAvatar();
+		}
 	}
 	if (InAvatarActor && InAvatarActor->GetLocalRole() == ROLE_SimulatedProxy)
 	{
@@ -171,6 +178,36 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 				*GetPathNameSafe(InAvatarActor), *GetPathNameSafe(ActorInfo->GetAnimInstance()), bPreserveMontageState);
 			Mover->RefreshTraversalPresentation(this);
 		}
+	}
+}
+
+void URpgAbilitySystemComponent::ReinvokeActiveGameplayCuesForNewAvatar()
+{
+	// Cues of active effects: on the server, and on the owning client, which receives the effects in full.
+	for (const FActiveGameplayEffect& Effect : &ActiveGameplayEffects)
+	{
+		if (!Effect.bIsInhibited && Effect.Spec.Def && !Effect.Spec.Def->GameplayCues.IsEmpty())
+		{
+			InvokeGameplayCueEvent(FGameplayEffectSpecForRPC(Effect.Spec), EGameplayCueEvent::WhileActive);
+		}
+	}
+
+	auto ReinvokeContainer = [this](const FActiveGameplayCueContainer& Container)
+	{
+		for (const FActiveGameplayCue& Cue : Container.GameplayCues)
+		{
+			// Like a replicated add, a cue this client predicted itself is left to its prediction.
+			if (!Cue.bPredictivelyRemoved && !Cue.PredictionKey.IsLocalClientKey())
+			{
+				InvokeGameplayCueEvent(Cue.GameplayCueTag, EGameplayCueEvent::WhileActive, Cue.Parameters);
+			}
+		}
+	};
+	ReinvokeContainer(ActiveGameplayCues);
+	// Other clients receive effect cues only through the minimal container; the server mirrors its effects' cues there.
+	if (!IsOwnerActorAuthoritative())
+	{
+		ReinvokeContainer(MinimalReplicationGameplayCues);
 	}
 }
 
@@ -1469,17 +1506,37 @@ bool URpgAbilitySystemComponent::GetCooldownTimeRemainingAndDurationForAbilityId
 	}
 
 	const FGameplayTagContainer* CooldownTags = AbilityCDO->GetCooldownTags();
-	if (!CooldownTags || CooldownTags->IsEmpty())
+	return CooldownTags && GetEffectTimeRemainingAndDurationForTags(*CooldownTags, OutRemainingTime, OutDuration);
+}
+
+bool URpgAbilitySystemComponent::GetEffectTimeRemainingAndDurationForTag(
+	FGameplayTag OwningTag,
+	float& OutRemainingTime,
+	float& OutDuration) const
+{
+	OutRemainingTime = 0.0f;
+	OutDuration = 0.0f;
+	return OwningTag.IsValid() &&
+		GetEffectTimeRemainingAndDurationForTags(FGameplayTagContainer(OwningTag), OutRemainingTime, OutDuration);
+}
+
+bool URpgAbilitySystemComponent::GetEffectTimeRemainingAndDurationForTags(
+	const FGameplayTagContainer& OwningTags,
+	float& OutRemainingTime,
+	float& OutDuration) const
+{
+	OutRemainingTime = 0.0f;
+	OutDuration = 0.0f;
+	if (OwningTags.IsEmpty())
 	{
 		return false;
 	}
 
-	const FGameplayEffectQuery CooldownQuery = FGameplayEffectQuery::MakeQuery_MatchAnyOwningTags(*CooldownTags);
-	const TArray<TPair<float, float>> CooldownTimes = GetActiveEffectsTimeRemainingAndDuration(CooldownQuery);
-	for (const TPair<float, float>& CooldownTime : CooldownTimes)
+	const FGameplayEffectQuery Query = FGameplayEffectQuery::MakeQuery_MatchAnyOwningTags(OwningTags);
+	for (const TPair<float, float>& EffectTime : GetActiveEffectsTimeRemainingAndDuration(Query))
 	{
-		const float RemainingTime = CooldownTime.Key;
-		const float Duration = CooldownTime.Value;
+		const float RemainingTime = EffectTime.Key;
+		const float Duration = EffectTime.Value;
 		if (RemainingTime > OutRemainingTime)
 		{
 			OutRemainingTime = RemainingTime;
