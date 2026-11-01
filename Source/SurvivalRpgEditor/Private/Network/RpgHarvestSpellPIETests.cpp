@@ -804,6 +804,11 @@ NETWORK_TEST_CLASS(HarvestSpellPIE, "SurvivalRpg.Network")
 					TestRunner->AddInfo(FString::Printf(
 						TEXT("Cast edge: the client held up to %d spell effects (%d frames with two), and tuned up to %.0f swing targets"),
 						MaxClientSpellEffects, OverlapFrames, MaxClientTunedTargets));
+					// The predicted effect and its server copy never both count on the caster, so no frame tunes more
+					// targets than the server captured. One run in one process with 60 ms simulated lag; other timings
+					// are not covered.
+					ASSERT_THAT(AreEqual(0, OverlapFrames));
+					ASSERT_THAT(IsTrue(MaxClientTunedTargets <= static_cast<float>(ServerCaptures[1])));
 				})
 			.UntilClient(TEXT("The caster shows both stock changes"), 0,
 				[this](FNetworkState& State)

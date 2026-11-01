@@ -193,11 +193,17 @@ bool FRpgAbilitySystemFirstAvatarCueTest::RunTest(const FString& Parameters)
 	Effect->DurationPolicy = EGameplayEffectDurationType::HasDuration;
 	Effect->DurationMagnitude = FGameplayEffectModifierMagnitude(FScalableFloat(10.0f));
 	Effect->GameplayCues.Add(FGameplayEffectCue(EffectCue, 0.0f, 0.0f));
-	TestTrue(TEXT("The timed effect applies without an avatar"),
-		AbilitySystem->ApplyGameplayEffectToSelf(Effect, 1.0f, AbilitySystem->MakeEffectContext()).IsValid());
+	const FActiveGameplayEffectHandle EffectHandle = AbilitySystem->ApplyGameplayEffectToSelf(Effect, 1.0f, AbilitySystem->MakeEffectContext());
+	TestTrue(TEXT("The timed effect applies without an avatar"), EffectHandle.IsValid());
 	TestTrue(TEXT("Both cues are active"), AbilitySystem->IsGameplayCueActive(LooseCue) && AbilitySystem->IsGameplayCueActive(EffectCue));
+	// An owning client gets the effect through replication, and the engine defers its cue to the first avatar itself.
+	const FActiveGameplayEffect* ActiveEffect = AbilitySystem->GetActiveGameplayEffect(EffectHandle);
+	if (TestNotNull(TEXT("The effect is active"), ActiveEffect))
+	{
+		ActiveEffect->bPendingRepWhileActiveGC = true;
+	}
 
-	// The first pawn shows each active cue once.
+	// The first pawn shows each active cue once, the deferred effect cue included.
 	APawn* Pawn = Fixture.GetWorld()->SpawnActor<APawn>();
 	Avatar = Pawn;
 	AbilitySystem->InitAbilityActorInfo(Owner, Pawn);
@@ -208,6 +214,15 @@ bool FRpgAbilitySystemFirstAvatarCueTest::RunTest(const FString& Parameters)
 	AbilitySystem->InitAbilityActorInfo(Owner, Pawn);
 	TestEqual(TEXT("A repeated binding does not replay the loose cue"), WhileActiveOnAvatar.FindRef(LooseCue), 1);
 	TestEqual(TEXT("A repeated binding does not replay the effect's cue"), WhileActiveOnAvatar.FindRef(EffectCue), 1);
+
+	// A death clears the avatar, as the pawn extension does; the respawned pawn shows each cue once.
+	AbilitySystem->InitAbilityActorInfo(Owner, nullptr);
+	APawn* RespawnedPawn = Fixture.GetWorld()->SpawnActor<APawn>();
+	Avatar = RespawnedPawn;
+	WhileActiveOnAvatar.Reset();
+	AbilitySystem->InitAbilityActorInfo(Owner, RespawnedPawn);
+	TestEqual(TEXT("The respawned pawn shows the loose cue once"), WhileActiveOnAvatar.FindRef(LooseCue), 1);
+	TestEqual(TEXT("The respawned pawn shows the effect's cue once"), WhileActiveOnAvatar.FindRef(EffectCue), 1);
 
 	CueManager->OnGameplayCueRouted().Remove(Routed);
 	return true;

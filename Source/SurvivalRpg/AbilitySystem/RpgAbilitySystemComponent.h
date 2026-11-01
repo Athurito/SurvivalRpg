@@ -267,9 +267,12 @@ private:
 	FSimpleMulticastDelegate AbilitySpecsReplicatedDelegate;
 
 	/**
-	 * Plays the WhileActive event of every gameplay cue active on this ability system. Cue events reach no actor while
-	 * the system has no avatar, as on a late joiner whose copy of a player state arrives before its pawn, so the first
-	 * avatar would otherwise never show a looping cue that started earlier. Cosmetic and local to this machine.
+	 * Plays the WhileActive event of every cue in ActiveGameplayCues and, on clients, in MinimalReplicationGameplayCues.
+	 * Cue events reach no actor while the system has no avatar, as on a late joiner whose copy of a player state arrives
+	 * before its pawn. InitAbilityActorInfo calls this on every change from no avatar to a pawn: the first spawn, a
+	 * respawn, an AI possession and a pawn that becomes relevant again. Effect cues are left to the engine's deferred
+	 * replay in UAbilitySystemComponent::InitAbilityActorInfo, which InitAbilityActorInfo extends to every active effect,
+	 * so each cue plays once on the new pawn. Cosmetic and local to this machine.
 	 */
 	void ReinvokeActiveGameplayCuesForNewAvatar();
 
