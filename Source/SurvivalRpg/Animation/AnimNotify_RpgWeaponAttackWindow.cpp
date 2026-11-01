@@ -26,6 +26,14 @@ namespace
 	}
 }
 
+UAnimNotify_RpgWeaponAttackWindowStart::UAnimNotify_RpgWeaponAttackWindowStart()
+{
+#if WITH_EDITORONLY_DATA
+	// The engine skips this only for animation editor meshes (UDebugSkelMeshComponent); PIE and games still fire.
+	bShouldFireInEditor = false;
+#endif
+}
+
 void UAnimNotify_RpgWeaponAttackWindowStart::Notify(
 	USkeletalMeshComponent* MeshComp,
 	UAnimSequenceBase* Animation,
@@ -38,6 +46,13 @@ void UAnimNotify_RpgWeaponAttackWindowStart::Notify(
 FString UAnimNotify_RpgWeaponAttackWindowStart::GetNotifyName_Implementation() const
 {
 	return TEXT("Attack Window Start");
+}
+
+UAnimNotify_RpgWeaponAttackWindowEnd::UAnimNotify_RpgWeaponAttackWindowEnd()
+{
+#if WITH_EDITORONLY_DATA
+	bShouldFireInEditor = false;
+#endif
 }
 
 void UAnimNotify_RpgWeaponAttackWindowEnd::Notify(
