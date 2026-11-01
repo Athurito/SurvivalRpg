@@ -589,6 +589,136 @@ float URpgAnimationAssetTools::RetimeMontageRange(UAnimMontage* Montage, const f
 	return Montage->GetPlayLength();
 }
 
+float URpgAnimationAssetTools::SetMontageClipRanges(UAnimMontage* Montage, const TArray<FRpgMontageClipRange>& Ranges)
+{
+	constexpr float Tolerance = 1.0e-3f;
+	if (!Montage || !IsProjectContentPackage(Montage->GetOutermost()->GetName()) || Montage->SlotAnimTracks.Num() != 1
+		|| Montage->CompositeSections.Num() > 1 || Ranges.IsEmpty())
+	{
+		return -1.0f;
+	}
+	FAnimTrack& Track = Montage->SlotAnimTracks[0].AnimTrack;
+	const FAnimSegment Template = Track.AnimSegments.IsEmpty() ? FAnimSegment() : Track.AnimSegments[0];
+	const UAnimSequenceBase* Sequence = Template.GetAnimReference();
+	if (!Sequence)
+	{
+		return -1.0f;
+	}
+
+	// The segments must play the sequence forward and back to back, so each montage time has exactly one animation time.
+	float ExpectedStart = 0.0f;
+	float ExpectedAnimTime = Template.AnimStartTime;
+	for (const FAnimSegment& Segment : Track.AnimSegments)
+	{
+		if (Segment.GetAnimReference() != Sequence || Segment.LoopingCount != 1 || Segment.AnimPlayRate < UE_KINDA_SMALL_NUMBER
+			|| !FMath::IsNearlyEqual(Segment.StartPos, ExpectedStart, Tolerance)
+			|| !FMath::IsNearlyEqual(Segment.AnimStartTime, ExpectedAnimTime, Tolerance))
+		{
+			return -1.0f;
+		}
+		ExpectedStart += Segment.GetLength();
+		ExpectedAnimTime = Segment.AnimEndTime;
+	}
+
+	const float SequenceLength = Sequence->GetPlayLength();
+	for (int32 Index = 0; Index < Ranges.Num(); ++Index)
+	{
+		const FRpgMontageClipRange& Range = Ranges[Index];
+		if (!FMath::IsFinite(Range.AnimStartTime) || !FMath::IsFinite(Range.AnimEndTime) || !FMath::IsFinite(Range.PlayRate)
+			|| Range.AnimStartTime < 0.0f || Range.AnimEndTime > SequenceLength + Tolerance
+			|| Range.AnimEndTime <= Range.AnimStartTime + UE_KINDA_SMALL_NUMBER || Range.PlayRate < 0.05f || Range.PlayRate > 4.0f
+			|| (Index > 0 && !FMath::IsNearlyEqual(Range.AnimStartTime, Ranges[Index - 1].AnimEndTime, Tolerance)))
+		{
+			return -1.0f;
+		}
+	}
+
+	auto ToAnimTime = [&Track](const float MontageTime)
+	{
+		for (const FAnimSegment& Segment : Track.AnimSegments)
+		{
+			if (MontageTime <= Segment.StartPos + Segment.GetLength() + UE_KINDA_SMALL_NUMBER)
+			{
+				return Segment.AnimStartTime + FMath::Max(0.0f, MontageTime - Segment.StartPos) * Segment.AnimPlayRate;
+			}
+		}
+		return Track.AnimSegments.Last().AnimEndTime;
+	};
+	auto ToNewMontageTime = [&Ranges](const float AnimTime, float& OutMontageTime)
+	{
+		float Position = 0.0f;
+		for (const FRpgMontageClipRange& Range : Ranges)
+		{
+			if (AnimTime >= Range.AnimStartTime - Tolerance && AnimTime <= Range.AnimEndTime + Tolerance)
+			{
+				OutMontageTime = Position + FMath::Clamp(AnimTime - Range.AnimStartTime, 0.0f, Range.AnimEndTime - Range.AnimStartTime)
+					/ Range.PlayRate;
+				return true;
+			}
+			Position += (Range.AnimEndTime - Range.AnimStartTime) / Range.PlayRate;
+		}
+		return false;
+	};
+
+	// Map every notify to its animation frame and back into the new layout before anything changes.
+	struct FNotifyTimes
+	{
+		float Start = 0.0f;
+		float End = 0.0f;
+	};
+	TArray<FNotifyTimes> NewTimes;
+	NewTimes.Reserve(Montage->Notifies.Num());
+	for (const FAnimNotifyEvent& Notify : Montage->Notifies)
+	{
+		FNotifyTimes Times;
+		if (!ToNewMontageTime(ToAnimTime(Notify.GetTime()), Times.Start)
+			|| !ToNewMontageTime(ToAnimTime(Notify.GetTime() + Notify.GetDuration()), Times.End))
+		{
+			return -1.0f;
+		}
+		NewTimes.Add(Times);
+	}
+
+	const FScopedTransaction Transaction(NSLOCTEXT("RpgAnimationAssetTools", "SetMontageClipRanges", "Set Montage Clip Ranges"));
+	Montage->Modify();
+	Track.AnimSegments.Reset();
+	float Position = 0.0f;
+	for (const FRpgMontageClipRange& Range : Ranges)
+	{
+		FAnimSegment Segment = Template;
+		Segment.AnimStartTime = Range.AnimStartTime;
+		Segment.AnimEndTime = FMath::Min(Range.AnimEndTime, SequenceLength);
+		Segment.AnimPlayRate = Range.PlayRate;
+		Segment.LoopingCount = 1;
+		Segment.StartPos = Position;
+		Track.AnimSegments.Add(Segment);
+		Position += Segment.GetLength();
+	}
+	Montage->SetCompositeLength(Position);
+	if (Montage->CompositeSections.Num() == 1)
+	{
+		Montage->CompositeSections[0].Link(Montage, 0.0f);
+	}
+
+	for (int32 Index = 0; Index < Montage->Notifies.Num(); ++Index)
+	{
+		FAnimNotifyEvent& Notify = Montage->Notifies[Index];
+		Notify.Link(Montage, NewTimes[Index].Start, Notify.GetSlotIndex());
+		Notify.RefreshTriggerOffset(Montage->CalculateOffsetForNotify(NewTimes[Index].Start));
+		if (Notify.NotifyStateClass)
+		{
+			Notify.SetDuration(NewTimes[Index].End - NewTimes[Index].Start);
+			Notify.EndLink.Link(Montage, NewTimes[Index].End, Notify.GetSlotIndex());
+			Notify.RefreshEndTriggerOffset(Montage->CalculateOffsetForNotify(NewTimes[Index].End));
+		}
+	}
+
+	Montage->RefreshCacheData();
+	Montage->PostEditChange();
+	Montage->MarkPackageDirty();
+	return Montage->GetPlayLength();
+}
+
 namespace
 {
 	UAnimGraphNode_SaveCachedPose* FindSaveCachedPoseNode(const UBlueprint* Blueprint, const FString& CacheName)

@@ -59,6 +59,7 @@ how a hit is found, not what a hit does.
 | HRW-04b | Swing feel after the first playtest: faster swing without the pull-out, local harvesting hitstop, stronger impact feedback, trace over the whole tool | Merged: [#341](https://github.com/Athurito/SurvivalRpg/pull/341) |
 | HRW-04c | Tool mesh pivots at the grip, so the user can tune the grip by turning the `ToolMesh` about the hand; in-hand look and trace unchanged | Merged: [#343](https://github.com/Athurito/SurvivalRpg/pull/343) |
 | HRW-04d | Second playtest: thin the dust that hides a falling tree, and give the pickaxe the axe's quick swing | Merged: [#346](https://github.com/Athurito/SurvivalRpg/pull/346) |
+| HRW-04e | Third playtest: a dull stone sound for the pickaxe, and a swing that winds up overhead and strikes down fast | In review: [#348](https://github.com/Athurito/SurvivalRpg/pull/348) |
 | HRW-05 | Focus meter and harvesting spells chosen in the skill tree, first spell Wide Swing; redesign of the tree and the runes | Planned |
 
 ## Task scope
@@ -455,6 +456,63 @@ In my own editor, standalone PIE in `Lvl_HarvestPickaxe` with the real character
 2. Pick up the pickaxe and hold at an iron vein. The pick goes up and strikes about 0.4 s after the press, roughly every 0.6 s while held, with grey chips, a small dust puff, a pick sound and a brief stop at each hit.
 3. Look at the pickaxe in the hand. If the grip looks off, turn the `ToolMesh` of `BP_Tool_PickaxeActor` about the hand in paused PIE, as for the axe.
 4. **Multiplayer:** play as listen server with two players. The client mines a vein while the host watches: the host sees the quicker strikes at a steady pace with chips and dust, without the client's pauses. Then the host fells a pine while the client watches: the client sees smooth chops and the tree falling without a lingering cloud.
+
+### HRW-04e: pickaxe sound and swing curve
+
+In the third playtest (2026-11-01) the pick sound rang like a struck glass bowl instead of sounding dull. The swing looked like setting the pickaxe down rather than winding up: it should wind up overhead and strike down fast, and the fast part was missing.
+
+#### HRW-04e report
+
+Branch `claude/hrw-04e-pickaxe-swing-sound`, PR [#348](https://github.com/Athurito/SurvivalRpg/pull/348): `8a551654` editor helper and test, `f6ed8c5f` assets, then this report with the notices, the skill notes and the status row.
+
+- **Sound, cause:** I can't judge sound by ear, so I measured the samples instead. Exported from the sound library, the three HRW-04b pick hits (*All In One Survival* `Pickaxe_hit_1`, `_2`, `_4`) have a spectral centroid of 5.9 to 7.0 kHz, 76 to 96 % of their energy above 3 kHz and none below 400 Hz. Their tail holds a narrow peak 30 to 37 dB above its band, which is the ring.
+- **Sound, change:** of 60 measured stone, rock and hammer impacts, three single, fast-attack *All In One Destruction Rock* impacts with a similar level replace them in place as `SW_Harvest_PickaxeHit_01` to `03`: `Rock_Sedimentary_Impact_Large_1`, `Rock_Various_Impact_Crumble_Medium_1` and `Rock_Sandstone_Impact_Medium_4`. They measure a 1.35 to 1.4 kHz centroid, 9 to 10 % of their energy above 3 kHz, 9 to 35 % below 400 Hz and a 22 to 25 dB tail peak, at −14.5 to −19 dBFS RMS against −14 to −16 before. Each wave plays at its own `Pitch` 0.85, which the stone cue's random 0.92 to 1.08 turns into 0.78 to 0.92. The axe's wood chops and the cue graphs are unchanged.
+- **Swing, cause:** with the tool tip computed as a fixed point in the hand's space for every clip frame, the pick tip of `IP_Pick_axe_hit_01` peaks at 7.9 m/s while still at head height (clip 1.37 s), then slows all the way down. It reaches vein height at 45 to 75 % of that peak. HRW-04d's start at clip 1.0 s also dropped most of the raise, so the blend-in, a slow descent and a gentle stop were what remained.
+- **Alternative compared:** `IP_Chop_Loop_02` of the same pack winds up overhead and strikes at up to 22.9 m/s, but into the ground: its tip ends at 2 cm, and it would drive the pick about 80 cm through a vein. The clip's shape was right and only its speed was off, so I retimed `IP_Pick_axe_hit_01` instead. The sword and spear packs have only one-handed or jumping slams.
+- **Swing, change:** the new editor helper `URpgAnimationAssetTools::SetMontageClipRanges` (Python `AnimationAssetTools.set_montage_clip_ranges`) lays out `AM_Harvest_PickaxeStrike` as clip ranges at their own rates, under the ability's unchanged rate 1.5: raise 0.70 to 1.10 s at 1.3, the top 1.10 to 1.22 s at 0.9, the downswing in steps of 1.4, 1.9, 2.4 and 3.0 up to 1.70 s, then 1.0 to the end. The steps cancel the clip's slowdown.
+
+  | Real time | Before (HRW-04d) | After |
+  | --- | --- | --- |
+  | 0 to 0.2 s | blend-in, pick rises to the top, tip at 3.6 to 8.8 m/s | raise to overhead, tip at 5 to 8 m/s |
+  | 0.2 to 0.3 s | downswing at head height, tip peaks at 11.6 m/s | hold at the top, tip at 3.4 to 5.3 m/s |
+  | 0.3 to 0.43 s | tip slows from 10.7 to 5.1 m/s on the way down | downswing, tip at 12 to 23 m/s |
+  | contact | 0.38 to 0.42 s, tip at 45 to 75 % of its peak | 0.42 to 0.44 s, tip at about 95 % of its peak |
+  | cycle | 0.565 s | 0.542 s |
+
+- **Attack window:** the faster downswing shortened the window to 0.12 s of real time. In two-player PIE at about 20 game frames per second, the server then committed only 11 of the client's 27 swings, against 8 of 8 with HRW-04d's 0.245 s window. The server traces a remote swing on a montage that advances in move-sized steps and closes the window on whichever of notify, poll and clock comes first. The window therefore now opens where the downswing starts (clip 1.22 s, pick over the head) and closes just before the blend-out (clip 1.83 s): 0.294 to 0.531 s, impact notify at 0.445 s. After that, 8 of 8 swings committed.
+- **Unchanged:** hitstop 60 ms, blend-in 0.18 s, blend-out 0.25 s with trigger 0, the stone cue's chips and dust, the grip.
+
+##### Validation
+
+All builds and tests through `ue.py`, with the MCP autostart off; my own editor (port 8020; port 8000 untouched) was closed for every build and test.
+
+- `build`: passed, 0 errors, 0 warnings.
+- `test SurvivalRpg.Animation.SetMontageClipRanges SurvivalRpg.Animation.TrimMontageToRange SurvivalRpg.Animation.RetimeMontageRange --null-rhi`, before the asset work: **3 / 3 passed**.
+- `test SurvivalRpg.Harvesting SurvivalRpg.Interaction.Harvesting SurvivalRpg.Animation --null-rhi`: **122 / 122 passed**, including `SwingMontageContract` (window, impact inside it, blend-out at most 0.25 s after the impact, hitstop margin) and `PickaxeToolContract`.
+- `test SurvivalRpg.Network.HarvestSwingPIE SurvivalRpg.Network.LootHarvestPIE SurvivalRpg.Network.HarvestCuePIE` (rendered, separate call): **12 / 12 passed**, all with the usual `FNetGUIDCache` log warnings and no ensure. These tests swing the axe, not the pickaxe.
+- `python Build/Tools/AgentSkills/sync.py` and `--check`: consistent.
+
+##### Agent check by eye
+
+In my own editor in `Lvl_HarvestPickaxe` with the real character, pickaxe and iron vein. Two other editors held the GPU at 98 %, so PIE ran at 3 to 4 frames per second; the checks used `r.ScreenPercentage 40` to `60` and `slomo 0.1` or `0.2`.
+
+- **Standalone:** four strikes took the vein from 4 to 0. Contact came at montage 0.626 to 0.655 s (clip 1.58 to 1.66 s), that is 0.42 to 0.44 s after each swing started. Each contact froze the swinger for 74 to 94 ms at 23 ms sampling, and stone chips and dust spawned. Held swings started every 0.61 to 0.65 s of game time.
+- **Frames:** the pick is overhead 0.1 s after the start, holds at the top until 0.2 s, then comes over and down and meets the rock at about 0.37 s of game time; screenshot frames delay the sampled timing.
+- **Listen server**, host and one client in one process, under `slomo 0.2`. The client mined the vein through its mouse button, four strikes for 4 to 0, twice. Its own montage froze at each predicted contact. The host's copy played at rate 1.5 without a freeze and committed at montage 0.636 to 0.663 s. Stone chips and dust spawned in both worlds.
+- **Failed attempt:** before the window moved, the same check committed 4 of 10, 3 of 13 and 4 of 4 swings; with HRW-04d's layout, set in memory for an A/B, 4 of 4 twice.
+
+##### Limits
+
+- The sound was picked by measurement. Nobody has heard it yet.
+- The window figures come from two-player PIE at about 20 game frames per second. At a normal frame rate the tests and earlier sessions saw no misses with the axe's 0.133 s window. The pickaxe now has 0.237 s.
+- The downswing is a time warp of one mocap clip, with speed steps between its ranges. At 30 frames per second each step lasts about one frame, and the frames read as continuous, but it was judged only in slow motion and still frames.
+- The motion was judged from slow-motion frames under a loaded GPU, not at full speed.
+
+##### Playtest
+
+1. Open `Lvl_HarvestPickaxe`, pick up the pickaxe and hold the left mouse button at an iron vein. The pick goes up over the head, pauses briefly at the top and comes down fast into the rock about 0.4 s after the swing starts, roughly every 0.6 s while held. Each strike sounds like a dull, low stone thud, with grey chips, a small dust puff and a brief stop.
+2. Pick up the axe and chop a dead pine: the wood chops sound as before.
+3. **Multiplayer:** play as listen server with two players. The client mines a vein while the host watches: the host sees the overhead wind-up and fast strike at a steady pace, hears the stone thud, and every strike that lands takes a section on both machines. Then swap: the host mines while the client watches the same.
 
 ### HRW-05: focus meter and harvesting spells
 

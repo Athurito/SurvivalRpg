@@ -55,6 +55,8 @@ Proven for the skeleton warrior (CMB-05, `docs/combat-skeleton-warrior.md`).
 - Pick sounds per needed sound event, not by browsing packs.
 - Copy candidates into a temporary `/Game` folder and read their `duration`. For impacts, export them with `AssetExportTask` and `SoundExporterWAV` and measure the attack, the share of energy below 150 Hz, and the spectral centroid: booms have a fast attack and more than 85 % low energy, cracks reach full scale within 20 ms.
 - Move the chosen waves into `Content/SurvivalRpg/Audio/Sounds/<Topic>/SW_*` with the `SFX_Effects` sound class and `ATT_FX_World` attenuation.
+- Without opening the library's editor, a headless `UnrealEditor-Cmd.exe Assets_Sounds.uproject -run=pythonscript -script=<file> -unattended -nullrhi` exports candidates with `SoundExporterWAV`. An `AssetImportTask` with `replace_existing` imports a chosen WAV over an existing wave and keeps its references; set the sound class, attenuation and `pitch` again afterwards (HRW-04e).
+- A dull impact needs a low centroid and no ring. The pick samples that the user heard as a struck glass bowl measured a 5.9 to 7.0 kHz centroid, 76 to 96 % of their energy above 3 kHz, none below 400 Hz, and a narrow tail peak 30 to 37 dB above its band median (40 to 340 ms after the peak, 0.8 to 10 kHz). Their *All In One Destruction Rock* replacements measure 1.35 to 1.4 kHz, 9 to 10 %, 9 to 35 % below 400 Hz and 22 to 25 dB. A wave's own `pitch` multiplies a cue's random pitch, so one material's sounds can sit lower without a graph change (HRW-04e).
 
 ## MetaHumans
 

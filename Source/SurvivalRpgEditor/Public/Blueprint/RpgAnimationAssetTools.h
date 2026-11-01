@@ -19,6 +19,25 @@ class UChooserTable;
 class UEdGraph;
 class USkeleton;
 
+/** One range of a montage's sequence, in animation seconds, and the rate the montage plays it at. Editor authoring input. */
+USTRUCT(BlueprintType)
+struct SURVIVALRPGEDITOR_API FRpgMontageClipRange
+{
+	GENERATED_BODY()
+
+	/** First animation second of the range, from 0 to the sequence length. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rpg|Animation|Editor", meta = (ClampMin = "0.0", ForceUnits = "s"))
+	float AnimStartTime = 0.0f;
+
+	/** Animation second where the range ends; the next range starts here. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rpg|Animation|Editor", meta = (ClampMin = "0.0", ForceUnits = "s"))
+	float AnimEndTime = 0.0f;
+
+	/** Speed of the range relative to the montage's own play rate, from 0.05 to 4. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rpg|Animation|Editor", meta = (ClampMin = "0.05", ClampMax = "4.0"))
+	float PlayRate = 1.0f;
+};
+
 /** Editor authoring gaps for animation assets. These operations contain no gameplay selection policy. */
 UCLASS()
 class SURVIVALRPGEDITOR_API URpgAnimationAssetTools final : public UBlueprintFunctionLibrary
@@ -125,6 +144,18 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
 	static float TrimMontageToRange(UAnimMontage* Montage, float StartTime, float EndTime);
+
+	/**
+	 * Lays out a project montage of one sequence as consecutive ranges of that sequence, each at its own rate, for example
+	 * a quick downswing after a slower wind-up, or a wind-up restored before a trimmed start. Ranges follow each other in
+	 * animation time without gaps and lie inside the sequence. The montage's segments must play that one sequence forward
+	 * and back to back, with at most one section, which stays at zero; trimmed, retimed or earlier laid-out montages
+	 * qualify. Notifies keep their animation frame; a notify whose frame the ranges do not cover refuses the change.
+	 * Returns the new montage length in seconds, or a negative value when the montage or the ranges do not qualify.
+	 * Records undo, never saves.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
+	static float SetMontageClipRanges(UAnimMontage* Montage, const TArray<FRpgMontageClipRange>& Ranges);
 
 	/**
 	 * Rotates every key of a project sequence's root bone track by YawDegrees about the vertical axis, so an in-place clip
