@@ -10,6 +10,9 @@ class SURVIVALRPG_API UAnimNotify_RpgWeaponAttackWindowStart : public UAnimNotif
 	GENERATED_BODY()
 
 public:
+	/** Defaults to not firing in animation editor previews, whose preview actor has no ASC to receive the event. */
+	UAnimNotify_RpgWeaponAttackWindowStart();
+
 	virtual void Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, const FAnimNotifyEventReference& EventReference) override;
 	virtual FString GetNotifyName_Implementation() const override;
 };
@@ -20,6 +23,9 @@ class SURVIVALRPG_API UAnimNotify_RpgWeaponAttackWindowEnd : public UAnimNotify
 	GENERATED_BODY()
 
 public:
+	/** Defaults to not firing in animation editor previews, whose preview actor has no ASC to receive the event. */
+	UAnimNotify_RpgWeaponAttackWindowEnd();
+
 	virtual void Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, const FAnimNotifyEventReference& EventReference) override;
 	virtual FString GetNotifyName_Implementation() const override;
 };

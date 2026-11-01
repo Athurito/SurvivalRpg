@@ -17,6 +17,9 @@ class SURVIVALRPG_API UAnimNotify_RpgGameplayEvent : public UAnimNotify
 	GENERATED_BODY()
 
 public:
+	/** Defaults to not firing in animation editor previews, whose preview actor has no ASC to receive the event. */
+	UAnimNotify_RpgGameplayEvent();
+
 	virtual void Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, const FAnimNotifyEventReference& EventReference) override;
 	virtual FString GetNotifyName_Implementation() const override;
 

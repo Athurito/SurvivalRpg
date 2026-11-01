@@ -6,6 +6,14 @@
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(AnimNotify_RpgGameplayEvent)
 
+UAnimNotify_RpgGameplayEvent::UAnimNotify_RpgGameplayEvent()
+{
+#if WITH_EDITORONLY_DATA
+	// The engine skips this only for animation editor meshes (UDebugSkelMeshComponent); PIE and games still fire.
+	bShouldFireInEditor = false;
+#endif
+}
+
 void UAnimNotify_RpgGameplayEvent::Notify(
 	USkeletalMeshComponent* MeshComp,
 	UAnimSequenceBase* Animation,
