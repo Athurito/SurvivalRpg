@@ -65,7 +65,7 @@ how a hit is found, not what a hit does.
 | HRW-04c | Tool mesh pivots at the grip, so the user can tune the grip by turning the `ToolMesh` about the hand; in-hand look and trace unchanged | Merged: [#343](https://github.com/Athurito/SurvivalRpg/pull/343) |
 | HRW-04d | Second playtest: thin the dust that hides a falling tree, and give the pickaxe the axe's quick swing | Merged: [#346](https://github.com/Athurito/SurvivalRpg/pull/346) |
 | HRW-04e | Third playtest: a dull stone sound for the pickaxe, and a swing that winds up overhead and strikes down fast | Merged: [#348](https://github.com/Athurito/SurvivalRpg/pull/348) |
-| HRW-05a | Ability tunings from active GameplayEffects: an Ability Tunings effect component that `GetTunedValueForSpec` folds after the tree and runes; native only, no assets | In review: [#PRNUMBER](https://github.com/Athurito/SurvivalRpg/pull/PRNUMBER) |
+| HRW-05a | Ability tunings from active GameplayEffects: an Ability Tunings effect component that `GetTunedValueForSpec` folds after the tree and runes; native only, no assets | In review: [#352](https://github.com/Athurito/SurvivalRpg/pull/352) |
 | HRW-05b | Focus resource and fill: `URpgFocusSet` on the PlayerState, a server fill once per landed swing, the gain effect, read-only view-model fields and the HUD meter | Planned |
 | HRW-05c | Wide Swing on Q, closing the first playable's magical harvesting ability: spell ability, cost and spell effects, cues, tree node, failure toast row, asset contracts and a spell PIE test | Planned |
 | HRW-05d | Split the harvesting tree per tool (axe on Logging, pickaxe on Mining) with their own spells, and visible talents in place of the rune-gated ones | Planned |
@@ -607,7 +607,7 @@ no assets.
 
 #### HRW-05a report
 
-Branch `claude/hrw-05a-effect-tunings`, PR [#PRNUMBER](https://github.com/Athurito/SurvivalRpg/pull/PRNUMBER): `COMMITHASH` the seam, its tests and docs, then this report with the status row.
+Branch `claude/hrw-05a-effect-tunings`, PR [#352](https://github.com/Athurito/SurvivalRpg/pull/352): `6e4f3e52` the seam, its tests, the docs and this report, then a commit that records the PR in the status row and here.
 
 - **Component:** `URpgAbilityTuningEffectComponent`
   (`Source/SurvivalRpg/AbilitySystem/Effects`), shown as "Ability Tunings" in
