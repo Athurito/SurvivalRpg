@@ -67,7 +67,7 @@ how a hit is found, not what a hit does.
 | HRW-04e | Third playtest: a dull stone sound for the pickaxe, and a swing that winds up overhead and strikes down fast | Merged: [#348](https://github.com/Athurito/SurvivalRpg/pull/348) |
 | HRW-05a | Ability tunings from active GameplayEffects: an Ability Tunings effect component that `GetTunedValueForSpec` folds after the tree and runes; native only, no assets | Merged: [#352](https://github.com/Athurito/SurvivalRpg/pull/352) |
 | HRW-05b | Focus resource and fill: `URpgFocusSet` on the PlayerState, a server fill once per landed swing, the gain effect, read-only view-model fields and the HUD meter | Merged: [#353](https://github.com/Athurito/SurvivalRpg/pull/353) |
-| HRW-05c | Wide Swing on Q, closing the first playable's magical harvesting ability: spell ability, cost and spell effects, cues, tree node, failure toast row, asset contracts and a spell PIE test | In review: [#358](https://github.com/Athurito/SurvivalRpg/pull/358) |
+| HRW-05c | Wide Swing on Q, closing the first playable's magical harvesting ability: spell ability, cost and spell effects, cues, tree node, failure toast row, asset contracts and a spell PIE test | Merged: [#358](https://github.com/Athurito/SurvivalRpg/pull/358) |
 | HRW-05d | Split the harvesting tree per tool (axe on Logging, pickaxe on Mining) with their own spells, and visible talents in place of the rune-gated ones | Planned |
 | HRW-05e | Runes as spell modifiers: tag-gated modifier effects applied with the spell, the ranks' always-on tunings cleared, rune bar and dormancy UI reworked | Planned |
 
