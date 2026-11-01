@@ -88,7 +88,9 @@ void URpgAbilitySystemComponent::InitAbilityActorInfo(AActor* InOwnerActor, AAct
 	check(InOwnerActor);
 
 	const bool bHasNewPawnAvatar = Cast<APawn>(InAvatarActor) && (InAvatarActor != ActorInfo->AvatarActor);
-	const bool bHadAvatar = ActorInfo->AvatarActor.IsValid();
+	// The engine's test for replaying deferred effect cues in Super: no avatar before, as on the first spawn, after a
+	// death, on a late joiner or when a pawn becomes relevant again.
+	const bool bFirstPawnAvatar = Cast<APawn>(InAvatarActor) && (!ActorInfo->AvatarActor.IsValid() || GetAvatarActor_Direct() == nullptr);
 	if (ActorInfo->AvatarActor.Get() != InAvatarActor)
 	{
 		ResetSprintMovement();
@@ -118,7 +120,24 @@ void URpgAbilitySystemComponent::InitAbilityActorInfo(AActor* InOwnerActor, AAct
 	if (!bPreserveMontageState)
 	{
 		ResetSimulatedMoverTraversalPresentation();
+		if (bFirstPawnAvatar)
+		{
+			// Super replays the WhileActive cues of effects it deferred during replication. Effects that were applied or
+			// played without this avatar join that one pass, so each effect cue plays once on the new pawn.
+			for (const FActiveGameplayEffect& Effect : &ActiveGameplayEffects)
+			{
+				if (!Effect.bIsInhibited && Effect.Spec.Def && !Effect.Spec.Def->GameplayCues.IsEmpty())
+				{
+					Effect.bPendingRepWhileActiveGC = true;
+				}
+			}
+		}
 		Super::InitAbilityActorInfo(InOwnerActor, InAvatarActor);
+		// Before abilities react to the new pawn, so cues they add from here on play only once.
+		if (bFirstPawnAvatar)
+		{
+			ReinvokeActiveGameplayCuesForNewAvatar();
+		}
 	}
 	else if (bPendingMontageRep)
 	{
@@ -161,12 +180,6 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 		}
 
 		TryActivateAbilitiesOnSpawn();
-
-		// Cues that started while there was no avatar played nowhere; show them on the first one.
-		if (!bHadAvatar)
-		{
-			ReinvokeActiveGameplayCuesForNewAvatar();
-		}
 	}
 	if (InAvatarActor && InAvatarActor->GetLocalRole() == ROLE_SimulatedProxy)
 	{
@@ -183,15 +196,6 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 
 void URpgAbilitySystemComponent::ReinvokeActiveGameplayCuesForNewAvatar()
 {
-	// Cues of active effects: on the server, and on the owning client, which receives the effects in full.
-	for (const FActiveGameplayEffect& Effect : &ActiveGameplayEffects)
-	{
-		if (!Effect.bIsInhibited && Effect.Spec.Def && !Effect.Spec.Def->GameplayCues.IsEmpty())
-		{
-			InvokeGameplayCueEvent(FGameplayEffectSpecForRPC(Effect.Spec), EGameplayCueEvent::WhileActive);
-		}
-	}
-
 	auto ReinvokeContainer = [this](const FActiveGameplayCueContainer& Container)
 	{
 		for (const FActiveGameplayCue& Cue : Container.GameplayCues)
