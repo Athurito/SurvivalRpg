@@ -59,7 +59,7 @@ how a hit is found, not what a hit does.
 | HRW-04b | Swing feel after the first playtest: faster swing without the pull-out, local harvesting hitstop, stronger impact feedback, trace over the whole tool | Merged: [#341](https://github.com/Athurito/SurvivalRpg/pull/341) |
 | HRW-04c | Tool mesh pivots at the grip, so the user can tune the grip by turning the `ToolMesh` about the hand; in-hand look and trace unchanged | Merged: [#343](https://github.com/Athurito/SurvivalRpg/pull/343) |
 | HRW-04d | Second playtest: thin the dust that hides a falling tree, and give the pickaxe the axe's quick swing | Merged: [#346](https://github.com/Athurito/SurvivalRpg/pull/346) |
-| HRW-04e | Third playtest: a dull stone sound for the pickaxe, and a swing that winds up overhead and strikes down fast | In review: [#348](https://github.com/Athurito/SurvivalRpg/pull/348) |
+| HRW-04e | Third playtest: a dull stone sound for the pickaxe, and a swing that winds up overhead and strikes down fast | Merged: [#348](https://github.com/Athurito/SurvivalRpg/pull/348) |
 | HRW-05 | Focus meter and harvesting spells chosen in the skill tree, first spell Wide Swing; redesign of the tree and the runes | Planned |
 
 ## Task scope
