@@ -13,12 +13,13 @@ class APlayerController;
 class UAbilitySystemComponent;
 class UGameplayAbility;
 class URpgPlayerProgressionComponent;
+struct FGameplayEventData;
 struct FOnAttributeChangeData;
 struct FRpgEquipmentLoadoutSlotsChangedMessage;
 
 /**
- * Read model of the local player's character values: level and experience, health, stamina, mana, armour and
- * equipment load. The inventory's character stats column and the HUD bind the same instance.
+ * Read model of the local player's character values: level and experience, health, stamina, mana, harvesting focus,
+ * armour and equipment load. The inventory's character stats column and the HUD bind the same instance.
  *
  * It also derives the HUD context: whether the character is in combat and whether every vital is full, which the HUD
  * uses to fade its vitals and action bars.
@@ -38,7 +39,11 @@ public:
 	/** Observes the equipment load of InPlayerController and the progression on its player state, once it exists. */
 	void BindPlayerController(APlayerController* InPlayerController);
 
-	/** Observes health, stamina and armour on InAbilitySystem, and the progression on its owning player state. */
+	/**
+	 * Observes health, stamina, mana, focus and armour on InAbilitySystem, and the progression on its owning player
+	 * state. Attribute sets granted later show up with their first value change or replication, and on the server with
+	 * the player state's Event.Abilities.Changed event that GameFeature grants send.
+	 */
 	void BindAbilitySystem(UAbilitySystemComponent* InAbilitySystem);
 
 	/** Stops observing the ability system and clears the attribute fields, for example while the pawn is gone. */
@@ -127,6 +132,29 @@ protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Character Stats|Mana", meta = (AllowPrivateAccess = "true"))
 	FText ManaText;
 
+	/**
+	 * Whether the ability system owns URpgFocusSet, which a harvesting GameFeature grants. Without it the focus fields
+	 * stay zero and the HUD hides the focus meter. Focus never counts towards bVitalsFull.
+	 */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Character Stats|Focus", meta = (AllowPrivateAccess = "true"))
+	bool bHasFocus = false;
+
+	/** Current focus, which landed tool swings fill; zero without a focus set. Read-only mirror of the owner's attribute. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Character Stats|Focus", meta = (AllowPrivateAccess = "true"))
+	float Focus = 0.0f;
+
+	/** Focus of a full meter; zero without a focus set. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Character Stats|Focus", meta = (AllowPrivateAccess = "true"))
+	float MaxFocus = 0.0f;
+
+	/** Focus / MaxFocus in [0, 1]. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Character Stats|Focus", meta = (AllowPrivateAccess = "true"))
+	float FocusProgress = 0.0f;
+
+	/** Whether the focus meter is full, so a harvesting spell can be cast. False without a focus set. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Character Stats|Focus", meta = (AllowPrivateAccess = "true"))
+	bool bFocusFull = false;
+
 	/** Armour attribute of the defense set. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Character Stats|Defense", meta = (AllowPrivateAccess = "true"))
 	float Armor = 0.0f;
@@ -183,6 +211,7 @@ private:
 	void HandleCharacterXPChanged(float CurrentXP, float XPToNextLevel);
 
 	void HandleAttributeChanged(const FOnAttributeChangeData& ChangeData);
+	void HandleAbilitiesChanged(const FGameplayEventData* EventData);
 	void HandleAbilityActivated(UGameplayAbility* Ability);
 	void HandleEquipmentLoadoutChanged(FGameplayTag Channel, const FRpgEquipmentLoadoutSlotsChangedMessage& Message);
 
@@ -204,6 +233,7 @@ private:
 	TWeakObjectPtr<URpgPlayerProgressionComponent> ObservedProgression;
 	TArray<TPair<FGameplayAttribute, FDelegateHandle>> AttributeHandles;
 	FDelegateHandle AbilityActivatedHandle;
+	FDelegateHandle AbilitiesChangedHandle;
 	FGameplayMessageListenerHandle LoadoutChangedHandle;
 	FTimerHandle CombatTimerHandle;
 };

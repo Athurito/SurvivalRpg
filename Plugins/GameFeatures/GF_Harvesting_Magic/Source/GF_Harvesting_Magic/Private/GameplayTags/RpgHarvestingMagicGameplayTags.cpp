@@ -88,6 +88,16 @@ namespace RpgHarvestingMagicGameplayTags
 		"Harvestable contacts one tool swing commits, base 1, rounded to a whole number from 1 to 8.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Tuning_Harvest_FocusGain,
+		"Ability.Tuning.Harvest.FocusGain",
+		"Focus one landed own swing or commit adds, base FocusGainPerSwing of the ability (0 fills nothing), at least 0.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		SetByCaller_Harvest_FocusGain,
+		"SetByCaller.Harvest.FocusGain",
+		"Magnitude of a harvest ability's focus gain effect: the captured tuned focus gain of one landed execution.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
 		Ability_Tuning_Harvest_Sections,
 		"Ability.Tuning.Harvest.Sections",
 		"Stock sections a harvest takes per target, or a swarm creature per strike; rounded, at least one.");

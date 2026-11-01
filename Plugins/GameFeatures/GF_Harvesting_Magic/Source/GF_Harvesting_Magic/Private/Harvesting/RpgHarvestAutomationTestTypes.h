@@ -132,6 +132,23 @@ public:
 	static constexpr float BaseDurationSeconds = 4.0f;
 };
 
+/** Instant focus gain like GE_HarvestFocus_Gain: adds its SetByCaller.Harvest.FocusGain magnitude to Focus. */
+UCLASS(NotBlueprintable, Transient)
+class URpgHarvestAutomationTestFocusGainEffect final : public UGameplayEffect
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgHarvestAutomationTestFocusGainEffect(
+		const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	/**
+	 * Makes the class default refuse to apply while its target owns IgnoredTag, as the asset ignores Harvest.Spell.Active.
+	 * An empty tag ignores nothing; tests restore it when they finish.
+	 */
+	static void SetIgnoredTargetTag(FGameplayTag IgnoredTag);
+};
+
 /** Asset-free authoritative corpse fixture with the real lifecycle and harvest components. */
 UCLASS(NotBlueprintable, Transient)
 class ARpgHarvestAutomationCorpseActor final : public AActor
@@ -363,6 +380,13 @@ public:
 
 	/** Milliseconds the swinger's own montage freezes at a swing's first resource contact. */
 	void ConfigureHitstop(const float InMilliseconds) { ToolSwingHitstopMilliseconds = InMilliseconds; }
+
+	/** Effect and authored amount of the focus each landed execution adds. */
+	void ConfigureFocusGain(const TSubclassOf<UGameplayEffect> InEffect, const float InPerSwing)
+	{
+		FocusGainEffect = InEffect;
+		FocusGainPerSwing = InPerSwing;
+	}
 
 	/** World times at which the hitstop froze and resumed the swing's montage, in order; the test swing plays none. */
 	const TArray<double>& GetMontagePauseTimes() const { return MontagePauseTimes; }

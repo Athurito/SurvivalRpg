@@ -1,5 +1,6 @@
 #include "Harvesting/RpgHarvestAutomationTestTypes.h"
 
+#include "GameplayEffectComponents/TargetTagRequirementsGameplayEffectComponent.h"
 #include "GameplayEffectComponents/TargetTagsGameplayEffectComponent.h"
 #include "GameplayTags/RpgHarvestingMagicGameplayTags.h"
 #include "Inventory/RpgInventoryFragment_HarvestingTool.h"
@@ -9,6 +10,7 @@
 #include "Harvesting/RpgHarvestableComponent.h"
 #include "Harvesting/RpgHarvestableCorpseComponent.h"
 #include "Harvesting/RpgHarvestTargeting.h"
+#include "SurvivalRpg/AbilitySystem/Attributes/RpgFocusSet.h"
 #include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
 #include "SurvivalRpg/Core/Corpse/RpgCorpseLifecycleComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
@@ -262,6 +264,31 @@ void URpgHarvestAutomationTestCooldownEffect::SetCooldownTag(const FGameplayTag 
 	GetMutableDefault<URpgHarvestAutomationTestCooldownEffect>()
 		->FindOrAddComponent<UTargetTagsGameplayEffectComponent>()
 		.SetAndApplyTargetTagChanges(GrantedTags);
+}
+
+URpgHarvestAutomationTestFocusGainEffect::URpgHarvestAutomationTestFocusGainEffect(
+	const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	DurationPolicy = EGameplayEffectDurationType::Instant;
+	FSetByCallerFloat Gain;
+	Gain.DataTag = RpgHarvestingMagicGameplayTags::SetByCaller_Harvest_FocusGain;
+	FGameplayModifierInfo& Modifier = Modifiers.AddDefaulted_GetRef();
+	Modifier.Attribute = URpgFocusSet::GetFocusAttribute();
+	Modifier.ModifierOp = EGameplayModOp::Additive;
+	Modifier.ModifierMagnitude = FGameplayEffectModifierMagnitude(Gain);
+}
+
+void URpgHarvestAutomationTestFocusGainEffect::SetIgnoredTargetTag(const FGameplayTag IgnoredTag)
+{
+	FGameplayTagRequirements& Requirements = GetMutableDefault<URpgHarvestAutomationTestFocusGainEffect>()
+		->FindOrAddComponent<UTargetTagRequirementsGameplayEffectComponent>()
+		.ApplicationTagRequirements;
+	Requirements.IgnoreTags.Reset();
+	if (IgnoredTag.IsValid())
+	{
+		Requirements.IgnoreTags.AddTag(IgnoredTag);
+	}
 }
 
 URpgHarvestAutomationTestAbility::URpgHarvestAutomationTestAbility(

@@ -97,6 +97,12 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestTunedValues
 	/** Tool swings only: harvestable contacts one swing commits (Ability.Tuning.Harvest.SwingTargets, base 1, 1 to 8). */
 	int32 SwingTargets = 1;
 
+	/**
+	 * Focus one landed execution adds to the harvester (Ability.Tuning.Harvest.FocusGain, base FocusGainPerSwing, at
+	 * least 0). Zero fills nothing.
+	 */
+	float FocusGain = 0.0f;
+
 	/** Stock sections per target, or per creature strike of a swarm. */
 	int32 SectionsPerTarget = 1;
 
@@ -212,6 +218,9 @@ struct GF_HARVESTING_MAGIC_API FRpgHarvestTunedValues
  * - Local hitstop: the locally controlled swinger's montage freezes for a tuned moment at its first resource contact of
  *   a swing. The server's copy of a remote swinger never freezes, so simulated proxies and the cadence keep their timing.
  * - Both strike sources share how a selection resolves: rewards, stock, cues and rune follow-ups.
+ * - Focus fill: the server applies FocusGainEffect to the harvester once per execution, after the first commit with an
+ *   accepted own hit, with the tuned FocusGain as its SetByCaller magnitude. Rejected contacts, secondary work such as
+ *   chained resources and rune strikes, stride pulses and swarms never fill.
  * - Cancel safety: ending or cancelling the ability before the commit or contact, for example by switching tools,
  *   never yields loot.
  * - Optional hold-to-aim: the ability previews while its input is held and executes on release.
@@ -282,6 +291,18 @@ public:
 	/** Returns the authored trace of this ability's tool swing, before the tuned reach. */
 	const FRpgSwingTraceParams& GetSwingTrace() const { return SwingTrace; }
 
+	/** Returns the instant effect a landed execution applies to fill the harvester's focus, or null for none. */
+	TSubclassOf<UGameplayEffect> GetFocusGainEffect() const { return FocusGainEffect; }
+
+	/** Returns the authored focus one landed execution adds, before tunings. */
+	float GetFocusGainPerSwing() const { return FocusGainPerSwing; }
+
+	/**
+	 * Returns whether Results hold an accepted own hit (FRpgHarvestResult::IsAcceptedDirectHit), the only results that
+	 * fill focus. Rejections and secondary work never do.
+	 */
+	static bool HasAcceptedDirectHit(const TArray<FRpgHarvestTargetEvaluation>& Results);
+
 	/** Seconds the swinger's own montage freezes at a tool swing's first resource contact; zero freezes nothing. */
 	float GetToolSwingHitstopSeconds() const { return FMath::Max(0.0f, ToolSwingHitstopMilliseconds) * 0.001f; }
 
@@ -348,6 +369,9 @@ public:
 
 	/** Swinging client: success cues this instance predicted, over every activation. */
 	uint32 GetOwnerPredictedToolCueCountForTests() const { return OwnerPredictedToolCueCountForTests; }
+
+	/** Server: focus gain effects this instance applied successfully, over every activation. */
+	uint32 GetAuthorityFocusFillCountForTests() const { return AuthorityFocusFillCountForTests; }
 
 	/** Local hitstops this instance froze its swing montage for on this machine, over every activation. */
 	uint32 GetToolSwingHitstopCountForTests() const { return ToolSwingHitstopCountForTests; }
@@ -535,6 +559,24 @@ protected:
 	/** Multiplier applied to the source tool's HarvestPower; scales yield-sensitive loot rows. One keeps the tool's power. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Yield", meta = (ClampMin = "0.01", UIMin = "0.1", UIMax = "5.0"))
 	float HarvestPowerScale = 1.0f;
+
+	/**
+	 * Instant effect the server applies to the harvester's own ability system once per execution that lands an accepted
+	 * own hit, for example GE_HarvestFocus_Gain, which adds its SetByCaller.Harvest.FocusGain magnitude to Focus. The
+	 * effect's own tag requirements decide when it applies, such as not during a spell. Empty fills nothing.
+	 * Designer content.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Focus")
+	TSubclassOf<UGameplayEffect> FocusGainEffect;
+
+	/**
+	 * Focus one landed execution adds before tunings (Ability.Tuning.Harvest.FocusGain): one swing for tool swings, one
+	 * commit for view-ray strikes, however many resources it struck. A full meter holds MaxFocus, usually 100. Zero, the
+	 * default, fills nothing, so only abilities that set it fill. Designer-tuned static data; the server captures the
+	 * tuned value when execution starts.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Focus", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "25.0"))
+	float FocusGainPerSwing = 0.0f;
 
 	/** Optional trade skill that unlocks this ability, for example Skill.Gathering.Mining. Empty means always unlocked. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rpg|Harvesting|Unlock", meta = (Categories = "Skill"))
@@ -896,13 +938,19 @@ private:
 
 	/**
 	 * Server: resolves a selection from either strike source. Commits its targets with one reward delivery
-	 * (CommitSelection, which also sends the rune follow-ups), executes the success or no-yield cue, and notifies On
-	 * Harvest Resolved.
+	 * (CommitSelection, which also sends the rune follow-ups), fills focus, executes the success or no-yield cue, and
+	 * notifies On Harvest Resolved.
 	 */
 	void ResolveSelection(
 		FRpgHarvestPreview& Selection,
 		const FRpgHarvestRequest& RequestTemplate,
 		const FRpgHarvestTunedValues& Values);
+
+	/**
+	 * Server: applies FocusGainEffect with Values.FocusGain to the harvester once per execution, when the committed
+	 * Selection holds an accepted own hit.
+	 */
+	void FillFocus(const FRpgHarvestPreview& Selection, const FRpgHarvestTunedValues& Values);
 
 	/** Tool swing: checks the swing's configuration, commits the facing, and plays it through PlayToolSwing. */
 	void BeginToolSwing();
@@ -982,6 +1030,9 @@ private:
 	FRpgHarvestTunedValues CommitValues;
 	bool bHasCommitValues = false;
 
+	/** Server: whether the current execution already filled focus; each execution, so each swing, fills once. */
+	bool bFocusFilledThisExecution = false;
+
 	/** Attack window and tool trace of the current tool swing; the server traces for gameplay, the swinging client for feedback. */
 	FRpgSwingTraceWindow ToolSwingWindow;
 
@@ -1024,6 +1075,7 @@ private:
 	uint32 AuthorityToolSwingHarvestCountForTests = 0;
 	uint32 OwnerPredictedToolCueCountForTests = 0;
 	uint32 ToolSwingHitstopCountForTests = 0;
+	uint32 AuthorityFocusFillCountForTests = 0;
 #endif
 
 	/**

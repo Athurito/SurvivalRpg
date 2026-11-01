@@ -6,6 +6,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgDefenseSet.h"
+#include "SurvivalRpg/AbilitySystem/Attributes/RpgFocusSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgManaSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgStaminaSet.h"
@@ -79,6 +80,12 @@ namespace
 			? EquipmentLoadout->GetHeavyLoadThreshold()
 			: GetDefault<URpgEquipmentLoadoutComponent>()->GetHeavyLoadThreshold();
 	}
+
+	/** Event the player state sends when GameFeature or progression grants change its abilities and attribute sets. */
+	FGameplayTag GetAbilitiesChangedEventTag()
+	{
+		return FGameplayTag::RequestGameplayTag(TEXT("Event.Abilities.Changed"), false);
+	}
 }
 
 void URpgCharacterStatsViewModel::BeginDestroy()
@@ -139,6 +146,8 @@ void URpgCharacterStatsViewModel::BindAbilitySystem(UAbilitySystemComponent* InA
 				URpgStaminaSet::GetMaxStaminaAttribute(),
 				URpgManaSet::GetManaAttribute(),
 				URpgManaSet::GetMaxManaAttribute(),
+				URpgFocusSet::GetFocusAttribute(),
+				URpgFocusSet::GetMaxFocusAttribute(),
 				URpgDefenseSet::GetArmorAttribute(),
 			};
 			for (const FGameplayAttribute& Attribute : ObservedAttributes)
@@ -148,6 +157,12 @@ void URpgCharacterStatsViewModel::BindAbilitySystem(UAbilitySystemComponent* InA
 					InAbilitySystem->GetGameplayAttributeValueChangeDelegate(Attribute).AddUObject(this, &ThisClass::HandleAttributeChanged));
 			}
 			AbilityActivatedHandle = InAbilitySystem->AbilityActivatedCallbacks.AddUObject(this, &ThisClass::HandleAbilityActivated);
+			// A set granted on the server changes no value, so a listen-server host learns of it from this event.
+			if (const FGameplayTag AbilitiesChanged = GetAbilitiesChangedEventTag(); AbilitiesChanged.IsValid())
+			{
+				AbilitiesChangedHandle = InAbilitySystem->GenericGameplayEventCallbacks.FindOrAdd(AbilitiesChanged)
+					.AddUObject(this, &ThisClass::HandleAbilitiesChanged);
+			}
 		}
 	}
 
@@ -194,9 +209,15 @@ void URpgCharacterStatsViewModel::ReleaseAbilitySystem()
 			AbilitySystem->GetGameplayAttributeValueChangeDelegate(Handle.Key).Remove(Handle.Value);
 		}
 		AbilitySystem->AbilityActivatedCallbacks.Remove(AbilityActivatedHandle);
+		if (FGameplayEventMulticastDelegate* AbilitiesChanged =
+				AbilitySystem->GenericGameplayEventCallbacks.Find(GetAbilitiesChangedEventTag()))
+		{
+			AbilitiesChanged->Remove(AbilitiesChangedHandle);
+		}
 	}
 	AttributeHandles.Reset();
 	AbilityActivatedHandle.Reset();
+	AbilitiesChangedHandle.Reset();
 	ObservedAbilitySystem.Reset();
 }
 
@@ -227,6 +248,12 @@ void URpgCharacterStatsViewModel::HandleAttributeChanged(const FOnAttributeChang
 	{
 		EnterCombat();
 	}
+}
+
+void URpgCharacterStatsViewModel::HandleAbilitiesChanged(const FGameplayEventData* EventData)
+{
+	(void)EventData;
+	RefreshAttributes();
 }
 
 void URpgCharacterStatsViewModel::HandleAbilityActivated(UGameplayAbility* Ability)
@@ -277,6 +304,9 @@ void URpgCharacterStatsViewModel::RefreshAttributes()
 	const bool bNewHasMana = AbilitySystem && AbilitySystem->HasAttributeSetForAttribute(URpgManaSet::GetManaAttribute());
 	const float NewMana = ReadAttribute(URpgManaSet::GetManaAttribute());
 	const float NewMaxMana = ReadAttribute(URpgManaSet::GetMaxManaAttribute());
+	const bool bNewHasFocus = AbilitySystem && AbilitySystem->HasAttributeSetForAttribute(URpgFocusSet::GetFocusAttribute());
+	const float NewFocus = ReadAttribute(URpgFocusSet::GetFocusAttribute());
+	const float NewMaxFocus = ReadAttribute(URpgFocusSet::GetMaxFocusAttribute());
 	const float NewArmor = ReadAttribute(URpgDefenseSet::GetArmorAttribute());
 
 	UE_MVVM_SET_PROPERTY_VALUE(Health, NewHealth);
@@ -292,6 +322,11 @@ void URpgCharacterStatsViewModel::RefreshAttributes()
 	UE_MVVM_SET_PROPERTY_VALUE(MaxMana, NewMaxMana);
 	UE_MVVM_SET_PROPERTY_VALUE(ManaProgress, GetRatio(NewMana, NewMaxMana));
 	SetText(ManaText, bNewHasMana ? MakeValueOfMaxText(NewMana, NewMaxMana) : FText::GetEmpty(), FFieldNotificationClassDescriptor::ManaText);
+	UE_MVVM_SET_PROPERTY_VALUE(bHasFocus, bNewHasFocus);
+	UE_MVVM_SET_PROPERTY_VALUE(Focus, NewFocus);
+	UE_MVVM_SET_PROPERTY_VALUE(MaxFocus, NewMaxFocus);
+	UE_MVVM_SET_PROPERTY_VALUE(FocusProgress, GetRatio(NewFocus, NewMaxFocus));
+	UE_MVVM_SET_PROPERTY_VALUE(bFocusFull, bNewHasFocus && NewMaxFocus > 0.0f && NewFocus >= NewMaxFocus);
 	UE_MVVM_SET_PROPERTY_VALUE(Armor, NewArmor);
 	SetText(ArmorText, FText::AsNumber(FMath::RoundToInt(NewArmor)), FFieldNotificationClassDescriptor::ArmorText);
 

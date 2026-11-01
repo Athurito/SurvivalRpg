@@ -55,6 +55,12 @@ namespace RpgHarvestingMagicGameplayTags
 	/** Tuning of how many harvestable contacts one tool swing commits; base 1. */
 	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_SwingTargets);
 
+	/** Tuning of the focus one landed execution adds; base from the ability's FocusGainPerSwing, usually 0. */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_FocusGain);
+
+	/** SetByCaller magnitude of a harvest ability's focus gain effect: the focus one landed execution adds. */
+	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(SetByCaller_Harvest_FocusGain);
+
 	/** Skill tree tuning of the stock sections taken per target, or per creature strike of a swarm. */
 	GF_HARVESTING_MAGIC_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Harvest_Sections);
 
