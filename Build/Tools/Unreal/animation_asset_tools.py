@@ -504,6 +504,34 @@ class AnimationAssetTools(unreal.ToolsetDefinition):
 
     @toolset_registry.tool_call
     @staticmethod
+    def set_montage_clip_ranges(asset_path: str, ranges_json: str) -> float:
+        """Lay out a one-sequence montage as consecutive ranges of that sequence, each at its own rate; does not save.
+
+        ranges_json is [{"start": s, "end": s, "rate": r}, ...] in animation seconds, back to back inside the sequence,
+        rates 0.05 to 4: for example a restored wind-up before a trimmed start, or a fast downswing. Trimmed, retimed and
+        laid-out montages qualify. Notifies keep their animation frame; a notify the ranges do not cover refuses the
+        change. Returns the new montage length.
+        """
+        _guard()
+        entries = json.loads(ranges_json)
+        if not isinstance(entries, list) or not entries:
+            raise RuntimeError('Expected a non-empty list of ranges')
+        ranges = []
+        for entry in entries:
+            values = [entry.get(key) if isinstance(entry, dict) else None for key in ('start', 'end', 'rate')]
+            if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in values):
+                raise RuntimeError('Each range needs finite start, end and rate')
+            clip_range = unreal.RpgMontageClipRange()
+            clip_range.anim_start_time, clip_range.anim_end_time, clip_range.play_rate = (float(v) for v in values)
+            ranges.append(clip_range)
+        length = unreal.RpgAnimationAssetTools.set_montage_clip_ranges(_asset(asset_path, unreal.AnimMontage), ranges)
+        if length < 0.0:
+            raise RuntimeError('Montage or ranges do not qualify: one sequence played forward, at most one section, '
+                               'back-to-back ranges inside it at rates 0.05 to 4, every notify covered')
+        return length
+
+    @toolset_registry.tool_call
+    @staticmethod
     def rotate_sequence_root(asset_path: str, yaw_degrees: float) -> bool:
         """Turn every root bone key of an in-place sequence by yaw_degrees about Z; does not save.
 
