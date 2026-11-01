@@ -43,9 +43,12 @@ public:
 	explicit URpgNetworkAutomationProjectileDamageEffect(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 };
 
-/** A straight, slow projectile with the fireball impact cue, so a test can watch it fly on every machine. */
+/**
+ * A straight, slow projectile with the fireball impact cue, so a test can watch it fly on every machine. It lingers two
+ * seconds after its stop, long enough for every client to show the stop before the actor goes.
+ */
 UCLASS(NotBlueprintable, Transient)
-class ARpgNetworkAutomationTestProjectile final : public ARpgCombatProjectile
+class ARpgNetworkAutomationTestProjectile : public ARpgCombatProjectile
 {
 	GENERATED_BODY()
 
@@ -54,6 +57,16 @@ public:
 
 	static constexpr float FlightSpeed = 1500.0f;
 	static constexpr float ShotDamage = 12.0f;
+};
+
+/** The test projectile with full gravity, like an arrow, so a stopped copy that keeps simulating would visibly fall. */
+UCLASS(NotBlueprintable, Transient)
+class ARpgNetworkAutomationFallingTestProjectile final : public ARpgNetworkAutomationTestProjectile
+{
+	GENERATED_BODY()
+
+public:
+	explicit ARpgNetworkAutomationFallingTestProjectile(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 };
 
 /**

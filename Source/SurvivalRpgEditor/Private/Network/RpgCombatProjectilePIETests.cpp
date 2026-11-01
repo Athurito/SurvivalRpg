@@ -124,8 +124,12 @@ namespace RpgCombatProjectilePIETests
 		}
 	}
 
-	/** Launches the slow test projectile from the equipment-free shooter fixture, as an NPC or system launch would. */
-	ARpgCombatProjectile* LaunchFromShooter(FNetworkState& State, const FVector& Origin, const int32 ShotId)
+	/** Launches a slow test projectile from the equipment-free shooter fixture, as an NPC or system launch would. */
+	ARpgCombatProjectile* LaunchFromShooter(
+		FNetworkState& State,
+		const FVector& Origin,
+		const int32 ShotId,
+		const TSubclassOf<ARpgCombatProjectile> ProjectileClass = ARpgNetworkAutomationTestProjectile::StaticClass())
 	{
 		URpgAbilitySystemComponent* AbilitySystem = State.Shooter ? State.Shooter->GetRpgAbilitySystemComponent() : nullptr;
 		if (!AbilitySystem)
@@ -140,15 +144,27 @@ namespace RpgCombatProjectilePIETests
 		Params.Direction = FVector::ForwardVector;
 		Params.Damage = ARpgNetworkAutomationTestProjectile::ShotDamage;
 		Params.ShotId = ShotId;
-		return ARpgCombatProjectile::LaunchWithDamageSpec(
-			State.World, ARpgNetworkAutomationTestProjectile::StaticClass(), Params, Spec, nullptr);
+		return ARpgCombatProjectile::LaunchWithDamageSpec(State.World, ProjectileClass, Params, Spec, nullptr);
 	}
+
+	/** How long each client watches its stopped copy; a copy that kept simulating under gravity would fall about 1.2 m. */
+	constexpr double ClientStopWatchSeconds = 0.5;
+
+	/** What one client saw of a shot's stop. */
+	struct FClientStop
+	{
+		FVector ImpactLocation = FVector::ZeroVector;
+		double FirstSeenSeconds = -1.0;
+		double LastSeenSeconds = -1.0;
+		double MaxDrift = 0.0;
+	};
 }
 
 NETWORK_TEST_CLASS(CombatProjectilePIE, "SurvivalRpg.Network")
 {
 	using FNetworkState = RpgCombatProjectilePIETests::FNetworkState;
 	using FRoutedCue = RpgCombatProjectilePIETests::FRoutedCue;
+	using FClientStop = RpgCombatProjectilePIETests::FClientStop;
 
 	FRpgScopedNetworkTestFrameTimeLimit FrameTimeLimit;
 	FPIENetworkComponent<FNetworkState> Network{
@@ -158,6 +174,7 @@ NETWORK_TEST_CLASS(CombatProjectilePIE, "SurvivalRpg.Network")
 	FPacketSimulationSettings PacketSettings;
 	FGameplayTag ImpactCueTag;
 	TArray<FRoutedCue> RoutedCues;
+	TMap<TWeakObjectPtr<UWorld>, FClientStop> ClientStops;
 	FDelegateHandle CueRoutedHandle;
 	double ImpactTime = -1.0;
 	bool bProjectileCausedHit = false;
@@ -176,6 +193,7 @@ NETWORK_TEST_CLASS(CombatProjectilePIE, "SurvivalRpg.Network")
 	BEFORE_EACH()
 	{
 		RoutedCues.Reset();
+		ClientStops.Reset();
 		StepDescriptions.Reset();
 		ImpactTime = -1.0;
 		bProjectileCausedHit = false;
@@ -264,8 +282,11 @@ NETWORK_TEST_CLASS(CombatProjectilePIE, "SurvivalRpg.Network")
 		}
 	}
 
-	/** After the server saw the hit: exactly one damage, then exactly one impact cue on every machine, then no projectile. */
-	void QueueSingleHitAndCue(const TCHAR* Shot)
+	/**
+	 * After the server saw the hit: every client shows the projectile stopped at the impact and keeping still, exactly
+	 * one damage, exactly one impact cue on every machine, then no projectile.
+	 */
+	void QueueSingleHitAndCue(const TCHAR* Shot, const int32 ShotId)
 	{
 		using namespace RpgCombatProjectilePIETests;
 
@@ -277,12 +298,17 @@ NETWORK_TEST_CLASS(CombatProjectilePIE, "SurvivalRpg.Network")
 					{
 						// The projectile lingers after its impact, so the causer is still alive here.
 						ImpactTime = FPlatformTime::Seconds();
+						ClientStops.Reset();
 						const AActor* Causer = State.Target->GetLastDamageCauser();
 						bProjectileCausedHit = Causer && Causer->IsA<ARpgCombatProjectile>();
 					}
 					return ImpactTime >= 0.0;
 				},
 				NetworkTimeout())
+			.UntilClients(Describe(FString::Printf(TEXT("%s stops on every client, which watches its stopped copy"), Shot)),
+				[this, ShotId](FNetworkState& State) { return WatchClientStop(State, ShotId); }, NetworkTimeout())
+			.ThenClients(Describe(FString::Printf(TEXT("%s stopped at the impact on every client and stayed there"), Shot)),
+				[this](FNetworkState& State) { AssertClientStop(State); })
 			.UntilServer(TEXT("Late duplicates have time to arrive"),
 				[this](FNetworkState&) { return FPlatformTime::Seconds() - ImpactTime >= CueQuietSeconds; },
 				NetworkTimeout())
@@ -302,6 +328,44 @@ NETWORK_TEST_CLASS(CombatProjectilePIE, "SurvivalRpg.Network")
 				[](FNetworkState& State) { return CountProjectiles(State.World) == 0; }, NetworkTimeout())
 			.UntilClients(TEXT("The stopped projectile goes on every client"),
 				[](FNetworkState& State) { return CountProjectiles(State.World) == 0; }, NetworkTimeout());
+	}
+
+	/**
+	 * Records this client's copy of the shot once it reports a stop, and how far it drifts from the replicated stop
+	 * location while the client watches it. Done after the watch time, or when the copy is gone after its stop was seen.
+	 */
+	bool WatchClientStop(FNetworkState& State, const int32 ShotId)
+	{
+		using namespace RpgCombatProjectilePIETests;
+
+		const ARpgCombatProjectile* Projectile = FindProjectile(State.World, ShotId);
+		FClientStop* Stop = ClientStops.Find(State.World);
+		if (!Projectile || Projectile->GetImpactResult() == ERpgProjectileImpactResult::None)
+		{
+			return Stop && !Projectile;
+		}
+
+		const double Now = FPlatformTime::Seconds();
+		if (!Stop)
+		{
+			Stop = &ClientStops.Add(State.World);
+			Stop->ImpactLocation = Projectile->GetImpactLocationForTests();
+			Stop->FirstSeenSeconds = Now;
+		}
+		Stop->LastSeenSeconds = Now;
+		Stop->MaxDrift = FMath::Max(Stop->MaxDrift, FVector::Dist(Projectile->GetActorLocation(), Stop->ImpactLocation));
+		return Now - Stop->FirstSeenSeconds >= ClientStopWatchSeconds;
+	}
+
+	void AssertClientStop(FNetworkState& State)
+	{
+		using namespace RpgCombatProjectilePIETests;
+
+		const FClientStop* Stop = ClientStops.Find(State.World);
+		ASSERT_THAT(IsNotNull(Stop));
+		ASSERT_THAT(IsTrue(FVector::Dist(Stop->ImpactLocation, TargetLocation) < 100.0));
+		ASSERT_THAT(IsTrue(Stop->LastSeenSeconds - Stop->FirstSeenSeconds >= ClientStopWatchSeconds * 0.8));
+		ASSERT_THAT(IsTrue(Stop->MaxDrift < 1.0));
 	}
 
 	void AssertSingleImpactCue(FNetworkState& State)
@@ -330,15 +394,16 @@ NETWORK_TEST_CLASS(CombatProjectilePIE, "SurvivalRpg.Network")
 					State.Target->ResetDamageObservations();
 					ASSERT_THAT(IsNotNull(LaunchFromShooter(State, ShooterLocation + FVector(50.0f, 0.0f, 0.0f), ShotId)));
 				})
-			.UntilClients(TEXT("Every client sees the projectile in flight"),
+			.UntilClients(TEXT("Every client sees the projectile in flight, with its launch point for the launch sound"),
 				[](FNetworkState& State)
 				{
 					const ARpgCombatProjectile* Projectile = FindProjectile(State.World, ShotId);
 					return Projectile && Projectile->GetImpactResult() == ERpgProjectileImpactResult::None &&
-						Projectile->GetActorLocation().X > ShooterLocation.X + 300.0f;
+						Projectile->GetActorLocation().X > ShooterLocation.X + 300.0f &&
+						Projectile->GetLaunchOrigin().Equals(ShooterLocation + FVector(50.0f, 0.0f, 0.0f), 1.0f);
 				},
 				NetworkTimeout());
-		QueueSingleHitAndCue(TEXT("The replicated projectile"));
+		QueueSingleHitAndCue(TEXT("The replicated projectile"), ShotId);
 	}
 
 	TEST_METHOD(PointBlankAndOrphanedProjectilesStillHitOnce)
@@ -347,14 +412,16 @@ NETWORK_TEST_CLASS(CombatProjectilePIE, "SurvivalRpg.Network")
 
 		QueueFixtures(true);
 		Network
-			.ThenServer(TEXT("The shooter launches right in front of the target"),
+			.ThenServer(TEXT("The shooter launches a falling projectile right in front of the target"),
 				[this](FNetworkState& State)
 				{
 					ASSERT_THAT(IsNotNull(State.Target));
 					State.Target->ResetDamageObservations();
-					ASSERT_THAT(IsNotNull(LaunchFromShooter(State, TargetLocation - FVector(40.0f, 0.0f, 0.0f), 2)));
+					// It hits before it first replicates, so every client receives it already stopped.
+					ASSERT_THAT(IsNotNull(LaunchFromShooter(State, TargetLocation - FVector(40.0f, 0.0f, 0.0f), 2,
+						ARpgNetworkAutomationFallingTestProjectile::StaticClass())));
 				});
-		QueueSingleHitAndCue(TEXT("The point-blank projectile"));
+		QueueSingleHitAndCue(TEXT("The point-blank projectile"), 2);
 
 		Network
 			.ThenServer(TEXT("A slow projectile flies while its shooter is removed"),
@@ -368,7 +435,7 @@ NETWORK_TEST_CLASS(CombatProjectilePIE, "SurvivalRpg.Network")
 					State.Shooter->Destroy();
 					State.Shooter = nullptr;
 				});
-		QueueSingleHitAndCue(TEXT("The orphaned projectile"));
+		QueueSingleHitAndCue(TEXT("The orphaned projectile"), 3);
 	}
 
 	TEST_METHOD(PredictedAbilityLaunchesWithoutEquipment)
@@ -415,7 +482,7 @@ NETWORK_TEST_CLASS(CombatProjectilePIE, "SurvivalRpg.Network")
 					ASSERT_THAT(IsNotNull(Spec));
 					ASSERT_THAT(IsTrue(AbilitySystem->TryActivateAbility(Spec->Handle)));
 				});
-		QueueSingleHitAndCue(TEXT("The ability's projectile"));
+		QueueSingleHitAndCue(TEXT("The ability's projectile"), URpgNetworkAutomationProjectileAbility::ShotId);
 		Network.ThenServer(TEXT("The predicting player is the damage's instigator"),
 			[this](FNetworkState& State)
 			{

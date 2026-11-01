@@ -414,4 +414,57 @@ bool FRpgStarterEquipmentAssetContractTest::RunTest(const FString& Parameters)
 	return !HasAnyErrors();
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgWeaponBlockAssetContractTest,
+	"SurvivalRpg.Combat.WeaponBlockAssetContract",
+	EAutomationTestFlags::EditorContext |
+		EAutomationTestFlags::EngineFilter)
+
+bool FRpgWeaponBlockAssetContractTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgWeaponAttackAssetTests;
+
+	// A shield stops arrows and spell projectiles from the front; a sword parries only melee.
+	struct FBlockContract
+	{
+		FWeaponBlueprintContract Weapon;
+		bool bBlocksProjectiles;
+	};
+	const FBlockContract BlockContracts[] = {
+		{
+			{
+				TEXT("BasicShield weapon instance"),
+				TEXT(
+					"/GF_Combat_Core/Equipment/Weapons/"
+					"BP_WeaponInstance_BasicShield.BP_WeaponInstance_BasicShield"),
+			},
+			true,
+		},
+		{ WeaponBlueprintContracts[0], false },
+		{ WeaponBlueprintContracts[1], false },
+	};
+
+	const FGameplayTag MeleeType = FGameplayTag::RequestGameplayTag(TEXT("Damage.Type.Melee"));
+	const FGameplayTag ProjectileType = FGameplayTag::RequestGameplayTag(TEXT("Damage.Type.Projectile"));
+	for (const FBlockContract& Contract : BlockContracts)
+	{
+		const URpgWeaponInstance* WeaponDefaults = LoadWeaponDefaults(*this, Contract.Weapon);
+		if (!WeaponDefaults)
+		{
+			continue;
+		}
+
+		const FGameplayTagContainer& BlockableTypes = WeaponDefaults->GetBlockDefinition().BlockableDamageTypeTags;
+		TestTrue(
+			*FString::Printf(TEXT("The %s blocks melee"), Contract.Weapon.Description),
+			BlockableTypes.HasTagExact(MeleeType));
+		TestEqual(
+			*FString::Printf(TEXT("The %s blocks projectiles only when it is a shield"), Contract.Weapon.Description),
+			BlockableTypes.HasTagExact(ProjectileType),
+			Contract.bBlocksProjectiles);
+	}
+
+	return !HasAnyErrors();
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

@@ -163,7 +163,7 @@ public:
 	virtual void PostNetReceiveVelocity(const FVector& NewVelocity) override;
 	//~ End AActor
 
-	/** World launch point in cm (server only). */
+	/** World launch point in cm; replicated once. */
 	UFUNCTION(BlueprintPure, Category = "Rpg|Combat|Projectile")
 	FVector GetLaunchOrigin() const { return LaunchOrigin; }
 
@@ -189,6 +189,9 @@ public:
 	bool SweepFlightSegmentForTests(const FVector& Start, const FVector& End, FHitResult& OutHit) { return SweepFlightSegment(Start, End, OutHit); }
 	const FGameplayEffectSpecHandle& GetDamageSpecForTests() const { return DamageSpec; }
 	FGameplayTag GetImpactCueTagForTests() const { return ImpactCueTag; }
+	FVector GetImpactLocationForTests() const { return ImpactState.Location; }
+	float GetMaxFlightSecondsForTests() const { return MaxFlightSeconds; }
+	void SetImpactCueForTests(const FGameplayTag& CueTag, bool bOnTargets) { ImpactCueTag = CueTag; bImpactCueOnTargets = bOnTargets; }
 #endif
 
 protected:
@@ -253,7 +256,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Presentation", meta = (ClampMin = "0.0", Units = "Seconds"))
 	float AudioFadeOutSeconds = 0.25f;
 
-	/** One of these plays at the launch point on every machine that receives the projectile before it stops. Designer data. */
+	/**
+	 * One of these plays at the launch point on every machine that receives the projectile in flight within half a second
+	 * of its launch; a late joiner hears none. Designer data.
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Presentation")
 	TArray<TObjectPtr<USoundBase>> LaunchSounds;
 
@@ -307,7 +313,10 @@ private:
 	/** Server: actors this flight passed through, such as a dodging target. */
 	TArray<TWeakObjectPtr<AActor>> PassedThroughActors;
 
-	FVector LaunchOrigin = FVector::ZeroVector;
+	/** World launch point in cm. Range and defense measure from it on the server; clients play the launch sound there. */
+	UPROPERTY(Replicated)
+	FVector_NetQuantize10 LaunchOrigin = FVector::ZeroVector;
+
 	FVector LastSweepLocation = FVector::ZeroVector;
 	float FlightSeconds = 0.0f;
 	FGenericTeamId LaunchTeamId = FGenericTeamId::NoTeam;

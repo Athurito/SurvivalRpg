@@ -146,7 +146,7 @@ Target choice, delivery, and effect payload remain separate. Player and enemy bo
 
 | Proposed class | Native responsibility |
 | --- | --- |
-| `ARpgCombatProjectile` | The shared projectile for arrows and spells: replicated movement/collision, retained launch payload and attribution, impact recovery policy, one authoritative impact, and teardown. It carries flight presentation per the [fireball carrier contract](vfx-fireball.md#flight-system) and executes the impact cue on authority through the instigator's ability system. It does not require equipment or arrow-specific content. |
+| `ARpgCombatProjectile` | The shared projectile for arrows and spells: replicated movement/collision, retained launch payload and attribution, impact recovery policy, one authoritative impact, and teardown. It carries flight presentation per the [fireball carrier contract](vfx-fireball.md#flight-system) and executes the impact cue on authority through the GameState's ability system, so the cue survives the shooter's death. It does not require equipment or arrow-specific content. |
 | `URpgAbilityTask_ProjectileShot` | Activation-bound validation of aiming/release data, charge duration, optional hold-resource drain, exactly-once release/payment/spawn, and cancellation cleanup. It accepts trusted configuration from an ability without requiring an equipment ability. |
 | `ARpgEmbeddedProjectilePickup` | Reusable attachment, grouping, expiry, and world recovery using the existing dropped-inventory foundation. On characters it is presentation for separately owned corpse recovery, never a second loot inventory for the same arrow. |
 | `URpgEmbeddedProjectileSubsystem` | Server-side world subsystem that only orders temporary arrow pickups and enforces `MaxWorldArrowPickups`. It owns no inventory, recovery, or combat state. |
@@ -221,7 +221,7 @@ All tasks are **Deferred** because their implementation start has not been selec
 
 | ID | Deliverable | Dependencies | Status |
 | --- | --- | --- | --- |
-| RNG-01 | The shared projectile for arrows and spells (the combat roadmap's "Projectile foundation"), retained source context, authoritative impacts, projectile defense, the fireball carrier contract, and proof that launching does not require equipment | Baseline refresh | Done; user check with RNG-06 ([ranged-projectile-foundation.md](ranged-projectile-foundation.md), [PR #364](https://github.com/Athurito/SurvivalRpg/pull/364)) |
+| RNG-01 | The shared projectile for arrows and spells (the combat roadmap's "Projectile foundation"), retained source context, authoritative impacts, projectile defense, the fireball carrier contract, and proof that launching does not require equipment | Baseline refresh | Done; user check with RNG-06 ([ranged-projectile-foundation.md](ranged-projectile-foundation.md), [PR #364](https://github.com/Athurito/SurvivalRpg/pull/364), review follow-up [PR #365](https://github.com/Athurito/SurvivalRpg/pull/365)) |
 | RNG-02 | Bow/arrow items, shot task, draw curves, inventory consumption, configurable costs/passive seams, recipes, and placeholder removal | RNG-01 | Deferred |
 | RNG-03 | Player input, shoulder camera, aim movement, grips, and draw/release animations on CMC/Manny | RNG-02 | Deferred |
 | RNG-03b | Impact recovery policies, the break roll, embedded world arrows and pickups, world grouping and cap, the player-hit rule, and salvage lifetime | RNG-03 | Deferred |

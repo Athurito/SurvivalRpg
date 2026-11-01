@@ -2,6 +2,7 @@
 
 #include "RpgCombatProjectile.h"
 
+#include "AbilitySystemGlobals.h"
 #include "AIController.h"
 #include "Components/SphereComponent.h"
 #include "Engine/CollisionProfile.h"
@@ -9,8 +10,11 @@
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
+#include "GameplayCueManager.h"
 #include "GameplayEffect.h"
 #include "Misc/AutomationTest.h"
+#include "Misc/ScopeExit.h"
+#include "PhysicsEngine/BodyInstance.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgCombatSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgDefenseSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
@@ -18,6 +22,7 @@
 #include "SurvivalRpg/AbilitySystem/Executions/RpgDamageExecution.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Combat/RpgCombatImpact.h"
+#include "SurvivalRpg/Core/Game/RpgGameStateBase.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Physics/RpgCollisionChannels.h"
@@ -430,6 +435,121 @@ bool FRpgCombatProjectileCollisionProfilesTest::RunTest(const FString& Parameter
 		TestEqual(FString::Printf(TEXT("Profile %s answers the projectile channel as expected"), Expected.Profile),
 			Template.ResponseToChannels.GetResponse(Rpg_TraceChannel_Projectile), Expected.Response);
 	}
+
+	// Components saved before slot 10 had a name store its responses under the slot's default name, such as the PCG
+	// volume brush in Lvl_PortalRealm_RootGrove; the channel redirect keeps them on the projectile channel.
+	FCollisionResponse SavedResponse;
+	SavedResponse.SetResponsesArray({ FResponseChannel(TEXT("GameTraceChannel10"), ECR_Ignore) });
+	TestEqual(TEXT("A response saved for the unnamed slot 10 still applies to the projectile channel"),
+		SavedResponse.GetResponse(Rpg_TraceChannel_Projectile), ECR_Ignore);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCombatProjectileWorldImpactTest,
+	"SurvivalRpg.Combat.Projectile.WorldImpact",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCombatProjectileWorldImpactTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCombatProjectileTests;
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this)) return false;
+
+	// A reserved cue tag without a notify, so routing it plays nothing.
+	const FGameplayTag CueTag = FGameplayTag::RequestGameplayTag(TEXT("GameplayCue.Combat.Parry"), false);
+	UGameplayCueManager* CueManager = UAbilitySystemGlobals::Get().GetGameplayCueManager();
+	if (!TestTrue(TEXT("The test cue tag exists"), CueTag.IsValid()) || !TestNotNull(TEXT("The cue manager exists"), CueManager)) return false;
+
+	// The impact cue goes through the GameState's ability system, as in a running game.
+	ARpgGameStateBase* GameState = Fixture.World->SpawnActor<ARpgGameStateBase>();
+	if (!TestNotNull(TEXT("The RPG game state spawns"), GameState)) return false;
+	Fixture.World->SetGameState(GameState);
+	GameState->GetRpgAbilitySystemComponent()->InitAbilityActorInfo(GameState, GameState);
+
+	TArray<FVector> CueLocations;
+	const FDelegateHandle Routed = CueManager->OnGameplayCueRouted().AddLambda(
+		[&CueLocations, CueTag](AActor*, const FGameplayTag Tag, const EGameplayCueEvent::Type Event,
+			const FGameplayCueParameters& CueParameters, EGameplayCueExecutionOptions)
+		{
+			if (Event == EGameplayCueEvent::Executed && Tag == CueTag)
+			{
+				CueLocations.Add(CueParameters.Location);
+			}
+		});
+	ON_SCOPE_EXIT { CueManager->OnGameplayCueRouted().Remove(Routed); };
+
+	// A wall blocks the projectile channel and has no ability system.
+	AActor* Wall = Fixture.World->SpawnActor<AActor>();
+	USphereComponent* WallBody = NewObject<USphereComponent>(Wall, NAME_None, RF_Transient);
+	WallBody->InitSphereRadius(50.0f);
+	WallBody->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	WallBody->SetCollisionResponseToAllChannels(ECR_Block);
+	Wall->SetRootComponent(WallBody);
+	Wall->AddInstanceComponent(WallBody);
+	WallBody->RegisterComponent();
+	Wall->SetActorLocation(FVector(-450.0f, 0.0f, 0.0f));
+
+	ARpgCombatProjectile* Projectile = Fixture.Launch(FVector(-900.0f, 0.0f, 0.0f), FVector(1.0f, 0.0f, 0.0f));
+	if (!TestNotNull(TEXT("The projectile launches"), Projectile)) return false;
+	Projectile->SetImpactCueForTests(CueTag, false);
+
+	const FVector WallPoint(-500.0f, 0.0f, 0.0f);
+	FHitResult WallHit(Wall, WallBody, WallPoint, FVector(-1.0f, 0.0f, 0.0f));
+	WallHit.bBlockingHit = true;
+	WallHit.Location = WallPoint - FVector(2.0f, 0.0f, 0.0f);
+	WallHit.TraceStart = WallPoint - FVector(200.0f, 0.0f, 0.0f);
+	WallHit.TraceEnd = WallPoint;
+	WallHit.Item = INDEX_NONE;
+	Projectile->ResolveImpactForTests(WallHit);
+
+	TestEqual(TEXT("A wall impact resolves as a world impact"), Projectile->GetImpactResult(), ERpgProjectileImpactResult::World);
+	TestTrue(TEXT("The projectile stops at the sweep's location"), Projectile->GetActorLocation().Equals(WallHit.Location));
+	TestTrue(TEXT("The stopped projectile lingers, then goes"), Projectile->GetLifeSpan() > 0.0f);
+	TestEqual(TEXT("A wall impact damages nobody"), Fixture.GetHealth(Fixture.Target), StartingHealth);
+	TestEqual(TEXT("A wall impact plays the impact cue once"), CueLocations.Num(), 1);
+	TestTrue(TEXT("The impact cue plays at the impact point"), CueLocations.Num() == 1 && CueLocations[0].Equals(WallPoint));
+
+	// On a target, the impact cue plays only when the projectile class asks for it, as arrows leave it to the hit cue.
+	ARpgCombatProjectile* QuietOnTargets = Fixture.Launch(FVector(-900.0f, 0.0f, 0.0f), FVector(1.0f, 0.0f, 0.0f));
+	ARpgCombatProjectile* LoudOnTargets = Fixture.Launch(FVector(-900.0f, 0.0f, 0.0f), FVector(1.0f, 0.0f, 0.0f));
+	if (!TestTrue(TEXT("Both target projectiles launch"), QuietOnTargets && LoudOnTargets)) return false;
+	QuietOnTargets->SetImpactCueForTests(CueTag, false);
+	LoudOnTargets->SetImpactCueForTests(CueTag, true);
+
+	QuietOnTargets->ResolveImpactForTests(Fixture.MakeTargetHit(FVector(-40.0f, 0.0f, 0.0f), FVector(1.0f, 0.0f, 0.0f)));
+	TestEqual(TEXT("The quiet projectile hits the target"), QuietOnTargets->GetImpactResult(), ERpgProjectileImpactResult::Hit);
+	TestEqual(TEXT("Without impact cues on targets, a target hit plays none"), CueLocations.Num(), 1);
+
+	LoudOnTargets->ResolveImpactForTests(Fixture.MakeTargetHit(FVector(-40.0f, 0.0f, 0.0f), FVector(1.0f, 0.0f, 0.0f)));
+	TestEqual(TEXT("The loud projectile hits the target"), LoudOnTargets->GetImpactResult(), ERpgProjectileImpactResult::Hit);
+	TestEqual(TEXT("With impact cues on targets, a target hit plays one"), CueLocations.Num(), 2);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCombatProjectileFlightExpiryTest,
+	"SurvivalRpg.Combat.Projectile.FlightExpiry",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCombatProjectileFlightExpiryTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCombatProjectileTests;
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this)) return false;
+
+	// Far from both bodies. Nothing moves the projectile in this world, so every flight segment the server sweeps is clear.
+	ARpgCombatProjectile* Projectile = Fixture.Launch(FVector(0.0f, 5000.0f, 0.0f), FVector(1.0f, 0.0f, 0.0f));
+	if (!TestNotNull(TEXT("The projectile launches"), Projectile)) return false;
+
+	const float MaxFlightSeconds = GetDefault<ARpgCombatProjectile>()->GetMaxFlightSecondsForTests();
+	Projectile->Tick(MaxFlightSeconds * 0.9f);
+	TestEqual(TEXT("A projectile flies on before its flight time ends"), Projectile->GetImpactResult(), ERpgProjectileImpactResult::None);
+
+	Projectile->Tick(MaxFlightSeconds * 0.2f);
+	TestEqual(TEXT("A projectile without an impact expires after its flight time"), Projectile->GetImpactResult(), ERpgProjectileImpactResult::Expired);
+	TestTrue(TEXT("The expired projectile lingers, then goes"), Projectile->GetLifeSpan() > 0.0f);
+	TestEqual(TEXT("An expired flight damages nobody"), Fixture.GetHealth(Fixture.Target), StartingHealth);
 	return true;
 }
 

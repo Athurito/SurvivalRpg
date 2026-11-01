@@ -38,6 +38,9 @@ namespace RpgCombatProjectile
 	/** Length in cm of the synthetic incoming segment when a hit carries no trace segment. */
 	constexpr float IncomingSegmentLength = 100.0f;
 
+	/** A machine that receives the projectile later than this into its flight plays no launch sound. */
+	constexpr float MaxLaunchSoundDelaySeconds = 0.5f;
+
 	ERpgProjectileImpactResult ToImpactResult(ERpgCombatImpactOutcome Outcome)
 	{
 		switch (Outcome)
@@ -244,17 +247,21 @@ void ARpgCombatProjectile::BeginPlay()
 
 	if (ImpactState.HasStopped())
 	{
-		// Late join or a point-blank impact: the projectile arrives already stopped.
+		// Late join, relevancy during the linger or a point-blank impact: the projectile arrives already stopped. Stopping
+		// here, after the component ticks are registered, keeps the movement still and lets On Flight Stopped follow BeginPlay.
 		SetActorLocation(ImpactState.Location);
 		StopFlightPresentation();
 		return;
 	}
 
-	if (LaunchSounds.Num() > 0 && GetNetMode() != NM_DedicatedServer)
+	// A machine that receives the projectile well into its flight, such as a late joiner, hears no launch.
+	const float Speed = ProjectileMovement->Velocity.Size();
+	const float FlightAgeSeconds = Speed > UE_KINDA_SMALL_NUMBER ? FVector::Dist(GetActorLocation(), LaunchOrigin) / Speed : 0.0f;
+	if (LaunchSounds.Num() > 0 && GetNetMode() != NM_DedicatedServer && FlightAgeSeconds <= RpgCombatProjectile::MaxLaunchSoundDelaySeconds)
 	{
 		if (USoundBase* LaunchSound = LaunchSounds[FMath::RandHelper(LaunchSounds.Num())])
 		{
-			UGameplayStatics::PlaySoundAtLocation(this, LaunchSound, GetActorLocation());
+			UGameplayStatics::PlaySoundAtLocation(this, LaunchSound, LaunchOrigin);
 		}
 	}
 }
@@ -290,6 +297,7 @@ void ARpgCombatProjectile::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>&
 
 	DOREPLIFETIME(ThisClass, ImpactState);
 	DOREPLIFETIME_CONDITION(ThisClass, ShotId, COND_InitialOnly);
+	DOREPLIFETIME_CONDITION(ThisClass, LaunchOrigin, COND_InitialOnly);
 }
 
 void ARpgCombatProjectile::PostNetReceiveLocationAndRotation()
@@ -525,7 +533,8 @@ void ARpgCombatProjectile::StopFlightPresentation()
 
 	ProjectileMovement->StopMovementImmediately();
 	ProjectileMovement->ResetInterpolation();
-	ProjectileMovement->SetComponentTickEnabled(false);
+	// Inactive, the movement stays still even if a later tick registration enables its tick again.
+	ProjectileMovement->Deactivate();
 
 	TInlineComponentArray<UFXSystemComponent*> FXComponents(this);
 	for (UFXSystemComponent* FXComponent : FXComponents)
@@ -544,7 +553,8 @@ void ARpgCombatProjectile::StopFlightPresentation()
 
 void ARpgCombatProjectile::OnRep_ImpactState()
 {
-	if (ImpactState.HasStopped())
+	// Before BeginPlay, a projectile that arrives already stopped is stopped by BeginPlay itself.
+	if (ImpactState.HasStopped() && HasActorBegunPlay())
 	{
 		SetActorLocation(ImpactState.Location);
 		StopFlightPresentation();
