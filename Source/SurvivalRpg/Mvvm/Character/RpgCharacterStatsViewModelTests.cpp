@@ -6,6 +6,8 @@
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "GameplayEffect.h"
+#include "GameplayEffectComponents/TargetTagsGameplayEffectComponent.h"
 #include "GameFramework/GameplayMessageSubsystem.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
@@ -410,6 +412,98 @@ bool FRpgCharacterStatsViewModelFocusTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Unbinding clears the maximum"), ReadFloat(ViewModel, TEXT("MaxFocus")), 0.0f);
 	AbilitySystem->HandleGameplayEvent(AbilitiesChanged.EventTag, &AbilitiesChanged);
 	TestFalse(TEXT("An unbound view model ignores later grant events"), ReadBool(ViewModel, TEXT("bHasFocus")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCharacterStatsViewModelFocusSpellTest,
+	"SurvivalRpg.UI.CharacterStats.FocusSpellDrainsTheMeter",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCharacterStatsViewModelFocusSpellTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCharacterStatsViewModelTests;
+
+	FScopedWorld ScopedWorld;
+	if (!TestNotNull(TEXT("A standalone test world exists"), ScopedWorld.World))
+	{
+		return false;
+	}
+
+	APawn* Pawn = ScopedWorld.World->SpawnActor<APawn>();
+	URpgAbilitySystemComponent* AbilitySystem = NewObject<URpgAbilitySystemComponent>(Pawn, NAME_None, RF_Transient);
+	Pawn->AddInstanceComponent(AbilitySystem);
+	AbilitySystem->RegisterComponent();
+	AbilitySystem->AddAttributeSetSubobject(NewObject<URpgFocusSet>(Pawn, NAME_None, RF_Transient));
+	AbilitySystem->InitAbilityActorInfo(Pawn, Pawn);
+
+	// The project config names the harvesting spell's tag; core reads only the setting.
+	const FGameplayTag SpellTag = FGameplayTag::RequestGameplayTag(TEXT("Harvest.Spell.Active"));
+	TGuardValue<FGameplayTag> ScopedSpellTag(GetMutableDefault<URpgUISettings>()->HudFocusSpellTag, SpellTag);
+	constexpr float SpellSeconds = 10.0f;
+	UGameplayEffect* Spell = NewObject<UGameplayEffect>(GetTransientPackage(), NAME_None, RF_Transient);
+	Spell->DurationPolicy = EGameplayEffectDurationType::HasDuration;
+	Spell->DurationMagnitude = FGameplayEffectModifierMagnitude(FScalableFloat(SpellSeconds));
+	FInheritedTagContainer GrantedTags;
+	GrantedTags.Added.AddTag(SpellTag);
+	Spell->AddComponent<UTargetTagsGameplayEffectComponent>().SetAndApplyTargetTagChanges(GrantedTags);
+
+	URpgCharacterStatsViewModel* ViewModel = NewObject<URpgCharacterStatsViewModel>();
+	int32 ActiveNotifications = 0;
+	const UE::FieldNotification::FFieldId ActiveField =
+		ViewModel->GetFieldNotificationDescriptor().GetField(ViewModel->GetClass(), TEXT("bFocusSpellActive"));
+	TestTrue(TEXT("bFocusSpellActive is a field-notify field"), ActiveField.IsValid());
+	ViewModel->AddFieldValueChangedDelegate(
+		ActiveField,
+		INotifyFieldValueChanged::FFieldValueChangedDelegate::CreateLambda(
+			[&ActiveNotifications](UObject*, UE::FieldNotification::FFieldId) { ++ActiveNotifications; }));
+
+	ViewModel->BindAbilitySystem(AbilitySystem);
+	TestTrue(TEXT("The focus set is observed"), ReadBool(ViewModel, TEXT("bHasFocus")));
+	TestFalse(TEXT("No spell runs yet"), ReadBool(ViewModel, TEXT("bFocusSpellActive")));
+	TestFalse(TEXT("An empty meter without a spell stays hidden"), ReadBool(ViewModel, TEXT("bShowFocus")));
+
+	// Casting spent the meter; the spell's timed effect now drains it.
+	const FActiveGameplayEffectHandle SpellHandle =
+		AbilitySystem->ApplyGameplayEffectToSelf(Spell, 1.0f, AbilitySystem->MakeEffectContext());
+	TestTrue(TEXT("The spell effect applies"), SpellHandle.IsValid());
+	TestTrue(TEXT("The granted tag starts the spell"), ReadBool(ViewModel, TEXT("bFocusSpellActive")));
+	TestEqual(TEXT("The start notifies once"), ActiveNotifications, 1);
+	TestEqual(TEXT("The spell's duration is read from its effect"), ReadFloat(ViewModel, TEXT("FocusSpellDuration")), SpellSeconds);
+	TestEqual(TEXT("A new spell has its whole time left"), ReadFloat(ViewModel, TEXT("FocusSpellRemainingTime")), SpellSeconds);
+	TestEqual(TEXT("A new spell's drain bar is full"), ReadFloat(ViewModel, TEXT("FocusSpellProgress")), 1.0f);
+	TestTrue(TEXT("The empty meter shows while the spell drains"), ReadBool(ViewModel, TEXT("bShowFocus")));
+	float Remaining = 0.0f;
+	float Duration = 0.0f;
+	TestTrue(TEXT("The ability system finds the spell by its tag"),
+		AbilitySystem->GetEffectTimeRemainingAndDurationForTag(SpellTag, Remaining, Duration) && Duration == SpellSeconds);
+	TestFalse(TEXT("An unrelated tag finds no effect"),
+		AbilitySystem->GetEffectTimeRemainingAndDurationForTag(RpgGameplayTags::Effect_Behavior_ClearOnRespawn, Remaining, Duration));
+
+	AbilitySystem->RemoveActiveGameplayEffect(SpellHandle);
+	TestFalse(TEXT("The spell ends with its effect"), ReadBool(ViewModel, TEXT("bFocusSpellActive")));
+	TestEqual(TEXT("The end notifies once"), ActiveNotifications, 2);
+	TestEqual(TEXT("No time is left"), ReadFloat(ViewModel, TEXT("FocusSpellRemainingTime")), 0.0f);
+	TestEqual(TEXT("The drain bar is empty"), ReadFloat(ViewModel, TEXT("FocusSpellProgress")), 0.0f);
+	TestFalse(TEXT("The empty meter hides again"), ReadBool(ViewModel, TEXT("bShowFocus")));
+
+	// A spell tag without a timed effect, such as a loose tag, shows a full bar that never drains.
+	AbilitySystem->AddLooseGameplayTag(SpellTag);
+	TestTrue(TEXT("A loose spell tag counts as a running spell"), ReadBool(ViewModel, TEXT("bFocusSpellActive")));
+	TestEqual(TEXT("Its drain bar is full"), ReadFloat(ViewModel, TEXT("FocusSpellProgress")), 1.0f);
+	TestEqual(TEXT("It has no duration"), ReadFloat(ViewModel, TEXT("FocusSpellDuration")), 0.0f);
+	AbilitySystem->RemoveLooseGameplayTag(SpellTag);
+	TestFalse(TEXT("Removing the loose tag ends it"), ReadBool(ViewModel, TEXT("bFocusSpellActive")));
+
+	ViewModel->UnbindAbilitySystem();
+	AbilitySystem->ApplyGameplayEffectToSelf(Spell, 1.0f, AbilitySystem->MakeEffectContext());
+	TestFalse(TEXT("An unbound view model ignores later spells"), ReadBool(ViewModel, TEXT("bFocusSpellActive")));
+
+	// Without a configured tag the meter never drains.
+	GetMutableDefault<URpgUISettings>()->HudFocusSpellTag = FGameplayTag();
+	ViewModel->BindAbilitySystem(AbilitySystem);
+	TestFalse(TEXT("Without a configured spell tag no spell shows"), ReadBool(ViewModel, TEXT("bFocusSpellActive")));
+	ViewModel->UnbindAbilitySystem();
 	return true;
 }
 

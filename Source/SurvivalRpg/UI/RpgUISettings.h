@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Engine/DeveloperSettings.h"
+#include "GameplayTagContainer.h"
 #include "RpgUIScreenRegistry.h"
 #include "UObject/SoftObjectPtr.h"
 
@@ -34,6 +35,15 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Config, Category = "HUD", meta = (ClampMin = "0.5", UIMin = "0.5", UIMax = "30", Units = "s"))
 	float HudCombatHoldSeconds = 6.0f;
+
+	/**
+	 * Owned tag of a running spell that spent the focus meter, for example a harvesting spell's active tag. While the
+	 * local player's ability system owns it, the character stats view model reports the remaining time of the timed
+	 * effect that grants it, so the focus meter drains. Empty turns the drain off. Presentation only; gameplay never
+	 * reads it.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Config, Category = "HUD")
+	FGameplayTag HudFocusSpellTag;
 
 	/**
 	 * Seconds a pickup notification stays after its last gain. Further gains of the same item within this time add

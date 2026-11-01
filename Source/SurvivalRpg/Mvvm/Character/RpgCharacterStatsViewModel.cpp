@@ -10,6 +10,7 @@
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgManaSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgStaminaSet.h"
+#include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentInstance.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
@@ -81,6 +82,9 @@ namespace
 			: GetDefault<URpgEquipmentLoadoutComponent>()->GetHeavyLoadThreshold();
 	}
 
+	/** Seconds between refreshes of a running focus spell's remaining time; often enough for a smooth meter drain. */
+	constexpr float FocusSpellRefreshSeconds = 0.05f;
+
 	/** Event the player state sends when GameFeature or progression grants change its abilities and attribute sets. */
 	FGameplayTag GetAbilitiesChangedEventTag()
 	{
@@ -94,6 +98,7 @@ void URpgCharacterStatsViewModel::BeginDestroy()
 	if (UWorld* World = GetObservedWorld())
 	{
 		World->GetTimerManager().ClearTimer(CombatTimerHandle);
+		World->GetTimerManager().ClearTimer(FocusSpellTimerHandle);
 	}
 	ReleaseProgression();
 	ReleaseAbilitySystem();
@@ -163,6 +168,13 @@ void URpgCharacterStatsViewModel::BindAbilitySystem(UAbilitySystemComponent* InA
 				AbilitiesChangedHandle = InAbilitySystem->GenericGameplayEventCallbacks.FindOrAdd(AbilitiesChanged)
 					.AddUObject(this, &ThisClass::HandleAbilitiesChanged);
 			}
+			// The project names the tag a focus-spending spell owns, so core never knows a harvesting tag.
+			ObservedFocusSpellTag = GetDefault<URpgUISettings>()->HudFocusSpellTag;
+			if (ObservedFocusSpellTag.IsValid())
+			{
+				FocusSpellTagHandle = InAbilitySystem->RegisterGameplayTagEvent(ObservedFocusSpellTag, EGameplayTagEventType::NewOrRemoved)
+					.AddUObject(this, &ThisClass::HandleFocusSpellTagChanged);
+			}
 		}
 	}
 
@@ -214,10 +226,22 @@ void URpgCharacterStatsViewModel::ReleaseAbilitySystem()
 		{
 			AbilitiesChanged->Remove(AbilitiesChangedHandle);
 		}
+		if (ObservedFocusSpellTag.IsValid())
+		{
+			AbilitySystem->UnregisterGameplayTagEvent(FocusSpellTagHandle, ObservedFocusSpellTag, EGameplayTagEventType::NewOrRemoved);
+		}
+		// Cleared through the ability system's world, which a later refresh may no longer reach.
+		if (UWorld* World = AbilitySystem->GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(FocusSpellTimerHandle);
+		}
 	}
 	AttributeHandles.Reset();
 	AbilityActivatedHandle.Reset();
 	AbilitiesChangedHandle.Reset();
+	FocusSpellTagHandle.Reset();
+	ObservedFocusSpellTag = FGameplayTag();
+	FocusSpellTimerHandle.Invalidate();
 	ObservedAbilitySystem.Reset();
 }
 
@@ -254,6 +278,13 @@ void URpgCharacterStatsViewModel::HandleAbilitiesChanged(const FGameplayEventDat
 {
 	(void)EventData;
 	RefreshAttributes();
+}
+
+void URpgCharacterStatsViewModel::HandleFocusSpellTagChanged(const FGameplayTag Tag, int32 NewCount)
+{
+	(void)Tag;
+	(void)NewCount;
+	RefreshFocusSpell();
 }
 
 void URpgCharacterStatsViewModel::HandleAbilityActivated(UGameplayAbility* Ability)
@@ -327,7 +358,7 @@ void URpgCharacterStatsViewModel::RefreshAttributes()
 	UE_MVVM_SET_PROPERTY_VALUE(MaxFocus, NewMaxFocus);
 	UE_MVVM_SET_PROPERTY_VALUE(FocusProgress, GetRatio(NewFocus, NewMaxFocus));
 	UE_MVVM_SET_PROPERTY_VALUE(bFocusFull, bNewHasFocus && NewMaxFocus > 0.0f && NewFocus >= NewMaxFocus);
-	UE_MVVM_SET_PROPERTY_VALUE(bShowFocus, bNewHasFocus && NewFocus > 0.0f);
+	RefreshFocusSpell();
 	UE_MVVM_SET_PROPERTY_VALUE(Armor, NewArmor);
 	SetText(ArmorText, FText::AsNumber(FMath::RoundToInt(NewArmor)), FFieldNotificationClassDescriptor::ArmorText);
 
@@ -335,6 +366,50 @@ void URpgCharacterStatsViewModel::RefreshAttributes()
 		&& NewHealth >= NewMaxHealth && NewStamina >= NewMaxStamina && (!bNewHasMana || NewMana >= NewMaxMana);
 	UE_MVVM_SET_PROPERTY_VALUE(bVitalsFull, bNewVitalsFull);
 	RefreshHudContext();
+}
+
+void URpgCharacterStatsViewModel::RefreshFocusSpell()
+{
+	UAbilitySystemComponent* AbilitySystem = ObservedAbilitySystem.Get();
+	const URpgAbilitySystemComponent* RpgAbilitySystem = Cast<URpgAbilitySystemComponent>(AbilitySystem);
+	const bool bNewActive = AbilitySystem && ObservedFocusSpellTag.IsValid() && AbilitySystem->HasMatchingGameplayTag(ObservedFocusSpellTag);
+	float NewRemaining = 0.0f;
+	float NewDuration = 0.0f;
+	if (bNewActive && RpgAbilitySystem)
+	{
+		RpgAbilitySystem->GetEffectTimeRemainingAndDurationForTag(ObservedFocusSpellTag, NewRemaining, NewDuration);
+	}
+	const bool bTimed = NewDuration > 0.0f;
+
+	UE_MVVM_SET_PROPERTY_VALUE(bFocusSpellActive, bNewActive);
+	UE_MVVM_SET_PROPERTY_VALUE(FocusSpellRemainingTime, NewRemaining);
+	UE_MVVM_SET_PROPERTY_VALUE(FocusSpellDuration, NewDuration);
+	// A spell without a timed effect, such as a loose tag, shows a full drain bar.
+	UE_MVVM_SET_PROPERTY_VALUE(FocusSpellProgress, bNewActive ? (bTimed ? GetRatio(NewRemaining, NewDuration) : 1.0f) : 0.0f);
+	UE_MVVM_SET_PROPERTY_VALUE(bShowFocus, bHasFocus && (Focus > 0.0f || bNewActive));
+
+	// The remaining time changes without an event, so it is polled while a timed spell runs.
+	UWorld* World = AbilitySystem ? AbilitySystem->GetWorld() : nullptr;
+	if (!World)
+	{
+		return;
+	}
+	FTimerManager& TimerManager = World->GetTimerManager();
+	if (bNewActive && bTimed)
+	{
+		if (!TimerManager.IsTimerActive(FocusSpellTimerHandle))
+		{
+			TimerManager.SetTimer(
+				FocusSpellTimerHandle,
+				FTimerDelegate::CreateUObject(this, &ThisClass::RefreshFocusSpell),
+				FocusSpellRefreshSeconds,
+				true);
+		}
+	}
+	else
+	{
+		TimerManager.ClearTimer(FocusSpellTimerHandle);
+	}
 }
 
 void URpgCharacterStatsViewModel::RefreshProgression()

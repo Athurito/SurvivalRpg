@@ -111,6 +111,7 @@ A `GameplayCueNotify_Burst` `OnBurst` override is const, so it cannot call the B
 - Create `GA_*` assets with `BlueprintTools.create`, parented to `/Script/SurvivalRpg.RpgGameplayAbility` or to the generated class (`_C`) of a Blueprint family base.
 - Set tags, costs, cooldowns, and activation policy with `ObjectTools.set_properties`, and build behavior with the Blueprint graph tools.
 - Grant the ability by referencing it from an AbilitySet (see [DataAssets](#dataassets-and-itemdefinition-fragments)).
+- Tag-keyed maps such as `FailureTagToUserFacingMessages`: write each key as import text, `(TagName="Ability.ActivateFail.Cost")`. A plain tag name imports the value but trips a handled ensure, "added key ... not found in map after import" (HRW-05c).
 
 ### GameplayEffects, cues, tags, and attributes
 
@@ -121,6 +122,8 @@ A `GameplayCueNotify_Burst` `OnBurst` override is const, so it cannot call the B
 - Adding a `PrimaryAssetTypesToScan` entry to a GameFeatureData in a running editor scans nothing until the editor restarts. The server still finds a skill tree through the equipped weapon, but clients list trees only from the asset manager, so a client misses the new tree until then (MST-10b).
 - Gameplay tags: `GameplayTagsToolset.ListTags`, `GetTagInfo`, and `FindReferencersByTag` read. `AddTag(TagName, Comment, TagSource)`, `RemoveTag`, and `RenameTag` change the INI tag sources and need explicit user approval. Check `Source/` for a native declaration before adding a tag to an INI source. `AddTag` rewrites the whole INI file, escaping every apostrophe in the comments and adding a blank line; restore the file and keep only the new `+GameplayTagList` line, which the running editor already knows.
 - Gameplay cues: `GameplayCueToolset.ListCues`, `GetCueInfo`, `FindCueNotifyAssets`, and `FindCueTagsWithoutNotifies` read. `CreateCueNotifyAsset` and `AddCueTag` need explicit user approval.
+  - A cost that passes only on a full resource, such as `GE_HarvestFocus_Spend` (HRW-05c): an instant `AddBase` modifier on the resource with an `AttributeBased` magnitude, coefficient -1 and the maximum captured from the `Source`. `CheckCost` builds the spec from the caster, so a `CheckCost` test proves the capture.
+  - A looping cue whose effect belongs on a held tool: the placement of `GameplayCueNotify_Looping` attaches only to the target's mesh or root. Spawn the system in `EventOnLoopingStart` instead: `Actor|GetAttachedActors` of the target, `Actor|GetComponentsByClass` with `StaticMeshComponent`, `Transformation|DoesSocketExist`, then `Niagara|SpawnSystemAttached` with auto destroy. Keep the components in an array and `Deactivate` them in `EventOnRemoval` (`GCN_Harvest_Spell_WideSwing`).
   - A variant of a burst notify, such as stone chips beside wood chips, can be a Blueprint child (`BlueprintTools.create` with the parent's `_C` class) with its own child tag in `GameplayCueTag`. It inherits the parent's `OnBurst` graph and variables, and only its defaults differ. Until its tag is set it answers the parent's tag too, so set the tag in the same session; a tag added to an INI file needs an editor restart first (HRW-04b).
 - Attribute sets are native schema; `AttributeSetToolset.FindAttributeSetClasses` and `ListAttributes` only read them.
 - During PIE, `AbilitySystemInspectorToolset.GetGrantedAbilities`, `GetActiveTags`, `GetActiveEffects`, and `GetAttributeValues` show an actor's ability system state.
@@ -188,6 +191,11 @@ Observed in HRW-03:
 
 - A Static Mesh Spawner's mesh entries carry their own instance descriptor, including a full `BodyInstance`. It overrides the collision that the descriptor's component class sets in its constructor, so a spawner authored with `BlockAll` kept it after the class changed.
 - Edit it on the spawner's selector, `<graph>:<SpawnerNode>.PCGStaticMeshSpawnerSettings_1.DefaultSelectorInstance`: read `MeshEntries`, change `descriptor.bodyInstance`, and set the whole array back with `ObjectTools.set_properties`. Node names come from `PCGToolset.GetGraphStructure`.
+- A denser copy of a stand (HRW-05c `PCG_HarvestDensePines`):
+  1. `AssetTools.duplicate` the graph.
+  2. Change the grid node with `PCGToolset.UpdateNode` (`jsonParams` with `cellSize` and `gridExtents`).
+  3. Place it with `SpawnGraphInstance` and run `ExecuteGraphInstance`.
+  4. Save the map with `AssetTools.save_assets`. `SceneTools.save_actor` refuses actors of a map without external actors.
 - Save the graph, then run `PCGToolset.ExecuteGraphInstance` for every volume from `ListGraphInstances` in each map that uses it, check the generated components with `ActorTools.get_components` on the volume, and save the map. Generation finishes asynchronously; wait a few seconds before reading. Unchanged seeds produced the same instance counts and transforms, so harvest stock keys stayed valid.
 
 ### Save and validate

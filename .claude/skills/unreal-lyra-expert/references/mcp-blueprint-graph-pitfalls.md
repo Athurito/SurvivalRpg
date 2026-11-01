@@ -45,6 +45,8 @@ Blueprints are designer-owned content: a person opens them in the editor and mus
 - `Math|Vector|vector-vector`, as `read_graph_dsl` prints it, cannot be created; write `(- a b)`.
 - `write_graph_dsl` cannot parse type ids whose category contains parentheses, such as GASP's `State Machine (Experimental)`; edit those graphs node by node.
 - `read_graph_dsl` may label a self call `Class|<OtherBP>|Func` when another loaded Blueprint has a function of that name. The node is still self-bound; check the package dependencies instead of the label.
+- `Audio|Components|Audio|FadeOut` binds `SynthComponent.FadeOut` and fails to connect an audio component. Create it with `create_node` and `declaring_class` `/Script/Engine.AudioComponent`, then wire `self`, exec and the values with `connect_pins` and `set_pin_value` (HRW-05c).
+- There is no `Class|Actor|GetRootComponent`, and `Variables|Transformation|GetRootComponent` reads only the Blueprint's own root. For another actor's component use `Actor|GetComponentbyClass :self actor :ComponentClass "..."` (HRW-05c).
 - `Class|InputMappingContext|GetMappings` reads the deprecated, empty `Mappings` array. Use `Utilities|Struct|BreakInputMappingContextMappingData (Class|InputMappingContext|GetDefaultKeyMappings ctx)`.
 
 ## Arguments and pins

@@ -577,7 +577,7 @@ Die erste Entwicklungspriorität ist ein kleiner, starker Vertical Slice.
 - ein Portal, das Gegner spawnt oder in Sublevel führt
 - ein Portalabschluss oder Bosszustand
 - eine Rune, die eine Waffe sichtbar verändert
-- eine magische Harvesting-Fähigkeit wie Rissgriff
+- eine magische Harvesting-Fähigkeit: Weiter Schwung (Wide Swing, HRW-05c). Gelandete Werkzeugschläge füllen den Fokus; ein voller Fokus wirkt den Zauber auf Q, und für 10 s reicht jeder Axt- und Spitzhackenschlag weiter und trifft bis zu drei Ressourcen.
 - 2-3 Ressourcen
 - 1-2 Craftingstationen
 

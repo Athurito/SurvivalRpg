@@ -224,6 +224,17 @@ public:
 	UFUNCTION(BlueprintPure, Category="RPG|AbilitySet")
 	bool GetCooldownTimeRemainingAndDurationForAbilityId(FGameplayTag AbilityIdTag, float& OutRemainingTime, float& OutDuration) const;
 
+	/**
+	 * Reads the active timed effect with the longest remaining time among those that own OwningTag as an asset or granted
+	 * tag, for example a running spell. Outputs are seconds on this machine's view of the effects, so a predicting owner
+	 * reads its predicted effect; infinite effects never count. Returns false when none runs. UI-read-only.
+	 */
+	UFUNCTION(BlueprintPure, Category="RPG|AbilitySet")
+	bool GetEffectTimeRemainingAndDurationForTag(FGameplayTag OwningTag, float& OutRemainingTime, float& OutDuration) const;
+
+	/** GetEffectTimeRemainingAndDurationForTag for any of OwningTags. */
+	bool GetEffectTimeRemainingAndDurationForTags(const FGameplayTagContainer& OwningTags, float& OutRemainingTime, float& OutDuration) const;
+
 	/** Adds RuntimeInputTag to the first ability spec matching AbilityIdTag, replacing any previous use of that input tag. Server-authoritative. */
 	UFUNCTION(BlueprintCallable, Category="RPG|AbilitySet")
 	bool BindInputTagToAbilityId(FGameplayTag AbilityIdTag, FGameplayTag RuntimeInputTag);
@@ -254,6 +265,13 @@ protected:
 	
 private:
 	FSimpleMulticastDelegate AbilitySpecsReplicatedDelegate;
+
+	/**
+	 * Plays the WhileActive event of every gameplay cue active on this ability system. Cue events reach no actor while
+	 * the system has no avatar, as on a late joiner whose copy of a player state arrives before its pawn, so the first
+	 * avatar would otherwise never show a looping cue that started earlier. Cosmetic and local to this machine.
+	 */
+	void ReinvokeActiveGameplayCuesForNewAvatar();
 
 	void ResetSprintMovement();
 	TWeakObjectPtr<UGameplayAbility> SprintMovementAbility;
