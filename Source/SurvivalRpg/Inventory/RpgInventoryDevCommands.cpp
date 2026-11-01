@@ -5,10 +5,12 @@
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
+#include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
+#include "SurvivalRpg/Inventory/RpgInventoryUiActionComponent.h"
 #include "SurvivalRpg/SurvivalRpg.h"
 
 namespace RpgInventoryDevCommands
@@ -22,13 +24,13 @@ namespace RpgInventoryDevCommands
 		}
 		if (Args.Num() < 1)
 		{
-			UE_LOG(LogRpg, Warning, TEXT("Usage: Rpg.Inventory.GrantItem <ItemDefinitionClassPath> [Count]"));
+			UE_LOG(LogRpg, Warning, TEXT("Usage: Rpg.Inventory.GrantItem <ItemDefinitionClassPath> [Count] [equip]"));
 			return;
 		}
 
 		UClass* ItemClass = LoadClass<URpgInventoryItemDefinition>(nullptr, *Args[0]);
 		const int32 Count = Args.IsValidIndex(1) ? FMath::Max(1, FCString::Atoi(*Args[1])) : 1;
-		const APlayerController* PlayerController = World->GetFirstPlayerController();
+		ARpgPlayerController* PlayerController = Cast<ARpgPlayerController>(World->GetFirstPlayerController());
 		const ARpgPlayerState* PlayerState = PlayerController ? PlayerController->GetPlayerState<ARpgPlayerState>() : nullptr;
 		URpgInventoryManagerComponent* Inventory = PlayerState ? PlayerState->GetInventoryManagerComponent() : nullptr;
 		if (!ItemClass || !Inventory)
@@ -38,15 +40,36 @@ namespace RpgInventoryDevCommands
 		}
 
 		// The ordinary authority grant: it places the items like a pickup and fails when they do not fit.
-		const URpgInventoryItemInstance* Granted = Inventory->GrantItemDefinition(ItemClass, Count);
+		URpgInventoryItemInstance* Granted = Inventory->GrantItemDefinition(ItemClass, Count);
 		UE_LOG(LogRpg, Log, TEXT("Rpg.Inventory.GrantItem: %s x%d %s."), *GetNameSafe(ItemClass), Count,
 			Granted ? TEXT("granted") : TEXT("did not fit"));
+
+		// "equip" moves the granted item into the main hand through the same intent the inventory screen sends.
+		URpgInventoryUiActionComponent* InventoryActions = PlayerController->GetInventoryUiActionComponent();
+		if (Granted && InventoryActions && Args.IsValidIndex(2) && Args[2].Equals(TEXT("equip"), ESearchCase::IgnoreCase))
+		{
+			const TArray<FRpgInventoryEntryView> Entries = Inventory->GetAllEntries();
+			const FRpgInventoryEntryView* Entry = Entries.FindByPredicate(
+				[Granted](const FRpgInventoryEntryView& Candidate) { return Candidate.Instance == Granted; });
+			if (Entry && Entry->EntryId.IsValid() && Entry->Placement.IsValid())
+			{
+				FRpgInventoryEquipmentIntent Intent;
+				Intent.EnsureRequestId();
+				Intent.ItemId = Entry->ItemId;
+				Intent.ExpectedEntryId = Entry->EntryId;
+				Intent.ExpectedSourcePlacement = Entry->Placement;
+				Intent.ExpectedQuantity = Entry->StackCount;
+				Intent.Operation = ERpgInventoryEquipmentIntentOperation::EquipToSlot;
+				Intent.TargetEquipmentSlot = ERpgEquipmentSlot::MainHand;
+				InventoryActions->RequestApplyInventoryEquipmentIntent(Inventory, Intent);
+			}
+		}
 	}
 
 	static FAutoConsoleCommandWithWorldAndArgs GrantItemCommand(
 		TEXT("Rpg.Inventory.GrantItem"),
 		TEXT("Server: grants items to the first local player's inventory, for playtests. ")
-		TEXT("Args: <ItemDefinitionClassPath> [Count, default 1]."),
+		TEXT("Args: <ItemDefinitionClassPath> [Count, default 1] [equip: also equip it in the main hand]."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&GrantItem));
 }
 

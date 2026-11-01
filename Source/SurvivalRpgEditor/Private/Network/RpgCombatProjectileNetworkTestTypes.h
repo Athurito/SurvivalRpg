@@ -4,9 +4,13 @@
 #include "GameplayEffect.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility.h"
 #include "SurvivalRpg/Combat/RpgCombatProjectile.h"
+#include "SurvivalRpg/Combat/RpgProjectileShot.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 
 #include "RpgCombatProjectileNetworkTestTypes.generated.h"
+
+class URpgAbilityTask_ProjectileShot;
 
 /**
  * Plain game mode for the projectile network tests: real RPG player states in faction 1 and the RPG game state, whose
@@ -90,4 +94,61 @@ protected:
 		const FGameplayAbilityActorInfo* ActorInfo,
 		const FGameplayAbilityActivationInfo ActivationInfo,
 		const FGameplayEventData* TriggerEventData) override;
+};
+
+/** Stackable test ammunition that launches ARpgNetworkAutomationTestProjectile, for the bow shot network test. */
+UCLASS(NotBlueprintable, Transient)
+class URpgNetworkAutomationArrowDefinition final : public URpgInventoryItemDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgNetworkAutomationArrowDefinition(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+};
+
+/** Instant stamina change with SetByCaller Data.StaminaDelta, like the sprint's GE_RpgGasp_StaminaDelta. */
+UCLASS(NotBlueprintable)
+class URpgNetworkAutomationShotStaminaEffect final : public UGameplayEffect
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgNetworkAutomationShotStaminaEffect(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+};
+
+/**
+ * Locally predicted shot ability without equipment, as GA_BowShot is without its bow: it draws with
+ * URpgAbilityTask_ProjectileShot and the test's arrows from the player's own inventory, and ends with the shot.
+ */
+UCLASS(NotBlueprintable)
+class URpgNetworkAutomationShotAbility final : public URpgGameplayAbility
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgNetworkAutomationShotAbility(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	static constexpr float ReleaseCost = 10.0f;
+
+	/** The shot this ability draws: the test arrow, a quick draw and a release cost. */
+	static FRpgProjectileShotDefinition MakeShotDefinition();
+
+	UPROPERTY(Transient)
+	TObjectPtr<URpgAbilityTask_ProjectileShot> ShotTask;
+
+	int32 ReleasedCount = 0;
+
+protected:
+	virtual void ActivateAbility(
+		const FGameplayAbilitySpecHandle Handle,
+		const FGameplayAbilityActorInfo* ActorInfo,
+		const FGameplayAbilityActivationInfo ActivationInfo,
+		const FGameplayEventData* TriggerEventData) override;
+
+private:
+	UFUNCTION()
+	void HandleReleased(float DrawFraction, ARpgCombatProjectile* Projectile);
+
+	UFUNCTION()
+	void HandleCancelled(ERpgProjectileShotResult Reason);
 };

@@ -36,8 +36,8 @@ namespace RpgResourceParityContractTests
 	// One weapon per combat style, the ranged style's running supply and the build target.
 	const TCHAR* RequiredOutputPaths[] = {
 		TEXT("/GF_Combat_Core/Items/Weapons/ID_BasicSword.ID_BasicSword_C"),
-		TEXT("/GF_Dev_Sandbox/ResourceParity/Items/ID_Placeholder_Bow.ID_Placeholder_Bow_C"),
-		TEXT("/GF_Dev_Sandbox/ResourceParity/Items/ID_Placeholder_Arrow.ID_Placeholder_Arrow_C"),
+		TEXT("/GF_Combat_Ranged/Items/ID_Bow.ID_Bow_C"),
+		TEXT("/GF_Combat_Ranged/Items/ID_Arrow_Standard.ID_Arrow_Standard_C"),
 		TEXT("/GF_Dev_Sandbox/ResourceParity/Items/ID_Placeholder_SpellFocus.ID_Placeholder_SpellFocus_C"),
 		TEXT("/GF_Dev_Sandbox/ResourceParity/Items/ID_Placeholder_KilnKit.ID_Placeholder_KilnKit_C"),
 	};

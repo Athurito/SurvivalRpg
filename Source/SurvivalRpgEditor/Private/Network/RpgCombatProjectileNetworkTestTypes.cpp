@@ -4,7 +4,12 @@
 #include "EngineUtils.h"
 #include "Network/RpgCombatNetworkTestTypes.h"
 #include "SurvivalRpg/AbilitySystem/Executions/RpgDamageExecution.h"
+#include "SurvivalRpg/AbilitySystem/Attributes/RpgStaminaSet.h"
+#include "SurvivalRpg/AbilitySystem/Tasks/RpgAbilityTask_ProjectileShot.h"
 #include "SurvivalRpg/Core/Game/RpgGameStateBase.h"
+#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Inventory/RpgInventoryFragment_Ammunition.h"
+#include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgCombatProjectileNetworkTestTypes)
 
@@ -88,3 +93,87 @@ void URpgNetworkAutomationProjectileAbility::ActivateAbility(
 
 	EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
 }
+
+URpgNetworkAutomationArrowDefinition::URpgNetworkAutomationArrowDefinition(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	DisplayName = FText::FromString(TEXT("Network Automation Arrow"));
+
+	URpgInventoryFragment_SpatialItem* Spatial = CreateDefaultSubobject<URpgInventoryFragment_SpatialItem>(TEXT("Spatial"));
+	Spatial->Footprint.Width = 1;
+	Spatial->Footprint.Height = 1;
+	Fragments.Add(Spatial);
+
+	URpgInventoryFragment_ItemTraits* Traits = CreateDefaultSubobject<URpgInventoryFragment_ItemTraits>(TEXT("Traits"));
+	Traits->ItemCategory = ERpgInventoryItemCategory::Misc;
+	Traits->bCanStack = true;
+	Traits->MaxStackSize = 20;
+	Fragments.Add(Traits);
+
+	URpgInventoryFragment_Ammunition* Ammunition = CreateDefaultSubobject<URpgInventoryFragment_Ammunition>(TEXT("Ammunition"));
+	Ammunition->ProjectileClass = ARpgNetworkAutomationTestProjectile::StaticClass();
+	Fragments.Add(Ammunition);
+}
+
+URpgNetworkAutomationShotStaminaEffect::URpgNetworkAutomationShotStaminaEffect(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	DurationPolicy = EGameplayEffectDurationType::Instant;
+	FSetByCallerFloat SetByCaller;
+	SetByCaller.DataTag = RpgGameplayTags::Data_StaminaDelta;
+	FGameplayModifierInfo Modifier;
+	Modifier.Attribute = URpgStaminaSet::GetStaminaAttribute();
+	Modifier.ModifierOp = EGameplayModOp::Additive;
+	Modifier.ModifierMagnitude = FGameplayEffectModifierMagnitude(SetByCaller);
+	Modifiers.Add(Modifier);
+}
+
+URpgNetworkAutomationShotAbility::URpgNetworkAutomationShotAbility(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
+	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
+}
+
+FRpgProjectileShotDefinition URpgNetworkAutomationShotAbility::MakeShotDefinition()
+{
+	FRpgProjectileShotDefinition Definition;
+	Definition.AmmunitionItemDefinition = URpgNetworkAutomationArrowDefinition::StaticClass();
+	Definition.MinimumNockSeconds = 0.2f;
+	Definition.FullDrawSeconds = 0.5f;
+	const auto AddKeys = [](FRuntimeFloatCurve& Curve, const float AtZero, const float AtOne)
+	{
+		FRichCurve* RichCurve = Curve.GetRichCurve();
+		RichCurve->SetKeyInterpMode(RichCurve->AddKey(0.0f, AtZero), RCIM_Linear);
+		RichCurve->SetKeyInterpMode(RichCurve->AddKey(1.0f, AtOne), RCIM_Linear);
+	};
+	AddKeys(Definition.DamageByDrawFraction, 5.0f, 12.0f);
+	AddKeys(Definition.LaunchSpeedByDrawFraction, 1000.0f, ARpgNetworkAutomationTestProjectile::FlightSpeed);
+	Definition.ReleaseStaminaCost = ReleaseCost;
+	Definition.StaminaChangeEffect = URpgNetworkAutomationShotStaminaEffect::StaticClass();
+	return Definition;
+}
+
+void URpgNetworkAutomationShotAbility::ActivateAbility(
+	const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayAbilityActivationInfo ActivationInfo,
+	const FGameplayEventData* TriggerEventData)
+{
+	ShotTask = URpgAbilityTask_ProjectileShot::StartProjectileShot(this, MakeShotDefinition());
+	ShotTask->OnReleased.AddDynamic(this, &ThisClass::HandleReleased);
+	ShotTask->OnCancelled.AddDynamic(this, &ThisClass::HandleCancelled);
+	ShotTask->ReadyForActivation();
+}
+
+void URpgNetworkAutomationShotAbility::HandleReleased(float DrawFraction, ARpgCombatProjectile* Projectile)
+{
+	++ReleasedCount;
+	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
+}
+
+void URpgNetworkAutomationShotAbility::HandleCancelled(ERpgProjectileShotResult Reason)
+{
+	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+}
+

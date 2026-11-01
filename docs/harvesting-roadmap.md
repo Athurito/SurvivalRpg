@@ -1300,7 +1300,7 @@ counted in sections:
 | Style | Weapon | Running supply | Sections |
 | --- | --- | --- | --- |
 | Melee | `ID_BasicSword`: 12 ore, 4 charcoal, 4 wood | None | 4.4 |
-| Ranged | `ID_Placeholder_Bow`: 12 wood, 2 ore | 20 `ID_Placeholder_Arrow`: 3 wood, 1 ore | 2.7, plus 0.8 per 20 arrows |
+| Ranged | `ID_Bow` (RNG-02; first `ID_Placeholder_Bow`): 12 wood, 2 ore | 20 `ID_Arrow_Standard` (RNG-02; first `ID_Placeholder_Arrow`): 3 wood, 1 ore | 2.7, plus 0.8 per 20 arrows |
 | Magic | `ID_Placeholder_SpellFocus`: 10 wood, 6 ore, 4 charcoal | None; spells cost mana | 4.6 |
 
 - **Crafting:** with 40 arrows, assumed here as one expedition's supply, the bow
@@ -1385,7 +1385,10 @@ yield multiplier.
 All assets were authored through Unreal MCP in `GF_Dev_Sandbox/ResourceParity`:
 - **Items:** `ID_Placeholder_Bow`, `ID_Placeholder_Arrow`,
   `ID_Placeholder_SpellFocus` and `ID_Placeholder_KilnKit` are plain items
-  without equipment. The bow and the focus are only recipe targets.
+  without equipment. The bow and the focus are only recipe targets. RNG-02
+  of the [ranged combat roadmap](ranged-combat-roadmap.md) replaced the bow
+  and arrow placeholders with the production `ID_Bow` and `ID_Arrow_Standard`
+  in `GF_Combat_Ranged`; the recipes keep their costs.
 - **Recipes:** `DA_Recipe_Parity_*` in `DA_RecipeSet_ResourceParity`, with the
   new categories `Crafting.Category.Weapons` and `Crafting.Category.Building`.
 - **Bench:** `BP_CraftingStation_ParityBench` is a copy of the workbench
