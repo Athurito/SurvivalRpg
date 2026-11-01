@@ -1,6 +1,6 @@
 # RNG-01: Shared combat projectile
 
-Task report for RNG-01 in the [ranged combat roadmap](ranged-combat-roadmap.md), [PR #364](https://github.com/Athurito/SurvivalRpg/pull/364) and its review follow-up FOLLOWUP_PR. One native, server-authoritative projectile carries arrows and spells: the combat roadmap's "Projectile foundation". It flies on every machine, hits exactly once on the server, applies its damage through a GameplayEffect, blocks on a shield from the incoming flight direction, and plays one impact cue on every machine. Any ability, NPC or system can launch it without equipment. The VFX-05 fireball ([vfx-fireball.md](vfx-fireball.md)) is its first content. Bow, ammunition, aiming and recovery follow in RNG-02 to RNG-06.
+Task report for RNG-01 in the [ranged combat roadmap](ranged-combat-roadmap.md), [PR #364](https://github.com/Athurito/SurvivalRpg/pull/364) and its review follow-up [PR #365](https://github.com/Athurito/SurvivalRpg/pull/365). One native, server-authoritative projectile carries arrows and spells: the combat roadmap's "Projectile foundation". It flies on every machine, hits exactly once on the server, applies its damage through a GameplayEffect, blocks on a shield from the incoming flight direction, and plays one impact cue on every machine. Any ability, NPC or system can launch it without equipment. The VFX-05 fireball ([vfx-fireball.md](vfx-fireball.md)) is its first content. Bow, ammunition, aiming and recovery follow in RNG-02 to RNG-06.
 
 ## C++ boundary decision
 
@@ -63,7 +63,7 @@ There was no projectile. Spells and the planned bow had no way to fly, hit, dama
 
 ## Validation (2026-11-01)
 
-### Review follow-up, on `master` `1d7a77de` plus the follow-up
+### Review follow-up (PR #365), on `master` `1d7a77de` plus the follow-up
 
 - **Review:** the coordinating session's four-lens review (network and lifecycle, GAS damage and defense, collision config, tests and conventions), each finding checked by an adversarial verifier, confirmed six findings and rated one plausible. The follow-up fixes all of them:
   - **Saved slot-10 responses (high):** naming slot 10 dropped the saved Ignore of the PCG volume brush in `Lvl_PortalRealm_RootGrove` (about 50 x 50 x 20 m over the realm floor), so the invisible brush would have stopped every projectile. Fixed by the channel redirect. The brushes in `Lvl_ResourceParity` and `Lvl_HarvestPickaxe` save `NoCollision` and were not affected.
