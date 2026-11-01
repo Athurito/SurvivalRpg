@@ -141,6 +141,17 @@ namespace RpgGameplayTags
 	 * the attack definition's Damage through it, for example Multiply 1.1 for +10 %.
 	 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Attack_Damage);
+
+	/**
+	 * Tuning tags a projectile shot (URpgAbilityTask_ProjectileShot) reads once per activation, in the unit of the shot
+	 * definition's value: full draw time in seconds, release stamina cost and hold stamina drain per second. Aim movement
+	 * (RNG-03) and the arrow break chance (RNG-03b) are reserved for their tasks.
+	 */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Ranged_DrawTime);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Ranged_ReleaseCost);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Ranged_HoldDrain);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Ranged_AimMovement);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Tuning_Ranged_BreakChance);
 	
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cheat_GodMode);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cheat_UnlimitedHealth);

@@ -149,6 +149,30 @@ public:
 		const FGameplayEffectSpecHandle& DamageSpec,
 		APawn* InstigatorPawn);
 
+	/**
+	 * Server: the first half of LaunchFromAbility. Spawns and prepares the projectile but does not finish spawning it, so
+	 * a caller can commit resources in between. Nothing begins play or replicates until FinishDeferredLaunch, and
+	 * AbortDeferredLaunch removes it without a trace. Returns null on clients or on failure.
+	 */
+	static ARpgCombatProjectile* BeginLaunchFromAbility(
+		UGameplayAbility* LaunchingAbility,
+		TSubclassOf<ARpgCombatProjectile> ProjectileClass,
+		const FRpgProjectileLaunchParams& Params);
+
+	/** Server: the first half of LaunchWithDamageSpec; see BeginLaunchFromAbility. */
+	static ARpgCombatProjectile* BeginLaunchWithDamageSpec(
+		UWorld* World,
+		TSubclassOf<ARpgCombatProjectile> ProjectileClass,
+		const FRpgProjectileLaunchParams& Params,
+		const FGameplayEffectSpecHandle& DamageSpec,
+		APawn* InstigatorPawn);
+
+	/** Server: finishes a deferred launch. Returns false when the projectile did not survive its BeginPlay. */
+	bool FinishDeferredLaunch();
+
+	/** Server: destroys a deferred launch before it began play or replicated. */
+	void AbortDeferredLaunch();
+
 	//~ IGenericTeamAgentInterface
 	/** The shooter's faction captured at launch (server only), so faction checks outlive the shooter. */
 	virtual FGenericTeamId GetGenericTeamId() const override;
@@ -316,6 +340,10 @@ private:
 	/** World launch point in cm. Range and defense measure from it on the server; clients play the launch sound there. */
 	UPROPERTY(Replicated)
 	FVector_NetQuantize10 LaunchOrigin = FVector::ZeroVector;
+
+	/** Server: the spawn transform of a deferred launch that has not finished yet. */
+	FTransform DeferredSpawnTransform;
+	bool bDeferredLaunchPending = false;
 
 	FVector LastSweepLocation = FVector::ZeroVector;
 	float FlightSeconds = 0.0f;
