@@ -906,8 +906,10 @@ tuning entries; the harvest mechanism reads them.
 
 ### Harvest tunings
 
-`URpgGameplayAbility_Harvest` applies the learned tunings of its weapon's tree
-to its authored values. Each tag names one value:
+`URpgGameplayAbility_Harvest` applies the tunings of its weapon's learned tree
+nodes, the runes socketed in the weapon and, since HRW-05a, every active
+effect with Ability Tunings on the player (a timed spell), in that order, to its
+authored values ([skill-trees.md](skill-trees.md#runtime-rules)). Each tag names one value:
 
 | Tag | Changes | Unit |
 | --- | --- | --- |
@@ -940,12 +942,14 @@ to its authored values. Each tag names one value:
 | `Ability.Tuning.Harvest.WorkerCount` | workers that rise at once, rounded, 1 to 4 (Pack, MST-09c) | workers |
 | `Ability.Tuning.Harvest.WorkerHits` | own hits that raise the workers, rounded, 1 to 16 (Master Worker, MST-09c) | hits |
 | `Ability.Tuning.Harvest.WorkerLifetime` | seconds the workers keep working (Master Worker, MST-09c) | s |
+| `Ability.Tuning.Harvest.SwingReach` | tool swings only: reach of the swing's trace beyond the tool tip, and of the server's reach check, base 0, at most 400 (HRW-03) | cm |
+| `Ability.Tuning.Harvest.SwingTargets` | tool swings only: harvestable contacts one swing commits, rounded, base 1, 1 to 8 (HRW-03) | contacts |
 
 - Rune ranks add their rune's values, and talents add or multiply them, only while the node's runes sit in the tool
   in hand (MST-06c). The [mastery map reports](mastery-map-roadmap.md) describe each rune and talent.
 - The preview resolves the values each time it evaluates. The server
   captures them, with the aim, when execution starts; learning or resetting a
-  node during the swing changes nothing.
+  node, or a spell effect starting or ending, during the swing changes nothing.
 - The cooldown tuning sets the duration of the cooldown effect's spec, so
   existing cooldown effects need no change. Only effects with a duration are
   tuned.

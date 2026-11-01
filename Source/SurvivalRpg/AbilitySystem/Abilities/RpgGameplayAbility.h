@@ -121,15 +121,22 @@ public:
 	TSoftObjectPtr<UTexture2D> GetAbilityIcon() const { return AbilityIcon; }
 
 	/**
-	 * Returns BaseValue changed by the learned skill tree nodes of the weapon that granted this ability, for example a
-	 * larger area radius. TuningTag names the value (Ability.Tuning.*); nodes target this ability by its ability id or
-	 * every ability of their weapon. Valid on the server and the owning client while the ability is instanced; returns
-	 * BaseValue for abilities without a skill tree. Read-only; designers add upgrades as tree data.
+	 * Returns BaseValue changed by every tuning source, for example a larger area radius. TuningTag names the value
+	 * (Ability.Tuning.*). The sources fold in this order: the learned skill tree nodes of the item that granted this
+	 * ability, the runes socketed in that item, then every active, uninhibited gameplay effect of this ability's system
+	 * with Ability Tunings (URpgAbilityTuningEffectComponent), such as a timed spell. The last Set wins, then Adds are
+	 * summed and Multiplies multiplied. Entries target this ability by its ability id, or every ability that reads the
+	 * tag when they name none; item sources only reach their own item's abilities. Valid on the server and the owning
+	 * client while the ability is instanced; returns BaseValue without any source. Read-only; designers add upgrades as
+	 * tree, rune or effect data.
 	 */
 	UFUNCTION(BlueprintPure, Category = "Rpg|Ability|Skill Tree", meta = (GameplayTagFilter = "Ability.Tuning"))
 	float GetTunedValue(FGameplayTag TuningTag, float BaseValue) const;
 
-	/** GetTunedValue for an explicit spec and actor info, for non-instanced use such as target previews. */
+	/**
+	 * GetTunedValue for an explicit spec and actor info, for non-instanced use such as target previews. Active effects
+	 * come from ActorInfo's ability system and also tune abilities without a source item.
+	 */
 	static float GetTunedValueForSpec(
 		const FGameplayAbilitySpec& Spec,
 		const FGameplayAbilityActorInfo& ActorInfo,

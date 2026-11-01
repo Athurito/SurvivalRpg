@@ -8,6 +8,7 @@ Behavior observed in this project's automation tests and PIE sessions on UE 5.8.
 
 - [Timers in test worlds](#timers-in-test-worlds)
 - [Standalone test worlds](#standalone-test-worlds)
+- [GameplayEffects in tests](#gameplayeffects-in-tests)
 - [GameplayCues and prediction](#gameplaycues-and-prediction)
 - [PIE network tests](#pie-network-tests)
 
@@ -32,6 +33,15 @@ Behavior observed in this project's automation tests and PIE sessions on UE 5.8.
 - `FRpgSwingTraceWindow::TraceSampleMotionForTests` sweeps two hand-built tool poses through a standalone world on the real trace channel, so a test can prove which collision a swing reports without an animated mesh. A test ability can override `URpgGameplayAbility_Harvest::PlayToolSwing` to start the swing without a montage and feed the window's hits to it (HRW-03).
 - A new object of a native class copies only those class default properties that already differed from its constructor when the class was linked (`CustomPropertyListForPostConstruction`). A test that changes a native test ability's class default at runtime, such as its activation policy, therefore does not reach the instance that `GiveAbility` creates. Input processing reads the class default and the ability reads its instance, so set both (HRW-04).
 - `UGameplayAbility::GetCurrentSourceObject` and `GetCurrentAbilitySpecHandle` ensure on a CDO. In an `AbilityActivatedCallbacks` handler, check `IsInstantiated()` first and read the spec from the ASC.
+
+## GameplayEffects in tests
+
+- A test can build an effect without an asset. Create it with `NewObject<UGameplayEffect>(GetTransientPackage())`, set `DurationPolicy` and `DurationMagnitude`, add components with `AddComponent<T>()`, and apply it with `ApplyGameplayEffectToSelf`. `URpgAbilityTuningEffectComponent::MakeTransientEffectForTests` builds one with Ability Tunings (HRW-05a).
+- `UGameplayEffect` is `MinimalAPI`, and its `SetStackingType` is editor-only and not exported, so project code cannot link against it. The `StackingType` property has been deprecated since 5.7. Read it with `GetStackingType()`; a test sets the property inside `PRAGMA_DISABLE_DEPRECATION_WARNINGS` (HRW-05a).
+- `OngoingTagRequirements` of `UTargetTagRequirementsGameplayEffectComponent` inhibit an effect as soon as it is added. On authority, adding or removing the loose tag flips `bIsInhibited` synchronously. `bIsInhibited` is not replicated; every machine computes it from its own tags.
+- A range loop over `GetActiveGameplayEffects()` already skips effects pending removal. After a removal or expiry, `GetActiveGameplayEffect(Handle)` returns null.
+- A duration effect expires on the world timer manager. Step the timers past the duration as in [Timers in test worlds](#timers-in-test-worlds).
+- Every application of an effect shares its components, because the effect asset is their outer. Keep per-application state out of a component.
 
 ## GameplayCues and prediction
 

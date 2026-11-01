@@ -296,9 +296,27 @@ public:
 	static bool IsNodeActiveForItem(const FRpgSkillTreeNode& Node, const UObject* SourceItem);
 
 	/**
-	 * Resolves TuningTag for the ability of Spec from the item of the spec's source equipment: the learned tunings of
-	 * that item's tree, with the progress from the owner of ActorInfo, then the current-rank tunings of the runes
-	 * socketed in that item. Returns BaseValue for abilities without a source item.
+	 * Collects the ids tuning entries name the ability of Spec by: its Ability.* spec-source tags, which AbilitySets
+	 * add from AbilityIdTag, and the ability's asset tags. The Q/E/R binding resolver matches the same ids.
+	 */
+	static void CollectTuningAbilityIds(const FGameplayAbilitySpec& Spec, FGameplayTagContainer& OutAbilityIds);
+
+	/**
+	 * Folds the item sources of TuningTag for the ability of Spec into Accumulator: the learned tunings of the tree of
+	 * the spec's source item, with the progress from the owner of ActorInfo, then the current-rank tunings of the runes
+	 * socketed in that item. Adds nothing for abilities without a source item.
+	 */
+	static void AccumulateItemTuningsForSpec(
+		const FGameplayAbilitySpec& Spec,
+		const FGameplayAbilityActorInfo& ActorInfo,
+		const FGameplayTagContainer& AbilityIds,
+		FGameplayTag TuningTag,
+		FRpgAbilityTuningAccumulator& Accumulator);
+
+	/**
+	 * Resolves TuningTag for the ability of Spec from its item sources alone, as AccumulateItemTuningsForSpec folds them.
+	 * Returns BaseValue for abilities without a source item. Abilities read URpgGameplayAbility::GetTunedValueForSpec,
+	 * which also folds active gameplay effects.
 	 */
 	static float ResolveAbilityTuningForSpec(
 		const FGameplayAbilitySpec& Spec,

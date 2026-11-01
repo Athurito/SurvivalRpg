@@ -15,12 +15,14 @@
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySourceInterface.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/AbilitySystem/RpgGameplayEffectContext.h"
+#include "SurvivalRpg/AbilitySystem/Effects/RpgAbilityTuningEffectComponent.h"
 #include "SurvivalRpg/Camera/RpgCameraMode.h"
 #include "SurvivalRpg/Core/Character/RpgCharacter.h"
 #include "SurvivalRpg/Core/Character/RpgPawnGameplayComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeComponent.h"
+#include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeDefinition.h"
 
 #define ENSURE_ABILITY_IS_INSTANTIATED_OR_RETURN(FunctionName, ReturnValue)																				\
 {																																						\
@@ -142,7 +144,22 @@ float URpgGameplayAbility::GetTunedValueForSpec(
 	const FGameplayTag TuningTag,
 	const float BaseValue)
 {
-	return URpgSkillTreeComponent::ResolveAbilityTuningForSpec(Spec, ActorInfo, TuningTag, BaseValue);
+	if (!TuningTag.IsValid())
+	{
+		return BaseValue;
+	}
+
+	FGameplayTagContainer AbilityIds;
+	URpgSkillTreeComponent::CollectTuningAbilityIds(Spec, AbilityIds);
+
+	// The source item's tree and runes first, then active effects, so an effect's Set wins over theirs.
+	FRpgAbilityTuningAccumulator Accumulator;
+	URpgSkillTreeComponent::AccumulateItemTuningsForSpec(Spec, ActorInfo, AbilityIds, TuningTag, Accumulator);
+	if (const UAbilitySystemComponent* AbilitySystem = ActorInfo.AbilitySystemComponent.Get())
+	{
+		URpgAbilityTuningEffectComponent::AccumulateActiveEffectTunings(*AbilitySystem, AbilityIds, TuningTag, Accumulator);
+	}
+	return Accumulator.Resolve(BaseValue);
 }
 
 void URpgGameplayAbility::GetAbilitySource(FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, float& OutSourceLevel, const IRpgAbilitySourceInterface*& OutAbilitySource, AActor*& OutEffectCauser) const

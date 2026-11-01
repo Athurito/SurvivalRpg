@@ -6,9 +6,12 @@
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "GameplayEffect.h"
 #include "Misc/AutomationTest.h"
 #include "NativeGameplayTags.h"
 #include "RpgInventoryFragment_Rune.h"
+#include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility.h"
+#include "SurvivalRpg/AbilitySystem/Effects/RpgAbilityTuningEffectComponent.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentAutomationTestTypes.h"
@@ -645,6 +648,118 @@ bool FRpgRuneSocketedTuningTest::RunTest(const FString& Parameters)
 		URpgSkillTreeComponent::ResolveAbilityTuningForSpec(
 			FGameplayAbilitySpec(URpgInventoryAutomationTestUseAbility::StaticClass()), ActorInfo, TAG_RuneSocketTest_Tuning, 1.0f),
 		1.0f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgActiveEffectTuningFoldOrderTest,
+	"SurvivalRpg.AbilitySystem.Tuning.ActiveEffectTunings.FoldAfterTreeAndRunes",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgActiveEffectTuningFoldOrderTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgRuneSocketTests;
+	ConfigureRuneAutomationTestDefinitions();
+	FScopedTestWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		World ? World->SpawnActor<ARpgInventoryAutomationTestPlayerState>() : nullptr;
+	ARpgEquipmentAutomationTestPawn* Pawn = World ? World->SpawnActor<ARpgEquipmentAutomationTestPawn>() : nullptr;
+	if (!TestNotNull(TEXT("The player state spawns"), PlayerState) || !TestNotNull(TEXT("The pawn spawns"), Pawn))
+	{
+		return false;
+	}
+	Pawn->SetPlayerState(PlayerState);
+	URpgAbilitySystemComponent* AbilitySystem = Pawn->GetRpgAbilitySystemComponent();
+	URpgSkillTreeComponent* SkillTrees = PlayerState->GetSkillTreeComponent();
+	URpgInventoryManagerComponent* Inventory = PlayerState->GetInventoryManagerComponent();
+	if (!TestNotNull(TEXT("The pawn has an ability system"), AbilitySystem) ||
+		!TestNotNull(TEXT("The player has skill trees"), SkillTrees) ||
+		!TestNotNull(TEXT("The player has an inventory"), Inventory))
+	{
+		return false;
+	}
+	AbilitySystem->InitAbilityActorInfo(Pawn, Pawn);
+
+	// Without a controller the player inventory has no layout; its default storage grid holds the items.
+	FRpgInventoryGridSize GridSize;
+	GridSize.Width = 6;
+	GridSize.Height = 3;
+	Inventory->SetDefaultGridSize(GridSize);
+	URpgInventoryItemInstance* Tool = Inventory->AddItemDefinitionToPlacement(
+		URpgRuneAutomationTestTreeToolDefinition::StaticClass(), 1, Storage(0, 0));
+	URpgInventoryItemInstance* Rune = Inventory->AddItemDefinitionToPlacement(
+		URpgRuneAutomationTestRuneDefinition::StaticClass(), 1, Storage(1, 0));
+	URpgInventoryFragment_Rune* RuneA = const_cast<URpgInventoryFragment_Rune*>(URpgInventoryFragment_Rune::FindRuneOfItem(Rune));
+	if (!TestNotNull(TEXT("The tool lies in storage"), Tool) || !TestNotNull(TEXT("Rune A lies in storage"), Rune) ||
+		!TestNotNull(TEXT("Rune A has its fragment"), RuneA) || !TestTrue(TEXT("Rune A has ranks"), !RuneA->Ranks.IsEmpty()))
+	{
+		return false;
+	}
+
+	auto MakeTuning = [](const ERpgSkillTreeTuningOperation Operation, const float Value)
+	{
+		FRpgSkillTreeAbilityTuning Tuning;
+		Tuning.TuningTag = TAG_RuneSocketTest_Tuning;
+		Tuning.Operation = Operation;
+		Tuning.Value = Value;
+		return Tuning;
+	};
+	// Every source sets and adds: the tree sets 4 and adds 10, rune A's rank I sets 6 and adds 0.5, the effect sets 20
+	// and adds 1.
+	URpgSkillTreeDefinition* Tree = NewObject<URpgSkillTreeDefinition>(GetTransientPackage(), NAME_None, RF_Transient);
+	Tree->TreeTag = TAG_RuneSocketTest_Tree;
+	Tree->MasterySkillTag = RpgTradeSkillGameplayTags::Skill_Gathering_Logging;
+	Tree->MaxPoints = 10;
+	FRpgSkillTreeNode& Plain = Tree->Nodes.AddDefaulted_GetRef();
+	Plain.NodeTag = TAG_RuneSocketTest_PlainNode;
+	Plain.AbilityTunings = {
+		MakeTuning(ERpgSkillTreeTuningOperation::Set, 4.0f), MakeTuning(ERpgSkillTreeTuningOperation::Add, 10.0f)};
+	URpgRuneAutomationTestTreeToolDefinition::SetTestSkillTree(Tree);
+	const TArray<FRpgRuneRank> AuthoredRanks = RuneA->Ranks;
+	ON_SCOPE_EXIT
+	{
+		URpgRuneAutomationTestTreeToolDefinition::SetTestSkillTree(nullptr);
+		RuneA->Ranks = AuthoredRanks;
+	};
+	RuneA->Ranks[0].AbilityTunings = {
+		MakeTuning(ERpgSkillTreeTuningOperation::Set, 6.0f), MakeTuning(ERpgSkillTreeTuningOperation::Add, 0.5f)};
+	const UGameplayEffect* Spell = URpgAbilityTuningEffectComponent::MakeTransientEffectForTests({
+		MakeTuning(ERpgSkillTreeTuningOperation::Set, 20.0f), MakeTuning(ERpgSkillTreeTuningOperation::Add, 1.0f)});
+
+	SkillTrees->RegisterSkillTree(Tree);
+	URpgTradeSkillProgressionComponent* TradeSkills = PlayerState->GetTradeSkillProgressionComponent();
+	for (int32 Guard = 0; Guard < 200 && TradeSkills->GetSkillLevelByTag(RpgTradeSkillGameplayTags::Skill_Gathering_Logging) < 4; ++Guard)
+	{
+		TradeSkills->AddSkillXPByTag(RpgTradeSkillGameplayTags::Skill_Gathering_Logging, 100.0f);
+	}
+	TestEqual(TEXT("Plain is learned"), SkillTrees->UnlockNode(TAG_RuneSocketTest_Tree, TAG_RuneSocketTest_PlainNode), ERpgSkillTreeUnlockResult::Unlockable);
+
+	URpgEquipmentInstance* ToolEquipment = NewObject<URpgEquipmentInstance>(Pawn, NAME_None, RF_Transient);
+	ToolEquipment->SetInstigator(Tool);
+	const FGameplayAbilitySpec ToolSpec(URpgInventoryAutomationTestUseAbility::StaticClass(), 1, INDEX_NONE, ToolEquipment);
+	const FGameplayAbilitySpec UnsourcedSpec(URpgInventoryAutomationTestUseAbility::StaticClass());
+	const FGameplayAbilityActorInfo& ActorInfo = *AbilitySystem->AbilityActorInfo;
+	auto Tuned = [&ActorInfo](const FGameplayAbilitySpec& Spec)
+	{
+		return URpgGameplayAbility::GetTunedValueForSpec(Spec, ActorInfo, TAG_RuneSocketTest_Tuning, 1.0f);
+	};
+
+	TestEqual(TEXT("The tree alone sets 4 and adds 10"), Tuned(ToolSpec), 14.0f);
+	TestEqual(TEXT("Rune A goes into the tool"), Move(*Inventory, Rune, Socket(*Inventory, Tool, 0)), ERpgInventoryMutationResultCode::Success);
+	TestEqual(TEXT("The rune's Set follows the tree's, and the Adds sum"), Tuned(ToolSpec), 16.5f);
+
+	const FActiveGameplayEffectHandle SpellHandle =
+		AbilitySystem->ApplyGameplayEffectToSelf(Spell, 1.0f, AbilitySystem->MakeEffectContext());
+	TestTrue(TEXT("The spell effect applies"), SpellHandle.IsValid());
+	TestEqual(TEXT("The effect's Set beats the tree's and the rune's, and Adds sum across all three"), Tuned(ToolSpec), 31.5f);
+	TestEqual(TEXT("The item-only resolver ignores active effects"),
+		URpgSkillTreeComponent::ResolveAbilityTuningForSpec(ToolSpec, ActorInfo, TAG_RuneSocketTest_Tuning, 1.0f), 16.5f);
+	TestEqual(TEXT("The effect alone tunes an ability without source item"), Tuned(UnsourcedSpec), 21.0f);
+
+	TestTrue(TEXT("The spell effect is removed"), AbilitySystem->RemoveActiveGameplayEffect(SpellHandle));
+	TestEqual(TEXT("Without the effect the item sources remain"), Tuned(ToolSpec), 16.5f);
+	TestEqual(TEXT("Without the effect an unsourced ability keeps its base"), Tuned(UnsourcedSpec), 1.0f);
 	return true;
 }
 

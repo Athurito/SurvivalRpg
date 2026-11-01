@@ -70,7 +70,8 @@ struct SURVIVALRPG_API FRpgSkillTreeMapRegion
 };
 
 /**
- * One numeric change a learned node makes to the abilities granted by its weapon, for example a larger area radius.
+ * One numeric change to an ability value, for example a larger area radius: made by a learned node or a socketed rune
+ * to the abilities of its item, or by an active gameplay effect with Ability Tunings to its target's abilities.
  * Abilities read the result through URpgGameplayAbility::GetTunedValue, so new upgrades of existing values need no code.
  * Designer-tuned static data.
  */
@@ -81,7 +82,7 @@ struct SURVIVALRPG_API FRpgSkillTreeAbilityTuning
 
 	/**
 	 * Stable ability id the entry applies to, for example Ability.Harvesting.PickaxeStrike. Empty applies it to every
-	 * ability the weapon of this tree grants.
+	 * ability of the source: those the item of a tree or rune grants, or every ability of an effect's target.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|Tuning", meta = (Categories = "Ability"))
 	FGameplayTag AbilityIdTag;
@@ -100,8 +101,9 @@ struct SURVIVALRPG_API FRpgSkillTreeAbilityTuning
 };
 
 /**
- * Folds the ability tunings of one tuning tag from several sources, such as learned nodes and socketed runes: the last
- * Set entry replaces the base value, then Add entries are added, then Multiply entries are multiplied.
+ * Folds the ability tunings of one tuning tag from several sources, in the order learned nodes, socketed runes, active
+ * gameplay effects: the last Set entry replaces the base value, then Add entries are added, then Multiply entries are
+ * multiplied.
  */
 struct SURVIVALRPG_API FRpgAbilityTuningAccumulator
 {

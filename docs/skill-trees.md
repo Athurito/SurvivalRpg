@@ -23,7 +23,7 @@ are data. Code is only needed when an ability gains a new tunable value.
 | Points | Derived from the tree's `MasterySkillTag` level in `URpgTradeSkillProgressionComponent` | Never stored. |
 | Abilities, effects and tags of learned nodes | `URpgEquipmentManagerComponent` | Granted while the weapon is in use; the source object is the weapon's equipment instance. |
 | Q/E/R binding | `URpgWeaponAbilityLoadoutComponent` | Order: player selection, then the tree of the weapon in use, then ability set defaults. |
-| Numeric upgrades | `URpgGameplayAbility::GetTunedValue` | Resolved on the server and the owning client. |
+| Numeric upgrades | `URpgGameplayAbility::GetTunedValue` | Resolved on the server and the owning client from learned nodes, socketed runes and active effects with Ability Tunings (`URpgAbilityTuningEffectComponent`, HRW-05a). |
 | Presentation | `URpgSkillProgressionViewModel`, `URpgSkillTreeViewModel`, `URpgSkillTreeNodeViewModel`, `URpgTradeSkillViewModel`, `URpgSkillTreeGridWidget`, `URpgSkillTreeMapWidget`, and the CommonUI screen `CUI_Skills` | Read-only; commands send the component's requests. |
 | Map camera and selection | `URpgSkillTreeMapWidget`, remembered per tree in `URpgUIScreenSubsystem` | Local to the player; never replicated or saved. |
 | Mastery milestone rewards | `MasteryMilestones` on the tree, claims in `URpgRewardClaimComponent` on the PlayerState | Each milestone grants one claim per player; the claim is server-authoritative, replicated to the owner and saved. |
@@ -65,8 +65,14 @@ are data. Code is only needed when an ability gains a new tunable value.
   - `URpgSkillTreeComponent::IsNodeActiveForItem` is the one rule; the equipment grants, the ability tunings and the skill screen's `bIsDormant` all use it.
 - **Rune tunings (MST-06b):** the `AbilityTunings` of the current rank of every rune socketed in the item count like learned node tunings, after them, for the abilities of that item only.
   - Learned nodes stay learned, so switching back restores everything.
-- **Tunings:** `GetTunedValue(TuningTag, Base)` collects the learned entries of the tree of the ability's weapon that match the tag and either target the ability's id or have no id.
-  - The result is `(last Set or Base + sum of Add) * product of Multiply`.
+- **Tunings:** `GetTunedValue(TuningTag, Base)` collects the entries that match the tag and either target the ability's id or have no id, in this order:
+  1. the learned nodes of the tree of the ability's weapon, in node order;
+  2. the runes socketed in that weapon;
+  3. every active gameplay effect of the ability's system that carries the Ability Tunings component (`URpgAbilityTuningEffectComponent`, HRW-05a), in container order.
+  - The result is `(last Set or Base + sum of Add) * product of Multiply`, so an effect's Set wins over the tree's and the runes'. Effects should use Add or Multiply, so talents still stack on them.
+  - The ids are the ability's `Ability.*` spec-source tags (its `AbilityIdTag` from the ability set) and its asset tags, matched exactly.
+  - Trees and runes only reach the abilities of their own item. An effect reaches every ability of its target that reads the tag, also abilities without a source item; name the ability ids to scope it.
+  - Each active effect counts once, whatever its stack count. Inhibited effects, for example with unmet `OngoingTagRequirements`, and effects pending removal count not at all.
   - Abilities that must not change mid-action read their values once when they start.
 - **Saves:** states are keyed by tags only.
   - On restore, a registered tree replays its purchases in order against the current skill levels.
@@ -190,6 +196,20 @@ Add an entry to `Nodes`:
    - In Blueprint: `Get Tuned Value`.
 3. Document the tag on the ability so designers know it exists.
 
+### Tune abilities from a timed effect
+
+A spell or buff that changes ability values for a while is a GameplayEffect asset, not code:
+
+1. Set the effect's duration policy to Has Duration or Infinite. An Instant effect never becomes active and fails validation.
+2. Add the **Ability Tunings** component and fill its entries like node tunings: `AbilityIdTag`, `TuningTag`, `Operation`, `Value`.
+   - Name the ability ids, for example `Ability.Harvesting.AxeChop`; an entry without id tunes every ability of the target that reads the tag, and validation warns.
+   - Prefer Add or Multiply; validation warns on Set, which replaces the tree and rune values.
+   - Stacks do not multiply the entries, and validation warns on a stacking effect.
+3. To switch the tunings on and off as data, use the effect's `OngoingTagRequirements`: an inhibited effect tunes nothing.
+
+The server and the owning client resolve the same values: the owner receives the full active effects, and a
+LocalPredicted ability that applies the effect predicts them. Simulated proxies never resolve tunings.
+
 ## Tests
 
 `SurvivalRpg.Progression.SkillTrees.*` covers:
@@ -210,11 +230,15 @@ Add an entry to `Nodes`:
 the remembered view, several trees with one selection and their own points, a 200-node synthetic map, and that every
 shipped tree fits on the map, alone and with the others, without overlapping another tree.
 
+`SurvivalRpg.AbilitySystem.Tuning.ActiveEffectTunings.*` covers the effect source: application, expiry and removal,
+inhibition, the exact ability-id filter, the stack count, the fold order after tree and runes, and the component's
+validation.
+
 `SurvivalRpg.Save.WorldSave.MemoryRoundTrip` covers the save fields.
 `SurvivalRpg.Harvesting.Content.SharedHarvestingTreeContract` checks that axe and pickaxe carry the same tree, that its
 talents grant no abilities and form an entry with exclusive choices, and that the tool resources award the shared
 mastery XP. `AxeToolContract` and `PickaxeToolContract` check the tools' swings.
 `SurvivalRpg.Harvesting.Tuning.*` checks that harvest tunings change preview and commit alike, are captured when
-execution starts, shape the swarm, and shape the work of own hits (`WorkTalentsShapeOwnHits`); `SurvivalRpg.Harvesting.Swarm.StrikeRadiusTakesEachTargetOnce` checks the
+execution starts (also against a spell effect applied or expiring mid-swing), shape the swarm, and shape the work of own hits (`WorkTalentsShapeOwnHits`); `SurvivalRpg.Harvesting.Swarm.StrikeRadiusTakesEachTargetOnce` checks the
 strike radius. `SurvivalRpg.Harvesting.Stride.*` checks the strides of
 ultimates such as Striding Wave.
