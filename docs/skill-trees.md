@@ -8,7 +8,9 @@ Weapons and tools carry skill trees, as in New World:
 The system is generic. Harvesting tools use it first (HARV-09, see
 [harvesting-roadmap.md](harvesting-roadmap.md)); combat weapons can use it
 without code changes. Since MST-03b, axe and pickaxe share one harvesting tree of passive talents
-([mastery-map-shared-harvesting.md](mastery-map-shared-harvesting.md)); its nodes place nothing on Q/E/R.
+([mastery-map-shared-harvesting.md](mastery-map-shared-harvesting.md)). Since HRW-05c its Spells region teaches
+harvesting spells: a spell node grants one ability with an `Ability.Harvesting.Spell.*` id and no input tag, so
+learning it fills the first free Q/E/R slot; the talents still place nothing there.
 
 The design goal is extensibility: new trees, nodes, abilities and upgrades
 are data. Code is only needed when an ability gains a new tunable value.
@@ -138,7 +140,7 @@ The view models observe the replicated state and rebuild at most once per frame.
 | Tree | Carried by | Points | Nodes |
 | --- | --- | --- | --- |
 | `DA_SkillTree_Combat` (`GF_Combat_Core`) | Sword and two-handed sword | `Skill.Mastery.Combat` (shown as Combat), earned by kills through the kill XP action | Free-position map left of Harvesting with the region Discipline: the entry Battle Rhythm (1 point, weapon attacks +10 % damage through `Ability.Tuning.Attack.Damage`) forking into the exclusive choices Riposte (3 points, a perfect block deals 50 % more stagger damage and restores 50 % more stamina) and Bulwark (3 points, blocking costs 25 % less stamina and stops 15 % more damage); [report](mastery-map-combat-tree.md) |
-| `DA_SkillTree_Harvesting` (`GF_Harvesting_Magic`) | Axe and pickaxe | `Skill.Mastery.Harvesting` (shown as Harvesting) | Free-position map with fifteen passive talents in five regions, each a one-point entry forking into two exclusive three-point choices; 20 points buy one path through every region. Impact: Cleaving Force, then Shatter or Follow Through. The other four need runes in the tool in hand: Aftermath (Brand: Lasting Power, then Discharge or Wandering Effect, which also needs Erntesprung), Rune Flow (Echo or Kraftübertragung: Rune Resonance, then Division or Condensation), Spread (Erntesprung or Durchschlag: Wide Paths, then Fork or Deep Rift) and Helpers (Totenarbeiter: Shared Blow, then Pack or Master Worker). Values and reports: [mastery map roadmap](mastery-map-roadmap.md) |
+| `DA_SkillTree_Harvesting` (`GF_Harvesting_Magic`) | Axe and pickaxe | `Skill.Mastery.Harvesting` (shown as Harvesting) | Free-position map with a Spells region and fifteen passive talents in five regions; 21 points buy Wide Swing and one path through every talent region. Spells (shown first): Wide Swing (1 point, Active), which puts the spell `GA_HarvestSpell_WideSwing` on Q and grants `Harvest.Spell.Known`, so landed swings start to fill the focus meter ([HRW-05c](harvesting-rework-roadmap.md#hrw-05c-wide-swing-on-q)). Each talent region is a one-point entry forking into two exclusive three-point choices. Impact: Cleaving Force, then Shatter or Follow Through. The other four need runes in the tool in hand: Aftermath (Brand: Lasting Power, then Discharge or Wandering Effect, which also needs Erntesprung), Rune Flow (Echo or Kraftübertragung: Rune Resonance, then Division or Condensation), Spread (Erntesprung or Durchschlag: Wide Paths, then Fork or Deep Rift) and Helpers (Totenarbeiter: Shared Blow, then Pack or Master Worker). Values and reports: [mastery map roadmap](mastery-map-roadmap.md) |
 
 Riposte and Bulwark grant infinite GameplayEffects on `URpgDefenseSet`; the other talents only carry tunings. Weapon attacks read
 `Ability.Tuning.Attack.Damage`. The harvest abilities read the tags under `Ability.Tuning.Harvest`
@@ -236,8 +238,9 @@ validation.
 
 `SurvivalRpg.Save.WorldSave.MemoryRoundTrip` covers the save fields.
 `SurvivalRpg.Harvesting.Content.SharedHarvestingTreeContract` checks that axe and pickaxe carry the same tree, that its
-talents grant no abilities and form an entry with exclusive choices, and that the tool resources award the shared
-mastery XP. `AxeToolContract` and `PickaxeToolContract` check the tools' swings.
+talents grant no abilities and form an entry with exclusive choices, that its Spells nodes grant exactly one ability
+with an `Ability.Harvesting.Spell.*` id and no input tag, and that the tool resources award the shared mastery XP.
+`WideSwingSpellContract` checks the spell, its cost, effect and cues. `AxeToolContract` and `PickaxeToolContract` check the tools' swings.
 `SurvivalRpg.Harvesting.Tuning.*` checks that harvest tunings change preview and commit alike, are captured when
 execution starts (also against a spell effect applied or expiring mid-swing), shape the swarm, and shape the work of own hits (`WorkTalentsShapeOwnHits`); `SurvivalRpg.Harvesting.Swarm.StrikeRadiusTakesEachTargetOnce` checks the
 strike radius. `SurvivalRpg.Harvesting.Stride.*` checks the strides of

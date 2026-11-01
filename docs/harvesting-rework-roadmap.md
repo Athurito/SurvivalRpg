@@ -559,9 +559,10 @@ In my own editor in `Lvl_HarvestPickaxe` with the real character, pickaxe and ir
   - Its cost is an instant effect of minus `MaxFocus`, so it passes only on a
     full meter.
   - `GE_HarvestSpell_WideSwing` lasts 10 s, does not stack and carries the
-    tunings `SwingReach` +150 cm and `SwingTargets` +2, for
-    `Ability.Harvesting.AxeChop` and `Ability.Harvesting.PickaxeStrike`. The
-    pickaxe entries are dropped if its strike misses veins behind.
+    tunings `SwingReach` +300 cm (retuned from +150 after the HRW-05c
+    measurement) and `SwingTargets` +2, for `Ability.Harvesting.AxeChop` and
+    `Ability.Harvesting.PickaxeStrike`. The pickaxe strike reaches veins
+    behind, so its entries stay.
   - The effect grants `Harvest.Spell.Active` and `Harvest.Spell.WideSwing`,
     clears on respawn and plays a looping cue.
   - The values stay inside the native clamps (reach at most 400 cm, 1 to 8
@@ -843,6 +844,287 @@ editor on port 8000 was not touched.
 4. **Multiplayer:** play as listen server with two players. The client chops
    while the host watches: only the client's meter rises, and the host's stays
    hidden. Swap roles: only the chopping player's meter fills.
+
+### HRW-05c: Wide Swing on Q
+
+The focus meter now spends on Wide Swing, the first harvesting spell, which
+closes the first playable's magical harvesting ability. A full meter casts it
+from Q, and for 10 s every axe and pickaxe swing reaches farther and strikes up
+to three resources.
+
+#### HRW-05c report
+
+Branch `claude/hrw-05c-wide-swing`, PR [#PRNUM](PRURL):
+
+- `982a870e`: the spell, its assets, the native seams and the tests.
+- `9c7fbdfa`: the reach retune after the measurement, the dense test grove, the
+  Spells node placement and brighter edge motes.
+- A third commit adds the docs, the skill references and this report.
+
+- **Spell:** `GA_HarvestSpell_WideSwing` (`GAS/Abilities`) is a Blueprint on
+  `URpgGameplayAbility`. It keeps the native defaults: LocalPredicted,
+  InstancedPerActor, OnInputTriggered and Independent, so it never cancels the
+  held swing.
+  - Cost: `GE_HarvestFocus_Spend`, an instant add of -1 × `MaxFocus` captured
+    from the caster. Only a full meter pays.
+  - `Status.Death` and `Harvest.Spell.Active` block it.
+  - Graph: `CommitAbility`, then `ApplyGameplayEffectToOwner` with
+    `GE_HarvestSpell_WideSwing`, then `EndAbility`. A failed commit cancels.
+  - Failure texts: "Focus not full" for the cost and "Wide Swing is already
+    running" for blocked tags. The UI is English, so the row's text is too.
+- **Effect:** `GE_HarvestSpell_WideSwing` (`GAS/Effects`).
+  - It lasts 10 s and does not stack.
+  - Its Ability Tunings add `SwingReach` 300 and `SwingTargets` 2 to
+    `Ability.Harvesting.AxeChop` and `Ability.Harvesting.PickaxeStrike`.
+  - It grants `Harvest.Spell.Active` and `Harvest.Spell.WideSwing`, carries
+    `Effect.Behavior.ClearOnRespawn` and plays
+    `GameplayCue.Harvesting.Spell.WideSwing` while active.
+- **Grant:** `AS_HarvestSpell_WideSwing` holds one ability with the id
+  `Ability.Harvesting.Spell.WideSwing` and no input tag.
+  - `DA_SkillTree_Harvesting` gains the Spells region (map x -480, left of
+    Impact, now the default region) with `SkillTree.Node.Harvesting.WideSwing`:
+    cost 1, Active, the set above, granted tag `Harvest.Spell.Known`.
+  - `MaxPoints` rises from 20 to 21.
+  - Learning it puts the spell on the first free slot, Q.
+- **Gate:** `GE_HarvestFocus_Gain` now requires `Harvest.Spell.Known` and still
+  ignores `Harvest.Spell.Active`, so the meter starts with the first spell.
+- **Presentation:**
+  - `GCN_Harvest_Spell_WideSwing` is a `GameplayCueNotify_Looping`.
+    - On loop start it spawns `NS_Harvest_SpellEdge` (teal motes from the
+      ember template) on `TracePoint_Tip` of every mesh with that socket on the
+      actors attached to the caster, and a hum (`SW_Portal_ResidueLoop_01` at
+      0.3 volume) on the caster's mesh.
+    - On removal it deactivates the edges and fades the hum over 0.6 s.
+    - The engine's placement can attach only to the character mesh, which is
+      why the graph finds the held tool itself.
+  - `GCN_Harvest_ToolHit_Spectral` and `GCN_Harvest_ToolHit_Stone_Spectral`
+    are children of the tool hits that add `NS_Harvest_SpectralHit`, a teal
+    copy of the spark template.
+    - Both swings select them through a `FormSuccessGameplayCues` entry keyed
+      on `Harvest.Spell.WideSwing`.
+    - The entry is captured into `CommitValues`, so the owner's predicted cue
+      switches too.
+- **HUD:**
+  - `URpgUISettings::HudFocusSpellTag` names the running spell's tag;
+    `Config/DefaultGame.ini` sets it to `Harvest.Spell.Active`. Core never
+    names a harvesting tag.
+  - `URpgAbilitySystemComponent::GetEffectTimeRemainingAndDurationForTag`
+    reads the longest timed effect owning a tag. The cooldown read now uses it
+    as well.
+  - `URpgCharacterStatsViewModel` gains `bFocusSpellActive`,
+    `FocusSpellRemainingTime`, `FocusSpellDuration` and `FocusSpellProgress`.
+    - They are polled every 0.05 s while a timed spell runs.
+    - `bShowFocus` now also holds while the spell runs.
+  - `CUI_HarvestFocusMeter` gains `SpellDrainBar`: the focus fill with a paler
+    tint, bound to `FocusSpellProgress` and `bFocusSpellActive`.
+  - `CUI_AbilityFailureToast` gains a Focus row (cost failure, `Focus` of
+    `MaxFocus`) before the generic cost row.
+- **Late-join fix:** cue events reach no actor while an ability system has no
+  avatar. A late joiner's copy of a player state arrives before its pawn, so it
+  never showed a looping cue that was already running.
+  - `URpgAbilitySystemComponent` now replays the WhileActive event of every
+    active cue when an ability system gets its first pawn avatar: the cues of
+    active effects, cues added outside effects and, on clients, the minimal
+    replication cues.
+  - The spell PIE test found it.
+- **Test grove:** `PCG_HarvestDensePines` is a copy of `PCG_HarvestDeadPines`
+  with 2.2 m cells and ±40 cm jitter. `Harvest_PcgDensePineGrove` places it in
+  `Lvl_HarvestPickaxe`: 3 × 3 trunks between x 1640 and 2160, y -1700 and
+  -1190, south of the stand.
+- **Tags** (`Config/DefaultGameplayTags.ini`):
+  - `Ability.Harvesting.Spell` and `.WideSwing`;
+  - `Harvest.Spell.Known` and `Harvest.Spell.WideSwing`;
+  - `GameplayCue.Harvesting.Spell.WideSwing`,
+    `GameplayCue.Harvesting.ToolHit.Spectral` and
+    `GameplayCue.Harvesting.ToolHit.Stone.Spectral`;
+  - `SkillTree.Node.Harvesting.WideSwing`.
+
+##### Measurements
+
+- **Pick path:** under the spell the pickaxe captured 3 targets and took the
+  100 cm block behind the struck one (`PickaxeStrikeUnderTheSpellReachesTheVeinBehind`,
+  at 150 cm reach and again at 300). The pickaxe entries stay.
+- **Work saved:** standalone PIE, scripted, with the spell kept active.
+  - The player walks to the nearest standing trunk, stands 85 cm in front of
+    it on the line from where it stood, and chops it empty.
+  - Every run took all 4 sections of every trunk.
+
+  | Stand | Reach | Swings | Walks | Walked | Game time |
+  | --- | --- | --- | --- | --- | --- |
+  | Dense grove, 9 trunks 2.2 to 2.8 m apart | no spell | 36 | 9 | 51.6 m | 22.5 s |
+  | Dense grove | +150 cm | 29 | 8 | 49.9 m | 18.5 s |
+  | Dense grove | +300 cm | 24 | 6 | 48.0 m | 14.9 s |
+  | Dense grove | +400 cm | 20 | 5 | 45.8 m | 12.5 s |
+  | `Harvest_PcgDeadPineStand`, 12 trunks | none, +150 or +400 cm | 48 | 12 | 105.1 m | 29.9 s |
+
+  - The stands of `Lvl_HarvestPickaxe` and `Lvl_ResourceParity` use the
+    6.5 m cells of `PCG_HarvestDeadPines`: neighbouring trunks stand 4.9 to
+    8 m apart, veins 3.3 to 5.5 m. No reach inside the 400 cm clamp lets a
+    swing reach a second resource there.
+  - At +150 cm the spell saved a fifth of the swings even in the dense grove,
+    too weak to read. **Retuned to +300 cm**, a third fewer swings and walks
+    while it runs.
+  - Running for about 40 to 50 % of steady chopping (25 swings to fill, 10 s),
+    that is roughly a sixth fewer swings over time in dense groves.
+- **HRW-05a double count:** from the Q press to the server's confirmation, the
+  caster's client never held more than one Wide Swing effect in any frame. Its
+  tuned `SwingTargets` never exceeded 3. The overlap is not visible, so the
+  effect scan stays as it is.
+- **Capture edges:** the SwingTargets each swing captured, client/server:
+  1/1, then four times 3/3, then 1/1 twice. Q and the next swing in the same
+  frame agree from the first swing, and the expiry produced no mismatch (bound:
+  at most one).
+- **Caster cues:** per wide swing the caster predicted 2 spectral hits and
+  absorbed both server copies.
+
+##### Tests
+
+- `SurvivalRpg.Harvesting.Content.WideSwingSpellContract` checks:
+  - the Spells node of the shared tree teaches the spell, a Blueprint whose
+    native base is `URpgGameplayAbility`, predicted and independent, blocked
+    by `Harvest.Spell.Active`;
+  - its cost: an instant spend of Focus that `CheckCost` refuses one point
+    short of full and accepts on a full meter;
+  - the effect: a fixed duration above 0, no stacking, the granted tags,
+    `ClearOnRespawn`, the looping cue, and Ability Tunings that name the swing
+    ids, add, stay inside the clamps and widen the axe;
+  - the looping cue's actor notify;
+  - both swings' Wide Swing form cues: impact notifies under their hit cue's
+    tag.
+- `SharedHarvestingTreeContract`, relaxed: a Spells node grants exactly one
+  ability with an `Ability.Harvesting.Spell.*` id and no input tag, is Active,
+  needs no rune and grants `Harvest.Spell.Known`; talents still grant none.
+- `CatalogContract`, relaxed: spells stay outside the fifteen talents and five
+  branches, and `MaxPoints` covers one path through every branch plus every
+  spell.
+- `FocusFillContract`: the gain requires `Harvest.Spell.Known`.
+- `SurvivalRpg.UI.CharacterStats.FocusSpellDrainsTheMeter`:
+  - a timed effect with the configured tag starts the drain, which reads its
+    duration and remaining time;
+  - removal ends it;
+  - a loose tag shows a full bar;
+  - an unbound model and an empty setting ignore spells.
+- `SurvivalRpg.AbilitySystem.Cues.ActiveCuesReachTheFirstAvatar`: a loose cue
+  and an effect cue started without an avatar play once on the first pawn, and
+  a repeated binding replays nothing.
+- `SurvivalRpg.Network.HarvestSpellPIE`, rendered, listen server, a client and
+  a late joiner:
+  - `ClientCastPredictsWidensSwingsShowsEverywhereAndExpires`:
+    - an early press fails for its cost;
+    - one landed swing fills the meter;
+    - Q and the next swing go out in the same frame, and the predicted effect
+      exists on the client before the server knows it;
+    - the swing takes the front and the behind trunk on the server, and the
+      caster predicts both spectral hits and plays each once;
+    - the host sees the tag and the cue actor on the caster;
+    - a late joiner sees the cue but neither the caster's focus nor its
+      effect;
+    - the caster swings without pause across the expiry, which gives the
+      capture bound and a single target again;
+    - every client sees the cue end.
+  - `PickaxeStrikeUnderTheSpellReachesTheVeinBehind`: the pick path
+    measurement.
+- `HarvestFocusPIE` grants `Harvest.Spell.Known` on the server, since the gain
+  now needs it.
+
+##### Validation
+
+All through `ue.py` with the MCP autostart off; my editor ran on port 8020 and
+the user's editor was not touched.
+
+- `build`: passed, 0 errors and 0 warnings.
+- `test SurvivalRpg.Harvesting SurvivalRpg.Progression.SkillTrees SurvivalRpg.Runes SurvivalRpg.AbilitySystem SurvivalRpg.UI --null-rhi`:
+  **216 / 216 passed**. One had a warning: `UI.Respawn.CommonUIComposition`,
+  the compiler note on the untouched `CUI_RespawnScreen`.
+- Rendered, one call each, after the retune: `HarvestSpellPIE` 2 / 2,
+  `HarvestFocusPIE` 1 / 1, `HarvestSwingPIE` 2 / 2, `LootHarvestPIE` 8 / 8,
+  `HarvestCuePIE` 2 / 2 and `CombatRemoteMeleePIE` 5 / 5: **20 / 20 passed**,
+  with only the usual `LogNetPackageMap` and `AdvancedFriendsInterfaceLog`
+  warnings.
+- Earlier, after the late-join fix: `SurvivalRpg.AbilitySystem.Cues` and
+  `SurvivalRpg.AbilitySystem.AbilitySet` 3 / 3; `SurvivalRpg.UI.SkillTreeMap`
+  and the tree contracts 12 / 12 after the node moved.
+- `python Build/Tools/AgentSkills/sync.py --check`: consistent.
+- **Agent PIE check** in `Lvl_HarvestPickaxe`, listen server and one client in
+  one process, driven by a Python script with the real F, left mouse and Q
+  keys:
+  - The client picked up the axe, earned a point and learned the node. Slot 1
+    showed `Ability.Harvesting.Spell.WideSwing`, the Q slot the spell's icon,
+    and the server granted `Harvest.Spell.Known`.
+  - The gain effect filled the meter to 96, and one chop filled it to 100 with
+    the full glow.
+  - Q spent it to 0 on client and server and showed the draining bar.
+  - Two wide swings in the grove took the struck trunk and the two behind it
+    each time (stock 3→1, 4→2, 4→2 on both machines), and all three were empty
+    two swings later.
+  - While the spell ran, both machines had an active `NS_Harvest_SpellEdge` on
+    the axe's `ToolMesh` at `TracePoint_Tip` and a cue actor owned by the
+    caster. Three seconds after expiry none was left.
+  - The host's capture of a wide swing shows teal sparks and a dust puff at
+    the trunk behind the one the client struck.
+  - After expiry the meter hid again.
+
+##### Failed attempts
+
+- **Learning in the agent check:** the client's `RequestUnlockNode` server
+  RPC, called from a slate post-tick Python callback on the client world's
+  component, never reached the server. Calling it on the server copy of the
+  same component runs the same validation. The axe pickup by F failed in 3 of
+  8 runs (driver timing).
+- **First node position:** x -560 overlapped the combat cluster on the shared
+  skill map (`UI.SkillTreeMap.Content.ExistingTreesFit`); x -480 clears it.
+- **Late joiner:** the first test run timed out because the late joiner had
+  the spell tag and an active cue but no cue actor. This led to the replay fix
+  above.
+- **Owner cue count:** routed cues on the caster include the server copies
+  that its predictions absorb; the test subtracts
+  `RpgCombatImpact::GetAbsorbedImpactCountForTests`.
+- **Field stock:** a harvest profile clamps `SectionCount` to 16; the test's
+  40 failed the first run.
+
+##### Limits
+
+- **Sparse stands:** the existing stands are too sparse for Wide Swing; the
+  spell pays off only where resources stand within about 3 to 4 m of each
+  other, as in the new test grove. World density is a design decision for the
+  user, not settled here.
+- **Look and sound:** the edge motes are small and were judged in stills, not
+  at full speed; the hum was not heard (no audio capture).
+  - The icon is shared with Division (`T_UI_Skill_WideWave`).
+  - The toast row uses the generic blocked icon.
+  - The drain bar's tint is close to the focus fill.
+- **Edge on a tool switch:** the edge attaches when the cue starts. A tool
+  switch during the spell keeps the effect but leaves the new tool without the
+  edge. Not tested.
+- **Learn route:** the agent check learned the node through the server copy of
+  the request, not the skill screen; the screen and its RPC are covered by the
+  skill tree PIE tests. The PIE test activates the spell's spec directly; the
+  agent check pressed the real Q.
+- **Unchanged design risks:** while runes stay active, each extra contact runs
+  the per-selection rune follow-ups (playtest with runes unsocketed).
+  Rejected contacts use up targets. Extra contacts ignore harvest protection
+  zones.
+- **Scan cost:** not profiled; no hitch was visible in the two-player check.
+
+##### Playtest
+
+1. Open `Lvl_HarvestPickaxe`, pick up the axe and chop pines until the
+   Harvesting mastery gives a point (level 2). No focus meter appears yet.
+2. Open the skills screen (H): the Harvesting tree opens on its Spells region.
+   Learn Wide Swing; Q now shows its icon.
+3. Chop: the teal gauge right of R fills, about 25 landed chops. Press Q
+   before it is full: "Focus not full".
+4. When it glows, press Q. The gauge turns into a draining bar for 10 s, teal
+   motes trail the axe and a quiet hum plays. Press Q again: "Wide Swing is
+   already running".
+5. Walk to the dense grove south of the pine stand and chop a trunk with
+   others behind it. Each chop takes a section from up to three trunks, with
+   teal sparks at each. After 10 s the chops take one trunk again.
+6. The pickaxe on an iron vein behaves the same under the spell.
+7. **Multiplayer:** play as listen server with two players. The client learns
+   and casts Wide Swing and chops in the grove while the host watches. The
+   host sees the motes on the client's axe and the teal sparks at every
+   struck trunk, and the host's own meter stays hidden. Swap roles.
 
 ## HRW-01 report
 
