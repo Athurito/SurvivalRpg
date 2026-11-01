@@ -1,6 +1,6 @@
 # Ranged combat roadmap
 
-Updated: 2026-10-26. Status: **Deferred; implementation start not scheduled**.
+Updated: 2026-11-01. Status: **In progress.** The user started the whole roadmap on 2026-11-01; its tasks are delivered one PR each in dependency order and validated by the user at the end. RNG-01 is done.
 
 This plan records the agreed first bow system: a player bow and a bow enemy using shared combat mechanisms, including visibly embedded arrows, breakage, and partial ammunition recovery. It also defines the extension boundary for later magic and abilities such as Rain of Arrows. This is a design and implementation handoff, not a report of implemented or tested gameplay.
 
@@ -221,7 +221,7 @@ All tasks are **Deferred** because their implementation start has not been selec
 
 | ID | Deliverable | Dependencies | Status |
 | --- | --- | --- | --- |
-| RNG-01 | The shared projectile for arrows and spells (the combat roadmap's "Projectile foundation"), retained source context, authoritative impacts, projectile defense, the fireball carrier contract, and proof that launching does not require equipment | Baseline refresh | Deferred |
+| RNG-01 | The shared projectile for arrows and spells (the combat roadmap's "Projectile foundation"), retained source context, authoritative impacts, projectile defense, the fireball carrier contract, and proof that launching does not require equipment | Baseline refresh | Done; user check with RNG-06 ([ranged-projectile-foundation.md](ranged-projectile-foundation.md), [PR #364](https://github.com/Athurito/SurvivalRpg/pull/364)) |
 | RNG-02 | Bow/arrow items, shot task, draw curves, inventory consumption, configurable costs/passive seams, recipes, and placeholder removal | RNG-01 | Deferred |
 | RNG-03 | Player input, shoulder camera, aim movement, grips, and draw/release animations on CMC/Manny | RNG-02 | Deferred |
 | RNG-03b | Impact recovery policies, the break roll, embedded world arrows and pickups, world grouping and cap, the player-hit rule, and salvage lifetime | RNG-03 | Deferred |

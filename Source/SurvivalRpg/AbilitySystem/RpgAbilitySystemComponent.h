@@ -66,6 +66,13 @@ public:
 	/** Immutable activation speed cap in cm/s, or zero without a local lease. Proxies use their movement snapshot. */
 	UFUNCTION(BlueprintPure, Category = "Rpg|Block")
 	float GetBlockMovementSpeedLimit() const;
+	/**
+	 * Server: the Damage.Type tags the active block's source can stop (FRpgWeaponBlockDefinition::BlockableDamageTypeTags),
+	 * published by the block ability while its block state applies and emptied when it clears. Not replicated. The damage
+	 * execution reads it for projectile damage; melee blocking ignores it so the owner's hit prediction stays on replicated state.
+	 */
+	void SetActiveBlockableDamageTypes(const FGameplayTagContainer& DamageTypes) { ActiveBlockableDamageTypes = DamageTypes; }
+	const FGameplayTagContainer& GetActiveBlockableDamageTypes() const { return ActiveBlockableDamageTypes; }
 
 	/** Acquires a positive sprint speed in cm/s for this exact predicted/authority activation; no client speed RPC is accepted. */
 	uint32 BeginSprintMovement(UGameplayAbility* Ability, float SprintSpeed);
@@ -285,6 +292,9 @@ private:
 	uint32 SprintMovementLease = 0;
 	uint32 LastSprintMovementLease = 0;
 	float SprintMovementSpeed = 0.f;
+
+	/** See GetActiveBlockableDamageTypes. */
+	FGameplayTagContainer ActiveBlockableDamageTypes;
 
 	void ResetBlockMovement();
 	TWeakObjectPtr<UGameplayAbility> BlockMovementAbility;

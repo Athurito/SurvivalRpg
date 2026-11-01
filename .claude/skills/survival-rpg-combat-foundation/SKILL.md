@@ -124,6 +124,12 @@ DamageEffectClass, Radius, Duration, TickInterval, bApplyOnce, bIgnoreOwner, Tar
 
 Specialized data lives in feature plugins, for example `DA_DamageArea_FireGround` with `GE_Damage_Fire_DOT` in `GF_Combat_Magic`. Spawn damage areas through GameplayAbilities, AnimNotifies or attack windows, portal actors, Dungeonbreak managers, or encounter spawners. Avoid placing feature-owned gameplay actors in main maps unless the map is a feature test map or the dependency is intentional.
 
+## Projectile guidance
+
+`ARpgCombatProjectile` (`Source/SurvivalRpg/Combat`) is the one projectile foundation for arrows and spells; `docs/ranged-projectile-foundation.md` describes it. Never add a second, spell- or arrow-specific projectile. Concrete projectiles are Blueprint subclasses that set class data (damage effect, damage type tags, speed, gravity, radius, impact cue, recovery policy) and attach their presentation under `VisualRoot`. Abilities launch them with `LaunchFromAbility`, which needs no equipment; native systems use `LaunchWithDamageSpec`. The server owns the sweep, the single impact and the damage; clients only fly and stop the presentation.
+
+A projectile is blocked only while the active block's source lists `Damage.Type.Projectile` in `FRpgWeaponBlockDefinition::BlockableDamageTypeTags` (shields do, swords do not), and its block cone faces the incoming flight, not the shooter. Melee blocking ignores that list. A perfect block never staggers a distant shooter.
+
 ## Abilities with montages
 
 Abilities may live in a GameFeature and reference montages in the same feature; the Experience or GameFeature action grants the ability set and input mapping, and the ability plays the montage and drives attack windows, traces, and effects. Core never references feature-only montages; a feature may reference core or shared character assets.

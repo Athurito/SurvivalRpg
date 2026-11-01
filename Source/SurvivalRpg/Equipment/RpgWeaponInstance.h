@@ -205,7 +205,8 @@ struct FRpgWeaponBlockDefinition
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Block")
 	bool bCanBlock = true;
 
-	// Damage type tags this block can stop. Basic sword/shield usually blocks Damage.Type.Melee only.
+	// Damage type tags this block can stop. Every block stops melee; add Damage.Type.Projectile so it also stops arrows
+	// and spell projectiles from inside its cone (shields do, swords do not). The server reads it while the block is up.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Block", meta = (Categories = "Damage.Type"))
 	FGameplayTagContainer BlockableDamageTypeTags;
 

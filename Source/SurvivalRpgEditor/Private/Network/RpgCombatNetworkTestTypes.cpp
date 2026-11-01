@@ -187,6 +187,7 @@ ARpgCombatNetworkTargetFixture::ARpgCombatNetworkTargetFixture(
 	HitCollision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	HitCollision->SetCollisionResponseToAllChannels(ECR_Ignore);
 	HitCollision->SetCollisionResponseToChannel(Rpg_TraceChannel_Weapon, ECR_Block);
+	HitCollision->SetCollisionResponseToChannel(Rpg_TraceChannel_Projectile, ECR_Block);
 	HitCollision->SetGenerateOverlapEvents(false);
 	HitCollision->SetCanEverAffectNavigation(false);
 

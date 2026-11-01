@@ -163,12 +163,14 @@ several players hit the same target:
 
 - **Spear:** second melee family from the Spear pack and the weapon meshes in
   `SkeletonProps` and `SkeletonCharacter`.
-- **Projectile foundation:** one native, server-authoritative and replicated
-  projectile for spells and arrows: movement, hit detection, damage through
-  GameplayEffects and an impact GameplayCue. The VFX-05 fireball flight system
-  and impact cue ([VFX roadmap](vfx-roadmap.md)) are its first content. It is
-  built once, as RNG-01 of the [ranged combat roadmap](ranged-combat-roadmap.md);
-  combat magic reuses it instead of adding its own projectile.
+- **Projectile foundation:** delivered by RNG-01 of the
+  [ranged combat roadmap](ranged-combat-roadmap.md) as `ARpgCombatProjectile`
+  ([ranged-projectile-foundation.md](ranged-projectile-foundation.md)): one
+  native, server-authoritative and replicated projectile for spells and arrows
+  with movement, hit detection, damage through GameplayEffects and an impact
+  GameplayCue. The VFX-05 fireball flight system and impact cue
+  ([VFX roadmap](vfx-roadmap.md)) are its first content; combat magic reuses
+  it instead of adding its own projectile.
 - **Spell area foundation:** one native, server-authoritative and replicated
   spell area that can move over the ground, applies damage over time through
   GameplayEffects and carries a looping GameplayCue. The VFX-08 fire tornado
