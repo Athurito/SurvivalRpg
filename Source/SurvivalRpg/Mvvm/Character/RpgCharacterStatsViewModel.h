@@ -155,6 +155,10 @@ protected:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Character Stats|Focus", meta = (AllowPrivateAccess = "true"))
 	bool bFocusFull = false;
 
+	/** Whether the HUD should show the focus meter: the focus set exists and holds focus. An empty meter stays hidden. */
+	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Character Stats|Focus", meta = (AllowPrivateAccess = "true"))
+	bool bShowFocus = false;
+
 	/** Armour attribute of the defense set. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Character Stats|Defense", meta = (AllowPrivateAccess = "true"))
 	float Armor = 0.0f;

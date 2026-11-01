@@ -944,6 +944,7 @@ authored values ([skill-trees.md](skill-trees.md#runtime-rules)). Each tag names
 | `Ability.Tuning.Harvest.WorkerLifetime` | seconds the workers keep working (Master Worker, MST-09c) | s |
 | `Ability.Tuning.Harvest.SwingReach` | tool swings only: reach of the swing's trace beyond the tool tip, and of the server's reach check, base 0, at most 400 (HRW-03) | cm |
 | `Ability.Tuning.Harvest.SwingTargets` | tool swings only: harvestable contacts one swing commits, rounded, base 1, 1 to 8 (HRW-03) | contacts |
+| `Ability.Tuning.Harvest.FocusGain` | focus one landed execution adds through `FocusGainEffect`, base `FocusGainPerSwing` (0 fills nothing), at least 0 (HRW-05b) | focus |
 
 - Rune ranks add their rune's values, and talents add or multiply them, only while the node's runes sit in the tool
   in hand (MST-06c). The [mastery map reports](mastery-map-roadmap.md) describe each rune and talent.

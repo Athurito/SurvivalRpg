@@ -106,6 +106,7 @@ Behavior observed in this project's UE 5.8 editor sessions on the primary workst
 ## Captures
 
 - Never capture the whole desktop; it once captured the user's private mail window. Read the editor log, use `CaptureEditorImage`, or use `SlateInspectorToolset.SlateInspectorToolset` with `Windows` (action `list`, then `select` by index) and `Screenshot` (`ref: ""`) for a PIE client window titled `... [NetMode: Client 1]`. Capture packaged or `-game` processes with `PrintWindow` on their own window handle.
+  - The `Windows` indices change whenever another window takes focus, for example after a `Type` into the editor's `Cmd` box or a Python progress popup. List and select by title right before each `Screenshot`; a stale index captured a notification window (HRW-05b).
 - `CaptureViewport` renders the editor world only, also during PIE.
 - A map without lights captures black, and `viewmode unlit` does not affect `CaptureViewport`. Spawn temporary lights for a shot and delete them before saving.
 - Frame-exact PIE shots: `execute_console_command(pie_world, 'HighResShot 1', pc)` from a post-tick callback writes the game viewport without editor UI to `Saved/Screenshots/WindowsEditor/HighresScreenshot#####.png`. Its frame takes much longer; under `slomo` a per-frame sampler then measured a 60 ms hitstop as 124 ms (HRW-04d).

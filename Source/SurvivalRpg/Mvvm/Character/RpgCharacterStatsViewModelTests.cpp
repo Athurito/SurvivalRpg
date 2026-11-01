@@ -382,6 +382,7 @@ bool FRpgCharacterStatsViewModelFocusTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("The set's appearance notifies once"), HasFocusNotifications, 1);
 	TestEqual(TEXT("A new meter is empty"), ReadFloat(ViewModel, TEXT("Focus")), 0.0f);
 	TestEqual(TEXT("A new meter holds the set's maximum"), ReadFloat(ViewModel, TEXT("MaxFocus")), 100.0f);
+	TestFalse(TEXT("An empty meter stays hidden"), ReadBool(ViewModel, TEXT("bShowFocus")));
 	TestTrue(TEXT("Full health and stamina still count as full vitals"), ReadBool(ViewModel, TEXT("bVitalsFull")));
 
 	AbilitySystem->SetNumericAttributeBase(URpgFocusSet::GetFocusAttribute(), 40.0f);
@@ -389,6 +390,7 @@ bool FRpgCharacterStatsViewModelFocusTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Focus progress is current over maximum"), ReadFloat(ViewModel, TEXT("FocusProgress")), 0.4f);
 	TestEqual(TEXT("A focus change notifies the progress"), ProgressNotifications, 1);
 	TestFalse(TEXT("A partial meter is not full"), ReadBool(ViewModel, TEXT("bFocusFull")));
+	TestTrue(TEXT("A meter holding focus shows"), ReadBool(ViewModel, TEXT("bShowFocus")));
 	TestTrue(TEXT("A partial meter leaves the vitals full"), ReadBool(ViewModel, TEXT("bVitalsFull")));
 	TestFalse(TEXT("Focus alone does not show the vitals"), ReadBool(ViewModel, TEXT("bShowVitals")));
 	TestFalse(TEXT("Gaining focus is no combat"), ReadBool(ViewModel, TEXT("bInCombat")));
@@ -401,6 +403,7 @@ bool FRpgCharacterStatsViewModelFocusTest::RunTest(const FString& Parameters)
 	AbilitySystem->SetNumericAttributeBase(URpgFocusSet::GetFocusAttribute(), 0.0f);
 	TestFalse(TEXT("A spent meter is no longer full"), ReadBool(ViewModel, TEXT("bFocusFull")));
 	TestEqual(TEXT("Spending notifies the full flag again"), FullNotifications, 2);
+	TestFalse(TEXT("A spent meter hides again"), ReadBool(ViewModel, TEXT("bShowFocus")));
 
 	ViewModel->UnbindAbilitySystem();
 	TestFalse(TEXT("Unbinding clears focus"), ReadBool(ViewModel, TEXT("bHasFocus")));

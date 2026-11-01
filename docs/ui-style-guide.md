@@ -49,6 +49,7 @@ derived from them.
 | 17 | RarityUncommon | — | 0.16, 0.55, 0.20 | Item frames |
 | 18 | RarityRare | — | 0.16, 0.33, 0.80 | Item frames |
 | 19 | RarityEpic | — | 0.48, 0.18, 0.72 | Item frames |
+| 20 | Focus | `#4F8C86` | 0.0782, 0.2622, 0.2384 | Harvesting focus meter and its full glow (HRW-05b) |
 
 The rarity roles are darker frame colours; the rarity rings in equipment and
 weapon slots use them. The item text colours stay in
@@ -123,6 +124,11 @@ Since UI-01b, `M_UI_Panel` also has:
   glow always take the tint. A low value lets a state colour show only in the
   frame, as on the skill plaques.
 
+Since HRW-05b, `M_UI_Panel` also has a `Pulse` group: `PulseRate` (breaths
+per second) and `PulseDepth` (0 to 1, how far each breath dims the
+opacity). Both default to 0, which leaves every existing panel unchanged. Use
+it for a state that waits for the player, such as a full focus meter.
+
 `M_UI_ResourceBar` draws bar fills:
 - **Shape:** `Radius`, `EdgeWidth`, `EdgeOpacity` (darkened inner edge).
 - **Fill:** `FillOpacity`, `GradientStrength`, `SheenStrength` (a static
@@ -153,6 +159,8 @@ material's colour shows.
 | `MI_UI_ResourceBar_Background` | Panel | Bar track |
 | `MI_UI_ResourceBar_Health`, `_Stamina`, `_Mana`, `_XP`, `_Load` | Resource bar | Bar fills |
 | `MI_UI_ResourceBar_Ticks` | Resource bar | Segment ticks only, as an overlay above a bar |
+| `MI_UI_ResourceBar_Focus` (`GF_Harvesting_Magic/UI`) | Resource bar | Focus meter fill: role 20, four segments, stronger sheen |
+| `MI_UI_FocusFullGlow` (`GF_Harvesting_Magic/UI`) | Panel | Inner glow around a full focus meter, role 20, pulsing about once a second |
 
 | `MI_UI_Plaque`, `_PlaqueHovered`, `_PlaquePressed` | Panel | Octagonal skill plaques; the widget's state colour tints frame and glow |
 | `MI_UI_PlaqueRing` | Panel | Outer selection ring around a plaque |
@@ -376,6 +384,11 @@ styles for newly placed widgets.
   - Fade HUD groups with `URpgHudFadeBox`: pin while the content matters,
     pulse on one-off events. Hide completely what only matters on change
     (vitals, enemy bars); dim controls (quickbar, abilities) to 40 %.
+  - Resource meters of the Q/E/R abilities, such as harvesting focus, are
+    18 × 64 vertical gauges right of the ability bar, in the
+    `UI.HUD.Slot.AbilityResource` slot outside the bars' fade. They keep their
+    space while the resource exists, show their content only while it holds
+    something, and pulse a glow in the resource's role when full.
   - Text over the world sits on a plate (`MI_UI_Panel_Inset` at 75 %) so it
     stays readable on bright scenes.
   - Menu key hints (`CUI_HudKeyHints`) sit in a right-aligned wrap box, two

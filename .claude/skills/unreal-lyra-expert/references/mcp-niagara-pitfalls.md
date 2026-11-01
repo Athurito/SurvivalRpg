@@ -68,6 +68,12 @@ Behavior observed while building this project's VFX library on UE 5.8. Read it t
 - Exposure-compensated `M_FX_Additive` in daylight: colour gain 0.5-4 reads orange, from about 8 yellow-white, and below 0.25 it is barely visible.
 - `M_FX_DecalSubUV` is the Niagara Examples decal master.
 - `MaterialEditingLibrary.get_input_node_output_name_for_material_expression` dereferenced null and crashed the editor. Dump material wiring with `get_inputs_for_material_expression` and `get_material_expression_input_names` only.
+- UI palette roles (HRW-05b role 20, Focus):
+  - `MPC_UI_Palette`: set `VectorParameters` with `ObjectTools.set_properties` to the array `get_properties` returned plus one element with a fresh uppercase GUID as `id`.
+  - `MF_UI_PaletteRole`: add a `MaterialExpressionCollectionParameter` with `MaterialTools.add_expression`. Set its `Collection` first and `ParameterName` in a second call, which resolves the parameter id.
+  - Widen the custom node's array and clamp in `Code`, append an `Inputs` element modelled on the last one with the new expression, and `recompile` the function. The new input then showed in `get_expression_inputs`, and no "invalid parameter" error was logged.
+  - The recompile marks every master that calls the function dirty (`M_UI_Glyph`, `M_UI_Panel`, `M_UI_ResourceBar`). Save them with the change.
+- A new Custom node's `Inputs` start as one unnamed element. Rename that element in one call, then send the longer array in another, or the size and element change together are rejected.
 
 ## Debugging and capture
 

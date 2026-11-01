@@ -327,6 +327,7 @@ void URpgCharacterStatsViewModel::RefreshAttributes()
 	UE_MVVM_SET_PROPERTY_VALUE(MaxFocus, NewMaxFocus);
 	UE_MVVM_SET_PROPERTY_VALUE(FocusProgress, GetRatio(NewFocus, NewMaxFocus));
 	UE_MVVM_SET_PROPERTY_VALUE(bFocusFull, bNewHasFocus && NewMaxFocus > 0.0f && NewFocus >= NewMaxFocus);
+	UE_MVVM_SET_PROPERTY_VALUE(bShowFocus, bNewHasFocus && NewFocus > 0.0f);
 	UE_MVVM_SET_PROPERTY_VALUE(Armor, NewArmor);
 	SetText(ArmorText, FText::AsNumber(FMath::RoundToInt(NewArmor)), FFieldNotificationClassDescriptor::ArmorText);
 
