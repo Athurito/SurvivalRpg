@@ -544,7 +544,7 @@ void URpgPortalTravelComponent::TryClientDeferredUnloadAfterExit()
 			UE_LOG(LogRpgPortalTravel, Warning, TEXT("Portal travel deferred client unload timed out. RequestId=%d Controller=%s Portal=%s InstanceName=%s"),
 				PendingUnloadRequestId,
 				*GetNameSafe(GetOwner()),
-				*GetNameSafe(PendingUnloadPortal),
+				*GetNameSafe(PendingUnloadPortal.Get()),
 				*PendingUnloadLevelInstanceName);
 		}
 
@@ -738,7 +738,7 @@ void URpgPortalTravelComponent::ResetRequestData()
 
 void URpgPortalTravelComponent::ResetPendingClientUnloadData()
 {
-	PendingUnloadPortal = nullptr;
+	PendingUnloadPortal.Reset();
 	PendingUnloadLevelInstanceName.Reset();
 	PendingUnloadRequestId = 0;
 	ClientDeferredUnloadStartTime = 0.0;
