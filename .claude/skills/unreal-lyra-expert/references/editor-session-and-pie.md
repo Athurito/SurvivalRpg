@@ -33,6 +33,9 @@ Behavior observed in this project's UE 5.8 editor sessions on the primary workst
 - `unreal.Rotator(a, b, c)` takes roll, pitch, yaw in that order. Pass keywords, `unreal.Rotator(roll=0, pitch=0, yaw=90)`; a positional yaw of -90 in the middle pitched a PIE pawn onto its back (HRW-01).
 - `UWidget::SynchronizeProperties` pushes the UMG `Clipping` property onto the Slate widget. A native widget that clips in its Slate `Construct` must also default its UMG `Clipping`, or Widget Blueprints draw it unclipped (MST-02).
 - The PIE window size comes from `NewWindowWidth`/`NewWindowHeight` on the `LevelEditorPlaySettings` CDO. They are not saved per user: after a restart they fall back to the engine's 1280 x 720, and only `LastSize` in `Saved/Config/WindowsEditor/EditorPerProjectUserSettings.ini` keeps the last window size (MST-10b). On this workstation they were 406 × 212, which squashes menus; set them through `ObjectTools.set_properties` before screenshots and restore them afterwards.
+- **Slow start from a stale changelist file:** `Saved/SourceControl/UncontrolledChangelists.json` can list thousands of files that no longer exist. The Git provider then checks each one on every start: about 586 `SourceControl` lines, and 67 to 95 s without any log output.
+  - On 2026-11-01, renaming the file while the editor was closed cut `(Engine Initialization) Total time` from 128 to 158 s down to 16 s.
+  - Compare that log line across `Saved/Logs/SurvivalRpg*.log` when a start feels slow. The file is local and ignored.
 - The MCP server answers about 30 s after launch. Probe the endpoint, for example with `curl http://127.0.0.1:8000/mcp`, instead of parsing `netstat`, whose output is localized on this machine. After a relaunch, the old log can still hold a ready line.
 - An MCP client session that started before the editor has no editor tools. The endpoint still answers a small streamable-HTTP client: `initialize`, then `tools/call` with `call_tool`.
   - A Python standard-library client works (HRW-03): POST JSON-RPC with `Accept: application/json, text/event-stream`, keep the `Mcp-Session-Id` response header of `initialize`, send `notifications/initialized`, and send the header with every call. A reply can come as plain JSON or as server-sent events; read the last `data:` line. The tool's result is the text content, a JSON string with `returnValue`.
@@ -151,4 +154,11 @@ Behavior observed in this project's UE 5.8 editor sessions on the primary workst
   - never author assets or start PIE there;
   - never attach the debugger to it without asking, because a breakpoint freezes the whole editor.
 - **RiderLink:** Rider reaches the editor only through RiderLink, an editor plugin Rider installs into the engine or the project. On 2026-11-01 it was installed in neither, and `ue_status` answered `{"connected":false}` while the user's editor ran. Tools on Rider's own index, such as `get_run_configurations` with `rootFolder` set to the project folder, answered. Prefer installing RiderLink into the engine (`Engine/Plugins/Developer/RiderLink`), so the repository stays clean.
-- **Status:** beyond the tool listing, `get_run_configurations` and `ue_status`, the server is not yet exercised in this project. Record further findings here.
+- **Inspections (startup analysis, 2026-11-01):**
+  - `lint_files` works without RiderLink, at about 1.8 s per file; a run over 989 project files found one real lifetime bug.
+  - `get_project_problems` only reads Rider's Problems view, so it stays empty until Rider has analysed the files.
+  - `min_severity: "warning"` still returns the style hints, about 10,000 of them.
+  - Expect false positives: MVVM-bound and MCP-toolset functions show as unused, and a hidden-friend `operator==` shows as an error.
+  - `get_solution_projects` returns about 139 KB and exceeds the tool-result limit.
+- **Own clients:** a standard-library client gets HTTP 404 after seconds to minutes and must call `initialize` again.
+- **Status:** RiderLink and the `ue_*` tools are still untested. Record further findings here.
