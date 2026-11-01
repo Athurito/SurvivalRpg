@@ -16,6 +16,7 @@ Behavior observed in this project's UE 5.8 editor sessions on the primary workst
 - [Profiling](#profiling)
 - [Packaging and separate processes](#packaging-and-separate-processes)
 - [Headless editor](#headless-editor)
+- [Rider MCP](#rider-mcp)
 
 ## Launch an editor
 
@@ -135,3 +136,18 @@ Behavior observed in this project's UE 5.8 editor sessions on the primary workst
 
 - `UnrealEditor-Cmd.exe <project>.uproject -run=pythonscript -script=<file> -unattended -nullrhi` runs a read-only Python dump without a GPU window or an MCP port, also for another project such as the asset library.
 - Git Bash rewrites `/Game/...` arguments into Windows paths. Set `MSYS_NO_PATHCONV=1` when passing asset paths to scripts, also for `python -c` code strings that contain them; lookups otherwise fail silently.
+
+## Rider MCP
+
+- **Setup:** Claude Code's `.mcp.json` also configures `rider`, the JetBrains Rider MCP server. Rider 2026.2.4 answered on `http://127.0.0.1:64482/stream` and listed 91 tools on 2026-11-01. It responds only while Rider runs with its MCP server enabled (Settings, Tools, MCP Server). If Rider shows another port there, update the URL. Codex has no Rider entry yet.
+- **Use it for C++ work in the solution:**
+  - build state and problems: `build_solution_start`, `build_solution_state`, `get_file_problems`, `get_project_problems`;
+  - symbol search and IDE refactorings: `search_symbol`, `rename_refactoring`, `safe_delete`, `extract_method`, `change_api_signature`;
+  - native debugging: `xdebug_attach_to_process`, `xdebug_set_breakpoint`, `xdebug_get_stack`, `xdebug_get_frame_values`.
+- **What it does not replace:** author Blueprint, Widget Blueprint, GameplayAbility and DataAsset assets through `unreal-mcp`. Build, test and cook through `ue.py`; only its verdict backs a claim that the project compiles or tests pass.
+- **Its Unreal tools** (`search_assets`, `get_asset_properties`, `find_default_value_overrides`, `ue_export_blueprint_nodes`, `ue_execute_python`, `ue_play`) reach the editor that Rider's RiderLink connects to, normally the user's editor in the main checkout. Treat that editor like port 8000:
+  - inspect it only with the user's consent;
+  - never author assets or start PIE there;
+  - never attach the debugger to it without asking, because a breakpoint freezes the whole editor.
+- **RiderLink:** Rider reaches the editor only through RiderLink, an editor plugin Rider installs into the engine or the project. On 2026-11-01 it was installed in neither, and `ue_status` answered `{"connected":false}` while the user's editor ran. Tools on Rider's own index, such as `get_run_configurations` with `rootFolder` set to the project folder, answered. Prefer installing RiderLink into the engine (`Engine/Plugins/Developer/RiderLink`), so the repository stays clean.
+- **Status:** beyond the tool listing, `get_run_configurations` and `ue_status`, the server is not yet exercised in this project. Record further findings here.
