@@ -147,4 +147,5 @@ Behavior observed in this project's UE 5.8 editor sessions on the primary workst
   - inspect it only with the user's consent;
   - never author assets or start PIE there;
   - never attach the debugger to it without asking, because a breakpoint freezes the whole editor.
-- **Status:** beyond the tool listing, the server is not yet exercised in this project. Record the first real findings here.
+- **RiderLink:** Rider reaches the editor only through RiderLink, an editor plugin Rider installs into the engine or the project. On 2026-11-01 it was installed in neither, and `ue_status` answered `{"connected":false}` while the user's editor ran. Tools on Rider's own index, such as `get_run_configurations` with `rootFolder` set to the project folder, answered. Prefer installing RiderLink into the engine (`Engine/Plugins/Developer/RiderLink`), so the repository stays clean.
+- **Status:** beyond the tool listing, `get_run_configurations` and `ue_status`, the server is not yet exercised in this project. Record further findings here.
