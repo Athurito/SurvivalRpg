@@ -18,7 +18,7 @@ architecture.
 
 | Roadmap | Status |
 | --- | --- |
-| [Harvesting rework](docs/harvesting-rework-roadmap.md) (HRW) | Active: HRW-01 to 04e merged, HRW-05 awaits design review |
+| [Harvesting rework](docs/harvesting-rework-roadmap.md) (HRW) | Active: HRW-01 to 04e, 05a and 05b merged; HRW-05c next |
 | [VFX](docs/vfx-roadmap.md) | Planned tasks |
 | [UI](docs/ui-roadmap.md) | Planned tasks |
 | [Ranged combat](docs/ranged-combat-roadmap.md) | Deferred |
