@@ -67,7 +67,7 @@ how a hit is found, not what a hit does.
 | HRW-04e | Third playtest: a dull stone sound for the pickaxe, and a swing that winds up overhead and strikes down fast | Merged: [#348](https://github.com/Athurito/SurvivalRpg/pull/348) |
 | HRW-05a | Ability tunings from active GameplayEffects: an Ability Tunings effect component that `GetTunedValueForSpec` folds after the tree and runes; native only, no assets | Merged: [#352](https://github.com/Athurito/SurvivalRpg/pull/352) |
 | HRW-05b | Focus resource and fill: `URpgFocusSet` on the PlayerState, a server fill once per landed swing, the gain effect, read-only view-model fields and the HUD meter | Merged: [#353](https://github.com/Athurito/SurvivalRpg/pull/353) |
-| HRW-05c | Wide Swing on Q, closing the first playable's magical harvesting ability: spell ability, cost and spell effects, cues, tree node, failure toast row, asset contracts and a spell PIE test | Planned |
+| HRW-05c | Wide Swing on Q, closing the first playable's magical harvesting ability: spell ability, cost and spell effects, cues, tree node, failure toast row, asset contracts and a spell PIE test | In review: [#358](https://github.com/Athurito/SurvivalRpg/pull/358) |
 | HRW-05d | Split the harvesting tree per tool (axe on Logging, pickaxe on Mining) with their own spells, and visible talents in place of the rune-gated ones | Planned |
 | HRW-05e | Runes as spell modifiers: tag-gated modifier effects applied with the spell, the ranks' always-on tunings cleared, rune bar and dormancy UI reworked | Planned |
 
@@ -854,12 +854,12 @@ to three resources.
 
 #### HRW-05c report
 
-Branch `claude/hrw-05c-wide-swing`, PR [#PRNUM](PRURL):
+Branch `claude/hrw-05c-wide-swing`, PR [#358](https://github.com/Athurito/SurvivalRpg/pull/358):
 
 - `982a870e`: the spell, its assets, the native seams and the tests.
 - `9c7fbdfa`: the reach retune after the measurement, the dense test grove, the
   Spells node placement and brighter edge motes.
-- A third commit adds the docs, the skill references and this report.
+- `4f478b97`: the docs, the skill references and this report; a fourth commit records the PR here and in the status row.
 
 - **Spell:** `GA_HarvestSpell_WideSwing` (`GAS/Abilities`) is a Blueprint on
   `URpgGameplayAbility`. It keeps the native defaults: LocalPredicted,
