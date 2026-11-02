@@ -88,7 +88,13 @@ void URpgEmbeddedProjectileHostComponent::EndPlay(const EEndPlayReason::Type End
 bool URpgEmbeddedProjectileHostComponent::CanRecover() const
 {
 	const AActor* Owner = GetOwner();
-	if (!Owner || !Owner->HasAuthority() || Owner->IsActorBeingDestroyed() || !FindLootSource() || !FindCorpseInventory())
+	const URpgLootSourceComponent* LootSource = FindLootSource();
+	if (!Owner || !Owner->HasAuthority() || Owner->IsActorBeingDestroyed() || !LootSource || !FindCorpseInventory())
+	{
+		return false;
+	}
+	// A harvest-only corpse never builds loot, so an arrow in it could never be looted.
+	if (!LootSource->HasDeathLoot())
 	{
 		return false;
 	}
@@ -179,21 +185,22 @@ int32 URpgEmbeddedProjectileHostComponent::RecoverProjectile(
 	Record.GroupId = GroupId;
 	const int32 RecordId = Record.RecordId;
 
-	// A corpse whose loot is already built takes the projectile into it at once.
+	// A corpse whose loot is already built takes the projectile into it at once, or withdraws it again.
 	OfferPendingToLoot();
-	return RecordId;
+	return Records.ContainsByPredicate([RecordId](const FRecord& Entry) { return Entry.RecordId == RecordId; }) ? RecordId : 0;
 }
 
-void URpgEmbeddedProjectileHostComponent::CancelRecord(const int32 RecordId)
+bool URpgEmbeddedProjectileHostComponent::CancelRecord(const int32 RecordId)
 {
 	const int32 Index = Records.IndexOfByPredicate([RecordId](const FRecord& Record) { return Record.RecordId == RecordId; });
 	if (Index == INDEX_NONE || Records[Index].State != ERecordState::Pending)
 	{
-		return;
+		return false;
 	}
 	const int32 GroupId = Records[Index].GroupId;
 	Records.RemoveAt(Index);
 	ChangeGroupCount(GroupId, -1);
+	return true;
 }
 
 int32 URpgEmbeddedProjectileHostComponent::GetPendingCount() const
@@ -240,12 +247,9 @@ void URpgEmbeddedProjectileHostComponent::HandleLootPopulated(URpgLootSourceComp
 			Record.State = ERecordState::Credited;
 		}
 	}
-	for (const FRecord& Record : Records)
+	if (Inventory)
 	{
-		if (Record.State == ERecordState::Credited && Inventory)
-		{
-			ObservedCorpseCounts.Add(Record.Ammunition, Inventory->GetTotalItemCountByDefinition(Record.Ammunition));
-		}
+		RetireTakenCredits(*Inventory);
 	}
 	// Projectiles that hit while the loot was rolled but before it was built join now.
 	OfferPendingToLoot();
@@ -260,56 +264,77 @@ void URpgEmbeddedProjectileHostComponent::OfferPendingToLoot()
 		return;
 	}
 
-	for (FRecord& Record : Records)
+	// By id: each addition commits the corpse inventory, whose post-commit may change the records.
+	TArray<int32> PendingIds;
+	for (const FRecord& Record : Records)
 	{
-		if (Record.State != ERecordState::Pending)
+		if (Record.State == ERecordState::Pending)
+		{
+			PendingIds.Add(Record.RecordId);
+		}
+	}
+	for (const int32 RecordId : PendingIds)
+	{
+		const FRecord* Record = Records.FindByPredicate([RecordId](const FRecord& Entry) { return Entry.RecordId == RecordId; });
+		if (!Record || Record->State != ERecordState::Pending)
 		{
 			continue;
 		}
 		FInventoryPickup Payload;
 		FPickupTemplate& Template = Payload.Templates.AddDefaulted_GetRef();
-		Template.ItemDef = Record.Ammunition;
+		Template.ItemDef = Record->Ammunition;
 		Template.StackCount = 1;
-		if (!LootSource->AddSupplementalLoot(Payload))
+		const bool bAdded = LootSource->AddSupplementalLoot(Payload);
+		FRecord* Added = Records.FindByPredicate([RecordId](const FRecord& Entry) { return Entry.RecordId == RecordId; });
+		if (bAdded && Added)
 		{
-			continue;
+			Added->State = LootSource->IsLootPopulated() ? ERecordState::Credited : ERecordState::Queued;
 		}
-		Record.State = LootSource->IsLootPopulated() ? ERecordState::Credited : ERecordState::Queued;
-		if (Record.State == ERecordState::Credited)
+		else if (!bAdded && LootSource->IsLootPopulated())
 		{
-			ObservedCorpseCounts.Add(Record.Ammunition, Inventory->GetTotalItemCountByDefinition(Record.Ammunition));
+			// The built loot could not take it, such as a full corpse: the projectile is lost, and so is its shaft.
+			CancelRecord(RecordId);
 		}
 	}
 }
 
-void URpgEmbeddedProjectileHostComponent::HandleInventoryCommitted(URpgInventoryManagerComponent* Inventory)
+void URpgEmbeddedProjectileHostComponent::RetireTakenCredits(const URpgInventoryManagerComponent& Inventory)
 {
-	if (!Inventory || Inventory != FindCorpseInventory())
+	// Items are interchangeable: credits retire, oldest first, only while the corpse holds fewer items of an ammunition
+	// than it has credits for it. Stacks merged, split or moved inside the corpse, and the loot table's own arrows taken
+	// first, retire nothing.
+	TMap<TSubclassOf<URpgInventoryItemDefinition>, int32> Excess;
+	for (const FRecord& Record : Records)
 	{
-		return;
-	}
-
-	// Only a drop in the aggregate quantity is a take; stacks merged, split or moved inside the corpse are not.
-	for (TPair<TSubclassOf<URpgInventoryItemDefinition>, int32>& Observed : ObservedCorpseCounts)
-	{
-		const int32 Count = Inventory->GetTotalItemCountByDefinition(Observed.Key);
-		int32 Taken = Observed.Value - Count;
-		Observed.Value = Count;
-		for (FRecord& Record : Records)
+		if (Record.State == ERecordState::Credited)
 		{
-			if (Taken <= 0)
+			int32* Count = Excess.Find(Record.Ammunition);
+			if (!Count)
 			{
-				break;
+				Count = &Excess.Add(Record.Ammunition, -Inventory.GetTotalItemCountByDefinition(Record.Ammunition));
 			}
-			if (Record.State == ERecordState::Credited && Record.Ammunition == Observed.Key)
-			{
-				Record.State = ERecordState::Retired;
-				ChangeGroupCount(Record.GroupId, -1);
-				--Taken;
-			}
+			++*Count;
+		}
+	}
+	for (FRecord& Record : Records)
+	{
+		int32* Count = Record.State == ERecordState::Credited ? Excess.Find(Record.Ammunition) : nullptr;
+		if (Count && *Count > 0)
+		{
+			Record.State = ERecordState::Retired;
+			ChangeGroupCount(Record.GroupId, -1);
+			--*Count;
 		}
 	}
 	Records.RemoveAll([](const FRecord& Record) { return Record.State == ERecordState::Retired; });
+}
+
+void URpgEmbeddedProjectileHostComponent::HandleInventoryCommitted(URpgInventoryManagerComponent* Inventory)
+{
+	if (Inventory && Inventory == FindCorpseInventory())
+	{
+		RetireTakenCredits(*Inventory);
+	}
 }
 
 void URpgEmbeddedProjectileHostComponent::ChangeGroupCount(const int32 GroupId, const int32 Delta)

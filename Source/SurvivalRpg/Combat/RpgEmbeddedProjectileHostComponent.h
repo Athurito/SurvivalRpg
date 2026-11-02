@@ -52,9 +52,10 @@ struct SURVIVALRPG_API FRpgEmbeddedProjectileGroup
  * The server keeps one record per intact projectile, registered before its damage applies, so even a killing arrow
  * counts. Records stay pending entitlements while the character lives: they become corpse loot when the colocated
  * URpgLootSourceComponent populates, or join that loot at once for a later hit on the corpse. From then on the corpse
- * inventory is the only quantity owner. Recovered items are credited in order, and every decrease of their quantity in
- * the corpse inventory retires the oldest credits and their shafts; moves inside the corpse change nothing. A completed
- * or expiring corpse takes no further credits, and nothing ever drops into the world when the corpse goes.
+ * inventory is the only quantity owner. Recovered items are credited in order; whenever the corpse holds fewer items of
+ * an ammunition than it has credits for it, the oldest credits retire with their shafts, so moves inside the corpse and
+ * taking the same ammunition from the loot table first change nothing. A character without death loot, a completed or
+ * an expiring corpse takes no projectiles, and nothing ever drops into the world when the corpse goes.
  *
  * Shafts are presentation: at most MaxVisibleArrowsPerCharacter per character, after which further projectiles join the
  * nearest shaft. The groups replicate; every machine attaches its own shaft meshes to the bones of its own skeletal
@@ -68,12 +69,16 @@ class SURVIVALRPG_API URpgEmbeddedProjectileHostComponent : public UActorCompone
 public:
 	URpgEmbeddedProjectileHostComponent(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
-	/** Server: whether the character can take a recovered projectile now: alive, or a corpse whose loot is still open. */
+	/**
+	 * Server: whether the character can take a recovered projectile now: it has death loot, and it is alive or a corpse
+	 * whose loot is still open.
+	 */
 	bool CanRecover() const;
 
 	/**
 	 * Server: records one intact projectile of Ammunition that hit the character at Hit while flying along
-	 * FlightDirection, and shows it on the nearest bone. Returns the record's id, or zero when nothing was recorded.
+	 * FlightDirection, and shows it on the nearest bone. Returns the record's id, or zero when nothing was recorded, also
+	 * when a corpse whose loot is built could not take it.
 	 */
 	int32 RecoverProjectile(
 		const FHitResult& Hit,
@@ -81,8 +86,12 @@ public:
 		TSubclassOf<URpgInventoryItemDefinition> Ammunition,
 		const FRpgProjectileRecoveryDefinition& Definition);
 
-	/** Server: withdraws a record that has not reached the corpse loot yet, such as one whose impact turned out blocked. */
-	void CancelRecord(int32 RecordId);
+	/**
+	 * Server: withdraws a record that has not reached the corpse loot yet, such as one whose impact turned out blocked.
+	 * False when the record is already in the loot, for example because the blocked hit's damage killed at once; it
+	 * stays there.
+	 */
+	bool CancelRecord(int32 RecordId);
 
 	/** The visible shafts; replicated. */
 	const TArray<FRpgEmbeddedProjectileGroup>& GetGroups() const { return Groups; }
@@ -133,6 +142,7 @@ private:
 	void HandleLootPopulated(URpgLootSourceComponent* Source, bool bHasLoot);
 	void HandleInventoryCommitted(URpgInventoryManagerComponent* Inventory);
 	void OfferPendingToLoot();
+	void RetireTakenCredits(const URpgInventoryManagerComponent& Inventory);
 	void ChangeGroupCount(int32 GroupId, int32 Delta);
 	void MarkGroupsChanged();
 	USkeletalMeshComponent* FindMesh() const;
@@ -153,9 +163,6 @@ private:
 
 	/** Server: one record per recovered projectile, in credit order. */
 	TArray<FRecord> Records;
-
-	/** Server: the corpse inventory's last seen count of each recovered ammunition. */
-	TMap<TSubclassOf<URpgInventoryItemDefinition>, int32> ObservedCorpseCounts;
 
 	int32 LastRecordId = 0;
 	int32 LastGroupId = 0;

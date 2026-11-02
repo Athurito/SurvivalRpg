@@ -369,11 +369,12 @@ bool URpgAbilitySystemComponent::TryReserveRangedRecoveryToken(const int32 Budge
 	const AActor* Avatar = GetAvatarActor();
 	if (Avatar != RangedRecoveryTokenAvatar.Get())
 	{
-		// Each life of an avatar has its own budget.
+		// Each life of an avatar has its own budget, set by its first budgeted shot, so another weapon never raises it.
 		RangedRecoveryTokenAvatar = Avatar;
 		RangedRecoveryTokensUsed = 0;
+		RangedRecoveryTokenBudget = Budget;
 	}
-	if (!Avatar || RangedRecoveryTokensUsed >= Budget)
+	if (!Avatar || RangedRecoveryTokensUsed >= RangedRecoveryTokenBudget)
 	{
 		return false;
 	}

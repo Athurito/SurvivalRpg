@@ -121,9 +121,10 @@ public:
 	 */
 	bool GetLocalRangedDrawProgress(float& OutDrawFraction, float& OutNockFraction) const;
 	/**
-	 * Server: reserves one of Budget ranged recovery tokens of the current avatar's life, so an unlimited projectile shot
-	 * still returns its ammunition. False once Budget tokens are used. A new avatar, such as a newly spawned enemy,
-	 * starts with none used; target changes, loadout refreshes or equipment changes never give tokens back.
+	 * Server: reserves one ranged recovery token of the current avatar's life, so an unlimited projectile shot still
+	 * returns its ammunition. The life's first reservation fixes its budget to Budget; false once that many are used. A
+	 * new avatar, such as a newly spawned enemy, starts with none used; target changes, loadout refreshes or equipment
+	 * changes never give tokens back or raise the budget.
 	 */
 	bool TryReserveRangedRecoveryToken(int32 Budget);
 	/** Server: gives back the token a shot reserved when its release failed before the projectile launched. */
@@ -381,8 +382,9 @@ private:
 	double LocalRangedReleaseEndSeconds = -1.0;
 	double LocalRangedDrawStartSeconds = 0.0;
 	bool bHasLocalRangedDrawTiming = false;
-	// Server: recovery tokens used by the life of RangedRecoveryTokenAvatar.
+	// Server: recovery tokens used by the life of RangedRecoveryTokenAvatar, and that life's budget.
 	int32 RangedRecoveryTokensUsed = 0;
+	int32 RangedRecoveryTokenBudget = 0;
 	TWeakObjectPtr<const AActor> RangedRecoveryTokenAvatar;
 	float LocalRangedFullDrawSeconds = 1.f;
 	float LocalRangedNockSeconds = 0.f;

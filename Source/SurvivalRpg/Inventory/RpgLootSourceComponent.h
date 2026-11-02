@@ -51,6 +51,12 @@ public:
 	bool CanTakeSupplementalLoot() const { return bLootPopulated || bSupplementsGathered; }
 
 	/**
+	 * Server: whether this source has or will build death loot, so supplements such as lodged arrows reach a looter.
+	 * False for a harvest-only corpse that generates no loot on death, or one without any loot configured.
+	 */
+	bool HasDeathLoot() const;
+
+	/**
 	 * Server: adds Payload to the death loot after its payload was built, such as an arrow that hit the corpse. Before
 	 * the payload commits it joins the payload; afterwards it is added to the inventory at once. Returns false when the
 	 * payload is not built yet or the addition failed; nothing is added then.

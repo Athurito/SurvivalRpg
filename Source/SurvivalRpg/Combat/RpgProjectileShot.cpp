@@ -287,10 +287,11 @@ namespace RpgProjectileShot
 		}
 
 		// Only an arrow the shooter paid for comes back. Unlimited fire returns ammunition only for the recovery tokens
-		// of the shooter's life; a failed release gives its token back.
+		// of the shooter's life; a failed release gives its token back, and ammunition consumed on impact takes none.
 		URpgAbilitySystemComponent* RpgAbilitySystem = Cast<URpgAbilitySystemComponent>(AbilitySystem);
 		const bool bRecoveryToken = AmmunitionPolicy == ERpgProjectileAmmunitionPolicy::Unlimited
 			&& Definition.UnlimitedRecoveryBudget > 0 && RpgAbilitySystem
+			&& ProjectileClass->GetDefaultObject<ARpgCombatProjectile>()->GetImpactRecovery() == ERpgProjectileImpactRecovery::Recoverable
 			&& RpgAbilitySystem->TryReserveRangedRecoveryToken(Definition.UnlimitedRecoveryBudget);
 		const auto ReturnToken = [bRecoveryToken, RpgAbilitySystem]()
 		{

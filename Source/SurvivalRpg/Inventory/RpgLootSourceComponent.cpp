@@ -215,6 +215,12 @@ bool URpgLootSourceComponent::TryPopulateLoot()
 	return true;
 }
 
+bool URpgLootSourceComponent::HasDeathLoot() const
+{
+	return CanTakeSupplementalLoot()
+		|| (bGenerateLootOnDeath && (LootTable || !LootTemplates.IsEmpty() || !LootInstances.IsEmpty()));
+}
+
 bool URpgLootSourceComponent::AddSupplementalLoot(const FInventoryPickup& Payload)
 {
 	const AActor* OwnerActor = GetOwner();

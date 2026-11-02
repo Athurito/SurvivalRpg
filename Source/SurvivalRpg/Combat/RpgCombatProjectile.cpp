@@ -512,16 +512,15 @@ ERpgProjectileRecoveryOutcome ARpgCombatProjectile::ResolveRecovery(
 	}
 
 	// A shield stops the projectile, so a blocked one may fall to the ground, but it never stays on the blocker: a record
-	// made before the damage is withdrawn again.
+	// made before the damage is withdrawn again. One the block's damage already put into the corpse loot stays there.
 	const bool bBlocked = Result == ERpgProjectileImpactResult::Blocked || Result == ERpgProjectileImpactResult::PerfectBlocked;
 	URpgEmbeddedProjectileHostComponent* Host = CharacterHost.Get();
 	if (CharacterRecordId != 0 && Host)
 	{
-		if (!bBlocked)
+		if (!bBlocked || !Host->CancelRecord(CharacterRecordId))
 		{
 			return ERpgProjectileRecoveryOutcome::Embedded;
 		}
-		Host->CancelRecord(CharacterRecordId);
 		CharacterRecordId = 0;
 	}
 

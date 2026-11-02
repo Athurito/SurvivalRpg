@@ -740,8 +740,19 @@ bool FRpgProjectileShotAmmunitionPolicyTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("An arrow nobody paid for can never be recovered"), Arrow && !Arrow->GetRecoveryItemDefinitionForTests());
 	}
 	{
+		// Ammunition consumed on impact never comes back, so its unlimited fire takes no recovery token.
+		FRpgProjectileShotDefinition Consumed = MakeDefinition();
+		Consumed.UnlimitedRecoveryBudget = 2;
+		FFixture Fixture;
+		if (!Fixture.Initialize(*this, false) || !Fixture.Grant(Consumed, ERpgProjectileAmmunitionPolicy::Unlimited)) return false;
+		TestEqual(TEXT("A consumed-on-impact shot releases"), Fixture.Shoot(1.0f), ERpgProjectileShotResult::Released);
+		const ARpgCombatProjectile* Spell = Fixture.Ability->LastProjectile.Get();
+		TestTrue(TEXT("It carries no recovery item"), Spell && !Spell->GetRecoveryItemDefinitionForTests());
+		TestEqual(TEXT("It reserves no recovery token"), Fixture.ASC->GetRangedRecoveryTokensUsed(), 0);
+	}
+	{
 		// An NPC archer's unlimited fire returns ammunition only for its life's recovery budget.
-		FRpgProjectileShotDefinition Budgeted = MakeDefinition();
+		FRpgProjectileShotDefinition Budgeted = MakeDefinition(URpgProjectileRecoveryAutomationArrowDefinition::StaticClass());
 		Budgeted.UnlimitedRecoveryBudget = 2;
 		FFixture Fixture;
 		if (!Fixture.Initialize(*this, false) || !Fixture.Grant(Budgeted, ERpgProjectileAmmunitionPolicy::Unlimited)) return false;
@@ -756,6 +767,10 @@ bool FRpgProjectileShotAmmunitionPolicyTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("The second shot of a life can be recovered"), ShootRecoverable());
 		TestFalse(TEXT("A shot beyond the budget returns nothing"), ShootRecoverable());
 		TestEqual(TEXT("The life used its whole budget"), Fixture.ASC->GetRangedRecoveryTokensUsed(), 2);
+		FRpgProjectileShotDefinition Generous = Budgeted;
+		Generous.UnlimitedRecoveryBudget = 5;
+		Fixture.Ability->ShotDefinition = Generous;
+		TestFalse(TEXT("A weapon with a bigger budget never raises the life's budget"), ShootRecoverable());
 
 		// A new life, such as a newly spawned enemy, starts with a fresh budget; a failed release keeps it.
 		APawn* NextLife = Fixture.World->SpawnActor<APawn>();

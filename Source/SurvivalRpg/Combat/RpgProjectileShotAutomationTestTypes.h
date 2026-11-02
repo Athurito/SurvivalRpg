@@ -21,11 +21,14 @@ public:
 	explicit ARpgProjectileShotAutomationTestProjectile(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 };
 
-/** Editor-only projectile that destroys itself in BeginPlay, so a shot's finished spawn fails. */
+/** Editor-only recoverable projectile that destroys itself in BeginPlay, so a shot's finished spawn fails. */
 UCLASS(NotBlueprintable, Transient)
 class ARpgProjectileShotAutomationFailingProjectile final : public ARpgProjectileShotAutomationTestProjectile
 {
 	GENERATED_BODY()
+
+public:
+	explicit ARpgProjectileShotAutomationFailingProjectile(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 protected:
 	virtual void BeginPlay() override;
@@ -55,7 +58,7 @@ public:
 	virtual bool IsEditorOnly() const override { return true; }
 };
 
-/** Editor-only loot source whose death loot is one unit item, as an enemy corpse fixture. */
+/** Editor-only loot source whose death loot is one unit item, as an enemy corpse fixture; tests call PopulateLoot. */
 UCLASS(NotBlueprintable, Transient)
 class SURVIVALRPG_API URpgProjectileRecoveryAutomationLootSource final : public URpgLootSourceComponent
 {
