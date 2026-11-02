@@ -1,11 +1,13 @@
 #include "Network/RpgCombatProjectileNetworkTestTypes.h"
 
+#include "Components/BoxComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Network/RpgCombatNetworkTestTypes.h"
 #include "SurvivalRpg/AbilitySystem/Executions/RpgDamageExecution.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgStaminaSet.h"
 #include "SurvivalRpg/AbilitySystem/Tasks/RpgAbilityTask_ProjectileShot.h"
+#include "SurvivalRpg/Combat/RpgEmbeddedProjectilePickup.h"
 #include "SurvivalRpg/Core/Game/RpgGameStateBase.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_Ammunition.h"
@@ -58,6 +60,29 @@ ARpgNetworkAutomationFallingTestProjectile::ARpgNetworkAutomationFallingTestProj
 	: Super(ObjectInitializer)
 {
 	GravityScale = 1.0f;
+}
+
+ARpgNetworkAutomationRecoverableProjectile::ARpgNetworkAutomationRecoverableProjectile(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	ImpactCueTag = FGameplayTag();
+	ImpactRecovery = ERpgProjectileImpactRecovery::Recoverable;
+	Recovery.PickupClass = ARpgEmbeddedProjectilePickup::StaticClass();
+}
+
+ARpgNetworkAutomationRecoveryWall::ARpgNetworkAutomationRecoveryWall(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	bReplicates = true;
+	bAlwaysRelevant = true;
+	SetReplicatingMovement(true);
+
+	Wall = CreateDefaultSubobject<UBoxComponent>(TEXT("Wall"));
+	Wall->InitBoxExtent(FVector(HalfThickness, 300.0f, 300.0f));
+	Wall->SetCollisionObjectType(ECC_WorldStatic);
+	Wall->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	Wall->SetCollisionResponseToAllChannels(ECR_Block);
+	RootComponent = Wall;
 }
 
 URpgNetworkAutomationProjectileAbility::URpgNetworkAutomationProjectileAbility(const FObjectInitializer& ObjectInitializer)

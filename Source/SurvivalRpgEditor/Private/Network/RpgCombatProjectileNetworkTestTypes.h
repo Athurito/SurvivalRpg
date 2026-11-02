@@ -10,6 +10,7 @@
 
 #include "RpgCombatProjectileNetworkTestTypes.generated.h"
 
+class UBoxComponent;
 class URpgAbilityTask_ProjectileShot;
 
 /**
@@ -71,6 +72,33 @@ class ARpgNetworkAutomationFallingTestProjectile final : public ARpgNetworkAutom
 
 public:
 	explicit ARpgNetworkAutomationFallingTestProjectile(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+};
+
+/** The slow test projectile, recoverable: an intact impact leaves a plain ARpgEmbeddedProjectilePickup. No impact cue. */
+UCLASS(NotBlueprintable, Transient)
+class ARpgNetworkAutomationRecoverableProjectile final : public ARpgNetworkAutomationTestProjectile
+{
+	GENERATED_BODY()
+
+public:
+	explicit ARpgNetworkAutomationRecoverableProjectile(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+};
+
+/** A replicated, movable wall without an ability system that projectiles hit and recovered arrows embed in. */
+UCLASS(NotBlueprintable, Transient)
+class ARpgNetworkAutomationRecoveryWall final : public AActor
+{
+	GENERATED_BODY()
+
+public:
+	explicit ARpgNetworkAutomationRecoveryWall(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	/** Half the wall's thickness along X in cm; its front face lies this far before its location. */
+	static constexpr float HalfThickness = 20.0f;
+
+private:
+	UPROPERTY()
+	TObjectPtr<UBoxComponent> Wall;
 };
 
 /**
