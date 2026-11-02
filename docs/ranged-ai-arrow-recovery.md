@@ -1,6 +1,6 @@
 # RNG-03c: Arrows in AI characters, corpse recovery and the NPC recovery budget
 
-Task report for RNG-03c in the [ranged combat roadmap](ranged-combat-roadmap.md), PR pending. Intact arrows now stay in AI enemies: the shafts show on their bones, follow animation and each machine's ragdoll, and the arrows become ordinary corpse loot when the enemy dies, including arrows that hit the corpse afterwards. Looting them removes their shafts. Unlimited NPC fire returns ammunition only for a finite budget per enemy life. Player characters still never keep arrows (RNG-03b), and the bow enemy itself is RNG-05.
+Task report for RNG-03c in the [ranged combat roadmap](ranged-combat-roadmap.md), [PR #370](https://github.com/Athurito/SurvivalRpg/pull/370). Intact arrows now stay in AI enemies: the shafts show on their bones, follow animation and each machine's ragdoll, and the arrows become ordinary corpse loot when the enemy dies, including arrows that hit the corpse afterwards. Looting them removes their shafts. Unlimited NPC fire returns ammunition only for a finite budget per enemy life. Player characters still never keep arrows (RNG-03b), and the bow enemy itself is RNG-05.
 
 ## C++ boundary decision
 
