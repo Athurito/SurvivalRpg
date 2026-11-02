@@ -364,6 +364,34 @@ bool URpgAbilitySystemComponent::GetLocalRangedDrawProgress(float& OutDrawFracti
 	return true;
 }
 
+bool URpgAbilitySystemComponent::TryReserveRangedRecoveryToken(const int32 Budget)
+{
+	const AActor* Avatar = GetAvatarActor();
+	if (Avatar != RangedRecoveryTokenAvatar.Get())
+	{
+		// Each life of an avatar has its own budget, set by its first budgeted shot, so another weapon never raises it.
+		RangedRecoveryTokenAvatar = Avatar;
+		RangedRecoveryTokensUsed = 0;
+		RangedRecoveryTokenBudget = Budget;
+	}
+	if (!Avatar || RangedRecoveryTokensUsed >= RangedRecoveryTokenBudget)
+	{
+		return false;
+	}
+	++RangedRecoveryTokensUsed;
+	return true;
+}
+
+void URpgAbilitySystemComponent::ReturnRangedRecoveryToken()
+{
+	RangedRecoveryTokensUsed = FMath::Max(0, RangedRecoveryTokensUsed - 1);
+}
+
+int32 URpgAbilitySystemComponent::GetRangedRecoveryTokensUsed() const
+{
+	return GetAvatarActor() && GetAvatarActor() == RangedRecoveryTokenAvatar.Get() ? RangedRecoveryTokensUsed : 0;
+}
+
 bool URpgAbilitySystemComponent::IsRangedDrawingForPresentation() const
 {
 	return AbilityActorInfo.IsValid() && AbilityActorInfo->IsLocallyControlled()

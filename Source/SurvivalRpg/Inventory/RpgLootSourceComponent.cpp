@@ -172,6 +172,13 @@ bool URpgLootSourceComponent::TryPopulateLoot()
 		bLootMaterialized = true;
 	}
 
+	if (!bSupplementsGathered)
+	{
+		// Once per death: the payload keeps what others added through every retry.
+		bSupplementsGathered = true;
+		OnGatherSupplementalLoot.Broadcast(this, CachedLootPickup);
+	}
+
 	// An empty successful roll is a valid no-drop result and needs no inventory mutation.
 	const bool bHasLoot =
 		!CachedLootPickup.Templates.IsEmpty() ||
@@ -206,6 +213,36 @@ bool URpgLootSourceComponent::TryPopulateLoot()
 	}
 	OnLootPopulationCompleted.Broadcast(this, bHasLoot);
 	return true;
+}
+
+bool URpgLootSourceComponent::HasDeathLoot() const
+{
+	return CanTakeSupplementalLoot()
+		|| (bGenerateLootOnDeath && (LootTable || !LootTemplates.IsEmpty() || !LootInstances.IsEmpty()));
+}
+
+bool URpgLootSourceComponent::AddSupplementalLoot(const FInventoryPickup& Payload)
+{
+	const AActor* OwnerActor = GetOwner();
+	if (!OwnerActor || !OwnerActor->HasAuthority() || (Payload.Templates.IsEmpty() && Payload.Instances.IsEmpty()))
+	{
+		return false;
+	}
+
+	if (bLootPopulated)
+	{
+		URpgInventoryManagerComponent* InventoryManager = FindInventoryManager();
+		TArray<FRpgInventoryItemId> AffectedItemIds;
+		return InventoryManager && InventoryManager->AddPickupBatch(Payload, AffectedItemIds).IsSuccess();
+	}
+	if (bSupplementsGathered)
+	{
+		// The built payload has not committed yet; the items commit with it, or not at all.
+		CachedLootPickup.Templates.Append(Payload.Templates);
+		CachedLootPickup.Instances.Append(Payload.Instances);
+		return true;
+	}
+	return false;
 }
 
 void URpgLootSourceComponent::HandleDeathFinished(AActor* OwningActor)

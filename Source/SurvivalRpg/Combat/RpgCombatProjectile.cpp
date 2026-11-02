@@ -23,6 +23,7 @@
 #include "SurvivalRpg/SurvivalRpg.h"
 #include "SurvivalRpg/AbilitySystem/RpgGameplayEffectContext.h"
 #include "SurvivalRpg/Combat/RpgCombatImpact.h"
+#include "SurvivalRpg/Combat/RpgEmbeddedProjectileHostComponent.h"
 #include "SurvivalRpg/Combat/RpgEmbeddedProjectilePickup.h"
 #include "SurvivalRpg/Core/RpgWorldCollectable.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
@@ -480,6 +481,8 @@ void ARpgCombatProjectile::ResolveImpact(const FHitResult& Hit)
 			ContextHit.TraceEnd = Hit.Location;
 		}
 
+		// Recorded before the damage, so the corpse loot of a target this projectile kills includes it.
+		PrepareCharacterRecovery(ContextHit, FlightDirection);
 		PreApplyImpactDamage(ContextHit, TargetASC);
 		Result = ApplyImpactDamage(ContextHit, TargetASC);
 	}
@@ -508,29 +511,45 @@ ERpgProjectileRecoveryOutcome ARpgCombatProjectile::ResolveRecovery(
 		return ERpgProjectileRecoveryOutcome::None;
 	}
 
-	// A character never keeps a projectile: a hit on a player or an NPC only plays its feedback, also on a corpse whose
-	// ability system is already gone (RNG-03c recovers NPC arrows through the corpse). A shield stops the projectile
-	// instead, so a blocked one may fall to the ground, but it never stays on the blocker.
+	// A shield stops the projectile, so a blocked one may fall to the ground, but it never stays on the blocker: a record
+	// made before the damage is withdrawn again. One the block's damage already put into the corpse loot stays there.
 	const bool bBlocked = Result == ERpgProjectileImpactResult::Blocked || Result == ERpgProjectileImpactResult::PerfectBlocked;
-	if ((Result != ERpgProjectileImpactResult::World || Cast<APawn>(Hit.GetActor())) && !bBlocked)
+	URpgEmbeddedProjectileHostComponent* Host = CharacterHost.Get();
+	if (CharacterRecordId != 0 && Host)
 	{
-		return ERpgProjectileRecoveryOutcome::None;
+		if (!bBlocked || !Host->CancelRecord(CharacterRecordId))
+		{
+			return ERpgProjectileRecoveryOutcome::Embedded;
+		}
+		CharacterRecordId = 0;
 	}
 
-	// The one break roll of this projectile; nothing later rolls again.
-	const FRpgProjectileSurfaceRecoveryRule* SurfaceRule = FindSurfaceRule(Hit);
-	const float BreakChance = FMath::Clamp(LaunchBreakChance * (SurfaceRule ? SurfaceRule->BreakChanceMultiplier : 1.0f), 0.0f, 1.0f);
-	float Roll = FMath::FRand();
-#if WITH_DEV_AUTOMATION_TESTS
-	if (BreakRollForTests.IsSet())
+	// A player character never keeps a projectile; an AI corpse whose ability system is already gone takes it as loot.
+	const APawn* HitPawn = Cast<APawn>(Hit.GetActor());
+	URpgEmbeddedProjectileHostComponent* HitHost = HitPawn ? HitPawn->FindComponentByClass<URpgEmbeddedProjectileHostComponent>() : nullptr;
+	if (!bBlocked && (Result != ERpgProjectileImpactResult::World || HitPawn))
 	{
-		Roll = BreakRollForTests.GetValue();
+		if (!HitHost || !HitHost->CanRecover())
+		{
+			return ERpgProjectileRecoveryOutcome::None;
+		}
+		if (!RollIntact(Hit))
+		{
+			return ERpgProjectileRecoveryOutcome::Broken;
+		}
+		if (Result == ERpgProjectileImpactResult::World)
+		{
+			CharacterHost = HitHost;
+			CharacterRecordId = HitHost->RecoverProjectile(Hit, FlightDirection, RecoveryItemDefinition, Recovery);
+		}
+		return CharacterRecordId != 0 ? ERpgProjectileRecoveryOutcome::Embedded : ERpgProjectileRecoveryOutcome::None;
 	}
-#endif
-	if (Roll < BreakChance)
+
+	if (!RollIntact(Hit))
 	{
 		return ERpgProjectileRecoveryOutcome::Broken;
 	}
+	const FRpgProjectileSurfaceRecoveryRule* SurfaceRule = FindSurfaceRule(Hit);
 
 	const FVector Forward = FlightDirection.IsNearlyZero() ? -Hit.ImpactNormal : FlightDirection;
 	FRpgProjectileRecoveryPlacement Placement;
@@ -592,6 +611,40 @@ ERpgProjectileRecoveryOutcome ARpgCombatProjectile::ResolveRecovery(
 		return ERpgProjectileRecoveryOutcome::None;
 	}
 	return Placement.bEmbedded ? ERpgProjectileRecoveryOutcome::Embedded : ERpgProjectileRecoveryOutcome::Dropped;
+}
+
+void ARpgCombatProjectile::PrepareCharacterRecovery(const FHitResult& Hit, const FVector& FlightDirection)
+{
+	if (ImpactRecovery != ERpgProjectileImpactRecovery::Recoverable || !RecoveryItemDefinition)
+	{
+		return;
+	}
+	const AActor* HitActor = Hit.GetActor();
+	URpgEmbeddedProjectileHostComponent* Host = HitActor ? HitActor->FindComponentByClass<URpgEmbeddedProjectileHostComponent>() : nullptr;
+	if (Host && Host->CanRecover() && RollIntact(Hit))
+	{
+		CharacterHost = Host;
+		CharacterRecordId = Host->RecoverProjectile(Hit, FlightDirection, RecoveryItemDefinition, Recovery);
+	}
+}
+
+bool ARpgCombatProjectile::RollIntact(const FHitResult& Hit)
+{
+	if (!bIntactRoll.IsSet())
+	{
+		// The one break roll of this projectile; nothing later rolls again.
+		const FRpgProjectileSurfaceRecoveryRule* SurfaceRule = FindSurfaceRule(Hit);
+		const float BreakChance = FMath::Clamp(LaunchBreakChance * (SurfaceRule ? SurfaceRule->BreakChanceMultiplier : 1.0f), 0.0f, 1.0f);
+		float Roll = FMath::FRand();
+#if WITH_DEV_AUTOMATION_TESTS
+		if (BreakRollForTests.IsSet())
+		{
+			Roll = BreakRollForTests.GetValue();
+		}
+#endif
+		bIntactRoll = Roll >= BreakChance;
+	}
+	return bIntactRoll.GetValue();
 }
 
 const FRpgProjectileSurfaceRecoveryRule* ARpgCombatProjectile::FindSurfaceRule(const FHitResult& Hit) const

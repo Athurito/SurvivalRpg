@@ -9,6 +9,7 @@
 
 class APawn;
 class ARpgEmbeddedProjectilePickup;
+class URpgEmbeddedProjectileHostComponent;
 class UAbilitySystemComponent;
 class UGameplayAbility;
 class UGameplayEffect;
@@ -100,6 +101,13 @@ struct SURVIVALRPG_API FRpgProjectileRecoveryDefinition
 	/** Distance in cm within which a projectile joins an existing pickup once its hit component holds the maximum. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Recovery", meta = (ClampMin = "0.0", Units = "Centimeters"))
 	float GroupRadius = 100.0f;
+
+	/**
+	 * Shafts one AI character shows at most. Further intact projectiles join the nearest shaft, preferring the same
+	 * bone, and still count in full toward its corpse loot.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Recovery", meta = (ClampMin = "1"))
+	int32 MaxVisibleArrowsPerCharacter = 10;
 
 	/** Largest fall in cm from the contact to the ground for a dropped projectile; without ground in reach it is lost. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Recovery", meta = (ClampMin = "0.0", Units = "Centimeters"))
@@ -217,10 +225,11 @@ struct FRpgProjectileImpactState
  * class data below and attach their flight presentation under VisualRoot; when the flight stops, the projectile hides
  * its meshes, deactivates every FX system and fades every audio component on its own.
  *
- * A Recoverable projectile launched with a RecoveryItemDefinition returns its ammunition (RNG-03b): at a world impact or
- * a block the server rolls once whether it broke, and an intact one leaves an ARpgEmbeddedProjectilePickup, embedded in
- * the hit surface or dropped near a shield. A character never keeps one: a hit on a player or an NPC only plays its
- * feedback; corpse recovery from NPCs is RNG-03c.
+ * A Recoverable projectile launched with a RecoveryItemDefinition returns its ammunition: the server rolls once at the
+ * impact whether it broke (RNG-03b). An intact one at a world impact or a block leaves an ARpgEmbeddedProjectilePickup,
+ * embedded in the hit surface or dropped near a shield. In an AI character, or its corpse, it lodges as corpse loot of
+ * that character's URpgEmbeddedProjectileHostComponent, recorded before its damage applies (RNG-03c). A player
+ * character never keeps one: the hit only plays its feedback.
  */
 UCLASS(Blueprintable)
 class SURVIVALRPG_API ARpgCombatProjectile : public AActor, public IGenericTeamAgentInterface
@@ -317,6 +326,9 @@ public:
 
 	/** Server: the intact projectile's pickup, or null when the impact left none or it is gone. */
 	ARpgEmbeddedProjectilePickup* GetRecoveredPickup() const { return RecoveredPickup.Get(); }
+
+	/** Server: the record id in the character that keeps this projectile, or zero. */
+	int32 GetCharacterRecordId() const { return CharacterRecordId; }
 
 	UProjectileMovementComponent* GetProjectileMovement() const { return ProjectileMovement; }
 	TSubclassOf<UGameplayEffect> GetDamageEffectClass() const { return DamageEffectClass; }
@@ -437,6 +449,10 @@ private:
 	void ResolveImpact(const FHitResult& Hit);
 	/** Server, once per impact: the break roll and the pickup of an intact projectile. Returns what became of it. */
 	ERpgProjectileRecoveryOutcome ResolveRecovery(const FHitResult& Hit, ERpgProjectileImpactResult Result, const FVector& FlightDirection);
+	/** Server, before the damage: records an intact projectile in an AI character that keeps projectiles. */
+	void PrepareCharacterRecovery(const FHitResult& Hit, const FVector& FlightDirection);
+	/** Server: the one break roll of this impact; true when the projectile stays intact. Later calls return the same. */
+	bool RollIntact(const FHitResult& Hit);
 	const FRpgProjectileSurfaceRecoveryRule* FindSurfaceRule(const FHitResult& Hit) const;
 	ERpgProjectileImpactResult ApplyImpactDamage(const FHitResult& Hit, UAbilitySystemComponent* TargetASC);
 	void ExecuteImpactCue(const FHitResult& Hit) const;
@@ -476,6 +492,13 @@ private:
 
 	/** Server: the pickup this projectile's ammunition went to. */
 	TWeakObjectPtr<ARpgEmbeddedProjectilePickup> RecoveredPickup;
+
+	/** Server: the character that keeps this projectile and the id of its record there. */
+	TWeakObjectPtr<URpgEmbeddedProjectileHostComponent> CharacterHost;
+	int32 CharacterRecordId = 0;
+
+	/** Server: the result of the one break roll, once rolled. */
+	TOptional<bool> bIntactRoll;
 
 #if WITH_DEV_AUTOMATION_TESTS
 	TOptional<float> BreakRollForTests;

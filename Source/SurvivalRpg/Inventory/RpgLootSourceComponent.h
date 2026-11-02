@@ -21,6 +21,15 @@ DECLARE_MULTICAST_DELEGATE_TwoParams(
 	bool /* bHasLoot */);
 
 /**
+ * Fires once on the server when the death loot payload is first built, before its first delivery attempt, so other
+ * components can add items to it, such as arrows lodged in the body. The payload is kept for every retry.
+ */
+DECLARE_MULTICAST_DELEGATE_TwoParams(
+	FRpgLootGatherSupplementsNative,
+	URpgLootSourceComponent* /* LootSource */,
+	FInventoryPickup& /* Payload */);
+
+/**
  * Rolls an actor's loot once on the authoritative death path and atomically populates its inventory.
  * A transient delivery failure retains the original roll and concrete item state for an unchanged retry.
  */
@@ -34,6 +43,25 @@ public:
 
 	/** Native server-side completion seam used by corpse lifecycle components. Failed attempts never broadcast. */
 	FRpgLootPopulationCompletedNative OnLootPopulationCompleted;
+
+	/** Native server-side seam that adds items to the death loot payload once, when it is first built. */
+	FRpgLootGatherSupplementsNative OnGatherSupplementalLoot;
+
+	/** Server: whether AddSupplementalLoot can take items now, because the death loot payload is already built. */
+	bool CanTakeSupplementalLoot() const { return bLootPopulated || bSupplementsGathered; }
+
+	/**
+	 * Server: whether this source has or will build death loot, so supplements such as lodged arrows reach a looter.
+	 * False for a harvest-only corpse that generates no loot on death, or one without any loot configured.
+	 */
+	bool HasDeathLoot() const;
+
+	/**
+	 * Server: adds Payload to the death loot after its payload was built, such as an arrow that hit the corpse. Before
+	 * the payload commits it joins the payload; afterwards it is added to the inventory at once. Returns false when the
+	 * payload is not built yet or the addition failed; nothing is added then.
+	 */
+	bool AddSupplementalLoot(const FInventoryPickup& Payload);
 
 	/** Resolves at most one authoritative roll and retries its unchanged atomic delivery until it succeeds. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory|Loot")
@@ -117,4 +145,7 @@ private:
 
 	UPROPERTY(Transient)
 	bool bLootMaterialized = false;
+
+	/** Whether OnGatherSupplementalLoot already added to the payload. */
+	bool bSupplementsGathered = false;
 };

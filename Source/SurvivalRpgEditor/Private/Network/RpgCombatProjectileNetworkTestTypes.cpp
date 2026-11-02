@@ -1,6 +1,11 @@
 #include "Network/RpgCombatProjectileNetworkTestTypes.h"
 
 #include "Components/BoxComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
+#include "SurvivalRpg/Combat/RpgEmbeddedProjectileHostComponent.h"
+#include "SurvivalRpg/Combat/RpgProjectileShotAutomationTestTypes.h"
+#include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Network/RpgCombatNetworkTestTypes.h"
@@ -68,6 +73,29 @@ ARpgNetworkAutomationRecoverableProjectile::ARpgNetworkAutomationRecoverableProj
 	ImpactCueTag = FGameplayTag();
 	ImpactRecovery = ERpgProjectileImpactRecovery::Recoverable;
 	Recovery.PickupClass = ARpgEmbeddedProjectilePickup::StaticClass();
+}
+
+ARpgNetworkAutomationArrowBody::ARpgNetworkAutomationArrowBody(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	bReplicates = true;
+	bAlwaysRelevant = true;
+
+	Mesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Mesh"));
+	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Mesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+	RootComponent = Mesh;
+	Loot = CreateDefaultSubobject<URpgInventoryManagerComponent>(TEXT("Loot"));
+	LootSource = CreateDefaultSubobject<URpgProjectileRecoveryAutomationLootSource>(TEXT("LootSource"));
+	Host = CreateDefaultSubobject<URpgEmbeddedProjectileHostComponent>(TEXT("Host"));
+}
+
+void ARpgNetworkAutomationArrowBody::BeginPlay()
+{
+	// Every machine poses the same skeleton, so a shaft on a bone lands on the same body part everywhere.
+	Mesh->SetSkeletalMeshAsset(LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/SurvivalRpg/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple")));
+	Mesh->RefreshBoneTransforms();
+	Super::BeginPlay();
 }
 
 ARpgNetworkAutomationRecoveryWall::ARpgNetworkAutomationRecoveryWall(const FObjectInitializer& ObjectInitializer)

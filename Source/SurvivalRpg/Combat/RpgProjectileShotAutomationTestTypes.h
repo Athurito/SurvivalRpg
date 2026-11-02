@@ -5,6 +5,7 @@
 #include "SurvivalRpg/Combat/RpgCombatProjectile.h"
 #include "SurvivalRpg/Combat/RpgProjectileShot.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
+#include "SurvivalRpg/Inventory/RpgLootSourceComponent.h"
 
 #include "RpgProjectileShotAutomationTestTypes.generated.h"
 
@@ -20,11 +21,14 @@ public:
 	explicit ARpgProjectileShotAutomationTestProjectile(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 };
 
-/** Editor-only projectile that destroys itself in BeginPlay, so a shot's finished spawn fails. */
+/** Editor-only recoverable projectile that destroys itself in BeginPlay, so a shot's finished spawn fails. */
 UCLASS(NotBlueprintable, Transient)
 class ARpgProjectileShotAutomationFailingProjectile final : public ARpgProjectileShotAutomationTestProjectile
 {
 	GENERATED_BODY()
+
+public:
+	explicit ARpgProjectileShotAutomationFailingProjectile(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 protected:
 	virtual void BeginPlay() override;
@@ -52,6 +56,16 @@ public:
 	explicit URpgProjectileRecoveryAutomationArrowDefinition(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	virtual bool IsEditorOnly() const override { return true; }
+};
+
+/** Editor-only loot source whose death loot is one unit item, as an enemy corpse fixture; tests call PopulateLoot. */
+UCLASS(NotBlueprintable, Transient)
+class SURVIVALRPG_API URpgProjectileRecoveryAutomationLootSource final : public URpgLootSourceComponent
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgProjectileRecoveryAutomationLootSource(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 };
 
 /** Editor-only 1x1 stackable ammunition that launches ARpgProjectileShotAutomationTestProjectile. */

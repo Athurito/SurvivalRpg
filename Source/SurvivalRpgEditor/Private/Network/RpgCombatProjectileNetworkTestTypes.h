@@ -11,6 +11,10 @@
 #include "RpgCombatProjectileNetworkTestTypes.generated.h"
 
 class UBoxComponent;
+class URpgEmbeddedProjectileHostComponent;
+class URpgInventoryManagerComponent;
+class URpgLootSourceComponent;
+class USkeletalMeshComponent;
 class URpgAbilityTask_ProjectileShot;
 
 /**
@@ -82,6 +86,34 @@ class ARpgNetworkAutomationRecoverableProjectile final : public ARpgNetworkAutom
 
 public:
 	explicit ARpgNetworkAutomationRecoverableProjectile(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+};
+
+/** A replicated stand-in for an AI character's body: the Manny skeletal mesh, corpse loot and the arrow host. */
+UCLASS(NotBlueprintable, Transient)
+class ARpgNetworkAutomationArrowBody final : public AActor
+{
+	GENERATED_BODY()
+
+public:
+	explicit ARpgNetworkAutomationArrowBody(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	USkeletalMeshComponent* GetBodyMesh() const { return Mesh; }
+
+protected:
+	virtual void BeginPlay() override;
+
+private:
+	UPROPERTY()
+	TObjectPtr<USkeletalMeshComponent> Mesh;
+
+	UPROPERTY()
+	TObjectPtr<URpgInventoryManagerComponent> Loot;
+
+	UPROPERTY()
+	TObjectPtr<URpgLootSourceComponent> LootSource;
+
+	UPROPERTY()
+	TObjectPtr<URpgEmbeddedProjectileHostComponent> Host;
 };
 
 /** A replicated, movable wall without an ability system that projectiles hit and recovered arrows embed in. */
