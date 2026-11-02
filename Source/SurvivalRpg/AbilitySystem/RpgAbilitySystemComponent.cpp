@@ -341,6 +341,29 @@ void URpgAbilitySystemComponent::NoteLocalRangedRelease(const float Seconds)
 	LocalRangedReleaseEndSeconds = World && Seconds > 0.f ? World->GetTimeSeconds() + Seconds : -1.0;
 }
 
+void URpgAbilitySystemComponent::SetLocalRangedDrawTiming(const double StartSeconds, const float FullDrawSeconds, const float MinimumNockSeconds)
+{
+	LocalRangedDrawStartSeconds = StartSeconds;
+	bHasLocalRangedDrawTiming = true;
+	LocalRangedFullDrawSeconds = FMath::Max(0.01f, FullDrawSeconds);
+	LocalRangedNockSeconds = FMath::Clamp(MinimumNockSeconds, 0.f, LocalRangedFullDrawSeconds);
+}
+
+bool URpgAbilitySystemComponent::GetLocalRangedDrawProgress(float& OutDrawFraction, float& OutNockFraction) const
+{
+	OutDrawFraction = 0.f;
+	OutNockFraction = 0.f;
+	const UWorld* World = GetWorld();
+	if (!bLocalRangedDrawing || !bHasLocalRangedDrawTiming || !World)
+	{
+		return false;
+	}
+	// The same fraction the shot computes from its elapsed draw time.
+	OutDrawFraction = FMath::Clamp(static_cast<float>(World->GetTimeSeconds() - LocalRangedDrawStartSeconds) / LocalRangedFullDrawSeconds, 0.f, 1.f);
+	OutNockFraction = LocalRangedNockSeconds / LocalRangedFullDrawSeconds;
+	return true;
+}
+
 bool URpgAbilitySystemComponent::IsRangedDrawingForPresentation() const
 {
 	return AbilityActorInfo.IsValid() && AbilityActorInfo->IsLocallyControlled()
@@ -362,6 +385,7 @@ void URpgAbilitySystemComponent::ResetRangedAim()
 	RangedAimTokens.Reset();
 	bLocalRangedDrawing = false;
 	LocalRangedReleaseEndSeconds = -1.0;
+	bHasLocalRangedDrawTiming = false;
 	if (bRangedAimTagApplied)
 	{
 		bRangedAimTagApplied = false;

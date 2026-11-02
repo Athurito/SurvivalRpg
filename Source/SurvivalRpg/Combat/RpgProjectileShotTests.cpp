@@ -242,6 +242,11 @@ bool FRpgProjectileShotPresentationTagsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("A drawn shot is drawing"), HasTag(RpgGameplayTags::State_Ranged_Drawing));
 	TestTrue(TEXT("The owner presents its own draw"), Fixture.ASC->IsRangedDrawingForPresentation());
 	Fixture.Advance(0.1f);
+	float DrawProgress = -1.0f;
+	float NockProgress = -1.0f;
+	TestTrue(TEXT("The owner knows how far it drew"), Fixture.ASC->GetLocalRangedDrawProgress(DrawProgress, NockProgress));
+	TestEqual(TEXT("The draw progress follows the drawn time over the full draw"), DrawProgress, 0.1f, 0.001f);
+	TestEqual(TEXT("The nock lies at its share of the full draw"), NockProgress, 0.25f, 0.001f);
 	Fixture.Release();
 	TestFalse(TEXT("An early release stops drawing"), HasTag(RpgGameplayTags::State_Ranged_Drawing));
 	TestFalse(TEXT("An early release shows no release"), HasTag(RpgGameplayTags::State_Ranged_Releasing));
@@ -252,6 +257,7 @@ bool FRpgProjectileShotPresentationTagsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("The release shows"), HasTag(RpgGameplayTags::State_Ranged_Releasing));
 	TestTrue(TEXT("The owner presents its own release"), Fixture.ASC->IsRangedReleasingForPresentation());
 	TestFalse(TEXT("The owner no longer presents a draw"), Fixture.ASC->IsRangedDrawingForPresentation());
+	TestFalse(TEXT("A released shot reports no draw progress"), Fixture.ASC->GetLocalRangedDrawProgress(DrawProgress, NockProgress));
 	return true;
 }
 

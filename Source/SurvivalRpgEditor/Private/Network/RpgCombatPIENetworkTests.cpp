@@ -1,5 +1,8 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "Engine/LocalPlayer.h"
+#include "SurvivalRpg/Mvvm/Combat/RpgRangedCombatViewModel.h"
+#include "SurvivalRpg/Mvvm/RpgUiSubsystem.h"
 #include "CQTest.h"
 #include "Components/PIENetworkComponent.h"
 #include "Network/RpgCombatNetworkTestTypes.h"
@@ -2552,6 +2555,15 @@ NETWORK_TEST_CLASS(RangedAimPIE, "SurvivalRpg.Network")
 		return Archer ? Archer->GetCharacterMovement()->GetMaxSpeed() : -1.0f;
 	}
 
+	/** This machine's local ranged HUD view model, as the bow crosshair and ammunition counter read it. */
+	static const URpgRangedCombatViewModel* LocalRangedHud(const FNetworkState& State)
+	{
+		const UGameInstance* GameInstance = State.World ? State.World->GetGameInstance() : nullptr;
+		const ULocalPlayer* LocalPlayer = GameInstance ? GameInstance->GetFirstGamePlayer() : nullptr;
+		const URpgUiSubsystem* Ui = LocalPlayer ? LocalPlayer->GetSubsystem<URpgUiSubsystem>() : nullptr;
+		return Ui ? Ui->GetRangedCombatViewModel() : nullptr;
+	}
+
 	int32 ArcherArrows(const FNetworkState& State) const
 	{
 		ARpgCharacter* Archer = RpgCombatPIENetworkTests::FindCharacterByPlayerId(State.World, ArcherId);
@@ -2718,7 +2730,22 @@ NETWORK_TEST_CLASS(RangedAimPIE, "SurvivalRpg.Network")
 		const FGameplayTag AimInput = Tag(TEXT("InputTag.Weapon.Block"));
 		const FGameplayTag ShotInput = Tag(TEXT("InputTag.Weapon.Primary"));
 		QueueArcherReady();
-		Network.ThenServer(TEXT("The bow authors a positive aim cap"), [this](FNetworkState&) { ASSERT_THAT(IsTrue(AimSpeedLimit() > 0.0f)); });
+		Network.ThenServer(TEXT("The bow authors a positive aim cap"), [this](FNetworkState&) { ASSERT_THAT(IsTrue(AimSpeedLimit() > 0.0f)); })
+			.UntilClient(TEXT("The archer's HUD shows the bow and its arrows"), 0,
+				[](FNetworkState& State)
+				{
+					const URpgRangedCombatViewModel* Hud = LocalRangedHud(State);
+					return Hud && Hud->GetHasRangedWeapon() && Hud->GetAmmunitionCount() == StartingArrows && Hud->GetShotAvailable()
+						&& !Hud->GetAiming();
+				},
+				NetworkTimeout())
+			.UntilClient(TEXT("The unarmed observer's HUD shows no ranged weapon"), 1,
+				[](FNetworkState& State)
+				{
+					const URpgRangedCombatViewModel* Hud = LocalRangedHud(State);
+					return Hud && Hud->IsTickingForTests() && !Hud->GetHasRangedWeapon();
+				},
+				NetworkTimeout());
 		QueueArcherInput(TEXT("The archer holds the aim input"), AimInput, true);
 		Network
 			.UntilServer(TEXT("The server holds the aim stance with its movement cap"),
@@ -2746,6 +2773,13 @@ NETWORK_TEST_CLASS(RangedAimPIE, "SurvivalRpg.Network")
 				NetworkTimeout())
 			.UntilClient(TEXT("The archer holds a full draw"), 0,
 				[this](FNetworkState& State) { return State.World->GetTimeSeconds() - PhaseStartWorldSeconds >= 1.2; },
+				NetworkTimeout())
+			.UntilClient(TEXT("The archer's HUD shows the crosshair and a full draw"), 0,
+				[](FNetworkState& State)
+				{
+					const URpgRangedCombatViewModel* Hud = LocalRangedHud(State);
+					return Hud && Hud->GetAiming() && Hud->GetDrawing() && Hud->GetNocked() && Hud->GetFullyDrawn();
+				},
 				NetworkTimeout());
 		QueueArcherInput(TEXT("The archer releases"), ShotInput, false);
 		Network
@@ -2758,6 +2792,14 @@ NETWORK_TEST_CLASS(RangedAimPIE, "SurvivalRpg.Network")
 				NetworkTimeout())
 			.UntilClient(TEXT("The observer sees the release"), 1,
 				[this](FNetworkState& State) { return ArcherHas(State, TEXT("State.Ranged.Releasing")) && !ArcherHas(State, TEXT("State.Ranged.Drawing")); },
+				NetworkTimeout())
+			.UntilClient(TEXT("The archer's HUD counts the spent arrow and ends the draw"), 0,
+				[](FNetworkState& State)
+				{
+					const URpgRangedCombatViewModel* Hud = LocalRangedHud(State);
+					return Hud && Hud->GetAmmunitionCount() == StartingArrows - 1 && !Hud->GetDrawing() && Hud->GetDrawFraction() == 0.0f
+						&& Hud->GetAiming();
+				},
 				NetworkTimeout())
 			.ThenServer(TEXT("The held aim keeps the stance after the shot ended"),
 				[this](FNetworkState& State)
@@ -2775,6 +2817,37 @@ NETWORK_TEST_CLASS(RangedAimPIE, "SurvivalRpg.Network")
 				{
 					const URpgAbilitySystemComponent* AbilitySystem = ArcherAbilitySystem(State);
 					return AbilitySystem && !AbilitySystem->IsRangedAimActive();
+				},
+				NetworkTimeout())
+			.ThenServer(TEXT("The archer's last arrows leave its inventory"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Archer = RpgCombatPIENetworkTests::FindCharacterByPlayerId(State.World, ArcherId);
+					URpgInventoryManagerComponent* Inventory = Archer && Archer->GetPlayerState()
+						? Archer->GetPlayerState()->FindComponentByClass<URpgInventoryManagerComponent>() : nullptr;
+					UClass* ArrowClass = LoadClass<URpgInventoryItemDefinition>(nullptr, TEXT("/GF_Combat_Ranged/Items/ID_Arrow_Standard.ID_Arrow_Standard_C"));
+					ASSERT_THAT(IsTrue(Inventory && ArrowClass && Inventory->ConsumeItemsByDefinition(ArrowClass, StartingArrows - 1)));
+				})
+			.UntilClient(TEXT("The archer's HUD shows the bow empty"), 0,
+				[](FNetworkState& State)
+				{
+					const URpgRangedCombatViewModel* Hud = LocalRangedHud(State);
+					return Hud && Hud->GetHasRangedWeapon() && Hud->GetAmmunitionCount() == 0 && !Hud->GetShotAvailable();
+				},
+				NetworkTimeout())
+			.ThenServer(TEXT("The archer puts the bow away"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Archer = RpgCombatPIENetworkTests::FindCharacterByPlayerId(State.World, ArcherId);
+					URpgEquipmentManagerComponent* Equipment = Archer ? Archer->FindComponentByClass<URpgEquipmentManagerComponent>() : nullptr;
+					ASSERT_THAT(IsNotNull(Equipment));
+					Equipment->UnequipItemInSlot(ERpgEquipmentSlot::MainHand);
+				})
+			.UntilClient(TEXT("The archer's HUD hides the ammunition"), 0,
+				[](FNetworkState& State)
+				{
+					const URpgRangedCombatViewModel* Hud = LocalRangedHud(State);
+					return Hud && !Hud->GetHasRangedWeapon() && !Hud->GetAiming();
 				},
 				NetworkTimeout());
 	}
