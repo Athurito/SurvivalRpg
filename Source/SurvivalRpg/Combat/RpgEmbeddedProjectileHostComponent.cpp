@@ -132,6 +132,11 @@ int32 URpgEmbeddedProjectileHostComponent::RecoverProjectile(
 		{
 			Contact = FMath::ClosestPointOnSegment(BoneLocation, Hit.ImpactPoint, Hit.ImpactPoint + Forward * RpgEmbeddedProjectileHost::BodySearchLength);
 		}
+		else if (Mesh->GetNumBones() > 0)
+		{
+			// Without posed bones the shaft still follows the skeleton from its root.
+			Bone = Mesh->GetBoneName(0);
+		}
 	}
 	const ARpgEmbeddedProjectilePickup* VisualDefaults = Definition.PickupClass ? Definition.PickupClass->GetDefaultObject<ARpgEmbeddedProjectilePickup>() : nullptr;
 	Contact += Forward * (VisualDefaults ? VisualDefaults->GetEmbedDepth() : 0.0f);

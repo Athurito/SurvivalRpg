@@ -19,7 +19,11 @@
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgStaminaSet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/AbilitySystem/Tasks/RpgAbilityTask_ProjectileShot.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "SurvivalRpg/Combat/RpgEmbeddedProjectileHostComponent.h"
 #include "SurvivalRpg/Combat/RpgEmbeddedProjectilePickup.h"
+#include "SurvivalRpg/Inventory/RpgLootSourceComponent.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
@@ -41,7 +45,34 @@ namespace RpgCombatProjectilePIETests
 		ARpgCombatNetworkTargetFixture* Target = nullptr;
 		ARpgCombatNetworkTargetFixture* Shooter = nullptr;
 		ARpgNetworkAutomationRecoveryWall* Wall = nullptr;
+		ARpgNetworkAutomationArrowBody* Body = nullptr;
 	};
+
+	const FVector ArrowBodyLocation(0.0f, 5000.0f, 300.0f);
+
+	URpgEmbeddedProjectileHostComponent* FindArrowHost(const FNetworkState& State)
+	{
+		return State.Body ? State.Body->FindComponentByClass<URpgEmbeddedProjectileHostComponent>() : nullptr;
+	}
+
+	/** Every group of the host shows exactly one shaft on this machine's own skeletal mesh, at the group's bone. */
+	bool ShowsShaftsOnItsSkeleton(const FNetworkState& State, const int32 Expected)
+	{
+		const URpgEmbeddedProjectileHostComponent* Host = FindArrowHost(State);
+		if (!Host || Host->GetGroups().Num() != Expected || Host->GetVisibleShaftCount() != Expected)
+		{
+			return false;
+		}
+		for (const FRpgEmbeddedProjectileGroup& Group : Host->GetGroups())
+		{
+			const UStaticMeshComponent* Shaft = Host->GetShaftForTests(Group.GroupId);
+			if (Group.Bone.IsNone() || !Shaft || Shaft->GetAttachParent() != State.Body->GetBodyMesh() || Shaft->GetAttachSocketName() != Group.Bone)
+			{
+				return false;
+			}
+		}
+		return true;
+	}
 
 	/** The recovery shot flies along +X beside the target into a movable wall. */
 	const FVector RecoveryShotOrigin(100.0f, 3000.0f, 300.0f);
@@ -797,6 +828,52 @@ NETWORK_TEST_CLASS(CombatProjectilePIE, "SurvivalRpg.Network")
 					return Inventory && Inventory->GetTotalItemCountByDefinition(Arrow) == 1;
 				},
 				NetworkTimeout());
+	}
+
+	TEST_METHOD(ArrowsInABodyShowOnEveryClientsSkeletonAndLeaveWithTheirLoot)
+	{
+		using namespace RpgCombatProjectilePIETests;
+
+		QueueFixtures(false);
+		Network
+			.SpawnAndReplicate<ARpgNetworkAutomationArrowBody, &FNetworkState::Body>(
+				[](ARpgNetworkAutomationArrowBody& Body) { Body.SetActorLocation(ArrowBodyLocation); },
+				NetworkTimeout())
+			.ThenServer(TEXT("Two intact arrows lodge in the body's chest and thigh"),
+				[this](FNetworkState& State)
+				{
+					URpgEmbeddedProjectileHostComponent* Host = FindArrowHost(State);
+					const TSubclassOf<URpgInventoryItemDefinition> Arrow = LoadClass<URpgInventoryItemDefinition>(nullptr, StandardArrowPath);
+					FRpgProjectileRecoveryDefinition Definition;
+					Definition.PickupClass = LoadClass<ARpgEmbeddedProjectilePickup>(nullptr,
+						TEXT("/GF_Combat_Ranged/Projectiles/BP_EmbeddedPickup_Arrow.BP_EmbeddedPickup_Arrow_C"));
+					ASSERT_THAT(IsTrue(Host && Arrow && Definition.PickupClass));
+					for (const FVector& Offset : { FVector(-30.0f, 0.0f, 130.0f), FVector(-30.0f, 10.0f, 60.0f) })
+					{
+						FHitResult Hit(State.Body, State.Body->GetBodyMesh(), ArrowBodyLocation + Offset, FVector(-1.0f, 0.0f, 0.0f));
+						ASSERT_THAT(IsTrue(Host->RecoverProjectile(Hit, FVector(1.0f, 0.0f, 0.0f), Arrow, Definition) != 0));
+					}
+					ASSERT_THAT(IsTrue(Host->GetGroups().Num() == 2));
+					ASSERT_THAT(IsTrue(!Host->GetGroups()[0].Bone.IsNone()));
+					ASSERT_THAT(IsTrue(Host->GetVisibleShaftCount() == 2));
+					ASSERT_THAT(IsTrue(ShowsShaftsOnItsSkeleton(State, 2)));
+				})
+			.UntilClients(TEXT("Every client shows both shafts on its own skeleton"),
+				[](FNetworkState& State) { return ShowsShaftsOnItsSkeleton(State, 2); }, NetworkTimeout())
+			.ThenServer(TEXT("The body dies and a player takes one arrow from its loot"),
+				[this](FNetworkState& State)
+				{
+					URpgEmbeddedProjectileHostComponent* Host = FindArrowHost(State);
+					URpgInventoryManagerComponent* Loot = State.Body->FindComponentByClass<URpgInventoryManagerComponent>();
+					const TSubclassOf<URpgInventoryItemDefinition> Arrow = LoadClass<URpgInventoryItemDefinition>(nullptr, StandardArrowPath);
+					ASSERT_THAT(IsTrue(Host && Loot));
+					State.Body->FindComponentByClass<URpgLootSourceComponent>()->PopulateLoot();
+					ASSERT_THAT(IsTrue(Loot->GetTotalItemCountByDefinition(Arrow) == 2));
+					ASSERT_THAT(IsTrue(Loot->ConsumeItemsByDefinition(Arrow, 1)));
+					ASSERT_THAT(IsTrue(ShowsShaftsOnItsSkeleton(State, 1)));
+				})
+			.UntilClients(TEXT("Every client drops the looted shaft"),
+				[](FNetworkState& State) { return ShowsShaftsOnItsSkeleton(State, 1); }, NetworkTimeout());
 	}
 };
 

@@ -57,7 +57,7 @@ public:
 
 /** Editor-only loot source whose death loot is one unit item, as an enemy corpse fixture. */
 UCLASS(NotBlueprintable, Transient)
-class URpgProjectileRecoveryAutomationLootSource final : public URpgLootSourceComponent
+class SURVIVALRPG_API URpgProjectileRecoveryAutomationLootSource final : public URpgLootSourceComponent
 {
 	GENERATED_BODY()
 
