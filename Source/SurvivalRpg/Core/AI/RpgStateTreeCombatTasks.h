@@ -212,7 +212,10 @@ struct SURVIVALRPG_API FRpgStateTreeRangedAttackTaskInstanceData
 	UPROPERTY(EditAnywhere, Category = Parameter, meta = (ClampMin = "0.0", Units = "s"))
 	float LineOfFireGrace = 1.0f;
 
-	/** Seconds from the start of the draw until an unreleased shot is lowered and the task fails. */
+	/**
+	 * Seconds from the start of the draw until an unreleased shot is lowered and the task fails. Keep it above the
+	 * weapon's full draw time plus AimHoldMax, or the archer never shoots.
+	 */
 	UPROPERTY(EditAnywhere, Category = Parameter, meta = (ClampMin = "0.1", Units = "s"))
 	float Timeout = 6.0f;
 

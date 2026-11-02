@@ -60,7 +60,8 @@ public:
 	/**
 	 * Starts a shot with the shot definition of the ability's source weapon (URpgRangedWeaponInstance), such as the
 	 * equipped bow. Without a ranged source weapon the shot cancels as InvalidShot. A weapon that declares the unlimited
-	 * NPC policy uses it instead of AmmunitionPolicy, so players and NPCs share one shot ability.
+	 * NPC policy uses it instead of AmmunitionPolicy for a shooter without a player inventory, so players and NPCs share
+	 * one shot ability.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Ability|Tasks", meta = (DisplayName = "Start Projectile Shot From Weapon", HidePin = "OwningAbility", DefaultToSelf = "OwningAbility", BlueprintInternalUseOnly = "true"))
 	static URpgAbilityTask_ProjectileShot* StartProjectileShotFromWeapon(

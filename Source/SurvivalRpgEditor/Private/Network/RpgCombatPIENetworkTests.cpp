@@ -6,6 +6,7 @@
 #include "CQTest.h"
 #include "Components/PIENetworkComponent.h"
 #include "Network/RpgCombatNetworkTestTypes.h"
+#include "Network/RpgCombatProjectileNetworkTestTypes.h"
 
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
@@ -2916,6 +2917,10 @@ NETWORK_TEST_CLASS(RangedEnemyPIE, "SurvivalRpg.Network")
 	int32 TargetId = INDEX_NONE;
 	int32 ObserverId = INDEX_NONE;
 	bool bObserverSawTheDraw = false;
+	double BlockedSinceSeconds = 0.0;
+	bool bSawDrawAfterBudget = false;
+	float HealthBeforeNextHit = 0.0f;
+	TWeakObjectPtr<AActor> Wall;
 	TArray<TSharedPtr<FString>> StepDescriptions;
 
 	const TCHAR* Describe(const FString& Description)
@@ -2930,6 +2935,19 @@ NETWORK_TEST_CLASS(RangedEnemyPIE, "SurvivalRpg.Network")
 			return *It;
 		}
 		return nullptr;
+	}
+
+	static const URpgAbilitySystemComponent* ArcherAbilitySystem(UWorld* World)
+	{
+		const ARpgAICharacter* Archer = FindArcher(World);
+		return Archer ? Cast<URpgAbilitySystemComponent>(Archer->GetAbilitySystemComponent()) : nullptr;
+	}
+
+	float TargetHealthNow(UWorld* World) const
+	{
+		const ARpgCharacter* Target = FindPlayer(World, TargetId);
+		const UAbilitySystemComponent* AbilitySystem = Target ? Target->GetAbilitySystemComponent() : nullptr;
+		return AbilitySystem ? AbilitySystem->GetNumericAttribute(URpgHealthSet::GetHealthAttribute()) : -1.0f;
 	}
 
 	ARpgCharacter* FindPlayer(UWorld* World, const int32 PlayerId) const
@@ -2951,6 +2969,10 @@ NETWORK_TEST_CLASS(RangedEnemyPIE, "SurvivalRpg.Network")
 		TargetId = INDEX_NONE;
 		ObserverId = INDEX_NONE;
 		bObserverSawTheDraw = false;
+		BlockedSinceSeconds = 0.0;
+		bSawDrawAfterBudget = false;
+		HealthBeforeNextHit = 0.0f;
+		Wall.Reset();
 		for (const FWorldContext& Context : GEngine->GetWorldContexts())
 		{
 			if (Context.WorldType == EWorldType::PIE && IsValid(Context.World()))
@@ -3014,7 +3036,7 @@ NETWORK_TEST_CLASS(RangedEnemyPIE, "SurvivalRpg.Network")
 					});
 		}
 		Network
-			.ThenServer(TEXT("The target stands 10 m in front of a spawned bow enemy; the others stand out of its reach"),
+			.ThenServer(TEXT("The target stands 10 m in front of a spawned bow enemy behind a wall; the others stand out of its reach"),
 				[this](FNetworkState& State)
 				{
 					for (TActorIterator<ARpgCharacter> It(State.World); It; ++It)
@@ -3038,18 +3060,46 @@ NETWORK_TEST_CLASS(RangedEnemyPIE, "SurvivalRpg.Network")
 					ASSERT_THAT(IsTrue(ArcherClass != nullptr));
 					FActorSpawnParameters Spawn;
 					Spawn.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+					Wall = State.World->SpawnActor<ARpgNetworkAutomationRecoveryWall>(FVector(500.0, 0.0, 300.0), FRotator::ZeroRotator, Spawn);
+					ASSERT_THAT(IsTrue(Wall.IsValid()));
 					ASSERT_THAT(IsTrue(State.World->SpawnActor<ARpgAICharacter>(ArcherClass, ArcherLocation, FRotator(0.0, 180.0, 0.0), Spawn) != nullptr));
 				})
-			.UntilServer(TEXT("The archer's StateTree controls its attack driver, and its loadout holds the unlimited enemy bow"),
-				[](FNetworkState& State)
+			.UntilServer(TEXT("The archer's StateTree targets the player with the unlimited enemy bow, but the wall blocks its line of fire"),
+				[this](FNetworkState& State)
 				{
 					const ARpgAICharacter* Archer = FindArcher(State.World);
 					const URpgAIAttackDriverComponent* Driver = Archer ? Archer->FindComponentByClass<URpgAIAttackDriverComponent>() : nullptr;
 					const URpgRangedWeaponInstance* Bow = Driver ? Driver->FindMainHandRangedWeapon() : nullptr;
-					return Driver && Driver->IsExternallyControlled() && Bow
-						&& Bow->GetAmmunitionPolicy() == ERpgProjectileAmmunitionPolicy::Unlimited;
+					const AActor* Target = FindPlayer(State.World, TargetId);
+					if (!Driver || !Driver->IsExternallyControlled() || !Bow || Bow->GetAmmunitionPolicy() != ERpgProjectileAmmunitionPolicy::Unlimited
+						|| !Target || Driver->GetCombatTarget() != Target || Driver->HasLineOfFire(Target))
+					{
+						return false;
+					}
+					BlockedSinceSeconds = State.World->GetTimeSeconds();
+					return true;
 				},
 				NetworkTimeout())
+			.UntilServer(TEXT("Behind the wall it draws nothing for 3 s"),
+				[this](FNetworkState& State)
+				{
+					const URpgAbilitySystemComponent* AbilitySystem = ArcherAbilitySystem(State.World);
+					const ARpgAICharacter* Archer = FindArcher(State.World);
+					const URpgAIAttackDriverComponent* Driver = Archer ? Archer->FindComponentByClass<URpgAIAttackDriverComponent>() : nullptr;
+					// A failed check ends the wait with its error recorded.
+					if (!Assert.IsTrue(AbilitySystem && Driver) || !Assert.AreEqual(0, AbilitySystem->GetRangedRecoveryTokensUsed())
+						|| !Assert.IsFalse(Driver->IsRangedShotActive()))
+					{
+						return true;
+					}
+					return State.World->GetTimeSeconds() - BlockedSinceSeconds >= 3.0;
+				},
+				NetworkTimeout())
+			.ThenServer(TEXT("The wall goes"), [this](FNetworkState&)
+				{
+					ASSERT_THAT(IsTrue(Wall.IsValid()));
+					Wall->Destroy();
+				})
 			.UntilServer(TEXT("The archer released a shot that took one of its life's recovery tokens"),
 				[](FNetworkState& State)
 				{
@@ -3081,19 +3131,38 @@ NETWORK_TEST_CLASS(RangedEnemyPIE, "SurvivalRpg.Network")
 					return bObserverSawTheDraw && Equipment && Equipment->GetWeaponHoldLayerInstance(ERpgEquipmentSlot::MainHand) != nullptr;
 				},
 				NetworkTimeout())
-			.ThenServer(TEXT("Unlimited fire stays within the recovery budget"),
-				[this](FNetworkState& State)
+			.UntilServer(TEXT("Its fire spends the whole recovery budget of its life"),
+				[](FNetworkState& State)
 				{
+					const URpgAbilitySystemComponent* AbilitySystem = ArcherAbilitySystem(State.World);
 					const ARpgAICharacter* Archer = FindArcher(State.World);
-					const URpgAbilitySystemComponent* AbilitySystem = Archer
-						? Cast<URpgAbilitySystemComponent>(Archer->GetAbilitySystemComponent())
-						: nullptr;
 					const URpgAIAttackDriverComponent* Driver = Archer ? Archer->FindComponentByClass<URpgAIAttackDriverComponent>() : nullptr;
 					const URpgRangedWeaponInstance* Bow = Driver ? Driver->FindMainHandRangedWeapon() : nullptr;
-					ASSERT_THAT(IsTrue(AbilitySystem && Bow));
-					ASSERT_THAT(IsTrue(Bow->GetShotDefinition().UnlimitedRecoveryBudget > 0));
-					ASSERT_THAT(IsTrue(AbilitySystem->GetRangedRecoveryTokensUsed() <= Bow->GetShotDefinition().UnlimitedRecoveryBudget));
-				});
+					return AbilitySystem && Bow && AbilitySystem->GetRangedRecoveryTokensUsed() >= Bow->GetShotDefinition().UnlimitedRecoveryBudget;
+				},
+				NetworkTimeout())
+			.UntilServer(TEXT("It draws again after the budget, hits once more, and nothing refills the budget"),
+				[this](FNetworkState& State)
+				{
+					const URpgAbilitySystemComponent* AbilitySystem = ArcherAbilitySystem(State.World);
+					const ARpgAICharacter* Archer = FindArcher(State.World);
+					const URpgAIAttackDriverComponent* Driver = Archer ? Archer->FindComponentByClass<URpgAIAttackDriverComponent>() : nullptr;
+					const URpgRangedWeaponInstance* Bow = Driver ? Driver->FindMainHandRangedWeapon() : nullptr;
+					// A failed check ends the wait with its error recorded.
+					if (!Assert.IsTrue(AbilitySystem && Driver && Bow)
+						|| !Assert.AreEqual(Bow->GetShotDefinition().UnlimitedRecoveryBudget, AbilitySystem->GetRangedRecoveryTokensUsed()))
+					{
+						return true;
+					}
+					// The last budgeted arrow has landed by the next draw, so a later hit comes from a shot beyond the budget.
+					if (!bSawDrawAfterBudget && Driver->IsRangedShotActive() && !Driver->WasRangedShotReleased())
+					{
+						bSawDrawAfterBudget = true;
+						HealthBeforeNextHit = TargetHealthNow(State.World);
+					}
+					return bSawDrawAfterBudget && TargetHealthNow(State.World) < HealthBeforeNextHit;
+				},
+				NetworkTimeout());
 	}
 };
 

@@ -55,7 +55,9 @@ protected:
 	/**
 	 * ShooterInventory for every weapon a player can hold: each shot consumes one ammunition item. Unlimited only for NPC
 	 * weapon content that never enters an inventory, such as an enemy loadout's bow: its shots need no items, and
-	 * ShotDefinition.UnlimitedRecoveryBudget bounds the arrows they return. Overrides the policy the shot ability passes.
+	 * ShotDefinition.UnlimitedRecoveryBudget bounds the arrows they return. Unlimited replaces the policy the shot ability
+	 * passes, and only for a shooter without a player inventory; a player always pays. Read by the server's and the
+	 * owner's shot; designer-tuned static data, not replicated.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Ranged")
 	ERpgProjectileAmmunitionPolicy AmmunitionPolicy = ERpgProjectileAmmunitionPolicy::ShooterInventory;

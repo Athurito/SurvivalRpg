@@ -266,12 +266,12 @@ bool URpgAIAttackDriverComponent::IsBlockedByCombatState(const URpgAbilitySystem
 		ASC.HasMatchingGameplayTag(RpgGameplayTags::State_Blocking);
 }
 
-FGameplayAbilitySpecHandle URpgAIAttackDriverComponent::FindAttackSpec(const URpgAbilitySystemComponent& ASC) const
+FGameplayAbilitySpecHandle URpgAIAttackDriverComponent::FindAttackSpec(const URpgAbilitySystemComponent& ASC, const UObject* Source) const
 {
 	const FGameplayTag InputTag = GetResolvedAttackInputTag();
 	for (const FGameplayAbilitySpec& Spec : ASC.GetActivatableAbilities())
 	{
-		if (Spec.Ability && Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag))
+		if (Spec.Ability && Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag) && (!Source || Spec.SourceObject.Get() == Source))
 		{
 			return Spec.Handle;
 		}
@@ -731,12 +731,14 @@ bool URpgAIAttackDriverComponent::StartRangedShot()
 	UWorld* World = GetWorld();
 	URpgAbilitySystemComponent* ASC = GetRpgAbilitySystemComponent();
 	AActor* Target = CombatTarget.Get();
+	const URpgRangedWeaponInstance* Weapon = FindMainHandRangedWeapon();
 	if (bAttackSequenceActive || IsRangedShotActive() || !World || !ASC || !GetOwner()->HasAuthority() || !IsOwnerAlive()
-		|| !IsValidCombatTarget(Target) || IsBlockedByCombatState(*ASC) || !FindMainHandRangedWeapon())
+		|| !IsValidCombatTarget(Target) || IsBlockedByCombatState(*ASC) || !Weapon)
 	{
 		return false;
 	}
-	const FGameplayAbilitySpecHandle SpecHandle = FindAttackSpec(*ASC);
+	// The weapon's own shot, not another ability that shares the attack input.
+	const FGameplayAbilitySpecHandle SpecHandle = FindAttackSpec(*ASC, Weapon);
 	if (!SpecHandle.IsValid())
 	{
 		return false;
@@ -770,10 +772,10 @@ bool URpgAIAttackDriverComponent::ReleaseRangedShot()
 	return true;
 }
 
-void URpgAIAttackDriverComponent::CancelRangedShot()
+void URpgAIAttackDriverComponent::CancelRangedShot(const bool bIncludeReleased)
 {
 	URpgAbilitySystemComponent* ASC = GetRpgAbilitySystemComponent();
-	if (ASC && !bRangedShotReleased && IsRangedShotActive())
+	if (ASC && (bIncludeReleased || !bRangedShotReleased) && IsRangedShotActive())
 	{
 		ASC->CancelAbilityHandle(RangedShotSpecHandle);
 	}
@@ -814,15 +816,16 @@ bool URpgAIAttackDriverComponent::HasLineOfFire(const AActor* Target) const
 		return false;
 	}
 
+	// From the body at the launch height, as the shot checks the way to its muzzle too: an obstacle right in front of
+	// the archer, closer than the muzzle, still blocks.
 	const FVector TargetPoint = Target->GetActorLocation();
-	const FVector Muzzle = RpgProjectileShot::GetMuzzleLocation(
-		Weapon->GetShotDefinition(), Pawn->GetActorLocation(), (TargetPoint - Pawn->GetActorLocation()).Rotation().Yaw);
+	const FVector Body = Pawn->GetActorLocation() + FVector(0.0f, 0.0f, Weapon->GetShotDefinition().MuzzleOffset.Z);
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(RpgAILineOfFire), false, Pawn);
 	TArray<AActor*> AttachedActors;
 	Pawn->GetAttachedActors(AttachedActors, true, true);
 	QueryParams.AddIgnoredActors(AttachedActors);
 	FHitResult Hit;
-	if (!World->LineTraceSingleByChannel(Hit, Muzzle, TargetPoint, Rpg_TraceChannel_Projectile, QueryParams))
+	if (!World->LineTraceSingleByChannel(Hit, Body, TargetPoint, Rpg_TraceChannel_Projectile, QueryParams))
 	{
 		return true;
 	}

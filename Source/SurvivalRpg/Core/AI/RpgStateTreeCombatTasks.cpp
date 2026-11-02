@@ -437,12 +437,15 @@ void FRpgStateTreeMeleeAttackTask::ExitState(FStateTreeExecutionContext& Context
 
 namespace RpgStateTreeCombat
 {
+	/** Seconds a released shot's ability may still run before the task lowers it. */
+	constexpr float ReleasedShotTimeout = 1.0f;
+
 	/** Points the view at the ballistic aim above Target, so the shot that reads the view arcs onto Target's body. */
 	void AimRangedShot(AAIController& Controller, const URpgAIAttackDriverComponent& AttackDriver, const AActor& Target)
 	{
 		if (ARpgAIController* RpgController = Cast<ARpgAIController>(&Controller))
 		{
-			FVector AimPoint;
+			FVector AimPoint = Target.GetActorLocation();
 			AttackDriver.GetRangedAimPoint(&Target, AimPoint);
 			RpgController->SetFocusAimPoint(AimPoint);
 		}
@@ -493,7 +496,18 @@ EStateTreeRunStatus FRpgStateTreeRangedAttackTask::Tick(FStateTreeExecutionConte
 	}
 	if (InstanceData.bReleased)
 	{
-		return AttackDriver->IsRangedShotActive() ? EStateTreeRunStatus::Running : EStateTreeRunStatus::Succeeded;
+		if (!AttackDriver->IsRangedShotActive())
+		{
+			return EStateTreeRunStatus::Succeeded;
+		}
+		// A release that never ended its ability, such as one whose input was blocked, must not hold the bow forever.
+		InstanceData.TimeLeft -= DeltaTime;
+		if (InstanceData.TimeLeft <= 0.0f)
+		{
+			AttackDriver->CancelRangedShot(true);
+			return EStateTreeRunStatus::Failed;
+		}
+		return EStateTreeRunStatus::Running;
 	}
 	// A stagger, a dodge or death cancelled the draw.
 	AActor* Target = AttackDriver->GetCombatTarget();
@@ -517,6 +531,7 @@ EStateTreeRunStatus FRpgStateTreeRangedAttackTask::Tick(FStateTreeExecutionConte
 		if (InstanceData.HoldLeft <= 0.0f && bLineOfFire && AttackDriver->ReleaseRangedShot())
 		{
 			InstanceData.bReleased = true;
+			InstanceData.TimeLeft = FMath::Max(InstanceData.TimeLeft, ReleasedShotTimeout);
 			return AttackDriver->IsRangedShotActive() ? EStateTreeRunStatus::Running : EStateTreeRunStatus::Succeeded;
 		}
 	}

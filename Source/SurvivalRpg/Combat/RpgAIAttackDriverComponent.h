@@ -109,8 +109,11 @@ public:
 	/** Server: releases the drawn shot as a player's input release does. False without a drawn shot or after its release. */
 	bool ReleaseRangedShot();
 
-	/** Server: lowers a drawn shot without shooting and without cost; a released shot plays out. */
-	void CancelRangedShot();
+	/**
+	 * Server: lowers a drawn shot without shooting and without cost. A released shot plays out unless bIncludeReleased,
+	 * for a release whose ability never ended.
+	 */
+	void CancelRangedShot(bool bIncludeReleased = false);
 
 	/** True from StartRangedShot until the shot ability ends. */
 	bool IsRangedShotActive() const;
@@ -122,8 +125,9 @@ public:
 	float GetRangedDrawFraction() const;
 
 	/**
-	 * Server: whether the straight path from the main-hand ranged weapon's launch point to Target's body is clear on the
-	 * projectile channel. Anything else in between blocks it, also a pawn such as an ally. False without a ranged weapon.
+	 * Server: whether the straight path from the owner's body at the main-hand ranged weapon's launch height to Target's
+	 * body is clear on the projectile channel. Anything else in between blocks it, also a pawn such as an ally or an
+	 * obstacle closer than the muzzle. False without a ranged weapon.
 	 */
 	bool HasLineOfFire(const AActor* Target) const;
 
@@ -157,8 +161,8 @@ private:
 	bool CanAttemptAttack(bool bRequireInterval) const;
 	/** Whether a state such as a stagger, a raised block or death keeps the owner from attacking now. */
 	bool IsBlockedByCombatState(const URpgAbilitySystemComponent& ASC) const;
-	/** The granted ability on the attack input, or an invalid handle. */
-	FGameplayAbilitySpecHandle FindAttackSpec(const URpgAbilitySystemComponent& ASC) const;
+	/** The granted ability on the attack input, from Source when one is given, or an invalid handle. */
+	FGameplayAbilitySpecHandle FindAttackSpec(const URpgAbilitySystemComponent& ASC, const UObject* Source = nullptr) const;
 	bool IsInAttackRangeAndCone(const AActor* Target) const;
 	bool HasActiveMainHandPrimaryAttack() const;
 	AActor* FindNearestHostileTarget(float SearchRadius) const;
