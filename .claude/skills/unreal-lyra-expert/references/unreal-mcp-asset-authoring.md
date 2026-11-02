@@ -105,6 +105,8 @@ A `GameplayCueNotify_Burst` `OnBurst` override is const, so it cannot call the B
 - A montage that should end right after its strike, such as a tool swing that blends into the next wind-up, needs `BlendOutTriggerTime` 0: by default the auto blend-out starts its blend time before the end, which at a 1.5 play rate and 0.25 s fell before the attack window. With 0 the last pose holds while it blends out (HRW-04b).
 - `ObjectTools.get_properties` cannot read a montage's `Notifies` or a static mesh's `Sockets`; use `AssetContractTools.montage_contract`, and `find_socket` in editor Python.
 - `AnimationAssetTools.set_blend_space_samples` rejects the whole set when one coordinate lies outside an axis range, even by 0.2.
+- A *Blend Poses by bool* branch that must restart its child, such as a release clip, needs `ChildUpateMode` (the engine's spelling) `ResetChildOnActivate`. Python sees only the deprecated `reset_child_on_activation`, and setting it raises the deprecation as an error; set `child_upate_mode` to `unreal.BlendListChildUpdateMode.RESET_CHILD_ON_ACTIVATE` on the node struct instead (RNG-03 `ABP_Hold_Bow_Manny`).
+- Python names of reflected booleans drop the `b`: `bRangedAimActive` is `ranged_aim_active`.
 
 ### GameplayAbility
 
@@ -147,6 +149,9 @@ A `GameplayCueNotify_Burst` `OnBurst` override is const, so it cannot call the B
   - It cannot bind to a widget function. Use `AssetContractTools.add_view_function_binding` for a function with one input, and `AssetContractTools.add_function_input` to give that function an enum, struct or object input, which `BlueprintTools.add_function_param` cannot type. Its `soft_reference` flag makes a class input a soft object reference, such as a view model's soft texture.
 
 ### DataAssets and ItemDefinition fragments
+
+- Appending to an array of structs with `ObjectTools.set_properties`, such as an AbilitySet's `GrantedGameplayAbilities`, needs the existing elements in exactly the shape `get_properties` returns, object references included as `{"refPath": ...}`; otherwise the call fails with "ArrayAdd: elements changed alongside the size change" (RNG-03).
+- A Blueprint ability's asset tags are writable as `AbilityTags`, `{"gameplayTags": [{"tagName": ...}]}`; `GetAssetTags()` reads them (RNG-03).
 
 - DataAsset instances such as `URpgAbilitySet` and `URpgPawnData`: create with `DataAssetTools.create(folder_path, asset_name, asset_type)`, then set values with `ObjectTools.set_properties`.
 - Blueprint-class definitions such as `URpgExperienceDefinition`, `URpgInventoryItemDefinition`, and `URpgEquipmentDefinition`: create with `BlueprintTools.create` and the native definition class as `asset_type`, then call `ObjectTools.set_properties` on the Blueprint.
