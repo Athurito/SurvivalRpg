@@ -60,6 +60,7 @@ Behavior observed in this project's UE 5.8 editor sessions on the primary workst
 - Do not combine `SurvivalRpg.Harvesting` with PIE network tests in one `ue.py test` call: a `Harvesting.Persistence` test leaves its `HarvestRenewableAreaTest` world referenced, and the next PIE test's `NewMap` crashes the editor with "World Memory Leaks" (HRW-01). Run them in separate calls.
 - A/B against master content: `git checkout origin/master -- <asset>` runs a suite on the old asset, and `git checkout HEAD -- <asset>` inside a `trap ... EXIT` restores it.
 - Importing the project toolsets writes a `__pycache__` folder under `Build/Tools/Unreal`, which `.gitignore` does not cover; delete it before committing.
+- One rendered `ue.py test` run of every native suite (`SurvivalRpg.Combat` through `SurvivalRpg.UI`, about 600 tests) twice ended in a GPU driver crash (`DXGI_ERROR_DRIVER_INTERNAL_ERROR`) at the same `Inventory.TransferDelta` test after about 295 tests; that suite passes alone. Run the suites without PIE tests with `--null-rhi`, and `SurvivalRpg.Combat`, `SurvivalRpg.Network` and `SurvivalRpg.GASP` each in its own rendered call (RNG-05).
 
 ## Dirty packages and modals
 

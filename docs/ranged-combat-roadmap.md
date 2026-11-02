@@ -1,6 +1,6 @@
 # Ranged combat roadmap
 
-Updated: 2026-11-02. Status: **In progress.** The user started the whole roadmap on 2026-11-01; its tasks are delivered one PR each in dependency order and validated by the user at the end. RNG-01 to RNG-05, including RNG-03b and RNG-03c, are done.
+Updated: 2026-11-02. Status: **Implemented; user check pending.** The user started the whole roadmap on 2026-11-01; its tasks are delivered one PR each in dependency order and validated by the user at the end. RNG-01 to RNG-06, including RNG-03b and RNG-03c, are done; the user's playtest of the whole delivery is pending ([acceptance and playtest](ranged-acceptance.md)).
 
 This plan records the agreed first bow system: a player bow and a bow enemy using shared combat mechanisms, including visibly embedded arrows, breakage, and partial ammunition recovery. It also defines the extension boundary for later magic and abilities such as Rain of Arrows. This is a design and implementation handoff, not a report of implemented or tested gameplay.
 
@@ -228,7 +228,7 @@ All tasks are **Deferred** because their implementation start has not been selec
 | RNG-03c | Embedded arrows on AI characters with grouping, corpse recovery including post-death hits, and the finite NPC recovery-budget mechanism | RNG-03b | Done; user check with RNG-06 ([ranged-ai-arrow-recovery.md](ranged-ai-arrow-recovery.md), [PR #370](https://github.com/Athurito/SurvivalRpg/pull/370)) |
 | RNG-04 | Crosshair, draw-strength and ammunition HUD through CommonUI/MVVM; no trajectory or impact prediction display | RNG-03 | Done; user check with RNG-06 ([ranged-hud.md](ranged-hud.md), [PR #369](https://github.com/Athurito/SurvivalRpg/pull/369)) |
 | RNG-05 | One bow enemy extending existing AI action/spacing behavior, common bow execution, and configured unlimited fire with bounded recovery | RNG-03c | Done; user check with RNG-06 ([ranged-bow-enemy.md](ranged-bow-enemy.md), [PR #371](https://github.com/Athurito/SurvivalRpg/pull/371)) |
-| RNG-06 | Integrated acceptance, network/regression checks, and final first-bow feel tuning | RNG-04, RNG-05 | Deferred |
+| RNG-06 | Integrated acceptance, network/regression checks, and final first-bow feel tuning | RNG-04, RNG-05 | Done; user playtest and feel check pending ([ranged-acceptance.md](ranged-acceptance.md), PR pending) |
 
 Each task records its ownership boundary, changed assets, actual validation, failed attempts, remaining limits, PR, and next action. Do not defer the focused checks for early tasks until RNG-06. No implementation task is marked Ready by this document.
 
