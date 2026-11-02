@@ -5,6 +5,7 @@
 #include "SurvivalRpg/Combat/RpgEmbeddedProjectilePickup.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_Ammunition.h"
+#include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgProjectileShotAutomationTestTypes)
@@ -47,6 +48,16 @@ ARpgProjectileRecoveryAutomationProjectile::ARpgProjectileRecoveryAutomationProj
 {
 	ImpactRecovery = ERpgProjectileImpactRecovery::Recoverable;
 	Recovery.PickupClass = ARpgEmbeddedProjectilePickup::StaticClass();
+}
+
+URpgProjectileRecoveryAutomationLootSource::URpgProjectileRecoveryAutomationLootSource(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	FPickupTemplate Loot;
+	Loot.ItemDef = URpgInventoryAutomationTestUnitItemDefinition::StaticClass();
+	Loot.StackCount = 1;
+	LootTemplates = { Loot };
+	bGenerateLootOnDeath = false;
 }
 
 URpgProjectileRecoveryAutomationArrowDefinition::URpgProjectileRecoveryAutomationArrowDefinition(const FObjectInitializer& ObjectInitializer)

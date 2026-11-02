@@ -7,6 +7,7 @@
 #include "GameFramework/PlayerState.h"
 #include "GameplayEffect.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility.h"
+#include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgStaminaSet.h"
 #include "SurvivalRpg/Combat/RpgCombatProjectile.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
@@ -280,19 +281,33 @@ namespace RpgProjectileShot
 		Params.StaggerDamage = Definition.StaggerDamage * Fraction;
 		Params.ShotId = ShotId;
 		Params.BreakChance = Tuning.BreakChance;
-		// Only an arrow the shooter paid for comes back; unlimited fire never creates ammunition.
-		Params.RecoveryItemDefinition = AmmunitionPolicy == ERpgProjectileAmmunitionPolicy::ShooterInventory
-			? Definition.AmmunitionItemDefinition
-			: nullptr;
 		if (!FMath::IsFinite(Params.Speed) || Params.Speed <= 0.0f || !FMath::IsFinite(Params.Damage) || Params.Damage < 0.0f)
 		{
 			return ERpgProjectileShotResult::InvalidShot;
 		}
 
+		// Only an arrow the shooter paid for comes back. Unlimited fire returns ammunition only for the recovery tokens
+		// of the shooter's life; a failed release gives its token back.
+		URpgAbilitySystemComponent* RpgAbilitySystem = Cast<URpgAbilitySystemComponent>(AbilitySystem);
+		const bool bRecoveryToken = AmmunitionPolicy == ERpgProjectileAmmunitionPolicy::Unlimited
+			&& Definition.UnlimitedRecoveryBudget > 0 && RpgAbilitySystem
+			&& RpgAbilitySystem->TryReserveRangedRecoveryToken(Definition.UnlimitedRecoveryBudget);
+		const auto ReturnToken = [bRecoveryToken, RpgAbilitySystem]()
+		{
+			if (bRecoveryToken)
+			{
+				RpgAbilitySystem->ReturnRangedRecoveryToken();
+			}
+		};
+		Params.RecoveryItemDefinition = AmmunitionPolicy == ERpgProjectileAmmunitionPolicy::ShooterInventory || bRecoveryToken
+			? Definition.AmmunitionItemDefinition
+			: nullptr;
+
 		// Spawned but not finished: nothing begins play or replicates until every payment has gone through.
 		ARpgCombatProjectile* Projectile = ARpgCombatProjectile::BeginLaunchFromAbility(Ability, ProjectileClass, Params);
 		if (!Projectile)
 		{
+			ReturnToken();
 			return ERpgProjectileShotResult::SpawnFailed;
 		}
 
@@ -303,6 +318,7 @@ namespace RpgProjectileShot
 			&& (!Inventory || !Inventory->ConsumeItemsByDefinition(Definition.AmmunitionItemDefinition, 1)))
 		{
 			Projectile->AbortDeferredLaunch();
+			ReturnToken();
 			return ERpgProjectileShotResult::NoAmmunition;
 		}
 
@@ -321,6 +337,7 @@ namespace RpgProjectileShot
 		{
 			ReturnArrow();
 			Projectile->AbortDeferredLaunch();
+			ReturnToken();
 			return ERpgProjectileShotResult::InsufficientStamina;
 		}
 
@@ -332,6 +349,7 @@ namespace RpgProjectileShot
 				ApplyStaminaDelta(*AbilitySystem, Definition.StaminaChangeEffect, Level, Cost);
 			}
 			ReturnArrow();
+			ReturnToken();
 			return ERpgProjectileShotResult::SpawnFailed;
 		}
 

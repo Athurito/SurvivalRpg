@@ -1,6 +1,7 @@
 #include "RpgAICharacter.h"
 
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/Combat/RpgEmbeddedProjectileHostComponent.h"
 #include "SurvivalRpg/Combat/RpgEnemyCombatLoadout.h"
 #include "SurvivalRpg/Core/AI/RpgAIPlayerState.h"
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
@@ -23,6 +24,7 @@ ARpgAICharacter::ARpgAICharacter(const FObjectInitializer& ObjectInitializer)
 	LootSourceComponent->SetAutomaticContainerUnlockEnabled(false);
 	CorpseLifecycleComponent = CreateDefaultSubobject<URpgCorpseLifecycleComponent>(TEXT("CorpseLifecycleComponent"));
 	CorpseLifecycleComponent->SetupAttachment(GetMesh());
+	EmbeddedProjectileHostComponent = CreateDefaultSubobject<URpgEmbeddedProjectileHostComponent>(TEXT("EmbeddedProjectileHostComponent"));
 }
 
 void ARpgAICharacter::BeginPlay()

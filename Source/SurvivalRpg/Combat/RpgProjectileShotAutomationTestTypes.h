@@ -5,6 +5,7 @@
 #include "SurvivalRpg/Combat/RpgCombatProjectile.h"
 #include "SurvivalRpg/Combat/RpgProjectileShot.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
+#include "SurvivalRpg/Inventory/RpgLootSourceComponent.h"
 
 #include "RpgProjectileShotAutomationTestTypes.generated.h"
 
@@ -52,6 +53,16 @@ public:
 	explicit URpgProjectileRecoveryAutomationArrowDefinition(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	virtual bool IsEditorOnly() const override { return true; }
+};
+
+/** Editor-only loot source whose death loot is one unit item, as an enemy corpse fixture. */
+UCLASS(NotBlueprintable, Transient)
+class URpgProjectileRecoveryAutomationLootSource final : public URpgLootSourceComponent
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgProjectileRecoveryAutomationLootSource(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 };
 
 /** Editor-only 1x1 stackable ammunition that launches ARpgProjectileShotAutomationTestProjectile. */

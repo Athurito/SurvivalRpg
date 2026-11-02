@@ -25,7 +25,10 @@
 #include "SurvivalRpg/AbilitySystem/Executions/RpgDamageExecution.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Combat/RpgCombatImpact.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "SurvivalRpg/Combat/RpgEmbeddedProjectileHostComponent.h"
 #include "SurvivalRpg/Combat/RpgEmbeddedProjectilePickup.h"
+#include "SurvivalRpg/Core/Corpse/RpgCorpseLifecycleComponent.h"
 #include "SurvivalRpg/Combat/RpgEmbeddedProjectileSubsystem.h"
 #include "SurvivalRpg/Combat/RpgProjectileShotAutomationTestTypes.h"
 #include "SurvivalRpg/Core/Game/RpgGameStateBase.h"
@@ -1104,6 +1107,203 @@ bool FRpgCombatProjectileRecoveryCollectTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("The pickup keeps its deadline"), Orphan->GetRecoveryDeadline(), OrphanDeadline);
 	Fixture.Advance(3.25f);
 	TestTrue(TEXT("The orphaned pickup still expires at its deadline"), IsGone(WeakOrphan));
+	return true;
+}
+
+namespace RpgCombatProjectileTests
+{
+	/** Gives Pawn what an AI character has to keep arrows: a skeletal mesh, loot inventory, loot source and host. */
+	URpgEmbeddedProjectileHostComponent* AddCharacterRecovery(APawn* Pawn)
+	{
+		const auto Add = [Pawn](UActorComponent* Component)
+		{
+			Pawn->AddInstanceComponent(Component);
+			Component->RegisterComponent();
+		};
+		USkeletalMeshComponent* Mesh = NewObject<USkeletalMeshComponent>(Pawn, NAME_None, RF_Transient);
+		Mesh->SetupAttachment(Pawn->GetRootComponent());
+		Add(Mesh);
+		Add(NewObject<URpgInventoryManagerComponent>(Pawn, NAME_None, RF_Transient));
+		Add(NewObject<URpgProjectileRecoveryAutomationLootSource>(Pawn, NAME_None, RF_Transient));
+		URpgEmbeddedProjectileHostComponent* Host = NewObject<URpgEmbeddedProjectileHostComponent>(Pawn, NAME_None, RF_Transient);
+		Add(Host);
+		return Host;
+	}
+
+	int32 CountGroupArrows(const URpgEmbeddedProjectileHostComponent* Host)
+	{
+		int32 Count = 0;
+		for (const FRpgEmbeddedProjectileGroup& Group : Host->GetGroups())
+		{
+			Count += Group.Count;
+		}
+		return Count;
+	}
+
+	/** Arrow content whose pickup has a mesh, so character shafts show. */
+	void UseArrowContent(FRpgProjectileRecoveryDefinition& Recovery)
+	{
+		Recovery.PickupClass = LoadClass<ARpgEmbeddedProjectilePickup>(nullptr,
+			TEXT("/GF_Combat_Ranged/Projectiles/BP_EmbeddedPickup_Arrow.BP_EmbeddedPickup_Arrow_C"));
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCombatProjectileRecoveryCharacterLootTest,
+	"SurvivalRpg.Combat.Projectile.Recovery.AICharacterKeepsArrowsAsCorpseLoot",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCombatProjectileRecoveryCharacterLootTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCombatProjectileTests;
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this)) return false;
+	URpgEmbeddedProjectileHostComponent* Host = AddCharacterRecovery(Fixture.Target.Pawn);
+	URpgInventoryManagerComponent* Corpse = Fixture.Target.Pawn->FindComponentByClass<URpgInventoryManagerComponent>();
+	URpgLootSourceComponent* Loot = Fixture.Target.Pawn->FindComponentByClass<URpgLootSourceComponent>();
+	if (!TestTrue(TEXT("The AI target keeps arrows"), Host && Corpse && Loot && Host->CanRecover())) return false;
+	const TSubclassOf<URpgInventoryItemDefinition> Arrow = URpgProjectileRecoveryAutomationArrowDefinition::StaticClass();
+	const FVector Direction(1.0f, 0.0f, 0.0f);
+	const auto Shoot = [&Fixture, &Direction](const float BreakChance, const float Roll)
+	{
+		ARpgCombatProjectile* Projectile = Fixture.LaunchRecoverable(FVector(-900.0f, 0.0f, 0.0f), Direction, BreakChance, Roll,
+			ARpgProjectileRecoveryAutomationProjectile::StaticClass(), URpgProjectileRecoveryAutomationArrowDefinition::StaticClass(),
+			[](FRpgProjectileRecoveryDefinition& Recovery) { UseArrowContent(Recovery); });
+		if (Projectile)
+		{
+			Projectile->ResolveImpactForTests(Fixture.MakeTargetHit(FVector(-40.0f, 0.0f, 0.0f), Direction));
+		}
+		return Projectile ? Projectile->GetRecoveryOutcome() : ERpgProjectileRecoveryOutcome::None;
+	};
+
+	for (int32 Index = 0; Index < 3; ++Index)
+	{
+		TestEqual(TEXT("An intact arrow lodges in the AI target"), Shoot(0.0f, 1.0f), ERpgProjectileRecoveryOutcome::Embedded);
+	}
+	TestEqual(TEXT("Three arrows wait for the corpse loot"), Host->GetPendingCount(), 3);
+	TestEqual(TEXT("Three shafts show"), Host->GetGroups().Num(), 3);
+	TestEqual(TEXT("This machine attaches three shaft meshes"), Host->GetVisibleShaftCount(), 3);
+	const UStaticMeshComponent* Shaft = Host->GetGroups().IsEmpty() ? nullptr : Host->GetShaftForTests(Host->GetGroups()[0].GroupId);
+	TestTrue(TEXT("A shaft rides on the character's skeletal mesh"),
+		Shaft && Shaft->GetAttachParent() == Fixture.Target.Pawn->FindComponentByClass<USkeletalMeshComponent>());
+	TestEqual(TEXT("A broken arrow lodges nothing"), Shoot(1.0f, 0.0f), ERpgProjectileRecoveryOutcome::Broken);
+	TestEqual(TEXT("A broken arrow adds no record"), Host->GetPendingCount(), 3);
+
+	Fixture.RaiseBlock(ProjectileBlock(), false);
+	Shoot(0.0f, 1.0f);
+	TestEqual(TEXT("A blocked arrow never stays on the blocker"), Host->GetPendingCount(), 3);
+	TestEqual(TEXT("A blocked arrow adds no shaft"), Host->GetGroups().Num(), 3);
+	Fixture.ResetTarget();
+
+	// Death: the loot carries every lodged arrow once.
+	Loot->PopulateLoot();
+	TestEqual(TEXT("The corpse loot holds the three arrows"), Corpse->GetTotalItemCountByDefinition(Arrow), 3);
+	TestEqual(TEXT("No arrow waits any more"), Host->GetPendingCount(), 0);
+	TestEqual(TEXT("All three are credited"), Host->GetCreditedCount(), 3);
+
+	// A later hit on the corpse joins its loot at once.
+	TestEqual(TEXT("An arrow into the corpse lodges"), Shoot(0.0f, 1.0f), ERpgProjectileRecoveryOutcome::Embedded);
+	TestEqual(TEXT("The corpse loot takes the late arrow"), Corpse->GetTotalItemCountByDefinition(Arrow), 4);
+	TestEqual(TEXT("The late arrow is credited at once"), Host->GetCreditedCount(), 4);
+	TestEqual(TEXT("Four shafts show"), Host->GetGroups().Num(), 4);
+
+	// Looting retires shafts in credit order; only what leaves the corpse counts.
+	Corpse->ConsumeItemsByDefinition(Arrow, 2);
+	TestEqual(TEXT("Two taken arrows retire two credits"), Host->GetCreditedCount(), 2);
+	TestEqual(TEXT("Their shafts go"), Host->GetGroups().Num(), 2);
+	TestEqual(TEXT("This machine removes their meshes"), Host->GetVisibleShaftCount(), 2);
+	Corpse->ConsumeItemsByDefinition(URpgInventoryAutomationTestUnitItemDefinition::StaticClass(), 1);
+	TestEqual(TEXT("Taking other loot retires no arrow"), Host->GetCreditedCount(), 2);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCombatProjectileRecoveryCharacterGroupTest,
+	"SurvivalRpg.Combat.Projectile.Recovery.AICharacterGroupsBeyondVisibleMaximum",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCombatProjectileRecoveryCharacterGroupTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCombatProjectileTests;
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this)) return false;
+	URpgEmbeddedProjectileHostComponent* Host = AddCharacterRecovery(Fixture.Target.Pawn);
+	URpgInventoryManagerComponent* Corpse = Fixture.Target.Pawn->FindComponentByClass<URpgInventoryManagerComponent>();
+	const FVector Direction(1.0f, 0.0f, 0.0f);
+	for (int32 Index = 0; Index < 5; ++Index)
+	{
+		ARpgCombatProjectile* Projectile = Fixture.LaunchRecoverable(FVector(-900.0f, 0.0f, 0.0f), Direction, 0.0f, 1.0f,
+			ARpgProjectileRecoveryAutomationProjectile::StaticClass(), URpgProjectileRecoveryAutomationArrowDefinition::StaticClass(),
+			[](FRpgProjectileRecoveryDefinition& Recovery) { Recovery.MaxVisibleArrowsPerCharacter = 2; });
+		if (Projectile)
+		{
+			Projectile->ResolveImpactForTests(Fixture.MakeTargetHit(FVector(-40.0f, 0.0f, float(Index) * 10.0f), Direction));
+		}
+	}
+	TestEqual(TEXT("Only the visible maximum of shafts shows"), Host->GetGroups().Num(), 2);
+	TestEqual(TEXT("The shafts stand for every arrow"), CountGroupArrows(Host), 5);
+	TestEqual(TEXT("Every arrow keeps its own record"), Host->GetPendingCount(), 5);
+	Fixture.Target.Pawn->FindComponentByClass<URpgLootSourceComponent>()->PopulateLoot();
+	TestEqual(TEXT("Grouping loses no arrow in the corpse loot"),
+		Corpse->GetTotalItemCountByDefinition(URpgProjectileRecoveryAutomationArrowDefinition::StaticClass()), 5);
+	Corpse->ConsumeItemsByDefinition(URpgProjectileRecoveryAutomationArrowDefinition::StaticClass(), 4);
+	TestEqual(TEXT("A group keeps its shaft while it stands for an arrow"), CountGroupArrows(Host), 1);
+	TestEqual(TEXT("One shaft is left"), Host->GetGroups().Num(), 1);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCombatProjectileRecoveryCorpseTest,
+	"SurvivalRpg.Combat.Projectile.Recovery.CorpseTakesArrowsUntilItCompletes",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCombatProjectileRecoveryCorpseTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCombatProjectileTests;
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this)) return false;
+
+	// A corpse: a pawn whose ability system is already gone, with the corpse lifecycle of an AI character.
+	APawn* Corpse = Fixture.World->SpawnActor<APawn>(APawn::StaticClass(), FTransform(FVector(0.0f, 2000.0f, 0.0f)));
+	UBoxComponent* Body = NewObject<UBoxComponent>(Corpse, NAME_None, RF_Transient);
+	Body->InitBoxExtent(FVector(40.0f));
+	Corpse->SetRootComponent(Body);
+	Corpse->AddInstanceComponent(Body);
+	Body->RegisterComponent();
+	URpgCorpseLifecycleComponent* Lifecycle = NewObject<URpgCorpseLifecycleComponent>(Corpse, NAME_None, RF_Transient);
+	Lifecycle->SetupAttachment(Body);
+	Corpse->AddInstanceComponent(Lifecycle);
+	Lifecycle->RegisterComponent();
+	URpgEmbeddedProjectileHostComponent* Host = AddCharacterRecovery(Corpse);
+	URpgInventoryManagerComponent* Inventory = Corpse->FindComponentByClass<URpgInventoryManagerComponent>();
+	const TSubclassOf<URpgInventoryItemDefinition> Arrow = URpgProjectileRecoveryAutomationArrowDefinition::StaticClass();
+	const FVector Direction(1.0f, 0.0f, 0.0f);
+	const auto Shoot = [&]()
+	{
+		ARpgCombatProjectile* Projectile = Fixture.LaunchRecoverable(FVector(-900.0f, 2000.0f, 0.0f), Direction, 0.0f, 1.0f);
+		if (Projectile)
+		{
+			Projectile->ResolveImpactForTests(FFixture::MakeBlockHit(Body, FVector(-40.0f, 2000.0f, 0.0f), Direction));
+		}
+		return Projectile ? Projectile->GetRecoveryOutcome() : ERpgProjectileRecoveryOutcome::None;
+	};
+
+	Lifecycle->NotifyDeathStarted(FVector::ZeroVector);
+	TestEqual(TEXT("A dying body keeps the arrow that hits it"), Shoot(), ERpgProjectileRecoveryOutcome::Embedded);
+	TestEqual(TEXT("It waits for the corpse loot"), Host->GetPendingCount(), 1);
+	Corpse->FindComponentByClass<URpgLootSourceComponent>()->PopulateLoot();
+	TestEqual(TEXT("The corpse loot carries it"), Inventory->GetTotalItemCountByDefinition(Arrow), 1);
+
+	// Emptied, the corpse completes and takes no further credits.
+	Inventory->ConsumeItemsByDefinition(Arrow, 1);
+	Inventory->ConsumeItemsByDefinition(URpgInventoryAutomationTestUnitItemDefinition::StaticClass(), 1);
+	Lifecycle->NotifyDeathFinished();
+	Lifecycle->SetInventoryRequirementComplete(true);
+	Lifecycle->HandleSettleElapsedForTesting();
+	if (!TestTrue(TEXT("The emptied corpse completes"), Lifecycle->GetLifecycleState() >= ERpgCorpseLifecycleState::Completed)) return false;
+	TestFalse(TEXT("A completed corpse takes no arrow"), Host->CanRecover());
+	TestEqual(TEXT("An arrow into a completed corpse is gone"), Shoot(), ERpgProjectileRecoveryOutcome::None);
+	TestEqual(TEXT("It adds no loot"), Inventory->GetTotalItemCountByDefinition(Arrow), 0);
 	return true;
 }
 

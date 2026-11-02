@@ -86,6 +86,12 @@ public:
 	/** Server: the component the ammunition stuck in or lies on, or null once it is gone. */
 	UPrimitiveComponent* GetHostComponent() const { return HostComponent.Get(); }
 
+	/** The display mesh; on a class's defaults, the mesh and offset that shafts on characters reuse. */
+	UStaticMeshComponent* GetDisplayMeshComponent() const { return DisplayMesh; }
+
+	/** Depth in cm an embedded projectile of this class sits inside what it hit. */
+	float GetEmbedDepth() const { return EmbedDepth; }
+
 	//~ AActor
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	//~ End AActor

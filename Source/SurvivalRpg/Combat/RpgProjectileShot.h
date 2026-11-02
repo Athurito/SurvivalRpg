@@ -67,6 +67,15 @@ struct SURVIVALRPG_API FRpgProjectileShotDefinition
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Shot|Ammunition")
 	TSubclassOf<URpgInventoryItemDefinition> AmmunitionItemDefinition;
 
+	/**
+	 * Under the Unlimited ammunition policy, such as for an NPC archer: shots per shooter life whose intact projectile
+	 * still returns AmmunitionItemDefinition, so its corpse or the world can give back a bounded number of arrows. Each
+	 * successful release reserves one, which neither a miss, a break nor a collection gives back; later shots return
+	 * nothing. Zero for none. Ignored under ShooterInventory, where every consumed item can come back. Designer data.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Shot|Ammunition", meta = (ClampMin = "0"))
+	int32 UnlimitedRecoveryBudget = 0;
+
 	/** Seconds from the start of the draw until the shot is nocked. An earlier release cancels without cost. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Shot|Draw", meta = (ClampMin = "0.0", Units = "Seconds"))
 	float MinimumNockSeconds = 0.25f;
@@ -265,7 +274,9 @@ namespace RpgProjectileShot
 	 * consumes one ammunition item under ShooterInventory, pays the release stamina and finishes the spawn. Any failure
 	 * undoes what it already took and destroys the unfinished projectile, so a failed release launches nothing and costs
 	 * nothing. A returned arrow is a new item in the first free cell, not necessarily the stack it came from. Only an
-	 * arrow consumed from the inventory can be recovered after its impact; Unlimited shots return no ammunition.
+	 * arrow consumed from the inventory can be recovered after its impact; an Unlimited shot returns ammunition only while
+	 * the shooter's life has recovery tokens of Definition.UnlimitedRecoveryBudget left, and a failed release returns its
+	 * token.
 	 */
 	SURVIVALRPG_API ERpgProjectileShotResult CommitShot(
 		UGameplayAbility* Ability,

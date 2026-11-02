@@ -13,6 +13,7 @@ class URpgInventoryContainerComponent;
 class URpgInventoryManagerComponent;
 class URpgLootSourceComponent;
 class URpgCorpseLifecycleComponent;
+class URpgEmbeddedProjectileHostComponent;
 
 UCLASS()
 class SURVIVALRPG_API ARpgAICharacter : public ARpgCharacter
@@ -67,4 +68,8 @@ private:
 	/** Server-owned corpse timers and locally simulated bone-following ragdoll presentation. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Corpse", Meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URpgCorpseLifecycleComponent> CorpseLifecycleComponent;
+
+	/** Arrows lodged in this enemy and its corpse: their shafts and their corpse loot (RNG-03c). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|Combat", Meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URpgEmbeddedProjectileHostComponent> EmbeddedProjectileHostComponent;
 };
