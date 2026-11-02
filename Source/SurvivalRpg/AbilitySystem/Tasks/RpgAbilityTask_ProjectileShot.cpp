@@ -468,6 +468,7 @@ void URpgAbilityTask_ProjectileShot::SetDrawingTag(const bool bDrawing)
 		{
 			// A new draw ends the previous release, so the next release shows from its start on this machine too.
 			ASC->NoteLocalRangedRelease(0.0f);
+			ASC->SetLocalRangedDrawTiming(StartSeconds, Tuning.FullDrawSeconds, Tuning.MinimumNockSeconds);
 		}
 	}
 	if (bAuthority)

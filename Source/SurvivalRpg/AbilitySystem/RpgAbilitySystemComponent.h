@@ -110,6 +110,16 @@ public:
 	void SetLocalRangedDrawing(bool bDrawing);
 	/** Locally controlled owner only: its own predicted release shows for Seconds. Never replicated. */
 	void NoteLocalRangedRelease(float Seconds);
+	/**
+	 * Locally controlled owner only: the timing of its own predicted draw for the HUD's draw strength. StartSeconds is
+	 * world time; FullDrawSeconds and MinimumNockSeconds are the activation's resolved tuning. Never replicated.
+	 */
+	void SetLocalRangedDrawTiming(double StartSeconds, float FullDrawSeconds, float MinimumNockSeconds);
+	/**
+	 * Locally controlled owner only: how far its own draw has come, false while it draws nothing. OutDrawFraction runs
+	 * from 0 to 1 over the full draw; OutNockFraction is where nocking ends on the same scale. UI read model.
+	 */
+	bool GetLocalRangedDrawProgress(float& OutDrawFraction, float& OutNockFraction) const;
 	/** Presentation read model: the locally controlled owner's prediction, the authority's replicated tag elsewhere. */
 	UFUNCTION(BlueprintPure, Category = "Rpg|Ranged")
 	bool IsRangedDrawingForPresentation() const;
@@ -359,6 +369,10 @@ private:
 	// The owner's own predicted presentation; the authority alone writes the replicated tags others read.
 	bool bLocalRangedDrawing = false;
 	double LocalRangedReleaseEndSeconds = -1.0;
+	double LocalRangedDrawStartSeconds = 0.0;
+	bool bHasLocalRangedDrawTiming = false;
+	float LocalRangedFullDrawSeconds = 1.f;
+	float LocalRangedNockSeconds = 0.f;
 
 	void ResetFacingCommitment();
 	TWeakObjectPtr<UGameplayAbility> FacingCommitmentAbility;

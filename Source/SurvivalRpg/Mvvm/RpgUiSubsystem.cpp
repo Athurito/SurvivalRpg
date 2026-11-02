@@ -4,6 +4,7 @@
 #include "RpgUiSubsystem.h"
 
 #include "Character/RpgCharacterStatsViewModel.h"
+#include "Combat/RpgRangedCombatViewModel.h"
 #include "Inventory/RpgPickupFeedViewModels.h"
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/PlayerController.h"
@@ -24,13 +25,18 @@ UObject* URpgUiSubsystem::FindViewModel(const UClass* ExpectedType) const
 	{
 		return PickupFeedVM;
 	}
+	if (RangedCombatVM && RangedCombatVM->GetClass() == ExpectedType)
+	{
+		return RangedCombatVM;
+	}
 	return nullptr;
 }
 
 bool URpgUiSubsystem::ProvidesViewModelClass(const UClass* Class)
 {
 	return Class == URpgCharacterStatsViewModel::StaticClass() ||
-		Class == URpgPickupFeedViewModel::StaticClass();
+		Class == URpgPickupFeedViewModel::StaticClass() ||
+		Class == URpgRangedCombatViewModel::StaticClass();
 }
 
 void URpgUiSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -39,6 +45,7 @@ void URpgUiSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 	CharacterStatsVM = NewObject<URpgCharacterStatsViewModel>(this);
 	PickupFeedVM = NewObject<URpgPickupFeedViewModel>(this);
+	RangedCombatVM = NewObject<URpgRangedCombatViewModel>(this);
 
 	if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
 	{
@@ -52,6 +59,7 @@ void URpgUiSubsystem::Deinitialize()
 
 	CharacterStatsVM = nullptr;
 	PickupFeedVM = nullptr;
+	RangedCombatVM = nullptr;
 
 	Super::Deinitialize();
 }
@@ -92,6 +100,10 @@ void URpgUiSubsystem::BindToPlayerController(APlayerController* NewPlayerControl
 	{
 		PickupFeedVM->BindPlayerController(BoundPlayerController);
 	}
+	if (RangedCombatVM)
+	{
+		RangedCombatVM->BindPlayerController(BoundPlayerController);
+	}
 
 	HandlePawnChanged(nullptr, BoundPlayerController->GetPawn());
 }
@@ -112,6 +124,10 @@ void URpgUiSubsystem::UnbindFromPlayerController()
 	if (PickupFeedVM)
 	{
 		PickupFeedVM->Unbind();
+	}
+	if (RangedCombatVM)
+	{
+		RangedCombatVM->Unbind();
 	}
 }
 
@@ -147,6 +163,10 @@ void URpgUiSubsystem::UnbindFromPawnExtension(bool bResetViewModel)
 	{
 		CharacterStatsVM->UnbindAbilitySystem();
 	}
+	if (bResetViewModel && RangedCombatVM)
+	{
+		RangedCombatVM->BindAbilitySystem(nullptr);
+	}
 }
 
 void URpgUiSubsystem::HandleAbilitySystemInitialized()
@@ -162,6 +182,10 @@ void URpgUiSubsystem::HandleAbilitySystemInitialized()
 		{
 			CharacterStatsVM->BindAbilitySystem(ASC);
 		}
+		if (RangedCombatVM)
+		{
+			RangedCombatVM->BindAbilitySystem(ASC);
+		}
 	}
 }
 
@@ -170,5 +194,9 @@ void URpgUiSubsystem::HandleAbilitySystemUninitialized()
 	if (CharacterStatsVM)
 	{
 		CharacterStatsVM->UnbindAbilitySystem();
+	}
+	if (RangedCombatVM)
+	{
+		RangedCombatVM->BindAbilitySystem(nullptr);
 	}
 }
