@@ -18,6 +18,7 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Attack_Basic, "Ability.Attack.Basic", "Semantic tag for a basic attack ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Support_Heal, "Ability.Support.Heal", "Semantic tag for a support healing ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Defense_Block, "Ability.Defense.Block", "Semantic tag for a defensive block ability.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Type_RangedAim, "Ability.Type.RangedAim", "Marks the abilities of one ranged aim stance, such as the bow's aim and shot; they hold the stance together and do not interrupt each other.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Type_Attack, "Ability.Type.Attack", "Marks an ability as an attack; enemy AI reads it on its combat target to react, for example to block.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(AI_Role_Grunt, "AI.Role.Grunt", "Semantic tag for a basic grunt AI role.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(AI_Event_TargetAttackStarted, "AI.Event.TargetAttackStarted", "StateTree event sent to an AI when its combat target starts an ability tagged Ability.Type.Attack.");
@@ -107,6 +108,9 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_GuardBroken, "State.GuardBroken", "Target's guard is broken.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_StaggerImmune, "State.StaggerImmune", "Target is temporarily immune to new stagger buildup.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_HyperArmor, "State.HyperArmor", "Held on the server while an attack step grants it: stagger damage still fills the meter, but the meter cannot break until the tag is gone.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Ranged_Aiming, "State.Ranged.Aiming", "Replicated: the character holds a ranged aim stance, from the aim input or a drawn shot. Presentation and simulated-proxy movement read it.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Ranged_Drawing, "State.Ranged.Drawing", "Replicated: a projectile shot is nocked or drawn and not yet released or cancelled. Presentation only.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Ranged_Releasing, "State.Ranged.Releasing", "Replicated for a short presentation time after a projectile shot released. Presentation only.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Evading, "State.Evading", "Target is inside a dodge's invulnerability window; incoming damage is ignored.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Trait_Staggerable, "Trait.Staggerable", "Target can build stagger and enter stagger reactions.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Death, "Status.Death", "Target has the death status.");
@@ -124,7 +128,7 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Tuning_Ranged_DrawTime, "Ability.Tuning.Ranged.DrawTime", "Seconds a projectile shot needs to reach full draw.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Tuning_Ranged_ReleaseCost, "Ability.Tuning.Ranged.ReleaseCost", "Stamina a projectile shot pays once when it releases.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Tuning_Ranged_HoldDrain, "Ability.Tuning.Ranged.HoldDrain", "Stamina per second a nocked projectile shot drains while held; zero for none.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Tuning_Ranged_AimMovement, "Ability.Tuning.Ranged.AimMovement", "Movement speed multiplier while aiming a ranged weapon (reserved for RNG-03).");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Tuning_Ranged_AimMovement, "Ability.Tuning.Ranged.AimMovement", "Movement speed cap in cm/s while a ranged aim stance is held.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Tuning_Ranged_BreakChance, "Ability.Tuning.Ranged.BreakChance", "Chance from 0 to 1 that a recoverable arrow breaks on impact (reserved for RNG-03b).");
 	
 	// ---------------- Lifecycle ----------------

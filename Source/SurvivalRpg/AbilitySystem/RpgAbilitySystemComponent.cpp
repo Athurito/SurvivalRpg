@@ -12,6 +12,7 @@
 #include "SurvivalRpg/Combat/RpgCombatDeveloperSettings.h"
 #include "SurvivalRpg/SurvivalRpg.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
+#include "SurvivalRpg/Camera/RpgCameraMode.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterMoverComponent.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterMovementComponent.h"
 #include "SurvivalRpg/Core/Character/RpgMoverRagdollComponent.h"
@@ -55,6 +56,7 @@ void URpgAbilitySystemComponent::EndPlay(const EEndPlayReason::Type EndPlayReaso
 {
 	ResetSprintMovement();
 	ResetBlockMovement();
+	ResetRangedAim();
 	ResetFacingCommitment();
 	ResetSimulatedMoverTraversalPresentation();
 	if (AActor* Avatar = GetAvatarActor())
@@ -95,6 +97,7 @@ void URpgAbilitySystemComponent::InitAbilityActorInfo(AActor* InOwnerActor, AAct
 	{
 		ResetSprintMovement();
 		ResetBlockMovement();
+		ResetRangedAim();
 		ResetFacingCommitment();
 		InputSuppressedUntilReleaseSpecHandles.Reset();
 	}
@@ -220,6 +223,7 @@ void URpgAbilitySystemComponent::ClearActorInfo()
 	InputSuppressedUntilReleaseSpecHandles.Reset();
 	ResetSprintMovement();
 	ResetBlockMovement();
+	ResetRangedAim();
 	ResetFacingCommitment();
 	ResetSimulatedMoverTraversalPresentation();
 	InitializedAnimInstance.Reset();
@@ -231,6 +235,138 @@ void URpgAbilitySystemComponent::ClearActorInfo()
 		}
 	}
 	Super::ClearActorInfo();
+}
+
+uint32 URpgAbilitySystemComponent::BeginRangedAim(UGameplayAbility* Ability, float MovementSpeedLimit,
+	TSubclassOf<URpgCameraMode> CameraMode)
+{
+	AActor* Avatar = GetAvatarActor();
+	if (!Avatar || Avatar->GetLocalRole() < ROLE_AutonomousProxy || !Ability || !Ability->IsActive()
+		|| Ability->GetAbilitySystemComponentFromActorInfo() != this || Ability->GetAvatarActorFromActorInfo() != Avatar
+		|| !Ability->GetCurrentAbilitySpecHandle().IsValid() || !FMath::IsFinite(MovementSpeedLimit) || MovementSpeedLimit < 0.f)
+	{
+		return 0;
+	}
+	const FPredictionKey ActivationKey = Ability->GetCurrentActivationInfo().GetActivationPredictionKey();
+	RangedAimTokens.RemoveAll([this](const FRangedAimToken& Entry) { return !IsRangedAimTokenLive(Entry); });
+	if (const FRangedAimToken* Existing = RangedAimTokens.FindByPredicate([Ability, &ActivationKey](const FRangedAimToken& Entry)
+		{ return Entry.Ability.Get() == Ability && Entry.ActivationKey == ActivationKey; }))
+	{
+		return Existing->Token;
+	}
+	FRangedAimToken& Entry = RangedAimTokens.AddDefaulted_GetRef();
+	Entry.Ability = Ability;
+	Entry.Avatar = Avatar;
+	Entry.ActivationKey = ActivationKey;
+	Entry.MovementSpeedLimit = MovementSpeedLimit;
+	Entry.CameraMode = CameraMode.Get();
+	if (++LastRangedAimToken == 0) { ++LastRangedAimToken; }
+	Entry.Token = LastRangedAimToken;
+	const uint32 Token = Entry.Token;
+	RefreshRangedAim();
+	return Token;
+}
+
+void URpgAbilitySystemComponent::EndRangedAim(UGameplayAbility* Ability, uint32 Token)
+{
+	if (Token && RangedAimTokens.RemoveAll([Ability, Token](const FRangedAimToken& Entry)
+		{ return Entry.Token == Token && Entry.Ability.Get() == Ability; }) > 0)
+	{
+		RefreshRangedAim();
+	}
+}
+
+bool URpgAbilitySystemComponent::IsRangedAimTokenLive(const FRangedAimToken& Entry) const
+{
+	const AActor* Avatar = GetAvatarActor();
+	const UGameplayAbility* Ability = Entry.Ability.Get();
+	return Entry.Token && Avatar && Entry.Avatar.Get() == Avatar && Ability && Ability->IsActive()
+		&& Ability->GetAbilitySystemComponentFromActorInfo() == this && Ability->GetAvatarActorFromActorInfo() == Avatar
+		&& Ability->GetCurrentActivationInfo().GetActivationPredictionKey() == Entry.ActivationKey;
+}
+
+bool URpgAbilitySystemComponent::IsRangedAimActive() const
+{
+	const AActor* Avatar = GetAvatarActor();
+	if (!Avatar) { return false; }
+	if (Avatar->GetLocalRole() == ROLE_SimulatedProxy)
+	{
+		return HasMatchingGameplayTag(RpgGameplayTags::State_Ranged_Aiming);
+	}
+	return RangedAimTokens.ContainsByPredicate([this](const FRangedAimToken& Entry) { return IsRangedAimTokenLive(Entry); });
+}
+
+float URpgAbilitySystemComponent::GetRangedAimMovementSpeedLimit() const
+{
+	float Limit = 0.f;
+	for (const FRangedAimToken& Entry : RangedAimTokens)
+	{
+		if (IsRangedAimTokenLive(Entry) && Entry.MovementSpeedLimit > 0.f)
+		{
+			Limit = Limit > 0.f ? FMath::Min(Limit, Entry.MovementSpeedLimit) : Entry.MovementSpeedLimit;
+		}
+	}
+	return Limit;
+}
+
+TSubclassOf<URpgCameraMode> URpgAbilitySystemComponent::GetRangedAimCameraMode() const
+{
+	const FRangedAimToken* Entry = RangedAimTokens.FindByPredicate(
+		[this](const FRangedAimToken& Candidate) { return Candidate.CameraMode.IsValid() && IsRangedAimTokenLive(Candidate); });
+	return Entry ? TSubclassOf<URpgCameraMode>(Entry->CameraMode.Get()) : nullptr;
+}
+
+void URpgAbilitySystemComponent::RefreshRangedAim()
+{
+	RangedAimTokens.RemoveAll([this](const FRangedAimToken& Entry) { return !IsRangedAimTokenLive(Entry); });
+	const AActor* Avatar = GetAvatarActor();
+	const bool bAiming = !RangedAimTokens.IsEmpty();
+	// Only the authority writes the tag: a replicated count overwrites a predicted local one on the owner. The owner
+	// reads its own tokens instead; the authority's count reaches every other machine and late joiners.
+	if (Avatar && Avatar->HasAuthority() && bAiming != bRangedAimTagApplied)
+	{
+		bRangedAimTagApplied = bAiming;
+		SetLooseGameplayTagCount(RpgGameplayTags::State_Ranged_Aiming, bAiming ? 1 : 0, EGameplayTagReplicationState::TagAndCountToAll);
+	}
+}
+
+void URpgAbilitySystemComponent::SetLocalRangedDrawing(const bool bDrawing)
+{
+	bLocalRangedDrawing = bDrawing;
+}
+
+void URpgAbilitySystemComponent::NoteLocalRangedRelease(const float Seconds)
+{
+	const UWorld* World = GetWorld();
+	LocalRangedReleaseEndSeconds = World && Seconds > 0.f ? World->GetTimeSeconds() + Seconds : -1.0;
+}
+
+bool URpgAbilitySystemComponent::IsRangedDrawingForPresentation() const
+{
+	return AbilityActorInfo.IsValid() && AbilityActorInfo->IsLocallyControlled()
+		? bLocalRangedDrawing : HasMatchingGameplayTag(RpgGameplayTags::State_Ranged_Drawing);
+}
+
+bool URpgAbilitySystemComponent::IsRangedReleasingForPresentation() const
+{
+	if (AbilityActorInfo.IsValid() && AbilityActorInfo->IsLocallyControlled())
+	{
+		const UWorld* World = GetWorld();
+		return World && World->GetTimeSeconds() < LocalRangedReleaseEndSeconds;
+	}
+	return HasMatchingGameplayTag(RpgGameplayTags::State_Ranged_Releasing);
+}
+
+void URpgAbilitySystemComponent::ResetRangedAim()
+{
+	RangedAimTokens.Reset();
+	bLocalRangedDrawing = false;
+	LocalRangedReleaseEndSeconds = -1.0;
+	if (bRangedAimTagApplied)
+	{
+		bRangedAimTagApplied = false;
+		SetLooseGameplayTagCount(RpgGameplayTags::State_Ranged_Aiming, 0, EGameplayTagReplicationState::TagAndCountToAll);
+	}
 }
 
 uint32 URpgAbilitySystemComponent::BeginBlockMovement(UGameplayAbility* Ability, float MovementSpeedLimit)
@@ -1055,6 +1191,12 @@ void URpgAbilitySystemComponent::NotifyAbilityEnded(FGameplayAbilitySpecHandle H
 		&& Ability && Ability->GetCurrentActivationInfo().GetActivationPredictionKey() == SprintMovementActivationKey)
 	{
 		ResetSprintMovement();
+	}
+	// An ended activation's aim token retires with it, so a missing cleanup can never hold the stance.
+	if (RangedAimTokens.ContainsByPredicate([Ability](const FRangedAimToken& Entry) { return Entry.Ability.Get() == Ability; }))
+	{
+		RangedAimTokens.RemoveAll([Ability](const FRangedAimToken& Entry) { return Entry.Ability.Get() == Ability; });
+		RefreshRangedAim();
 	}
 	Super::NotifyAbilityEnded(Handle, Ability, bWasCancelled);
 	

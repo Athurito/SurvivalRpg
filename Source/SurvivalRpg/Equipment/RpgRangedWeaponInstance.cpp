@@ -50,6 +50,12 @@ EDataValidationResult URpgRangedWeaponInstance::IsDataValid(FDataValidationConte
 			FText::FromString(GetPathName()), Error));
 		Result = EDataValidationResult::Invalid;
 	}
+	if (!FMath::IsFinite(AimDefinition.MovementSpeedLimit) || AimDefinition.MovementSpeedLimit < 0.0f)
+	{
+		Context.AddError(FText::Format(LOCTEXT("InvalidAimSpeed", "Ranged weapon '{0}': AimDefinition.MovementSpeedLimit must be zero or more."),
+			FText::FromString(GetPathName())));
+		Result = EDataValidationResult::Invalid;
+	}
 	return Result;
 }
 #endif

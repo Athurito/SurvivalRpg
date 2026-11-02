@@ -17,6 +17,7 @@ class URpgAbilitySet;
 class UGameplayAbility;
 class ARpgBasePlayerState;
 class UAnimInstance;
+class URpgCameraMode;
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class SURVIVALRPG_API URpgAbilitySystemComponent : public UAbilitySystemComponent
@@ -84,6 +85,37 @@ public:
 	/** Immutable authorized speed in cm/s, or zero without a current local activation. */
 	UFUNCTION(BlueprintPure, Category = "Rpg|Sprint")
 	float GetSprintMovementSpeed() const;
+
+	/**
+	 * Acquires a ranged aim token for this exact predicted/authority activation, such as a held bow aim or a drawn shot.
+	 * Tokens of different activations stack: the stance holds while any is live, and ending one never clears another.
+	 * MovementSpeedLimit is a cm/s cap while aiming, zero for none; CameraMode is the local aim camera, null for none.
+	 * Returns zero when the activation cannot aim; a repeated call for the same activation returns its existing token.
+	 */
+	uint32 BeginRangedAim(UGameplayAbility* Ability, float MovementSpeedLimit, TSubclassOf<URpgCameraMode> CameraMode);
+	/** Retires only the matching token; delayed cleanup cannot clear a newer activation's stance. */
+	void EndRangedAim(UGameplayAbility* Ability, uint32 Token);
+	/** Game-thread read model: any live token on owner and authority, the replicated State.Ranged.Aiming tag on proxies. */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Ranged")
+	bool IsRangedAimActive() const;
+	/** Lowest positive movement cap in cm/s of the live tokens, or zero without one. Owner and authority only. */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Ranged")
+	float GetRangedAimMovementSpeedLimit() const;
+	/** Camera mode of the oldest live token that names one, or null. Local presentation only. */
+	TSubclassOf<URpgCameraMode> GetRangedAimCameraMode() const;
+	/**
+	 * Locally controlled owner only: its own predicted draw, which presentation reads without waiting for the server.
+	 * Never replicated; the authority's State.Ranged.Drawing serves every other machine.
+	 */
+	void SetLocalRangedDrawing(bool bDrawing);
+	/** Locally controlled owner only: its own predicted release shows for Seconds. Never replicated. */
+	void NoteLocalRangedRelease(float Seconds);
+	/** Presentation read model: the locally controlled owner's prediction, the authority's replicated tag elsewhere. */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Ranged")
+	bool IsRangedDrawingForPresentation() const;
+	/** Presentation read model of a recent release, like IsRangedDrawingForPresentation. */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Ranged")
+	bool IsRangedReleasingForPresentation() const;
 
 	/**
 	 * Acquires the facing commitment of this exact predicted/authority activation, replacing an older one.
@@ -304,6 +336,29 @@ private:
 	uint32 BlockMovementLease = 0;
 	uint32 LastBlockMovementLease = 0;
 	float BlockMovementSpeedLimit = 0.f;
+
+	/** One live ranged aim token: the activation that holds it and what it asks of movement and camera. */
+	struct FRangedAimToken
+	{
+		TWeakObjectPtr<UGameplayAbility> Ability;
+		TWeakObjectPtr<AActor> Avatar;
+		FPredictionKey ActivationKey;
+		uint32 Token = 0;
+		float MovementSpeedLimit = 0.f;
+		// Weak: the class belongs to the weapon content that started the aim, never to this token.
+		TWeakObjectPtr<UClass> CameraMode;
+	};
+	bool IsRangedAimTokenLive(const FRangedAimToken& Entry) const;
+	/** Drops tokens whose activation ended and mirrors the remaining stance into State.Ranged.Aiming on owner and authority. */
+	void RefreshRangedAim();
+	void ResetRangedAim();
+	// Local ownership tokens are never network authority; movement records the sampled cap in its own history.
+	TArray<FRangedAimToken, TInlineAllocator<2>> RangedAimTokens;
+	uint32 LastRangedAimToken = 0;
+	bool bRangedAimTagApplied = false;
+	// The owner's own predicted presentation; the authority alone writes the replicated tags others read.
+	bool bLocalRangedDrawing = false;
+	double LocalRangedReleaseEndSeconds = -1.0;
 
 	void ResetFacingCommitment();
 	TWeakObjectPtr<UGameplayAbility> FacingCommitmentAbility;

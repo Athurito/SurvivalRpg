@@ -96,6 +96,8 @@ void URpgAbilityTask_ProjectileShot::Activate()
 		return;
 	}
 
+	SetDrawingTag(true);
+
 	// Bind before anything can end the shot: an On Nocked handler or an early release may resolve it synchronously, and
 	// the end releases these bindings.
 	if (bLocallyControlled)
@@ -357,6 +359,21 @@ void URpgAbilityTask_ProjectileShot::FinishReleased(const float DrawFraction, AR
 	bResolved = true;
 	Result = ERpgProjectileShotResult::Released;
 	ReleaseBindings();
+	SetDrawingTag(false);
+	// The owner shows its own predicted release; the authority's tag reaches every other machine.
+	URpgAbilitySystemComponent* RpgASC = Cast<URpgAbilitySystemComponent>(CapturedASC.Get());
+	if (RpgASC && Definition.ReleasePresentationSeconds > 0.0f)
+	{
+		if (bLocallyControlled)
+		{
+			RpgASC->NoteLocalRangedRelease(Definition.ReleasePresentationSeconds);
+		}
+		if (bAuthority)
+		{
+			RpgASC->AddTimedLooseGameplayTag(RpgGameplayTags::State_Ranged_Releasing, Definition.ReleasePresentationSeconds,
+				EGameplayTagReplicationState::TagAndCountToAll);
+		}
+	}
 	UE_LOG(LogRpgAbilitySystem, Verbose, TEXT("Projectile shot of %s released at draw %.2f (%s)."),
 		*GetNameSafe(Ability), DrawFraction, Projectile ? *Projectile->GetName() : TEXT("predicted"));
 	if (ShouldBroadcastAbilityTaskDelegates())
@@ -371,6 +388,7 @@ void URpgAbilityTask_ProjectileShot::FinishCancelled(const ERpgProjectileShotRes
 	bResolved = true;
 	Result = Reason;
 	ReleaseBindings();
+	SetDrawingTag(false);
 	UE_LOG(LogRpgAbilitySystem, Verbose, TEXT("Projectile shot of %s ended without a projectile: %s."),
 		*GetNameSafe(Ability), *UEnum::GetValueAsString(Reason));
 	if (ShouldBroadcastAbilityTaskDelegates())
@@ -429,5 +447,35 @@ void URpgAbilityTask_ProjectileShot::OnDestroy(const bool bInOwnerFinished)
 	// An activation that ends before its release, through a dodge, a stagger or the weapon's removal, pays nothing.
 	bResolved = true;
 	ReleaseBindings();
+	SetDrawingTag(false);
 	Super::OnDestroy(bInOwnerFinished);
+}
+
+void URpgAbilityTask_ProjectileShot::SetDrawingTag(const bool bDrawing)
+{
+	URpgAbilitySystemComponent* ASC = Cast<URpgAbilitySystemComponent>(CapturedASC.Get());
+	if (!ASC || bDrawingTagApplied == bDrawing || (!bAuthority && !bLocallyControlled))
+	{
+		return;
+	}
+	bDrawingTagApplied = bDrawing;
+	// A replicated count overwrites a predicted local one, so the owner keeps its own flag and only the authority
+	// writes the tag every other machine reads.
+	if (bLocallyControlled)
+	{
+		ASC->SetLocalRangedDrawing(bDrawing);
+		if (bDrawing)
+		{
+			// A new draw ends the previous release, so the next release shows from its start on this machine too.
+			ASC->NoteLocalRangedRelease(0.0f);
+		}
+	}
+	if (bAuthority)
+	{
+		ASC->SetLooseGameplayTagCount(RpgGameplayTags::State_Ranged_Drawing, bDrawing ? 1 : 0, EGameplayTagReplicationState::TagAndCountToAll);
+		if (bDrawing)
+		{
+			ASC->RemoveTimedLooseGameplayTag(RpgGameplayTags::State_Ranged_Releasing, EGameplayTagReplicationState::TagAndCountToAll);
+		}
+	}
 }

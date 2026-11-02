@@ -66,6 +66,13 @@ public:
 	bool IsBlockControllingRotation() const;
 	/** Game-thread presentation snapshot: effective saved policy inside movement/replay, otherwise the current valid GAS lease. */
 	bool GetBlockMovementForMove(float& OutSpeedLimit) const;
+	/** Camera-facing ranged aim locomotion, outside rotation modes; yields to traversal and root motion like block. */
+	bool IsRangedAimControllingRotation() const;
+	/**
+	 * Ranged aim stance of the current move: the saved policy inside movement and replay, otherwise today's GAS aim token.
+	 * OutSpeedLimit is the move's cap in cm/s, zero for none.
+	 */
+	bool GetRangedAimMovementForMove(float& OutSpeedLimit) const;
 
 	/**
 	 * Designer-assigned shared movement profile: speeds, acceleration, braking, friction, turn rates, air control, and jump.
@@ -231,6 +238,7 @@ private:
 	friend class FSavedMove_RpgCharacter;
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FRpgBlockRepeatedSavedMoveYawTest;
+	friend class FRpgRangedAimMovementTest;
 	friend class FRpgSprintSavedMoveTest;
 	friend class RpgCmcSprintTests::FFixture;
 	friend class RpgCmcRotationModeTests::FFixture;
@@ -241,6 +249,7 @@ private:
 	/** Copies the assigned profile's static values into the stock fields the engine reads directly; no-op without one. */
 	void ApplyMovementProfile();
 	bool SampleBlockMovement(float& OutSpeedLimit) const;
+	bool SampleRangedAimMovement(float& OutSpeedLimit) const;
 	bool SampleEquipmentInHands() const;
 	bool SampleFacingCommitment(float& OutSteeringRate) const;
 	bool SampleFacingCommitment(float& OutSteeringRate, uint32& OutLease) const;
@@ -291,6 +300,8 @@ private:
 	// Immutable local saved-move values are applied only during replay; they are never client authority on the server.
 	bool bBlockMovementForMove = false;
 	float BlockMovementSpeedLimitForMove = 0.f;
+	bool bRangedAimForMove = false;
+	float RangedAimSpeedLimitForMove = 0.f;
 	FRotator ControlRotationForMove = FRotator::ZeroRotator;
 	bool bInBlockMovementScope = false;
 	bool bEquipmentInHandsForMove = false;

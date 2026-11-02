@@ -134,6 +134,7 @@ void URpgAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 {
 	Super::NativeUpdateAnimation(DeltaSeconds);
 	CaptureBlockAnimationState();
+	CaptureRangedAnimationState();
 
 	const ARpgCharacter* Character = Cast<ARpgCharacter>(GetOwningActor());
 	if (!Character)
@@ -144,6 +145,27 @@ void URpgAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	URpgCharacterMovementComponent* CharMoveComp = CastChecked<URpgCharacterMovementComponent>(Character->GetCharacterMovement());
 	const FRpgCharacterGroundInfo& GroundInfo = CharMoveComp->GetGroundInfo();
 	GroundDistance = GroundInfo.GroundDistance;
+}
+
+void URpgAnimInstance::CaptureRangedAnimationState()
+{
+	// Linked layers, such as a bow's hold layer, capture the same values for their own worker-thread graphs.
+	bRangedAimActive = false;
+	bRangedDrawing = false;
+	bRangedReleasing = false;
+	RangedAimPitch = 0.f;
+	const APawn* Pawn = TryGetPawnOwner();
+	const URpgAbilitySystemComponent* ASC = Pawn ? Cast<URpgAbilitySystemComponent>(
+		UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(const_cast<APawn*>(Pawn))) : nullptr;
+	if (!ASC || ASC->GetAvatarActor() != Pawn)
+	{
+		return;
+	}
+	bRangedAimActive = ASC->IsRangedAimActive();
+	bRangedDrawing = ASC->IsRangedDrawingForPresentation();
+	bRangedReleasing = ASC->IsRangedReleasingForPresentation();
+	const float Pitch = FRotator::NormalizeAxis(Pawn->GetBaseAimRotation().Pitch - Pawn->GetActorRotation().Pitch);
+	RangedAimPitch = FMath::IsFinite(Pitch) ? FMath::Clamp(Pitch, -90.f, 90.f) : 0.f;
 }
 
 void URpgAnimInstance::CaptureBlockAnimationState()

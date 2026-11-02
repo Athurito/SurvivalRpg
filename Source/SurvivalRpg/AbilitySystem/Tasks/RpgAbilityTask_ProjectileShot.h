@@ -108,6 +108,8 @@ private:
 	double GetElapsedSeconds() const;
 	bool MatchesActivation() const;
 	void ReleaseBindings();
+	/** Owner and authority: the draw presentation follows this shot from activation until it ends. */
+	void SetDrawingTag(bool bDrawing);
 
 	FRpgProjectileShotDefinition Definition;
 	ERpgProjectileAmmunitionPolicy AmmunitionPolicy = ERpgProjectileAmmunitionPolicy::ShooterInventory;
@@ -125,6 +127,7 @@ private:
 	bool bAuthority = false;
 	bool bLocallyControlled = false;
 	bool bResolved = false;
+	bool bDrawingTagApplied = false;
 	bool bNocked = false;
 	ERpgProjectileShotResult Result = ERpgProjectileShotResult::Interrupted;
 };

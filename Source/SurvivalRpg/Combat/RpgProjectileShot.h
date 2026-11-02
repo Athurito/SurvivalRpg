@@ -120,6 +120,13 @@ struct SURVIVALRPG_API FRpgProjectileShotDefinition
 	/** Seconds the server waits for a remote shooter's release before it cancels without cost; zero waits indefinitely. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Shot|Network", meta = (ClampMin = "0.0", Units = "Seconds"))
 	float MaxHoldSeconds = 60.0f;
+
+	/**
+	 * Seconds State.Ranged.Releasing stays on the shooter after a release, so every machine's animation can show it.
+	 * Owner and authority set it; presentation only, zero for none.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Shot|Presentation", meta = (ClampMin = "0.0", Units = "Seconds"))
+	float ReleasePresentationSeconds = 0.5f;
 };
 
 /** The tunable values of one activation, resolved once at its start. Read-only for presentation. */

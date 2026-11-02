@@ -225,6 +225,36 @@ bool FRpgProjectileShotNockCancelTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgProjectileShotPresentationTagsTest,
+	"SurvivalRpg.Combat.ProjectileShot.PresentationTagsFollowTheShot",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgProjectileShotPresentationTagsTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgProjectileShotTests;
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this) || !Fixture.AddArrows(StartingArrows) || !Fixture.Grant(MakeDefinition())) return false;
+	const auto HasTag = [&Fixture](const FGameplayTag Tag) { return Fixture.ASC->HasMatchingGameplayTag(Tag); };
+
+	// The drawn shot shows as drawing on every machine; a cancel ends it without a release.
+	if (!TestTrue(TEXT("The shot activates"), Fixture.Activate())) return false;
+	TestTrue(TEXT("A drawn shot is drawing"), HasTag(RpgGameplayTags::State_Ranged_Drawing));
+	TestTrue(TEXT("The owner presents its own draw"), Fixture.ASC->IsRangedDrawingForPresentation());
+	Fixture.Advance(0.1f);
+	Fixture.Release();
+	TestFalse(TEXT("An early release stops drawing"), HasTag(RpgGameplayTags::State_Ranged_Drawing));
+	TestFalse(TEXT("An early release shows no release"), HasTag(RpgGameplayTags::State_Ranged_Releasing));
+
+	// A release stops drawing and shows the release for its presentation time.
+	TestEqual(TEXT("A full draw releases"), Fixture.Shoot(1.0f), ERpgProjectileShotResult::Released);
+	TestFalse(TEXT("The released shot stops drawing"), HasTag(RpgGameplayTags::State_Ranged_Drawing));
+	TestTrue(TEXT("The release shows"), HasTag(RpgGameplayTags::State_Ranged_Releasing));
+	TestTrue(TEXT("The owner presents its own release"), Fixture.ASC->IsRangedReleasingForPresentation());
+	TestFalse(TEXT("The owner no longer presents a draw"), Fixture.ASC->IsRangedDrawingForPresentation());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgProjectileShotDrawTest,
 	"SurvivalRpg.Combat.ProjectileShot.DrawCurvesSetDamageAndSpeed",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -621,9 +651,11 @@ bool FRpgProjectileShotBowContentTest::RunTest(const FString& Parameters)
 
 	// A full draw shoots one standard arrow at the bow's top speed and pays once.
 	Press();
+	TestTrue(TEXT("Holding the primary input alone enters the aim stance"), Fixture.ASC->IsRangedAimActive());
 	Fixture.Advance(Shot.FullDrawSeconds + 0.5f);
 	Release();
 	TestFalse(TEXT("The release ends the shot"), Fixture.IsActive());
+	TestFalse(TEXT("Ending the shot ends its stance"), Fixture.ASC->IsRangedAimActive());
 	ARpgCombatProjectile* Arrow = nullptr;
 	for (TActorIterator<ARpgCombatProjectile> It(Fixture.World); It; ++It)
 	{

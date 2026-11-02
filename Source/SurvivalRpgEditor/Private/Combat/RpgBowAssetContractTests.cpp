@@ -15,6 +15,7 @@
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_EquippableItem.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_SkillTree.h"
+#include "Animation/Skeleton.h"
 #include "UObject/UnrealType.h"
 
 namespace RpgBowAssetContractTests
@@ -73,26 +74,51 @@ bool FRpgBowAssetContractTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("The bow shoots the standard arrow"), Weapon->GetShotDefinition().AmmunitionItemDefinition.Get(),
 		LoadClass<URpgInventoryItemDefinition>(nullptr, ArrowPath));
 
-	// The main hand grants exactly the bow's shot on the primary attack input.
-	TArray<const FRpgAbilitySet_GameplayAbility*> Shots;
+	// The main hand grants the bow's shot on the primary attack input and its held aim on the aim input.
+	TArray<const FRpgAbilitySet_GameplayAbility*> Grants;
 	for (const FRpgEquipmentSlotAbilitySet& SlotSet : Equipment->SlotAbilitySetsToGrant)
 	{
 		if (SlotSet.EquippedSlot == ERpgEquipmentSlot::MainHand && SlotSet.AbilitySet)
 		{
 			for (const FRpgAbilitySet_GameplayAbility& Grant : SlotSet.AbilitySet->GetGrantedGameplayAbilities())
 			{
-				Shots.Add(&Grant);
+				Grants.Add(&Grant);
 			}
 		}
 	}
-	if (!TestEqual(TEXT("The bow grants one ability"), Shots.Num(), 1)) return false;
-	const UClass* ShotClass = Shots[0]->Ability.Get();
-	TestTrue(TEXT("The bow's shot is a Blueprint ability on the project's ability base"),
-		ShotClass && ShotClass->IsChildOf(URpgGameplayAbility::StaticClass()) && !ShotClass->IsNative());
-	TestEqual(TEXT("The shot is on the primary attack input"), Shots[0]->InputTag,
-		FGameplayTag::RequestGameplayTag(TEXT("InputTag.Weapon.Primary")));
-	TestEqual(TEXT("The shot has its stable ability id for ranged tunings"), Shots[0]->AbilityIdTag,
+	TestEqual(TEXT("The bow grants its shot and its aim"), Grants.Num(), 2);
+	const auto FindGrant = [&Grants](const TCHAR* InputTag) -> const FRpgAbilitySet_GameplayAbility*
+	{
+		const FGameplayTag Tag = FGameplayTag::RequestGameplayTag(InputTag);
+		const FRpgAbilitySet_GameplayAbility* const* Found = Grants.FindByPredicate(
+			[&Tag](const FRpgAbilitySet_GameplayAbility* Grant) { return Grant->InputTag == Tag; });
+		return Found ? *Found : nullptr;
+	};
+	const FGameplayTag RangedAimTag = FGameplayTag::RequestGameplayTag(TEXT("Ability.Type.RangedAim"));
+	const FRpgAbilitySet_GameplayAbility* Shot = FindGrant(TEXT("InputTag.Weapon.Primary"));
+	const FRpgAbilitySet_GameplayAbility* Aim = FindGrant(TEXT("InputTag.Weapon.Block"));
+	if (!TestTrue(TEXT("The shot is on the primary attack input and the aim on the aim input"), Shot && Aim)) return false;
+	for (const FRpgAbilitySet_GameplayAbility* Grant : { Shot, Aim })
+	{
+		const UClass* AbilityClass = Grant->Ability.Get();
+		const URpgGameplayAbility* AbilityDefaults = AbilityClass ? AbilityClass->GetDefaultObject<URpgGameplayAbility>() : nullptr;
+		TestTrue(TEXT("Each bow ability is a Blueprint on the project's ability base"),
+			AbilityClass && AbilityClass->IsChildOf(URpgGameplayAbility::StaticClass()) && !AbilityClass->IsNative());
+		TestTrue(TEXT("Shot and aim hold one aim stance together"), AbilityDefaults && AbilityDefaults->GetAssetTags().HasTag(RangedAimTag));
+	}
+	TestEqual(TEXT("The shot has its stable ability id for ranged tunings"), Shot->AbilityIdTag,
 		FGameplayTag::RequestGameplayTag(TEXT("Ability.Ranged.BowShot")));
+	TestEqual(TEXT("The aim has its own stable ability id"), Aim->AbilityIdTag, FGameplayTag::RequestGameplayTag(TEXT("Ability.Ranged.BowAim")));
+	const URpgGameplayAbility* AimDefaults = Aim->Ability ? Aim->Ability->GetDefaultObject<URpgGameplayAbility>() : nullptr;
+	TestTrue(TEXT("The aim lasts while its input is held and runs beside the shot"), AimDefaults
+		&& AimDefaults->GetActivationPolicy() == ERpgAbilityActivationPolicy::WhileInputActive
+		&& AimDefaults->GetActivationGroup() == ERpgAbilityActivationGroup::Independent);
+
+	// The aim stance slows movement and has a camera; the hold layer presents it on the Manny skeleton.
+	TestTrue(TEXT("Aiming slows movement"), Weapon->GetAimDefinition().MovementSpeedLimit > 0.0f);
+	TestNotNull(TEXT("Aiming has its own camera"), Weapon->GetAimDefinition().CameraMode.Get());
+	const USkeleton* Manny = LoadObject<USkeleton>(nullptr, TEXT("/Game/SurvivalRpg/Characters/Mannequins/Meshes/SK_Mannequin.SK_Mannequin"));
+	TestNotNull(TEXT("The bow has a hold layer for the Manny skeleton"), Equipment->ResolveHoldLayer(Manny, ERpgEquipmentSlot::MainHand).Get());
 	return true;
 }
 
