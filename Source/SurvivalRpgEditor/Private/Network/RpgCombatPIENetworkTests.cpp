@@ -3206,22 +3206,32 @@ NETWORK_TEST_CLASS(RangedEnemyPIE, "SurvivalRpg.Network")
 		using namespace RpgCombatPIENetworkTests;
 		QueueEncounter(false);
 		Network
-			.UntilServer(TEXT("The archer draws at the target"), [this](FNetworkState&) { return ArcherDraws(); }, NetworkTimeout())
+			// Near the full draw, so a release decision could race the death.
+			.UntilServer(TEXT("The archer has drawn the bow to 80 % at the target"), [this](FNetworkState&)
+				{
+					const URpgAIAttackDriverComponent* Driver = ArcherRef.IsValid() ? ArcherRef->FindComponentByClass<URpgAIAttackDriverComponent>() : nullptr;
+					return ArcherDraws() && Driver->GetRangedDrawFraction() >= 0.8f;
+				},
+				NetworkTimeout())
 			.ThenServer(TEXT("The archer dies mid-draw"), [this](FNetworkState& State)
 				{
+					ASSERT_THAT(IsTrue(ArcherDraws()));
 					URpgHealthComponent* Health = URpgHealthComponent::FindHealthComponent(ArcherRef.Get());
 					ASSERT_THAT(IsTrue(Health != nullptr));
 					Health->DamageSelfDestruct(false);
+					ASSERT_THAT(IsTrue(Health->IsDeadOrDying()));
 					DeathSeconds = State.World->GetTimeSeconds();
 				})
-			.UntilServer(TEXT("Its draw ends without an arrow or damage for 2 s"), [this](FNetworkState& State)
+			.UntilServer(TEXT("Its draw ends unreleased, without an arrow or damage for 2 s"), [this](FNetworkState& State)
 				{
+					const URpgAIAttackDriverComponent* Driver = ArcherRef.IsValid() ? ArcherRef->FindComponentByClass<URpgAIAttackDriverComponent>() : nullptr;
 					// A failed check ends the wait with its error recorded.
-					if (!Assert.AreEqual(0, CountProjectiles(State.World)) || !Assert.IsTrue(TargetHealthNow(State.World) == TargetHealth))
+					if (!Assert.IsTrue(Driver != nullptr) || !Assert.IsFalse(Driver->WasRangedShotReleased())
+						|| !Assert.AreEqual(0, CountProjectiles(State.World)) || !Assert.IsTrue(TargetHealthNow(State.World) == TargetHealth))
 					{
 						return true;
 					}
-					return !ArcherDraws() && State.World->GetTimeSeconds() - DeathSeconds >= 2.0;
+					return !Driver->IsRangedShotActive() && State.World->GetTimeSeconds() - DeathSeconds >= 2.0;
 				},
 				NetworkTimeout())
 			.ThenServer(TEXT("A second archer takes its place"), [this](FNetworkState& State)

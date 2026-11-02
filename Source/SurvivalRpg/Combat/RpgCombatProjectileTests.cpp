@@ -1387,11 +1387,15 @@ bool FRpgCombatProjectileRecoverySaveTest::RunTest(const FString& Parameters)
 	ARpgInventoryContainerActor* Chest = Fixture.World->SpawnActor<ARpgInventoryContainerActor>();
 	if (!TestTrue(TEXT("A world-save owner and an ordinary chest exist"), Mode && Chest)) return false;
 	Mode->bEnableDiskPersistence = false;
+	// The shipped arrow's pickup Blueprint, so a component override in it cannot slip into world saves unnoticed.
 	UBoxComponent* Wall = Fixture.SpawnBlock(FVector(500.0f, 6000.0f, 0.0f), FVector(10.0f, 100.0f, 100.0f), EComponentMobility::Static);
-	ARpgEmbeddedProjectilePickup* Pickup = RecoverInto(Fixture, Wall, FVector(490.0f, 6000.0f, 0.0f));
-	if (!TestTrue(TEXT("An intact arrow leaves a pickup holding it"), Pickup && Pickup->GetAmmunitionCount() == 1)) return false;
+	ARpgEmbeddedProjectilePickup* Pickup = RecoverInto(Fixture, Wall, FVector(490.0f, 6000.0f, 0.0f),
+		[](FRpgProjectileRecoveryDefinition& Recovery) { UseArrowContent(Recovery); });
+	if (!TestTrue(TEXT("An intact arrow leaves a content pickup holding it"), Pickup && !Pickup->GetClass()->IsNative()
+		&& Pickup->GetAmmunitionCount() == 1)) return false;
 
-	// BeginPlay decides which containers become persistent; this world never began play, so run it for both.
+	// BeginPlay decides which containers become persistent; this world never began play, so run it for both. The spawned
+	// mode is not the world's game mode, so the chest takes the branch that assigns its id without registering.
 	Chest->DispatchBeginPlay();
 	Pickup->DispatchBeginPlay();
 	const FName ChestId = Chest->GetContainerComponent()->GetPersistentContainerId();
