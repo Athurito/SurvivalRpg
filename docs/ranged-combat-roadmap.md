@@ -1,6 +1,6 @@
 # Ranged combat roadmap
 
-Updated: 2026-11-02. Status: **In progress.** The user started the whole roadmap on 2026-11-01; its tasks are delivered one PR each in dependency order and validated by the user at the end. RNG-01, RNG-02, RNG-03, RNG-03b and RNG-04 are done.
+Updated: 2026-11-02. Status: **In progress.** The user started the whole roadmap on 2026-11-01; its tasks are delivered one PR each in dependency order and validated by the user at the end. RNG-01, RNG-02, RNG-03, RNG-03b, RNG-03c and RNG-04 are done.
 
 This plan records the agreed first bow system: a player bow and a bow enemy using shared combat mechanisms, including visibly embedded arrows, breakage, and partial ammunition recovery. It also defines the extension boundary for later magic and abilities such as Rain of Arrows. This is a design and implementation handoff, not a report of implemented or tested gameplay.
 
@@ -225,7 +225,7 @@ All tasks are **Deferred** because their implementation start has not been selec
 | RNG-02 | Bow/arrow items, shot task, draw curves, inventory consumption, configurable costs/passive seams, recipes, and placeholder removal | RNG-01 | Done; user check with RNG-06 ([ranged-bow-items-shot.md](ranged-bow-items-shot.md), [PR #366](https://github.com/Athurito/SurvivalRpg/pull/366)) |
 | RNG-03 | Player input, shoulder camera, aim movement, grips, and draw/release animations on CMC/Manny | RNG-02 | Done; user check with RNG-06 ([ranged-aim-presentation.md](ranged-aim-presentation.md), [PR #367](https://github.com/Athurito/SurvivalRpg/pull/367)) |
 | RNG-03b | Impact recovery policies, the break roll, embedded world arrows and pickups, world grouping and cap, the player-hit rule, and salvage lifetime | RNG-03 | Done; user check with RNG-06 ([ranged-arrow-recovery.md](ranged-arrow-recovery.md), [PR #368](https://github.com/Athurito/SurvivalRpg/pull/368)) |
-| RNG-03c | Embedded arrows on AI characters with grouping, corpse recovery including post-death hits, and the finite NPC recovery-budget mechanism | RNG-03b | Deferred |
+| RNG-03c | Embedded arrows on AI characters with grouping, corpse recovery including post-death hits, and the finite NPC recovery-budget mechanism | RNG-03b | Done; user check with RNG-06 ([ranged-ai-arrow-recovery.md](ranged-ai-arrow-recovery.md), PR pending) |
 | RNG-04 | Crosshair, draw-strength and ammunition HUD through CommonUI/MVVM; no trajectory or impact prediction display | RNG-03 | Done; user check with RNG-06 ([ranged-hud.md](ranged-hud.md), [PR #369](https://github.com/Athurito/SurvivalRpg/pull/369)) |
 | RNG-05 | One bow enemy extending existing AI action/spacing behavior, common bow execution, and configured unlimited fire with bounded recovery | RNG-03c | Deferred |
 | RNG-06 | Integrated acceptance, network/regression checks, and final first-bow feel tuning | RNG-04, RNG-05 | Deferred |
