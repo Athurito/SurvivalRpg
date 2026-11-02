@@ -1,6 +1,6 @@
 # RNG-03b: Arrow break roll, embedded world arrows and recovery
 
-Task report for RNG-03b in the [ranged combat roadmap](ranged-combat-roadmap.md), PR pending. An intact standard arrow now stays in the world: the server rolls once at a world impact or a block whether it broke; an intact arrow embeds in the hit surface, or drops to the ground near a shield or a surface it cannot embed in. Players collect it with the ordinary Collect interaction. Characters never keep arrows. Arrows embedded in AI characters, corpse recovery and the NPC recovery budget follow in RNG-03c.
+Task report for RNG-03b in the [ranged combat roadmap](ranged-combat-roadmap.md), [PR #368](https://github.com/Athurito/SurvivalRpg/pull/368). An intact standard arrow now stays in the world: the server rolls once at a world impact or a block whether it broke; an intact arrow embeds in the hit surface, or drops to the ground near a shield or a surface it cannot embed in. Players collect it with the ordinary Collect interaction. Characters never keep arrows. Arrows embedded in AI characters, corpse recovery and the NPC recovery budget follow in RNG-03c.
 
 ## C++ boundary decision
 
