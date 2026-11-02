@@ -12,7 +12,7 @@ class UTexture2D;
 class URpgAbilitySystemComponent;
 class URpgInventoryItemDefinition;
 class URpgInventoryManagerComponent;
-struct FRpgEquipmentLoadoutSlotsChangedMessage;
+class URpgRangedWeaponInstance;
 struct FRpgInventoryChangeMessage;
 
 /**
@@ -20,11 +20,12 @@ struct FRpgInventoryChangeMessage;
  * is a ranged weapon, its ammunition in the player's own inventory, the aim stance and the draw strength.
  *
  * URpgUiSubsystem owns one per local player and keeps it bound across pawns and ability system changes; widgets get it
- * through URpgLocalPlayerViewModelResolver. Weapon and ammunition follow the equipment loadout and inventory messages.
- * Aim and draw are the owner's own prediction, read every frame only while a ranged weapon is active. Nothing here
+ * through URpgLocalPlayerViewModelResolver. The weapon is the ranged weapon instance equipped on the bound pawn, whose
+ * shot definition names the ammunition the shot spends; the count follows the inventory messages. Aim and draw are the
+ * owner's own prediction, read every frame only while a ranged weapon is active. Nothing here
  * shows a trajectory or a landing point: the draw strength describes the draw, not where the arrow goes.
  */
-UCLASS(BlueprintType, DisplayName = "Ranged Combat Viewmodel")
+UCLASS(BlueprintType, DisplayName = "Ranged Combat Viewmodel", meta = (MVVMAllowedContextCreationType = "Resolver"))
 class SURVIVALRPG_API URpgRangedCombatViewModel : public UMVVMViewModelBase
 {
 	GENERATED_BODY()
@@ -32,23 +33,20 @@ class SURVIVALRPG_API URpgRangedCombatViewModel : public UMVVMViewModelBase
 public:
 	virtual void BeginDestroy() override;
 
-	/** Follows Controller's equipment loadout and its player state's inventory; null unbinds them. */
+	/** Counts ammunition in Controller's player state inventory; null unbinds it. */
 	void BindPlayerController(APlayerController* Controller);
 
-	/** Reads aim and draw from AbilitySystem, the current pawn's; null unbinds it. */
+	/** Reads the weapon, aim and draw of AbilitySystem's pawn, the current one; null unbinds it. */
 	void BindAbilitySystem(URpgAbilitySystemComponent* AbilitySystem);
 
 	/** Releases every binding and resets the fields. */
 	void Unbind();
 
-	/** Re-reads the active weapon and its ammunition. Called on loadout and inventory changes. */
+	/** Re-reads the pawn's ranged weapon and, when it changed, its ammunition. Called a few times a second. */
 	void RefreshWeapon();
 
 	/** Re-reads aim and draw from the bound ability system. Called every frame while a ranged weapon is active. */
 	void RefreshRangedState();
-
-	/** The ammunition a weapon item's ranged instance shoots, or null for an item that is no ranged weapon. */
-	static TSubclassOf<URpgInventoryItemDefinition> FindAmmunitionForWeapon(TSubclassOf<URpgInventoryItemDefinition> WeaponItem);
 
 	bool GetHasRangedWeapon() const { return bHasRangedWeapon; }
 	int32 GetAmmunitionCount() const { return AmmunitionCount; }
@@ -67,7 +65,7 @@ public:
 #endif
 
 private:
-	/** True while the active main hand is a ranged weapon; the ammunition HUD shows only then. */
+	/** True while the pawn has a ranged weapon equipped; the ammunition HUD shows only then. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Ranged Combat|Ammunition", meta = (AllowPrivateAccess = "true"))
 	bool bHasRangedWeapon = false;
 
@@ -119,7 +117,6 @@ private:
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Ranged Combat|Draw", meta = (AllowPrivateAccess = "true"))
 	bool bFullyDrawn = false;
 
-	void HandleLoadoutChanged(FGameplayTag Channel, const FRpgEquipmentLoadoutSlotsChangedMessage& Message);
 	void HandleInventoryChanged(FGameplayTag Channel, const FRpgInventoryChangeMessage& Message);
 	bool HandleTick(float DeltaSeconds);
 	URpgInventoryManagerComponent* FindInventory() const;
@@ -130,8 +127,9 @@ private:
 
 	TWeakObjectPtr<APlayerController> ObservedController;
 	TWeakObjectPtr<URpgAbilitySystemComponent> ObservedAbilitySystem;
+	TWeakObjectPtr<URpgRangedWeaponInstance> ObservedWeapon;
 	TSubclassOf<URpgInventoryItemDefinition> AmmunitionDefinition;
-	FGameplayMessageListenerHandle LoadoutListener;
 	FGameplayMessageListenerHandle InventoryListener;
 	FTSTicker::FDelegateHandle TickerHandle;
+	float SecondsUntilWeaponCheck = 0.0f;
 };

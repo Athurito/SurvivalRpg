@@ -9,7 +9,10 @@
 #include "Misc/AutomationTest.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Combat/RpgProjectileShotAutomationTestTypes.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
+
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "UObject/StrongObjectPtr.h"
@@ -62,23 +65,41 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FRpgRangedCombatViewModelBowContentTest::RunTest(const FString& Parameters)
 {
-	UClass* BowItem = LoadClass<URpgInventoryItemDefinition>(nullptr, TEXT("/GF_Combat_Ranged/Items/ID_Bow.ID_Bow_C"));
+	using namespace RpgRangedCombatViewModelTests;
+	UClass* BowEquipment = LoadClass<URpgEquipmentDefinition>(nullptr, TEXT("/GF_Combat_Ranged/Equipment/Bow/ED_Bow.ED_Bow_C"));
 	UClass* ArrowItem = LoadClass<URpgInventoryItemDefinition>(nullptr, TEXT("/GF_Combat_Ranged/Items/ID_Arrow_Standard.ID_Arrow_Standard_C"));
-	if (!TestTrue(TEXT("The bow content loads"), BowItem && ArrowItem)) return false;
+	if (!TestTrue(TEXT("The bow content loads"), BowEquipment && ArrowItem)) return false;
 
-	TestTrue(TEXT("The bow item's weapon shoots the standard arrow"),
-		URpgRangedCombatViewModel::FindAmmunitionForWeapon(BowItem) == ArrowItem);
-	TestNull(TEXT("An item that is no ranged weapon shoots nothing"),
-		URpgRangedCombatViewModel::FindAmmunitionForWeapon(URpgInventoryAutomationTestUnitItemDefinition::StaticClass()).Get());
-	TestNull(TEXT("No item shoots nothing"), URpgRangedCombatViewModel::FindAmmunitionForWeapon(nullptr).Get());
+	FScopedWorld ScopedWorld;
+	if (!TestNotNull(TEXT("A standalone test world exists"), ScopedWorld.World)) return false;
+	APawn* Pawn = ScopedWorld.World->SpawnActor<APawn>();
+	URpgAbilitySystemComponent* AbilitySystem = NewObject<URpgAbilitySystemComponent>(Pawn, NAME_None, RF_Transient);
+	Pawn->AddInstanceComponent(AbilitySystem);
+	AbilitySystem->RegisterComponent();
+	AbilitySystem->InitAbilityActorInfo(Pawn, Pawn);
+	URpgEquipmentManagerComponent* Equipment = NewObject<URpgEquipmentManagerComponent>(Pawn, NAME_None, RF_Transient);
+	Pawn->AddInstanceComponent(Equipment);
+	Equipment->RegisterComponent();
 
 	URpgRangedCombatViewModel* ViewModel = NewObject<URpgRangedCombatViewModel>();
-	ViewModel->SetAmmunitionForTests(ArrowItem);
-	TestTrue(TEXT("The bow shows its ammunition"), ViewModel->GetHasRangedWeapon());
-	TestFalse(TEXT("The standard arrow names itself"), RpgRangedCombatViewModelTests::ReadText(ViewModel, TEXT("AmmunitionName")).IsEmpty());
+	ViewModel->BindAbilitySystem(AbilitySystem);
+	TestFalse(TEXT("An unarmed pawn has no ranged weapon"), ViewModel->GetHasRangedWeapon());
+	TestTrue(TEXT("A bound pawn's equipment is watched"), ViewModel->IsTickingForTests());
+
+	// The weapon instance the bow equips names the ammunition its shot spends; the HUD shows the same.
+	if (!TestNotNull(TEXT("The bow equips"), Equipment->EquipItemInSlot(BowEquipment, ERpgEquipmentSlot::MainHand))) return false;
+	ViewModel->RefreshWeapon();
+	TestTrue(TEXT("The equipped bow is a ranged weapon"), ViewModel->GetHasRangedWeapon());
+	TestFalse(TEXT("The standard arrow names itself"), ReadText(ViewModel, TEXT("AmmunitionName")).IsEmpty());
 	const FProperty* IconProperty = ViewModel->GetClass()->FindPropertyByName(TEXT("AmmunitionIcon"));
 	const TSoftObjectPtr<UTexture2D>* Icon = IconProperty ? IconProperty->ContainerPtrToValuePtr<TSoftObjectPtr<UTexture2D>>(ViewModel) : nullptr;
 	TestTrue(TEXT("The standard arrow has an icon for the HUD"), Icon && !Icon->IsNull());
+
+	Equipment->UnequipItemInSlot(ERpgEquipmentSlot::MainHand);
+	ViewModel->RefreshWeapon();
+	TestFalse(TEXT("Putting the bow away hides the ammunition"), ViewModel->GetHasRangedWeapon());
+	ViewModel->Unbind();
+	TestFalse(TEXT("Unbinding stops watching"), ViewModel->IsTickingForTests());
 	return true;
 }
 
@@ -155,10 +176,7 @@ bool FRpgRangedCombatViewModelDrawTest::RunTest(const FString& Parameters)
 
 	URpgRangedCombatViewModel* ViewModel = NewObject<URpgRangedCombatViewModel>();
 	ViewModel->BindAbilitySystem(AbilitySystem);
-	TestFalse(TEXT("Without a ranged weapon nothing ticks"), ViewModel->IsTickingForTests());
-
 	ViewModel->SetAmmunitionForTests(URpgProjectileShotAutomationArrowDefinition::StaticClass());
-	TestTrue(TEXT("A ranged weapon in hand ticks the draw"), ViewModel->IsTickingForTests());
 	TestFalse(TEXT("No stance aims"), ViewModel->GetAiming());
 	TestFalse(TEXT("No draw draws"), ViewModel->GetDrawing());
 
@@ -189,9 +207,7 @@ bool FRpgRangedCombatViewModelDrawTest::RunTest(const FString& Parameters)
 
 	ViewModel->BindAbilitySystem(nullptr);
 	TestFalse(TEXT("Losing the ability system stops the tick"), ViewModel->IsTickingForTests());
-	ViewModel->BindAbilitySystem(AbilitySystem);
-	ViewModel->SetAmmunitionForTests(nullptr);
-	TestFalse(TEXT("Putting the bow away stops the tick"), ViewModel->IsTickingForTests());
+	TestFalse(TEXT("Losing the ability system clears the draw"), ViewModel->GetDrawing());
 	ViewModel->Unbind();
 	return true;
 }

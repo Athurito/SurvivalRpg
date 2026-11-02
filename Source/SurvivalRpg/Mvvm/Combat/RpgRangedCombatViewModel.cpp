@@ -4,16 +4,11 @@
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
-#include "SurvivalRpg/Core/Player/RpgPlayerController.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
-#include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
-#include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
+#include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
 #include "SurvivalRpg/Equipment/RpgRangedWeaponInstance.h"
-#include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
-#include "SurvivalRpg/Inventory/RpgInventoryFragment_EquippableItem.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
-#include "SurvivalRpg/Inventory/RpgInventoryItemInstance.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerMessageTags.h"
 
@@ -23,6 +18,9 @@ namespace RpgRangedCombatViewModel
 {
 	/** A draw this close to full counts as full, so float drift never hides the full-draw state. */
 	constexpr float FullDrawTolerance = 0.001f;
+
+	/** Seconds between checks of the pawn's equipment; a weapon swap shows within this time. */
+	constexpr float WeaponCheckSeconds = 0.2f;
 }
 
 void URpgRangedCombatViewModel::BeginDestroy()
@@ -31,10 +29,6 @@ void URpgRangedCombatViewModel::BeginDestroy()
 	{
 		FTSTicker::GetCoreTicker().RemoveTicker(TickerHandle);
 		TickerHandle.Reset();
-	}
-	if (LoadoutListener.IsValid())
-	{
-		LoadoutListener.Unregister();
 	}
 	if (InventoryListener.IsValid())
 	{
@@ -47,10 +41,6 @@ void URpgRangedCombatViewModel::BindPlayerController(APlayerController* Controll
 {
 	if (ObservedController.Get() != Controller)
 	{
-		if (LoadoutListener.IsValid())
-		{
-			LoadoutListener.Unregister();
-		}
 		if (InventoryListener.IsValid())
 		{
 			InventoryListener.Unregister();
@@ -58,21 +48,18 @@ void URpgRangedCombatViewModel::BindPlayerController(APlayerController* Controll
 		ObservedController = Controller;
 		if (UWorld* World = Controller ? Controller->GetWorld() : nullptr)
 		{
-			UGameplayMessageSubsystem& Messages = UGameplayMessageSubsystem::Get(World);
-			LoadoutListener = Messages.RegisterListener<FRpgEquipmentLoadoutSlotsChangedMessage>(
-				RpgGameplayTags::Rpg_EquipmentLoadout_Message_SlotsChanged, this, &ThisClass::HandleLoadoutChanged);
-			InventoryListener = Messages.RegisterListener<FRpgInventoryChangeMessage>(
+			InventoryListener = UGameplayMessageSubsystem::Get(World).RegisterListener<FRpgInventoryChangeMessage>(
 				TAG_Rpg_Inventory_Message_StackChanged, this, &ThisClass::HandleInventoryChanged);
 		}
 	}
-	RefreshWeapon();
+	RefreshAmmunition();
 }
 
 void URpgRangedCombatViewModel::BindAbilitySystem(URpgAbilitySystemComponent* AbilitySystem)
 {
 	ObservedAbilitySystem = AbilitySystem;
 	UpdateTicker();
-	RefreshRangedState();
+	RefreshWeapon();
 }
 
 void URpgRangedCombatViewModel::Unbind()
@@ -83,10 +70,20 @@ void URpgRangedCombatViewModel::Unbind()
 
 void URpgRangedCombatViewModel::RefreshWeapon()
 {
-	const ARpgPlayerController* Controller = Cast<ARpgPlayerController>(ObservedController.Get());
-	const URpgEquipmentLoadoutComponent* Loadout = Controller ? Controller->GetEquipmentLoadoutComponent() : nullptr;
-	const URpgInventoryItemInstance* MainHand = Loadout ? Loadout->GetItemInEquipmentSlot(ERpgEquipmentSlot::MainHand) : nullptr;
-	ApplyWeapon(FindAmmunitionForWeapon(MainHand ? MainHand->GetItemDef() : nullptr));
+	// The equipped weapon instance is what the shot reads its ammunition from; the HUD reads the same.
+	const URpgAbilitySystemComponent* AbilitySystem = ObservedAbilitySystem.Get();
+	const AActor* Avatar = AbilitySystem ? AbilitySystem->GetAvatarActor() : nullptr;
+	const URpgEquipmentManagerComponent* Equipment = Avatar ? Avatar->FindComponentByClass<URpgEquipmentManagerComponent>() : nullptr;
+	URpgRangedWeaponInstance* Weapon = Equipment ? Equipment->GetFirstInstanceOfType<URpgRangedWeaponInstance>() : nullptr;
+	if (Weapon != ObservedWeapon.Get() || (!Weapon && bHasRangedWeapon))
+	{
+		ObservedWeapon = Weapon;
+		ApplyWeapon(Weapon ? Weapon->GetShotDefinition().AmmunitionItemDefinition : nullptr);
+	}
+	else
+	{
+		RefreshRangedState();
+	}
 }
 
 void URpgRangedCombatViewModel::ApplyWeapon(const TSubclassOf<URpgInventoryItemDefinition> Ammunition)
@@ -131,23 +128,6 @@ void URpgRangedCombatViewModel::RefreshRangedState()
 	UE_MVVM_SET_PROPERTY_VALUE(bFullyDrawn, bHasDraw && Draw >= 1.0f - RpgRangedCombatViewModel::FullDrawTolerance);
 }
 
-TSubclassOf<URpgInventoryItemDefinition> URpgRangedCombatViewModel::FindAmmunitionForWeapon(const TSubclassOf<URpgInventoryItemDefinition> WeaponItem)
-{
-	const URpgInventoryItemDefinition* Item = WeaponItem ? GetDefault<URpgInventoryItemDefinition>(WeaponItem) : nullptr;
-	const URpgInventoryFragment_EquippableItem* Equippable = Item
-		? Cast<URpgInventoryFragment_EquippableItem>(Item->FindFragmentByClass(URpgInventoryFragment_EquippableItem::StaticClass()))
-		: nullptr;
-	const TSubclassOf<URpgEquipmentDefinition> Equipment = Equippable ? Equippable->GetEquipmentDefinition() : nullptr;
-	const TSubclassOf<URpgEquipmentInstance> InstanceType = Equipment ? GetDefault<URpgEquipmentDefinition>(Equipment)->InstanceType : nullptr;
-	const URpgRangedWeaponInstance* Weapon = InstanceType ? Cast<URpgRangedWeaponInstance>(InstanceType->GetDefaultObject()) : nullptr;
-	return Weapon ? Weapon->GetShotDefinition().AmmunitionItemDefinition : nullptr;
-}
-
-void URpgRangedCombatViewModel::HandleLoadoutChanged(FGameplayTag, const FRpgEquipmentLoadoutSlotsChangedMessage&)
-{
-	RefreshWeapon();
-}
-
 void URpgRangedCombatViewModel::HandleInventoryChanged(FGameplayTag, const FRpgInventoryChangeMessage& Message)
 {
 	if (AmmunitionDefinition && Message.InventoryOwner && Message.InventoryOwner == FindInventory())
@@ -156,9 +136,18 @@ void URpgRangedCombatViewModel::HandleInventoryChanged(FGameplayTag, const FRpgI
 	}
 }
 
-bool URpgRangedCombatViewModel::HandleTick(float)
+bool URpgRangedCombatViewModel::HandleTick(const float DeltaSeconds)
 {
-	RefreshRangedState();
+	SecondsUntilWeaponCheck -= DeltaSeconds;
+	if (SecondsUntilWeaponCheck <= 0.0f)
+	{
+		SecondsUntilWeaponCheck = RpgRangedCombatViewModel::WeaponCheckSeconds;
+		RefreshWeapon();
+	}
+	else if (bHasRangedWeapon)
+	{
+		RefreshRangedState();
+	}
 	return true;
 }
 
@@ -185,8 +174,9 @@ void URpgRangedCombatViewModel::RefreshAmmunition()
 
 void URpgRangedCombatViewModel::UpdateTicker()
 {
-	// Aim and draw change every frame while a ranged weapon is out; without one nothing ticks.
-	const bool bShouldTick = bHasRangedWeapon && ObservedAbilitySystem.IsValid();
+	// The pawn's equipment changes without a notification, so the bound pawn's weapon is checked a few times a second;
+	// aim and draw are read every frame while a ranged weapon is out.
+	const bool bShouldTick = ObservedAbilitySystem.IsValid();
 	if (bShouldTick && !TickerHandle.IsValid())
 	{
 		TickerHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateUObject(this, &ThisClass::HandleTick));
