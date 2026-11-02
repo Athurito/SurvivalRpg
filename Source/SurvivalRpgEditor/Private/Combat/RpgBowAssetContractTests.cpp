@@ -2,12 +2,20 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "Animation/AnimBlueprintGeneratedClass.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "InputAction.h"
 #include "Misc/AutomationTest.h"
+#include "StateTree.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
 #include "SurvivalRpg/Combat/RpgCombatProjectile.h"
+#include "SurvivalRpg/Combat/RpgEnemyCombatLoadout.h"
 #include "SurvivalRpg/Combat/RpgProjectileShot.h"
+#include "SurvivalRpg/Core/AI/RpgAICharacter.h"
+#include "SurvivalRpg/Core/AI/RpgAIController.h"
+#include "SurvivalRpg/Core/AI/RpgAIPawnData.h"
+#include "SurvivalRpg/Core/AI/RpgStateTreeCombatTasks.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
 #include "SurvivalRpg/Equipment/RpgRangedWeaponInstance.h"
 #include "SurvivalRpg/Input/RpgInputConfig.h"
@@ -24,6 +32,8 @@ namespace RpgBowAssetContractTests
 	const TCHAR* ArrowPath = TEXT("/GF_Combat_Ranged/Items/ID_Arrow_Standard.ID_Arrow_Standard_C");
 	const TCHAR* ArrowProjectilePath = TEXT("/GF_Combat_Ranged/Projectiles/BP_Projectile_Arrow.BP_Projectile_Arrow_C");
 	const TCHAR* CombatInputConfigPath = TEXT("/GF_Combat_Core/Input/DA_InputConfig_Combat.DA_InputConfig_Combat");
+	const TCHAR* EnemyBowPath = TEXT("/GF_Combat_Ranged/AI/EnemyWeapons/ID_EnemyBow.ID_EnemyBow_C");
+	const TCHAR* ArcherPath = TEXT("/GF_AI_RiftMonsters/AI/Characters/BP_RiftGrunt_Bow.BP_RiftGrunt_Bow_C");
 
 	template <typename FragmentType>
 	const FragmentType* FindFragment(const URpgInventoryItemDefinition* Definition)
@@ -119,6 +129,103 @@ bool FRpgBowAssetContractTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("Aiming has its own camera"), Weapon->GetAimDefinition().CameraMode.Get());
 	const USkeleton* Manny = LoadObject<USkeleton>(nullptr, TEXT("/Game/SurvivalRpg/Characters/Mannequins/Meshes/SK_Mannequin.SK_Mannequin"));
 	TestNotNull(TEXT("The bow has a hold layer for the Manny skeleton"), Equipment->ResolveHoldLayer(Manny, ERpgEquipmentSlot::MainHand).Get());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgEnemyBowAssetContractTest,
+	"SurvivalRpg.Combat.Ranged.EnemyBowAssetContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgEnemyBowAssetContractTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgBowAssetContractTests;
+	const auto LoadEquipment = [](const TCHAR* ItemPath) -> const URpgEquipmentDefinition*
+	{
+		const UClass* ItemClass = LoadClass<URpgInventoryItemDefinition>(nullptr, ItemPath);
+		const URpgInventoryFragment_EquippableItem* Equippable =
+			ItemClass ? FindFragment<URpgInventoryFragment_EquippableItem>(ItemClass->GetDefaultObject<URpgInventoryItemDefinition>()) : nullptr;
+		return Equippable && Equippable->EquipmentDefinition
+			? Equippable->EquipmentDefinition->GetDefaultObject<URpgEquipmentDefinition>()
+			: nullptr;
+	};
+	const auto MainHandSets = [](const URpgEquipmentDefinition& Equipment)
+	{
+		TSet<const URpgAbilitySet*> Sets;
+		for (const FRpgEquipmentSlotAbilitySet& SlotSet : Equipment.SlotAbilitySetsToGrant)
+		{
+			if (SlotSet.EquippedSlot == ERpgEquipmentSlot::MainHand && SlotSet.AbilitySet)
+			{
+				Sets.Add(SlotSet.AbilitySet);
+			}
+		}
+		return Sets;
+	};
+
+	const URpgEquipmentDefinition* PlayerBow = LoadEquipment(BowPath);
+	const URpgEquipmentDefinition* EnemyBow = LoadEquipment(EnemyBowPath);
+	if (!TestTrue(TEXT("Player and enemy bow equip through equipment definitions"), PlayerBow && EnemyBow)) return false;
+	const URpgRangedWeaponInstance* PlayerWeapon = PlayerBow->InstanceType ? Cast<URpgRangedWeaponInstance>(PlayerBow->InstanceType->GetDefaultObject()) : nullptr;
+	const URpgRangedWeaponInstance* EnemyWeapon = EnemyBow->InstanceType ? Cast<URpgRangedWeaponInstance>(EnemyBow->InstanceType->GetDefaultObject()) : nullptr;
+	if (!TestTrue(TEXT("Both are ranged weapons"), PlayerWeapon && EnemyWeapon)) return false;
+
+	// One bow execution: the enemy bow grants the player's shot ability; only its ammunition policy differs.
+	TestTrue(TEXT("The enemy bow grants the player bow's abilities"), MainHandSets(*EnemyBow).Num() > 0
+		&& MainHandSets(*EnemyBow).Difference(MainHandSets(*PlayerBow)).IsEmpty()
+		&& MainHandSets(*PlayerBow).Difference(MainHandSets(*EnemyBow)).IsEmpty());
+	TestEqual(TEXT("A player's bow always consumes arrows"), PlayerWeapon->GetAmmunitionPolicy(), ERpgProjectileAmmunitionPolicy::ShooterInventory);
+	TestEqual(TEXT("The enemy bow fires without items"), EnemyWeapon->GetAmmunitionPolicy(), ERpgProjectileAmmunitionPolicy::Unlimited);
+	const FRpgProjectileShotDefinition& EnemyShot = EnemyWeapon->GetShotDefinition();
+	TArray<FText> ShotErrors;
+	RpgProjectileShot::ValidateDefinition(EnemyShot, ShotErrors);
+	TestTrue(TEXT("The enemy bow's shot definition is valid"), ShotErrors.IsEmpty());
+	TestTrue(TEXT("Its unlimited fire returns arrows for a finite budget per life"), EnemyShot.UnlimitedRecoveryBudget > 0);
+	TestEqual(TEXT("It shoots the standard arrow"), EnemyShot.AmmunitionItemDefinition.Get(), LoadClass<URpgInventoryItemDefinition>(nullptr, ArrowPath));
+	const UClass* ProjectileClass = URpgInventoryFragment_Ammunition::FindProjectileClass(EnemyShot.AmmunitionItemDefinition);
+	TestTrue(TEXT("Its arrows can be recovered"), ProjectileClass
+		&& ProjectileClass->GetDefaultObject<ARpgCombatProjectile>()->GetImpactRecovery() == ERpgProjectileImpactRecovery::Recoverable);
+	const USkeleton* Manny = LoadObject<USkeleton>(nullptr, TEXT("/Game/SurvivalRpg/Characters/Mannequins/Meshes/SK_Mannequin.SK_Mannequin"));
+	TestNotNull(TEXT("The enemy bow has a hold layer for the Manny skeleton"), EnemyBow->ResolveHoldLayer(Manny, ERpgEquipmentSlot::MainHand).Get());
+
+	// The bow enemy: its archetype's loadout equips the enemy bow, its AnimBP hosts the hold layer, its tree shoots.
+	const UClass* ArcherClass = LoadClass<ARpgAICharacter>(nullptr, ArcherPath);
+	const ARpgAICharacter* Archer = ArcherClass ? ArcherClass->GetDefaultObject<ARpgAICharacter>() : nullptr;
+	if (!TestNotNull(TEXT("The bow enemy loads"), Archer)) return false;
+	const URpgEnemyCombatArchetypeComponent* Archetype = Archer->FindComponentByClass<URpgEnemyCombatArchetypeComponent>();
+	const URpgEnemyCombatLoadoutComponent* Loadouts = Archer->FindComponentByClass<URpgEnemyCombatLoadoutComponent>();
+	if (!TestTrue(TEXT("The bow enemy has an archetype and loadouts"), Archetype && Loadouts)) return false;
+	const FGameplayTag ArchetypeTag = Archetype->GetEnemyCombatArchetypeTag();
+	TestEqual(TEXT("It is of the Bow archetype"), ArchetypeTag, FGameplayTag::RequestGameplayTag(TEXT("Enemy.Archetype.Bow")));
+	const URpgEnemyCombatLoadoutDefinition* Loadout = nullptr;
+	for (const TSoftObjectPtr<const URpgEnemyCombatLoadoutDefinition>& Definition : Loadouts->GetLoadoutDefinitionsForEditor())
+	{
+		const URpgEnemyCombatLoadoutDefinition* Loaded = Definition.LoadSynchronous();
+		Loadout = Loaded && Loaded->GetArchetypeTag() == ArchetypeTag ? Loaded : Loadout;
+	}
+	TestTrue(TEXT("Its archetype's loadout equips the enemy bow in the main hand"), Loadout && Loadout->GetEquipmentItems().ContainsByPredicate(
+		[](const FRpgEnemyCombatLoadoutItem& Item)
+		{
+			return Item.EquipmentSlot == ERpgEquipmentSlot::MainHand
+				&& Item.ItemDefinition.ToSoftObjectPath() == FSoftObjectPath(EnemyBowPath);
+		}));
+	const UClass* AnimClass = Archer->GetMesh() ? Archer->GetMesh()->GetAnimClass() : nullptr;
+	const UClass* MainHandHold = LoadClass<UObject>(nullptr,
+		TEXT("/Game/SurvivalRpg/Characters/GASP/Shared/RPG/WeaponHold/ALI_RpgMainHandHold.ALI_RpgMainHandHold_C"));
+	TestTrue(TEXT("Its AnimBP hosts the main-hand hold layer the bow links"), AnimClass && MainHandHold && AnimClass->ImplementsInterface(MainHandHold));
+
+	const UClass* ControllerClass = Archer->AIControllerClass.Get();
+	const ARpgAIController* Controller = ControllerClass ? Cast<ARpgAIController>(ControllerClass->GetDefaultObject()) : nullptr;
+	const UStateTree* Tree = Controller && Controller->GetDefaultPawnData() ? Controller->GetDefaultPawnData()->StateTree.Get() : nullptr;
+	bool bShoots = false;
+	if (Tree)
+	{
+		const FInstancedStructContainer& Nodes = Tree->GetNodes();
+		for (int32 Index = 0; Index < Nodes.Num(); ++Index)
+		{
+			bShoots |= Nodes[Index].GetScriptStruct() == FRpgStateTreeRangedAttackTask::StaticStruct();
+		}
+	}
+	TestTrue(TEXT("Its controller runs a StateTree that shoots with the Ranged Attack task"), bShoots);
 	return true;
 }
 

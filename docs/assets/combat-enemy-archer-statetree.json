@@ -1,0 +1,299 @@
+{
+  "asset": "/GF_AI_RiftMonsters/AI/StateTrees/ST_SkeletonArcher",
+  "note": "RNG-05 skeleton archer. Rebuild with AIAssetTools.build_state_tree(asset, json.dumps({key: this[key] for key in ('global_tasks', 'root')})). Distances in cm, times in s.",
+  "global_tasks": [
+    {
+      "struct": "/Script/SurvivalRpg.RpgStateTreeCombatControlTask",
+      "values": {
+        "TargetPolicy": "LastAttacker",
+        "TargetSwitchCooldown": 4.0,
+        "SearchRadius": 3000.0,
+        "LoseRadius": 4000.0
+      }
+    }
+  ],
+  "root": {
+    "name": "SkeletonArcher",
+    "selection": "TrySelectChildrenInOrder",
+    "children": [
+      {
+        "name": "Idle",
+        "description": "No hostile within reach: stand and look again.",
+        "enter_conditions": [
+          {
+            "struct": "/Script/SurvivalRpg.RpgStateTreeCombatTargetDistanceCondition",
+            "values": {
+              "bInvert": true
+            }
+          }
+        ],
+        "tasks": [
+          {
+            "struct": "/Script/StateTreeModule.StateTreeDelayTask",
+            "values": {
+              "Duration": 0.5
+            }
+          }
+        ],
+        "transitions": [
+          {
+            "trigger": "OnStateCompleted",
+            "to": "SkeletonArcher"
+          }
+        ]
+      },
+      {
+        "name": "Combat",
+        "selection": "TrySelectChildrenInOrder",
+        "enter_conditions": [
+          {
+            "struct": "/Script/SurvivalRpg.RpgStateTreeCombatTargetDistanceCondition"
+          }
+        ],
+        "children": [
+          {
+            "name": "Recover",
+            "description": "Staggered or guard broken: stand still until the reaction ends.",
+            "enter_conditions": [
+              {
+                "struct": "/Script/SurvivalRpg.RpgStateTreeOwnerHasTagsCondition",
+                "values": {
+                  "Tags": "(GameplayTags=((TagName=\"State.Staggered\"),(TagName=\"State.GuardBroken\")))"
+                }
+              }
+            ],
+            "tasks": [
+              {
+                "struct": "/Script/SurvivalRpg.RpgStateTreeWaitWhileOwnerTaggedTask"
+              }
+            ],
+            "transitions": [
+              {
+                "trigger": "OnStateCompleted",
+                "to": "SkeletonArcher"
+              }
+            ]
+          },
+          {
+            "name": "Evade",
+            "description": "The target pressed in closer than 4.5 m: run back into the shooting band for up to 2.5 s, then shoot from where it stands.",
+            "enter_conditions": [
+              {
+                "struct": "/Script/SurvivalRpg.RpgStateTreeCombatTargetDistanceCondition",
+                "values": {
+                  "MaxDistance": 450.0
+                }
+              }
+            ],
+            "tasks": [
+              {
+                "struct": "/Script/SurvivalRpg.RpgStateTreeKeepCombatDistanceTask",
+                "values": {
+                  "MinDistance": 800.0,
+                  "MaxDistance": 1200.0,
+                  "bWalk": false,
+                  "bStrafe": false,
+                  "bSucceedInBand": true,
+                  "DurationMin": 2.5,
+                  "DurationMax": 2.5
+                }
+              }
+            ],
+            "transitions": [
+              {
+                "trigger": "OnTick",
+                "to": "Recover",
+                "priority": "High",
+                "conditions": [
+                  {
+                    "struct": "/Script/SurvivalRpg.RpgStateTreeOwnerHasTagsCondition",
+                    "values": {
+                      "Tags": "(GameplayTags=((TagName=\"State.Staggered\"),(TagName=\"State.GuardBroken\")))"
+                    }
+                  }
+                ]
+              },
+              {
+                "trigger": "OnStateCompleted",
+                "to": "Shoot"
+              }
+            ]
+          },
+          {
+            "name": "Approach",
+            "description": "The target is beyond 16 m: run until 13 m.",
+            "enter_conditions": [
+              {
+                "struct": "/Script/SurvivalRpg.RpgStateTreeCombatTargetDistanceCondition",
+                "values": {
+                  "MinDistance": 1600.0
+                }
+              }
+            ],
+            "tasks": [
+              {
+                "struct": "/Script/SurvivalRpg.RpgStateTreeKeepCombatDistanceTask",
+                "values": {
+                  "MinDistance": 0.0,
+                  "MaxDistance": 1300.0,
+                  "bWalk": false,
+                  "bStrafe": false,
+                  "bSucceedInBand": true
+                }
+              }
+            ],
+            "transitions": [
+              {
+                "trigger": "OnTick",
+                "to": "Recover",
+                "priority": "High",
+                "conditions": [
+                  {
+                    "struct": "/Script/SurvivalRpg.RpgStateTreeOwnerHasTagsCondition",
+                    "values": {
+                      "Tags": "(GameplayTags=((TagName=\"State.Staggered\"),(TagName=\"State.GuardBroken\")))"
+                    }
+                  }
+                ]
+              },
+              {
+                "trigger": "OnStateCompleted",
+                "to": "SkeletonArcher"
+              }
+            ]
+          },
+          {
+            "name": "Engage",
+            "selection": "TrySelectChildrenInOrder",
+            "transitions": [
+              {
+                "trigger": "OnTick",
+                "to": "Recover",
+                "priority": "High",
+                "conditions": [
+                  {
+                    "struct": "/Script/SurvivalRpg.RpgStateTreeOwnerHasTagsCondition",
+                    "values": {
+                      "Tags": "(GameplayTags=((TagName=\"State.Staggered\"),(TagName=\"State.GuardBroken\")))"
+                    }
+                  }
+                ]
+              }
+            ],
+            "children": [
+              {
+                "name": "Reposition",
+                "description": "No line of fire, for example a wall or an ally in between: walk sideways around the target at 8 to 13 m for 1 to 2 s.",
+                "enter_conditions": [
+                  {
+                    "struct": "/Script/SurvivalRpg.RpgStateTreeCombatTargetInLineOfFireCondition",
+                    "values": {
+                      "bInvert": true
+                    }
+                  }
+                ],
+                "tasks": [
+                  {
+                    "struct": "/Script/SurvivalRpg.RpgStateTreeKeepCombatDistanceTask",
+                    "values": {
+                      "MinDistance": 800.0,
+                      "MaxDistance": 1300.0,
+                      "bWalk": true,
+                      "bStrafe": true,
+                      "DurationMin": 1.0,
+                      "DurationMax": 2.0,
+                      "StrafeAngleStep": 45.0,
+                      "RepathInterval": 0.3
+                    }
+                  }
+                ],
+                "transitions": [
+                  {
+                    "trigger": "OnTick",
+                    "to": "Evade",
+                    "conditions": [
+                      {
+                        "struct": "/Script/SurvivalRpg.RpgStateTreeCombatTargetDistanceCondition",
+                        "values": {
+                          "MaxDistance": 450.0
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "trigger": "OnStateCompleted",
+                    "to": "SkeletonArcher"
+                  }
+                ]
+              },
+              {
+                "name": "Shoot",
+                "description": "Draw, hold the full draw for 0.4 to 0.8 s so the target can read it, release.",
+                "tasks": [
+                  {
+                    "struct": "/Script/SurvivalRpg.RpgStateTreeRangedAttackTask",
+                    "values": {
+                      "AimHoldMin": 0.4,
+                      "AimHoldMax": 0.8,
+                      "LineOfFireGrace": 1.0,
+                      "Timeout": 6.0
+                    }
+                  }
+                ],
+                "transitions": [
+                  {
+                    "trigger": "OnStateSucceeded",
+                    "to": "Circle"
+                  },
+                  {
+                    "trigger": "OnStateFailed",
+                    "to": "SkeletonArcher"
+                  }
+                ]
+              },
+              {
+                "name": "Circle",
+                "description": "Walk sideways around the target at 8 to 13 m for 1.5 to 3 s, then shoot again. A target closer than 4.5 m sends the archer back; a drawn shot still goes off.",
+                "tasks": [
+                  {
+                    "struct": "/Script/SurvivalRpg.RpgStateTreeKeepCombatDistanceTask",
+                    "values": {
+                      "MinDistance": 800.0,
+                      "MaxDistance": 1300.0,
+                      "bWalk": true,
+                      "bStrafe": true,
+                      "DurationMin": 1.5,
+                      "DurationMax": 3.0,
+                      "StrafeAngleStep": 35.0,
+                      "StrafeSwitchIntervalMin": 2.0,
+                      "StrafeSwitchIntervalMax": 4.0,
+                      "RepathInterval": 0.4
+                    }
+                  }
+                ],
+                "transitions": [
+                  {
+                    "trigger": "OnTick",
+                    "to": "Evade",
+                    "conditions": [
+                      {
+                        "struct": "/Script/SurvivalRpg.RpgStateTreeCombatTargetDistanceCondition",
+                        "values": {
+                          "MaxDistance": 450.0
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "trigger": "OnStateCompleted",
+                    "to": "SkeletonArcher"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
