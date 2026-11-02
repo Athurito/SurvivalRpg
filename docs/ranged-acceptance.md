@@ -1,6 +1,6 @@
 # RNG-06: Integrated acceptance of the first bow
 
-Task report for RNG-06 in the [ranged combat roadmap](ranged-combat-roadmap.md), PR pending.
+Task report for RNG-06 in the [ranged combat roadmap](ranged-combat-roadmap.md), [PR #372](https://github.com/Athurito/SurvivalRpg/pull/372).
 
 This task closes the first bow delivery. It holds:
 - the acceptance matrix for every contract the roadmap lists, with the evidence for each;
