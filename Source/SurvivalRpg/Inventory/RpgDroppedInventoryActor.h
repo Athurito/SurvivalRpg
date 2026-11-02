@@ -64,6 +64,9 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual FInteractionOption BuildCollectInteractionOption(const FInteractionQuery& InteractQuery) const override;
 
+	/** Access and transfer rules of the loot inventory; subclasses configure it in their constructor. */
+	URpgInventoryContainerComponent* GetLootContainerComponent() const { return ContainerComponent; }
+
 private:
 	void EnsureLootInventoryPostCommitBinding();
 	void HandleLootInventoryPostCommit(URpgInventoryManagerComponent* Inventory);

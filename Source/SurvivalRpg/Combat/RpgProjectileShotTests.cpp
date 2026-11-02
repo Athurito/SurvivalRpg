@@ -18,6 +18,7 @@
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/AbilitySystem/Tasks/RpgAbilityTask_ProjectileShot.h"
 #include "SurvivalRpg/Combat/RpgCombatProjectile.h"
+#include "SurvivalRpg/Combat/RpgEmbeddedProjectilePickup.h"
 #include "SurvivalRpg/Combat/RpgProjectileShotAutomationTestTypes.h"
 #include "SurvivalRpg/Equipment/RpgRangedWeaponInstance.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
@@ -457,7 +458,10 @@ bool FRpgProjectileShotTuningTest::RunTest(const FString& Parameters)
 	AddDrain.TuningTag = RpgGameplayTags::Ability_Tuning_Ranged_HoldDrain;
 	AddDrain.Operation = ERpgSkillTreeTuningOperation::Add;
 	AddDrain.Value = 2.0f;
-	TStrongObjectPtr<UGameplayEffect> Passive(URpgAbilityTuningEffectComponent::MakeTransientEffectForTests({ HalfCost, HalfDraw, AddDrain }, 1000.0f));
+	FRpgSkillTreeAbilityTuning HalfBreak = HalfCost;
+	HalfBreak.TuningTag = RpgGameplayTags::Ability_Tuning_Ranged_BreakChance;
+	TStrongObjectPtr<UGameplayEffect> Passive(URpgAbilityTuningEffectComponent::MakeTransientEffectForTests({ HalfCost, HalfDraw, AddDrain, HalfBreak }, 1000.0f));
+	const float BaseBreakChance = GetDefault<ARpgProjectileShotAutomationTestProjectile>()->GetRecoveryDefinition().BaseBreakChance;
 
 	if (!TestTrue(TEXT("The shot activates"), Fixture.Activate())) return false;
 	Fixture.ASC->ApplyGameplayEffectToSelf(Passive.Get(), 1.0f, Fixture.ASC->MakeEffectContext());
@@ -465,14 +469,20 @@ bool FRpgProjectileShotTuningTest::RunTest(const FString& Parameters)
 	Fixture.Release();
 	TestEqual(TEXT("A passive gained during the draw keeps this shot's cost"), Fixture.GetStamina(), StartingStamina - ReleaseCost);
 	TestEqual(TEXT("A passive gained during the draw keeps this shot's draw time"), Fixture.Ability->LastDrawFraction, 0.5f, 0.001f);
+	const ARpgCombatProjectile* FirstArrow = Fixture.Ability->LastProjectile.Get();
+	TestEqual(TEXT("A passive gained during the draw keeps this shot's break chance"),
+		FirstArrow ? FirstArrow->GetBreakChanceForTests() : -1.0f, BaseBreakChance);
 
 	if (!TestTrue(TEXT("The next shot activates"), Fixture.Activate())) return false;
 	TestEqual(TEXT("The next shot drains while held as the passive adds"), Fixture.Ability->ShotTask->GetShotTuning().HoldStaminaPerSecond, 2.0f);
+	TestEqual(TEXT("The next shot breaks as the passive tunes"), Fixture.Ability->ShotTask->GetShotTuning().BreakChance, BaseBreakChance * 0.5f);
 	Fixture.Advance(0.5f);
 	Fixture.Release();
 	TestEqual(TEXT("The next shot releases"), Fixture.Ability->LastResult, ERpgProjectileShotResult::Released);
 	TestEqual(TEXT("The next shot pays the passive's cost"), Fixture.GetStamina(), StartingStamina - ReleaseCost * 1.5f);
 	TestEqual(TEXT("The next shot draws in the passive's time"), Fixture.Ability->LastDrawFraction, 1.0f, 0.001f);
+	const ARpgCombatProjectile* NextArrow = Fixture.Ability->LastProjectile.Get();
+	TestEqual(TEXT("The next arrow carries the tuned break chance"), NextArrow ? NextArrow->GetBreakChanceForTests() : -1.0f, BaseBreakChance * 0.5f);
 	return true;
 }
 
@@ -663,6 +673,15 @@ bool FRpgProjectileShotBowContentTest::RunTest(const FString& Parameters)
 	}
 	if (!TestNotNull(TEXT("The release launches an arrow"), Arrow)) return false;
 	TestTrue(TEXT("It is the standard arrow's projectile"), Arrow->IsA(ArrowProjectileClass));
+	const ARpgCombatProjectile* ArrowDefaults = ArrowProjectileClass->GetDefaultObject<ARpgCombatProjectile>();
+	TestEqual(TEXT("The standard arrow is recoverable"), ArrowDefaults->GetImpactRecovery(), ERpgProjectileImpactRecovery::Recoverable);
+	const TSubclassOf<ARpgEmbeddedProjectilePickup> ArrowPickupClass = ArrowDefaults->GetRecoveryDefinition().PickupClass;
+	TestTrue(TEXT("The standard arrow leaves a content pickup"),
+		ArrowPickupClass && ArrowPickupClass != ARpgEmbeddedProjectilePickup::StaticClass());
+	TestTrue(TEXT("The shot returns the consumed standard arrow"), Arrow->GetRecoveryItemDefinitionForTests() == ArrowClass);
+	TestTrue(TEXT("The standard arrow authors a break chance"), ArrowDefaults->GetRecoveryDefinition().BaseBreakChance > 0.0f);
+	TestEqual(TEXT("The shot breaks with the arrow's base chance"), Arrow->GetBreakChanceForTests(),
+		ArrowDefaults->GetRecoveryDefinition().BaseBreakChance);
 	const float TopSpeed = Shot.LaunchSpeedByDrawFraction.GetRichCurveConst()->Eval(1.0f);
 	TestEqual(TEXT("A full draw shoots at the bow curve's top speed"), Arrow->GetProjectileMovement()->Velocity.Size(), static_cast<double>(TopSpeed), 1.0);
 	TestEqual(TEXT("The bow curve sets the damage"), GetSetByCaller(Arrow, RpgGameplayTags::SetByCaller_Damage),
@@ -711,6 +730,16 @@ bool FRpgProjectileShotAmmunitionPolicyTest::RunTest(const FString& Parameters)
 		if (!Fixture.Initialize(*this, false) || !Fixture.Grant(MakeDefinition(), ERpgProjectileAmmunitionPolicy::Unlimited)) return false;
 		TestEqual(TEXT("The unlimited policy shoots without items"), Fixture.Shoot(1.0f), ERpgProjectileShotResult::Released);
 		TestEqual(TEXT("It still pays the release cost"), Fixture.GetStamina(), StartingStamina - ReleaseCost);
+		const ARpgCombatProjectile* Arrow = Fixture.Ability->LastProjectile.Get();
+		TestTrue(TEXT("An arrow nobody paid for can never be recovered"), Arrow && !Arrow->GetRecoveryItemDefinitionForTests());
+	}
+	{
+		FFixture Fixture;
+		if (!Fixture.Initialize(*this) || !Fixture.AddArrows(StartingArrows) || !Fixture.Grant(MakeDefinition())) return false;
+		TestEqual(TEXT("A shooter with arrows shoots"), Fixture.Shoot(1.0f), ERpgProjectileShotResult::Released);
+		const ARpgCombatProjectile* Arrow = Fixture.Ability->LastProjectile.Get();
+		TestTrue(TEXT("A consumed arrow can be recovered as the same ammunition"),
+			Arrow && Arrow->GetRecoveryItemDefinitionForTests() == MakeDefinition().AmmunitionItemDefinition);
 	}
 	return true;
 }

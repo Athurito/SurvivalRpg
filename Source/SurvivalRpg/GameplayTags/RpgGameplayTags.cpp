@@ -129,7 +129,7 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Tuning_Ranged_ReleaseCost, "Ability.Tuning.Ranged.ReleaseCost", "Stamina a projectile shot pays once when it releases.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Tuning_Ranged_HoldDrain, "Ability.Tuning.Ranged.HoldDrain", "Stamina per second a nocked projectile shot drains while held; zero for none.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Tuning_Ranged_AimMovement, "Ability.Tuning.Ranged.AimMovement", "Movement speed cap in cm/s while a ranged aim stance is held.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Tuning_Ranged_BreakChance, "Ability.Tuning.Ranged.BreakChance", "Chance from 0 to 1 that a recoverable arrow breaks on impact (reserved for RNG-03b).");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Tuning_Ranged_BreakChance, "Ability.Tuning.Ranged.BreakChance", "Chance from 0 to 1 that a recoverable arrow breaks at its impact, before the hit surface's rules.");
 	
 	// ---------------- Lifecycle ----------------
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InitState_Spawned, "InitState.Spawned", "Pawn spawned.");

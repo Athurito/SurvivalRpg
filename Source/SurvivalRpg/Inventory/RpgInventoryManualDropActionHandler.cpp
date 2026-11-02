@@ -5,6 +5,7 @@
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
 #include "RpgDroppedInventoryActor.h"
+#include "RpgInventoryContainerComponent.h"
 #include "RpgInventoryFragment_ItemContainer.h"
 #include "RpgInventoryItemCapabilities.h"
 #include "RpgInventoryItemInstance.h"
@@ -376,7 +377,13 @@ bool FRpgInventoryManualDropActionHandler::TryTransferManualDrop(
 				DropActor
 					? DropActor->GetLootInventoryManager()
 					: nullptr;
+			// Temporary loot such as recovered arrows takes no deposits; a drop beside it gets its own pile.
+			const URpgInventoryContainerComponent* Container =
+				DropActor
+					? DropActor->FindComponentByClass<URpgInventoryContainerComponent>()
+					: nullptr;
 			return TargetInventory != SourceInventory &&
+				(!Container || Container->CanReceiveTransferFrom(SourceInventory)) &&
 				CanManualDropTargetAcceptTransferredStack(
 					TargetInventory,
 					Item,

@@ -4,6 +4,7 @@
 #include "AbilitySystemGlobals.h"
 #include "Abilities/GameplayAbility.h"
 #include "Components/AudioComponent.h"
+#include "Components/MeshComponent.h"
 #include "Components/SphereComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/GameStateBase.h"
@@ -17,10 +18,14 @@
 #include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
 #include "Particles/ParticleSystemComponent.h"
+#include "PhysicalMaterials/PhysicalMaterial.h"
 #include "Sound/SoundBase.h"
 #include "SurvivalRpg/SurvivalRpg.h"
 #include "SurvivalRpg/AbilitySystem/RpgGameplayEffectContext.h"
 #include "SurvivalRpg/Combat/RpgCombatImpact.h"
+#include "SurvivalRpg/Combat/RpgEmbeddedProjectilePickup.h"
+#include "SurvivalRpg/Core/RpgWorldCollectable.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Factions/RpgFactionSubsystem.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Physics/RpgCollisionChannels.h"
@@ -40,6 +45,12 @@ namespace RpgCombatProjectile
 
 	/** A machine that receives the projectile later than this into its flight plays no launch sound. */
 	constexpr float MaxLaunchSoundDelaySeconds = 0.5f;
+
+	/** Distance in cm in front of the contact from which a dropped projectile falls, so it lands before a shield or wall. */
+	constexpr float DropStandOff = 30.0f;
+
+	/** Height in cm a dropped projectile rests above the ground. */
+	constexpr float DropRestHeight = 1.0f;
 
 	ERpgProjectileImpactResult ToImpactResult(ERpgCombatImpactOutcome Outcome)
 	{
@@ -218,6 +229,8 @@ void ARpgCombatProjectile::InitializeLaunch(
 	LaunchOrigin = Params.Origin;
 	LastSweepLocation = Params.Origin;
 	ShotId = Params.ShotId;
+	RecoveryItemDefinition = Params.RecoveryItemDefinition;
+	LaunchBreakChance = FMath::Clamp(Params.BreakChance >= 0.0f ? Params.BreakChance : Recovery.BaseBreakChance, 0.0f, 1.0f);
 	ProjectileMovement->Velocity = Direction * (Params.Speed > 0.0f ? Params.Speed : DefaultSpeed);
 
 	DamageSpec = InDamageSpec;
@@ -481,7 +494,115 @@ void ARpgCombatProjectile::ResolveImpact(const FHitResult& Hit)
 		ExecuteImpactCue(Hit);
 	}
 
+	ImpactState.Recovery = ResolveRecovery(Hit, Result, FlightDirection);
 	FinishFlight(Result, Hit.Location, Hit.ImpactNormal);
+}
+
+ERpgProjectileRecoveryOutcome ARpgCombatProjectile::ResolveRecovery(
+	const FHitResult& Hit,
+	const ERpgProjectileImpactResult Result,
+	const FVector& FlightDirection)
+{
+	if (ImpactRecovery != ERpgProjectileImpactRecovery::Recoverable || !RecoveryItemDefinition)
+	{
+		return ERpgProjectileRecoveryOutcome::None;
+	}
+
+	// A character never keeps a projectile: a hit on a player or an NPC only plays its feedback, also on a corpse whose
+	// ability system is already gone (RNG-03c recovers NPC arrows through the corpse). A shield stops the projectile
+	// instead, so a blocked one may fall to the ground, but it never stays on the blocker.
+	const bool bBlocked = Result == ERpgProjectileImpactResult::Blocked || Result == ERpgProjectileImpactResult::PerfectBlocked;
+	if ((Result != ERpgProjectileImpactResult::World || Cast<APawn>(Hit.GetActor())) && !bBlocked)
+	{
+		return ERpgProjectileRecoveryOutcome::None;
+	}
+
+	// The one break roll of this projectile; nothing later rolls again.
+	const FRpgProjectileSurfaceRecoveryRule* SurfaceRule = FindSurfaceRule(Hit);
+	const float BreakChance = FMath::Clamp(LaunchBreakChance * (SurfaceRule ? SurfaceRule->BreakChanceMultiplier : 1.0f), 0.0f, 1.0f);
+	float Roll = FMath::FRand();
+#if WITH_DEV_AUTOMATION_TESTS
+	if (BreakRollForTests.IsSet())
+	{
+		Roll = BreakRollForTests.GetValue();
+	}
+#endif
+	if (Roll < BreakChance)
+	{
+		return ERpgProjectileRecoveryOutcome::Broken;
+	}
+
+	const FVector Forward = FlightDirection.IsNearlyZero() ? -Hit.ImpactNormal : FlightDirection;
+	FRpgProjectileRecoveryPlacement Placement;
+	if (!bBlocked && (!SurfaceRule || SurfaceRule->bCanEmbed) && ARpgEmbeddedProjectilePickup::CanEmbedIn(Hit.GetComponent()))
+	{
+		Placement.bEmbedded = true;
+		Placement.HostComponent = Hit.GetComponent();
+		Placement.HostBone = Hit.BoneName;
+		Placement.Transform = FTransform(Forward.Rotation(), Hit.ImpactPoint);
+	}
+	else
+	{
+		// It falls from just in front of and above the contact, so a hit on sloped ground starts above it; without ground
+		// in reach it is lost. The hit surface itself may be the ground, unless it is the blocker.
+		const FVector Back = FVector(-Forward.X, -Forward.Y, 0.0f).GetSafeNormal();
+		const FVector DropStart = Hit.ImpactPoint + Back * RpgCombatProjectile::DropStandOff
+			+ FVector(0.0f, 0.0f, RpgCombatProjectile::DropStandOff);
+		const FVector DropEnd = DropStart - FVector(0.0f, 0.0f, FMath::Max(0.0f, Recovery.MaxDropHeight));
+
+		// The projectile channel finds what a projectile would land on; triggers, interaction shapes and pickups ignore
+		// it. Characters and other collectables block it, so the fall passes through them.
+		FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(RpgCombatProjectileDrop), false, this);
+		if (bBlocked)
+		{
+			QueryParams.AddIgnoredActor(Hit.GetActor());
+		}
+		FHitResult Ground;
+		bool bFoundGround = false;
+		for (int32 Attempt = 0; Attempt < RpgCombatProjectile::MaxPassThroughsPerSweep && !bFoundGround; ++Attempt)
+		{
+			if (!GetWorld()->LineTraceSingleByChannel(Ground, DropStart, DropEnd, Rpg_TraceChannel_Projectile, QueryParams))
+			{
+				break;
+			}
+			const AActor* GroundActor = Ground.GetActor();
+			bFoundGround = !Cast<APawn>(GroundActor) && !Cast<ARpgWorldCollectable>(GroundActor);
+			QueryParams.AddIgnoredActor(GroundActor);
+		}
+		if (!bFoundGround)
+		{
+			return ERpgProjectileRecoveryOutcome::None;
+		}
+
+		FVector LyingForward = FVector::VectorPlaneProject(Forward, Ground.ImpactNormal).GetSafeNormal();
+		if (LyingForward.IsNearlyZero())
+		{
+			LyingForward = FVector::VectorPlaneProject(FVector::ForwardVector, Ground.ImpactNormal).GetSafeNormal();
+		}
+		Placement.HostComponent = Ground.GetComponent();
+		Placement.Transform = FTransform(FRotationMatrix::MakeFromXZ(LyingForward, Ground.ImpactNormal).Rotator(),
+			Ground.ImpactPoint + Ground.ImpactNormal * RpgCombatProjectile::DropRestHeight);
+	}
+
+	ARpgEmbeddedProjectilePickup* Pickup = ARpgEmbeddedProjectilePickup::RecoverAmmunition(
+		GetWorld(), Recovery.PickupClass, RecoveryItemDefinition, Recovery, Placement);
+	RecoveredPickup = Pickup;
+	if (!Pickup)
+	{
+		return ERpgProjectileRecoveryOutcome::None;
+	}
+	return Placement.bEmbedded ? ERpgProjectileRecoveryOutcome::Embedded : ERpgProjectileRecoveryOutcome::Dropped;
+}
+
+const FRpgProjectileSurfaceRecoveryRule* ARpgCombatProjectile::FindSurfaceRule(const FHitResult& Hit) const
+{
+	const UPhysicalMaterial* PhysicalMaterial = Hit.PhysMaterial.Get();
+	return PhysicalMaterial
+		? Recovery.SurfaceRules.FindByPredicate([PhysicalMaterial](const FRpgProjectileSurfaceRecoveryRule& Rule)
+		{
+			return Rule.PhysicalMaterial == PhysicalMaterial;
+		})
+		: nullptr;
 }
 
 ERpgProjectileImpactResult ARpgCombatProjectile::ApplyImpactDamage(const FHitResult& Hit, UAbilitySystemComponent* TargetASC)
@@ -576,6 +697,17 @@ void ARpgCombatProjectile::StopFlightPresentation()
 	ProjectileMovement->ResetInterpolation();
 	// Inactive, the movement stays still even if a later tick registration enables its tick again.
 	ProjectileMovement->Deactivate();
+
+	// Only a projectile that stopped in the world with nothing to recover stays visible while it lingers. A recovered one
+	// hands over to its pickup, a broken one is gone, and none stays behind on a moving character or in mid-air.
+	if (ImpactState.Result != ERpgProjectileImpactResult::World || ImpactState.Recovery != ERpgProjectileRecoveryOutcome::None)
+	{
+		TInlineComponentArray<UMeshComponent*> Meshes(this);
+		for (UMeshComponent* Mesh : Meshes)
+		{
+			Mesh->SetVisibility(false);
+		}
+	}
 
 	TInlineComponentArray<UFXSystemComponent*> FXComponents(this);
 	for (UFXSystemComponent* FXComponent : FXComponents)

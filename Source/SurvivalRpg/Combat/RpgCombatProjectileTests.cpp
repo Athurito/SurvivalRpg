@@ -4,7 +4,9 @@
 
 #include "AbilitySystemGlobals.h"
 #include "AIController.h"
+#include "Components/BoxComponent.h"
 #include "Components/SphereComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Engine/CollisionProfile.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
@@ -14,6 +16,7 @@
 #include "GameplayEffect.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/ScopeExit.h"
+#include "PhysicalMaterials/PhysicalMaterial.h"
 #include "PhysicsEngine/BodyInstance.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgCombatSet.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgDefenseSet.h"
@@ -22,9 +25,17 @@
 #include "SurvivalRpg/AbilitySystem/Executions/RpgDamageExecution.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Combat/RpgCombatImpact.h"
+#include "SurvivalRpg/Combat/RpgEmbeddedProjectilePickup.h"
+#include "SurvivalRpg/Combat/RpgEmbeddedProjectileSubsystem.h"
+#include "SurvivalRpg/Combat/RpgProjectileShotAutomationTestTypes.h"
 #include "SurvivalRpg/Core/Game/RpgGameStateBase.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Interaction/IInteractableTarget.h"
+#include "SurvivalRpg/Interaction/InteractionQuery.h"
+#include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
+#include "SurvivalRpg/Inventory/RpgInventoryContainerComponent.h"
+#include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Physics/RpgCollisionChannels.h"
 #include "UObject/StrongObjectPtr.h"
 
@@ -67,6 +78,7 @@ namespace RpgCombatProjectileTests
 				GEngine->DestroyWorldContext(World);
 				World->DestroyWorld(false);
 			}
+			GFrameCounter = CachedFrameCounter;
 		}
 
 		bool Initialize(FAutomationTestBase& Test)
@@ -145,6 +157,92 @@ namespace RpgCombatProjectileTests
 			return ARpgCombatProjectile::LaunchWithDamageSpec(World, ARpgCombatProjectile::StaticClass(), Params, Spec, Shooter.Pawn);
 		}
 
+		/**
+		 * Launches a projectile of Class that returns RecoveryItem when intact. The break roll is fixed to Roll, so a roll
+		 * at or above BreakChance keeps it intact; Configure may change the class's recovery data before the impact.
+		 */
+		ARpgCombatProjectile* LaunchRecoverable(
+			const FVector& Origin,
+			const FVector& Direction,
+			float BreakChance,
+			float Roll,
+			TSubclassOf<ARpgCombatProjectile> Class = ARpgProjectileRecoveryAutomationProjectile::StaticClass(),
+			TSubclassOf<URpgInventoryItemDefinition> RecoveryItem = URpgProjectileRecoveryAutomationArrowDefinition::StaticClass(),
+			TFunctionRef<void(FRpgProjectileRecoveryDefinition&)> Configure = [](FRpgProjectileRecoveryDefinition&) {}) const
+		{
+			const FGameplayEffectSpecHandle Spec(new FGameplayEffectSpec(DamageEffect.Get(), Shooter.ASC->MakeEffectContext(), 1.0f));
+			FRpgProjectileLaunchParams Params;
+			Params.Origin = Origin;
+			Params.Direction = Direction;
+			Params.Damage = ShotDamage;
+			Params.BreakChance = BreakChance;
+			Params.RecoveryItemDefinition = RecoveryItem;
+			ARpgCombatProjectile* Projectile = ARpgCombatProjectile::LaunchWithDamageSpec(World, Class, Params, Spec, Shooter.Pawn);
+			if (Projectile)
+			{
+				Projectile->SetBreakRollForTests(Roll);
+				if (ARpgProjectileRecoveryAutomationProjectile* Recoverable = Cast<ARpgProjectileRecoveryAutomationProjectile>(Projectile))
+				{
+					Configure(Recoverable->GetMutableRecoveryForTests());
+				}
+			}
+			return Projectile;
+		}
+
+		/** A world block, such as a wall or the floor, that the projectile channel and the drop trace hit. */
+		UBoxComponent* SpawnBlock(const FVector& Location, const FVector& Extent, EComponentMobility::Type Mobility) const
+		{
+			AActor* Block = World->SpawnActor<AActor>();
+			UBoxComponent* Box = NewObject<UBoxComponent>(Block, NAME_None, RF_Transient);
+			Box->InitBoxExtent(Extent);
+			Box->SetRelativeLocation(Location);
+			Box->SetMobility(Mobility);
+			Box->SetCollisionObjectType(ECC_WorldStatic);
+			Box->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+			Box->SetCollisionResponseToAllChannels(ECR_Block);
+			Block->SetRootComponent(Box);
+			Block->AddInstanceComponent(Box);
+			Box->RegisterComponent();
+			if (Mobility == EComponentMobility::Movable)
+			{
+				// A moving host must be one every client can resolve; a runtime component only is when it replicates.
+				Block->SetReplicates(true);
+				Box->SetIsReplicated(true);
+			}
+			return Box;
+		}
+
+		/** A hit on Block whose flight segment ran along Direction into ImpactPoint, facing back along it. */
+		static FHitResult MakeBlockHit(UBoxComponent* Block, const FVector& ImpactPoint, const FVector& Direction)
+		{
+			FHitResult Hit(Block->GetOwner(), Block, ImpactPoint, -Direction);
+			Hit.bBlockingHit = true;
+			Hit.Location = ImpactPoint;
+			Hit.TraceStart = ImpactPoint - Direction * 200.0f;
+			Hit.TraceEnd = ImpactPoint;
+			Hit.Item = INDEX_NONE;
+			return Hit;
+		}
+
+		/**
+		 * Ticks the world in steps the world settings do not clamp. Each step is a new frame, or the timer manager ticks
+		 * only once (see the GAS test pitfalls); the destructor restores the frame counter.
+		 */
+		void Advance(float Seconds) const
+		{
+			constexpr float Step = 0.25f;
+			for (float Elapsed = 0.0f; Elapsed < Seconds - UE_KINDA_SMALL_NUMBER; Elapsed += Step)
+			{
+				++GFrameCounter;
+				World->Tick(LEVELTICK_All, FMath::Min(Step, Seconds - Elapsed));
+			}
+		}
+
+		URpgEmbeddedProjectileSubsystem* GetRecovery() const
+		{
+			return World->GetSubsystem<URpgEmbeddedProjectileSubsystem>();
+		}
+
 		/** A hit on the target's body whose flight segment ran along Direction into ImpactPoint. */
 		FHitResult MakeTargetHit(const FVector& ImpactPoint, const FVector& Direction) const
 		{
@@ -178,6 +276,7 @@ namespace RpgCombatProjectileTests
 			Target.ASC->SetActiveBlockableDamageTypes(BlockableDamageTypes);
 		}
 
+		const uint64 CachedFrameCounter = GFrameCounter;
 		TStrongObjectPtr<UGameInstance> GameInstance;
 		TStrongObjectPtr<UGameplayEffect> DamageEffect;
 		UWorld* World = nullptr;
@@ -550,6 +649,461 @@ bool FRpgCombatProjectileFlightExpiryTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("A projectile without an impact expires after its flight time"), Projectile->GetImpactResult(), ERpgProjectileImpactResult::Expired);
 	TestTrue(TEXT("The expired projectile lingers, then goes"), Projectile->GetLifeSpan() > 0.0f);
 	TestEqual(TEXT("An expired flight damages nobody"), Fixture.GetHealth(Fixture.Target), StartingHealth);
+	return true;
+}
+
+namespace RpgCombatProjectileTests
+{
+	bool IsGone(const TWeakObjectPtr<AActor>& Actor)
+	{
+		return !Actor.IsValid() || Actor->IsActorBeingDestroyed();
+	}
+
+	/** A flight mesh under the projectile's root, as an arrow Blueprint has one under its visual root. */
+	UStaticMeshComponent* AddFlightMesh(ARpgCombatProjectile* Projectile)
+	{
+		if (!Projectile)
+		{
+			return nullptr;
+		}
+		UStaticMeshComponent* Mesh = NewObject<UStaticMeshComponent>(Projectile, NAME_None, RF_Transient);
+		Mesh->SetupAttachment(Projectile->GetRootComponent());
+		Mesh->RegisterComponent();
+		return Mesh;
+	}
+
+	/** One recovery shot into Block at ImpactPoint along +X that stays intact. */
+	ARpgEmbeddedProjectilePickup* RecoverInto(
+		const FFixture& Fixture,
+		UBoxComponent* Block,
+		const FVector& ImpactPoint,
+		TFunctionRef<void(FRpgProjectileRecoveryDefinition&)> Configure = [](FRpgProjectileRecoveryDefinition&) {},
+		TSubclassOf<URpgInventoryItemDefinition> Ammunition = URpgProjectileRecoveryAutomationArrowDefinition::StaticClass())
+	{
+		const FVector Direction(1.0f, 0.0f, 0.0f);
+		ARpgCombatProjectile* Projectile = Fixture.LaunchRecoverable(ImpactPoint - Direction * 300.0f, Direction, 0.3f, 1.0f,
+			ARpgProjectileRecoveryAutomationProjectile::StaticClass(), Ammunition, Configure);
+		if (!Projectile)
+		{
+			return nullptr;
+		}
+		Projectile->ResolveImpactForTests(FFixture::MakeBlockHit(Block, ImpactPoint, Direction));
+		return Projectile->GetRecoveredPickup();
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCombatProjectileRecoveryWorldImpactTest,
+	"SurvivalRpg.Combat.Projectile.Recovery.WorldImpactEmbedsOnce",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCombatProjectileRecoveryWorldImpactTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCombatProjectileTests;
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this)) return false;
+
+	UBoxComponent* Wall = Fixture.SpawnBlock(FVector(500.0f, 0.0f, 0.0f), FVector(10.0f, 2000.0f, 500.0f), EComponentMobility::Static);
+	const FVector Direction(1.0f, 0.0f, 0.0f);
+	const FVector ImpactPoint(490.0f, 0.0f, 20.0f);
+	ARpgCombatProjectile* Projectile = Fixture.LaunchRecoverable(FVector(100.0f, 0.0f, 20.0f), Direction, 0.3f, 0.5f);
+	if (!TestNotNull(TEXT("A recoverable arrow launches"), Projectile)) return false;
+	const UStaticMeshComponent* FlightMesh = AddFlightMesh(Projectile);
+	const FHitResult Hit = FFixture::MakeBlockHit(Wall, ImpactPoint, Direction);
+	Projectile->ResolveImpactForTests(Hit);
+	Projectile->ResolveImpactForTests(Hit);
+
+	ARpgEmbeddedProjectilePickup* Pickup = Projectile->GetRecoveredPickup();
+	if (!TestNotNull(TEXT("An intact arrow leaves a pickup"), Pickup)) return false;
+	TestEqual(TEXT("A second impact report recovers nothing more"), Fixture.GetRecovery()->GetPickupCount(), 1);
+	TestEqual(TEXT("The impact resolves as embedded"), Projectile->GetRecoveryOutcome(), ERpgProjectileRecoveryOutcome::Embedded);
+	TestFalse(TEXT("The pickup takes over from the flight mesh"), FlightMesh && FlightMesh->IsVisible());
+	TestEqual(TEXT("The pickup holds the one paid arrow"), Pickup->GetAmmunitionCount(), 1);
+	TestTrue(TEXT("The pickup holds the arrow's ammunition"),
+		Pickup->GetAmmunitionDefinition() == URpgProjectileRecoveryAutomationArrowDefinition::StaticClass());
+	TestTrue(TEXT("The pickup is embedded"), Pickup->IsEmbedded());
+	TestTrue(TEXT("The pickup sits in the wall along the flight"), Pickup->GetActorLocation().Equals(ImpactPoint + Direction * 4.0f, 0.1f));
+	TestTrue(TEXT("The pickup points along the flight"), Pickup->GetActorForwardVector().Equals(Direction, 0.001f));
+	TestTrue(TEXT("The wall hosts the pickup"), Pickup->GetHostComponent() == Wall);
+	TestNull(TEXT("A static wall needs no attachment"), Pickup->GetAttachParentActor());
+	TestEqual(TEXT("The pickup lasts the recovery lifetime"), Pickup->GetRecoveryDeadline(),
+		Fixture.World->GetTimeSeconds() + 600.0, 0.01);
+
+	const URpgInventoryContainerComponent* Container = Pickup->FindComponentByClass<URpgInventoryContainerComponent>();
+	if (!TestNotNull(TEXT("The pickup has a loot container"), Container)) return false;
+	TestTrue(TEXT("The pickup can be looted"), Container->IsContainerAccessible());
+	TestTrue(TEXT("Nobody can deposit into the pickup"), Container->GetTransferPolicy() == ERpgInventoryContainerTransferPolicy::WithdrawOnly);
+	TestFalse(TEXT("Crafting never draws from the pickup"), Container->AllowsCraftingAccess());
+	TestTrue(TEXT("The pickup is never saved with the world"), Container->GetPersistentContainerId().IsNone());
+
+	TArray<FInteractionOption> Options;
+	FInteractionOptionBuilder Builder(TScriptInterface<IInteractableTarget>(Pickup), Options);
+	Pickup->GatherInteractionOptions(FInteractionQuery(), Builder);
+	TestTrue(TEXT("The prompt shows the quantity"), Options.Num() == 1 && Options[0].Prompt.TargetText.ToString().Contains(TEXT("(1)")));
+
+	// A moving host carries its arrows along.
+	UBoxComponent* Door = Fixture.SpawnBlock(FVector(500.0f, 3000.0f, 0.0f), FVector(10.0f, 200.0f, 200.0f), EComponentMobility::Movable);
+	ARpgEmbeddedProjectilePickup* DoorPickup = RecoverInto(Fixture, Door, FVector(490.0f, 3000.0f, 0.0f));
+	if (!TestNotNull(TEXT("An arrow in a moving host leaves a pickup"), DoorPickup)) return false;
+	TestTrue(TEXT("The pickup attaches to the moving host"), DoorPickup->GetAttachParentActor() == Door->GetOwner());
+	Door->GetOwner()->SetActorLocation(FVector(500.0f, 3500.0f, 0.0f));
+	TestTrue(TEXT("The pickup follows the moving host"), DoorPickup->GetActorLocation().Equals(FVector(494.0f, 3500.0f, 0.0f), 0.1f));
+
+	// A moving host no client can resolve, and any collectable, takes no arrow: it drops to the floor instead.
+	UBoxComponent* Floor = Fixture.SpawnBlock(FVector(0.0f, 0.0f, -300.0f), FVector(6000.0f, 6000.0f, 50.0f), EComponentMobility::Static);
+	UBoxComponent* LocalDoor = Fixture.SpawnBlock(FVector(500.0f, 4500.0f, 0.0f), FVector(10.0f, 200.0f, 200.0f), EComponentMobility::Movable);
+	LocalDoor->GetOwner()->SetReplicates(false);
+	LocalDoor->SetIsReplicated(false);
+	ARpgEmbeddedProjectilePickup* LocalPickup = RecoverInto(Fixture, LocalDoor, FVector(490.0f, 4500.0f, 0.0f));
+	TestTrue(TEXT("An arrow drops below a moving host no client can resolve"),
+		LocalPickup && !LocalPickup->IsEmbedded() && LocalPickup->GetHostComponent() == Floor);
+	TestTrue(TEXT("Another collectable never hosts an arrow"), !ARpgEmbeddedProjectilePickup::CanEmbedIn(DoorPickup->FindComponentByClass<UStaticMeshComponent>()));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCombatProjectileRecoveryBreakRollTest,
+	"SurvivalRpg.Combat.Projectile.Recovery.BreakRollAndSurfaces",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCombatProjectileRecoveryBreakRollTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCombatProjectileTests;
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this)) return false;
+
+	UBoxComponent* Wall = Fixture.SpawnBlock(FVector(500.0f, 0.0f, 0.0f), FVector(10.0f, 2000.0f, 500.0f), EComponentMobility::Static);
+	Fixture.SpawnBlock(FVector(0.0f, 0.0f, -300.0f), FVector(3000.0f, 3000.0f, 50.0f), EComponentMobility::Static);
+	TStrongObjectPtr<UPhysicalMaterial> Stone(NewObject<UPhysicalMaterial>(GetTransientPackage(), NAME_None, RF_Transient));
+	TStrongObjectPtr<UPhysicalMaterial> Metal(NewObject<UPhysicalMaterial>(GetTransientPackage(), NAME_None, RF_Transient));
+	const auto WithSurfaces = [&Stone, &Metal](FRpgProjectileRecoveryDefinition& Recovery)
+	{
+		FRpgProjectileSurfaceRecoveryRule StoneRule;
+		StoneRule.PhysicalMaterial = Stone.Get();
+		StoneRule.BreakChanceMultiplier = 2.0f;
+		FRpgProjectileSurfaceRecoveryRule MetalRule;
+		MetalRule.PhysicalMaterial = Metal.Get();
+		MetalRule.bCanEmbed = false;
+		Recovery.SurfaceRules = { StoneRule, MetalRule };
+	};
+	const FVector Direction(1.0f, 0.0f, 0.0f);
+	const auto Launch = [&](float BreakChance, float Roll)
+	{
+		return Fixture.LaunchRecoverable(FVector(100.0f, 0.0f, 0.0f), Direction, BreakChance, Roll,
+			ARpgProjectileRecoveryAutomationProjectile::StaticClass(), URpgProjectileRecoveryAutomationArrowDefinition::StaticClass(), WithSurfaces);
+	};
+	const auto Shoot = [&](float BreakChance, float Roll, UPhysicalMaterial* Material)
+	{
+		ARpgCombatProjectile* Projectile = Launch(BreakChance, Roll);
+		if (!Projectile)
+		{
+			return ERpgProjectileRecoveryOutcome::None;
+		}
+		FHitResult Hit = FFixture::MakeBlockHit(Wall, FVector(490.0f, 0.0f, 0.0f), Direction);
+		Hit.PhysMaterial = Material;
+		Projectile->ResolveImpactForTests(Hit);
+		return Projectile->GetRecoveryOutcome();
+	};
+
+	TestEqual(TEXT("A roll below the break chance breaks the arrow"), Shoot(0.3f, 0.29f, nullptr), ERpgProjectileRecoveryOutcome::Broken);
+	TestEqual(TEXT("A broken arrow leaves no pickup"), Fixture.GetRecovery()->GetPickupCount(), 0);
+	TestEqual(TEXT("A roll at the break chance keeps it intact"), Shoot(0.3f, 0.3f, nullptr), ERpgProjectileRecoveryOutcome::Embedded);
+	TestEqual(TEXT("A certain break always breaks"), Shoot(1.0f, 0.999f, nullptr), ERpgProjectileRecoveryOutcome::Broken);
+	TestEqual(TEXT("Without a break chance it never breaks"), Shoot(0.0f, 0.0f, nullptr), ERpgProjectileRecoveryOutcome::Embedded);
+	TestEqual(TEXT("A surface rule scales the break chance"), Shoot(0.3f, 0.5f, Stone.Get()), ERpgProjectileRecoveryOutcome::Broken);
+	TestEqual(TEXT("Above the scaled chance it stays intact"), Shoot(0.3f, 0.6f, Stone.Get()), ERpgProjectileRecoveryOutcome::Embedded);
+
+	const int32 PickupsBeforeDrop = Fixture.GetRecovery()->GetPickupCount();
+	ARpgCombatProjectile* Glancing = Launch(0.3f, 0.5f);
+	if (!TestNotNull(TEXT("The glancing arrow launches"), Glancing)) return false;
+	FHitResult MetalHit = FFixture::MakeBlockHit(Wall, FVector(490.0f, 0.0f, 0.0f), Direction);
+	MetalHit.PhysMaterial = Metal.Get();
+	Glancing->ResolveImpactForTests(MetalHit);
+	const ARpgEmbeddedProjectilePickup* Dropped = Glancing->GetRecoveredPickup();
+	TestEqual(TEXT("An intact arrow drops off a surface it cannot embed in"), Glancing->GetRecoveryOutcome(), ERpgProjectileRecoveryOutcome::Dropped);
+	if (!TestNotNull(TEXT("The dropped arrow leaves a pickup"), Dropped)) return false;
+	TestFalse(TEXT("The dropped pickup is not embedded"), Dropped->IsEmbedded());
+	TestTrue(TEXT("It lies on the floor in front of the wall"), Dropped->GetActorLocation().Equals(FVector(460.0f, 0.0f, -249.0f), 0.1f));
+	TestEqual(TEXT("It adds one pickup"), Fixture.GetRecovery()->GetPickupCount(), PickupsBeforeDrop + 1);
+
+	ARpgCombatProjectile* OnMetalFloor = Fixture.LaunchRecoverable(FVector(0.0f, 1000.0f, 0.0f), FVector(0.0f, 0.0f, -1.0f), 0.3f, 0.5f,
+		ARpgProjectileRecoveryAutomationProjectile::StaticClass(), URpgProjectileRecoveryAutomationArrowDefinition::StaticClass(), WithSurfaces);
+	if (!TestNotNull(TEXT("The arrow into the metal floor launches"), OnMetalFloor)) return false;
+	UBoxComponent* MetalFloor = Fixture.SpawnBlock(FVector(0.0f, 1000.0f, -150.0f), FVector(300.0f, 300.0f, 50.0f), EComponentMobility::Static);
+	FHitResult MetalFloorHit = FFixture::MakeBlockHit(MetalFloor, FVector(0.0f, 1000.0f, -100.0f), FVector(0.0f, 0.0f, -1.0f));
+	MetalFloorHit.PhysMaterial = Metal.Get();
+	OnMetalFloor->ResolveImpactForTests(MetalFloorHit);
+	const ARpgEmbeddedProjectilePickup* OnFloor = OnMetalFloor->GetRecoveredPickup();
+	TestEqual(TEXT("An arrow on a floor it cannot embed in lies on that floor"), OnMetalFloor->GetRecoveryOutcome(), ERpgProjectileRecoveryOutcome::Dropped);
+	TestTrue(TEXT("The floor it hit hosts it"), OnFloor && OnFloor->GetHostComponent() == MetalFloor);
+
+	ARpgCombatProjectile* Untuned = Fixture.LaunchRecoverable(FVector(100.0f, 0.0f, 0.0f), Direction, -1.0f, 1.0f);
+	TestEqual(TEXT("A launch without its own chance uses the class's base break chance"), Untuned ? Untuned->GetBreakChanceForTests() : -1.0f, 0.3f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCombatProjectileRecoveryCharacterTest,
+	"SurvivalRpg.Combat.Projectile.Recovery.CharactersKeepNothing",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCombatProjectileRecoveryCharacterTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCombatProjectileTests;
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this)) return false;
+
+	const FVector Direction(1.0f, 0.0f, 0.0f);
+	const UStaticMeshComponent* FlightMesh = nullptr;
+	const auto ShootTarget = [&Fixture, &Direction, &FlightMesh]()
+	{
+		ARpgCombatProjectile* Projectile = Fixture.LaunchRecoverable(FVector(-900.0f, 0.0f, 0.0f), Direction, 0.0f, 1.0f);
+		FlightMesh = AddFlightMesh(Projectile);
+		if (Projectile)
+		{
+			Projectile->ResolveImpactForTests(Fixture.MakeTargetHit(FVector(-40.0f, 0.0f, 0.0f), Direction));
+		}
+		return Projectile;
+	};
+
+	ARpgCombatProjectile* Hit = ShootTarget();
+	if (!TestNotNull(TEXT("The arrow at the character launches"), Hit)) return false;
+	TestEqual(TEXT("The arrow hits the character"), Hit->GetImpactResult(), ERpgProjectileImpactResult::Hit);
+	TestEqual(TEXT("A character keeps no arrow"), Hit->GetRecoveryOutcome(), ERpgProjectileRecoveryOutcome::None);
+	TestEqual(TEXT("A character hit leaves no pickup"), Fixture.GetRecovery()->GetPickupCount(), 0);
+	TestFalse(TEXT("No arrow mesh stays on the character"), FlightMesh && FlightMesh->IsVisible());
+
+	// A pawn whose ability system is gone, as on an NPC corpse, keeps no arrow either.
+	APawn* Corpse = Fixture.World->SpawnActor<APawn>(APawn::StaticClass(), FTransform(FVector(0.0f, 2000.0f, 0.0f)));
+	UBoxComponent* CorpseBody = NewObject<UBoxComponent>(Corpse, NAME_None, RF_Transient);
+	CorpseBody->InitBoxExtent(FVector(40.0f));
+	CorpseBody->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	CorpseBody->SetCollisionResponseToAllChannels(ECR_Block);
+	Corpse->SetRootComponent(CorpseBody);
+	Corpse->AddInstanceComponent(CorpseBody);
+	CorpseBody->RegisterComponent();
+	ARpgCombatProjectile* AtCorpse = Fixture.LaunchRecoverable(FVector(-900.0f, 2000.0f, 0.0f), Direction, 0.0f, 1.0f);
+	if (!TestNotNull(TEXT("The arrow at the corpse launches"), AtCorpse)) return false;
+	AtCorpse->ResolveImpactForTests(FFixture::MakeBlockHit(CorpseBody, FVector(-40.0f, 2000.0f, 0.0f), Direction));
+	TestEqual(TEXT("A pawn without an ability system resolves as a world hit"), AtCorpse->GetImpactResult(), ERpgProjectileImpactResult::World);
+	TestEqual(TEXT("A pawn without an ability system keeps no arrow"), AtCorpse->GetRecoveryOutcome(), ERpgProjectileRecoveryOutcome::None);
+
+	// Without ground in reach a blocked arrow is lost.
+	Fixture.RaiseBlock(ProjectileBlock(), false);
+	ARpgCombatProjectile* Lost = ShootTarget();
+	if (!TestNotNull(TEXT("The arrow over the void launches"), Lost)) return false;
+	TestEqual(TEXT("The shield stops the arrow over the void"), Lost->GetImpactResult(), ERpgProjectileImpactResult::Blocked);
+	TestEqual(TEXT("Without ground a blocked arrow is lost"), Lost->GetRecoveryOutcome(), ERpgProjectileRecoveryOutcome::None);
+	TestEqual(TEXT("A lost arrow leaves no pickup"), Fixture.GetRecovery()->GetPickupCount(), 0);
+
+	// A trigger volume between the shield and the floor does not catch the falling arrow.
+	UBoxComponent* Floor = Fixture.SpawnBlock(FVector(0.0f, 0.0f, -100.0f), FVector(3000.0f, 3000.0f, 50.0f), EComponentMobility::Static);
+	UBoxComponent* Trigger = Fixture.SpawnBlock(FVector(-70.0f, 0.0f, -20.0f), FVector(100.0f, 100.0f, 5.0f), EComponentMobility::Static);
+	Trigger->SetCollisionObjectType(ECC_WorldDynamic);
+	Trigger->SetCollisionResponseToAllChannels(ECR_Overlap);
+
+	for (const bool bPerfect : { false, true })
+	{
+		Fixture.ResetTarget();
+		Fixture.RaiseBlock(ProjectileBlock(), bPerfect);
+		ARpgCombatProjectile* Blocked = ShootTarget();
+		if (!TestNotNull(TEXT("The blocked arrow launches"), Blocked)) return false;
+		TestEqual(TEXT("The shield stops the arrow"), Blocked->GetImpactResult(),
+			bPerfect ? ERpgProjectileImpactResult::PerfectBlocked : ERpgProjectileImpactResult::Blocked);
+		TestEqual(TEXT("A blocked intact arrow drops"), Blocked->GetRecoveryOutcome(), ERpgProjectileRecoveryOutcome::Dropped);
+		const ARpgEmbeddedProjectilePickup* Pickup = Blocked->GetRecoveredPickup();
+		if (!TestNotNull(TEXT("The blocked arrow leaves a pickup"), Pickup)) return false;
+		TestTrue(TEXT("The pickup never stays on the blocker"), Pickup->GetAttachParentActor() != Fixture.Target.Pawn);
+		TestTrue(TEXT("The floor hosts the dropped arrow"), Pickup->GetHostComponent() == Floor);
+		TestTrue(TEXT("It lies on the floor in front of the shield"), Pickup->GetActorLocation().Equals(FVector(-70.0f, 0.0f, -49.0f), 0.1f));
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCombatProjectileRecoveryNothingToRecoverTest,
+	"SurvivalRpg.Combat.Projectile.Recovery.ConsumedOrUnpaidLeavesNothing",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCombatProjectileRecoveryNothingToRecoverTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCombatProjectileTests;
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this)) return false;
+
+	UBoxComponent* Wall = Fixture.SpawnBlock(FVector(500.0f, 0.0f, 0.0f), FVector(10.0f, 2000.0f, 500.0f), EComponentMobility::Static);
+	const FVector Direction(1.0f, 0.0f, 0.0f);
+	bool bMeshesStayed = true;
+	const auto Shoot = [&](TSubclassOf<ARpgCombatProjectile> Class, TSubclassOf<URpgInventoryItemDefinition> RecoveryItem)
+	{
+		// A certain break: any break roll would report Broken.
+		ARpgCombatProjectile* Projectile = Fixture.LaunchRecoverable(FVector(100.0f, 0.0f, 0.0f), Direction, 1.0f, 0.0f, Class, RecoveryItem);
+		const UStaticMeshComponent* FlightMesh = AddFlightMesh(Projectile);
+		if (Projectile)
+		{
+			Projectile->ResolveImpactForTests(FFixture::MakeBlockHit(Wall, FVector(490.0f, 0.0f, 0.0f), Direction));
+		}
+		bMeshesStayed &= FlightMesh && FlightMesh->IsVisible();
+		return Projectile ? Projectile->GetRecoveryOutcome() : ERpgProjectileRecoveryOutcome::Broken;
+	};
+
+	TestEqual(TEXT("A projectile consumed on impact never rolls"),
+		Shoot(ARpgProjectileShotAutomationTestProjectile::StaticClass(), URpgProjectileRecoveryAutomationArrowDefinition::StaticClass()),
+		ERpgProjectileRecoveryOutcome::None);
+	TestEqual(TEXT("An arrow nobody paid for never rolls"),
+		Shoot(ARpgProjectileRecoveryAutomationProjectile::StaticClass(), nullptr), ERpgProjectileRecoveryOutcome::None);
+	TestTrue(TEXT("A world stop with nothing to recover keeps its mesh while it lingers"), bMeshesStayed);
+
+	ARpgCombatProjectile* Expiring = Fixture.LaunchRecoverable(FVector(0.0f, 5000.0f, 0.0f), Direction, 0.0f, 1.0f);
+	if (!TestNotNull(TEXT("The expiring arrow launches"), Expiring)) return false;
+	Expiring->Tick(GetDefault<ARpgProjectileRecoveryAutomationProjectile>()->GetMaxFlightSecondsForTests() + 1.0f);
+	TestEqual(TEXT("The flight expires"), Expiring->GetImpactResult(), ERpgProjectileImpactResult::Expired);
+	TestEqual(TEXT("An expired flight recovers nothing"), Expiring->GetRecoveryOutcome(), ERpgProjectileRecoveryOutcome::None);
+	TestEqual(TEXT("Nothing left a pickup"), Fixture.GetRecovery()->GetPickupCount(), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCombatProjectileRecoveryGroupingTest,
+	"SurvivalRpg.Combat.Projectile.Recovery.GroupingAndWorldCap",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCombatProjectileRecoveryGroupingTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCombatProjectileTests;
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this)) return false;
+
+	UBoxComponent* Wall = Fixture.SpawnBlock(FVector(500.0f, 0.0f, 0.0f), FVector(10.0f, 3000.0f, 500.0f), EComponentMobility::Static);
+	UBoxComponent* OtherWall = Fixture.SpawnBlock(FVector(-3000.0f, 0.0f, 0.0f), FVector(10.0f, 3000.0f, 500.0f), EComponentMobility::Static);
+	const auto TwoPerHost = [](FRpgProjectileRecoveryDefinition& Recovery)
+	{
+		Recovery.MaxSeparatePickupsPerHost = 2;
+		Recovery.GroupRadius = 100.0f;
+	};
+	URpgEmbeddedProjectileSubsystem* Recovery = Fixture.GetRecovery();
+
+	ARpgEmbeddedProjectilePickup* First = RecoverInto(Fixture, Wall, FVector(490.0f, 0.0f, 0.0f), TwoPerHost);
+	ARpgEmbeddedProjectilePickup* Second = RecoverInto(Fixture, Wall, FVector(490.0f, 500.0f, 0.0f), TwoPerHost);
+	if (!TestTrue(TEXT("The first two arrows leave separate pickups"), First && Second && First != Second)) return false;
+	const TWeakObjectPtr<AActor> WeakSecond(Second);
+	const double FirstDeadline = First->GetRecoveryDeadline();
+
+	Fixture.Advance(5.0f);
+	ARpgEmbeddedProjectilePickup* Joined = RecoverInto(Fixture, Wall, FVector(490.0f, 50.0f, 0.0f), TwoPerHost);
+	TestTrue(TEXT("A full host takes the next arrow into its nearest group"), Joined == First);
+	TestEqual(TEXT("The group carries both arrows"), First->GetAmmunitionCount(), 2);
+	TestEqual(TEXT("Grouping adds no actor"), Recovery->GetPickupCount(), 2);
+	TestEqual(TEXT("The group keeps the later deadline"), First->GetRecoveryDeadline(), FirstDeadline + 5.0, 0.01);
+
+	ARpgEmbeddedProjectilePickup* Far = RecoverInto(Fixture, Wall, FVector(490.0f, 1500.0f, 0.0f), TwoPerHost);
+	TestTrue(TEXT("An arrow outside every group gets its own pickup"), Far && Far != First && Far != Second);
+	ARpgEmbeddedProjectilePickup* OtherAmmunition = RecoverInto(Fixture, Wall, FVector(490.0f, 10.0f, 0.0f), TwoPerHost,
+		URpgProjectileShotAutomationArrowDefinition::StaticClass());
+	TestTrue(TEXT("Another ammunition never joins the group"), OtherAmmunition && OtherAmmunition != First);
+	TestEqual(TEXT("Four pickups exist"), Recovery->GetPickupCount(), 4);
+
+	// The world cap expires the pickup closest to its deadline: the second, which no later arrow joined.
+	Recovery->SetMaxWorldArrowPickupsForTests(4);
+	ARpgEmbeddedProjectilePickup* BeyondCap = RecoverInto(Fixture, OtherWall, FVector(-3010.0f, 0.0f, 0.0f));
+	TestNotNull(TEXT("The new pickup beyond the cap stays"), BeyondCap);
+	TestTrue(TEXT("The cap expires the oldest pickup early"), IsGone(WeakSecond));
+	TestEqual(TEXT("The world keeps its cap"), Recovery->GetPickupCount(), 4);
+	TestEqual(TEXT("The group's arrows survive the cap"), First->GetAmmunitionCount(), 2);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCombatProjectileRecoveryCollectTest,
+	"SurvivalRpg.Combat.Projectile.Recovery.CollectExpireAndLoseHost",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCombatProjectileRecoveryCollectTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCombatProjectileTests;
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this)) return false;
+
+	UBoxComponent* Wall = Fixture.SpawnBlock(FVector(500.0f, 0.0f, 0.0f), FVector(10.0f, 3000.0f, 500.0f), EComponentMobility::Static);
+	const auto OnePerHost = [](FRpgProjectileRecoveryDefinition& Recovery)
+	{
+		Recovery.MaxSeparatePickupsPerHost = 1;
+		Recovery.RecoveryLifetimeSeconds = 3.0f;
+	};
+	ARpgEmbeddedProjectilePickup* Group = nullptr;
+	for (int32 Index = 0; Index < 3; ++Index)
+	{
+		Group = RecoverInto(Fixture, Wall, FVector(490.0f, 0.0f, 0.0f), OnePerHost);
+	}
+	if (!TestNotNull(TEXT("Three arrows share one pickup"), Group) || !TestEqual(TEXT("The group holds three"), Group->GetAmmunitionCount(), 3)) return false;
+	const TWeakObjectPtr<AActor> WeakGroup(Group);
+
+	// A looter with room for only two arrows: every cell taken, one stack at 18 of 20.
+	const auto MakeLooter = [&Fixture](const TCHAR* Name)
+	{
+		AActor* Owner = Fixture.World->SpawnActor<AActor>();
+		URpgInventoryManagerComponent* Inventory = NewObject<URpgInventoryManagerComponent>(Owner, Name, RF_Transient);
+		Owner->AddInstanceComponent(Inventory);
+		Inventory->RegisterComponent();
+		return Inventory;
+	};
+	URpgInventoryManagerComponent* FullLooter = MakeLooter(TEXT("FullLooter"));
+	const FRpgInventoryContainerHandle Root = FRpgInventoryContainerHandle::MakeRoot(FullLooter->GetDefaultContainerId());
+	bool bFilled = true;
+	for (int32 Y = 0; Y < 6; ++Y)
+	{
+		for (int32 X = 0; X < 10; ++X)
+		{
+			FRpgInventoryGridPlacement Placement;
+			Placement.SetContainerHandle(Root);
+			Placement.X = X;
+			Placement.Y = Y;
+			const bool bArrowCell = X == 9 && Y == 5;
+			const TSubclassOf<URpgInventoryItemDefinition> Item = bArrowCell
+				? TSubclassOf<URpgInventoryItemDefinition>(URpgProjectileRecoveryAutomationArrowDefinition::StaticClass())
+				: TSubclassOf<URpgInventoryItemDefinition>(URpgInventoryAutomationTestUnitItemDefinition::StaticClass());
+			bFilled &= FullLooter->AddItemDefinitionToPlacement(Item, bArrowCell ? 18 : 1, Placement) != nullptr;
+		}
+	}
+	if (!TestTrue(TEXT("The looter's grid is full"), bFilled)) return false;
+
+	TArray<FRpgInventoryItemId> Added;
+	Group->GetLootInventoryManager()->CollectRootItemsBatch(FullLooter, { Root }, FGuid::NewGuid(), Added);
+	TestEqual(TEXT("A full inventory takes what fits"),
+		FullLooter->GetTotalItemCountByDefinition(URpgProjectileRecoveryAutomationArrowDefinition::StaticClass()), 20);
+	TestEqual(TEXT("The rest stays in the group"), Group->GetAmmunitionCount(), 1);
+	TestFalse(TEXT("A group with arrows left stays"), IsGone(WeakGroup));
+
+	URpgInventoryManagerComponent* SecondLooter = MakeLooter(TEXT("SecondLooter"));
+	Group->GetLootInventoryManager()->CollectRootItemsBatch(SecondLooter,
+		{ FRpgInventoryContainerHandle::MakeRoot(SecondLooter->GetDefaultContainerId()) }, FGuid::NewGuid(), Added);
+	TestEqual(TEXT("A second looter gets only the remainder"),
+		SecondLooter->GetTotalItemCountByDefinition(URpgProjectileRecoveryAutomationArrowDefinition::StaticClass()), 1);
+	Fixture.Advance(0.25f);
+	TestTrue(TEXT("An emptied group goes"), IsGone(WeakGroup));
+
+	// Expiry ends an untouched pickup at its deadline.
+	ARpgEmbeddedProjectilePickup* Expiring = RecoverInto(Fixture, Wall, FVector(490.0f, 1000.0f, 0.0f), OnePerHost);
+	const TWeakObjectPtr<AActor> WeakExpiring(Expiring);
+	Fixture.Advance(2.5f);
+	TestFalse(TEXT("A pickup stays before its deadline"), IsGone(WeakExpiring));
+	Fixture.Advance(1.0f);
+	TestTrue(TEXT("A pickup expires at its deadline"), IsGone(WeakExpiring));
+
+	// A pickup whose moving host goes stays where it was until its own deadline.
+	UBoxComponent* Crate = Fixture.SpawnBlock(FVector(500.0f, 2000.0f, 0.0f), FVector(10.0f, 100.0f, 100.0f), EComponentMobility::Movable);
+	ARpgEmbeddedProjectilePickup* Orphan = RecoverInto(Fixture, Crate, FVector(490.0f, 2000.0f, 0.0f), OnePerHost);
+	if (!TestNotNull(TEXT("The arrow in the crate leaves a pickup"), Orphan)) return false;
+	const TWeakObjectPtr<AActor> WeakOrphan(Orphan);
+	const FVector OrphanLocation = Orphan->GetActorLocation();
+	const double OrphanDeadline = Orphan->GetRecoveryDeadline();
+	Crate->GetOwner()->Destroy();
+	TestFalse(TEXT("The pickup outlives its host"), IsGone(WeakOrphan));
+	TestNull(TEXT("The pickup is detached from the gone host"), Orphan->GetAttachParentActor());
+	TestTrue(TEXT("The pickup stays at its last world transform"), Orphan->GetActorLocation().Equals(OrphanLocation, 0.1f));
+	TestEqual(TEXT("The pickup keeps its deadline"), Orphan->GetRecoveryDeadline(), OrphanDeadline);
+	Fixture.Advance(3.25f);
+	TestTrue(TEXT("The orphaned pickup still expires at its deadline"), IsGone(WeakOrphan));
 	return true;
 }
 

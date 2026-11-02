@@ -163,6 +163,12 @@ public:
 	 */
 	void ConfigureAsDeathLootContainer();
 
+	/**
+	 * Configures this native default subobject as temporary world loot, such as recovered arrows: accessible,
+	 * withdraw-only and closed to crafting scans, so it never registers for world saves. Call from the owner's constructor.
+	 */
+	void ConfigureAsTemporaryLootContainer();
+
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Inventory|Container")
 	bool IsContainerAccessible() const { return bAccessible && !bConstructionPending && !bPhysicalMoveInProgress; }
 

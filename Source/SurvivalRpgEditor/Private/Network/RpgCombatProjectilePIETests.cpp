@@ -19,6 +19,9 @@
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgStaminaSet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/AbilitySystem/Tasks/RpgAbilityTask_ProjectileShot.h"
+#include "SurvivalRpg/Combat/RpgEmbeddedProjectilePickup.h"
+#include "SurvivalRpg/Core/Player/RpgPlayerState.h"
+#include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 
 #if ENABLE_PIE_NETWORK_TEST
@@ -37,7 +40,29 @@ namespace RpgCombatProjectilePIETests
 	{
 		ARpgCombatNetworkTargetFixture* Target = nullptr;
 		ARpgCombatNetworkTargetFixture* Shooter = nullptr;
+		ARpgNetworkAutomationRecoveryWall* Wall = nullptr;
 	};
+
+	/** The recovery shot flies along +X beside the target into a movable wall. */
+	const FVector RecoveryShotOrigin(100.0f, 3000.0f, 300.0f);
+	const FVector RecoveryWallLocation(1500.0f, 3000.0f, 300.0f);
+	const FVector RecoveryWallMove(0.0f, 200.0f, 100.0f);
+
+	/** Where the intact arrow embeds: at the wall's front face plus the pickup's default embed depth. */
+	const FVector RecoveryPickupLocation(1500.0f - ARpgNetworkAutomationRecoveryWall::HalfThickness + 4.0f, 3000.0f, 300.0f);
+	const TCHAR* const StandardArrowPath = TEXT("/GF_Combat_Ranged/Items/ID_Arrow_Standard.ID_Arrow_Standard_C");
+
+	ARpgEmbeddedProjectilePickup* FindPickup(UWorld* World)
+	{
+		for (TActorIterator<ARpgEmbeddedProjectilePickup> It(World); It; ++It)
+		{
+			if (IsValid(*It) && !It->IsActorBeingDestroyed())
+			{
+				return *It;
+			}
+		}
+		return nullptr;
+	}
 
 	/** One impact cue routed on some machine. */
 	struct FRoutedCue
@@ -132,7 +157,9 @@ namespace RpgCombatProjectilePIETests
 		FNetworkState& State,
 		const FVector& Origin,
 		const int32 ShotId,
-		const TSubclassOf<ARpgCombatProjectile> ProjectileClass = ARpgNetworkAutomationTestProjectile::StaticClass())
+		const TSubclassOf<ARpgCombatProjectile> ProjectileClass = ARpgNetworkAutomationTestProjectile::StaticClass(),
+		const TSubclassOf<URpgInventoryItemDefinition> RecoveryItem = nullptr,
+		const float BreakChance = -1.0f)
 	{
 		URpgAbilitySystemComponent* AbilitySystem = State.Shooter ? State.Shooter->GetRpgAbilitySystemComponent() : nullptr;
 		if (!AbilitySystem)
@@ -147,6 +174,8 @@ namespace RpgCombatProjectilePIETests
 		Params.Direction = FVector::ForwardVector;
 		Params.Damage = ARpgNetworkAutomationTestProjectile::ShotDamage;
 		Params.ShotId = ShotId;
+		Params.RecoveryItemDefinition = RecoveryItem;
+		Params.BreakChance = BreakChance;
 		return ARpgCombatProjectile::LaunchWithDamageSpec(State.World, ProjectileClass, Params, Spec, nullptr);
 	}
 
@@ -182,6 +211,7 @@ NETWORK_TEST_CLASS(CombatProjectilePIE, "SurvivalRpg.Network")
 	double ImpactTime = -1.0;
 	bool bProjectileCausedHit = false;
 	int32 ShooterPlayerId = INDEX_NONE;
+	int32 CollectorPlayerId = INDEX_NONE;
 	int32 ServerShotId = 0;
 	double DrawStartSeconds = 0.0;
 	double DrawStartWorldSeconds = 0.0;
@@ -204,6 +234,7 @@ NETWORK_TEST_CLASS(CombatProjectilePIE, "SurvivalRpg.Network")
 		ImpactTime = -1.0;
 		bProjectileCausedHit = false;
 		ShooterPlayerId = INDEX_NONE;
+		CollectorPlayerId = INDEX_NONE;
 
 		for (const FWorldContext& Context : GEngine->GetWorldContexts())
 		{
@@ -651,6 +682,121 @@ NETWORK_TEST_CLASS(CombatProjectilePIE, "SurvivalRpg.Network")
 						ASSERT_THAT(IsTrue(FMath::IsNearlyEqual(GetStamina(PlayerState), StartingStamina)));
 					}
 				});
+	}
+
+	TEST_METHOD(IntactArrowEmbedsEverywhereFollowsItsWallAndIsCollectedOnce)
+	{
+		using namespace RpgCombatProjectilePIETests;
+		constexpr int32 ShotId = 31;
+
+		QueueFixtures(true);
+		Network
+			.SpawnAndReplicate<ARpgNetworkAutomationRecoveryWall, &FNetworkState::Wall>(
+				[](ARpgNetworkAutomationRecoveryWall& Wall) { Wall.SetActorLocation(RecoveryWallLocation); },
+				NetworkTimeout())
+			.ThenServer(TEXT("The shooter fires a paid arrow that cannot break into the movable wall"),
+				[this](FNetworkState& State)
+				{
+					const TSubclassOf<URpgInventoryItemDefinition> Arrow = LoadClass<URpgInventoryItemDefinition>(nullptr, StandardArrowPath);
+					ASSERT_THAT(IsNotNull(Arrow.Get()));
+					ASSERT_THAT(IsNotNull(LaunchFromShooter(State, RecoveryShotOrigin, ShotId,
+						ARpgNetworkAutomationRecoverableProjectile::StaticClass(), Arrow, 0.0f)));
+				})
+			.UntilClients(TEXT("Every client's copy of the arrow reports it embedded"),
+				[](FNetworkState& State)
+				{
+					const ARpgCombatProjectile* Projectile = FindProjectile(State.World, ShotId);
+					return Projectile && Projectile->GetRecoveryOutcome() == ERpgProjectileRecoveryOutcome::Embedded;
+				},
+				NetworkTimeout())
+			.UntilServer(TEXT("The intact arrow leaves one pickup on the server"),
+				[this](FNetworkState& State)
+				{
+					const ARpgEmbeddedProjectilePickup* Pickup = FindPickup(State.World);
+					return Pickup && Pickup->GetAmmunitionCount() == 1;
+				},
+				NetworkTimeout())
+			.ThenServer(TEXT("The server's pickup is embedded in the wall and attached to it"),
+				[this](FNetworkState& State)
+				{
+					const ARpgEmbeddedProjectilePickup* Pickup = FindPickup(State.World);
+					ASSERT_THAT(IsNotNull(Pickup));
+					ASSERT_THAT(IsTrue(Pickup->IsEmbedded()));
+					ASSERT_THAT(IsTrue(Pickup->GetAttachParentActor() == State.Wall));
+					ASSERT_THAT(IsTrue(FVector::Dist(Pickup->GetActorLocation(), RecoveryPickupLocation) < 5.0));
+				})
+			.UntilClients(TEXT("Every client shows the one arrow embedded and attached to its copy of the wall"),
+				[](FNetworkState& State)
+				{
+					const ARpgEmbeddedProjectilePickup* Pickup = FindPickup(State.World);
+					return Pickup && State.Wall && Pickup->GetAmmunitionCount() == 1 && Pickup->IsEmbedded()
+						&& Pickup->GetAttachParentActor() == State.Wall
+						&& FVector::Dist(Pickup->GetActorLocation(), RecoveryPickupLocation) < 5.0;
+				},
+				NetworkTimeout())
+			.ThenServer(TEXT("The wall moves"),
+				[this](FNetworkState& State)
+				{
+					ASSERT_THAT(IsNotNull(State.Wall));
+					State.Wall->SetActorLocation(RecoveryWallLocation + RecoveryWallMove);
+				})
+			.UntilClients(TEXT("The embedded arrow follows the moved wall on every client"),
+				[](FNetworkState& State)
+				{
+					const ARpgEmbeddedProjectilePickup* Pickup = FindPickup(State.World);
+					return Pickup && FVector::Dist(Pickup->GetActorLocation(), RecoveryPickupLocation + RecoveryWallMove) < 5.0;
+				},
+				NetworkTimeout())
+			.ThenServer(TEXT("A remote player collects the arrow through the pickup's loot inventory"),
+				[this](FNetworkState& State)
+				{
+					ARpgEmbeddedProjectilePickup* Pickup = FindPickup(State.World);
+					ASSERT_THAT(IsNotNull(Pickup));
+					TArray<ARpgPlayerState*> RemotePlayers;
+					for (APlayerState* PlayerState : GetPlayerStates(State))
+					{
+						const APlayerController* Controller = PlayerState ? Cast<APlayerController>(PlayerState->GetOwner()) : nullptr;
+						if (Controller && !Controller->IsLocalController())
+						{
+							RemotePlayers.Add(Cast<ARpgPlayerState>(PlayerState));
+						}
+					}
+					ASSERT_THAT(IsTrue(RemotePlayers.Num() == ClientCount && RemotePlayers[0] && RemotePlayers[1]));
+					const TSubclassOf<URpgInventoryItemDefinition> Arrow = Pickup->GetAmmunitionDefinition();
+					const auto Collect = [Pickup](ARpgPlayerState* Player)
+					{
+						URpgInventoryManagerComponent* Inventory = Player->GetInventoryManagerComponent();
+						TArray<FRpgInventoryItemId> Added;
+						Pickup->GetLootInventoryManager()->CollectRootItemsBatch(Inventory,
+							{ FRpgInventoryContainerHandle::MakeRoot(Inventory->GetDefaultContainerId()) }, FGuid::NewGuid(), Added);
+						return Inventory->GetTotalItemCountByDefinition(Pickup->GetAmmunitionDefinition());
+					};
+					CollectorPlayerId = RemotePlayers[0]->GetPlayerId();
+					ASSERT_THAT(IsTrue(Collect(RemotePlayers[0]) == 1));
+					// The second player reaches for the same arrow in the same frame and gets nothing.
+					ASSERT_THAT(IsTrue(Collect(RemotePlayers[1]) == 0));
+					ASSERT_THAT(IsTrue(Arrow == Pickup->GetAmmunitionDefinition() && Pickup->GetAmmunitionCount() == 0));
+				})
+			.UntilServer(TEXT("The emptied pickup goes on the server"),
+				[this](FNetworkState& State) { return FindPickup(State.World) == nullptr; }, NetworkTimeout())
+			.UntilClients(TEXT("The pickup goes on every client, and the collector owns the arrow"),
+				[this](FNetworkState& State)
+				{
+					if (FindPickup(State.World))
+					{
+						return false;
+					}
+					const APlayerController* Controller = State.World->GetFirstPlayerController();
+					const ARpgPlayerState* Own = Controller ? Controller->GetPlayerState<ARpgPlayerState>() : nullptr;
+					if (!Own || Own->GetPlayerId() != CollectorPlayerId)
+					{
+						return true;
+					}
+					const URpgInventoryManagerComponent* Inventory = Own->GetInventoryManagerComponent();
+					const TSubclassOf<URpgInventoryItemDefinition> Arrow = LoadClass<URpgInventoryItemDefinition>(nullptr, StandardArrowPath);
+					return Inventory && Inventory->GetTotalItemCountByDefinition(Arrow) == 1;
+				},
+				NetworkTimeout());
 	}
 };
 

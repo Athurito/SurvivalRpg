@@ -30,6 +30,30 @@ protected:
 	virtual void BeginPlay() override;
 };
 
+/** Editor-only recoverable projectile whose intact impacts leave a plain ARpgEmbeddedProjectilePickup. */
+UCLASS(NotBlueprintable, Transient)
+class ARpgProjectileRecoveryAutomationProjectile final : public ARpgProjectileShotAutomationTestProjectile
+{
+	GENERATED_BODY()
+
+public:
+	explicit ARpgProjectileRecoveryAutomationProjectile(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	FRpgProjectileRecoveryDefinition& GetMutableRecoveryForTests() { return Recovery; }
+};
+
+/** Editor-only 1x1 stackable ammunition that launches ARpgProjectileRecoveryAutomationProjectile. */
+UCLASS(NotBlueprintable, Transient)
+class URpgProjectileRecoveryAutomationArrowDefinition final : public URpgInventoryItemDefinition
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgProjectileRecoveryAutomationArrowDefinition(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	virtual bool IsEditorOnly() const override { return true; }
+};
+
 /** Editor-only 1x1 stackable ammunition that launches ARpgProjectileShotAutomationTestProjectile. */
 UCLASS(NotBlueprintable, Transient)
 class URpgProjectileShotAutomationArrowDefinition final : public URpgInventoryItemDefinition

@@ -487,6 +487,13 @@ void URpgInventoryContainerComponent::ConfigureAsDeathLootContainer()
 	bAllowCraftingAccess = false;
 }
 
+void URpgInventoryContainerComponent::ConfigureAsTemporaryLootContainer()
+{
+	bAccessible = true;
+	TransferPolicy = ERpgInventoryContainerTransferPolicy::WithdrawOnly;
+	bAllowCraftingAccess = false;
+}
+
 #if WITH_EDITOR
 EDataValidationResult URpgInventoryContainerComponent::IsDataValid(
 	FDataValidationContext& Context) const
