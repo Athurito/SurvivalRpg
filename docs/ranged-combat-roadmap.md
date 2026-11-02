@@ -226,7 +226,7 @@ All tasks are **Deferred** because their implementation start has not been selec
 | RNG-03 | Player input, shoulder camera, aim movement, grips, and draw/release animations on CMC/Manny | RNG-02 | Done; user check with RNG-06 ([ranged-aim-presentation.md](ranged-aim-presentation.md), [PR #367](https://github.com/Athurito/SurvivalRpg/pull/367)) |
 | RNG-03b | Impact recovery policies, the break roll, embedded world arrows and pickups, world grouping and cap, the player-hit rule, and salvage lifetime | RNG-03 | Done; user check with RNG-06 ([ranged-arrow-recovery.md](ranged-arrow-recovery.md), [PR #368](https://github.com/Athurito/SurvivalRpg/pull/368)) |
 | RNG-03c | Embedded arrows on AI characters with grouping, corpse recovery including post-death hits, and the finite NPC recovery-budget mechanism | RNG-03b | Deferred |
-| RNG-04 | Crosshair, draw-strength and ammunition HUD through CommonUI/MVVM; no trajectory or impact prediction display | RNG-03 | Done; user check with RNG-06 ([ranged-hud.md](ranged-hud.md), PR_LINK) |
+| RNG-04 | Crosshair, draw-strength and ammunition HUD through CommonUI/MVVM; no trajectory or impact prediction display | RNG-03 | Done; user check with RNG-06 ([ranged-hud.md](ranged-hud.md), [PR #369](https://github.com/Athurito/SurvivalRpg/pull/369)) |
 | RNG-05 | One bow enemy extending existing AI action/spacing behavior, common bow execution, and configured unlimited fire with bounded recovery | RNG-03c | Deferred |
 | RNG-06 | Integrated acceptance, network/regression checks, and final first-bow feel tuning | RNG-04, RNG-05 | Deferred |
 

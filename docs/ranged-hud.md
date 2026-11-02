@@ -1,6 +1,6 @@
 # RNG-04: Bow crosshair, draw strength and ammunition HUD
 
-Task report for RNG-04 in the [ranged combat roadmap](ranged-combat-roadmap.md), PR pending. While the player aims a bow, a crosshair shows around the screen centre, with a draw-strength bar below while drawing and a mark at full draw. A slot right of the Q/E/R abilities shows the ammunition and its count while a ranged weapon is equipped, and marks it when empty. Nothing shows a trajectory, an arc, a landing point or a ballistic correction.
+Task report for RNG-04 in the [ranged combat roadmap](ranged-combat-roadmap.md), [PR #369](https://github.com/Athurito/SurvivalRpg/pull/369). While the player aims a bow, a crosshair shows around the screen centre, with a draw-strength bar below while drawing and a mark at full draw. A slot right of the Q/E/R abilities shows the ammunition and its count while a ranged weapon is equipped, and marks it when empty. Nothing shows a trajectory, an arc, a landing point or a ballistic correction.
 
 ## C++ boundary decision
 
