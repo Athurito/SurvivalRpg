@@ -324,6 +324,9 @@ public:
 	/** The class's recovery data; only a Recoverable class uses it. */
 	const FRpgProjectileRecoveryDefinition& GetRecoveryDefinition() const { return Recovery; }
 
+	/** Multiplier of world gravity on this class's flight, such as for an NPC's ballistic aim. Designer data. */
+	float GetGravityScale() const { return GravityScale; }
+
 	/** Server: the intact projectile's pickup, or null when the impact left none or it is gone. */
 	ARpgEmbeddedProjectilePickup* GetRecoveredPickup() const { return RecoveredPickup.Get(); }
 

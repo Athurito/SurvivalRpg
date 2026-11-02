@@ -6,6 +6,7 @@
 #include "CQTest.h"
 #include "Components/PIENetworkComponent.h"
 #include "Network/RpgCombatNetworkTestTypes.h"
+#include "Network/RpgCombatProjectileNetworkTestTypes.h"
 
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
@@ -36,11 +37,13 @@
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "Animation/AnimInstance.h"
+#include "SurvivalRpg/Combat/RpgAIAttackDriverComponent.h"
 #include "SurvivalRpg/Combat/RpgCombatDeveloperSettings.h"
 #include "SurvivalRpg/Combat/RpgCombatImpact.h"
 #include "SurvivalRpg/Combat/RpgCombatProjectile.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
+#include "SurvivalRpg/Core/AI/RpgAICharacter.h"
 #include "SurvivalRpg/Core/Character/RpgCharacter.h"
 #include "SurvivalRpg/Core/Game/Experience/RpgExperienceDefinition.h"
 #include "SurvivalRpg/Core/Game/Experience/RpgExperienceManagerComponent.h"
@@ -2892,6 +2895,274 @@ NETWORK_TEST_CLASS(RangedAimPIE, "SurvivalRpg.Network")
 		Network.UntilServer(TEXT("A fresh press aims again"), [this](FNetworkState& State) { return ArcherHas(State, TEXT("State.Ranged.Aiming")); },
 			NetworkTimeout());
 		QueueArcherInput(TEXT("The archer lowers the bow"), AimInput, false);
+	}
+};
+
+NETWORK_TEST_CLASS(RangedEnemyPIE, "SurvivalRpg.Network")
+{
+	using FNetworkState = RpgCombatPIENetworkTests::FNetworkState;
+
+	static constexpr int32 ClientCount = 2;
+	static constexpr float TargetHealth = 1000.0f;
+	/** Where the archer stands: 10 m in front of the target, inside its shooting band and without a navmesh to move. */
+	inline static const FVector ArcherLocation{1000.0, 0.0, 120.0};
+
+	RpgCombatPIENetworkTests::FScopedPIEWorldSaveIsolation WorldSaveIsolation;
+	FRpgScopedNetworkTestGround Ground;
+	FRpgScopedNetworkTestFrameTimeLimit FrameTimeLimit;
+	FPIENetworkComponent<FNetworkState> Network{TestRunner, TestCommandBuilder, bInitializing};
+	FPacketSimulationSettings PacketSettings;
+	FPrimaryAssetId OriginalExperienceOverride;
+	UClass* PrototypeGameModeClass = nullptr;
+	int32 TargetId = INDEX_NONE;
+	int32 ObserverId = INDEX_NONE;
+	bool bObserverSawTheDraw = false;
+	double BlockedSinceSeconds = 0.0;
+	bool bSawDrawAfterBudget = false;
+	float HealthBeforeNextHit = 0.0f;
+	TWeakObjectPtr<AActor> Wall;
+	TArray<TSharedPtr<FString>> StepDescriptions;
+
+	const TCHAR* Describe(const FString& Description)
+	{
+		return **StepDescriptions.Add_GetRef(MakeShared<FString>(Description));
+	}
+
+	static ARpgAICharacter* FindArcher(UWorld* World)
+	{
+		for (TActorIterator<ARpgAICharacter> It(World); It; ++It)
+		{
+			return *It;
+		}
+		return nullptr;
+	}
+
+	static const URpgAbilitySystemComponent* ArcherAbilitySystem(UWorld* World)
+	{
+		const ARpgAICharacter* Archer = FindArcher(World);
+		return Archer ? Cast<URpgAbilitySystemComponent>(Archer->GetAbilitySystemComponent()) : nullptr;
+	}
+
+	float TargetHealthNow(UWorld* World) const
+	{
+		const ARpgCharacter* Target = FindPlayer(World, TargetId);
+		const UAbilitySystemComponent* AbilitySystem = Target ? Target->GetAbilitySystemComponent() : nullptr;
+		return AbilitySystem ? AbilitySystem->GetNumericAttribute(URpgHealthSet::GetHealthAttribute()) : -1.0f;
+	}
+
+	ARpgCharacter* FindPlayer(UWorld* World, const int32 PlayerId) const
+	{
+		for (TActorIterator<ARpgCharacter> It(World); It; ++It)
+		{
+			if (It->GetPlayerState() && It->GetPlayerState()->GetPlayerId() == PlayerId)
+			{
+				return *It;
+			}
+		}
+		return nullptr;
+	}
+
+	BEFORE_EACH()
+	{
+		using namespace RpgCombatPIENetworkTests;
+		StepDescriptions.Reset();
+		TargetId = INDEX_NONE;
+		ObserverId = INDEX_NONE;
+		bObserverSawTheDraw = false;
+		BlockedSinceSeconds = 0.0;
+		bSawDrawAfterBudget = false;
+		HealthBeforeNextHit = 0.0f;
+		Wall.Reset();
+		for (const FWorldContext& Context : GEngine->GetWorldContexts())
+		{
+			if (Context.WorldType == EWorldType::PIE && IsValid(Context.World()))
+			{
+				TestRunner->AddError(TEXT("Ranged enemy PIE automation requires all existing PIE sessions to be stopped first."));
+				return;
+			}
+		}
+		URpgDeveloperSettings* DeveloperSettings = GetMutableDefault<URpgDeveloperSettings>();
+		OriginalExperienceOverride = DeveloperSettings->ExperienceOverride;
+		WorldSaveIsolation.Start();
+		Ground.Start();
+		FrameTimeLimit.Start(MaxSimulatedFrameTime);
+		PrototypeGameModeClass = LoadClass<ARpgGameModeBase>(nullptr, PrototypeGameModeClassPath);
+		ASSERT_THAT(IsNotNull(PrototypeGameModeClass));
+		DeveloperSettings->ExperienceOverride = FPrimaryAssetId(URpgExperienceDefinition::StaticClass()->GetFName(), PrototypeExperienceName);
+
+		PacketSettings = FPacketSimulationSettings();
+		PacketSettings.PktLag = 60;
+		PacketSettings.PktLagVariance = 10;
+		FNetworkComponentBuilder<FNetworkState>()
+			.WithClients(ClientCount)
+			.AsListenServer()
+			.WithPacketSimulationSettings(&PacketSettings)
+			.WithGameInstanceClass(FSoftClassPath(TEXT("/Game/SurvivalRpg/Core/Game/BP_Rpg_GameInstance.BP_Rpg_GameInstance_C")))
+			.WithGameMode(PrototypeGameModeClass)
+			.Build(Network);
+	}
+
+	AFTER_EACH()
+	{
+		GetMutableDefault<URpgDeveloperSettings>()->ExperienceOverride = OriginalExperienceOverride;
+	}
+
+	TEST_METHOD(BowEnemyShootsThePlayerThroughTheSharedBowShot)
+	{
+		using namespace RpgCombatPIENetworkTests;
+		Network
+			.ThenServer(TEXT("Listen server uses its own nonpersistent test GameMode instance"),
+				[this](FNetworkState& State) { ASSERT_THAT(IsTrue(WorldSaveIsolation.IsWorldIsolated(State.World))); })
+			.UntilServer(TEXT("Prototype Experience loads with both clients"),
+				[](FNetworkState& State) { return IsPrototypeExperienceReady(State, ClientCount); },
+				NetworkTimeout());
+		for (int32 Index = 0; Index < ClientCount; ++Index)
+		{
+			Network
+				.UntilClient(Describe(FString::Printf(TEXT("Client %d owns a grounded Prototype pawn"), Index)), Index,
+					[](FNetworkState& State)
+					{
+						ARpgCharacter* Character = FindLocalCharacter(State.World);
+						return IsPrototypeExperienceReady(State, ClientCount) && IsPrototypeCharacterReady(Character)
+							&& Character->GetLocalRole() == ROLE_AutonomousProxy && Character->GetCharacterMovement()->IsMovingOnGround();
+					},
+					NetworkTimeout())
+				.ThenClient(Describe(FString::Printf(TEXT("Capture client %d"), Index)), Index,
+					[this, Index](FNetworkState& State)
+					{
+						ARpgCharacter* Character = FindLocalCharacter(State.World);
+						ASSERT_THAT(IsTrue(Character && Character->GetPlayerState()));
+						(Index == 0 ? TargetId : ObserverId) = Character->GetPlayerState()->GetPlayerId();
+					});
+		}
+		Network
+			.ThenServer(TEXT("The target stands 10 m in front of a spawned bow enemy behind a wall; the others stand out of its reach"),
+				[this](FNetworkState& State)
+				{
+					for (TActorIterator<ARpgCharacter> It(State.World); It; ++It)
+					{
+						ARpgCharacter* Character = *It;
+						const int32 PlayerId = Character->GetPlayerState() ? Character->GetPlayerState()->GetPlayerId() : INDEX_NONE;
+						const FVector Location = PlayerId == TargetId ? FVector(0.0, 0.0, 100.0)
+							: PlayerId == ObserverId ? FVector(-3000.0, 2000.0, 100.0) : FVector(-3000.0, -2000.0, 100.0);
+						Character->TeleportTo(Location, FRotator::ZeroRotator);
+						Character->GetCharacterMovement()->StopMovementImmediately();
+						Character->ForceNetUpdate();
+					}
+					ARpgCharacter* Target = FindPlayer(State.World, TargetId);
+					UAbilitySystemComponent* TargetAbilitySystem = Target ? Target->GetAbilitySystemComponent() : nullptr;
+					ASSERT_THAT(IsTrue(TargetAbilitySystem != nullptr));
+					TargetAbilitySystem->SetNumericAttributeBase(URpgHealthSet::GetMaxHealthAttribute(), TargetHealth);
+					TargetAbilitySystem->SetNumericAttributeBase(URpgHealthSet::GetHealthAttribute(), TargetHealth);
+
+					UClass* ArcherClass = LoadClass<ARpgAICharacter>(nullptr,
+						TEXT("/GF_AI_RiftMonsters/AI/Characters/BP_RiftGrunt_Bow.BP_RiftGrunt_Bow_C"));
+					ASSERT_THAT(IsTrue(ArcherClass != nullptr));
+					FActorSpawnParameters Spawn;
+					Spawn.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+					Wall = State.World->SpawnActor<ARpgNetworkAutomationRecoveryWall>(FVector(500.0, 0.0, 300.0), FRotator::ZeroRotator, Spawn);
+					ASSERT_THAT(IsTrue(Wall.IsValid()));
+					ASSERT_THAT(IsTrue(State.World->SpawnActor<ARpgAICharacter>(ArcherClass, ArcherLocation, FRotator(0.0, 180.0, 0.0), Spawn) != nullptr));
+				})
+			.UntilServer(TEXT("The archer's StateTree targets the player with the unlimited enemy bow, but the wall blocks its line of fire"),
+				[this](FNetworkState& State)
+				{
+					const ARpgAICharacter* Archer = FindArcher(State.World);
+					const URpgAIAttackDriverComponent* Driver = Archer ? Archer->FindComponentByClass<URpgAIAttackDriverComponent>() : nullptr;
+					const URpgRangedWeaponInstance* Bow = Driver ? Driver->FindMainHandRangedWeapon() : nullptr;
+					const AActor* Target = FindPlayer(State.World, TargetId);
+					if (!Driver || !Driver->IsExternallyControlled() || !Bow || Bow->GetAmmunitionPolicy() != ERpgProjectileAmmunitionPolicy::Unlimited
+						|| !Target || Driver->GetCombatTarget() != Target || Driver->HasLineOfFire(Target))
+					{
+						return false;
+					}
+					BlockedSinceSeconds = State.World->GetTimeSeconds();
+					return true;
+				},
+				NetworkTimeout())
+			.UntilServer(TEXT("Behind the wall it draws nothing for 3 s"),
+				[this](FNetworkState& State)
+				{
+					const URpgAbilitySystemComponent* AbilitySystem = ArcherAbilitySystem(State.World);
+					const ARpgAICharacter* Archer = FindArcher(State.World);
+					const URpgAIAttackDriverComponent* Driver = Archer ? Archer->FindComponentByClass<URpgAIAttackDriverComponent>() : nullptr;
+					// A failed check ends the wait with its error recorded.
+					if (!Assert.IsTrue(AbilitySystem && Driver) || !Assert.AreEqual(0, AbilitySystem->GetRangedRecoveryTokensUsed())
+						|| !Assert.IsFalse(Driver->IsRangedShotActive()))
+					{
+						return true;
+					}
+					return State.World->GetTimeSeconds() - BlockedSinceSeconds >= 3.0;
+				},
+				NetworkTimeout())
+			.ThenServer(TEXT("The wall goes"), [this](FNetworkState&)
+				{
+					ASSERT_THAT(IsTrue(Wall.IsValid()));
+					Wall->Destroy();
+				})
+			.UntilServer(TEXT("The archer released a shot that took one of its life's recovery tokens"),
+				[](FNetworkState& State)
+				{
+					const ARpgAICharacter* Archer = FindArcher(State.World);
+					const URpgAbilitySystemComponent* AbilitySystem = Archer
+						? Cast<URpgAbilitySystemComponent>(Archer->GetAbilitySystemComponent())
+						: nullptr;
+					return AbilitySystem && AbilitySystem->GetRangedRecoveryTokensUsed() >= 1;
+				},
+				NetworkTimeout())
+			.UntilServer(TEXT("Its arrow hit the target"),
+				[this](FNetworkState& State)
+				{
+					const ARpgCharacter* Target = FindPlayer(State.World, TargetId);
+					const UAbilitySystemComponent* AbilitySystem = Target ? Target->GetAbilitySystemComponent() : nullptr;
+					return AbilitySystem && AbilitySystem->GetNumericAttribute(URpgHealthSet::GetHealthAttribute()) < TargetHealth;
+				},
+				NetworkTimeout())
+			.UntilClient(TEXT("A client that is no target shows the archer's bow hold layer and sees it draw"), 1,
+				[this](FNetworkState& State)
+				{
+					ARpgAICharacter* Archer = FindArcher(State.World);
+					const URpgEquipmentManagerComponent* Equipment = Archer ? Archer->FindComponentByClass<URpgEquipmentManagerComponent>() : nullptr;
+					const UAbilitySystemComponent* AbilitySystem = Archer ? Archer->GetAbilitySystemComponent() : nullptr;
+					if (AbilitySystem && AbilitySystem->HasMatchingGameplayTag(FGameplayTag::RequestGameplayTag(TEXT("State.Ranged.Drawing"))))
+					{
+						bObserverSawTheDraw = true;
+					}
+					return bObserverSawTheDraw && Equipment && Equipment->GetWeaponHoldLayerInstance(ERpgEquipmentSlot::MainHand) != nullptr;
+				},
+				NetworkTimeout())
+			.UntilServer(TEXT("Its fire spends the whole recovery budget of its life"),
+				[](FNetworkState& State)
+				{
+					const URpgAbilitySystemComponent* AbilitySystem = ArcherAbilitySystem(State.World);
+					const ARpgAICharacter* Archer = FindArcher(State.World);
+					const URpgAIAttackDriverComponent* Driver = Archer ? Archer->FindComponentByClass<URpgAIAttackDriverComponent>() : nullptr;
+					const URpgRangedWeaponInstance* Bow = Driver ? Driver->FindMainHandRangedWeapon() : nullptr;
+					return AbilitySystem && Bow && AbilitySystem->GetRangedRecoveryTokensUsed() >= Bow->GetShotDefinition().UnlimitedRecoveryBudget;
+				},
+				NetworkTimeout())
+			.UntilServer(TEXT("It draws again after the budget, hits once more, and nothing refills the budget"),
+				[this](FNetworkState& State)
+				{
+					const URpgAbilitySystemComponent* AbilitySystem = ArcherAbilitySystem(State.World);
+					const ARpgAICharacter* Archer = FindArcher(State.World);
+					const URpgAIAttackDriverComponent* Driver = Archer ? Archer->FindComponentByClass<URpgAIAttackDriverComponent>() : nullptr;
+					const URpgRangedWeaponInstance* Bow = Driver ? Driver->FindMainHandRangedWeapon() : nullptr;
+					// A failed check ends the wait with its error recorded.
+					if (!Assert.IsTrue(AbilitySystem && Driver && Bow)
+						|| !Assert.AreEqual(Bow->GetShotDefinition().UnlimitedRecoveryBudget, AbilitySystem->GetRangedRecoveryTokensUsed()))
+					{
+						return true;
+					}
+					// The last budgeted arrow has landed by the next draw, so a later hit comes from a shot beyond the budget.
+					if (!bSawDrawAfterBudget && Driver->IsRangedShotActive() && !Driver->WasRangedShotReleased())
+					{
+						bSawDrawAfterBudget = true;
+						HealthBeforeNextHit = TargetHealthNow(State.World);
+					}
+					return bSawDrawAfterBudget && TargetHealthNow(State.World) < HealthBeforeNextHit;
+				},
+				NetworkTimeout());
 	}
 };
 

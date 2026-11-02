@@ -8,6 +8,7 @@
 #include "NavigationSystem.h"
 #include "StateTreeExecutionContext.h"
 #include "SurvivalRpg/Combat/RpgAIBlockDriverComponent.h"
+#include "SurvivalRpg/Core/AI/RpgAIController.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterMovementComponent.h"
 #include "SurvivalRpg/Core/Character/RpgHealthComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
@@ -431,6 +432,128 @@ void FRpgStateTreeMeleeAttackTask::ExitState(FStateTreeExecutionContext& Context
 	if (URpgAIAttackDriverComponent* AttackDriver = ResolveAttackDriver(Controller->GetPawn()))
 	{
 		AttackDriver->CancelAttackSequence();
+	}
+}
+
+namespace RpgStateTreeCombat
+{
+	/** Seconds a released shot's ability may still run before the task lowers it. */
+	constexpr float ReleasedShotTimeout = 1.0f;
+
+	/** Points the view at the ballistic aim above Target, so the shot that reads the view arcs onto Target's body. */
+	void AimRangedShot(AAIController& Controller, const URpgAIAttackDriverComponent& AttackDriver, const AActor& Target)
+	{
+		if (ARpgAIController* RpgController = Cast<ARpgAIController>(&Controller))
+		{
+			FVector AimPoint = Target.GetActorLocation();
+			AttackDriver.GetRangedAimPoint(&Target, AimPoint);
+			RpgController->SetFocusAimPoint(AimPoint);
+		}
+	}
+}
+
+FRpgStateTreeRangedAttackTask::FRpgStateTreeRangedAttackTask()
+{
+	bShouldCallTick = true;
+}
+
+EStateTreeRunStatus FRpgStateTreeRangedAttackTask::EnterState(FStateTreeExecutionContext& Context, const FStateTreeTransitionResult& Transition) const
+{
+	using namespace RpgStateTreeCombat;
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	AAIController* Controller = ResolveController(Context);
+	APawn* Pawn = ResolveLivingPawn(Controller);
+	URpgAIAttackDriverComponent* AttackDriver = ResolveAttackDriver(Pawn);
+	AActor* Target = AttackDriver ? AttackDriver->GetCombatTarget() : nullptr;
+	if (!Target || !AttackDriver->HasLineOfFire(Target))
+	{
+		return EStateTreeRunStatus::Failed;
+	}
+
+	// The archer stands while it draws; the next state takes over the movement.
+	Controller->StopMovement();
+	AimRangedShot(*Controller, *AttackDriver, *Target);
+	if (!AttackDriver->StartRangedShot())
+	{
+		return EStateTreeRunStatus::Failed;
+	}
+	InstanceData.HoldLeft = RandomInRange(InstanceData.AimHoldMin, InstanceData.AimHoldMax);
+	InstanceData.TimeOutOfLine = 0.0f;
+	InstanceData.TimeLeft = InstanceData.Timeout;
+	InstanceData.bReleased = false;
+	return EStateTreeRunStatus::Running;
+}
+
+EStateTreeRunStatus FRpgStateTreeRangedAttackTask::Tick(FStateTreeExecutionContext& Context, const float DeltaTime) const
+{
+	using namespace RpgStateTreeCombat;
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	AAIController* Controller = ResolveController(Context);
+	URpgAIAttackDriverComponent* AttackDriver = ResolveAttackDriver(ResolveLivingPawn(Controller));
+	if (!AttackDriver)
+	{
+		return EStateTreeRunStatus::Failed;
+	}
+	if (InstanceData.bReleased)
+	{
+		if (!AttackDriver->IsRangedShotActive())
+		{
+			return EStateTreeRunStatus::Succeeded;
+		}
+		// A release that never ended its ability, such as one whose input was blocked, must not hold the bow forever.
+		InstanceData.TimeLeft -= DeltaTime;
+		if (InstanceData.TimeLeft <= 0.0f)
+		{
+			AttackDriver->CancelRangedShot(true);
+			return EStateTreeRunStatus::Failed;
+		}
+		return EStateTreeRunStatus::Running;
+	}
+	// A stagger, a dodge or death cancelled the draw.
+	AActor* Target = AttackDriver->GetCombatTarget();
+	if (!AttackDriver->IsRangedShotActive() || !Target)
+	{
+		return EStateTreeRunStatus::Failed;
+	}
+
+	AimRangedShot(*Controller, *AttackDriver, *Target);
+	InstanceData.TimeLeft -= DeltaTime;
+	const bool bLineOfFire = AttackDriver->HasLineOfFire(Target);
+	InstanceData.TimeOutOfLine = bLineOfFire ? 0.0f : InstanceData.TimeOutOfLine + DeltaTime;
+	if (InstanceData.TimeLeft <= 0.0f || InstanceData.TimeOutOfLine > InstanceData.LineOfFireGrace)
+	{
+		return EStateTreeRunStatus::Failed;
+	}
+
+	if (AttackDriver->GetRangedDrawFraction() >= 1.0f)
+	{
+		InstanceData.HoldLeft -= DeltaTime;
+		if (InstanceData.HoldLeft <= 0.0f && bLineOfFire && AttackDriver->ReleaseRangedShot())
+		{
+			InstanceData.bReleased = true;
+			InstanceData.TimeLeft = FMath::Max(InstanceData.TimeLeft, ReleasedShotTimeout);
+			return AttackDriver->IsRangedShotActive() ? EStateTreeRunStatus::Running : EStateTreeRunStatus::Succeeded;
+		}
+	}
+	return EStateTreeRunStatus::Running;
+}
+
+void FRpgStateTreeRangedAttackTask::ExitState(FStateTreeExecutionContext& Context, const FStateTreeTransitionResult& Transition) const
+{
+	using namespace RpgStateTreeCombat;
+	AAIController* Controller = ResolveController(Context);
+	if (!Controller)
+	{
+		return;
+	}
+	// A leaving state lowers an unreleased draw without cost; a released shot plays out.
+	if (URpgAIAttackDriverComponent* AttackDriver = ResolveAttackDriver(Controller->GetPawn()))
+	{
+		AttackDriver->CancelRangedShot();
+	}
+	if (ARpgAIController* RpgController = Cast<ARpgAIController>(Controller))
+	{
+		RpgController->ClearFocusAimPoint();
 	}
 }
 

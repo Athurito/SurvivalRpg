@@ -10,10 +10,15 @@
 #include "GameFramework/Pawn.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_BasicWeaponAttack.h"
+#include "SurvivalRpg/Combat/RpgCombatProjectile.h"
+#include "SurvivalRpg/Combat/RpgProjectileShot.h"
 #include "SurvivalRpg/Core/Character/RpgHealthComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
+#include "SurvivalRpg/Equipment/RpgRangedWeaponInstance.h"
 #include "SurvivalRpg/Equipment/RpgWeaponInstance.h"
+#include "SurvivalRpg/Inventory/RpgInventoryFragment_Ammunition.h"
+#include "SurvivalRpg/Physics/RpgCollisionChannels.h"
 #include "SurvivalRpg/Factions/RpgFactionSubsystem.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 
@@ -233,11 +238,7 @@ bool URpgAIAttackDriverComponent::CanAttemptAttack(const bool bRequireInterval) 
 		return false;
 	}
 
-	if (ASC->HasMatchingGameplayTag(RpgGameplayTags::State_Staggered) ||
-		ASC->HasMatchingGameplayTag(RpgGameplayTags::State_GuardBroken) ||
-		ASC->HasMatchingGameplayTag(RpgGameplayTags::State_Dead) ||
-		ASC->HasMatchingGameplayTag(RpgGameplayTags::Status_Death) ||
-		ASC->HasMatchingGameplayTag(RpgGameplayTags::State_Blocking))
+	if (IsBlockedByCombatState(*ASC))
 	{
 		if (ShouldDebugLog())
 		{
@@ -254,6 +255,28 @@ bool URpgAIAttackDriverComponent::CanAttemptAttack(const bool bRequireInterval) 
 	}
 
 	return bHasPrimary;
+}
+
+bool URpgAIAttackDriverComponent::IsBlockedByCombatState(const URpgAbilitySystemComponent& ASC) const
+{
+	return ASC.HasMatchingGameplayTag(RpgGameplayTags::State_Staggered) ||
+		ASC.HasMatchingGameplayTag(RpgGameplayTags::State_GuardBroken) ||
+		ASC.HasMatchingGameplayTag(RpgGameplayTags::State_Dead) ||
+		ASC.HasMatchingGameplayTag(RpgGameplayTags::Status_Death) ||
+		ASC.HasMatchingGameplayTag(RpgGameplayTags::State_Blocking);
+}
+
+FGameplayAbilitySpecHandle URpgAIAttackDriverComponent::FindAttackSpec(const URpgAbilitySystemComponent& ASC, const UObject* Source) const
+{
+	const FGameplayTag InputTag = GetResolvedAttackInputTag();
+	for (const FGameplayAbilitySpec& Spec : ASC.GetActivatableAbilities())
+	{
+		if (Spec.Ability && Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag) && (!Source || Spec.SourceObject.Get() == Source))
+		{
+			return Spec.Handle;
+		}
+	}
+	return FGameplayAbilitySpecHandle();
 }
 
 bool URpgAIAttackDriverComponent::IsInAttackRangeAndCone(const AActor* Target) const
@@ -609,6 +632,7 @@ void URpgAIAttackDriverComponent::BeginExternalControl(const ERpgAICombatTargetP
 
 void URpgAIAttackDriverComponent::EndExternalControl()
 {
+	CancelRangedShot();
 	if (!bExternalControl)
 	{
 		return;
@@ -666,16 +690,7 @@ bool URpgAIAttackDriverComponent::StartAttackSequence(const int32 StepCount)
 		return false;
 	}
 
-	const FGameplayTag InputTag = GetResolvedAttackInputTag();
-	FGameplayAbilitySpecHandle SpecHandle;
-	for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
-	{
-		if (Spec.Ability && Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag))
-		{
-			SpecHandle = Spec.Handle;
-			break;
-		}
-	}
+	const FGameplayAbilitySpecHandle SpecHandle = FindAttackSpec(*ASC);
 	if (!SpecHandle.IsValid())
 	{
 		return false;
@@ -709,6 +724,142 @@ bool URpgAIAttackDriverComponent::StartAttackSequence(const int32 StepCount)
 void URpgAIAttackDriverComponent::CancelAttackSequence()
 {
 	AttackSequenceStepCount = AttackSequenceStepsStarted;
+}
+
+bool URpgAIAttackDriverComponent::StartRangedShot()
+{
+	UWorld* World = GetWorld();
+	URpgAbilitySystemComponent* ASC = GetRpgAbilitySystemComponent();
+	AActor* Target = CombatTarget.Get();
+	const URpgRangedWeaponInstance* Weapon = FindMainHandRangedWeapon();
+	if (bAttackSequenceActive || IsRangedShotActive() || !World || !ASC || !GetOwner()->HasAuthority() || !IsOwnerAlive()
+		|| !IsValidCombatTarget(Target) || IsBlockedByCombatState(*ASC) || !Weapon)
+	{
+		return false;
+	}
+	// The weapon's own shot, not another ability that shares the attack input.
+	const FGameplayAbilitySpecHandle SpecHandle = FindAttackSpec(*ASC, Weapon);
+	if (!SpecHandle.IsValid())
+	{
+		return false;
+	}
+
+	FaceTarget(Target);
+	bRangedShotReleased = false;
+	RangedShotSpecHandle = SpecHandle;
+	// A shot that cancels during its activation, such as one without ammunition, never counts as drawn.
+	if (!ASC->TryActivateAbility(SpecHandle) || !IsRangedShotActive())
+	{
+		RangedShotSpecHandle = FGameplayAbilitySpecHandle();
+		return false;
+	}
+	LastAttackTime = World->GetTimeSeconds();
+	return true;
+}
+
+bool URpgAIAttackDriverComponent::ReleaseRangedShot()
+{
+	URpgAbilitySystemComponent* ASC = GetRpgAbilitySystemComponent();
+	if (!ASC || bRangedShotReleased || !IsRangedShotActive())
+	{
+		return false;
+	}
+	bRangedShotReleased = true;
+	// The input release a player ends the draw with; the shot reads its aim from the controller's view.
+	const FGameplayTag InputTag = GetResolvedAttackInputTag();
+	ASC->AbilityInputTagReleased(InputTag);
+	ASC->ProcessAbilityInput(0.0f, false);
+	return true;
+}
+
+void URpgAIAttackDriverComponent::CancelRangedShot(const bool bIncludeReleased)
+{
+	URpgAbilitySystemComponent* ASC = GetRpgAbilitySystemComponent();
+	if (ASC && (bIncludeReleased || !bRangedShotReleased) && IsRangedShotActive())
+	{
+		ASC->CancelAbilityHandle(RangedShotSpecHandle);
+	}
+}
+
+bool URpgAIAttackDriverComponent::IsRangedShotActive() const
+{
+	const URpgAbilitySystemComponent* ASC = GetRpgAbilitySystemComponent();
+	const FGameplayAbilitySpec* Spec = ASC && RangedShotSpecHandle.IsValid() ? ASC->FindAbilitySpecFromHandle(RangedShotSpecHandle) : nullptr;
+	return Spec && Spec->IsActive();
+}
+
+float URpgAIAttackDriverComponent::GetRangedDrawFraction() const
+{
+	const URpgAbilitySystemComponent* ASC = GetRpgAbilitySystemComponent();
+	float DrawFraction = 0.0f;
+	float NockFraction = 0.0f;
+	// The server runs an AI's shot as its locally controlled machine, so the local draw timing is the server's.
+	return ASC && IsRangedShotActive() && ASC->GetLocalRangedDrawProgress(DrawFraction, NockFraction) ? DrawFraction : -1.0f;
+}
+
+const URpgRangedWeaponInstance* URpgAIAttackDriverComponent::FindMainHandRangedWeapon() const
+{
+	const AActor* Owner = GetOwner();
+	const URpgEquipmentManagerComponent* EquipmentManager = Owner ? Owner->FindComponentByClass<URpgEquipmentManagerComponent>() : nullptr;
+	return EquipmentManager
+		? Cast<URpgRangedWeaponInstance>(EquipmentManager->GetEquipmentInstanceInSlot(ERpgEquipmentSlot::MainHand))
+		: nullptr;
+}
+
+bool URpgAIAttackDriverComponent::HasLineOfFire(const AActor* Target) const
+{
+	const URpgRangedWeaponInstance* Weapon = FindMainHandRangedWeapon();
+	const APawn* Pawn = Cast<APawn>(GetOwner());
+	UWorld* World = GetWorld();
+	if (!Weapon || !Pawn || !Target || !World)
+	{
+		return false;
+	}
+
+	// From the body at the launch height, as the shot checks the way to its muzzle too: an obstacle right in front of
+	// the archer, closer than the muzzle, still blocks.
+	const FVector TargetPoint = Target->GetActorLocation();
+	const FVector Body = Pawn->GetActorLocation() + FVector(0.0f, 0.0f, Weapon->GetShotDefinition().MuzzleOffset.Z);
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(RpgAILineOfFire), false, Pawn);
+	TArray<AActor*> AttachedActors;
+	Pawn->GetAttachedActors(AttachedActors, true, true);
+	QueryParams.AddIgnoredActors(AttachedActors);
+	FHitResult Hit;
+	if (!World->LineTraceSingleByChannel(Hit, Body, TargetPoint, Rpg_TraceChannel_Projectile, QueryParams))
+	{
+		return true;
+	}
+	const AActor* HitActor = Hit.GetActor();
+	return HitActor && (HitActor == Target || HitActor->IsAttachedTo(Target));
+}
+
+bool URpgAIAttackDriverComponent::GetRangedAimPoint(const AActor* Target, FVector& OutAimPoint) const
+{
+	const URpgRangedWeaponInstance* Weapon = FindMainHandRangedWeapon();
+	const APawn* Pawn = Cast<APawn>(GetOwner());
+	const UWorld* World = GetWorld();
+	if (!Weapon || !Pawn || !Target || !World)
+	{
+		return false;
+	}
+
+	const FRpgProjectileShotDefinition& Definition = Weapon->GetShotDefinition();
+	const FVector TargetPoint = Target->GetActorLocation();
+	const FVector Muzzle = RpgProjectileShot::GetMuzzleLocation(
+		Definition, Pawn->GetActorLocation(), (TargetPoint - Pawn->GetActorLocation()).Rotation().Yaw);
+	const TSubclassOf<ARpgCombatProjectile> ProjectileClass =
+		URpgInventoryFragment_Ammunition::FindProjectileClass(Definition.AmmunitionItemDefinition);
+	const ARpgCombatProjectile* ProjectileDefaults = ProjectileClass ? ProjectileClass->GetDefaultObject<ARpgCombatProjectile>() : nullptr;
+	const float Gravity = ProjectileDefaults ? -World->GetGravityZ() * ProjectileDefaults->GetGravityScale() : 0.0f;
+	FVector Direction;
+	const bool bInReach = RpgProjectileShot::SolveLaunchDirection(
+		Muzzle, TargetPoint, RpgProjectileShot::GetLaunchSpeed(Definition, 1.0f), Gravity, Direction);
+
+	// The shot aims from the view through the focus and launches from the muzzle toward where that ray first hits. A
+	// focus far along the launch direction keeps both rays nearly parallel.
+	constexpr float AimPointDistance = 5000.0f;
+	OutAimPoint = Pawn->GetPawnViewLocation() + Direction * AimPointDistance;
+	return bInReach;
 }
 
 void URpgAIAttackDriverComponent::TapAttackInput(URpgAbilitySystemComponent& ASC) const

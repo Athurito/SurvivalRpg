@@ -160,6 +160,22 @@ void ARpgAIController::StopPawnStateTree(const FString& Reason)
 	}
 }
 
+void ARpgAIController::SetFocusAimPoint(const FVector& WorldPoint)
+{
+	FocusAimPoint = WorldPoint;
+}
+
+void ARpgAIController::ClearFocusAimPoint()
+{
+	FocusAimPoint.Reset();
+}
+
+FVector ARpgAIController::GetFocalPointOnActor(const AActor* Actor) const
+{
+	// Only the focus point moves: the focus actor stays, so the engine keeps pitching the view as toward a pawn.
+	return FocusAimPoint.IsSet() && Actor ? FocusAimPoint.GetValue() : Super::GetFocalPointOnActor(Actor);
+}
+
 void ARpgAIController::SetGenericTeamId(const FGenericTeamId& NewTeamID)
 {
 	Super::SetGenericTeamId(NewTeamID);

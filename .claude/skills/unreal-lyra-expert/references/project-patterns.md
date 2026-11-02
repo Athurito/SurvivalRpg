@@ -65,6 +65,12 @@ AI movement looks jerky when it stops dead, which `AAIController::MoveTo` does m
 - **The fix:** route combat moves through `RequestCombatMove` in `RpgStateTreeCombatTasks.cpp`. It projects the goal first, skips goals closer than 40 cm, tests the reach without the capsule, and clears stop-on-finish with every request.
 - **Ownership:** the global combat control task holds the focus for all combat states, and tasks leave the movement to the next state instead of stopping on exit.
 
+Ranged AI (RNG-05, [bow enemy](../../../../docs/ranged-bow-enemy.md)):
+- **One shot ability:** an enemy draws and releases the player's shot ability through `URpgAIAttackDriverComponent::StartRangedShot` and `ReleaseRangedShot`, which sends the same input release a player does. The NPC weapon instance declares `AmmunitionPolicy` Unlimited; do not add an NPC variant of the ability.
+- **Aim pitch:** `AAIController::UpdateControlRotation` zeroes the view pitch unless the focus actor is a pawn, so a focal point alone aims flat. Keep the target as the focus actor and move only its focal point: `ARpgAIController::SetFocusAimPoint` overrides `GetFocalPointOnActor`. The shot reads its aim from that view (`GetPlayerViewPoint`).
+- **StateTree nodes:** every node needs an instance data struct, also an empty one, or the StateTree compiler rejects it with "Malformed node, missing instance value" (`FRpgStateTreeCombatTargetInLineOfFireCondition`).
+- **Hold layers on enemies:** an enemy's equipment links its hold layer only into an AnimBP that implements `ALI_RpgMainHandHold`. `ED_EnemySword` already names the sword's hold layer, so adding the interface to `ABP_Enemy_SwordShield` would change the warrior's sword arm; the bow enemy uses its own copy, `ABP_Enemy_Archer`.
+
 Native widgets that place authored entries outside a list view (`URpgViewModelEntryBox`, `URpgSkillTreeGridWidget`, `URpgSkillTreeMapWidget`; MST-01, [mastery map foundation](../../../../docs/mastery-map-foundation.md)):
 - **Item handoff:** `IUserObjectListEntry::Execute_OnListItemObjectSet` reaches only Blueprint implementations. A native `NativeOnListItemObjectSet` override, as in `URpgMvvmListEntryWidget`, needs `SetEntryItem`. Hand items over the way `URpgViewModelEntryBox::AppendEntry` does.
 - **Entry creation:** `CreateWidget(UWidget*, ...)` finds its owner through the widget's `UWidgetTree`; for a widget outside one it ensures and returns null. Tests build the host widget's tree and use `WidgetTree->ConstructWidget`.

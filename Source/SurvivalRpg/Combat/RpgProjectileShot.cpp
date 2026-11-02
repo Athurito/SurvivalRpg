@@ -194,6 +194,43 @@ namespace RpgProjectileShot
 		return ERpgProjectileShotResult::Released;
 	}
 
+	float GetLaunchSpeed(const FRpgProjectileShotDefinition& Definition, const float DrawFraction)
+	{
+		return EvaluateCurve(Definition.LaunchSpeedByDrawFraction, FMath::Clamp(DrawFraction, 0.0f, 1.0f));
+	}
+
+	FVector GetMuzzleLocation(const FRpgProjectileShotDefinition& Definition, const FVector& ShooterLocation, const float AimYawDegrees)
+	{
+		return ShooterLocation + FRotator(0.0f, AimYawDegrees, 0.0f).RotateVector(Definition.MuzzleOffset);
+	}
+
+	bool SolveLaunchDirection(const FVector& Origin, const FVector& Target, const float Speed, const float Gravity, FVector& OutDirection)
+	{
+		const FVector Offset = Target - Origin;
+		OutDirection = Offset.GetSafeNormal();
+		const double Horizontal = Offset.Size2D();
+		if (OutDirection.IsNearlyZero() || !(Speed > 0.0f) || Horizontal < UE_KINDA_SMALL_NUMBER)
+		{
+			return false;
+		}
+		if (Gravity <= 0.0f)
+		{
+			return true;
+		}
+
+		// Low root of the ballistic equation: tan(a) = (v² - sqrt(v⁴ - g(g x² + 2 y v²))) / (g x).
+		const double SpeedSquared = FMath::Square(static_cast<double>(Speed));
+		const double Discriminant = FMath::Square(SpeedSquared) - Gravity * (Gravity * FMath::Square(Horizontal) + 2.0 * Offset.Z * SpeedSquared);
+		if (Discriminant < 0.0)
+		{
+			return false;
+		}
+		const double Elevation = FMath::Atan((SpeedSquared - FMath::Sqrt(Discriminant)) / (Gravity * Horizontal));
+		const FVector Flat = FVector(Offset.X, Offset.Y, 0.0).GetSafeNormal();
+		OutDirection = Flat * FMath::Cos(Elevation) + FVector::UpVector * FMath::Sin(Elevation);
+		return true;
+	}
+
 	bool ResolveGeometry(
 		const FRpgProjectileShotDefinition& Definition,
 		const APawn* Shooter,
@@ -216,8 +253,7 @@ namespace RpgProjectileShot
 		QueryParams.AddIgnoredActors(AttachedActors);
 
 		// The camera only gives intent: the shot leaves from the weapon, and the body-to-muzzle segment must be clear.
-		const FRotator AimYaw(0.0f, CameraDirection.Rotation().Yaw, 0.0f);
-		const FVector Muzzle = ShooterLocation + AimYaw.RotateVector(Definition.MuzzleOffset);
+		const FVector Muzzle = GetMuzzleLocation(Definition, ShooterLocation, CameraDirection.Rotation().Yaw);
 		const FVector Body = ShooterLocation + FVector(0.0f, 0.0f, Definition.MuzzleOffset.Z);
 		OutGeometry.Origin = Muzzle;
 		OutGeometry.bObstructed = false;

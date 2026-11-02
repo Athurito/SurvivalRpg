@@ -70,6 +70,11 @@ void URpgAbilityTask_ProjectileShot::Activate()
 			return;
 		}
 		Definition = Weapon->GetShotDefinition();
+		// Only an NPC fires without items: a player who somehow holds an NPC weapon still pays arrows.
+		if (Weapon->GetAmmunitionPolicy() == ERpgProjectileAmmunitionPolicy::Unlimited && !RpgProjectileShot::FindShooterInventory(ASC))
+		{
+			AmmunitionPolicy = ERpgProjectileAmmunitionPolicy::Unlimited;
+		}
 	}
 	TArray<FText> DefinitionErrors;
 	RpgProjectileShot::ValidateDefinition(Definition, DefinitionErrors);
