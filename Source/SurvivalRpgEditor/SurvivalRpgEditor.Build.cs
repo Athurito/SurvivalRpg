@@ -37,6 +37,7 @@ public class SurvivalRpgEditor : ModuleRules
 			"GameplayMessageRuntime",
 			"GameplayStateTreeModule",
 			"GameplayTags",
+			"GameplayTasks",
 			"IKRig",
 			"InputBlueprintNodes",
 			"InputCore",

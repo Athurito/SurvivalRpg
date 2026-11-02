@@ -23,6 +23,11 @@ Purchased content lives in the asset library listed under "Local environment" in
 - Read an asset project headlessly instead of opening another editor: `UnrealEditor-Cmd.exe <asset project>.uproject -run=pythonscript -script=<file> -unattended -nullrhi` exports textures (PNG, or EXR for 16-bit float sources) and materials (T3D), and walks dependency closures with `AssetRegistry.get_dependencies`.
 - Migrate by copying `.uasset` files to the same `/Game` path in SurvivalRpg, then move them into the target folder with `AssetTools.rename_assets`; this leaves no redirectors.
 - Check the output classes afterwards and replace legacy types as unreal-gasp-expert describes.
+- Downsize oversized library textures during the migration (RNG-02, the SkeletonArmy archer's 4096 px bow and arrow textures):
+  1. In the asset project, export each texture as PNG headlessly and record its `compression_settings`, `srgb` and `lod_group`.
+  2. Resize the PNGs outside the editor, for example with Pillow.
+  3. In SurvivalRpg, copy the meshes and materials to their `/Game` path, import the PNGs under the pack's own texture path and names with `AssetImportTask.replace_existing`, so the copied materials resolve them, and restore the recorded settings.
+  4. Move the whole set into the target folder with `rename_assets`.
 
 ## Animations
 

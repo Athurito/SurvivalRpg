@@ -105,8 +105,8 @@ Server code that adds or executes a GameplayCue inside a client's predicted acti
 
 Use GameFeature plugins for modular gameplay packages without overcomplicating early prototypes.
 
-- Existing under `Plugins/GameFeatures`: `GF_Combat_Core`, `GF_Combat_Magic`, `GF_Runes_Core`, `GF_Portals_Core`, `GF_Harvesting_Magic`, `GF_Progression`, `GF_AI_RiftMonsters`, `GF_AI_Wildlife`, and `GF_Dev_Sandbox`.
-- Planned in the vision document: `GF_Combat_Ranged`, `GF_Runes_Elemental`, `GF_Runes_Rift`, `GF_Dungeonbreak_System`, and `GF_WorldState`. Create one only when a slice needs it.
+- Existing under `Plugins/GameFeatures`: `GF_Combat_Core`, `GF_Combat_Magic`, `GF_Combat_Ranged`, `GF_Runes_Core`, `GF_Portals_Core`, `GF_Harvesting_Magic`, `GF_Progression`, `GF_AI_RiftMonsters`, `GF_AI_Wildlife`, and `GF_Dev_Sandbox`.
+- Planned in the vision document: `GF_Runes_Elemental`, `GF_Runes_Rift`, `GF_Dungeonbreak_System`, and `GF_WorldState`. Create one only when a slice needs it.
 
 For early testing, simple prototype actors and effects (for example a viewport-placed damage-area test actor or `GE_Damage_Instant`) may live in Core when GameFeature placement blocks fast iteration. Mark them as prototype or base assets and refactor later.
 

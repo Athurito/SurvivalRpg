@@ -130,6 +130,10 @@
 			"Enabled": true
 		},
 		{
+			"Name": "GF_Combat_Ranged",
+			"Enabled": true
+		},
+		{
 			"Name": "GF_Runes_Core",
 			"Enabled": true
 		},

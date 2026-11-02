@@ -60,6 +60,13 @@ Native widgets that place authored entries outside a list view (`URpgViewModelEn
 - **Entry creation:** `CreateWidget(UWidget*, ...)` finds its owner through the widget's `UWidgetTree`; for a widget outside one it ensures and returns null. Tests build the host widget's tree and use `WidgetTree->ConstructWidget`.
 - **Drag surfaces:** take presses in `OnPreviewMouseButtonDown`, so an entry's button never clicks at the end of a drag. Slate releases mouse capture and calls `OnMouseCaptureLost` when window activation changes or the captor leaves the visible hierarchy, for example when its screen closes. End gestures there.
 
+### Ability input
+
+`URpgInputComponent::BindAbilityActions` presses the abilities of an input config's ability actions on `Triggered` and releases them on `Completed`.
+- A Pressed trigger on such an action completes one tick after the press while the key is still down, so every hold ends at once: `IA_Block` before the GASP Mover foundation, `IA_WeaponAbility01`–`03` before HRW, and `IA_PrimaryAttack` before RNG-02 (held tool swings ran once, the bow released before its nock). Leave hold-capable ability actions without triggers.
+- An action without triggers triggers every tick while held. When its abilities must still count each click, such as melee combo steps, set `bPressOnStartOnly` on its input config entry, which binds the press to `Started`. `DA_InputConfig_Combat` does so for `IA_PrimaryAttack`, and `SurvivalRpg.Combat.Ranged.PrimaryInputHoldsUntilRelease` guards both.
+- Native tests that call `AbilityInputTagPressed` skip Enhanced Input, so they never catch a wrong trigger.
+
 ## Not adopted without evidence or request
 
 - Lyra subsystems not already present in this project

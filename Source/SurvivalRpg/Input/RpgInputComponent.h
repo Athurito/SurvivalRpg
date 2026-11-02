@@ -92,7 +92,8 @@ void URpgInputComponent::BindAbilityActions(const URpgInputConfig* InputConfig, 
 		{
 			if (PressedFunc)
 			{
-				BindHandles.Add(BindAction(Action.InputAction, ETriggerEvent::Triggered, Object, PressedFunc, Action.InputTag).GetHandle());
+				const ETriggerEvent PressEvent = Action.bPressOnStartOnly ? ETriggerEvent::Started : ETriggerEvent::Triggered;
+				BindHandles.Add(BindAction(Action.InputAction, PressEvent, Object, PressedFunc, Action.InputTag).GetHandle());
 			}
 
 			if (ReleasedFunc)

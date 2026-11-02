@@ -25,6 +25,16 @@ public:
 	/** Semantic input tag routed by the owning input component. Must be a strict descendant of InputTag. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Meta = (Categories = "InputTag"))
 	FGameplayTag InputTag;
+
+	/**
+	 * Ability mappings only: press the abilities once when the action starts instead of on every tick it triggers, and
+	 * release them when it completes. Use it on an action without triggers whose abilities count each click, such as
+	 * melee combo steps, while others hold until the physical release, such as a bow draw or a held tool swing. A
+	 * Pressed trigger cannot do both: it completes one tick after the press while the key is still down. Static
+	 * designer-authored data.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	bool bPressOnStartOnly = false;
 };
 
 /**

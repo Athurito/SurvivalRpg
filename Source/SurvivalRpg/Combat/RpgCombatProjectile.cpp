@@ -97,6 +97,15 @@ ARpgCombatProjectile* ARpgCombatProjectile::LaunchFromAbility(
 	TSubclassOf<ARpgCombatProjectile> ProjectileClass,
 	const FRpgProjectileLaunchParams& Params)
 {
+	ARpgCombatProjectile* Projectile = BeginLaunchFromAbility(LaunchingAbility, ProjectileClass, Params);
+	return Projectile && Projectile->FinishDeferredLaunch() ? Projectile : nullptr;
+}
+
+ARpgCombatProjectile* ARpgCombatProjectile::BeginLaunchFromAbility(
+	UGameplayAbility* LaunchingAbility,
+	TSubclassOf<ARpgCombatProjectile> ProjectileClass,
+	const FRpgProjectileLaunchParams& Params)
+{
 	const FGameplayAbilityActorInfo* ActorInfo = LaunchingAbility ? LaunchingAbility->GetCurrentActorInfo() : nullptr;
 	if (!ActorInfo || !ActorInfo->IsNetAuthority() || !ProjectileClass)
 	{
@@ -119,10 +128,21 @@ ARpgCombatProjectile* ARpgCombatProjectile::LaunchFromAbility(
 			*GetNameSafe(ProjectileClass), *GetNameSafe(LaunchingAbility));
 	}
 
-	return LaunchWithDamageSpec(World, ProjectileClass, Params, Spec, Cast<APawn>(Avatar));
+	return BeginLaunchWithDamageSpec(World, ProjectileClass, Params, Spec, Cast<APawn>(Avatar));
 }
 
 ARpgCombatProjectile* ARpgCombatProjectile::LaunchWithDamageSpec(
+	UWorld* World,
+	TSubclassOf<ARpgCombatProjectile> ProjectileClass,
+	const FRpgProjectileLaunchParams& Params,
+	const FGameplayEffectSpecHandle& DamageSpec,
+	APawn* InstigatorPawn)
+{
+	ARpgCombatProjectile* Projectile = BeginLaunchWithDamageSpec(World, ProjectileClass, Params, DamageSpec, InstigatorPawn);
+	return Projectile && Projectile->FinishDeferredLaunch() ? Projectile : nullptr;
+}
+
+ARpgCombatProjectile* ARpgCombatProjectile::BeginLaunchWithDamageSpec(
 	UWorld* World,
 	TSubclassOf<ARpgCombatProjectile> ProjectileClass,
 	const FRpgProjectileLaunchParams& Params,
@@ -165,8 +185,29 @@ ARpgCombatProjectile* ARpgCombatProjectile::LaunchWithDamageSpec(
 	// Everything the first replication and BeginPlay need is in place before the actor finishes spawning.
 	Projectile->SourceAbilitySystem = SourceASC;
 	Projectile->InitializeLaunch(Params, Direction, DamageSpec);
-	Projectile->FinishSpawning(SpawnTransform);
-	return IsValid(Projectile) ? Projectile : nullptr;
+	Projectile->DeferredSpawnTransform = SpawnTransform;
+	Projectile->bDeferredLaunchPending = true;
+	return Projectile;
+}
+
+bool ARpgCombatProjectile::FinishDeferredLaunch()
+{
+	if (!bDeferredLaunchPending)
+	{
+		return false;
+	}
+	bDeferredLaunchPending = false;
+	FinishSpawning(DeferredSpawnTransform);
+	return IsValid(this) && !IsActorBeingDestroyed();
+}
+
+void ARpgCombatProjectile::AbortDeferredLaunch()
+{
+	if (bDeferredLaunchPending)
+	{
+		bDeferredLaunchPending = false;
+		Destroy();
+	}
 }
 
 void ARpgCombatProjectile::InitializeLaunch(
