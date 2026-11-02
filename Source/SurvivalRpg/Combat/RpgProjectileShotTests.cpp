@@ -679,6 +679,7 @@ bool FRpgProjectileShotBowContentTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("The standard arrow leaves a content pickup"),
 		ArrowPickupClass && ArrowPickupClass != ARpgEmbeddedProjectilePickup::StaticClass());
 	TestTrue(TEXT("The shot returns the consumed standard arrow"), Arrow->GetRecoveryItemDefinitionForTests() == ArrowClass);
+	TestTrue(TEXT("The standard arrow authors a break chance"), ArrowDefaults->GetRecoveryDefinition().BaseBreakChance > 0.0f);
 	TestEqual(TEXT("The shot breaks with the arrow's base chance"), Arrow->GetBreakChanceForTests(),
 		ArrowDefaults->GetRecoveryDefinition().BaseBreakChance);
 	const float TopSpeed = Shot.LaunchSpeedByDrawFraction.GetRichCurveConst()->Eval(1.0f);

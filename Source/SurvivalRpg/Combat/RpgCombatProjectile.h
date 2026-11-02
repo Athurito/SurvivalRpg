@@ -76,11 +76,11 @@ struct SURVIVALRPG_API FRpgProjectileRecoveryDefinition
 	TSubclassOf<ARpgEmbeddedProjectilePickup> PickupClass;
 
 	/**
-	 * Chance from 0 to 1 that the projectile breaks at its impact. The launching ability tunes it once per activation
-	 * through Ability.Tuning.Ranged.BreakChance; surface rules then scale it at the impact.
+	 * Chance from 0 to 1 that the projectile breaks at its impact; zero never breaks. The launching ability tunes it once
+	 * per activation through Ability.Tuning.Ranged.BreakChance; surface rules then scale it at the impact.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Recovery", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float BaseBreakChance = 0.3f;
+	float BaseBreakChance = 0.0f;
 
 	/** Per-material break chance factors and embedding; a material without a rule embeds with the unscaled chance. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Recovery")
@@ -163,10 +163,11 @@ struct SURVIVALRPG_API FRpgProjectileLaunchParams
 	int32 ShotId = 0;
 
 	/**
-	 * Ammunition an intact recoverable projectile returns, set only when the launch paid a real item for it, such as an
-	 * arrow consumed from the shooter's inventory. None grants no recovery credit.
+	 * Ammunition an intact recoverable projectile returns. Native only: the shot commit sets it when the launch consumed
+	 * a real item, such as an arrow from the shooter's inventory, so no Blueprint launch can create ammunition. None
+	 * grants no recovery credit.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projectile|Recovery")
+	UPROPERTY()
 	TSubclassOf<URpgInventoryItemDefinition> RecoveryItemDefinition;
 
 	/**

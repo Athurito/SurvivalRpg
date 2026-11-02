@@ -27,6 +27,7 @@
 #include "SurvivalRpg/Base/RpgBaseStorageStationComponent.h"
 #include "SurvivalRpg/Base/RpgBaseStorageUpgradeDefinition.h"
 #include "SurvivalRpg/Base/RpgPersonalStorageLockerActor.h"
+#include "SurvivalRpg/Combat/RpgEmbeddedProjectilePickup.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentAutomationTestTypes.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentLoadoutComponent.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
@@ -13601,6 +13602,91 @@ bool FRpgInventoryBaseConcreteDomainRevisionTest::RunTest(
 	TestTrue(
 		TEXT("Personal-to-Vault redeposit preserves Stabilized state"),
 		StableRedepositedCore->IsContainmentStabilized());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgInventoryManualDropBesideTemporaryLootTest,
+	"SurvivalRpg.Inventory.Drop.SkipsWithdrawOnlyLootNearby",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgInventoryManualDropBesideTemporaryLootTest::RunTest(
+	const FString& Parameters)
+{
+	using namespace RpgInventoryTransactionTests;
+	FScopedInventoryWorld TestWorld;
+	if (!InitializeTest(*this, TestWorld))
+	{
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	ARpgInventoryAutomationTestPlayerController* Controller =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerController>();
+	ARpgInventoryAutomationTestPlayerState* PlayerState =
+		World->SpawnActor<ARpgInventoryAutomationTestPlayerState>();
+	if (!TestNotNull(TEXT("The drop controller fixture exists"), Controller) ||
+		!TestNotNull(TEXT("The drop player-state fixture exists"), PlayerState))
+	{
+		return false;
+	}
+	Controller->SetPlayerState(PlayerState);
+	PlayerState->SetOwner(Controller);
+	URpgInventoryManagerComponent* Inventory = PlayerState->GetInventoryManagerComponent();
+	URpgInventoryUiActionComponent* UiActions = Controller->GetInventoryUiActionComponent();
+	if (!TestNotNull(TEXT("The player inventory exists"), Inventory) ||
+		!TestNotNull(TEXT("The action gateway exists"), UiActions))
+	{
+		return false;
+	}
+
+	const FRpgInventoryContainerHandle Pockets =
+		FRpgInventoryContainerHandle::MakeRoot(URpgPlayerInventoryLayoutComponent::PocketsGroupId);
+	URpgInventoryItemInstance* Item = Inventory->AddItemDefinitionToPlacement(
+		URpgInventoryAutomationTestStackableWeaponItemDefinition::StaticClass(), 4, MakePlacement(Pockets, 0, 0));
+	FRpgInventoryEntryView Entry;
+	if (!TestNotNull(TEXT("The stack to drop exists"), Item) ||
+		!TestTrue(TEXT("The stack has an entry"), GetEntryView(Inventory, Item->GetItemId(), Entry)))
+	{
+		return false;
+	}
+
+	// Recovered arrows lie exactly where the drop lands: in front of the controller, which has no pawn.
+	const AActor* DropSource = Controller;
+	const FVector DropLocation = DropSource->GetActorLocation() + DropSource->GetActorForwardVector() * 120.0f + FVector(0.0f, 0.0f, 30.0f);
+	ARpgEmbeddedProjectilePickup* Arrows = World->SpawnActor<ARpgEmbeddedProjectilePickup>(
+		ARpgEmbeddedProjectilePickup::StaticClass(), FTransform(DropLocation));
+	if (!TestNotNull(TEXT("The arrow pickup exists"), Arrows) ||
+		!TestTrue(TEXT("The arrow pickup holds an item"),
+			Arrows->MergePickupTemplate(URpgInventoryAutomationTestUnitItemDefinition::StaticClass(), 1)))
+	{
+		return false;
+	}
+
+	FRpgInventoryManualDropRequest Request;
+	Request.RequestId = FGuid::NewGuid();
+	Request.EntryId = Entry.EntryId;
+	Request.ItemId = Entry.ItemId;
+	Request.ExpectedSourcePlacement = Entry.Placement;
+	Request.ExpectedSourceQuantity = Entry.StackCount;
+	Request.StackCount = 2;
+	UiActions->RequestDropInventoryItemById(Inventory, Request);
+
+	TestEqual(TEXT("The drop leaves the rest of the stack"), Inventory->GetItemStackCount(Item), 2);
+	int32 OwnPiles = 0;
+	for (TActorIterator<ARpgDroppedInventoryActor> It(World); It; ++It)
+	{
+		if (*It != Arrows && !It->IsPendingKillPending())
+		{
+			++OwnPiles;
+			TestEqual(TEXT("The new pile holds the dropped quantity"),
+				It->GetLootInventoryManager()->GetTotalItemCountByDefinition(
+					URpgInventoryAutomationTestStackableWeaponItemDefinition::StaticClass()),
+				2);
+		}
+	}
+	TestEqual(TEXT("The drop gets its own pile beside the withdraw-only arrows"), OwnPiles, 1);
+	TestEqual(TEXT("Nothing went into the arrow pickup"), Arrows->GetLootInventoryManager()->GetAllEntries().Num(), 1);
 	return true;
 }
 

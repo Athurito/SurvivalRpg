@@ -56,6 +56,12 @@ public:
 		const FRpgProjectileRecoveryDefinition& Definition,
 		const FRpgProjectileRecoveryPlacement& Placement);
 
+	/**
+	 * Whether a projectile can embed in Host: no other collectable, whose pickup would leave the arrow floating, and on
+	 * a moving host only one that every client can resolve, so the attachment replicates. Otherwise it drops.
+	 */
+	static bool CanEmbedIn(const UPrimitiveComponent* Host);
+
 	/** Server: adds Count items of its ammunition and keeps the later of its own and Deadline (world seconds). */
 	bool AddRecoveredAmmunition(int32 Count, double Deadline);
 

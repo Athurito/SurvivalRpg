@@ -41,6 +41,17 @@ ARpgEmbeddedProjectilePickup::ARpgEmbeddedProjectilePickup(const FObjectInitiali
 	InteractionCollision->SetCanEverAffectNavigation(false);
 }
 
+bool ARpgEmbeddedProjectilePickup::CanEmbedIn(const UPrimitiveComponent* Host)
+{
+	const AActor* HostActor = Host ? Host->GetOwner() : nullptr;
+	if (!HostActor || HostActor->IsA<ARpgWorldCollectable>())
+	{
+		return false;
+	}
+	return Host->Mobility != EComponentMobility::Movable
+		|| ((HostActor->GetIsReplicated() || HostActor->IsFullNameStableForNetworking()) && Host->IsSupportedForNetworking());
+}
+
 ARpgEmbeddedProjectilePickup* ARpgEmbeddedProjectilePickup::RecoverAmmunition(
 	UWorld* World,
 	const TSubclassOf<ARpgEmbeddedProjectilePickup> PickupClass,

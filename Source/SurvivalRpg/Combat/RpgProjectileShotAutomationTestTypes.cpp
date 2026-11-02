@@ -39,6 +39,7 @@ ARpgProjectileShotAutomationTestProjectile::ARpgProjectileShotAutomationTestProj
 	CollisionRadius = 2.0f;
 	MaxFlightSeconds = 5.0f;
 	ImpactLingerSeconds = 0.5f;
+	Recovery.BaseBreakChance = 0.3f;
 }
 
 ARpgProjectileRecoveryAutomationProjectile::ARpgProjectileRecoveryAutomationProjectile(const FObjectInitializer& ObjectInitializer)

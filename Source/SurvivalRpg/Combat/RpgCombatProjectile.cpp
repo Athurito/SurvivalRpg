@@ -24,6 +24,7 @@
 #include "SurvivalRpg/AbilitySystem/RpgGameplayEffectContext.h"
 #include "SurvivalRpg/Combat/RpgCombatImpact.h"
 #include "SurvivalRpg/Combat/RpgEmbeddedProjectilePickup.h"
+#include "SurvivalRpg/Core/RpgWorldCollectable.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Factions/RpgFactionSubsystem.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
@@ -507,10 +508,11 @@ ERpgProjectileRecoveryOutcome ARpgCombatProjectile::ResolveRecovery(
 		return ERpgProjectileRecoveryOutcome::None;
 	}
 
-	// A character never keeps a projectile: a hit on a player or an NPC only plays its feedback. A shield stops the
-	// projectile instead, so a blocked one may fall to the ground, but it never stays on the blocker.
+	// A character never keeps a projectile: a hit on a player or an NPC only plays its feedback, also on a corpse whose
+	// ability system is already gone (RNG-03c recovers NPC arrows through the corpse). A shield stops the projectile
+	// instead, so a blocked one may fall to the ground, but it never stays on the blocker.
 	const bool bBlocked = Result == ERpgProjectileImpactResult::Blocked || Result == ERpgProjectileImpactResult::PerfectBlocked;
-	if (Result != ERpgProjectileImpactResult::World && !bBlocked)
+	if ((Result != ERpgProjectileImpactResult::World || Cast<APawn>(Hit.GetActor())) && !bBlocked)
 	{
 		return ERpgProjectileRecoveryOutcome::None;
 	}
@@ -532,7 +534,7 @@ ERpgProjectileRecoveryOutcome ARpgCombatProjectile::ResolveRecovery(
 
 	const FVector Forward = FlightDirection.IsNearlyZero() ? -Hit.ImpactNormal : FlightDirection;
 	FRpgProjectileRecoveryPlacement Placement;
-	if (!bBlocked && Hit.GetComponent() && (!SurfaceRule || SurfaceRule->bCanEmbed))
+	if (!bBlocked && (!SurfaceRule || SurfaceRule->bCanEmbed) && ARpgEmbeddedProjectilePickup::CanEmbedIn(Hit.GetComponent()))
 	{
 		Placement.bEmbedded = true;
 		Placement.HostComponent = Hit.GetComponent();
@@ -541,18 +543,33 @@ ERpgProjectileRecoveryOutcome ARpgCombatProjectile::ResolveRecovery(
 	}
 	else
 	{
-		// It falls from just in front of the contact; without ground in reach it is lost.
+		// It falls from just in front of and above the contact, so a hit on sloped ground starts above it; without ground
+		// in reach it is lost. The hit surface itself may be the ground, unless it is the blocker.
 		const FVector Back = FVector(-Forward.X, -Forward.Y, 0.0f).GetSafeNormal();
-		const FVector DropStart = Hit.ImpactPoint + Back * RpgCombatProjectile::DropStandOff;
+		const FVector DropStart = Hit.ImpactPoint + Back * RpgCombatProjectile::DropStandOff
+			+ FVector(0.0f, 0.0f, RpgCombatProjectile::DropStandOff);
 		const FVector DropEnd = DropStart - FVector(0.0f, 0.0f, FMath::Max(0.0f, Recovery.MaxDropHeight));
 
+		// The projectile channel finds what a projectile would land on; triggers, interaction shapes and pickups ignore
+		// it. Characters and other collectables block it, so the fall passes through them.
 		FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(RpgCombatProjectileDrop), false, this);
-		QueryParams.AddIgnoredActor(Hit.GetActor());
-		FCollisionObjectQueryParams ObjectParams;
-		ObjectParams.AddObjectTypesToQuery(ECC_WorldStatic);
-		ObjectParams.AddObjectTypesToQuery(ECC_WorldDynamic);
+		if (bBlocked)
+		{
+			QueryParams.AddIgnoredActor(Hit.GetActor());
+		}
 		FHitResult Ground;
-		if (!GetWorld()->LineTraceSingleByObjectType(Ground, DropStart, DropEnd, ObjectParams, QueryParams))
+		bool bFoundGround = false;
+		for (int32 Attempt = 0; Attempt < RpgCombatProjectile::MaxPassThroughsPerSweep && !bFoundGround; ++Attempt)
+		{
+			if (!GetWorld()->LineTraceSingleByChannel(Ground, DropStart, DropEnd, Rpg_TraceChannel_Projectile, QueryParams))
+			{
+				break;
+			}
+			const AActor* GroundActor = Ground.GetActor();
+			bFoundGround = !Cast<APawn>(GroundActor) && !Cast<ARpgWorldCollectable>(GroundActor);
+			QueryParams.AddIgnoredActor(GroundActor);
+		}
+		if (!bFoundGround)
 		{
 			return ERpgProjectileRecoveryOutcome::None;
 		}

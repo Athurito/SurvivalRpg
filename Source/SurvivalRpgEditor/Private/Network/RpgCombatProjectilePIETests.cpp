@@ -702,6 +702,13 @@ NETWORK_TEST_CLASS(CombatProjectilePIE, "SurvivalRpg.Network")
 					ASSERT_THAT(IsNotNull(LaunchFromShooter(State, RecoveryShotOrigin, ShotId,
 						ARpgNetworkAutomationRecoverableProjectile::StaticClass(), Arrow, 0.0f)));
 				})
+			.UntilClients(TEXT("Every client's copy of the arrow reports it embedded"),
+				[](FNetworkState& State)
+				{
+					const ARpgCombatProjectile* Projectile = FindProjectile(State.World, ShotId);
+					return Projectile && Projectile->GetRecoveryOutcome() == ERpgProjectileRecoveryOutcome::Embedded;
+				},
+				NetworkTimeout())
 			.UntilServer(TEXT("The intact arrow leaves one pickup on the server"),
 				[this](FNetworkState& State)
 				{
@@ -717,8 +724,6 @@ NETWORK_TEST_CLASS(CombatProjectilePIE, "SurvivalRpg.Network")
 					ASSERT_THAT(IsTrue(Pickup->IsEmbedded()));
 					ASSERT_THAT(IsTrue(Pickup->GetAttachParentActor() == State.Wall));
 					ASSERT_THAT(IsTrue(FVector::Dist(Pickup->GetActorLocation(), RecoveryPickupLocation) < 5.0));
-					const ARpgCombatProjectile* Projectile = FindProjectile(State.World, ShotId);
-					ASSERT_THAT(IsTrue(!Projectile || Projectile->GetRecoveryOutcome() == ERpgProjectileRecoveryOutcome::Embedded));
 				})
 			.UntilClients(TEXT("Every client shows the one arrow embedded and attached to its copy of the wall"),
 				[](FNetworkState& State)
@@ -747,23 +752,30 @@ NETWORK_TEST_CLASS(CombatProjectilePIE, "SurvivalRpg.Network")
 				{
 					ARpgEmbeddedProjectilePickup* Pickup = FindPickup(State.World);
 					ASSERT_THAT(IsNotNull(Pickup));
-					ARpgPlayerState* Collector = nullptr;
+					TArray<ARpgPlayerState*> RemotePlayers;
 					for (APlayerState* PlayerState : GetPlayerStates(State))
 					{
 						const APlayerController* Controller = PlayerState ? Cast<APlayerController>(PlayerState->GetOwner()) : nullptr;
 						if (Controller && !Controller->IsLocalController())
 						{
-							Collector = Cast<ARpgPlayerState>(PlayerState);
-							break;
+							RemotePlayers.Add(Cast<ARpgPlayerState>(PlayerState));
 						}
 					}
-					URpgInventoryManagerComponent* Inventory = Collector ? Collector->GetInventoryManagerComponent() : nullptr;
-					ASSERT_THAT(IsNotNull(Inventory));
-					CollectorPlayerId = Collector->GetPlayerId();
-					TArray<FRpgInventoryItemId> Added;
-					Pickup->GetLootInventoryManager()->CollectRootItemsBatch(Inventory,
-						{ FRpgInventoryContainerHandle::MakeRoot(Inventory->GetDefaultContainerId()) }, FGuid::NewGuid(), Added);
-					ASSERT_THAT(IsTrue(Inventory->GetTotalItemCountByDefinition(Pickup->GetAmmunitionDefinition()) == 1));
+					ASSERT_THAT(IsTrue(RemotePlayers.Num() == ClientCount && RemotePlayers[0] && RemotePlayers[1]));
+					const TSubclassOf<URpgInventoryItemDefinition> Arrow = Pickup->GetAmmunitionDefinition();
+					const auto Collect = [Pickup](ARpgPlayerState* Player)
+					{
+						URpgInventoryManagerComponent* Inventory = Player->GetInventoryManagerComponent();
+						TArray<FRpgInventoryItemId> Added;
+						Pickup->GetLootInventoryManager()->CollectRootItemsBatch(Inventory,
+							{ FRpgInventoryContainerHandle::MakeRoot(Inventory->GetDefaultContainerId()) }, FGuid::NewGuid(), Added);
+						return Inventory->GetTotalItemCountByDefinition(Pickup->GetAmmunitionDefinition());
+					};
+					CollectorPlayerId = RemotePlayers[0]->GetPlayerId();
+					ASSERT_THAT(IsTrue(Collect(RemotePlayers[0]) == 1));
+					// The second player reaches for the same arrow in the same frame and gets nothing.
+					ASSERT_THAT(IsTrue(Collect(RemotePlayers[1]) == 0));
+					ASSERT_THAT(IsTrue(Arrow == Pickup->GetAmmunitionDefinition() && Pickup->GetAmmunitionCount() == 0));
 				})
 			.UntilServer(TEXT("The emptied pickup goes on the server"),
 				[this](FNetworkState& State) { return FindPickup(State.World) == nullptr; }, NetworkTimeout())
