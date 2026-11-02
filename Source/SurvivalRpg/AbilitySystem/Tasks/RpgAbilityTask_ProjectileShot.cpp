@@ -360,12 +360,19 @@ void URpgAbilityTask_ProjectileShot::FinishReleased(const float DrawFraction, AR
 	Result = ERpgProjectileShotResult::Released;
 	ReleaseBindings();
 	SetDrawingTag(false);
-	// The owner predicts the release presentation; the authority's tag reaches every other machine.
+	// The owner shows its own predicted release; the authority's tag reaches every other machine.
 	URpgAbilitySystemComponent* RpgASC = Cast<URpgAbilitySystemComponent>(CapturedASC.Get());
-	if (RpgASC && (bAuthority || bLocallyControlled) && Definition.ReleasePresentationSeconds > 0.0f)
+	if (RpgASC && Definition.ReleasePresentationSeconds > 0.0f)
 	{
-		RpgASC->AddTimedLooseGameplayTag(RpgGameplayTags::State_Ranged_Releasing, Definition.ReleasePresentationSeconds,
-			EGameplayTagReplicationState::TagAndCountToAll);
+		if (bLocallyControlled)
+		{
+			RpgASC->NoteLocalRangedRelease(Definition.ReleasePresentationSeconds);
+		}
+		if (bAuthority)
+		{
+			RpgASC->AddTimedLooseGameplayTag(RpgGameplayTags::State_Ranged_Releasing, Definition.ReleasePresentationSeconds,
+				EGameplayTagReplicationState::TagAndCountToAll);
+		}
 	}
 	UE_LOG(LogRpgAbilitySystem, Verbose, TEXT("Projectile shot of %s released at draw %.2f (%s)."),
 		*GetNameSafe(Ability), DrawFraction, Projectile ? *Projectile->GetName() : TEXT("predicted"));
@@ -446,11 +453,20 @@ void URpgAbilityTask_ProjectileShot::OnDestroy(const bool bInOwnerFinished)
 
 void URpgAbilityTask_ProjectileShot::SetDrawingTag(const bool bDrawing)
 {
-	UAbilitySystemComponent* ASC = CapturedASC.Get();
+	URpgAbilitySystemComponent* ASC = Cast<URpgAbilitySystemComponent>(CapturedASC.Get());
 	if (!ASC || bDrawingTagApplied == bDrawing || (!bAuthority && !bLocallyControlled))
 	{
 		return;
 	}
 	bDrawingTagApplied = bDrawing;
-	ASC->SetLooseGameplayTagCount(RpgGameplayTags::State_Ranged_Drawing, bDrawing ? 1 : 0, EGameplayTagReplicationState::TagAndCountToAll);
+	// A replicated count overwrites a predicted local one, so the owner keeps its own flag and only the authority
+	// writes the tag every other machine reads.
+	if (bLocallyControlled)
+	{
+		ASC->SetLocalRangedDrawing(bDrawing);
+	}
+	if (bAuthority)
+	{
+		ASC->SetLooseGameplayTagCount(RpgGameplayTags::State_Ranged_Drawing, bDrawing ? 1 : 0, EGameplayTagReplicationState::TagAndCountToAll);
+	}
 }

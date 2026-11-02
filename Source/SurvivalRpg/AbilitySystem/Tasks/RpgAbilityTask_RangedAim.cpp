@@ -61,12 +61,13 @@ void URpgAbilityTask_RangedAim::Activate()
 	}
 
 	CapturedASC = ASC;
+	CapturedAvatar = ASC->GetAvatarActor();
 	CapturedSpec = Spec->Handle;
 	// The cap is fixed for this activation; a passive gained while aiming applies to the next stance.
 	const float Tuned = URpgGameplayAbility::GetTunedValueForSpec(*Spec, *ActorInfo, RpgGameplayTags::Ability_Tuning_Ranged_AimMovement,
 		Definition.MovementSpeedLimit);
 	MovementSpeedLimit = FMath::IsFinite(Tuned) ? FMath::Max(0.0f, Tuned) : FMath::Max(0.0f, Definition.MovementSpeedLimit);
-	// A sprint already held when the stance starts does not interrupt it; one started afterwards does.
+	// A sprint already held when the stance starts does not interrupt it; once it ends, the next sprint does.
 	bSprintAtStart = ASC->IsSprintMovementActive();
 	CancelledHandle = Ability->OnGameplayAbilityCancelled.AddUObject(this, &ThisClass::HandleAbilityCancelled);
 	Token = ASC->BeginRangedAim(Ability, MovementSpeedLimit, Definition.CameraMode);
@@ -82,6 +83,11 @@ void URpgAbilityTask_RangedAim::TickTask(const float DeltaTime)
 	if (!Token || bInterrupting)
 	{
 		return;
+	}
+	const URpgAbilitySystemComponent* SprintSource = CapturedASC.Get();
+	if (bSprintAtStart && SprintSource && !SprintSource->IsSprintMovementActive())
+	{
+		bSprintAtStart = false;
 	}
 	const FName Reason = FindInterruption();
 	if (Reason.IsNone())
@@ -103,7 +109,8 @@ void URpgAbilityTask_RangedAim::TickTask(const float DeltaTime)
 FName URpgAbilityTask_RangedAim::FindInterruption() const
 {
 	const URpgAbilitySystemComponent* ASC = CapturedASC.Get();
-	const AActor* Avatar = GetAvatarActor();
+	const AActor* Avatar = CapturedAvatar.Get();
+	// The ability system drops every token when its avatar changes; an ability that survives that must not keep aiming.
 	if (!ASC || !Avatar || ASC->GetAvatarActor() != Avatar)
 	{
 		return RpgRangedAimTask::AvatarChanged;

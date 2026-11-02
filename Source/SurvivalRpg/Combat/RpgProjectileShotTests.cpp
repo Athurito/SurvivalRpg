@@ -239,6 +239,7 @@ bool FRpgProjectileShotPresentationTagsTest::RunTest(const FString& Parameters)
 	// The drawn shot shows as drawing on every machine; a cancel ends it without a release.
 	if (!TestTrue(TEXT("The shot activates"), Fixture.Activate())) return false;
 	TestTrue(TEXT("A drawn shot is drawing"), HasTag(RpgGameplayTags::State_Ranged_Drawing));
+	TestTrue(TEXT("The owner presents its own draw"), Fixture.ASC->IsRangedDrawingForPresentation());
 	Fixture.Advance(0.1f);
 	Fixture.Release();
 	TestFalse(TEXT("An early release stops drawing"), HasTag(RpgGameplayTags::State_Ranged_Drawing));
@@ -248,6 +249,8 @@ bool FRpgProjectileShotPresentationTagsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("A full draw releases"), Fixture.Shoot(1.0f), ERpgProjectileShotResult::Released);
 	TestFalse(TEXT("The released shot stops drawing"), HasTag(RpgGameplayTags::State_Ranged_Drawing));
 	TestTrue(TEXT("The release shows"), HasTag(RpgGameplayTags::State_Ranged_Releasing));
+	TestTrue(TEXT("The owner presents its own release"), Fixture.ASC->IsRangedReleasingForPresentation());
+	TestFalse(TEXT("The owner no longer presents a draw"), Fixture.ASC->IsRangedDrawingForPresentation());
 	return true;
 }
 

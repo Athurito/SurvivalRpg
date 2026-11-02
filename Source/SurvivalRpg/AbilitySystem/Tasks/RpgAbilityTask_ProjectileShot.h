@@ -108,7 +108,7 @@ private:
 	double GetElapsedSeconds() const;
 	bool MatchesActivation() const;
 	void ReleaseBindings();
-	/** Owner and authority: State.Ranged.Drawing follows this shot from activation until it ends. */
+	/** Owner and authority: the draw presentation follows this shot from activation until it ends. */
 	void SetDrawingTag(bool bDrawing);
 
 	FRpgProjectileShotDefinition Definition;

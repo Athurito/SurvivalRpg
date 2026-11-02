@@ -320,19 +320,48 @@ void URpgAbilitySystemComponent::RefreshRangedAim()
 {
 	RangedAimTokens.RemoveAll([this](const FRangedAimToken& Entry) { return !IsRangedAimTokenLive(Entry); });
 	const AActor* Avatar = GetAvatarActor();
-	const bool bMayWriteTag = Avatar && (Avatar->HasAuthority() || (AbilityActorInfo.IsValid() && AbilityActorInfo->IsLocallyControlled()));
 	const bool bAiming = !RangedAimTokens.IsEmpty();
-	if (bMayWriteTag && bAiming != bRangedAimTagApplied)
+	// Only the authority writes the tag: a replicated count overwrites a predicted local one on the owner. The owner
+	// reads its own tokens instead; the authority's count reaches every other machine and late joiners.
+	if (Avatar && Avatar->HasAuthority() && bAiming != bRangedAimTagApplied)
 	{
 		bRangedAimTagApplied = bAiming;
-		// The owner predicts the stance; the authority's count reaches every other machine and late joiners.
 		SetLooseGameplayTagCount(RpgGameplayTags::State_Ranged_Aiming, bAiming ? 1 : 0, EGameplayTagReplicationState::TagAndCountToAll);
 	}
+}
+
+void URpgAbilitySystemComponent::SetLocalRangedDrawing(const bool bDrawing)
+{
+	bLocalRangedDrawing = bDrawing;
+}
+
+void URpgAbilitySystemComponent::NoteLocalRangedRelease(const float Seconds)
+{
+	const UWorld* World = GetWorld();
+	LocalRangedReleaseEndSeconds = World && Seconds > 0.f ? World->GetTimeSeconds() + Seconds : -1.0;
+}
+
+bool URpgAbilitySystemComponent::IsRangedDrawingForPresentation() const
+{
+	return AbilityActorInfo.IsValid() && AbilityActorInfo->IsLocallyControlled()
+		? bLocalRangedDrawing : HasMatchingGameplayTag(RpgGameplayTags::State_Ranged_Drawing);
+}
+
+bool URpgAbilitySystemComponent::IsRangedReleasingForPresentation() const
+{
+	if (AbilityActorInfo.IsValid() && AbilityActorInfo->IsLocallyControlled())
+	{
+		const UWorld* World = GetWorld();
+		return World && World->GetTimeSeconds() < LocalRangedReleaseEndSeconds;
+	}
+	return HasMatchingGameplayTag(RpgGameplayTags::State_Ranged_Releasing);
 }
 
 void URpgAbilitySystemComponent::ResetRangedAim()
 {
 	RangedAimTokens.Reset();
+	bLocalRangedDrawing = false;
+	LocalRangedReleaseEndSeconds = -1.0;
 	if (bRangedAimTagApplied)
 	{
 		bRangedAimTagApplied = false;

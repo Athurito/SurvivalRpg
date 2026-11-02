@@ -68,6 +68,7 @@ private:
 	FRpgRangedAimDefinition Definition;
 	bool bDefinitionFromWeapon = false;
 	TWeakObjectPtr<URpgAbilitySystemComponent> CapturedASC;
+	TWeakObjectPtr<AActor> CapturedAvatar;
 	FGameplayAbilitySpecHandle CapturedSpec;
 	FDelegateHandle CancelledHandle;
 	uint32 Token = 0;

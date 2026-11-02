@@ -305,6 +305,16 @@ bool FRpgRangedAimInterruptionTest::RunTest(const FString& Parameters)
 	Fixture.TickAim(Aim);
 	TestTrue(TEXT("An earlier sprint leaves a new stance alone"), Fixture.IsActive(Aim));
 	Fixture.ASC->EndSprintMovement(IdleInstance, SprintLease);
+	Fixture.TickAim(Aim);
+	TestTrue(TEXT("Its end leaves the stance alone"), Fixture.IsActive(Aim));
+	// Once that sprint ended, a new one interrupts the stance.
+	const uint32 LaterSprintLease = Fixture.ASC->BeginSprintMovement(IdleInstance, 500.f);
+	Fixture.TickAim(Aim);
+	TestFalse(TEXT("A sprint started after the earlier one ended interrupts the stance"), Fixture.IsActive(Aim));
+	Fixture.ASC->EndSprintMovement(IdleInstance, LaterSprintLease);
+	Fixture.Release(AimInput);
+	Fixture.Press(AimInput);
+	TestTrue(TEXT("A fresh press aims again after the sprint"), Fixture.IsActive(Aim));
 
 	// Leaving the ground, by a jump, a fall or traversal, interrupts it.
 	Fixture.Movement->SetMovementMode(MOVE_Falling);

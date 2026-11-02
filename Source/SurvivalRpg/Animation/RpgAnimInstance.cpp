@@ -162,8 +162,8 @@ void URpgAnimInstance::CaptureRangedAnimationState()
 		return;
 	}
 	bRangedAimActive = ASC->IsRangedAimActive();
-	bRangedDrawing = ASC->HasMatchingGameplayTag(RpgGameplayTags::State_Ranged_Drawing);
-	bRangedReleasing = ASC->HasMatchingGameplayTag(RpgGameplayTags::State_Ranged_Releasing);
+	bRangedDrawing = ASC->IsRangedDrawingForPresentation();
+	bRangedReleasing = ASC->IsRangedReleasingForPresentation();
 	const float Pitch = FRotator::NormalizeAxis(Pawn->GetBaseAimRotation().Pitch - Pawn->GetActorRotation().Pitch);
 	RangedAimPitch = FMath::IsFinite(Pitch) ? FMath::Clamp(Pitch, -90.f, 90.f) : 0.f;
 }

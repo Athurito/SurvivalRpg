@@ -103,6 +103,19 @@ public:
 	float GetRangedAimMovementSpeedLimit() const;
 	/** Camera mode of the oldest live token that names one, or null. Local presentation only. */
 	TSubclassOf<URpgCameraMode> GetRangedAimCameraMode() const;
+	/**
+	 * Locally controlled owner only: its own predicted draw, which presentation reads without waiting for the server.
+	 * Never replicated; the authority's State.Ranged.Drawing serves every other machine.
+	 */
+	void SetLocalRangedDrawing(bool bDrawing);
+	/** Locally controlled owner only: its own predicted release shows for Seconds. Never replicated. */
+	void NoteLocalRangedRelease(float Seconds);
+	/** Presentation read model: the locally controlled owner's prediction, the authority's replicated tag elsewhere. */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Ranged")
+	bool IsRangedDrawingForPresentation() const;
+	/** Presentation read model of a recent release, like IsRangedDrawingForPresentation. */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Ranged")
+	bool IsRangedReleasingForPresentation() const;
 
 	/**
 	 * Acquires the facing commitment of this exact predicted/authority activation, replacing an older one.
@@ -343,6 +356,9 @@ private:
 	TArray<FRangedAimToken, TInlineAllocator<2>> RangedAimTokens;
 	uint32 LastRangedAimToken = 0;
 	bool bRangedAimTagApplied = false;
+	// The owner's own predicted presentation; the authority alone writes the replicated tags others read.
+	bool bLocalRangedDrawing = false;
+	double LocalRangedReleaseEndSeconds = -1.0;
 
 	void ResetFacingCommitment();
 	TWeakObjectPtr<UGameplayAbility> FacingCommitmentAbility;

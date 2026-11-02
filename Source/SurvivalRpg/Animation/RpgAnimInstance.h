@@ -80,11 +80,11 @@ public:
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Ranged Animation")
 	bool bRangedAimActive = false;
 
-	/** A projectile shot is nocked or drawn (State.Ranged.Drawing). Game-thread snapshot; presentation only. */
+	/** A projectile shot is nocked or drawn: the owner's prediction, State.Ranged.Drawing elsewhere. Game-thread snapshot. */
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Ranged Animation")
 	bool bRangedDrawing = false;
 
-	/** A shot released moments ago (State.Ranged.Releasing). Game-thread snapshot; presentation only. */
+	/** A shot released moments ago: the owner's prediction, State.Ranged.Releasing elsewhere. Game-thread snapshot. */
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Ranged Animation")
 	bool bRangedReleasing = false;
 
