@@ -2,6 +2,7 @@
 
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgStaminaSet.h"
 #include "SurvivalRpg/AbilitySystem/Tasks/RpgAbilityTask_ProjectileShot.h"
+#include "SurvivalRpg/Combat/RpgEmbeddedProjectilePickup.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_Ammunition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
@@ -38,6 +39,24 @@ ARpgProjectileShotAutomationTestProjectile::ARpgProjectileShotAutomationTestProj
 	CollisionRadius = 2.0f;
 	MaxFlightSeconds = 5.0f;
 	ImpactLingerSeconds = 0.5f;
+}
+
+ARpgProjectileRecoveryAutomationProjectile::ARpgProjectileRecoveryAutomationProjectile(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	ImpactRecovery = ERpgProjectileImpactRecovery::Recoverable;
+	Recovery.PickupClass = ARpgEmbeddedProjectilePickup::StaticClass();
+}
+
+URpgProjectileRecoveryAutomationArrowDefinition::URpgProjectileRecoveryAutomationArrowDefinition(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	DisplayName = FText::FromString(TEXT("Automation Recoverable Arrow"));
+	RpgProjectileShotAutomationTestTypes::AddArrowFragments(*this, Fragments,
+		CreateDefaultSubobject<URpgInventoryFragment_SpatialItem>(TEXT("Spatial")),
+		CreateDefaultSubobject<URpgInventoryFragment_ItemTraits>(TEXT("Traits")),
+		CreateDefaultSubobject<URpgInventoryFragment_Ammunition>(TEXT("Ammunition")),
+		ARpgProjectileRecoveryAutomationProjectile::StaticClass());
 }
 
 void ARpgProjectileShotAutomationFailingProjectile::BeginPlay()

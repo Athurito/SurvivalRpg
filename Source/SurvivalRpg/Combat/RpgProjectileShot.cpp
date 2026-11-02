@@ -141,6 +141,12 @@ namespace RpgProjectileShot
 			Tuning.ReleaseStaminaCost = Tune(RpgGameplayTags::Ability_Tuning_Ranged_ReleaseCost, Definition.ReleaseStaminaCost);
 			Tuning.HoldStaminaPerSecond = Tune(RpgGameplayTags::Ability_Tuning_Ranged_HoldDrain, Definition.HoldStaminaPerSecond);
 		}
+		const TSubclassOf<ARpgCombatProjectile> ProjectileClass =
+			URpgInventoryFragment_Ammunition::FindProjectileClass(Definition.AmmunitionItemDefinition);
+		const float BaseBreakChance = ProjectileClass
+			? ProjectileClass->GetDefaultObject<ARpgCombatProjectile>()->GetRecoveryDefinition().BaseBreakChance
+			: 0.0f;
+		Tuning.BreakChance = FMath::Min(1.0f, Tune(RpgGameplayTags::Ability_Tuning_Ranged_BreakChance, BaseBreakChance));
 		return Tuning;
 	}
 
@@ -273,6 +279,11 @@ namespace RpgProjectileShot
 		Params.Damage = EvaluateCurve(Definition.DamageByDrawFraction, Fraction);
 		Params.StaggerDamage = Definition.StaggerDamage * Fraction;
 		Params.ShotId = ShotId;
+		Params.BreakChance = Tuning.BreakChance;
+		// Only an arrow the shooter paid for comes back; unlimited fire never creates ammunition.
+		Params.RecoveryItemDefinition = AmmunitionPolicy == ERpgProjectileAmmunitionPolicy::ShooterInventory
+			? Definition.AmmunitionItemDefinition
+			: nullptr;
 		if (!FMath::IsFinite(Params.Speed) || Params.Speed <= 0.0f || !FMath::IsFinite(Params.Damage) || Params.Damage < 0.0f)
 		{
 			return ERpgProjectileShotResult::InvalidShot;

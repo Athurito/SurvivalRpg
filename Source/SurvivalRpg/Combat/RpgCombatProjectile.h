@@ -8,14 +8,18 @@
 #include "RpgCombatProjectile.generated.h"
 
 class APawn;
+class ARpgEmbeddedProjectilePickup;
 class UAbilitySystemComponent;
 class UGameplayAbility;
 class UGameplayEffect;
+class UPhysicalMaterial;
+class UPrimitiveComponent;
 class UProjectileMovementComponent;
+class URpgInventoryItemDefinition;
 class USoundBase;
 class USphereComponent;
 
-/** What becomes of the projectile's ammunition when it lands. The projectile only carries the policy; recovery acts on it. */
+/** What becomes of the projectile's ammunition when it lands. */
 UENUM(BlueprintType)
 enum class ERpgProjectileImpactRecovery : uint8
 {
@@ -23,6 +27,83 @@ enum class ERpgProjectileImpactRecovery : uint8
 	Recoverable,
 	/** Burns, shatters or dissolves on impact: no break roll, embedding, pickup or recovery credit (magic arrows, spells). */
 	ConsumedOnImpact,
+};
+
+/** What the server's impact made of a recoverable projectile's ammunition. Replicated with the stop; presentation only. */
+UENUM(BlueprintType)
+enum class ERpgProjectileRecoveryOutcome : uint8
+{
+	/** Nothing to recover: consumed on impact, no recovery credit, a character hit, or an expired flight. */
+	None,
+	/** The break roll broke the projectile; it grants no ammunition. */
+	Broken,
+	/** Intact and embedded where it hit, as a world pickup that follows a moving hit component. */
+	Embedded,
+	/** Intact but unable to embed, such as off a shield or an unsuitable surface: a pickup on the ground near the contact. */
+	Dropped,
+};
+
+/** How one physical material changes recoverable projectiles that hit it. Designer data. */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgProjectileSurfaceRecoveryRule
+{
+	GENERATED_BODY()
+
+	/** Physical material of the hit surface this rule applies to. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Recovery")
+	TObjectPtr<UPhysicalMaterial> PhysicalMaterial;
+
+	/** Factor on the launch's break chance for hits on this material; the result is clamped to 0..1. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Recovery", meta = (ClampMin = "0.0"))
+	float BreakChanceMultiplier = 1.0f;
+
+	/** Whether an intact projectile can embed in this material. Otherwise it drops to the ground near the contact. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Recovery")
+	bool bCanEmbed = true;
+};
+
+/**
+ * How a recoverable projectile class leaves its ammunition in the world (ranged combat roadmap RNG-03b). Designer data
+ * on the projectile class; the server reads it once at the impact.
+ */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgProjectileRecoveryDefinition
+{
+	GENERATED_BODY()
+
+	/** Pickup an intact projectile leaves, embedded or on the ground. Required for recovery; none recovers nothing. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Recovery")
+	TSubclassOf<ARpgEmbeddedProjectilePickup> PickupClass;
+
+	/**
+	 * Chance from 0 to 1 that the projectile breaks at its impact. The launching ability tunes it once per activation
+	 * through Ability.Tuning.Ranged.BreakChance; surface rules then scale it at the impact.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Recovery", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float BaseBreakChance = 0.3f;
+
+	/** Per-material break chance factors and embedding; a material without a rule embeds with the unscaled chance. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Recovery")
+	TArray<FRpgProjectileSurfaceRecoveryRule> SurfaceRules;
+
+	/** Seconds after the impact until an uncollected pickup expires with its remaining ammunition. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Recovery", meta = (ClampMin = "1.0", Units = "Seconds"))
+	float RecoveryLifetimeSeconds = 600.0f;
+
+	/**
+	 * Separate pickups one hit component holds before further intact projectiles join the nearest pickup of the same
+	 * ammunition on it within GroupRadius instead of adding an actor.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Recovery", meta = (ClampMin = "1"))
+	int32 MaxSeparatePickupsPerHost = 10;
+
+	/** Distance in cm within which a projectile joins an existing pickup once its hit component holds the maximum. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Recovery", meta = (ClampMin = "0.0", Units = "Centimeters"))
+	float GroupRadius = 100.0f;
+
+	/** Largest fall in cm from the contact to the ground for a dropped projectile; without ground in reach it is lost. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Recovery", meta = (ClampMin = "0.0", Units = "Centimeters"))
+	float MaxDropHeight = 500.0f;
 };
 
 /** How the server resolved a projectile's flight. Replicated with the stop for presentation; content only reads it. */
@@ -80,6 +161,20 @@ struct SURVIVALRPG_API FRpgProjectileLaunchParams
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projectile")
 	int32 ShotId = 0;
+
+	/**
+	 * Ammunition an intact recoverable projectile returns, set only when the launch paid a real item for it, such as an
+	 * arrow consumed from the shooter's inventory. None grants no recovery credit.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projectile|Recovery")
+	TSubclassOf<URpgInventoryItemDefinition> RecoveryItemDefinition;
+
+	/**
+	 * Chance from 0 to 1 that a recoverable projectile breaks, resolved once by the launching ability with its passive
+	 * tuning. Negative uses the projectile class's BaseBreakChance.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projectile|Recovery", meta = (ClampMax = "1.0"))
+	float BreakChance = -1.0f;
 };
 
 /** The replicated end of a flight: where it stopped and how the server resolved it. */
@@ -100,6 +195,10 @@ struct FRpgProjectileImpactState
 	UPROPERTY()
 	FVector_NetQuantizeNormal Normal = FVector::UpVector;
 
+	/** What the impact made of the ammunition. */
+	UPROPERTY()
+	ERpgProjectileRecoveryOutcome Recovery = ERpgProjectileRecoveryOutcome::None;
+
 	bool HasStopped() const { return Result != ERpgProjectileImpactResult::None; }
 };
 
@@ -114,8 +213,13 @@ struct FRpgProjectileImpactState
  * are captured at launch, so a weapon swap, the shooter's death or a respawn never changes a projectile in flight.
  *
  * Launching needs no equipment or inventory: any ability, NPC or system can launch one. Blueprint subclasses set the
- * class data below and attach their flight presentation under VisualRoot; when the flight stops, the projectile
- * deactivates every FX system and fades every audio component on its own.
+ * class data below and attach their flight presentation under VisualRoot; when the flight stops, the projectile hides
+ * its meshes, deactivates every FX system and fades every audio component on its own.
+ *
+ * A Recoverable projectile launched with a RecoveryItemDefinition returns its ammunition (RNG-03b): at a world impact or
+ * a block the server rolls once whether it broke, and an intact one leaves an ARpgEmbeddedProjectilePickup, embedded in
+ * the hit surface or dropped near a shield. A character never keeps one: a hit on a player or an NPC only plays its
+ * feedback; corpse recovery from NPCs is RNG-03c.
  */
 UCLASS(Blueprintable)
 class SURVIVALRPG_API ARpgCombatProjectile : public AActor, public IGenericTeamAgentInterface
@@ -203,6 +307,16 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rpg|Combat|Projectile")
 	ERpgProjectileImpactRecovery GetImpactRecovery() const { return ImpactRecovery; }
 
+	/** What the impact made of the ammunition, or None while the projectile flies; replicated. */
+	UFUNCTION(BlueprintPure, Category = "Rpg|Combat|Projectile")
+	ERpgProjectileRecoveryOutcome GetRecoveryOutcome() const { return ImpactState.Recovery; }
+
+	/** The class's recovery data; only a Recoverable class uses it. */
+	const FRpgProjectileRecoveryDefinition& GetRecoveryDefinition() const { return Recovery; }
+
+	/** Server: the intact projectile's pickup, or null when the impact left none or it is gone. */
+	ARpgEmbeddedProjectilePickup* GetRecoveredPickup() const { return RecoveredPickup.Get(); }
+
 	UProjectileMovementComponent* GetProjectileMovement() const { return ProjectileMovement; }
 	TSubclassOf<UGameplayEffect> GetDamageEffectClass() const { return DamageEffectClass; }
 
@@ -216,6 +330,10 @@ public:
 	FVector GetImpactLocationForTests() const { return ImpactState.Location; }
 	float GetMaxFlightSecondsForTests() const { return MaxFlightSeconds; }
 	void SetImpactCueForTests(const FGameplayTag& CueTag, bool bOnTargets) { ImpactCueTag = CueTag; bImpactCueOnTargets = bOnTargets; }
+	/** Replaces the break roll's random value from 0 to 1; the projectile stays intact when the value reaches the chance. */
+	void SetBreakRollForTests(float Roll) { BreakRollForTests = Roll; }
+	float GetBreakChanceForTests() const { return LaunchBreakChance; }
+	TSubclassOf<URpgInventoryItemDefinition> GetRecoveryItemDefinitionForTests() const { return RecoveryItemDefinition; }
 #endif
 
 protected:
@@ -306,11 +424,19 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Recovery")
 	ERpgProjectileImpactRecovery ImpactRecovery = ERpgProjectileImpactRecovery::ConsumedOnImpact;
 
+	/** How an intact projectile of this class is recovered. Designer data; read only under Recoverable. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Recovery",
+		meta = (EditCondition = "ImpactRecovery == ERpgProjectileImpactRecovery::Recoverable"))
+	FRpgProjectileRecoveryDefinition Recovery;
+
 private:
 	void InitializeLaunch(const FRpgProjectileLaunchParams& Params, const FVector& Direction, const FGameplayEffectSpecHandle& InDamageSpec);
 	bool SweepFlightSegment(const FVector& Start, const FVector& End, FHitResult& OutHit);
 	bool ShouldPassThrough(const FHitResult& Hit) const;
 	void ResolveImpact(const FHitResult& Hit);
+	/** Server, once per impact: the break roll and the pickup of an intact projectile. Returns what became of it. */
+	ERpgProjectileRecoveryOutcome ResolveRecovery(const FHitResult& Hit, ERpgProjectileImpactResult Result, const FVector& FlightDirection);
+	const FRpgProjectileSurfaceRecoveryRule* FindSurfaceRule(const FHitResult& Hit) const;
 	ERpgProjectileImpactResult ApplyImpactDamage(const FHitResult& Hit, UAbilitySystemComponent* TargetASC);
 	void ExecuteImpactCue(const FHitResult& Hit) const;
 	void ExpireFlight();
@@ -340,6 +466,19 @@ private:
 	/** World launch point in cm. Range and defense measure from it on the server; clients play the launch sound there. */
 	UPROPERTY(Replicated)
 	FVector_NetQuantize10 LaunchOrigin = FVector::ZeroVector;
+
+	/** Server: the ammunition an intact projectile returns; none grants no recovery credit. */
+	TSubclassOf<URpgInventoryItemDefinition> RecoveryItemDefinition;
+
+	/** Server: the break chance the launch resolved, before surface rules. */
+	float LaunchBreakChance = 0.0f;
+
+	/** Server: the pickup this projectile's ammunition went to. */
+	TWeakObjectPtr<ARpgEmbeddedProjectilePickup> RecoveredPickup;
+
+#if WITH_DEV_AUTOMATION_TESTS
+	TOptional<float> BreakRollForTests;
+#endif
 
 	/** Server: the spawn transform of a deferred launch that has not finished yet. */
 	FTransform DeferredSpawnTransform;

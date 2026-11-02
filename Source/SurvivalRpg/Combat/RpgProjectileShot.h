@@ -150,6 +150,13 @@ struct SURVIVALRPG_API FRpgProjectileShotTuning
 	/** Stamina per second the nocked shot drains. */
 	UPROPERTY(BlueprintReadOnly, Category = "Shot")
 	float HoldStaminaPerSecond = 0.0f;
+
+	/**
+	 * Chance from 0 to 1 that the shot's recoverable projectile breaks at its impact: the projectile class's
+	 * BaseBreakChance tuned by Ability.Tuning.Ranged.BreakChance, before the hit surface's rules.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Shot")
+	float BreakChance = 0.0f;
 };
 
 /** A shooter's release: how long it drew, where its camera aimed, and the shot's identity. */
@@ -257,7 +264,8 @@ namespace RpgProjectileShot
 	 * Server: the exactly-once release transaction of Ability's current activation. Spawns the projectile deferred,
 	 * consumes one ammunition item under ShooterInventory, pays the release stamina and finishes the spawn. Any failure
 	 * undoes what it already took and destroys the unfinished projectile, so a failed release launches nothing and costs
-	 * nothing. A returned arrow is a new item in the first free cell, not necessarily the stack it came from.
+	 * nothing. A returned arrow is a new item in the first free cell, not necessarily the stack it came from. Only an
+	 * arrow consumed from the inventory can be recovered after its impact; Unlimited shots return no ammunition.
 	 */
 	SURVIVALRPG_API ERpgProjectileShotResult CommitShot(
 		UGameplayAbility* Ability,
