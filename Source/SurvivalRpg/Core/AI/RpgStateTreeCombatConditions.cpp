@@ -35,6 +35,14 @@ bool FRpgStateTreeCombatTargetDistanceCondition::TestCondition(FStateTreeExecuti
 	return bPasses != bInvert;
 }
 
+bool FRpgStateTreeCombatTargetInLineOfFireCondition::TestCondition(FStateTreeExecutionContext& Context) const
+{
+	const APawn* Pawn = ResolveConditionPawn(Context);
+	const URpgAIAttackDriverComponent* Driver = Pawn ? Pawn->FindComponentByClass<URpgAIAttackDriverComponent>() : nullptr;
+	const bool bPasses = Driver && Driver->HasLineOfFire(Driver->GetCombatTarget());
+	return bPasses != bInvert;
+}
+
 bool FRpgStateTreeOwnerHasTagsCondition::TestCondition(FStateTreeExecutionContext& Context) const
 {
 	const FInstanceDataType& InstanceData = Context.GetInstanceData(*this);

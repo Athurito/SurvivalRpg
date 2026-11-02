@@ -7,7 +7,7 @@
 #include "RpgStateTreeCombatTasks.generated.h"
 
 /*
- * Server-side StateTree tasks for melee enemies. They compose the AI drivers (URpgAIAttackDriverComponent,
+ * Server-side StateTree tasks for melee and ranged enemies. They compose the AI drivers (URpgAIAttackDriverComponent,
  * URpgAIBlockDriverComponent) that GF_Combat_Core adds to every AI character: the combat control task hands the drivers
  * to the StateTree and owns target choice, the others move, attack, block or wait against the drivers' combat target.
  * Parameters are designer tuning per StateTree; the remaining instance fields are runtime state.
@@ -191,6 +191,57 @@ struct SURVIVALRPG_API FRpgStateTreeMeleeAttackTask : public FStateTreeAITaskBas
 
 	/** Picks a step count from the weights; RandomValue in [0, 1). One step when no weight is positive. */
 	static int32 PickStepCount(TConstArrayView<float> StepCountWeights, float RandomValue);
+};
+
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgStateTreeRangedAttackTaskInstanceData
+{
+	GENERATED_BODY()
+
+	/**
+	 * Shortest and longest time in seconds the full draw is held before the release, so the target can read the shot
+	 * and dodge it. Designer tuning.
+	 */
+	UPROPERTY(EditAnywhere, Category = Parameter, meta = (ClampMin = "0.0", Units = "s"))
+	float AimHoldMin = 0.4f;
+
+	UPROPERTY(EditAnywhere, Category = Parameter, meta = (ClampMin = "0.0", Units = "s"))
+	float AimHoldMax = 0.8f;
+
+	/** Seconds the target may stay out of the line of fire before the drawn shot is lowered and the task fails. */
+	UPROPERTY(EditAnywhere, Category = Parameter, meta = (ClampMin = "0.0", Units = "s"))
+	float LineOfFireGrace = 1.0f;
+
+	/** Seconds from the start of the draw until an unreleased shot is lowered and the task fails. */
+	UPROPERTY(EditAnywhere, Category = Parameter, meta = (ClampMin = "0.1", Units = "s"))
+	float Timeout = 6.0f;
+
+	float HoldLeft = 0.0f;
+	float TimeOutOfLine = 0.0f;
+	float TimeLeft = 0.0f;
+	bool bReleased = false;
+};
+
+/**
+ * Stops, draws the main-hand ranged weapon's shot through the attack driver, holds the full draw for a readable moment
+ * and releases while the combat target is in the line of fire. Meanwhile it points the controller's view at the
+ * ballistic aim above the target. Succeeds when the released shot's ability ends. Fails without a target or a line of
+ * fire at the start, when the shot cannot start or is interrupted, after LineOfFireGrace without a line of fire, or on
+ * timeout; an unreleased shot is lowered without cost.
+ */
+USTRUCT(meta = (DisplayName = "Ranged Attack", Category = "Rpg|AI"))
+struct SURVIVALRPG_API FRpgStateTreeRangedAttackTask : public FStateTreeAITaskBase
+{
+	GENERATED_BODY()
+
+	using FInstanceDataType = FRpgStateTreeRangedAttackTaskInstanceData;
+
+	FRpgStateTreeRangedAttackTask();
+
+	virtual const UStruct* GetInstanceDataType() const override { return FInstanceDataType::StaticStruct(); }
+	virtual EStateTreeRunStatus EnterState(FStateTreeExecutionContext& Context, const FStateTreeTransitionResult& Transition) const override;
+	virtual EStateTreeRunStatus Tick(FStateTreeExecutionContext& Context, const float DeltaTime) const override;
+	virtual void ExitState(FStateTreeExecutionContext& Context, const FStateTreeTransitionResult& Transition) const override;
 };
 
 USTRUCT(BlueprintType)

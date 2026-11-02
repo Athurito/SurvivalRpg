@@ -793,4 +793,44 @@ bool FRpgProjectileShotAmmunitionPolicyTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgProjectileShotLaunchDirectionTest,
+	"SurvivalRpg.Combat.ProjectileShot.LaunchDirectionArcsOntoTheTarget",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgProjectileShotLaunchDirectionTest::RunTest(const FString& Parameters)
+{
+	constexpr float Speed = 4000.0f;
+	constexpr float Gravity = 980.0f;
+	const FVector Origin(0.0f, 0.0f, 100.0f);
+	// Flies the launch analytically and returns its height above Target where it passes Target's horizontal distance.
+	const auto MissAtTarget = [&Origin](const FVector& Target, const FVector& Direction)
+	{
+		const double Horizontal = (Target - Origin).Size2D();
+		const double HorizontalSpeed = Speed * Direction.Size2D();
+		const double Seconds = Horizontal / HorizontalSpeed;
+		return Origin.Z + Speed * Direction.Z * Seconds - 0.5 * Gravity * FMath::Square(Seconds) - Target.Z;
+	};
+
+	for (const FVector& Target : { FVector(1500.0f, 0.0f, 100.0f), FVector(0.0f, 2500.0f, -200.0f), FVector(-900.0f, 600.0f, 400.0f) })
+	{
+		FVector Direction;
+		TestTrue(FString::Printf(TEXT("A target at %s is in reach"), *Target.ToString()),
+			RpgProjectileShot::SolveLaunchDirection(Origin, Target, Speed, Gravity, Direction));
+		TestTrue(TEXT("The direction is a unit vector"), Direction.IsNormalized());
+		TestTrue(TEXT("The direction heads toward the target"), (Direction.GetSafeNormal2D() | (Target - Origin).GetSafeNormal2D()) > 0.999f);
+		TestTrue(TEXT("The direction aims above the straight line against gravity"), Direction.Z > (Target - Origin).GetSafeNormal().Z);
+		TestEqual(TEXT("The arc passes the target"), MissAtTarget(Target, Direction), 0.0, 1.0);
+	}
+
+	const FVector Far(100000.0f, 0.0f, 100.0f);
+	FVector Direction;
+	TestFalse(TEXT("A target beyond the arc's reach is out of reach"), RpgProjectileShot::SolveLaunchDirection(Origin, Far, Speed, Gravity, Direction));
+	TestTrue(TEXT("It is then aimed at directly"), Direction.Equals((Far - Origin).GetSafeNormal(), 1.0e-4f));
+	TestTrue(TEXT("Without gravity the target is in reach"), RpgProjectileShot::SolveLaunchDirection(Origin, Far, Speed, 0.0f, Direction));
+	TestTrue(TEXT("and aimed at directly"), Direction.Equals((Far - Origin).GetSafeNormal(), 1.0e-4f));
+	TestFalse(TEXT("A target straight above has no arc"), RpgProjectileShot::SolveLaunchDirection(Origin, Origin + FVector(0.0f, 0.0f, 500.0f), Speed, Gravity, Direction));
+	return true;
+}
+
 #endif

@@ -38,6 +38,23 @@ struct SURVIVALRPG_API FRpgStateTreeCombatTargetDistanceCondition : public FStat
 	bool bInvert = false;
 };
 
+/**
+ * Passes while the straight path from the main-hand ranged weapon's launch point to the combat target's body is clear on
+ * the projectile channel, so a ranged enemy repositions instead of shooting into a wall or an ally. Server-side, reads
+ * the pawn's URpgAIAttackDriverComponent; fails without a target or a ranged weapon.
+ */
+USTRUCT(meta = (DisplayName = "Combat Target In Line Of Fire", Category = "Rpg|AI"))
+struct SURVIVALRPG_API FRpgStateTreeCombatTargetInLineOfFireCondition : public FStateTreeAIConditionBase
+{
+	GENERATED_BODY()
+
+	virtual bool TestCondition(FStateTreeExecutionContext& Context) const override;
+
+	/** Passes when there is no line of fire, also without a target. */
+	UPROPERTY(EditAnywhere, Category = Parameter)
+	bool bInvert = false;
+};
+
 USTRUCT(BlueprintType)
 struct SURVIVALRPG_API FRpgStateTreeOwnerHasTagsConditionInstanceData
 {

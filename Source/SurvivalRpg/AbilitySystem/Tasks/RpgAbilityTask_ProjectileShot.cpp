@@ -70,6 +70,10 @@ void URpgAbilityTask_ProjectileShot::Activate()
 			return;
 		}
 		Definition = Weapon->GetShotDefinition();
+		if (Weapon->GetAmmunitionPolicy() == ERpgProjectileAmmunitionPolicy::Unlimited)
+		{
+			AmmunitionPolicy = ERpgProjectileAmmunitionPolicy::Unlimited;
+		}
 	}
 	TArray<FText> DefinitionErrors;
 	RpgProjectileShot::ValidateDefinition(Definition, DefinitionErrors);

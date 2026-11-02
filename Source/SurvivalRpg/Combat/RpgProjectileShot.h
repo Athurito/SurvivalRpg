@@ -244,6 +244,19 @@ namespace RpgProjectileShot
 	/** The draw fraction from 0 to 1 of a shot drawn for DrawSeconds. */
 	SURVIVALRPG_API float GetDrawFraction(float DrawSeconds, const FRpgProjectileShotTuning& Tuning);
 
+	/** Launch speed in cm/s of Definition at DrawFraction from 0 to 1. */
+	SURVIVALRPG_API float GetLaunchSpeed(const FRpgProjectileShotDefinition& Definition, float DrawFraction);
+
+	/** The launch point of a shot by a shooter at ShooterLocation aiming at AimYawDegrees: MuzzleOffset in the aim's yaw. */
+	SURVIVALRPG_API FVector GetMuzzleLocation(const FRpgProjectileShotDefinition& Definition, const FVector& ShooterLocation, float AimYawDegrees);
+
+	/**
+	 * The direction to launch a projectile at Speed (cm/s) from Origin so that it passes Target on its low arc under
+	 * Gravity (cm/s², positive pulls down). False when Target is out of reach or the input is degenerate; OutDirection
+	 * then points straight at Target.
+	 */
+	SURVIVALRPG_API bool SolveLaunchDirection(const FVector& Origin, const FVector& Target, float Speed, float Gravity, FVector& OutDirection);
+
 	/** The inventory of the PlayerState that owns AbilitySystem, or null for any other owner such as an NPC pawn. */
 	SURVIVALRPG_API URpgInventoryManagerComponent* FindShooterInventory(const UAbilitySystemComponent* AbilitySystem);
 

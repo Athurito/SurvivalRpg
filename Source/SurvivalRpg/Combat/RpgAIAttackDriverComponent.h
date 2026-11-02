@@ -10,6 +10,7 @@ class UAbilitySystemComponent;
 class UGameplayAbility;
 class URpgAbilitySystemComponent;
 class URpgHealthComponent;
+class URpgRangedWeaponInstance;
 
 /** How an AI chooses its combat target among hostile pawns while a StateTree controls the driver. */
 UENUM(BlueprintType)
@@ -21,7 +22,12 @@ enum class ERpgAICombatTargetPolicy : uint8
 	LastAttacker,
 };
 
-UCLASS(BlueprintType, Blueprintable, ClassGroup = (Combat), meta = (BlueprintSpawnableComponent, DisplayName = "AI Melee Attack Driver"))
+/**
+ * Server-side attack driver of an AI character. On timers it attacks with a melee weapon by itself; under external
+ * control, normally a StateTree, it runs melee attack sequences and ranged shots on command against its combat target.
+ * Both use the ability on the weapon's attack input that a player uses.
+ */
+UCLASS(BlueprintType, Blueprintable, ClassGroup = (Combat), meta = (BlueprintSpawnableComponent, DisplayName = "AI Attack Driver"))
 class SURVIVALRPG_API URpgAIAttackDriverComponent : public UActorComponent
 {
 	GENERATED_BODY()
@@ -68,7 +74,8 @@ public:
 	/**
 	 * Server, external control: faces the target and presses the attack input, then presses once more per running
 	 * combo step until StepCount steps (1 or more) have started; the weapon's chain may end earlier. False when the
-	 * attack cannot start now: no valid target, a blocking state tag, no primary attack, or an activation failure.
+	 * attack cannot start now: no valid target, a blocking state tag, no melee primary attack (a ranged weapon has
+	 * none), or an activation failure.
 	 */
 	bool StartAttackSequence(int32 StepCount);
 
@@ -90,6 +97,46 @@ public:
 	 */
 	uint32 GetTargetAttackCount() const { return TargetAttackCount; }
 
+	/**
+	 * Server, external control: faces the combat target and starts the shot ability on the attack input of the main-hand
+	 * ranged weapon, such as an enemy's bow: the same ability a player draws with. The draw lasts until
+	 * ReleaseRangedShot. The shot aims through the controller's view, so the caller keeps the focus on the target. False
+	 * when no shot can start now: no valid target, a blocking state tag, no ranged main-hand weapon, or an activation
+	 * that failed or cancelled at once.
+	 */
+	bool StartRangedShot();
+
+	/** Server: releases the drawn shot as a player's input release does. False without a drawn shot or after its release. */
+	bool ReleaseRangedShot();
+
+	/** Server: lowers a drawn shot without shooting and without cost; a released shot plays out. */
+	void CancelRangedShot();
+
+	/** True from StartRangedShot until the shot ability ends. */
+	bool IsRangedShotActive() const;
+
+	/** Whether the running or the last shot was released. */
+	bool WasRangedShotReleased() const { return bRangedShotReleased; }
+
+	/** How far the running shot is drawn, from 0 to 1 (1 is a full draw), or -1 without a running shot. */
+	float GetRangedDrawFraction() const;
+
+	/**
+	 * Server: whether the straight path from the main-hand ranged weapon's launch point to Target's body is clear on the
+	 * projectile channel. Anything else in between blocks it, also a pawn such as an ally. False without a ranged weapon.
+	 */
+	bool HasLineOfFire(const AActor* Target) const;
+
+	/**
+	 * Server: a focus point for the controller, so that a full-draw shot of the main-hand ranged weapon, aimed from the
+	 * pawn's view through it, flies on its low ballistic arc to Target's body. False without a ranged main-hand weapon or
+	 * when Target is out of reach; OutAimPoint then lies on the straight line to Target.
+	 */
+	bool GetRangedAimPoint(const AActor* Target, FVector& OutAimPoint) const;
+
+	/** The main-hand weapon when it is a ranged weapon, or null. */
+	const URpgRangedWeaponInstance* FindMainHandRangedWeapon() const;
+
 #if WITH_DEV_AUTOMATION_TESTS
 	/** Server attack attempts so far, successful or not. */
 	uint32 GetAttackAttemptCountForTests() const { return AttackAttemptCountForTests; }
@@ -108,6 +155,10 @@ private:
 	bool IsOwnerAlive() const;
 	bool IsValidCombatTarget(const AActor* Target) const;
 	bool CanAttemptAttack(bool bRequireInterval) const;
+	/** Whether a state such as a stagger, a raised block or death keeps the owner from attacking now. */
+	bool IsBlockedByCombatState(const URpgAbilitySystemComponent& ASC) const;
+	/** The granted ability on the attack input, or an invalid handle. */
+	FGameplayAbilitySpecHandle FindAttackSpec(const URpgAbilitySystemComponent& ASC) const;
 	bool IsInAttackRangeAndCone(const AActor* Target) const;
 	bool HasActiveMainHandPrimaryAttack() const;
 	AActor* FindNearestHostileTarget(float SearchRadius) const;
@@ -193,6 +244,10 @@ private:
 	int32 AttackSequencePressedDuringStep = -1;
 	FGameplayAbilitySpecHandle AttackSequenceSpecHandle;
 	FTimerHandle AttackSequenceTimerHandle;
+
+	/** The shot ability StartRangedShot activated last. */
+	FGameplayAbilitySpecHandle RangedShotSpecHandle;
+	bool bRangedShotReleased = false;
 
 	FTimerHandle AttackTimerHandle;
 	FTimerHandle TargetAcquisitionTimerHandle;

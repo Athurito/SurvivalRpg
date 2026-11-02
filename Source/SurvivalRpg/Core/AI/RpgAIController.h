@@ -28,6 +28,18 @@ public:
 
 	const URpgAIPawnData* GetDefaultPawnData() const { return DefaultPawnData; }
 
+	/**
+	 * Server: aims the view at WorldPoint while the focus stays on its actor, such as a ranged shot's ballistic aim above
+	 * the combat target. The view keeps pitching as toward a pawn. Runtime state, not replicated; the view pitch the
+	 * engine replicates shows it.
+	 */
+	void SetFocusAimPoint(const FVector& WorldPoint);
+
+	/** Server: looks at the focus actor itself again. */
+	void ClearFocusAimPoint();
+
+	virtual FVector GetFocalPointOnActor(const AActor* Actor) const override;
+
 #if WITH_EDITOR
 	void SetDefaultPawnDataForEditor(const URpgAIPawnData* InPawnData);
 #endif
@@ -41,4 +53,7 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rpg|AI")
 	TObjectPtr<UStateTreeAIComponent> StateTreeComponent;
+
+private:
+	TOptional<FVector> FocusAimPoint;
 };
