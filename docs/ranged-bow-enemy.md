@@ -1,6 +1,6 @@
 # RNG-05: The bow enemy
 
-Task report for RNG-05 in the [ranged combat roadmap](ranged-combat-roadmap.md), PR pending. A skeleton archer, the Rift Grunt body with a bow, keeps its distance, shoots readable arrows through the player's own bow ability and repositions when a wall or an ally is in the way or a player presses in. Its fire is unlimited, and only five shots per life return arrows. Integrated acceptance and feel tuning are RNG-06.
+Task report for RNG-05 in the [ranged combat roadmap](ranged-combat-roadmap.md), [PR #371](https://github.com/Athurito/SurvivalRpg/pull/371). A skeleton archer, the Rift Grunt body with a bow, keeps its distance, shoots readable arrows through the player's own bow ability and repositions when a wall or an ally is in the way or a player presses in. Its fire is unlimited, and only five shots per life return arrows. Integrated acceptance and feel tuning are RNG-06.
 
 ## C++ boundary decision
 
