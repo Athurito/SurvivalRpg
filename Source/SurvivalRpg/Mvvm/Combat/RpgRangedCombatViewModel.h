@@ -20,8 +20,9 @@ struct FRpgInventoryChangeMessage;
  * is a ranged weapon, its ammunition in the player's own inventory, the aim stance and the draw strength.
  *
  * URpgUiSubsystem owns one per local player and keeps it bound across pawns and ability system changes; widgets get it
- * through URpgLocalPlayerViewModelResolver. The weapon is the ranged weapon instance equipped on the bound pawn, whose
- * shot definition names the ammunition the shot spends; the count follows the inventory messages. Aim and draw are the
+ * through URpgLocalPlayerViewModelResolver. The weapon is the ranged weapon instance in the bound pawn's main hand, else
+ * its off hand, whose shot definition names the ammunition the shot spends; the count follows the inventory messages
+ * of the inventory the shot spends from. Aim and draw are the
  * owner's own prediction, read every frame only while a ranged weapon is active. Nothing here
  * shows a trajectory or a landing point: the draw strength describes the draw, not where the arrow goes.
  */
@@ -61,11 +62,11 @@ public:
 
 #if WITH_DEV_AUTOMATION_TESTS
 	/** Treats the active weapon as one that shoots Ammunition, as an equipped bow does; null as no ranged weapon. */
-	void SetAmmunitionForTests(TSubclassOf<URpgInventoryItemDefinition> Ammunition) { ApplyWeapon(Ammunition); }
+	void SetAmmunitionForTests(TSubclassOf<URpgInventoryItemDefinition> Ammunition);
 #endif
 
 private:
-	/** True while the pawn has a ranged weapon equipped; the ammunition HUD shows only then. */
+	/** True while a hand of the pawn holds a ranged weapon; the ammunition HUD and the crosshair show only then. */
 	UPROPERTY(BlueprintReadOnly, FieldNotify, Category = "Ranged Combat|Ammunition", meta = (AllowPrivateAccess = "true"))
 	bool bHasRangedWeapon = false;
 
@@ -120,7 +121,7 @@ private:
 	void HandleInventoryChanged(FGameplayTag Channel, const FRpgInventoryChangeMessage& Message);
 	bool HandleTick(float DeltaSeconds);
 	URpgInventoryManagerComponent* FindInventory() const;
-	void ApplyWeapon(TSubclassOf<URpgInventoryItemDefinition> Ammunition);
+	void ApplyWeapon(bool bWeapon, TSubclassOf<URpgInventoryItemDefinition> Ammunition);
 	void RefreshAmmunition();
 	void UpdateTicker();
 	void ResetRangedState();

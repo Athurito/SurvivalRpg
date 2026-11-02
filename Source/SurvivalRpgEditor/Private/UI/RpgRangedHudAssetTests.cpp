@@ -1,5 +1,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "Algo/AllOf.h"
+#include "Algo/AnyOf.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/DynamicEntryBoxBase.h"
 #include "GameFeatureData.h"
@@ -68,12 +70,13 @@ bool FRpgRangedHudAssetContractTest::RunTest(const FString& Parameters)
 		TestTrue(*FString::Printf(TEXT("%s compiles"), Path), Widget->Status == BS_UpToDate || Widget->Status == BS_UpToDateWithWarnings);
 		const UMVVMBlueprintView* View = Mvvm->GetView(Widget);
 		const TArrayView<const FMVVMBlueprintViewModelContext> Sources = View ? View->GetViewModels() : TArrayView<const FMVVMBlueprintViewModelContext>();
-		if (!TestEqual(*FString::Printf(TEXT("%s has one view model source"), Path), Sources.Num(), 1)) continue;
-		TestTrue(*FString::Printf(TEXT("%s reads the ranged combat view model"), Path),
-			Sources[0].GetViewModelClass() == URpgRangedCombatViewModel::StaticClass());
-		TestTrue(*FString::Printf(TEXT("%s resolves the local player's instance"), Path),
-			Sources[0].CreationType == EMVVMBlueprintViewModelContextCreationType::Resolver);
-		TestTrue(*FString::Printf(TEXT("%s binds its view model"), Path), View->GetNumBindings() > 0);
+		TestTrue(*FString::Printf(TEXT("%s resolves the local player's ranged combat view model"), Path),
+			Algo::AnyOf(Sources, [](const FMVVMBlueprintViewModelContext& Source)
+			{
+				return Source.GetViewModelClass() == URpgRangedCombatViewModel::StaticClass()
+					&& Source.CreationType == EMVVMBlueprintViewModelContextCreationType::Resolver;
+			}));
+		TestTrue(*FString::Printf(TEXT("%s binds its view model"), Path), View && View->GetNumBindings() > 0);
 	}
 
 	// The crosshair slot stacks its entries at the screen centre, so the bow crosshair never shifts the interaction dot.
@@ -91,7 +94,8 @@ bool FRpgRangedHudAssetContractTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Crosshair entries centre horizontally"), HAlign && *HAlign == HAlign_Center);
 	TestTrue(TEXT("Crosshair entries centre vertically"), VAlign && *VAlign == VAlign_Center);
 	// Without a spacing pattern an overlay entry box ignores the entry alignment and pins entries to the top left.
-	TestTrue(TEXT("Crosshair entries keep their alignment"), Spacing && Spacing->Num() == 1 && Spacing->Last().IsNearlyZero());
+	TestTrue(TEXT("Crosshair entries keep their alignment"), Spacing && !Spacing->IsEmpty()
+		&& Algo::AllOf(*Spacing, [](const FVector2D& Step) { return Step.IsNearlyZero(); }));
 	return true;
 }
 

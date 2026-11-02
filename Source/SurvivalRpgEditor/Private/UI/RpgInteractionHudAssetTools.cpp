@@ -9,6 +9,7 @@
 #include "Components/Border.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/DynamicEntryBoxBase.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/Image.h"
@@ -558,6 +559,29 @@ namespace RpgInteractionHudAuthoring
 		{
 			OverlaySlot->SetVerticalAlignment(VAlign_Center);
 			bChanged = true;
+		}
+
+		// Several features add crosshairs here, such as the interaction dot and the bow crosshair: the slot stacks its
+		// entries at the centre. An overlay entry box ignores the entry alignment without a spacing pattern.
+		const auto SetEntryBoxValue = [Canonical, &bChanged](const TCHAR* Name, const auto& Value)
+		{
+			using FValue = std::decay_t<decltype(Value)>;
+			const FProperty* Property = FindFProperty<FProperty>(UDynamicEntryBoxBase::StaticClass(), Name);
+			FValue* Current = Property ? Property->ContainerPtrToValuePtr<FValue>(Canonical) : nullptr;
+			if (Current && !(*Current == Value))
+			{
+				Canonical->Modify();
+				*Current = Value;
+				bChanged = true;
+			}
+			return Current != nullptr;
+		};
+		if (!SetEntryBoxValue(TEXT("EntryBoxType"), EDynamicBoxType::Overlay)
+			|| !SetEntryBoxValue(TEXT("EntryHorizontalAlignment"), TEnumAsByte<EHorizontalAlignment>(HAlign_Center))
+			|| !SetEntryBoxValue(TEXT("EntryVerticalAlignment"), TEnumAsByte<EVerticalAlignment>(VAlign_Center))
+			|| !SetEntryBoxValue(TEXT("SpacingPattern"), TArray<FVector2D>{ FVector2D::ZeroVector }))
+		{
+			return false;
 		}
 
 		if (bChanged)

@@ -4,6 +4,7 @@
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
+#include "SurvivalRpg/Combat/RpgProjectileShot.h"
 #include "SurvivalRpg/Core/Player/RpgPlayerState.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
 #include "SurvivalRpg/Equipment/RpgRangedWeaponInstance.h"
@@ -39,7 +40,8 @@ void URpgRangedCombatViewModel::BeginDestroy()
 
 void URpgRangedCombatViewModel::BindPlayerController(APlayerController* Controller)
 {
-	if (ObservedController.Get() != Controller)
+	// A controller that is already gone reads as null, so unbinding always releases the listener.
+	if (ObservedController.Get() != Controller || !Controller)
 	{
 		if (InventoryListener.IsValid())
 		{
@@ -74,11 +76,15 @@ void URpgRangedCombatViewModel::RefreshWeapon()
 	const URpgAbilitySystemComponent* AbilitySystem = ObservedAbilitySystem.Get();
 	const AActor* Avatar = AbilitySystem ? AbilitySystem->GetAvatarActor() : nullptr;
 	const URpgEquipmentManagerComponent* Equipment = Avatar ? Avatar->FindComponentByClass<URpgEquipmentManagerComponent>() : nullptr;
-	URpgRangedWeaponInstance* Weapon = Equipment ? Equipment->GetFirstInstanceOfType<URpgRangedWeaponInstance>() : nullptr;
+	URpgRangedWeaponInstance* Weapon = nullptr;
+	for (const ERpgEquipmentSlot Hand : { ERpgEquipmentSlot::MainHand, ERpgEquipmentSlot::OffHand })
+	{
+		Weapon = Weapon ? Weapon : Cast<URpgRangedWeaponInstance>(Equipment ? Equipment->GetEquipmentInstanceInSlot(Hand) : nullptr);
+	}
 	if (Weapon != ObservedWeapon.Get() || (!Weapon && bHasRangedWeapon))
 	{
 		ObservedWeapon = Weapon;
-		ApplyWeapon(Weapon ? Weapon->GetShotDefinition().AmmunitionItemDefinition : nullptr);
+		ApplyWeapon(Weapon != nullptr, Weapon ? Weapon->GetShotDefinition().AmmunitionItemDefinition : nullptr);
 	}
 	else
 	{
@@ -86,10 +92,10 @@ void URpgRangedCombatViewModel::RefreshWeapon()
 	}
 }
 
-void URpgRangedCombatViewModel::ApplyWeapon(const TSubclassOf<URpgInventoryItemDefinition> Ammunition)
+void URpgRangedCombatViewModel::ApplyWeapon(const bool bWeapon, const TSubclassOf<URpgInventoryItemDefinition> Ammunition)
 {
-	AmmunitionDefinition = Ammunition;
-	UE_MVVM_SET_PROPERTY_VALUE(bHasRangedWeapon, AmmunitionDefinition != nullptr);
+	AmmunitionDefinition = bWeapon ? Ammunition : nullptr;
+	UE_MVVM_SET_PROPERTY_VALUE(bHasRangedWeapon, bWeapon);
 
 	const URpgInventoryItemDefinition* AmmunitionItem = AmmunitionDefinition ? GetDefault<URpgInventoryItemDefinition>(AmmunitionDefinition) : nullptr;
 	const URpgInventoryFragment_UIData* UIData = AmmunitionItem
@@ -107,6 +113,13 @@ void URpgRangedCombatViewModel::ApplyWeapon(const TSubclassOf<URpgInventoryItemD
 	UpdateTicker();
 	RefreshRangedState();
 }
+
+#if WITH_DEV_AUTOMATION_TESTS
+void URpgRangedCombatViewModel::SetAmmunitionForTests(const TSubclassOf<URpgInventoryItemDefinition> Ammunition)
+{
+	ApplyWeapon(Ammunition != nullptr, Ammunition);
+}
+#endif
 
 void URpgRangedCombatViewModel::RefreshRangedState()
 {
@@ -153,7 +166,11 @@ bool URpgRangedCombatViewModel::HandleTick(const float DeltaSeconds)
 
 URpgInventoryManagerComponent* URpgRangedCombatViewModel::FindInventory() const
 {
-	// The shot spends arrows from the player state's inventory, carried bags included; the HUD counts the same items.
+	// The inventory the shot spends from, carried bags included: the one of the player state that owns the ability system.
+	if (URpgInventoryManagerComponent* ShooterInventory = RpgProjectileShot::FindShooterInventory(ObservedAbilitySystem.Get()))
+	{
+		return ShooterInventory;
+	}
 	const APlayerController* Controller = ObservedController.Get();
 	const ARpgPlayerState* PlayerState = Controller ? Controller->GetPlayerState<ARpgPlayerState>() : nullptr;
 	return PlayerState ? PlayerState->GetInventoryManagerComponent() : nullptr;

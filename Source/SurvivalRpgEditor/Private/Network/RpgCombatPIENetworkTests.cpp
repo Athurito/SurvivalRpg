@@ -2743,7 +2743,7 @@ NETWORK_TEST_CLASS(RangedAimPIE, "SurvivalRpg.Network")
 				[](FNetworkState& State)
 				{
 					const URpgRangedCombatViewModel* Hud = LocalRangedHud(State);
-					return Hud && !Hud->GetHasRangedWeapon();
+					return Hud && Hud->IsTickingForTests() && !Hud->GetHasRangedWeapon();
 				},
 				NetworkTimeout());
 		QueueArcherInput(TEXT("The archer holds the aim input"), AimInput, true);
@@ -2817,6 +2817,37 @@ NETWORK_TEST_CLASS(RangedAimPIE, "SurvivalRpg.Network")
 				{
 					const URpgAbilitySystemComponent* AbilitySystem = ArcherAbilitySystem(State);
 					return AbilitySystem && !AbilitySystem->IsRangedAimActive();
+				},
+				NetworkTimeout())
+			.ThenServer(TEXT("The archer's last arrows leave its inventory"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Archer = RpgCombatPIENetworkTests::FindCharacterByPlayerId(State.World, ArcherId);
+					URpgInventoryManagerComponent* Inventory = Archer && Archer->GetPlayerState()
+						? Archer->GetPlayerState()->FindComponentByClass<URpgInventoryManagerComponent>() : nullptr;
+					UClass* ArrowClass = LoadClass<URpgInventoryItemDefinition>(nullptr, TEXT("/GF_Combat_Ranged/Items/ID_Arrow_Standard.ID_Arrow_Standard_C"));
+					ASSERT_THAT(IsTrue(Inventory && ArrowClass && Inventory->ConsumeItemsByDefinition(ArrowClass, StartingArrows - 1)));
+				})
+			.UntilClient(TEXT("The archer's HUD shows the bow empty"), 0,
+				[](FNetworkState& State)
+				{
+					const URpgRangedCombatViewModel* Hud = LocalRangedHud(State);
+					return Hud && Hud->GetHasRangedWeapon() && Hud->GetAmmunitionCount() == 0 && !Hud->GetShotAvailable();
+				},
+				NetworkTimeout())
+			.ThenServer(TEXT("The archer puts the bow away"),
+				[this](FNetworkState& State)
+				{
+					ARpgCharacter* Archer = RpgCombatPIENetworkTests::FindCharacterByPlayerId(State.World, ArcherId);
+					URpgEquipmentManagerComponent* Equipment = Archer ? Archer->FindComponentByClass<URpgEquipmentManagerComponent>() : nullptr;
+					ASSERT_THAT(IsNotNull(Equipment));
+					Equipment->UnequipItemInSlot(ERpgEquipmentSlot::MainHand);
+				})
+			.UntilClient(TEXT("The archer's HUD hides the ammunition"), 0,
+				[](FNetworkState& State)
+				{
+					const URpgRangedCombatViewModel* Hud = LocalRangedHud(State);
+					return Hud && !Hud->GetHasRangedWeapon() && !Hud->GetAiming();
 				},
 				NetworkTimeout());
 	}
