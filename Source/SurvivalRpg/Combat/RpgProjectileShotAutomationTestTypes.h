@@ -78,6 +78,8 @@ public:
 
 	FRpgProjectileShotDefinition ShotDefinition;
 	ERpgProjectileAmmunitionPolicy AmmunitionPolicy = ERpgProjectileAmmunitionPolicy::ShooterInventory;
+	/** False keeps the ability active after its release, as content with a release montage does. */
+	bool bEndOnRelease = true;
 
 	UPROPERTY(Transient)
 	TObjectPtr<URpgAbilityTask_ProjectileShot> ShotTask;

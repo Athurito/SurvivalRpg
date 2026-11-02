@@ -13,6 +13,7 @@
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_Ammunition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Physics/RpgCollisionChannels.h"
+#include "SurvivalRpg/SurvivalRpg.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(RpgProjectileShot)
 
@@ -134,8 +135,12 @@ namespace RpgProjectileShot
 		Tuning.MinimumNockSeconds = FMath::Max(0.0f, Definition.MinimumNockSeconds);
 		Tuning.FullDrawSeconds = FMath::Max3(0.01f, Tuning.MinimumNockSeconds,
 			Tune(RpgGameplayTags::Ability_Tuning_Ranged_DrawTime, Definition.FullDrawSeconds));
-		Tuning.ReleaseStaminaCost = Tune(RpgGameplayTags::Ability_Tuning_Ranged_ReleaseCost, Definition.ReleaseStaminaCost);
-		Tuning.HoldStaminaPerSecond = Tune(RpgGameplayTags::Ability_Tuning_Ranged_HoldDrain, Definition.HoldStaminaPerSecond);
+		// Costs need a stamina effect to be paid with; a shot without one stays free, also when a passive adds a cost.
+		if (IsStaminaChangeEffect(Definition.StaminaChangeEffect.GetDefaultObject()))
+		{
+			Tuning.ReleaseStaminaCost = Tune(RpgGameplayTags::Ability_Tuning_Ranged_ReleaseCost, Definition.ReleaseStaminaCost);
+			Tuning.HoldStaminaPerSecond = Tune(RpgGameplayTags::Ability_Tuning_Ranged_HoldDrain, Definition.HoldStaminaPerSecond);
+		}
 		return Tuning;
 	}
 
@@ -280,40 +285,42 @@ namespace RpgProjectileShot
 			return ERpgProjectileShotResult::SpawnFailed;
 		}
 
-		const float Level = Ability->GetAbilityLevel();
-		if (Cost > 0.0f && !ApplyStaminaDelta(*AbilitySystem, Definition.StaminaChangeEffect, Level, -Cost))
-		{
-			Projectile->AbortDeferredLaunch();
-			return ERpgProjectileShotResult::InsufficientStamina;
-		}
-
-		const auto RefundStamina = [&]()
-		{
-			// Same frame and effect, so adding the cost back restores the exact value it had.
-			if (Cost > 0.0f)
-			{
-				ApplyStaminaDelta(*AbilitySystem, Definition.StaminaChangeEffect, Level, Cost);
-			}
-		};
-
 		URpgInventoryManagerComponent* Inventory = AmmunitionPolicy == ERpgProjectileAmmunitionPolicy::ShooterInventory
 			? FindShooterInventory(AbilitySystem)
 			: nullptr;
 		if (AmmunitionPolicy == ERpgProjectileAmmunitionPolicy::ShooterInventory
 			&& (!Inventory || !Inventory->ConsumeItemsByDefinition(Definition.AmmunitionItemDefinition, 1)))
 		{
-			RefundStamina();
 			Projectile->AbortDeferredLaunch();
 			return ERpgProjectileShotResult::NoAmmunition;
 		}
 
+		const auto ReturnArrow = [&]()
+		{
+			// A new instance in the first free cell; the stack it left may sit elsewhere, such as in a bag.
+			if (Inventory && !Inventory->GrantItemDefinition(Definition.AmmunitionItemDefinition, 1))
+			{
+				UE_LOG(LogRpgWeapons, Warning, TEXT("Projectile shot of %s could not return its %s to the inventory."),
+					*GetNameSafe(Ability), *GetNameSafe(Definition.AmmunitionItemDefinition.Get()));
+			}
+		};
+
+		const float Level = Ability->GetAbilityLevel();
+		if (Cost > 0.0f && !ApplyStaminaDelta(*AbilitySystem, Definition.StaminaChangeEffect, Level, -Cost))
+		{
+			ReturnArrow();
+			Projectile->AbortDeferredLaunch();
+			return ERpgProjectileShotResult::InsufficientStamina;
+		}
+
 		if (!Projectile->FinishDeferredLaunch())
 		{
-			RefundStamina();
-			if (Inventory)
+			// Same frame and effect, so adding the cost back restores the exact value it had.
+			if (Cost > 0.0f)
 			{
-				Inventory->GrantItemDefinition(Definition.AmmunitionItemDefinition, 1);
+				ApplyStaminaDelta(*AbilitySystem, Definition.StaminaChangeEffect, Level, Cost);
 			}
+			ReturnArrow();
 			return ERpgProjectileShotResult::SpawnFailed;
 		}
 

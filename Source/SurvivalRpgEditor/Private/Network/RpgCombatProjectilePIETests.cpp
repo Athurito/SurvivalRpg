@@ -497,19 +497,6 @@ NETWORK_TEST_CLASS(CombatProjectilePIE, "SurvivalRpg.Network")
 			});
 	}
 
-	/** Server: the player state of the player with PlayerId. */
-	static APlayerState* FindPlayerState(const FNetworkState& State, const int32 PlayerId)
-	{
-		for (APlayerState* PlayerState : RpgCombatProjectilePIETests::GetPlayerStates(State))
-		{
-			if (PlayerState && PlayerState->GetPlayerId() == PlayerId)
-			{
-				return PlayerState;
-			}
-		}
-		return nullptr;
-	}
-
 	static float GetStamina(const APlayerState* PlayerState)
 	{
 		const UAbilitySystemComponent* AbilitySystem = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(PlayerState);
@@ -522,12 +509,23 @@ NETWORK_TEST_CLASS(CombatProjectilePIE, "SurvivalRpg.Network")
 		return Inventory ? Inventory->GetTotalItemCountByDefinition(URpgNetworkAutomationArrowDefinition::StaticClass()) : -1;
 	}
 
-	TEST_METHOD(ClientShotLaunchesOneArrowAndPaysOnce)
+	static constexpr int32 StartingArrows = 5;
+	static constexpr float StartingStamina = 100.0f;
+
+	static URpgNetworkAutomationShotAbility* FindShotAbility(const FNetworkState& State)
+	{
+		const APlayerController* PlayerController = State.World->GetFirstPlayerController();
+		const UAbilitySystemComponent* AbilitySystem = PlayerController
+			? UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(PlayerController->PlayerState)
+			: nullptr;
+		const FGameplayAbilitySpec* Spec = AbilitySystem ? AbilitySystem->FindAbilitySpecFromClass(URpgNetworkAutomationShotAbility::StaticClass()) : nullptr;
+		return Spec ? Cast<URpgNetworkAutomationShotAbility>(Spec->GetPrimaryInstance()) : nullptr;
+	}
+
+	/** Gives every player stamina, test arrows and the shot ability, then starts the first client's draw. */
+	void QueueClientDraw()
 	{
 		using namespace RpgCombatProjectilePIETests;
-		constexpr int32 StartingArrows = 5;
-		constexpr float StartingStamina = 100.0f;
-
 		QueueFixtures(false);
 		Network
 			.ThenClients(TEXT("Clients bind each player's pawn as its ability system avatar"),
@@ -571,7 +569,14 @@ NETWORK_TEST_CLASS(CombatProjectilePIE, "SurvivalRpg.Network")
 					ASSERT_THAT(IsTrue(AbilitySystem->TryActivateAbility(Spec->Handle)));
 					DrawStartSeconds = FPlatformTime::Seconds();
 					DrawStartWorldSeconds = State.World->GetTimeSeconds();
-				})
+				});
+	}
+
+	TEST_METHOD(ClientShotLaunchesOneArrowAndPaysOnce)
+	{
+		using namespace RpgCombatProjectilePIETests;
+		QueueClientDraw();
+		Network
 			.UntilClient(TEXT("The first client holds the full draw"), 0,
 				// Game time, which the per-frame step cap can slow below real time under load.
 				[this](FNetworkState& State) { return State.World->GetTimeSeconds() - DrawStartWorldSeconds >= 0.7; },
@@ -579,10 +584,7 @@ NETWORK_TEST_CLASS(CombatProjectilePIE, "SurvivalRpg.Network")
 			.ThenClient(TEXT("The first client releases"), 0,
 				[this](FNetworkState& State)
 				{
-					const APlayerController* PlayerController = State.World->GetFirstPlayerController();
-					UAbilitySystemComponent* AbilitySystem = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(PlayerController->PlayerState);
-					const FGameplayAbilitySpec* Spec = AbilitySystem->FindAbilitySpecFromClass(URpgNetworkAutomationShotAbility::StaticClass());
-					const URpgNetworkAutomationShotAbility* Ability = Spec ? Cast<URpgNetworkAutomationShotAbility>(Spec->GetPrimaryInstance()) : nullptr;
+					const URpgNetworkAutomationShotAbility* Ability = FindShotAbility(State);
 					ASSERT_THAT(IsTrue(Ability && Ability->ShotTask));
 					Ability->ShotTask->ReleaseShot();
 					ASSERT_THAT(IsTrue(Ability->ReleasedCount == 1));
@@ -617,6 +619,38 @@ NETWORK_TEST_CLASS(CombatProjectilePIE, "SurvivalRpg.Network")
 			.UntilClients(TEXT("Every client sees the arrow"),
 				[this](FNetworkState& State) { return FindProjectile(State.World, ServerShotId) != nullptr; },
 				NetworkTimeout());
+	}
+
+	TEST_METHOD(ServerTimesOutAHeldShotWithoutCost)
+	{
+		using namespace RpgCombatProjectilePIETests;
+		QueueClientDraw();
+		Network
+			.UntilClient(TEXT("The server ends the unreleased draw after its hold limit, also on the client"), 0,
+				[](FNetworkState& State)
+				{
+					const URpgNetworkAutomationShotAbility* Ability = FindShotAbility(State);
+					return Ability && !Ability->IsActive();
+				},
+				NetworkTimeout())
+			.ThenClient(TEXT("The client never released"), 0,
+				[this](FNetworkState& State)
+				{
+					const URpgNetworkAutomationShotAbility* Ability = FindShotAbility(State);
+					ASSERT_THAT(IsTrue(Ability && Ability->ReleasedCount == 0));
+					ASSERT_THAT(IsTrue(State.World->GetTimeSeconds() - DrawStartWorldSeconds
+						>= URpgNetworkAutomationShotAbility::MakeShotDefinition().MaxHoldSeconds - 0.5));
+				})
+			.ThenServer(TEXT("The timed-out draw launched nothing and cost nothing"),
+				[this](FNetworkState& State)
+				{
+					ASSERT_THAT(IsTrue(CountProjectiles(State.World) == 0));
+					for (const APlayerState* PlayerState : GetPlayerStates(State))
+					{
+						ASSERT_THAT(IsTrue(GetArrows(PlayerState) == StartingArrows));
+						ASSERT_THAT(IsTrue(FMath::IsNearlyEqual(GetStamina(PlayerState), StartingStamina)));
+					}
+				});
 	}
 };
 

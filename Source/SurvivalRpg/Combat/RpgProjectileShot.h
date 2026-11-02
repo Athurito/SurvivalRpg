@@ -100,7 +100,8 @@ struct SURVIVALRPG_API FRpgProjectileShotDefinition
 
 	/**
 	 * Instant stamina change the costs use: exactly one additive Stamina modifier whose magnitude is SetByCaller
-	 * Data.StaminaDelta, such as the sprint's GE_RpgGasp_StaminaDelta. Required when a cost or drain is set.
+	 * Data.StaminaDelta, such as the sprint's GE_RpgGasp_StaminaDelta. Required when a cost or drain is set. Without
+	 * one the shot is free, also when a passive tunes a cost onto it.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Shot|Cost")
 	TSubclassOf<UGameplayEffect> StaminaChangeEffect;
@@ -200,8 +201,12 @@ namespace RpgProjectileShot
 	/** Largest distance in cm between the shooter and its reported camera location. */
 	inline constexpr float MaxAimOriginDistance = 1000.0f;
 
-	/** Seconds the shooter's reported draw may exceed the draw the server observed, for network jitter. */
-	inline constexpr float DrawTimeTolerance = 0.25f;
+	/**
+	 * Seconds the shooter's reported draw may exceed the draw the server observed. The server's draw starts when the
+	 * activation arrives and ends when the release arrives, so latency cancels out and only jitter needs room; a
+	 * shooter that overstates its draw gains at most this much.
+	 */
+	inline constexpr float DrawTimeTolerance = 0.1f;
 
 	/** Appends why Definition cannot shoot; empty when it can. */
 	SURVIVALRPG_API void ValidateDefinition(const FRpgProjectileShotDefinition& Definition, TArray<FText>& OutErrors);
@@ -242,9 +247,10 @@ namespace RpgProjectileShot
 		FRpgProjectileShotGeometry& OutGeometry);
 
 	/**
-	 * Server: the exactly-once release transaction of Ability's current activation. Spawns the projectile deferred, pays
-	 * the release stamina, consumes one ammunition item under ShooterInventory and finishes the spawn. Any failure undoes
-	 * what it already paid and destroys the unfinished projectile, so a failed release launches nothing and costs nothing.
+	 * Server: the exactly-once release transaction of Ability's current activation. Spawns the projectile deferred,
+	 * consumes one ammunition item under ShooterInventory, pays the release stamina and finishes the spawn. Any failure
+	 * undoes what it already took and destroys the unfinished projectile, so a failed release launches nothing and costs
+	 * nothing. A returned arrow is a new item in the first free cell, not necessarily the stack it came from.
 	 */
 	SURVIVALRPG_API ERpgProjectileShotResult CommitShot(
 		UGameplayAbility* Ability,

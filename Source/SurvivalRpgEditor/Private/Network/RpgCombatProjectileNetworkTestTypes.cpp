@@ -151,6 +151,8 @@ FRpgProjectileShotDefinition URpgNetworkAutomationShotAbility::MakeShotDefinitio
 	AddKeys(Definition.LaunchSpeedByDrawFraction, 1000.0f, ARpgNetworkAutomationTestProjectile::FlightSpeed);
 	Definition.ReleaseStaminaCost = ReleaseCost;
 	Definition.StaminaChangeEffect = URpgNetworkAutomationShotStaminaEffect::StaticClass();
+	// Long enough for the release tests, short enough that the timeout test waits only a moment.
+	Definition.MaxHoldSeconds = 2.0f;
 	return Definition;
 }
 

@@ -96,15 +96,8 @@ void URpgAbilityTask_ProjectileShot::Activate()
 		return;
 	}
 
-	if (Tuning.MinimumNockSeconds > 0.0f)
-	{
-		GetWorld()->GetTimerManager().SetTimer(NockTimerHandle, this, &ThisClass::HandleNockTimer, Tuning.MinimumNockSeconds, false);
-	}
-	else
-	{
-		HandleNockTimer();
-	}
-
+	// Bind before anything can end the shot: an On Nocked handler or an early release may resolve it synchronously, and
+	// the end releases these bindings.
 	if (bLocallyControlled)
 	{
 		InputReleasedHandle = ASC->AbilityReplicatedEventDelegate(EAbilityGenericReplicatedEvent::InputReleased, CapturedSpec, CapturedActivationKey)
@@ -119,6 +112,20 @@ void URpgAbilityTask_ProjectileShot::Activate()
 		{
 			GetWorld()->GetTimerManager().SetTimer(ServerTimeoutHandle, this, &ThisClass::HandleServerTimeout, Definition.MaxHoldSeconds, false);
 		}
+	}
+
+	if (Tuning.MinimumNockSeconds > 0.0f)
+	{
+		GetWorld()->GetTimerManager().SetTimer(NockTimerHandle, this, &ThisClass::HandleNockTimer, Tuning.MinimumNockSeconds, false);
+	}
+	else
+	{
+		HandleNockTimer();
+	}
+
+	// A release that reached the server before this activation did resolves now.
+	if (!bResolved && !IsFinished() && TargetDataHandle.IsValid())
+	{
 		ASC->CallReplicatedTargetDataDelegatesIfSet(CapturedSpec, CapturedActivationKey);
 	}
 }

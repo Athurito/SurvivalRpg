@@ -19,8 +19,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRpgProjectileShotCancelled, ERpgPro
  *
  * The draw starts when the task activates. The locally controlled machine releases on the ability's input release (or
  * Release Shot) and sends the draw time and camera aim with the activation. The server clamps the draw to the time it
- * observed, checks the aim and launch obstruction, then commits exactly once: deferred spawn, release stamina, one
- * ammunition item, finished spawn, or nothing at all. Releasing before the minimum nocking time cancels without cost.
+ * observed, checks the aim and launch obstruction, then commits exactly once: deferred spawn, one ammunition item,
+ * release stamina, finished spawn, or nothing at all. Releasing before the minimum nocking time cancels without cost.
  * A duplicate release is ignored. Tunable values resolve once when the task starts, so a passive change applies to the
  * next activation. The owner predicts only the presentation; the authority alone launches and pays.
  */

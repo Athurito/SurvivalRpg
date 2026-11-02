@@ -115,7 +115,10 @@ void URpgProjectileShotAutomationAbility::HandleReleased(const float DrawFractio
 	LastDrawFraction = DrawFraction;
 	LastResult = ERpgProjectileShotResult::Released;
 	LastProjectile = Projectile;
-	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
+	if (bEndOnRelease)
+	{
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
+	}
 }
 
 void URpgProjectileShotAutomationAbility::HandleCancelled(const ERpgProjectileShotResult Reason)

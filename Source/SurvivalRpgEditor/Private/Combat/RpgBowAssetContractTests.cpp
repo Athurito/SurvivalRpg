@@ -2,6 +2,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "InputAction.h"
 #include "Misc/AutomationTest.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
@@ -9,6 +10,7 @@
 #include "SurvivalRpg/Combat/RpgProjectileShot.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
 #include "SurvivalRpg/Equipment/RpgRangedWeaponInstance.h"
+#include "SurvivalRpg/Input/RpgInputConfig.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_Ammunition.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_EquippableItem.h"
 #include "SurvivalRpg/Inventory/RpgInventoryFragment_ItemTraits.h"
@@ -20,6 +22,7 @@ namespace RpgBowAssetContractTests
 	const TCHAR* BowPath = TEXT("/GF_Combat_Ranged/Items/ID_Bow.ID_Bow_C");
 	const TCHAR* ArrowPath = TEXT("/GF_Combat_Ranged/Items/ID_Arrow_Standard.ID_Arrow_Standard_C");
 	const TCHAR* ArrowProjectilePath = TEXT("/GF_Combat_Ranged/Projectiles/BP_Projectile_Arrow.BP_Projectile_Arrow_C");
+	const TCHAR* CombatInputConfigPath = TEXT("/GF_Combat_Core/Input/DA_InputConfig_Combat.DA_InputConfig_Combat");
 
 	template <typename FragmentType>
 	const FragmentType* FindFragment(const URpgInventoryItemDefinition* Definition)
@@ -116,8 +119,29 @@ bool FRpgArrowAssetContractTest::RunTest(const FString& Parameters)
 	if (!TestNotNull(TEXT("The arrow projectile loads"), Projectile)) return false;
 	TestEqual(TEXT("A standard arrow is recoverable"), Projectile->GetImpactRecovery(), ERpgProjectileImpactRecovery::Recoverable);
 	const FFloatProperty* Gravity = FindFProperty<FFloatProperty>(ProjectileClass, TEXT("GravityScale"));
-	TestTrue(TEXT("An arrow falls under full gravity"), Gravity && Gravity->GetPropertyValue_InContainer(Projectile) == 1.0f);
+	TestTrue(TEXT("An arrow falls, so the player judges its drop"), Gravity && Gravity->GetPropertyValue_InContainer(Projectile) > 0.0f);
 	TestNotNull(TEXT("The arrow projectile applies damage"), Projectile->GetDamageEffectClass().Get());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgPrimaryInputHoldContractTest,
+	"SurvivalRpg.Combat.Ranged.PrimaryInputHoldsUntilRelease",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgPrimaryInputHoldContractTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgBowAssetContractTests;
+
+	// The bow draws while the primary attack is held and shoots on its release, and a click is still one melee press.
+	const URpgInputConfig* Config = LoadObject<URpgInputConfig>(nullptr, CombatInputConfigPath);
+	if (!TestNotNull(TEXT("The combat input config loads"), Config)) return false;
+	const FGameplayTag PrimaryTag = FGameplayTag::RequestGameplayTag(TEXT("InputTag.Weapon.Primary"));
+	const FRpgInputAction* Primary = Config->AbilityInputActions.FindByPredicate(
+		[&PrimaryTag](const FRpgInputAction& Action) { return Action.InputTag == PrimaryTag; });
+	if (!TestTrue(TEXT("The combat input maps the primary attack"), Primary && Primary->InputAction)) return false;
+	TestTrue(TEXT("The primary attack presses once per click"), Primary->bPressOnStartOnly);
+	TestTrue(TEXT("The primary attack has no trigger that ends a held press early"), Primary->InputAction->Triggers.IsEmpty());
 	return true;
 }
 

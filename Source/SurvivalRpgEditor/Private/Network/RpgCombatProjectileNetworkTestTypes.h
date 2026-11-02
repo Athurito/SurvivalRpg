@@ -130,7 +130,7 @@ public:
 
 	static constexpr float ReleaseCost = 10.0f;
 
-	/** The shot this ability draws: the test arrow, a quick draw and a release cost. */
+	/** The shot this ability draws: the test arrow, a quick draw, a release cost and a 2 s server hold limit. */
 	static FRpgProjectileShotDefinition MakeShotDefinition();
 
 	UPROPERTY(Transient)

@@ -14,6 +14,7 @@
 #include "Misc/AutomationTest.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgStaminaSet.h"
 #include "SurvivalRpg/AbilitySystem/Effects/RpgAbilityTuningEffectComponent.h"
+#include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/AbilitySystem/Tasks/RpgAbilityTask_ProjectileShot.h"
 #include "SurvivalRpg/Combat/RpgCombatProjectile.h"
@@ -319,6 +320,8 @@ bool FRpgProjectileShotDuplicateReleaseTest::RunTest(const FString& Parameters)
 	FFixture Fixture;
 	if (!Fixture.Initialize(*this) || !Fixture.AddArrows(StartingArrows) || !Fixture.Grant(MakeDefinition())) return false;
 
+	// The ability stays active after its release, so only the task's own guard can stop a second commit.
+	Fixture.Ability->bEndOnRelease = false;
 	if (!TestTrue(TEXT("The shot activates"), Fixture.Activate())) return false;
 	URpgAbilityTask_ProjectileShot* Task = Fixture.Ability->ShotTask;
 	Fixture.Advance(1.0f);
@@ -337,6 +340,9 @@ bool FRpgProjectileShotDuplicateReleaseTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("They pay the release cost once"), Fixture.GetStamina(), StartingStamina - ReleaseCost);
 	TestEqual(TEXT("The projectile keeps the owner's shot identity"),
 		Fixture.Ability->LastProjectile.IsValid() ? Fixture.Ability->LastProjectile->GetShotId() : 0, 77);
+	TestTrue(TEXT("The ability is still active after its shot"), Fixture.IsActive());
+	Fixture.ASC->CancelAbilityHandle(Fixture.Handle);
+	Fixture.Ability->bEndOnRelease = true;
 
 	// The server never counts more draw than it observed.
 	if (!TestTrue(TEXT("The next shot activates"), Fixture.Activate())) return false;
@@ -368,6 +374,38 @@ bool FRpgProjectileShotSpawnFailureTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgProjectileShotCancelledDrawTest,
+	"SurvivalRpg.Combat.ProjectileShot.CancelledDrawIgnoresALateRelease",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgProjectileShotCancelledDrawTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgProjectileShotTests;
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this) || !Fixture.AddArrows(StartingArrows) || !Fixture.Grant(MakeDefinition())) return false;
+
+	// A dodge, stagger or weapon removal cancels the drawn shot; its release message arrives afterwards.
+	if (!TestTrue(TEXT("The shot activates"), Fixture.Activate())) return false;
+	URpgAbilityTask_ProjectileShot* Task = Fixture.Ability->ShotTask;
+	Fixture.Advance(1.0f);
+	Fixture.ASC->CancelAbilityHandle(Fixture.Handle);
+	TestFalse(TEXT("The cancel ends the shot"), Fixture.IsActive());
+	TestTrue(TEXT("The cancelled shot is decided"), Task->IsResolvedForTests());
+
+	FRpgProjectileShotRelease Release;
+	Release.DrawSeconds = 1.0f;
+	Release.AimOrigin = ShooterLocation;
+	Release.AimDirection = FVector::ForwardVector;
+	Task->ReceiveReleaseForTests(Release);
+	Fixture.Release();
+	TestEqual(TEXT("A release after the cancel shoots nothing"), Fixture.Ability->ReleasedCount, 0);
+	TestEqual(TEXT("It launches nothing"), Fixture.CountLiveProjectiles(), 0);
+	TestEqual(TEXT("It consumes no arrow"), Fixture.GetArrows(), StartingArrows);
+	TestEqual(TEXT("It pays no stamina"), Fixture.GetStamina(), StartingStamina);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgProjectileShotTuningTest,
 	"SurvivalRpg.Combat.ProjectileShot.TuningIsFixedPerActivation",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -385,7 +423,11 @@ bool FRpgProjectileShotTuningTest::RunTest(const FString& Parameters)
 	HalfCost.Value = 0.5f;
 	FRpgSkillTreeAbilityTuning HalfDraw = HalfCost;
 	HalfDraw.TuningTag = RpgGameplayTags::Ability_Tuning_Ranged_DrawTime;
-	TStrongObjectPtr<UGameplayEffect> Passive(URpgAbilityTuningEffectComponent::MakeTransientEffectForTests({ HalfCost, HalfDraw }, 1000.0f));
+	FRpgSkillTreeAbilityTuning AddDrain;
+	AddDrain.TuningTag = RpgGameplayTags::Ability_Tuning_Ranged_HoldDrain;
+	AddDrain.Operation = ERpgSkillTreeTuningOperation::Add;
+	AddDrain.Value = 2.0f;
+	TStrongObjectPtr<UGameplayEffect> Passive(URpgAbilityTuningEffectComponent::MakeTransientEffectForTests({ HalfCost, HalfDraw, AddDrain }, 1000.0f));
 
 	if (!TestTrue(TEXT("The shot activates"), Fixture.Activate())) return false;
 	Fixture.ASC->ApplyGameplayEffectToSelf(Passive.Get(), 1.0f, Fixture.ASC->MakeEffectContext());
@@ -394,9 +436,47 @@ bool FRpgProjectileShotTuningTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("A passive gained during the draw keeps this shot's cost"), Fixture.GetStamina(), StartingStamina - ReleaseCost);
 	TestEqual(TEXT("A passive gained during the draw keeps this shot's draw time"), Fixture.Ability->LastDrawFraction, 0.5f, 0.001f);
 
-	TestEqual(TEXT("The next shot releases"), Fixture.Shoot(0.5f), ERpgProjectileShotResult::Released);
+	if (!TestTrue(TEXT("The next shot activates"), Fixture.Activate())) return false;
+	TestEqual(TEXT("The next shot drains while held as the passive adds"), Fixture.Ability->ShotTask->GetShotTuning().HoldStaminaPerSecond, 2.0f);
+	Fixture.Advance(0.5f);
+	Fixture.Release();
+	TestEqual(TEXT("The next shot releases"), Fixture.Ability->LastResult, ERpgProjectileShotResult::Released);
 	TestEqual(TEXT("The next shot pays the passive's cost"), Fixture.GetStamina(), StartingStamina - ReleaseCost * 1.5f);
 	TestEqual(TEXT("The next shot draws in the passive's time"), Fixture.Ability->LastDrawFraction, 1.0f, 0.001f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgProjectileShotFreeShotTest,
+	"SurvivalRpg.Combat.ProjectileShot.ShotWithoutStaminaEffectStaysFree",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgProjectileShotFreeShotTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgProjectileShotTests;
+	FRpgProjectileShotDefinition Definition = MakeDefinition();
+	Definition.ReleaseStaminaCost = 0.0f;
+	Definition.StaminaChangeEffect = nullptr;
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this) || !Fixture.AddArrows(StartingArrows) || !Fixture.Grant(Definition)) return false;
+
+	// A passive that adds costs to every shot, applied to a shot without a stamina effect, such as a spell or NPC shot.
+	FRpgSkillTreeAbilityTuning AddCost;
+	AddCost.TuningTag = RpgGameplayTags::Ability_Tuning_Ranged_ReleaseCost;
+	AddCost.Operation = ERpgSkillTreeTuningOperation::Add;
+	AddCost.Value = 5.0f;
+	FRpgSkillTreeAbilityTuning AddDrain = AddCost;
+	AddDrain.TuningTag = RpgGameplayTags::Ability_Tuning_Ranged_HoldDrain;
+	TStrongObjectPtr<UGameplayEffect> Passive(URpgAbilityTuningEffectComponent::MakeTransientEffectForTests({ AddCost, AddDrain }, 1000.0f));
+	Fixture.ASC->ApplyGameplayEffectToSelf(Passive.Get(), 1.0f, Fixture.ASC->MakeEffectContext());
+
+	if (!TestTrue(TEXT("The shot activates"), Fixture.Activate())) return false;
+	TestEqual(TEXT("Without a stamina effect a passive adds no release cost"), Fixture.Ability->ShotTask->GetShotTuning().ReleaseStaminaCost, 0.0f);
+	TestEqual(TEXT("Without a stamina effect a passive adds no hold drain"), Fixture.Ability->ShotTask->GetShotTuning().HoldStaminaPerSecond, 0.0f);
+	Fixture.Advance(1.0f);
+	Fixture.Release();
+	TestEqual(TEXT("The free shot still shoots"), Fixture.Ability->LastResult, ERpgProjectileShotResult::Released);
+	TestEqual(TEXT("It pays no stamina"), Fixture.GetStamina(), StartingStamina);
 	return true;
 }
 
@@ -505,16 +585,18 @@ bool FRpgProjectileShotBowContentTest::RunTest(const FString& Parameters)
 	UClass* ArrowClass = LoadClass<URpgInventoryItemDefinition>(nullptr, TEXT("/GF_Combat_Ranged/Items/ID_Arrow_Standard.ID_Arrow_Standard_C"));
 	UClass* ArrowProjectileClass = LoadClass<ARpgCombatProjectile>(nullptr,
 		TEXT("/GF_Combat_Ranged/Projectiles/BP_Projectile_Arrow.BP_Projectile_Arrow_C"));
-	if (!TestTrue(TEXT("The bow content loads"), ShotClass && BowClass && ArrowClass && ArrowProjectileClass)) return false;
+	const URpgAbilitySet* BowAbilities = LoadObject<URpgAbilitySet>(nullptr, TEXT("/GF_Combat_Ranged/GAS/AbilitySets/AS_Bow.AS_Bow"));
+	if (!TestTrue(TEXT("The bow content loads"), ShotClass && BowClass && ArrowClass && ArrowProjectileClass && BowAbilities)) return false;
 
 	FFixture Fixture;
-	if (!Fixture.Initialize(*this) || !Fixture.AddArrows(3, ArrowClass)) return false;
+	if (!Fixture.Initialize(*this) || !Fixture.AddArrows(4, ArrowClass)) return false;
 
-	// The equipped bow is the shot's source, as the equipment manager grants it.
+	// The bow's ability set grants the shot with the equipped bow as its source, as the equipment manager does.
 	URpgRangedWeaponInstance* Bow = NewObject<URpgRangedWeaponInstance>(Fixture.Pawn, BowClass);
-	FGameplayAbilitySpec Spec(ShotClass, 1, INDEX_NONE, Bow);
-	Spec.GetDynamicSpecSourceTags().AddTag(RpgGameplayTags::InputTag_Weapon_Primary);
-	Fixture.Handle = Fixture.ASC->GiveAbility(Spec);
+	BowAbilities->GiveToAbilitySystem(Fixture.ASC, nullptr, Bow);
+	const FGameplayAbilitySpec* Granted = Fixture.ASC->FindAbilitySpecFromClass(ShotClass);
+	if (!TestNotNull(TEXT("The bow's ability set grants the shot"), Granted)) return false;
+	Fixture.Handle = Granted->Handle;
 	const FRpgProjectileShotDefinition& Shot = Bow->GetShotDefinition();
 	const auto Press = [&Fixture]()
 	{
@@ -534,7 +616,7 @@ bool FRpgProjectileShotBowContentTest::RunTest(const FString& Parameters)
 	Release();
 	TestFalse(TEXT("An early release ends the draw"), Fixture.IsActive());
 	TestEqual(TEXT("An early release shoots nothing"), Fixture.CountLiveProjectiles(), 0);
-	TestEqual(TEXT("An early release costs no arrow"), Fixture.GetArrows(ArrowClass), 3);
+	TestEqual(TEXT("An early release costs no arrow"), Fixture.GetArrows(ArrowClass), 4);
 	TestEqual(TEXT("An early release costs no stamina"), Fixture.GetStamina(), StartingStamina);
 
 	// A full draw shoots one standard arrow at the bow's top speed and pays once.
@@ -553,8 +635,27 @@ bool FRpgProjectileShotBowContentTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("A full draw shoots at the bow curve's top speed"), Arrow->GetProjectileMovement()->Velocity.Size(), static_cast<double>(TopSpeed), 1.0);
 	TestEqual(TEXT("The bow curve sets the damage"), GetSetByCaller(Arrow, RpgGameplayTags::SetByCaller_Damage),
 		Shot.DamageByDrawFraction.GetRichCurveConst()->Eval(1.0f), 0.01f);
-	TestEqual(TEXT("The shot consumes one arrow"), Fixture.GetArrows(ArrowClass), 2);
+	TestEqual(TEXT("The shot consumes one arrow"), Fixture.GetArrows(ArrowClass), 3);
 	TestEqual(TEXT("The shot pays the bow's release cost once"), Fixture.GetStamina(), StartingStamina - Shot.ReleaseStaminaCost, 0.01f);
+
+	// Ranged passives reach the bow through its ability id; one aimed at another ability does not.
+	FRpgSkillTreeAbilityTuning BowHalfCost;
+	BowHalfCost.AbilityIdTag = FGameplayTag::RequestGameplayTag(TEXT("Ability.Ranged.BowShot"));
+	BowHalfCost.TuningTag = RpgGameplayTags::Ability_Tuning_Ranged_ReleaseCost;
+	BowHalfCost.Operation = ERpgSkillTreeTuningOperation::Multiply;
+	BowHalfCost.Value = 0.5f;
+	FRpgSkillTreeAbilityTuning SprintFreeCost = BowHalfCost;
+	SprintFreeCost.AbilityIdTag = RpgGameplayTags::Ability_Movement_Sprint;
+	SprintFreeCost.Value = 0.0f;
+	TStrongObjectPtr<UGameplayEffect> Passive(URpgAbilityTuningEffectComponent::MakeTransientEffectForTests({ BowHalfCost, SprintFreeCost }, 1000.0f));
+	Fixture.ASC->ApplyGameplayEffectToSelf(Passive.Get(), 1.0f, Fixture.ASC->MakeEffectContext());
+	const float BeforeTunedShot = Fixture.GetStamina();
+	Press();
+	Fixture.Advance(Shot.FullDrawSeconds + 0.5f);
+	Release();
+	TestEqual(TEXT("The tuned shot consumes one arrow"), Fixture.GetArrows(ArrowClass), 2);
+	TestEqual(TEXT("Only the passive for the bow's ability id changes its cost"), Fixture.GetStamina(),
+		BeforeTunedShot - Shot.ReleaseStaminaCost * 0.5f, 0.01f);
 	return true;
 }
 
