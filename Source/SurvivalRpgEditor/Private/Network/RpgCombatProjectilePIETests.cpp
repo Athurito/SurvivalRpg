@@ -46,6 +46,10 @@ namespace RpgCombatProjectilePIETests
 		ARpgCombatNetworkTargetFixture* Shooter = nullptr;
 		ARpgNetworkAutomationRecoveryWall* Wall = nullptr;
 		ARpgNetworkAutomationArrowBody* Body = nullptr;
+		ARpgCombatNetworkFloorFixture* Floor = nullptr;
+		/** Per group on this machine, before the ragdoll: the shaft's transform on its bone and its world location. */
+		TMap<int32, FTransform> ShaftOnBone;
+		TMap<int32, FVector> ShaftStart;
 	};
 
 	const FVector ArrowBodyLocation(0.0f, 5000.0f, 300.0f);
@@ -53,6 +57,69 @@ namespace RpgCombatProjectilePIETests
 	URpgEmbeddedProjectileHostComponent* FindArrowHost(const FNetworkState& State)
 	{
 		return State.Body ? State.Body->FindComponentByClass<URpgEmbeddedProjectileHostComponent>() : nullptr;
+	}
+
+	/**
+	 * Measures each shaft on its bone from world transforms and checks it against the replicated group, then turns this
+	 * machine's body into a ragdoll, as a corpse does locally. False when a shaft sits elsewhere than its group says.
+	 */
+	bool StartRagdoll(FNetworkState& State)
+	{
+		const URpgEmbeddedProjectileHostComponent* Host = FindArrowHost(State);
+		USkeletalMeshComponent* Mesh = State.Body ? State.Body->GetBodyMesh() : nullptr;
+		if (!Host || !Mesh || Host->GetGroups().IsEmpty())
+		{
+			return false;
+		}
+		for (const FRpgEmbeddedProjectileGroup& Group : Host->GetGroups())
+		{
+			const UStaticMeshComponent* Shaft = Host->GetShaftForTests(Group.GroupId);
+			const ARpgEmbeddedProjectilePickup* Visual = Group.VisualClass ? Group.VisualClass->GetDefaultObject<ARpgEmbeddedProjectilePickup>() : nullptr;
+			const UStaticMeshComponent* Template = Visual ? Visual->GetDisplayMeshComponent() : nullptr;
+			if (!Shaft || !Template)
+			{
+				return false;
+			}
+			const FTransform OnBone = Shaft->GetComponentTransform().GetRelativeTransform(Mesh->GetSocketTransform(Group.Bone));
+			const FTransform FromGroup = Template->GetRelativeTransform() * FTransform(Group.RelativeRotation, Group.RelativeLocation);
+			if (!OnBone.Equals(FromGroup, 0.5))
+			{
+				return false;
+			}
+			State.ShaftOnBone.Add(Group.GroupId, OnBone);
+			State.ShaftStart.Add(Group.GroupId, Shaft->GetComponentLocation());
+		}
+		Mesh->SetCollisionProfileName(TEXT("Ragdoll"));
+		Mesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		Mesh->SetAllBodiesSimulatePhysics(true);
+		Mesh->WakeAllRigidBodies();
+		return true;
+	}
+
+	/**
+	 * Every shaft moved at least 50 cm with the falling ragdoll and kept its location and rotation on its bone, measured
+	 * from world transforms against the transform it had on the bone before the fall.
+	 */
+	bool ShaftsFollowTheirFallingBones(const FNetworkState& State)
+	{
+		const URpgEmbeddedProjectileHostComponent* Host = FindArrowHost(State);
+		const USkeletalMeshComponent* Mesh = State.Body ? State.Body->GetBodyMesh() : nullptr;
+		if (!Host || !Mesh || !Mesh->IsSimulatingPhysics() || State.ShaftOnBone.IsEmpty())
+		{
+			return false;
+		}
+		for (const FRpgEmbeddedProjectileGroup& Group : Host->GetGroups())
+		{
+			const UStaticMeshComponent* Shaft = Host->GetShaftForTests(Group.GroupId);
+			const FTransform* OnBone = State.ShaftOnBone.Find(Group.GroupId);
+			const FVector* Start = State.ShaftStart.Find(Group.GroupId);
+			if (!Shaft || !OnBone || !Start || FVector::Dist(Shaft->GetComponentLocation(), *Start) < 50.0
+				|| !Shaft->GetComponentTransform().Equals(*OnBone * Mesh->GetSocketTransform(Group.Bone), 1.0))
+			{
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/** Every group of the host shows exactly one shaft on this machine's own skeletal mesh, at the group's bone. */
@@ -778,6 +845,15 @@ NETWORK_TEST_CLASS(CombatProjectilePIE, "SurvivalRpg.Network")
 					return Pickup && FVector::Dist(Pickup->GetActorLocation(), RecoveryPickupLocation + RecoveryWallMove) < 5.0;
 				},
 				NetworkTimeout())
+			.ThenClientJoins(NetworkTimeout())
+			.UntilClient(TEXT("A late joiner shows the arrow embedded in its copy of the moved wall"), ClientCount,
+				[](FNetworkState& State)
+				{
+					const ARpgEmbeddedProjectilePickup* Pickup = FindPickup(State.World);
+					return Pickup && State.Wall && Pickup->IsEmbedded() && Pickup->GetAttachParentActor() == State.Wall
+						&& FVector::Dist(Pickup->GetActorLocation(), RecoveryPickupLocation + RecoveryWallMove) < 5.0;
+				},
+				NetworkTimeout())
 			.ThenServer(TEXT("A remote player collects the arrow through the pickup's loot inventory"),
 				[this](FNetworkState& State)
 				{
@@ -792,7 +868,8 @@ NETWORK_TEST_CLASS(CombatProjectilePIE, "SurvivalRpg.Network")
 							RemotePlayers.Add(Cast<ARpgPlayerState>(PlayerState));
 						}
 					}
-					ASSERT_THAT(IsTrue(RemotePlayers.Num() == ClientCount && RemotePlayers[0] && RemotePlayers[1]));
+					// The two first clients and the late joiner.
+					ASSERT_THAT(IsTrue(RemotePlayers.Num() == ClientCount + 1 && RemotePlayers[0] && RemotePlayers[1]));
 					const TSubclassOf<URpgInventoryItemDefinition> Arrow = Pickup->GetAmmunitionDefinition();
 					const auto Collect = [Pickup](ARpgPlayerState* Player)
 					{
@@ -860,6 +937,9 @@ NETWORK_TEST_CLASS(CombatProjectilePIE, "SurvivalRpg.Network")
 				})
 			.UntilClients(TEXT("Every client shows both shafts on its own skeleton"),
 				[](FNetworkState& State) { return ShowsShaftsOnItsSkeleton(State, 2); }, NetworkTimeout())
+			.ThenClientJoins(NetworkTimeout())
+			.UntilClient(TEXT("A late joiner rebuilds both shafts on its own skeleton"), ClientCount,
+				[](FNetworkState& State) { return ShowsShaftsOnItsSkeleton(State, 2); }, NetworkTimeout())
 			.ThenServer(TEXT("The body dies and a player takes one arrow from its loot"),
 				[this](FNetworkState& State)
 				{
@@ -873,7 +953,17 @@ NETWORK_TEST_CLASS(CombatProjectilePIE, "SurvivalRpg.Network")
 					ASSERT_THAT(IsTrue(ShowsShaftsOnItsSkeleton(State, 1)));
 				})
 			.UntilClients(TEXT("Every client drops the looted shaft"),
-				[](FNetworkState& State) { return ShowsShaftsOnItsSkeleton(State, 1); }, NetworkTimeout());
+				[](FNetworkState& State) { return ShowsShaftsOnItsSkeleton(State, 1); }, NetworkTimeout())
+			// A static floor whose top lies at z 0 under the whole test area, 3 m below the body, so the ragdoll lands.
+			.SpawnAndReplicate<ARpgCombatNetworkFloorFixture, &FNetworkState::Floor>(NetworkTimeout())
+			.ThenServer(TEXT("The listen server's shaft sits where its group says, and its body goes limp"),
+				[this](FNetworkState& State) { ASSERT_THAT(IsTrue(StartRagdoll(State))); })
+			.ThenClients(TEXT("Every client's shaft sits where its group says, and its body goes limp"),
+				[this](FNetworkState& State) { ASSERT_THAT(IsTrue(StartRagdoll(State))); })
+			.UntilServer(TEXT("The listen server's shaft falls with its bone and keeps its place on it"),
+				[](FNetworkState& State) { return ShaftsFollowTheirFallingBones(State); }, NetworkTimeout())
+			.UntilClients(TEXT("Every client's shaft falls with its own ragdoll's bone and keeps its place on it"),
+				[](FNetworkState& State) { return ShaftsFollowTheirFallingBones(State); }, NetworkTimeout());
 	}
 };
 
