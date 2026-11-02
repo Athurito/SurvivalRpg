@@ -3,6 +3,7 @@
 #include "RpgWeaponInstance.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySourceInterface.h"
 #include "SurvivalRpg/Combat/RpgProjectileShot.h"
+#include "SurvivalRpg/Combat/RpgRangedAim.h"
 
 #include "RpgRangedWeaponInstance.generated.h"
 
@@ -26,6 +27,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Weapon|Ranged")
 	const FRpgProjectileShotDefinition& GetShotDefinition() const { return ShotDefinition; }
 
+	/** The weapon's aim stance: movement cap and camera while aiming or drawing. Designer-tuned static data. */
+	UFUNCTION(BlueprintPure, Category = "Weapon|Ranged")
+	const FRpgRangedAimDefinition& GetAimDefinition() const { return AimDefinition; }
+
 	virtual float GetDistanceAttenuation(float Distance, const FGameplayTagContainer* SourceTags = nullptr, const FGameplayTagContainer* TargetTags = nullptr) const override;
 	virtual float GetPhysicalMaterialAttenuation(const UPhysicalMaterial* PhysicalMaterial, const FGameplayTagContainer* SourceTags = nullptr, const FGameplayTagContainer* TargetTags = nullptr) const override;
 
@@ -38,4 +43,8 @@ protected:
 	/** See GetShotDefinition. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Ranged")
 	FRpgProjectileShotDefinition ShotDefinition;
+
+	/** See GetAimDefinition. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Ranged")
+	FRpgRangedAimDefinition AimDefinition;
 };

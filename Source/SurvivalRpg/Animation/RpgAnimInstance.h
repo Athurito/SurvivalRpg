@@ -73,6 +73,28 @@ public:
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Block Animation")
 	float BlockMovementSpeedLimit = 0.f;
 
+	/**
+	 * The character holds a ranged aim stance (held aim or a drawn shot): live aim tokens on owner and authority, the
+	 * replicated State.Ranged.Aiming tag on simulated proxies. Game-thread snapshot for worker-thread graphs; read-only.
+	 */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Ranged Animation")
+	bool bRangedAimActive = false;
+
+	/** A projectile shot is nocked or drawn (State.Ranged.Drawing). Game-thread snapshot; presentation only. */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Ranged Animation")
+	bool bRangedDrawing = false;
+
+	/** A shot released moments ago (State.Ranged.Releasing). Game-thread snapshot; presentation only. */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Ranged Animation")
+	bool bRangedReleasing = false;
+
+	/**
+	 * Aim pitch in degrees relative to the character's facing, from -90 (down) to 90 (up): the controller's view on owner
+	 * and authority, the replicated view pitch on simulated proxies. Game-thread snapshot; presentation only.
+	 */
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Ranged Animation")
+	float RangedAimPitch = 0.f;
+
 protected:
 
 	/** Moves the mesh with its capsule before a listen server caches the pose's component transform for a remote autonomous move. */
@@ -97,6 +119,7 @@ protected:
 private:
 	/** Refreshes only value inputs on the game thread, including reinitialization of an existing linked instance. */
 	void CaptureBlockAnimationState();
+	void CaptureRangedAnimationState();
 
 	/** True while CharacterMovement on a listen server ticks this pose for a move received from the remote owner. */
 	bool IsRemoteAutonomousPoseTick() const;

@@ -28,6 +28,8 @@ public:
 		Super::Clear();
 		bBlocking = false;
 		SpeedLimit = 0.f;
+		bRangedAim = false;
+		RangedAimSpeedLimit = 0.f;
 		ControlRotation = FRotator::ZeroRotator;
 		bSprintAuthorized = false;
 		SprintSpeed = 0.f;
@@ -45,6 +47,7 @@ public:
 		Super::SetMoveFor(Character, InDeltaTime, NewAccel, ClientData);
 		const URpgCharacterMovementComponent* Movement = CastChecked<URpgCharacterMovementComponent>(Character->GetCharacterMovement());
 		bBlocking = Movement->SampleBlockMovement(SpeedLimit);
+		bRangedAim = Movement->SampleRangedAimMovement(RangedAimSpeedLimit);
 		ControlRotation = Character->GetControlRotation();
 		bSprintAuthorized = Movement->SampleSprintMovement(SprintSpeed);
 		bEquipmentInHands = Movement->SampleEquipmentInHands();
@@ -59,6 +62,8 @@ public:
 		URpgCharacterMovementComponent* Movement = CastChecked<URpgCharacterMovementComponent>(Character->GetCharacterMovement());
 		Movement->bBlockMovementForMove = bBlocking;
 		Movement->BlockMovementSpeedLimitForMove = SpeedLimit;
+		Movement->bRangedAimForMove = bRangedAim;
+		Movement->RangedAimSpeedLimitForMove = RangedAimSpeedLimit;
 		Movement->ControlRotationForMove = ControlRotation;
 		Movement->bSprintAuthorizedForMove = bSprintAuthorized;
 		Movement->SprintSpeedForMove = SprintSpeed;
@@ -91,6 +96,7 @@ public:
 	{
 		const FSavedMove_RpgCharacter* Other = static_cast<const FSavedMove_RpgCharacter*>(NewMove.Get());
 		return bBlocking == Other->bBlocking && SpeedLimit == Other->SpeedLimit
+			&& bRangedAim == Other->bRangedAim && RangedAimSpeedLimit == Other->RangedAimSpeedLimit
 			&& bSprintAuthorized == Other->bSprintAuthorized && SprintSpeed == Other->SprintSpeed
 			&& bEquipmentInHands == Other->bEquipmentInHands && bFacingCommitted == Other->bFacingCommitted
 			&& FacingSteeringRate == Other->FacingSteeringRate && bAlignFacing == Other->bAlignFacing && bWalkToggled == Other->bWalkToggled
@@ -100,6 +106,8 @@ public:
 private:
 	bool bBlocking = false;
 	float SpeedLimit = 0.f;
+	bool bRangedAim = false;
+	float RangedAimSpeedLimit = 0.f;
 	FRotator ControlRotation = FRotator::ZeroRotator;
 	bool bSprintAuthorized = false;
 	float SprintSpeed = 0.f;
@@ -258,6 +266,26 @@ bool URpgCharacterMovementComponent::GetBlockMovementForMove(float& OutSpeedLimi
 	return SampleBlockMovement(OutSpeedLimit);
 }
 
+bool URpgCharacterMovementComponent::SampleRangedAimMovement(float& OutSpeedLimit) const
+{
+	OutSpeedLimit = 0.f;
+	const URpgAbilitySystemComponent* AbilitySystem = Cast<URpgAbilitySystemComponent>(
+		UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(GetOwner()));
+	if (!AbilitySystem || AbilitySystem->GetAvatarActor() != GetOwner() || !AbilitySystem->IsRangedAimActive()) { return false; }
+	OutSpeedLimit = AbilitySystem->GetRangedAimMovementSpeedLimit();
+	return true;
+}
+
+bool URpgCharacterMovementComponent::GetRangedAimMovementForMove(float& OutSpeedLimit) const
+{
+	if (bInBlockMovementScope)
+	{
+		OutSpeedLimit = RangedAimSpeedLimitForMove;
+		return bRangedAimForMove;
+	}
+	return SampleRangedAimMovement(OutSpeedLimit);
+}
+
 bool URpgCharacterMovementComponent::SampleEquipmentInHands() const
 {
 	const ARpgCharacter* Character = Cast<ARpgCharacter>(CharacterOwner);
@@ -283,7 +311,9 @@ bool URpgCharacterMovementComponent::SampleFacingCommitment(float& OutSteeringRa
 bool URpgCharacterMovementComponent::IsCombatStanceForMove() const
 {
 	float BlockLimit = 0.f;
-	return (bInBlockMovementScope ? bEquipmentInHandsForMove : SampleEquipmentInHands()) || GetBlockMovementForMove(BlockLimit);
+	float AimLimit = 0.f;
+	return (bInBlockMovementScope ? bEquipmentInHandsForMove : SampleEquipmentInHands()) || GetBlockMovementForMove(BlockLimit)
+		|| GetRangedAimMovementForMove(AimLimit);
 }
 
 bool URpgCharacterMovementComponent::IsCombatStanceHoldingFacingForMove() const
@@ -291,7 +321,7 @@ bool URpgCharacterMovementComponent::IsCombatStanceHoldingFacingForMove() const
 	// As in Souls-likes and Valheim, the camera orbits a stance that stands still; moving, blocking or an ability turns it.
 	if (bCombatStanceFacesCameraWhileStanding || !IsMovingOnGround() || !IsCombatStanceForMove()) { return false; }
 	float BlockLimit = 0.f;
-	if (GetBlockMovementForMove(BlockLimit)) { return false; }
+	if (GetBlockMovementForMove(BlockLimit) || GetRangedAimMovementForMove(BlockLimit)) { return false; }
 	// Simulated proxies have no input acceleration; their replicated velocity alone tells standing apart.
 	constexpr float StandingSpeed = 5.f;
 	return Acceleration.SizeSquared2D() <= UE_SMALL_NUMBER && Velocity.SizeSquared2D() <= FMath::Square(StandingSpeed);
@@ -371,7 +401,8 @@ bool URpgCharacterMovementComponent::CanSprintForMove(float& OutSprintSpeed) con
 	// With a profile the input is normalized; the move's own stick choice carries the strength instead.
 	if (MovementProfile && IsStickWalkForMove()) { return false; }
 	float BlockLimit = 0.f;
-	if (GetBlockMovementForMove(BlockLimit)) { return false; }
+	// A ranged aim stance never sprints; the sprint lease itself interrupts an unfinished shot instead.
+	if (GetBlockMovementForMove(BlockLimit) || GetRangedAimMovementForMove(BlockLimit)) { return false; }
 	if (bUseRotationModes && IsCombatStanceForMove() && !IsSprintDirectionAllowedForMove()) { return false; }
 	const URpgHealthComponent* Health = URpgHealthComponent::FindHealthComponent(CharacterOwner);
 	if (Health && Health->IsDeadOrDying()) { return false; }
@@ -455,6 +486,7 @@ void URpgCharacterMovementComponent::PerformMovement(float DeltaTime)
 	if (!CharacterOwner || !CharacterOwner->bClientUpdating)
 	{
 		bBlockMovementForMove = SampleBlockMovement(BlockMovementSpeedLimitForMove);
+		bRangedAimForMove = SampleRangedAimMovement(RangedAimSpeedLimitForMove);
 		bSprintAuthorizedForMove = SampleSprintMovement(SprintSpeedForMove);
 		bEquipmentInHandsForMove = SampleEquipmentInHands();
 		bFacingCommittedForMove = SampleFacingCommitment(FacingSteeringRateForMove, FacingCommitmentLeaseForMove);
@@ -532,6 +564,14 @@ bool URpgCharacterMovementComponent::IsBlockControllingRotation() const
 	return CharacterOwner && CharacterOwner->GetLocalRole() != ROLE_SimulatedProxy && MovementMode != MOVE_None &&
 		!IsMantleControllingRotation() && !HasAnimRootMotion() && !CurrentRootMotion.HasActiveRootMotionSources() &&
 		GetBlockMovementForMove(SpeedLimit);
+}
+
+bool URpgCharacterMovementComponent::IsRangedAimControllingRotation() const
+{
+	float SpeedLimit = 0.f;
+	return CharacterOwner && CharacterOwner->GetLocalRole() != ROLE_SimulatedProxy && MovementMode != MOVE_None &&
+		!IsMantleControllingRotation() && !HasAnimRootMotion() && !CurrentRootMotion.HasActiveRootMotionSources() &&
+		GetRangedAimMovementForMove(SpeedLimit);
 }
 
 const FRpgCharacterGroundInfo& URpgCharacterMovementComponent::GetGroundInfo()
@@ -622,7 +662,7 @@ void URpgCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 		}
 		return;
 	}
-	if (IsBlockControllingRotation())
+	if (IsBlockControllingRotation() || IsRangedAimControllingRotation())
 	{
 		const bool bSavedOrientToMovement = bOrientRotationToMovement;
 		const bool bSavedControllerDesired = bUseControllerDesiredRotation;
@@ -638,7 +678,7 @@ void URpgCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 FRotator URpgCharacterMovementComponent::ComputeOrientToMovementRotation(const FRotator& CurrentRotation,
 	float DeltaTime, FRotator& DeltaRotation) const
 {
-	if (bFaceControlRotationInPhysics || IsBlockControllingRotation())
+	if (bFaceControlRotationInPhysics || IsBlockControllingRotation() || IsRangedAimControllingRotation())
 	{
 		return GetControlRotationForMove();
 	}
@@ -678,8 +718,17 @@ float URpgCharacterMovementComponent::GetMaxSpeed() const
 		const float ProxySpeed = GetSimulatedProxyGaitSpeed();
 		AuthoredSpeed = ProxySpeed > 0.f ? ProxySpeed : Super::GetMaxSpeed();
 	}
-	return GetBlockMovementForMove(SpeedLimit) && FMath::IsFinite(SpeedLimit) && SpeedLimit > 0.f
-		? FMath::Min(AuthoredSpeed, SpeedLimit) : AuthoredSpeed;
+	if (GetBlockMovementForMove(SpeedLimit) && FMath::IsFinite(SpeedLimit) && SpeedLimit > 0.f)
+	{
+		AuthoredSpeed = FMath::Min(AuthoredSpeed, SpeedLimit);
+	}
+	// The aim stance's own cap, separate from block: either lease alone slows the move, both take the lower.
+	float AimLimit = 0.f;
+	if (GetRangedAimMovementForMove(AimLimit) && FMath::IsFinite(AimLimit) && AimLimit > 0.f)
+	{
+		AuthoredSpeed = FMath::Min(AuthoredSpeed, AimLimit);
+	}
+	return AuthoredSpeed;
 }
 
 void URpgCharacterMovementComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const

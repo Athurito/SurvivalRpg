@@ -21,6 +21,8 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Defense_Block);
 	/** Marks attack abilities; enemy AI watches its combat target's activations of them to react. */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Type_Attack);
+	/** Marks the abilities of one ranged aim stance (aim and shot); the stance's own interruption rule ignores them. */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Type_RangedAim);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(AI_Role_Grunt);
 	/** StateTree event an AI's combat control task sends when its combat target starts an attack. */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(AI_Event_TargetAttackStarted);
@@ -126,6 +128,9 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_HyperArmor);
 	/** Dodge invulnerability window: the damage execution ignores hits on targets with this tag. */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Evading);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Ranged_Aiming);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Ranged_Drawing);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Ranged_Releasing);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Trait_Staggerable);
 	// Exported because runtime GameFeature modules use the canonical death gate.
 	extern SURVIVALRPG_API FNativeGameplayTag Status_Death;

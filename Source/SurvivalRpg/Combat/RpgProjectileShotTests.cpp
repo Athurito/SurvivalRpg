@@ -225,6 +225,33 @@ bool FRpgProjectileShotNockCancelTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgProjectileShotPresentationTagsTest,
+	"SurvivalRpg.Combat.ProjectileShot.PresentationTagsFollowTheShot",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgProjectileShotPresentationTagsTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgProjectileShotTests;
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this) || !Fixture.AddArrows(StartingArrows) || !Fixture.Grant(MakeDefinition())) return false;
+	const auto HasTag = [&Fixture](const FGameplayTag Tag) { return Fixture.ASC->HasMatchingGameplayTag(Tag); };
+
+	// The drawn shot shows as drawing on every machine; a cancel ends it without a release.
+	if (!TestTrue(TEXT("The shot activates"), Fixture.Activate())) return false;
+	TestTrue(TEXT("A drawn shot is drawing"), HasTag(RpgGameplayTags::State_Ranged_Drawing));
+	Fixture.Advance(0.1f);
+	Fixture.Release();
+	TestFalse(TEXT("An early release stops drawing"), HasTag(RpgGameplayTags::State_Ranged_Drawing));
+	TestFalse(TEXT("An early release shows no release"), HasTag(RpgGameplayTags::State_Ranged_Releasing));
+
+	// A release stops drawing and shows the release for its presentation time.
+	TestEqual(TEXT("A full draw releases"), Fixture.Shoot(1.0f), ERpgProjectileShotResult::Released);
+	TestFalse(TEXT("The released shot stops drawing"), HasTag(RpgGameplayTags::State_Ranged_Drawing));
+	TestTrue(TEXT("The release shows"), HasTag(RpgGameplayTags::State_Ranged_Releasing));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgProjectileShotDrawTest,
 	"SurvivalRpg.Combat.ProjectileShot.DrawCurvesSetDamageAndSpeed",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

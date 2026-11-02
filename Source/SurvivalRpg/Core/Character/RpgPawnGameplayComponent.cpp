@@ -2,6 +2,7 @@
 
 
 #include "RpgPawnGameplayComponent.h"
+#include "AbilitySystemGlobals.h"
 #include "Animation/AnimInstance.h"
 #include "Components/SkeletalMeshComponent.h"
 
@@ -806,6 +807,16 @@ TSubclassOf<URpgCameraMode> URpgPawnGameplayComponent::DetermineCameraMode() con
 	if (!Pawn)
 	{
 		return nullptr;
+	}
+
+	// The ranged aim tokens of every held aim and drawn shot decide together; ending one keeps the others' camera.
+	if (const URpgAbilitySystemComponent* AbilitySystem = Cast<URpgAbilitySystemComponent>(
+		UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(const_cast<APawn*>(Pawn))))
+	{
+		if (const TSubclassOf<URpgCameraMode> AimCameraMode = AbilitySystem->GetRangedAimCameraMode())
+		{
+			return AimCameraMode;
+		}
 	}
 
 	if (URpgPawnExtensionComponent* PawnExtComp = URpgPawnExtensionComponent::FindPawnExtensionComponent(Pawn))
