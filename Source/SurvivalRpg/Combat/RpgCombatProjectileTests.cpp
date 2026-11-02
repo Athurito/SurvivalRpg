@@ -32,12 +32,14 @@
 #include "SurvivalRpg/Combat/RpgProjectileShotAutomationTestTypes.h"
 #include "SurvivalRpg/Core/AI/RpgAICharacter.h"
 #include "SurvivalRpg/Core/Corpse/RpgCorpseLifecycleComponent.h"
+#include "SurvivalRpg/Core/Game/RpgGameModeBase.h"
 #include "SurvivalRpg/Core/Game/RpgGameStateBase.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Interaction/IInteractableTarget.h"
 #include "SurvivalRpg/Interaction/InteractionQuery.h"
 #include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
+#include "SurvivalRpg/Inventory/RpgInventoryContainerActor.h"
 #include "SurvivalRpg/Inventory/RpgInventoryContainerComponent.h"
 #include "SurvivalRpg/Inventory/RpgInventoryManagerComponent.h"
 #include "SurvivalRpg/Physics/RpgCollisionChannels.h"
@@ -1368,6 +1370,40 @@ bool FRpgCombatProjectileRecoveryCorpseTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("A completed corpse takes no arrow"), Host->CanRecover());
 	TestEqual(TEXT("An arrow into a completed corpse is gone"), Shoot(), ERpgProjectileRecoveryOutcome::None);
 	TestEqual(TEXT("It adds no loot"), Inventory->GetTotalItemCountByDefinition(Arrow), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCombatProjectileRecoverySaveTest,
+	"SurvivalRpg.Combat.Projectile.Recovery.PickupsStayOutOfWorldSaves",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCombatProjectileRecoverySaveTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCombatProjectileTests;
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this)) return false;
+	ARpgGameModeBase* Mode = Fixture.World->SpawnActor<ARpgGameModeBase>();
+	ARpgInventoryContainerActor* Chest = Fixture.World->SpawnActor<ARpgInventoryContainerActor>();
+	if (!TestTrue(TEXT("A world-save owner and an ordinary chest exist"), Mode && Chest)) return false;
+	Mode->bEnableDiskPersistence = false;
+	UBoxComponent* Wall = Fixture.SpawnBlock(FVector(500.0f, 6000.0f, 0.0f), FVector(10.0f, 100.0f, 100.0f), EComponentMobility::Static);
+	ARpgEmbeddedProjectilePickup* Pickup = RecoverInto(Fixture, Wall, FVector(490.0f, 6000.0f, 0.0f));
+	if (!TestTrue(TEXT("An intact arrow leaves a pickup holding it"), Pickup && Pickup->GetAmmunitionCount() == 1)) return false;
+
+	// BeginPlay decides which containers become persistent; this world never began play, so run it for both.
+	Chest->DispatchBeginPlay();
+	Pickup->DispatchBeginPlay();
+	const FName ChestId = Chest->GetContainerComponent()->GetPersistentContainerId();
+	if (!TestFalse(TEXT("The chest is a persistent world container"), ChestId.IsNone())) return false;
+	TestTrue(TEXT("The pickup's container stays without a persistent id"),
+		Pickup->FindComponentByClass<URpgInventoryContainerComponent>()->GetPersistentContainerId().IsNone());
+
+	// The real capture path walks every world container; the temporary pickup must not enter the save.
+	Mode->WorldContainerSaveDataMap.Reset();
+	Mode->CaptureWorldContainers();
+	TestEqual(TEXT("The world save captures only the chest"), Mode->WorldContainerSaveDataMap.Num(), 1);
+	TestTrue(TEXT("The captured container is the chest"), Mode->WorldContainerSaveDataMap.Contains(ChestId));
 	return true;
 }
 
