@@ -7,6 +7,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Misc/AutomationTest.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgHealthSet.h"
+#include "SurvivalRpg/AbilitySystem/Effects/RpgAbilityTuningEffectComponent.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/AbilitySystem/Tasks/RpgAbilityTask_RangedAim.h"
 #include "SurvivalRpg/Camera/RpgCameraMode.h"
@@ -18,6 +19,7 @@
 #include "SurvivalRpg/Core/Character/RpgPawnExtensionComponent.h"
 #include "SurvivalRpg/Core/Character/RpgPawnGameplayComponent.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
+#include "SurvivalRpg/Progression/SkillTrees/RpgSkillTreeDefinition.h"
 #include "UObject/StrongObjectPtr.h"
 
 namespace RpgRangedAimTests
@@ -322,6 +324,126 @@ bool FRpgRangedAimInterruptionTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Leaving the ground interrupts the stance"), Fixture.IsActive(Aim));
 	TestEqual(TEXT("It names the airborne avatar"), Fixture.Instance(Aim)->LastInterruption, FName(TEXT("Airborne")));
 	TestFalse(TEXT("No stance remains"), Fixture.ASC->IsRangedAimActive());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgRangedAimBlockedPressTest,
+	"SurvivalRpg.Combat.Ranged.Aim.PressDuringABlockingStateWaits",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgRangedAimBlockedPressTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgRangedAimTests;
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this)) return false;
+	const FGameplayTag AimInput = RpgGameplayTags::InputTag_Weapon_Block;
+	const FGameplayAbilitySpecHandle Aim = Fixture.Grant(URpgRangedAimAutomationAbility::StaticClass(), AimInput, 150.f);
+	const FGameplayAbilitySpecHandle Exclusive = Fixture.Grant(URpgRangedAimAutomationExclusiveAbility::StaticClass());
+
+	// Pressed during a dodge-like ability, the aim waits instead of cancelling and eating the press.
+	TestTrue(TEXT("The dodge-like ability runs"), Fixture.ASC->TryActivateAbility(Exclusive));
+	Fixture.Press(AimInput);
+	Fixture.TickAim(Aim);
+	TestTrue(TEXT("The press is kept"), Fixture.IsActive(Aim));
+	TestFalse(TEXT("The stance waits while the dodge lasts"), Fixture.ASC->IsRangedAimActive());
+	TestEqual(TEXT("Waiting is no interruption"), Fixture.Instance(Aim)->InterruptedCount, 0);
+	Fixture.ASC->CancelAbilityHandle(Exclusive);
+	Fixture.TickAim(Aim);
+	TestTrue(TEXT("The stance begins when the dodge ends"), Fixture.ASC->IsRangedAimActive() && Fixture.HasAimTag());
+
+	// Pressed in the air, it begins on landing.
+	Fixture.Release(AimInput);
+	Fixture.ASC->CancelAbilityHandle(Aim);
+	Fixture.Movement->SetMovementMode(MOVE_Falling);
+	Fixture.Press(AimInput);
+	Fixture.TickAim(Aim);
+	TestTrue(TEXT("An aim pressed in the air is kept"), Fixture.IsActive(Aim) && !Fixture.ASC->IsRangedAimActive());
+	Fixture.Movement->SetMovementMode(MOVE_Flying);
+	Fixture.TickAim(Aim);
+	TestTrue(TEXT("It aims after landing"), Fixture.ASC->IsRangedAimActive());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgRangedAimTeardownTest,
+	"SurvivalRpg.Combat.Ranged.Aim.StaggerRemovalDeathAndAvatarChangeEndTheStance",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgRangedAimTeardownTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgRangedAimTests;
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this)) return false;
+	const FGameplayTag AimInput = RpgGameplayTags::InputTag_Weapon_Block;
+	FGameplayAbilitySpecHandle Aim = Fixture.Grant(URpgRangedAimAutomationAbility::StaticClass(), AimInput, 150.f);
+	const FGameplayAbilitySpecHandle Switching = Fixture.Grant(URpgRangedAimAutomationSwitchingAbility::StaticClass());
+
+	// A stagger starts independent and turns exclusive afterwards; the stance still ends.
+	Fixture.Press(AimInput);
+	TestTrue(TEXT("The switching ability starts beside the stance"), Fixture.ASC->TryActivateAbility(Switching));
+	Fixture.TickAim(Aim);
+	TestTrue(TEXT("An independent start leaves the stance"), Fixture.IsActive(Aim));
+	URpgGameplayAbility* SwitchingInstance = Cast<URpgGameplayAbility>(Fixture.ASC->FindAbilitySpecFromHandle(Switching)->GetPrimaryInstance());
+	TestTrue(TEXT("It turns exclusive"), SwitchingInstance && SwitchingInstance->ChangeActivationGroup(ERpgAbilityActivationGroup::Exclusive_Blocking));
+	Fixture.TickAim(Aim);
+	TestFalse(TEXT("The live exclusive group interrupts the stance"), Fixture.IsActive(Aim));
+	Fixture.ASC->CancelAbilityHandle(Switching);
+	Fixture.Release(AimInput);
+
+	// Removing the ability, as an unequip does, ends the stance with its tag and camera.
+	Fixture.Press(AimInput);
+	TestTrue(TEXT("The stance is back"), Fixture.ASC->IsRangedAimActive());
+	Fixture.ASC->ClearAbility(Aim);
+	TestFalse(TEXT("Removing the ability ends the stance"), Fixture.ASC->IsRangedAimActive());
+	TestFalse(TEXT("Removing the ability clears the tag"), Fixture.HasAimTag());
+	TestNull(TEXT("Removing the ability clears the camera"), Fixture.ASC->GetRangedAimCameraMode().Get());
+	Fixture.Release(AimInput);
+
+	// Death cancels every ability; the stance goes with it.
+	Aim = Fixture.Grant(URpgRangedAimAutomationAbility::StaticClass(), AimInput, 150.f);
+	Fixture.Press(AimInput);
+	TestTrue(TEXT("The re-granted aim holds the stance"), Fixture.ASC->IsRangedAimActive());
+	Fixture.ASC->CancelAbilities();
+	TestFalse(TEXT("Cancelling every ability ends the stance"), Fixture.ASC->IsRangedAimActive() || Fixture.HasAimTag());
+	Fixture.Release(AimInput);
+
+	// A new avatar drops the stance, and the old activation stops aiming.
+	Fixture.Press(AimInput);
+	TestTrue(TEXT("The stance is back again"), Fixture.ASC->IsRangedAimActive());
+	ARpgCharacter* NewAvatar = Fixture.World->SpawnActor<ARpgCharacter>();
+	if (!TestNotNull(TEXT("A second avatar exists"), NewAvatar)) return false;
+	Fixture.ASC->InitAbilityActorInfo(Fixture.Character, NewAvatar);
+	TestFalse(TEXT("A new avatar has no stance"), Fixture.ASC->IsRangedAimActive());
+	Fixture.TickAim(Aim);
+	TestFalse(TEXT("The old activation stops aiming"), Fixture.IsActive(Aim));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgRangedAimTuningTest,
+	"SurvivalRpg.Combat.Ranged.Aim.MovementTuningIsFixedPerActivation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgRangedAimTuningTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgRangedAimTests;
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this)) return false;
+	const FGameplayTag AimInput = RpgGameplayTags::InputTag_Weapon_Block;
+	const FGameplayAbilitySpecHandle Aim = Fixture.Grant(URpgRangedAimAutomationAbility::StaticClass(), AimInput, 200.f);
+	Fixture.Press(AimInput);
+	FRpgSkillTreeAbilityTuning Slower;
+	Slower.TuningTag = RpgGameplayTags::Ability_Tuning_Ranged_AimMovement;
+	Slower.Operation = ERpgSkillTreeTuningOperation::Multiply;
+	Slower.Value = 0.5f;
+	TStrongObjectPtr<UGameplayEffect> Passive(URpgAbilityTuningEffectComponent::MakeTransientEffectForTests({ Slower }, 1000.0f));
+	Fixture.ASC->ApplyGameplayEffectToSelf(Passive.Get(), 1.0f, Fixture.ASC->MakeEffectContext());
+	TestEqual(TEXT("A passive gained while aiming keeps this stance's cap"), Fixture.ASC->GetRangedAimMovementSpeedLimit(), 200.f);
+	Fixture.Release(AimInput);
+	Fixture.ASC->CancelAbilityHandle(Aim);
+	Fixture.Press(AimInput);
+	TestEqual(TEXT("The next stance takes the passive's cap"), Fixture.ASC->GetRangedAimMovementSpeedLimit(), 100.f);
 	return true;
 }
 

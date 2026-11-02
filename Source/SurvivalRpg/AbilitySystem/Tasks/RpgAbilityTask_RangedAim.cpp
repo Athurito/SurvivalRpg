@@ -70,7 +70,18 @@ void URpgAbilityTask_RangedAim::Activate()
 	// A sprint already held when the stance starts does not interrupt it; once it ends, the next sprint does.
 	bSprintAtStart = ASC->IsSprintMovementActive();
 	CancelledHandle = Ability->OnGameplayAbilityCancelled.AddUObject(this, &ThisClass::HandleAbilityCancelled);
-	Token = ASC->BeginRangedAim(Ability, MovementSpeedLimit, Definition.CameraMode);
+	// A press during a dodge, jump or stagger is kept: the stance begins when that state ends instead of cancelling.
+	bWaitingToStart = !FindInterruption().IsNone();
+	if (!bWaitingToStart)
+	{
+		BeginStance();
+	}
+}
+
+void URpgAbilityTask_RangedAim::BeginStance()
+{
+	URpgAbilitySystemComponent* ASC = CapturedASC.Get();
+	Token = ASC ? ASC->BeginRangedAim(Ability, MovementSpeedLimit, Definition.CameraMode) : 0;
 	if (!Token)
 	{
 		EndTask();
@@ -80,6 +91,26 @@ void URpgAbilityTask_RangedAim::Activate()
 void URpgAbilityTask_RangedAim::TickTask(const float DeltaTime)
 {
 	Super::TickTask(DeltaTime);
+	if (bWaitingToStart && !bInterrupting)
+	{
+		const FName Reason = FindInterruption();
+		if (Reason.IsNone())
+		{
+			bWaitingToStart = false;
+			const URpgAbilitySystemComponent* ASC = CapturedASC.Get();
+			bSprintAtStart = ASC && ASC->IsSprintMovementActive();
+			BeginStance();
+		}
+		else if (Reason == RpgRangedAimTask::AvatarChanged)
+		{
+			bInterrupting = true;
+			if (URpgAbilitySystemComponent* ASC = CapturedASC.Get())
+			{
+				ASC->CancelAbilityHandle(CapturedSpec);
+			}
+		}
+		return;
+	}
 	if (!Token || bInterrupting)
 	{
 		return;

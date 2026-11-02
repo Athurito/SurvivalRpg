@@ -44,6 +44,8 @@ Behavior observed in this project's UE 5.8 editor sessions on the primary workst
 - The MCP server answers about 30 s after launch. Probe the endpoint, for example with `curl http://127.0.0.1:8000/mcp`, instead of parsing `netstat`, whose output is localized on this machine. After a relaunch, the old log can still hold a ready line.
 - An MCP client session that started before the editor has no editor tools. The endpoint still answers a small streamable-HTTP client: `initialize`, then `tools/call` with `call_tool`.
   - A Python standard-library client works (HRW-03): POST JSON-RPC with `Accept: application/json, text/event-stream`, keep the `Mcp-Session-Id` response header of `initialize`, send `notifications/initialized`, and send the header with every call. A reply can come as plain JSON or as server-sent events; read the last `data:` line. The tool's result is the text content, a JSON string with `returnValue`.
+  - A restarted editor answers an old `Mcp-Session-Id` with HTTP 404; drop the cached id and send `initialize` again (RNG-03).
+  - Slate inspector refs such as the `Cmd` box's exist only after a `Snapshot` (with `ref` empty for all windows) in the running editor session; a `Type` with a ref from an earlier session only logs `Could not resolve ref` and does nothing, so a typed `QUIT_EDITOR` silently leaves the editor open (RNG-03).
   - Keep each call's `arguments` in a JSON file instead of inline shell quoting; `set_properties` takes its `values` as a serialized string inside it.
 
 ## Parallel editors and ports

@@ -59,6 +59,16 @@ public:
 	explicit URpgRangedAimAutomationExclusiveAbility(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 };
 
+/** An independent ability that turns exclusive after it started, as stagger and death do. */
+UCLASS(NotBlueprintable, Transient)
+class URpgRangedAimAutomationSwitchingAbility final : public URpgGameplayAbility
+{
+	GENERATED_BODY()
+
+public:
+	explicit URpgRangedAimAutomationSwitchingAbility(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+};
+
 /** An independent ability that stays active until cancelled, to hold leases such as a sprint in the tests. */
 UCLASS(NotBlueprintable, Transient)
 class URpgRangedAimAutomationIdleAbility final : public URpgGameplayAbility

@@ -464,9 +464,18 @@ void URpgAbilityTask_ProjectileShot::SetDrawingTag(const bool bDrawing)
 	if (bLocallyControlled)
 	{
 		ASC->SetLocalRangedDrawing(bDrawing);
+		if (bDrawing)
+		{
+			// A new draw ends the previous release, so the next release shows from its start on this machine too.
+			ASC->NoteLocalRangedRelease(0.0f);
+		}
 	}
 	if (bAuthority)
 	{
 		ASC->SetLooseGameplayTagCount(RpgGameplayTags::State_Ranged_Drawing, bDrawing ? 1 : 0, EGameplayTagReplicationState::TagAndCountToAll);
+		if (bDrawing)
+		{
+			ASC->RemoveTimedLooseGameplayTag(RpgGameplayTags::State_Ranged_Releasing, EGameplayTagReplicationState::TagAndCountToAll);
+		}
 	}
 }

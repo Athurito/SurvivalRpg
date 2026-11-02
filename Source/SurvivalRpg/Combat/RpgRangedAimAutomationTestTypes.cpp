@@ -49,6 +49,14 @@ URpgRangedAimAutomationExclusiveAbility::URpgRangedAimAutomationExclusiveAbility
 	ActivationGroup = ERpgAbilityActivationGroup::Exclusive_Replaceable;
 }
 
+URpgRangedAimAutomationSwitchingAbility::URpgRangedAimAutomationSwitchingAbility(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
+	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
+	ActivationGroup = ERpgAbilityActivationGroup::Independent;
+}
+
 URpgRangedAimAutomationIdleAbility::URpgRangedAimAutomationIdleAbility(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {

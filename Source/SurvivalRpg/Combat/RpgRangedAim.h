@@ -17,11 +17,12 @@ struct SURVIVALRPG_API FRpgRangedAimDefinition
 	GENERATED_BODY()
 
 	/**
-	 * Movement speed cap in cm/s while the stance is held, before Ability.Tuning.Ranged.AimMovement; zero for none. The
-	 * owner predicts it and the server applies its own token, so it is never sent by the client.
+	 * Movement speed cap in cm/s while the stance is held, before Ability.Tuning.Ranged.AimMovement; zero for none. Each
+	 * weapon authors its own (the bow 180). The owner predicts it and the server applies its own token, so it is never
+	 * sent by the client.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Aim", meta = (ClampMin = "0.0", Units = "CentimetersPerSecond"))
-	float MovementSpeedLimit = 180.0f;
+	float MovementSpeedLimit = 0.0f;
 
 	/** Local camera while the stance is held, such as the bow's shoulder camera; null keeps the current camera. Cosmetic. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Aim")

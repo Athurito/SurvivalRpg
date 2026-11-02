@@ -19,7 +19,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRpgRangedAimInterrupted, FName, Rea
  * On owner and authority the task interrupts the stance by cancelling its ability when the avatar leaves the ground
  * (jump, fall, traversal), a sprint starts, or another ability runs in an exclusive activation group (dodge, attack,
  * stagger, death); abilities tagged Ability.Type.RangedAim never interrupt it. A cancelled activation whose input is
- * still held waits for its release, so a held button never restarts the stance.
+ * still held waits for its release, so a held button never restarts the stance. A press made while such a state
+ * already lasts, such as during a dodge or a jump, does not cancel: the stance waits and begins once the state ends.
  */
 UCLASS()
 class SURVIVALRPG_API URpgAbilityTask_RangedAim : public UAbilityTask
@@ -45,7 +46,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ability|Tasks")
 	float GetMovementSpeedLimit() const { return MovementSpeedLimit; }
 
-	/** True while the task holds its aim token. */
+	/** True while the task holds its aim token; false while the stance still waits for a dodge, jump or stagger to end. */
 	UFUNCTION(BlueprintPure, Category = "Ability|Tasks")
 	bool IsHoldingAim() const { return Token != 0; }
 
@@ -63,6 +64,7 @@ private:
 	/** Why the stance must end now, or None. */
 	FName FindInterruption() const;
 	void HandleAbilityCancelled();
+	void BeginStance();
 	void ReleaseToken();
 
 	FRpgRangedAimDefinition Definition;
@@ -75,4 +77,5 @@ private:
 	float MovementSpeedLimit = 0.0f;
 	bool bSprintAtStart = false;
 	bool bInterrupting = false;
+	bool bWaitingToStart = false;
 };

@@ -45,6 +45,7 @@
 #include "SurvivalRpg/Development/RpgDeveloperSettings.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentDefinition.h"
 #include "SurvivalRpg/Equipment/RpgEquipmentManagerComponent.h"
+#include "SurvivalRpg/Equipment/RpgRangedWeaponInstance.h"
 #include "SurvivalRpg/Equipment/RpgWeaponInstance.h"
 #include "SurvivalRpg/Runes/RpgWeaponRuneDefinition.h"
 #include "UObject/StrongObjectPtr.h"
@@ -2503,7 +2504,13 @@ NETWORK_TEST_CLASS(RangedAimPIE, "SurvivalRpg.Network")
 
 	static constexpr int32 ClientCount = 2;
 	static constexpr int32 StartingArrows = 10;
-	static constexpr float AimSpeedLimit = 180.0f;
+	/** The bow's authored aim cap in cm/s, read from its weapon instance so tuning never breaks the test. */
+	static float AimSpeedLimit()
+	{
+		const UClass* BowClass = LoadClass<URpgRangedWeaponInstance>(nullptr,
+			TEXT("/GF_Combat_Ranged/Equipment/Bow/BP_WeaponInstance_Bow.BP_WeaponInstance_Bow_C"));
+		return BowClass ? BowClass->GetDefaultObject<URpgRangedWeaponInstance>()->GetAimDefinition().MovementSpeedLimit : 0.0f;
+	}
 
 	RpgCombatPIENetworkTests::FScopedPIEWorldSaveIsolation WorldSaveIsolation;
 	FRpgScopedNetworkTestGround Ground;
@@ -2711,16 +2718,17 @@ NETWORK_TEST_CLASS(RangedAimPIE, "SurvivalRpg.Network")
 		const FGameplayTag AimInput = Tag(TEXT("InputTag.Weapon.Block"));
 		const FGameplayTag ShotInput = Tag(TEXT("InputTag.Weapon.Primary"));
 		QueueArcherReady();
+		Network.ThenServer(TEXT("The bow authors a positive aim cap"), [this](FNetworkState&) { ASSERT_THAT(IsTrue(AimSpeedLimit() > 0.0f)); });
 		QueueArcherInput(TEXT("The archer holds the aim input"), AimInput, true);
 		Network
 			.UntilServer(TEXT("The server holds the aim stance with its movement cap"),
-				[this](FNetworkState& State) { return ArcherHas(State, TEXT("State.Ranged.Aiming")) && ArcherMaxSpeed(State) <= AimSpeedLimit + .01f; },
+				[this](FNetworkState& State) { return ArcherHas(State, TEXT("State.Ranged.Aiming")) && ArcherMaxSpeed(State) <= AimSpeedLimit() + .01f; },
 				NetworkTimeout())
 			.UntilClient(TEXT("The archer predicts the same stance and cap"), 0,
 				[this](FNetworkState& State)
 				{
 					const URpgAbilitySystemComponent* AbilitySystem = ArcherAbilitySystem(State);
-					return AbilitySystem && AbilitySystem->IsRangedAimActive() && ArcherMaxSpeed(State) <= AimSpeedLimit + .01f;
+					return AbilitySystem && AbilitySystem->IsRangedAimActive() && ArcherMaxSpeed(State) <= AimSpeedLimit() + .01f;
 				},
 				NetworkTimeout())
 			.UntilClient(TEXT("The observer sees the archer aim"), 1,
@@ -2755,12 +2763,12 @@ NETWORK_TEST_CLASS(RangedAimPIE, "SurvivalRpg.Network")
 				[this](FNetworkState& State)
 				{
 					ASSERT_THAT(IsTrue(ArcherHas(State, TEXT("State.Ranged.Aiming"))));
-					ASSERT_THAT(IsTrue(ArcherMaxSpeed(State) <= AimSpeedLimit + .01f));
+					ASSERT_THAT(IsTrue(ArcherMaxSpeed(State) <= AimSpeedLimit() + .01f));
 				});
 		QueueArcherInput(TEXT("The archer lowers the bow"), AimInput, false);
 		Network
 			.UntilServer(TEXT("The server ends the stance and its cap"),
-				[this](FNetworkState& State) { return !ArcherHas(State, TEXT("State.Ranged.Aiming")) && ArcherMaxSpeed(State) > AimSpeedLimit + 1.0f; },
+				[this](FNetworkState& State) { return !ArcherHas(State, TEXT("State.Ranged.Aiming")) && ArcherMaxSpeed(State) > AimSpeedLimit() + 1.0f; },
 				NetworkTimeout())
 			.UntilClient(TEXT("The observer sees the bow lowered"), 1,
 				[this](FNetworkState& State)

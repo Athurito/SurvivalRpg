@@ -651,9 +651,11 @@ bool FRpgProjectileShotBowContentTest::RunTest(const FString& Parameters)
 
 	// A full draw shoots one standard arrow at the bow's top speed and pays once.
 	Press();
+	TestTrue(TEXT("Holding the primary input alone enters the aim stance"), Fixture.ASC->IsRangedAimActive());
 	Fixture.Advance(Shot.FullDrawSeconds + 0.5f);
 	Release();
 	TestFalse(TEXT("The release ends the shot"), Fixture.IsActive());
+	TestFalse(TEXT("Ending the shot ends its stance"), Fixture.ASC->IsRangedAimActive());
 	ARpgCombatProjectile* Arrow = nullptr;
 	for (TActorIterator<ARpgCombatProjectile> It(Fixture.World); It; ++It)
 	{

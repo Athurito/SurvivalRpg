@@ -150,6 +150,7 @@ A `GameplayCueNotify_Burst` `OnBurst` override is const, so it cannot call the B
 
 - Appending to an array of structs with `ObjectTools.set_properties`, such as an AbilitySet's `GrantedGameplayAbilities`, needs the existing elements in exactly the shape `get_properties` returns, object references included as `{"refPath": ...}`; otherwise the call fails with "ArrayAdd: elements changed alongside the size change" (RNG-03).
 - A Blueprint ability's asset tags are writable as `AbilityTags`, `{"gameplayTags": [{"tagName": ...}]}`; `GetAssetTags()` reads them (RNG-03).
+- Assets save only values that differ from the native default. Changing a native struct or class default therefore silently retunes every Blueprint or DataAsset that kept the old default. Before moving a tuning value out of a native default, author it on each asset that relies on it, then compile and save; `get_properties` after the rebuild shows the new default where it is missing (RNG-03, the bow's aim cap).
 
 - DataAsset instances such as `URpgAbilitySet` and `URpgPawnData`: create with `DataAssetTools.create(folder_path, asset_name, asset_type)`, then set values with `ObjectTools.set_properties`.
 - Blueprint-class definitions such as `URpgExperienceDefinition`, `URpgInventoryItemDefinition`, and `URpgEquipmentDefinition`: create with `BlueprintTools.create` and the native definition class as `asset_type`, then call `ObjectTools.set_properties` on the Blueprint.
