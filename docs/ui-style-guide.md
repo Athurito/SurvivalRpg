@@ -389,6 +389,16 @@ styles for newly placed widgets.
     `UI.HUD.Slot.AbilityResource` slot outside the bars' fade. They keep their
     space while the resource exists, show their content only while it holds
     something, and pulse a glow in the resource's role when full.
+  - Ranged weapons (RNG-04):
+    - The ammunition counter is a 64-unit gear slot in the same slot: the
+      ammunition icon, the count bottom right, and `MI_UI_Glyph_Forbidden`
+      top left when it is empty. It shows only while a ranged weapon is
+      equipped.
+    - The bow crosshair shares `UI.HUD.Slot.Crosshair` with the interaction
+      dot. It shows four bone ticks around the free centre while aiming, a
+      64 × 6 draw-strength bar below while drawing (XP fill), and a
+      diamond at full draw.
+    - Nothing shows a trajectory, landing point or ballistic correction.
   - Text over the world sits on a plate (`MI_UI_Panel_Inset` at 75 %) so it
     stays readable on bright scenes.
   - Menu key hints (`CUI_HudKeyHints`) sit in a right-aligned wrap box, two
