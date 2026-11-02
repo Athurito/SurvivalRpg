@@ -1,6 +1,6 @@
 # RNG-02: Bow, standard arrow and the shot
 
-Task report for RNG-02 in the [ranged combat roadmap](ranged-combat-roadmap.md), PR_LINK. The first bow and the standard arrow are productive items in the new GameFeature `GF_Combat_Ranged`. One native ability task draws, validates and commits a projectile shot exactly once on the server: it launches the RNG-01 projectile, consumes one arrow from the shooter's inventory and pays the release stamina, or does nothing at all. Draw curves, costs and the passive seams are bow content. The primary attack button now holds until it is released. Aim input, camera, aim movement and animations follow in RNG-03, embedding and recovery in RNG-03b/03c, the HUD in RNG-04 and the bow enemy in RNG-05.
+Task report for RNG-02 in the [ranged combat roadmap](ranged-combat-roadmap.md), [PR #366](https://github.com/Athurito/SurvivalRpg/pull/366). The first bow and the standard arrow are productive items in the new GameFeature `GF_Combat_Ranged`. One native ability task draws, validates and commits a projectile shot exactly once on the server: it launches the RNG-01 projectile, consumes one arrow from the shooter's inventory and pays the release stamina, or does nothing at all. Draw curves, costs and the passive seams are bow content. The primary attack button now holds until it is released. Aim input, camera, aim movement and animations follow in RNG-03, embedding and recovery in RNG-03b/03c, the HUD in RNG-04 and the bow enemy in RNG-05.
 
 ## C++ boundary decision
 
