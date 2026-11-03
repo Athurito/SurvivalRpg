@@ -1,5 +1,6 @@
 #include "RpgProjectileShotAutomationTestTypes.h"
 
+#include "Components/SceneComponent.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgStaminaSet.h"
 #include "SurvivalRpg/AbilitySystem/Tasks/RpgAbilityTask_ProjectileShot.h"
 #include "SurvivalRpg/Combat/RpgEmbeddedProjectilePickup.h"
@@ -29,6 +30,24 @@ namespace RpgProjectileShotAutomationTestTypes
 		Ammunition->ProjectileClass = ProjectileClass;
 		Fragments.Add(Ammunition);
 	}
+}
+
+ARpgProjectileLaunchPresenterAutomationActor::ARpgProjectileLaunchPresenterAutomationActor(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	SetRootComponent(CreateDefaultSubobject<USceneComponent>(TEXT("Root")));
+}
+
+bool ARpgProjectileLaunchPresenterAutomationActor::HandOffProjectileLaunch_Implementation(ARpgCombatProjectile* Projectile, FVector& OutVisualStart)
+{
+	if (!bShowsAmmunition)
+	{
+		return false;
+	}
+	++HandOffCount;
+	LastProjectile = Projectile;
+	OutVisualStart = VisualStart;
+	return true;
 }
 
 ARpgProjectileShotAutomationTestProjectile::ARpgProjectileShotAutomationTestProjectile(const FObjectInitializer& ObjectInitializer)

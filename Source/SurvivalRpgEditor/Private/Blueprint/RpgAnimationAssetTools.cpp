@@ -16,6 +16,7 @@
 #include "AnimGraphNode_LinkedInputPose.h"
 #include "AnimGraphNode_SaveCachedPose.h"
 #include "AnimGraphNode_UseCachedPose.h"
+#include "AssetRegistry/AssetRegistryModule.h"
 #include "Chooser.h"
 #include "ChooserPropertyAccess.h"
 #include "Dom/JsonObject.h"
@@ -28,6 +29,8 @@
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
 #include "ScopedTransaction.h"
+#include "StaticToSkeletalMeshConverter.h"
+#include "Engine/StaticMesh.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "UObject/Package.h"
@@ -893,4 +896,24 @@ float URpgAnimationAssetTools::TrimMontageToRange(UAnimMontage* Montage, const f
 	Montage->PostEditChange();
 	Montage->MarkPackageDirty();
 	return Montage->GetPlayLength();
+}
+
+USkeleton* URpgAnimationAssetTools::CreateSkeletonFromStaticMesh(UStaticMesh* StaticMesh, const FString& PackageName, FVector RelativeRootPosition)
+{
+	if (!IsValid(StaticMesh) || RelativeRootPosition.ContainsNaN() || !IsProjectContentPackage(PackageName)
+		|| FindPackage(nullptr, *PackageName) || FPackageName::DoesPackageExist(PackageName) || !StaticMesh->GetBoundingBox().IsValid)
+	{
+		return nullptr;
+	}
+	UPackage* Package = CreatePackage(*PackageName);
+	USkeleton* Skeleton = NewObject<USkeleton>(Package, FName(FPackageName::GetShortName(PackageName)), RF_Public | RF_Standalone | RF_Transactional);
+	if (!FStaticToSkeletalMeshConverter::InitializeSkeletonFromStaticMesh(Skeleton, StaticMesh, RelativeRootPosition))
+	{
+		Skeleton->ClearFlags(RF_Public | RF_Standalone);
+		Skeleton->MarkAsGarbage();
+		return nullptr;
+	}
+	FAssetRegistryModule::AssetCreated(Skeleton);
+	Package->MarkPackageDirty();
+	return Skeleton;
 }

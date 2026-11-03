@@ -197,6 +197,21 @@ Observed in HRW-01 (editor Python run as [Editor sessions and PIE](editor-sessio
   - Set each component that shows the mesh to `compose_transforms(P, old relative transform)`, then compile its Blueprint.
   - Verify in actor space, not with the mesh bounds, which are axis-aligned in mesh space: compare every socket and every triangle's corners, normals and UVs from `RENDER_DATA` per LOD before and after. Match triangles by centroid and winding normal, because back-to-back triangles share a centroid. The generated lightmap UVs moved by up to 0.002 there; everything else matched within 0.0001 cm and 0.0001°.
 
+### Skeletal meshes from static meshes
+
+Observed while rigging the bow's string (bow draw presentation):
+
+- `SkeletonFromStaticMeshFactory` and `SkeletalMeshFromStaticMeshFactory` keep their inputs (`StaticMesh`, `ReferenceSkeleton`) out of reach of Python and `ToolsetLibrary.set_object_properties`. `create_asset` with the unset skeleton factory crashed the editor in `UStaticMesh::GetBoundingBox`.
+- Instead:
+  - `AnimationAssetTools.create_skeleton_from_static_mesh(mesh, package, relative_root)` creates a skeleton with one root bone.
+  - `copy_mesh_from_static_mesh`, `GeometryScript_BoneWeights.copy_bones_from_skeleton`, `mesh_create_bone_weights` and `set_all_vertex_bone_weights` (root, 1) prepare the mesh.
+  - `GeometryScript_NewAssetUtils.create_new_skeletal_mesh_asset_from_mesh` creates the skeletal mesh; pass the static mesh's materials in the options' `materials` map.
+  - `SkeletonModifier` (`set_skeletal_mesh`, `add_bone`, `set_bone_transform`, `commit_skeleton_to_skeletal_mesh`) adds bones. Bone transforms are local to the parent, and the root sits where the skeleton tool placed it, not at the mesh origin.
+  - `copy_mesh_from_skeletal_mesh`, `set_vertex_bone_weights` per vertex and `copy_mesh_to_skeletal_mesh` write the skin weights.
+- `get_all_vertex_positions` returns a tuple of the mesh, a `GeometryScriptVectorList` and a flag. Python has no `GeometryScript_ListUtilities`; call the list's own `convert_vector_list_to_array()`.
+- The material's `used_with_skeletal_mesh` flag is set automatically on first use, which dirties the material. Save it with the skeletal mesh, or the cooked game renders the default material.
+- Drive one bone from gameplay presentation with a `PoseableMeshComponent` (`SetBoneLocationByName` in component space), set from the owner's tick in `TG_PostUpdateWork` so the character's pose for that frame is final (`BP_BowActor`).
+
 ### PCG graphs
 
 Observed in HRW-03:

@@ -3,6 +3,7 @@
 #include "GameplayEffect.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility.h"
 #include "SurvivalRpg/Combat/RpgCombatProjectile.h"
+#include "SurvivalRpg/Combat/RpgProjectileLaunchPresenter.h"
 #include "SurvivalRpg/Combat/RpgProjectileShot.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Inventory/RpgLootSourceComponent.h"
@@ -19,6 +20,25 @@ class ARpgProjectileShotAutomationTestProjectile : public ARpgCombatProjectile
 
 public:
 	explicit ARpgProjectileShotAutomationTestProjectile(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+};
+
+/** Editor-only actor attached to a shooter that hands projectiles a fixed visual start, as a bow's nocked arrow does. */
+UCLASS(NotBlueprintable, Transient)
+class ARpgProjectileLaunchPresenterAutomationActor final : public AActor, public IRpgProjectileLaunchPresenter
+{
+	GENERATED_BODY()
+
+public:
+	explicit ARpgProjectileLaunchPresenterAutomationActor(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	/** World location handed to the projectile. */
+	FVector VisualStart = FVector::ZeroVector;
+	/** Whether a hand-off is offered at all. */
+	bool bShowsAmmunition = true;
+	int32 HandOffCount = 0;
+	TWeakObjectPtr<ARpgCombatProjectile> LastProjectile;
+
+	virtual bool HandOffProjectileLaunch_Implementation(ARpgCombatProjectile* Projectile, FVector& OutVisualStart) override;
 };
 
 /** Editor-only recoverable projectile that destroys itself in BeginPlay, so a shot's finished spawn fails. */

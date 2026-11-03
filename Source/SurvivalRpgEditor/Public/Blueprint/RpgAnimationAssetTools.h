@@ -18,6 +18,7 @@ class UBlueprint;
 class UChooserTable;
 class UEdGraph;
 class USkeleton;
+class UStaticMesh;
 
 /** One range of a montage's sequence, in animation seconds, and the rate the montage plays it at. Editor authoring input. */
 USTRUCT(BlueprintType)
@@ -178,4 +179,13 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
 	static UAnimGraphNode_UseCachedPose* CreateUseCachedPoseNode(UEdGraph* Graph, const FString& CacheName);
+
+	/**
+	 * Creates the skeleton asset PackageName (a new project package) with a single root bone, for turning StaticMesh into
+	 * a skeletal mesh with GeometryScript. RelativeRootPosition places the root in StaticMesh's bounding box, 0 to 1 per
+	 * axis; (0.5, 0.5, 0) is the bottom centre. The engine's converter keeps these inputs out of reach of scripts. Returns
+	 * the skeleton or null for an existing asset, a package outside the project or a mesh without geometry. Never saves.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
+	static USkeleton* CreateSkeletonFromStaticMesh(UStaticMesh* StaticMesh, const FString& PackageName, FVector RelativeRootPosition);
 };
