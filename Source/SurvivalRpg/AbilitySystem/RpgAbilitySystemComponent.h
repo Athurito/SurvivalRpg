@@ -19,6 +19,8 @@ class ARpgBasePlayerState;
 class UAnimInstance;
 class URpgCameraMode;
 
+DECLARE_MULTICAST_DELEGATE_OneParam(FRpgRangedAimBegan, const UGameplayAbility* /*Ability*/);
+
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class SURVIVALRPG_API URpgAbilitySystemComponent : public UAbilitySystemComponent
 {
@@ -98,6 +100,10 @@ public:
 	/** Game-thread read model: any live token on owner and authority, the replicated State.Ranged.Aiming tag on proxies. */
 	UFUNCTION(BlueprintPure, Category = "Rpg|Ranged")
 	bool IsRangedAimActive() const;
+	/** Owner and authority: whether the current activation of Ability holds a live aim token of its own. */
+	bool IsRangedAimHeldBy(const UGameplayAbility* Ability) const;
+	/** Owner and authority: an activation acquired its aim token, for example once a stance pressed in the air lands. */
+	FRpgRangedAimBegan OnRangedAimBegan;
 	/** Lowest positive movement cap in cm/s of the live tokens, or zero without one. Owner and authority only. */
 	UFUNCTION(BlueprintPure, Category = "Rpg|Ranged")
 	float GetRangedAimMovementSpeedLimit() const;

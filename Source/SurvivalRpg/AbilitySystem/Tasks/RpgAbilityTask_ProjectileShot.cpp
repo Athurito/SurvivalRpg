@@ -89,7 +89,6 @@ void URpgAbilityTask_ProjectileShot::Activate()
 	CapturedActivationKey = Ability->GetCurrentActivationInfo().GetActivationPredictionKey();
 	bAuthority = ActorInfo->IsNetAuthority();
 	bLocallyControlled = ActorInfo->IsLocallyControlled();
-	StartSeconds = GetWorld()->GetTimeSeconds();
 	// Every value this activation uses is fixed here; a passive gained while drawing applies to the next shot.
 	Tuning = RpgProjectileShot::ResolveTuning(Definition, *Spec, *ActorInfo);
 
@@ -100,8 +99,6 @@ void URpgAbilityTask_ProjectileShot::Activate()
 		FinishCancelled(Resources);
 		return;
 	}
-
-	SetDrawingTag(true);
 
 	// Bind before anything can end the shot: an On Nocked handler or an early release may resolve it synchronously, and
 	// the end releases these bindings.
@@ -121,13 +118,18 @@ void URpgAbilityTask_ProjectileShot::Activate()
 		}
 	}
 
-	if (Tuning.MinimumNockSeconds > 0.0f)
+	// A shot that holds an aim stance draws only inside it. Its stance waits while the avatar is in the air (and during a
+	// dodge or stagger), so a press there waits as well, on owner and authority alike, instead of shooting unaimed.
+	URpgAbilitySystemComponent* RpgASC = Cast<URpgAbilitySystemComponent>(ASC);
+	bWaitingForStance = RpgASC && Ability->GetAssetTags().HasTag(RpgGameplayTags::Ability_Type_RangedAim)
+		&& !RpgASC->IsRangedAimHeldBy(Ability);
+	if (bWaitingForStance)
 	{
-		GetWorld()->GetTimerManager().SetTimer(NockTimerHandle, this, &ThisClass::HandleNockTimer, Tuning.MinimumNockSeconds, false);
+		StanceBeganHandle = RpgASC->OnRangedAimBegan.AddUObject(this, &ThisClass::HandleStanceBegan);
 	}
 	else
 	{
-		HandleNockTimer();
+		BeginDraw();
 	}
 
 	// A release that reached the server before this activation did resolves now.
@@ -260,6 +262,34 @@ void URpgAbilityTask_ProjectileShot::HandleNockTimer()
 	}
 }
 
+void URpgAbilityTask_ProjectileShot::HandleStanceBegan(const UGameplayAbility* StanceAbility)
+{
+	URpgAbilitySystemComponent* RpgASC = Cast<URpgAbilitySystemComponent>(CapturedASC.Get());
+	if (!bWaitingForStance || bResolved || StanceAbility != Ability || !RpgASC || !RpgASC->IsRangedAimHeldBy(Ability)
+		|| !MatchesActivation())
+	{
+		return;
+	}
+	RpgASC->OnRangedAimBegan.Remove(StanceBeganHandle);
+	StanceBeganHandle.Reset();
+	BeginDraw();
+}
+
+void URpgAbilityTask_ProjectileShot::BeginDraw()
+{
+	bWaitingForStance = false;
+	StartSeconds = GetWorld()->GetTimeSeconds();
+	SetDrawingTag(true);
+	if (Tuning.MinimumNockSeconds > 0.0f)
+	{
+		GetWorld()->GetTimerManager().SetTimer(NockTimerHandle, this, &ThisClass::HandleNockTimer, Tuning.MinimumNockSeconds, false);
+	}
+	else
+	{
+		HandleNockTimer();
+	}
+}
+
 void URpgAbilityTask_ProjectileShot::HandleServerTimeout()
 {
 	if (!bResolved)
@@ -309,6 +339,12 @@ void URpgAbilityTask_ProjectileShot::ResolveRelease(const FRpgProjectileShotRele
 		FinishCancelled(ERpgProjectileShotResult::InvalidShot);
 		return;
 	}
+	// A release before the stance began never drew, whatever the owner reports.
+	if (bWaitingForStance)
+	{
+		FinishCancelled(ERpgProjectileShotResult::EarlyRelease);
+		return;
+	}
 
 	// The owner's draw counts only as long as the server saw the shot drawn, plus a little jitter.
 	const float DrawSeconds = FMath::Min(Release.DrawSeconds, static_cast<float>(GetElapsedSeconds()) + RpgProjectileShot::DrawTimeTolerance);
@@ -345,7 +381,7 @@ void URpgAbilityTask_ProjectileShot::PredictRelease(const FRpgProjectileShotRele
 	// inventory and stamina. The server's result alone launches and pays.
 	bResolved = true;
 	ReleaseBindings();
-	if (Release.DrawSeconds < Tuning.MinimumNockSeconds)
+	if (bWaitingForStance || Release.DrawSeconds < Tuning.MinimumNockSeconds)
 	{
 		FinishCancelled(ERpgProjectileShotResult::EarlyRelease);
 		return;
@@ -406,7 +442,7 @@ void URpgAbilityTask_ProjectileShot::FinishCancelled(const ERpgProjectileShotRes
 double URpgAbilityTask_ProjectileShot::GetElapsedSeconds() const
 {
 	const UWorld* World = GetWorld();
-	return World ? FMath::Max(0.0, World->GetTimeSeconds() - StartSeconds) : 0.0;
+	return World && !bWaitingForStance ? FMath::Max(0.0, World->GetTimeSeconds() - StartSeconds) : 0.0;
 }
 
 bool URpgAbilityTask_ProjectileShot::MatchesActivation() const
@@ -442,9 +478,17 @@ void URpgAbilityTask_ProjectileShot::ReleaseBindings()
 			ASC->AbilityTargetDataSetDelegate(CapturedSpec, CapturedActivationKey).Remove(TargetDataHandle);
 			ASC->ConsumeClientReplicatedTargetData(CapturedSpec, CapturedActivationKey);
 		}
+		if (StanceBeganHandle.IsValid())
+		{
+			if (URpgAbilitySystemComponent* RpgASC = Cast<URpgAbilitySystemComponent>(ASC))
+			{
+				RpgASC->OnRangedAimBegan.Remove(StanceBeganHandle);
+			}
+		}
 	}
 	InputReleasedHandle.Reset();
 	TargetDataHandle.Reset();
+	StanceBeganHandle.Reset();
 }
 
 void URpgAbilityTask_ProjectileShot::OnDestroy(const bool bInOwnerFinished)

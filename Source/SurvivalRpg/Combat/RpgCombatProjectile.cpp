@@ -598,7 +598,10 @@ ERpgProjectileRecoveryOutcome ARpgCombatProjectile::ResolveRecovery(
 		{
 			LyingForward = FVector::VectorPlaneProject(FVector::ForwardVector, Ground.ImpactNormal).GetSafeNormal();
 		}
-		Placement.HostComponent = Ground.GetComponent();
+		// Like an embed, it only follows a moving ground that every client can resolve; on any other it stays where it
+		// fell, so server and clients keep the same place.
+		UPrimitiveComponent* GroundComponent = Ground.GetComponent();
+		Placement.HostComponent = ARpgEmbeddedProjectilePickup::CanEmbedIn(GroundComponent) ? GroundComponent : nullptr;
 		Placement.Transform = FTransform(FRotationMatrix::MakeFromXZ(LyingForward, Ground.ImpactNormal).Rotator(),
 			Ground.ImpactPoint + Ground.ImpactNormal * RpgCombatProjectile::DropRestHeight);
 	}

@@ -7,6 +7,9 @@
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "GameplayTask.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerState.h"
 #include "GameFramework/ProjectileMovementComponent.h"
@@ -84,22 +87,36 @@ namespace RpgProjectileShotTests
 			}
 		}
 
-		bool Initialize(FAutomationTestBase& Test, const bool bPlayerStateOwner = true)
+		bool Initialize(FAutomationTestBase& Test, const bool bPlayerStateOwner = true, const bool bCharacterShooter = false)
 		{
 			if (!Test.TestNotNull(TEXT("Standalone shot world exists"), World)) return false;
 			// Finished spawns begin play, so a projectile that fails in its BeginPlay fails as in a running game.
 			World->InitializeActorsForPlay(FURL());
 			World->GetWorldSettings()->NotifyBeginPlay();
 
-			// A plain pawn has no root component, so it gets one to stand where the shot starts.
-			Pawn = World->SpawnActor<APawn>();
-			if (Pawn)
+			// A character brings the movement an aim stance reads; flying keeps it free of floor geometry and grounded for
+			// the stance. A plain pawn has no root component, so it gets one to stand where the shot starts.
+			if (bCharacterShooter)
 			{
-				USceneComponent* Root = NewObject<USceneComponent>(Pawn, NAME_None, RF_Transient);
-				Pawn->SetRootComponent(Root);
-				Pawn->AddInstanceComponent(Root);
-				Root->RegisterComponent();
-				Pawn->SetActorLocationAndRotation(ShooterLocation, FRotator::ZeroRotator);
+				ACharacter* Character = World->SpawnActor<ACharacter>();
+				Pawn = Character;
+				if (Character)
+				{
+					Character->GetCharacterMovement()->SetMovementMode(MOVE_Flying);
+					Character->SetActorLocationAndRotation(ShooterLocation, FRotator::ZeroRotator);
+				}
+			}
+			else
+			{
+				Pawn = World->SpawnActor<APawn>();
+				if (Pawn)
+				{
+					USceneComponent* Root = NewObject<USceneComponent>(Pawn, NAME_None, RF_Transient);
+					Pawn->SetRootComponent(Root);
+					Pawn->AddInstanceComponent(Root);
+					Root->RegisterComponent();
+					Pawn->SetActorLocationAndRotation(ShooterLocation, FRotator::ZeroRotator);
+				}
 			}
 			AActor* Owner = bPlayerStateOwner ? static_cast<AActor*>(World->SpawnActor<APlayerState>()) : Pawn;
 			if (!Test.TestTrue(TEXT("Shooter pawn and owner exist"), Pawn && Owner)) return false;
@@ -152,6 +169,23 @@ namespace RpgProjectileShotTests
 		}
 
 		void Advance(const double Seconds) const { World->TimeSeconds += Seconds; }
+
+		/** Runs every active ticking ability task once, as the ability system ticks them each frame. */
+		void TickTasks(const float DeltaSeconds = 1.0f / 60.0f) const
+		{
+			TArray<UGameplayTask*> Tasks;
+			for (auto It = ASC->GetTickingTaskIterator(); It; ++It)
+			{
+				Tasks.Add(*It);
+			}
+			for (UGameplayTask* Task : Tasks)
+			{
+				if (IsValid(Task) && Task->IsActive())
+				{
+					Task->TickTask(DeltaSeconds);
+				}
+			}
+		}
 
 		void Release() const
 		{
@@ -713,6 +747,83 @@ bool FRpgProjectileShotBowContentTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("The tuned shot consumes one arrow"), Fixture.GetArrows(ArrowClass), 2);
 	TestEqual(TEXT("Only the passive for the bow's ability id changes its cost"), Fixture.GetStamina(),
 		BeforeTunedShot - Shot.ReleaseStaminaCost * 0.5f, 0.01f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgProjectileShotAirbornePressTest,
+	"SurvivalRpg.Combat.ProjectileShot.BowShotPressedInTheAirWaitsForItsStance",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgProjectileShotAirbornePressTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgProjectileShotTests;
+	UClass* ShotClass = LoadClass<UGameplayAbility>(nullptr, TEXT("/GF_Combat_Ranged/GAS/Abilities/GA_BowShot.GA_BowShot_C"));
+	UClass* BowClass = LoadClass<URpgRangedWeaponInstance>(nullptr,
+		TEXT("/GF_Combat_Ranged/Equipment/Bow/BP_WeaponInstance_Bow.BP_WeaponInstance_Bow_C"));
+	UClass* ArrowClass = LoadClass<URpgInventoryItemDefinition>(nullptr, TEXT("/GF_Combat_Ranged/Items/ID_Arrow_Standard.ID_Arrow_Standard_C"));
+	const URpgAbilitySet* BowAbilities = LoadObject<URpgAbilitySet>(nullptr, TEXT("/GF_Combat_Ranged/GAS/AbilitySets/AS_Bow.AS_Bow"));
+	if (!TestTrue(TEXT("The bow content loads"), ShotClass && BowClass && ArrowClass && BowAbilities)) return false;
+
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this, true, true) || !Fixture.AddArrows(4, ArrowClass)) return false;
+	URpgRangedWeaponInstance* Bow = NewObject<URpgRangedWeaponInstance>(Fixture.Pawn, BowClass);
+	BowAbilities->GiveToAbilitySystem(Fixture.ASC, nullptr, Bow);
+	const FGameplayAbilitySpec* Granted = Fixture.ASC->FindAbilitySpecFromClass(ShotClass);
+	if (!TestNotNull(TEXT("The bow's ability set grants the shot"), Granted)) return false;
+	Fixture.Handle = Granted->Handle;
+	const FRpgProjectileShotDefinition& Shot = Bow->GetShotDefinition();
+	UCharacterMovementComponent* Movement = CastChecked<ACharacter>(Fixture.Pawn)->GetCharacterMovement();
+	const auto Press = [&Fixture]()
+	{
+		Fixture.ASC->AbilityInputTagPressed(RpgGameplayTags::InputTag_Weapon_Primary);
+		Fixture.ASC->ProcessAbilityInput(0.0f, false);
+	};
+	const auto Release = [&Fixture]()
+	{
+		Fixture.ASC->AbilityInputTagReleased(RpgGameplayTags::InputTag_Weapon_Primary);
+		Fixture.ASC->ProcessAbilityInput(0.0f, false);
+	};
+	const auto IsDrawing = [&Fixture]()
+	{
+		return Fixture.ASC->HasMatchingGameplayTag(RpgGameplayTags::State_Ranged_Drawing) || Fixture.ASC->IsRangedDrawingForPresentation();
+	};
+
+	// Pressed after a jump and released still in the air, even after a full draw's time, the shot never draws or pays.
+	Movement->SetMovementMode(MOVE_Falling);
+	Press();
+	Fixture.TickTasks();
+	TestTrue(TEXT("A press in the air is kept"), Fixture.IsActive());
+	TestFalse(TEXT("The stance waits in the air"), Fixture.ASC->IsRangedAimActive());
+	TestFalse(TEXT("The shot does not draw without its stance"), IsDrawing());
+	Fixture.Advance(Shot.FullDrawSeconds + 0.5f);
+	Fixture.TickTasks();
+	TestFalse(TEXT("It still does not draw while falling"), IsDrawing());
+	Release();
+	TestFalse(TEXT("The release in the air ends the shot"), Fixture.IsActive());
+	TestEqual(TEXT("It launches nothing"), Fixture.CountLiveProjectiles(), 0);
+	TestEqual(TEXT("It costs no arrow"), Fixture.GetArrows(ArrowClass), 4);
+	TestEqual(TEXT("It costs no stamina"), Fixture.GetStamina(), StartingStamina);
+
+	// Held through the landing, the press draws from the landing on, as the stance begins, and shoots once.
+	Press();
+	Fixture.Advance(1.0f);
+	Fixture.TickTasks();
+	TestFalse(TEXT("A held press still waits in the air"), IsDrawing());
+	Movement->SetMovementMode(MOVE_Flying);
+	Fixture.TickTasks();
+	TestTrue(TEXT("The stance begins on landing"), Fixture.ASC->IsRangedAimActive());
+	TestTrue(TEXT("The draw begins with the stance"), IsDrawing());
+	float DrawProgress = -1.0f;
+	float NockProgress = -1.0f;
+	TestTrue(TEXT("The owner knows how far it drew"), Fixture.ASC->GetLocalRangedDrawProgress(DrawProgress, NockProgress));
+	TestEqual(TEXT("The time in the air is no draw time"), DrawProgress, 0.0f, 0.001f);
+	Fixture.Advance(Shot.FullDrawSeconds + 0.5f);
+	Release();
+	TestFalse(TEXT("The release ends the shot"), Fixture.IsActive());
+	TestEqual(TEXT("The landed draw launches one arrow"), Fixture.CountLiveProjectiles(), 1);
+	TestEqual(TEXT("It consumes one arrow"), Fixture.GetArrows(ArrowClass), 3);
+	TestEqual(TEXT("It pays the release cost once"), Fixture.GetStamina(), StartingStamina - Shot.ReleaseStaminaCost, 0.01f);
 	return true;
 }
 

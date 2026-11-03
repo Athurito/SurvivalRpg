@@ -57,8 +57,9 @@ public:
 		const FRpgProjectileRecoveryPlacement& Placement);
 
 	/**
-	 * Whether a projectile can embed in Host: no other collectable, whose pickup would leave the arrow floating, and on
-	 * a moving host only one that every client can resolve, so the attachment replicates. Otherwise it drops.
+	 * Whether a projectile can embed in Host or lie on it as its host: no other collectable, whose pickup would leave
+	 * the arrow floating, and on a moving host only one that every client can resolve, so the attachment replicates.
+	 * Otherwise an embed drops, and a dropped pickup stays where it fell without a host.
 	 */
 	static bool CanEmbedIn(const UPrimitiveComponent* Host);
 

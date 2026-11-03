@@ -21,6 +21,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRpgRangedAimInterrupted, FName, Rea
  * stagger, death); abilities tagged Ability.Type.RangedAim never interrupt it. A cancelled activation whose input is
  * still held waits for its release, so a held button never restarts the stance. A press made while such a state
  * already lasts, such as during a dodge or a jump, does not cancel: the stance waits and begins once the state ends.
+ * A projectile shot of the same activation waits for that begin before it draws (URpgAbilityTask_ProjectileShot).
  */
 UCLASS()
 class SURVIVALRPG_API URpgAbilityTask_RangedAim : public UAbilityTask

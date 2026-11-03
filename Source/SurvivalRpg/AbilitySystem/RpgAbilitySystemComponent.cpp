@@ -264,6 +264,7 @@ uint32 URpgAbilitySystemComponent::BeginRangedAim(UGameplayAbility* Ability, flo
 	Entry.Token = LastRangedAimToken;
 	const uint32 Token = Entry.Token;
 	RefreshRangedAim();
+	OnRangedAimBegan.Broadcast(Ability);
 	return Token;
 }
 
@@ -294,6 +295,12 @@ bool URpgAbilitySystemComponent::IsRangedAimActive() const
 		return HasMatchingGameplayTag(RpgGameplayTags::State_Ranged_Aiming);
 	}
 	return RangedAimTokens.ContainsByPredicate([this](const FRangedAimToken& Entry) { return IsRangedAimTokenLive(Entry); });
+}
+
+bool URpgAbilitySystemComponent::IsRangedAimHeldBy(const UGameplayAbility* Ability) const
+{
+	return Ability && RangedAimTokens.ContainsByPredicate([this, Ability](const FRangedAimToken& Entry)
+		{ return Entry.Ability.Get() == Ability && IsRangedAimTokenLive(Entry); });
 }
 
 float URpgAbilitySystemComponent::GetRangedAimMovementSpeedLimit() const
