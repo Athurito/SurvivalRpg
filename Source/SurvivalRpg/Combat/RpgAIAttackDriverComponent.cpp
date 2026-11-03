@@ -863,20 +863,20 @@ bool URpgAIAttackDriverComponent::GetRangedAimPoint(const AActor* Target, FVecto
 
 	const FRpgProjectileShotDefinition& Definition = Weapon->GetShotDefinition();
 	const FVector TargetPoint = Target->GetActorLocation();
-	const FVector Muzzle = RpgProjectileShot::GetMuzzleLocation(
-		Definition, Pawn->GetActorLocation(), (TargetPoint - Pawn->GetActorLocation()).Rotation().Yaw);
+	const FVector ViewLocation = Pawn->GetPawnViewLocation();
+	const FVector Launch = RpgProjectileShot::GetAimLineLaunchPoint(Definition, Pawn->GetActorLocation(), ViewLocation, TargetPoint - ViewLocation);
 	const TSubclassOf<ARpgCombatProjectile> ProjectileClass =
 		URpgInventoryFragment_Ammunition::FindProjectileClass(Definition.AmmunitionItemDefinition);
 	const ARpgCombatProjectile* ProjectileDefaults = ProjectileClass ? ProjectileClass->GetDefaultObject<ARpgCombatProjectile>() : nullptr;
 	const float Gravity = ProjectileDefaults ? -World->GetGravityZ() * ProjectileDefaults->GetGravityScale() : 0.0f;
 	FVector Direction;
 	const bool bInReach = RpgProjectileShot::SolveLaunchDirection(
-		Muzzle, TargetPoint, RpgProjectileShot::GetLaunchSpeed(Definition, 1.0f), Gravity, Direction);
+		Launch, TargetPoint, RpgProjectileShot::GetLaunchSpeed(Definition, 1.0f), Gravity, Direction);
 
-	// The shot aims from the view through the focus and launches from the muzzle toward where that ray first hits. A
-	// focus far along the launch direction keeps both rays nearly parallel.
+	// The shot aims from the view through the focus and launches from that ray at the muzzle's depth, along it. The arc
+	// is solved from the point on the straight line to the target; the launch direction tilts that point by a few cm.
 	constexpr float AimPointDistance = 5000.0f;
-	OutAimPoint = Pawn->GetPawnViewLocation() + Direction * AimPointDistance;
+	OutAimPoint = ViewLocation + Direction * AimPointDistance;
 	return bInReach;
 }
 

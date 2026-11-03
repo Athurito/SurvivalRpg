@@ -327,9 +327,10 @@ bool FRpgProjectileShotDrawTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("A long draw is a full draw"), Fixture.Ability->LastDrawFraction, 1.0f, 0.001f);
 	TestEqual(TEXT("A full draw shoots at the curve's top speed"),
 		Fixture.Ability->LastProjectile.IsValid() ? Fixture.Ability->LastProjectile->GetProjectileMovement()->Velocity.Size() : 0.0, 6000.0, 1.0);
-	TestTrue(TEXT("The projectile leaves from the muzzle in front of the shooter"),
+	// The pawn aims from its eyes, 64 cm up, along X: the shot joins that aim line at the muzzle's depth of 60 cm.
+	TestTrue(TEXT("The projectile leaves from the aim line at the muzzle's depth"),
 		Fixture.Ability->LastProjectile.IsValid()
-		&& Fixture.Ability->LastProjectile->GetLaunchOrigin().Equals(ShooterLocation + FVector(60.0f, 0.0f, 50.0f), 1.0f));
+		&& Fixture.Ability->LastProjectile->GetLaunchOrigin().Equals(ShooterLocation + FVector(60.0f, 0.0f, 64.0f), 1.0f));
 	return true;
 }
 
@@ -621,6 +622,52 @@ bool FRpgProjectileShotObstructionTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("A camera far from the shooter is refused"), RpgProjectileShot::ResolveGeometry(
 		MakeDefinition(), Fixture.Pawn, ShooterLocation + FVector(RpgProjectileShot::MaxAimOriginDistance + 100.0f, 0.0f, 0.0f),
 		FVector::ForwardVector, Geometry));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgProjectileShotAimLineTest,
+	"SurvivalRpg.Combat.ProjectileShot.ShotLeavesFromTheAimLine",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgProjectileShotAimLineTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgProjectileShotTests;
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this)) return false;
+	const FRpgProjectileShotDefinition Definition = MakeDefinition();
+
+	// A shoulder camera behind, right of and above the shooter, aiming slightly down past everything.
+	const FVector Camera = ShooterLocation + FVector(-220.0f, 75.0f, 80.0f);
+	const FVector Aim = FVector(1.0f, 0.0f, -0.05f).GetSafeNormal();
+	const FVector Muzzle = RpgProjectileShot::GetMuzzleLocation(Definition, ShooterLocation, 0.0f);
+	FRpgProjectileShotGeometry Geometry;
+	if (!TestTrue(TEXT("The shoulder aim resolves"), RpgProjectileShot::ResolveGeometry(Definition, Fixture.Pawn, Camera, Aim, Geometry))) return false;
+	TestFalse(TEXT("Nothing obstructs it"), Geometry.bObstructed);
+	TestTrue(TEXT("It flies along the aim"), Geometry.Direction.Equals(Aim, 1.0e-4f));
+	TestEqual(TEXT("It leaves from the aim line"), FMath::PointDistToLine(Geometry.Origin, Aim, Camera), 0.0f, 0.01f);
+	TestEqual(TEXT("at the muzzle's depth"), (Geometry.Origin - Camera) | Aim, (Muzzle - Camera) | Aim, 0.01);
+	TestTrue(TEXT("which is the shared aim-line launch point"), Geometry.Origin.Equals(
+		RpgProjectileShot::GetAimLineLaunchPoint(Definition, ShooterLocation, Camera, Aim), 0.01f));
+
+	// A camera far to the side would start the shot away from the body: it leaves from the muzzle instead.
+	TestTrue(TEXT("A distant aim line resolves"), RpgProjectileShot::ResolveGeometry(
+		Definition, Fixture.Pawn, ShooterLocation + FVector(-220.0f, 300.0f, 80.0f), FVector::ForwardVector, Geometry));
+	TestTrue(TEXT("and leaves from the muzzle"), Geometry.Origin.Equals(Muzzle, 0.01f));
+
+	// A wall between the body and the shoulder's aim line, clear of the muzzle: the shot leaves from the muzzle.
+	AActor* Wall = Fixture.World->SpawnActor<AActor>();
+	USphereComponent* WallBody = NewObject<USphereComponent>(Wall, NAME_None, RF_Transient);
+	WallBody->InitSphereRadius(10.0f);
+	WallBody->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	WallBody->SetCollisionResponseToAllChannels(ECR_Block);
+	Wall->SetRootComponent(WallBody);
+	Wall->AddInstanceComponent(WallBody);
+	WallBody->RegisterComponent();
+	Wall->SetActorLocation(ShooterLocation + FVector(25.0f, 40.0f, 60.0f));
+	TestTrue(TEXT("The walled aim resolves"), RpgProjectileShot::ResolveGeometry(Definition, Fixture.Pawn, Camera, Aim, Geometry));
+	TestFalse(TEXT("The muzzle stays clear"), Geometry.bObstructed);
+	TestTrue(TEXT("It leaves from the muzzle"), Geometry.Origin.Equals(Muzzle, 0.01f));
 	return true;
 }
 

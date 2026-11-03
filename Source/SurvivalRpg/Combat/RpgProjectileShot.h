@@ -117,8 +117,9 @@ struct SURVIVALRPG_API FRpgProjectileShotDefinition
 	TSubclassOf<UGameplayEffect> StaminaChangeEffect;
 
 	/**
-	 * Launch point relative to the shooter's location in cm, in the frame of the aim's yaw (X forward, Y right, Z up). The
-	 * server checks the segment from the shooter's body at the same height to it, so a wall in between stops the shot.
+	 * Launch point relative to the shooter's location in cm, in the frame of the aim's yaw (X forward, Y right, Z up). Its
+	 * depth along the aim sets where the shot joins the aim line; it is the launch point itself when the aim line is out
+	 * of reach. The server checks the way from the shooter's body at the same height, so a wall in between stops the shot.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Shot|Aim")
 	FVector MuzzleOffset = FVector(60.0f, 0.0f, 50.0f);
@@ -251,6 +252,13 @@ namespace RpgProjectileShot
 	SURVIVALRPG_API FVector GetMuzzleLocation(const FRpgProjectileShotDefinition& Definition, const FVector& ShooterLocation, float AimYawDegrees);
 
 	/**
+	 * The point on the aim line, the ray from AimOrigin along AimDirection, at the muzzle's depth along that ray. A shot
+	 * launches there when ResolveGeometry accepts it, so an NPC solves its arc from this point too.
+	 */
+	SURVIVALRPG_API FVector GetAimLineLaunchPoint(
+		const FRpgProjectileShotDefinition& Definition, const FVector& ShooterLocation, const FVector& AimOrigin, const FVector& AimDirection);
+
+	/**
 	 * The direction to launch a projectile at Speed (cm/s) from Origin so that it passes Target on its low arc under
 	 * Gravity (cm/s², positive pulls down). False when Target is out of reach or the input is degenerate; OutDirection
 	 * then points straight at Target.
@@ -271,10 +279,12 @@ namespace RpgProjectileShot
 		const UAbilitySystemComponent* AbilitySystem);
 
 	/**
-	 * Server: the launch point and direction for a release. The muzzle follows Definition.MuzzleOffset in the aim's yaw;
-	 * a hit on the projectile channel between the shooter's body and the muzzle moves the launch point back in front of
-	 * it, so a shot never starts on the far side of a wall. The projectile flies toward the camera trace's first hit.
-	 * Returns false for malformed aim data or a camera location far from the shooter.
+	 * Server: the launch point and direction for a release. The shot leaves from the aim line, the camera ray, at the
+	 * muzzle's depth and flies along it, so it stays in the crosshair at every distance and only gravity takes it below.
+	 * That start must lie within 150 cm of the shooter's body with a clear way from the body on the projectile channel.
+	 * Otherwise it leaves from the muzzle, Definition.MuzzleOffset in the aim's yaw, toward the camera trace's first hit;
+	 * a hit between the body and the muzzle moves that launch point back in front of it, so a shot never starts on the
+	 * far side of a wall. Returns false for malformed aim data or a camera location far from the shooter.
 	 */
 	SURVIVALRPG_API bool ResolveGeometry(
 		const FRpgProjectileShotDefinition& Definition,

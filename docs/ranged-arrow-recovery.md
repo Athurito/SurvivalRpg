@@ -39,7 +39,7 @@ Every arrow was gone after its flight (RNG-02). The roadmap requires intact arro
 
 | Asset | Content |
 | --- | --- |
-| `GF_Combat_Ranged/Projectiles/BP_EmbeddedPickup_Arrow` | New, parent `ARpgEmbeddedProjectilePickup`. `DisplayMesh` shows `SM_Skeleton_Archer_Arrow` with the same relative transform as the projectile (-62 cm X, pitch -90), so its tip lies at the actor origin and the shaft along -X (measured bounds X -62.5 to 0.04 cm). Query-only collision for interaction focus. |
+| `GF_Combat_Ranged/Projectiles/BP_EmbeddedPickup_Arrow` | New, parent `ARpgEmbeddedProjectilePickup`. `DisplayMesh` shows `SM_Skeleton_Archer_Arrow` with the same relative transform as the projectile (-62 cm X, pitch -90), so its tip lies at the actor origin and the shaft along -X (measured bounds X -62.5 to 0.04 cm). Query-only collision for interaction focus. The [aim and visibility fix](ranged-arrow-aim-visibility.md) scaled both meshes by 1.4 at -86.8 cm X. |
 | `GF_Combat_Ranged/Projectiles/BP_Projectile_Arrow` | `Recovery`: pickup class `BP_EmbeddedPickup_Arrow` and break chance 0.3 saved in the asset; lifetime 600 s, 10 pickups per host, 100 cm group radius and 500 cm drop height equal the native defaults, which are the roadmap's starter values. No surface rules: the project has no surface physical materials yet. |
 
 ## Validation (2026-11-02)
