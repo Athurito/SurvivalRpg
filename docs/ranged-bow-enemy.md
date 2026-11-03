@@ -132,7 +132,7 @@ After RNG-04 only players could shoot. The AI attack driver accepted only melee 
 
 ## Follow-up: sword hits on the archer (2026-11-03)
 
-- **Report:** after RNG-06, the playtest found that some sword swings on the archer passed through without damage.
+- **Report:** after RNG-06, the playtest found that some sword swings on the archer passed through without damage ([PR #376](https://github.com/Athurito/SurvivalRpg/pull/376)).
 - **Finding:** the hits register. In PIE, every attack window that reached the archer damaged it, the same as the sword warrior:
   - frozen;
   - pinned in place while drawing;
