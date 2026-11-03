@@ -76,7 +76,7 @@
           },
           {
             "name": "Evade",
-            "description": "The target pressed in closer than 4.5 m: run back into the shooting band for up to 2.5 s, then shoot from where it stands.",
+            "description": "The target pressed in closer than 4.5 m: walk back toward the shooting band for up to 2.5 s, then shoot from where it stands. Walking keeps it within a melee chaser's reach.",
             "enter_conditions": [
               {
                 "struct": "/Script/SurvivalRpg.RpgStateTreeCombatTargetDistanceCondition",
@@ -91,7 +91,7 @@
                 "values": {
                   "MinDistance": 800.0,
                   "MaxDistance": 1200.0,
-                  "bWalk": false,
+                  "bWalk": true,
                   "bStrafe": false,
                   "bSucceedInBand": true,
                   "DurationMin": 2.5,
