@@ -7,7 +7,9 @@
 #include "EngineUtils.h"
 #include "TimerManager.h"
 #include "GameFramework/Actor.h"
+#include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerState.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility_BasicWeaponAttack.h"
 #include "SurvivalRpg/Combat/RpgCombatProjectile.h"
@@ -31,6 +33,20 @@ namespace
 
 	/** Seconds between checks of a running attack sequence for its next combo step. */
 	constexpr float AttackSequencePollInterval = 0.05f;
+
+	/** The actor that fights for a damage instigator: player abilities live on the player state, not on the pawn. */
+	AActor* ResolveAttacker(AActor* Instigator)
+	{
+		if (const APlayerState* PlayerState = Cast<APlayerState>(Instigator))
+		{
+			return PlayerState->GetPawn();
+		}
+		if (const AController* Controller = Cast<AController>(Instigator))
+		{
+			return Controller->GetPawn();
+		}
+		return Instigator;
+	}
 }
 
 URpgAIAttackDriverComponent::URpgAIAttackDriverComponent(const FObjectInitializer& ObjectInitializer)
@@ -138,7 +154,9 @@ void URpgAIAttackDriverComponent::ClearCombatTarget()
 
 void URpgAIAttackDriverComponent::HandleHealthChanged(URpgHealthComponent* HealthComponent, float OldValue, float NewValue, AActor* Instigator)
 {
-	if (!HealthComponent || HealthComponent->IsDeadOrDying() || NewValue >= OldValue || Instigator == GetOwner())
+	// Targets are the bodies that fight, so a player's player state answers with its current pawn.
+	AActor* Attacker = ResolveAttacker(Instigator);
+	if (!HealthComponent || HealthComponent->IsDeadOrDying() || NewValue >= OldValue || Attacker == GetOwner())
 	{
 		return;
 	}
@@ -146,18 +164,18 @@ void URpgAIAttackDriverComponent::HandleHealthChanged(URpgHealthComponent* Healt
 	if (bExternalControl)
 	{
 		const UWorld* World = GetWorld();
-		if (TargetPolicy == ERpgAICombatTargetPolicy::LastAttacker && World && Instigator != CombatTarget.Get() &&
-			IsValidCombatTarget(Instigator) &&
+		if (TargetPolicy == ERpgAICombatTargetPolicy::LastAttacker && World && Attacker != CombatTarget.Get() &&
+			IsValidCombatTarget(Attacker) &&
 			(!CombatTarget.IsValid() || World->GetTimeSeconds() - LastTargetSwitchTime >= TargetSwitchCooldown))
 		{
-			SetCombatTargetInternal(Instigator);
+			SetCombatTargetInternal(Attacker);
 		}
 		return;
 	}
 
-	if (bUseLastHostileDamageInstigator && IsValidCombatTarget(Instigator))
+	if (bUseLastHostileDamageInstigator && IsValidCombatTarget(Attacker))
 	{
-		SetCombatTargetInternal(Instigator);
+		SetCombatTargetInternal(Attacker);
 		ScheduleNextAttack(FMath::Max(0.0f, RetaliationDelay));
 	}
 }

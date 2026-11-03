@@ -18,7 +18,7 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Attack_Basic, "Ability.Attack.Basic", "Semantic tag for a basic attack ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Support_Heal, "Ability.Support.Heal", "Semantic tag for a support healing ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Defense_Block, "Ability.Defense.Block", "Semantic tag for a defensive block ability.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Type_RangedAim, "Ability.Type.RangedAim", "Marks the abilities of one ranged aim stance, such as the bow's aim and shot; they hold the stance together and do not interrupt each other.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Type_RangedAim, "Ability.Type.RangedAim", "Marks the abilities of one ranged aim stance, such as the bow's aim and shot; they hold the stance together and do not interrupt each other, and a projectile shot of such an ability draws only inside its own stance.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Type_Attack, "Ability.Type.Attack", "Marks an ability as an attack; enemy AI reads it on its combat target to react, for example to block.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(AI_Role_Grunt, "AI.Role.Grunt", "Semantic tag for a basic grunt AI role.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(AI_Event_TargetAttackStarted, "AI.Event.TargetAttackStarted", "StateTree event sent to an AI when its combat target starts an ability tagged Ability.Type.Attack.");

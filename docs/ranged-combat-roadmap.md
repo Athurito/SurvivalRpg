@@ -1,14 +1,14 @@
 # Ranged combat roadmap
 
-Updated: 2026-11-02. Status: **Implemented; user check pending.** The user started the whole roadmap on 2026-11-01; its tasks are delivered one PR each in dependency order and validated by the user at the end. RNG-01 to RNG-06, including RNG-03b and RNG-03c, are done; the user's playtest of the whole delivery is pending ([acceptance and playtest](ranged-acceptance.md)).
+Updated: 2026-11-03. Status: **Implemented; user check pending.** The user started the whole roadmap on 2026-11-01; its tasks are delivered one PR each in dependency order and validated by the user at the end. RNG-01 to RNG-06, including RNG-03b and RNG-03c, are done. An independent validation rated the delivery "passed with restrictions"; its medium findings are fixed ([validation fixes](ranged-acceptance.md#validation-fixes-2026-11-03)). The user's playtest of the whole delivery is pending ([acceptance and playtest](ranged-acceptance.md)).
 
-This plan records the agreed first bow system: a player bow and a bow enemy using shared combat mechanisms, including visibly embedded arrows, breakage, and partial ammunition recovery. It also defines the extension boundary for later magic and abilities such as Rain of Arrows. This is a design and implementation handoff, not a report of implemented or tested gameplay.
+This plan records the agreed first bow system: a player bow and a bow enemy using shared combat mechanisms, including visibly embedded arrows, breakage, and partial ammunition recovery. It also defines the extension boundary for later magic and abilities such as Rain of Arrows. It began as a design and implementation handoff; the task reports linked in the [implementation roadmap](#implementation-roadmap) record what was built and tested.
 
 ## Scheduling and scope
 
 - Ranged combat is an independent workstream with its own implementation start; this plan has no prerequisite to finish another roadmap.
 - Preserve the scheduling of other workstreams, including the [mastery map roadmap](mastery-map-roadmap.md). This document does not select when ranged implementation starts.
-- Every RNG task below remains Deferred until the user selects its start. Use one bounded task per branch/PR, named `codex/rng-<id>-<slug>` or `claude/rng-<id>-<slug>`.
+- The user started every RNG task below on 2026-11-01. Each was one bounded task per branch/PR, named `codex/rng-<id>-<slug>` or `claude/rng-<id>-<slug>`.
 - The first delivery is one bow, one standard arrow type, and one bow enemy. Embedded arrows and recovery are required for that delivery, not later polish.
 - The player presentation targets CMC/Manny. Do not incidentally add a Mover bow presentation; regression-check shared mechanisms on Mover.
 - RNG-01 is the only projectile foundation for arrows and spells: the "Projectile foundation" listed under "Later" in the [combat roadmap](combat-roadmap.md). There is no second, spell- or arrow-specific projectile. If combat magic needs a projectile before ranged work starts, implement RNG-01 from this roadmap first.
@@ -182,7 +182,7 @@ Document units, valid ranges, server/client ownership, replication, persistence,
 - Cover ammo removed during draw, insufficient release stamina, spawn failure, duplicate release messages, and cancellation races. The existing `URpgAbilityCost::ApplyCost` returns no success result; it alone cannot enforce this commit contract.
 - Retain resolved launch damage, source tags, source identity/faction, origin, charge, and recovery policy. Live equipment/source pointers must not change a projectile after a weapon swap, death, or avatar replacement.
 - Use launch origin and incoming impact direction for attenuation, defense, and feedback as applicable, not a new pawn's position or the projectile's final position as its own range origin.
-- Predict local draw/release presentation and a cosmetic arrow, with no client-authoritative collision or damage. Authoritative confirmation/rejection reconciles by shot identity.
+- Predict local draw/release presentation and a cosmetic arrow, with no client-authoritative collision or damage. Authoritative confirmation/rejection reconciles by shot identity. The draw and release presentation is predicted; the cosmetic arrow was never built and is an open [later extension](#later-extensions).
 - Keep acknowledgement in a longer-lived ASC/owner seam with bounded cosmetic cleanup. Immediate impact may destroy the projectile before its replicated actor appears, and the ability task may already have ended.
 - Keep launch data on the projectile and pass at most a shot identity through the effect context. `FRpgGameplayEffectContext` currently forwards Iris to the engine's context serializer; any new `NetSerialize` field needs a custom Iris NetSerializer beside the legacy path. Do not reuse the melee-only target/instigator cue suppression as an assumed per-projectile identity.
 
@@ -217,7 +217,7 @@ Unlimited NPC ammunition is an explicit content policy. The existing NPC invento
 
 ## Implementation roadmap
 
-All tasks are **Deferred** because their implementation start has not been selected. The order below is internal to this plan and does not reschedule other workstreams. Preserve these IDs, including the added recovery steps `RNG-03b` and `RNG-03c`. The dependencies are real prerequisites: RNG-04 can run beside RNG-03b and RNG-03c.
+The user started all tasks on 2026-11-01, and all are done. The order below is internal to this plan and does not reschedule other workstreams. Preserve these IDs, including the added recovery steps `RNG-03b` and `RNG-03c`. The dependencies are real prerequisites: RNG-04 can run beside RNG-03b and RNG-03c.
 
 | ID | Deliverable | Dependencies | Status |
 | --- | --- | --- | --- |
@@ -228,9 +228,9 @@ All tasks are **Deferred** because their implementation start has not been selec
 | RNG-03c | Embedded arrows on AI characters with grouping, corpse recovery including post-death hits, and the finite NPC recovery-budget mechanism | RNG-03b | Done; user check with RNG-06 ([ranged-ai-arrow-recovery.md](ranged-ai-arrow-recovery.md), [PR #370](https://github.com/Athurito/SurvivalRpg/pull/370)) |
 | RNG-04 | Crosshair, draw-strength and ammunition HUD through CommonUI/MVVM; no trajectory or impact prediction display | RNG-03 | Done; user check with RNG-06 ([ranged-hud.md](ranged-hud.md), [PR #369](https://github.com/Athurito/SurvivalRpg/pull/369)) |
 | RNG-05 | One bow enemy extending existing AI action/spacing behavior, common bow execution, and configured unlimited fire with bounded recovery | RNG-03c | Done; user check with RNG-06 ([ranged-bow-enemy.md](ranged-bow-enemy.md), [PR #371](https://github.com/Athurito/SurvivalRpg/pull/371)) |
-| RNG-06 | Integrated acceptance, network/regression checks, and final first-bow feel tuning | RNG-04, RNG-05 | Done; user playtest and feel check pending ([ranged-acceptance.md](ranged-acceptance.md), [PR #372](https://github.com/Athurito/SurvivalRpg/pull/372)) |
+| RNG-06 | Integrated acceptance, network/regression checks, and final first-bow feel tuning | RNG-04, RNG-05 | Done; user playtest and feel check pending ([ranged-acceptance.md](ranged-acceptance.md), [PR #372](https://github.com/Athurito/SurvivalRpg/pull/372), validation fixes [PR #375](https://github.com/Athurito/SurvivalRpg/pull/375)) |
 
-Each task records its ownership boundary, changed assets, actual validation, failed attempts, remaining limits, PR, and next action. Do not defer the focused checks for early tasks until RNG-06. No implementation task is marked Ready by this document.
+Each task records its ownership boundary, changed assets, actual validation, failed attempts, remaining limits, PR, and next action. Do not defer the focused checks for early tasks until RNG-06.
 
 ### Baseline refresh before RNG-01
 
@@ -278,6 +278,7 @@ Run builds, tests, and cooks through `Build/Tools/Unreal/ue.py`. Build after nat
 | Special arrow | Bow activation, projectile, recovery policy, and item/equipment source | Ammunition variants and additional effects; elemental arrows use the consumed-on-impact policy |
 | Rain of Arrows | GAS activation, server target validation, and shared damage/feedback | Ground targeting, telegraph, and timed area-effect mechanism |
 | Other enemy spells | Common ability/target contract | StateTree action selection and feature-owned spell content |
+| Predicted cosmetic arrow (open) | The shot's `ShotId`, the owner-predicted draw and release presentation, and the RNG-01 projectile | An owner-side cosmetic arrow at the release, reconciled with the server's projectile by shot identity and cleaned up on rejection, from the [shot commit](#shot-commit-and-networking) contract. Never built in RNG-01 to RNG-06; the owner sees its arrow about one round trip after the release |
 
 Rain of Arrows receives its own gameplay plan. It need not simulate one damaging replicated projectile for every visible arrow. Its decorative arrows must not accidentally create inventory ammunition. A future area-targeting presentation does not relax the bow's prohibition on flight-path or predicted-impact previews.
 
@@ -291,4 +292,4 @@ Inspection found an existing ranged weapon stub, existing atomic inventory/loot 
 
 A review on 2026-10-26 re-checked the cited seams against `master` at `0e00284e` (ranged stub, `ApplyCost` without a result, unused `MovementSpeed`, early-returning `PopulateLoot`, the 120-second corpse default, the melee-only AI attack driver, and the effect-context Iris forwarding). It merged the projectile with the combat roadmap's foundation and added the player-hit rule, the embedded-arrow budget, the recovery policies, and the RNG-03b/RNG-03c split from the user's decisions. The user also dropped the placeholder save migration, because no save is in production yet.
 
-Saving this plan adds documentation only. It does not create runtime classes, assets, save migrations, or a started roadmap task.
+Saving the original plan added documentation only; the RNG tasks above then implemented it.

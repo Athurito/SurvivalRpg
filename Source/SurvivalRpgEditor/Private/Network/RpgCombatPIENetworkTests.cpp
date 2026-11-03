@@ -2907,6 +2907,8 @@ NETWORK_TEST_CLASS(RangedEnemyPIE, "SurvivalRpg.Network")
 	static constexpr float TargetHealth = 1000.0f;
 	/** Where the archer stands: 10 m in front of the target, inside its shooting band and without a navmesh to move. */
 	inline static const FVector ArcherLocation{1000.0, 0.0, 120.0};
+	/** An observer within the archer's 30 m search, 13.5 m away and clear of the wall that can cover the target. */
+	inline static const FVector ObserverInReachLocation{0.0, 900.0, 100.0};
 
 	RpgCombatPIENetworkTests::FScopedPIEWorldSaveIsolation WorldSaveIsolation;
 	FRpgScopedNetworkTestGround Ground;
@@ -2924,6 +2926,9 @@ NETWORK_TEST_CLASS(RangedEnemyPIE, "SurvivalRpg.Network")
 	bool bSawDrawAfterBudget = false;
 	float HealthBeforeNextHit = 0.0f;
 	TWeakObjectPtr<AActor> Wall;
+	double CoveredSinceSeconds = 0.0;
+	double SwitchSeconds = 0.0;
+	float ObserverHealthBeforeShot = 0.0f;
 	TArray<TSharedPtr<FString>> StepDescriptions;
 
 	const TCHAR* Describe(const FString& Description)
@@ -2965,9 +2970,29 @@ NETWORK_TEST_CLASS(RangedEnemyPIE, "SurvivalRpg.Network")
 
 	float TargetHealthNow(UWorld* World) const
 	{
-		const ARpgCharacter* Target = FindPlayer(World, TargetId);
-		const UAbilitySystemComponent* AbilitySystem = Target ? Target->GetAbilitySystemComponent() : nullptr;
+		return PlayerHealthNow(World, TargetId);
+	}
+
+	float PlayerHealthNow(UWorld* World, const int32 PlayerId) const
+	{
+		const ARpgCharacter* Player = FindPlayer(World, PlayerId);
+		const UAbilitySystemComponent* AbilitySystem = Player ? Player->GetAbilitySystemComponent() : nullptr;
 		return AbilitySystem ? AbilitySystem->GetNumericAttribute(URpgHealthSet::GetHealthAttribute()) : -1.0f;
+	}
+
+	/** Kills the target player on the server, past the downed state that would keep it a valid combat target. */
+	void KillTarget(UWorld* World)
+	{
+		ARpgCharacter* Target = FindPlayer(World, TargetId);
+		URpgHealthComponent* Health = URpgHealthComponent::FindHealthComponent(Target);
+		ASSERT_THAT(IsTrue(Health != nullptr));
+		Health->DamageSelfDestruct(false);
+		if (URpgDownedComponent* Downed = Target->FindComponentByClass<URpgDownedComponent>(); Downed && Downed->IsDowned())
+		{
+			Downed->ForceDeathFromDowned();
+		}
+		ASSERT_THAT(IsTrue(Health->IsDeadOrDying()));
+		DeathSeconds = World->GetTimeSeconds();
 	}
 
 	ARpgCharacter* FindPlayer(UWorld* World, const int32 PlayerId) const
@@ -2995,6 +3020,9 @@ NETWORK_TEST_CLASS(RangedEnemyPIE, "SurvivalRpg.Network")
 		bSawDrawAfterBudget = false;
 		HealthBeforeNextHit = 0.0f;
 		Wall.Reset();
+		CoveredSinceSeconds = 0.0;
+		SwitchSeconds = 0.0;
+		ObserverHealthBeforeShot = 0.0f;
 		for (const FWorldContext& Context : GEngine->GetWorldContexts())
 		{
 			if (Context.WorldType == EWorldType::PIE && IsValid(Context.World()))
@@ -3029,8 +3057,8 @@ NETWORK_TEST_CLASS(RangedEnemyPIE, "SurvivalRpg.Network")
 		GetMutableDefault<URpgDeveloperSettings>()->ExperienceOverride = OriginalExperienceOverride;
 	}
 
-	/** Both clients ready, the target 10 m in front of a spawned bow enemy, the others out of its reach. */
-	void QueueEncounter(const bool bBehindAWall)
+	/** Both clients ready, the target 10 m in front of a spawned bow enemy, the others out of its reach unless bObserverInReach. */
+	void QueueEncounter(const bool bBehindAWall, const bool bObserverInReach = false)
 	{
 		using namespace RpgCombatPIENetworkTests;
 		Network
@@ -3059,17 +3087,18 @@ NETWORK_TEST_CLASS(RangedEnemyPIE, "SurvivalRpg.Network")
 					});
 		}
 		Network
-			.ThenServer(Describe(bBehindAWall
-					? TEXT("The target stands 10 m in front of a spawned bow enemy behind a wall; the others stand out of its reach")
-					: TEXT("The target stands 10 m in front of a spawned bow enemy; the others stand out of its reach")),
-				[this, bBehindAWall](FNetworkState& State)
+			.ThenServer(Describe(FString::Printf(TEXT("The target stands 10 m in front of a spawned bow enemy%s; %s"),
+					bBehindAWall ? TEXT(" behind a wall") : TEXT(""),
+					bObserverInReach ? TEXT("the observer stands 13.5 m from it, the host out of its reach") : TEXT("the others stand out of its reach"))),
+				[this, bBehindAWall, bObserverInReach](FNetworkState& State)
 				{
 					for (TActorIterator<ARpgCharacter> It(State.World); It; ++It)
 					{
 						ARpgCharacter* Character = *It;
 						const int32 PlayerId = Character->GetPlayerState() ? Character->GetPlayerState()->GetPlayerId() : INDEX_NONE;
+						const FVector ObserverLocation = bObserverInReach ? ObserverInReachLocation : FVector(-3000.0, 2000.0, 100.0);
 						const FVector Location = PlayerId == TargetId ? FVector(0.0, 0.0, 100.0)
-							: PlayerId == ObserverId ? FVector(-3000.0, 2000.0, 100.0) : FVector(-3000.0, -2000.0, 100.0);
+							: PlayerId == ObserverId ? ObserverLocation : FVector(-3000.0, -2000.0, 100.0);
 						Character->TeleportTo(Location, FRotator::ZeroRotator);
 						Character->GetCharacterMovement()->StopMovementImmediately();
 						Character->ForceNetUpdate();
@@ -3246,20 +3275,7 @@ NETWORK_TEST_CLASS(RangedEnemyPIE, "SurvivalRpg.Network")
 					ASSERT_THAT(IsTrue(ArcherRef.IsValid()));
 				})
 			.UntilServer(TEXT("The second archer draws at the target"), [this](FNetworkState&) { return ArcherDraws(); }, NetworkTimeout())
-			.ThenServer(TEXT("The target dies mid-draw"), [this](FNetworkState& State)
-				{
-					ARpgCharacter* Target = FindPlayer(State.World, TargetId);
-					URpgHealthComponent* Health = URpgHealthComponent::FindHealthComponent(Target);
-					ASSERT_THAT(IsTrue(Health != nullptr));
-					Health->DamageSelfDestruct(false);
-					// A player first goes down, and a downed player is still a valid target; finish the death.
-					if (URpgDownedComponent* Downed = Target->FindComponentByClass<URpgDownedComponent>(); Downed && Downed->IsDowned())
-					{
-						Downed->ForceDeathFromDowned();
-					}
-					ASSERT_THAT(IsTrue(Health->IsDeadOrDying()));
-					DeathSeconds = State.World->GetTimeSeconds();
-				})
+			.ThenServer(TEXT("The target dies mid-draw"), [this](FNetworkState& State) { KillTarget(State.World); })
 			.UntilServer(TEXT("The archer lowers that draw without releasing it"), [this](FNetworkState& State)
 				{
 					const URpgAIAttackDriverComponent* Driver = ArcherRef.IsValid() ? ArcherRef->FindComponentByClass<URpgAIAttackDriverComponent>() : nullptr;
@@ -3274,6 +3290,86 @@ NETWORK_TEST_CLASS(RangedEnemyPIE, "SurvivalRpg.Network")
 					}
 					(void)Assert.IsFalse(Driver->WasRangedShotReleased());
 					return true;
+				},
+				NetworkTimeout());
+	}
+
+	TEST_METHOD(ANewTargetDuringTheDrawGetsItsOwnHold)
+	{
+		using namespace RpgCombatPIENetworkTests;
+		QueueEncounter(false, true);
+		Network
+			.UntilServer(TEXT("The archer holds the full draw at the target, and a wall covers the target at once"), [this](FNetworkState& State)
+				{
+					const URpgAIAttackDriverComponent* Driver = ArcherRef.IsValid() ? ArcherRef->FindComponentByClass<URpgAIAttackDriverComponent>() : nullptr;
+					if (!ArcherDraws() || Driver->GetCombatTarget() != FindPlayer(State.World, TargetId) || Driver->GetRangedDrawFraction() < 1.0f)
+					{
+						return false;
+					}
+					FActorSpawnParameters Spawn;
+					Spawn.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+					Wall = State.World->SpawnActor<ARpgNetworkAutomationRecoveryWall>(FVector(500.0, 0.0, 300.0), FRotator::ZeroRotator, Spawn);
+					(void)Assert.IsTrue(Wall.IsValid(), TEXT("The wall spawns"));
+					CoveredSinceSeconds = State.World->GetTimeSeconds();
+					return true;
+				},
+				NetworkTimeout())
+			// The hold counts from the full draw and the line-of-fire grace from the wall, both in that frame. Past the
+			// longest hold (0.8 s) and inside the grace (1 s), the target dies, so the old hold is spent at the switch.
+			.UntilServer(TEXT("The covered target dies once the longest hold has passed"), [this](FNetworkState& State)
+				{
+					// A failed check ends the wait with its error recorded.
+					if (!Assert.IsTrue(ArcherDraws(), TEXT("The covered archer keeps its draw")))
+					{
+						return true;
+					}
+					if (State.World->GetTimeSeconds() - CoveredSinceSeconds < 0.81)
+					{
+						return false;
+					}
+					KillTarget(State.World);
+					return true;
+				},
+				NetworkTimeout())
+			.UntilServer(TEXT("The archer turns the full draw to the observer in reach and holds it again before the release"),
+				[this](FNetworkState& State)
+				{
+					const URpgAIAttackDriverComponent* Driver = ArcherRef.IsValid() ? ArcherRef->FindComponentByClass<URpgAIAttackDriverComponent>() : nullptr;
+					const AActor* Observer = FindPlayer(State.World, ObserverId);
+					// A failed check ends the wait with its error recorded.
+					if (!Assert.IsTrue(Driver != nullptr && Observer != nullptr))
+					{
+						return true;
+					}
+					const double Now = State.World->GetTimeSeconds();
+					if (SwitchSeconds <= 0.0)
+					{
+						if (Driver->GetCombatTarget() != Observer)
+						{
+							return false;
+						}
+						SwitchSeconds = Now;
+						ObserverHealthBeforeShot = PlayerHealthNow(State.World, ObserverId);
+						// The old hold is spent, so without a new hold the shot would leave at once.
+						if (!Assert.IsFalse(Driver->WasRangedShotReleased(), TEXT("The switch does not release the spent hold at once"))
+							|| !Assert.IsTrue(Driver->IsRangedShotActive() && Driver->GetRangedDrawFraction() >= 1.0f,
+								TEXT("The full draw carries over to the new target")))
+						{
+							return true;
+						}
+					}
+					if (!Driver->WasRangedShotReleased())
+					{
+						return false;
+					}
+					(void)Assert.IsTrue(Now - SwitchSeconds >= 0.3,
+						FString::Printf(TEXT("The new target gets its own hold before the release (released %.2f s after the switch)"), Now - SwitchSeconds));
+					return true;
+				},
+				NetworkTimeout())
+			.UntilServer(TEXT("Its arrow hits the observer"), [this](FNetworkState& State)
+				{
+					return PlayerHealthNow(State.World, ObserverId) < ObserverHealthBeforeShot;
 				},
 				NetworkTimeout());
 	}

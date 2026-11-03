@@ -478,6 +478,7 @@ EStateTreeRunStatus FRpgStateTreeRangedAttackTask::EnterState(FStateTreeExecutio
 		return EStateTreeRunStatus::Failed;
 	}
 	InstanceData.HoldLeft = RandomInRange(InstanceData.AimHoldMin, InstanceData.AimHoldMax);
+	InstanceData.HoldTarget = Target;
 	InstanceData.TimeOutOfLine = 0.0f;
 	InstanceData.TimeLeft = InstanceData.Timeout;
 	InstanceData.bReleased = false;
@@ -514,6 +515,14 @@ EStateTreeRunStatus FRpgStateTreeRangedAttackTask::Tick(FStateTreeExecutionConte
 	if (!AttackDriver->IsRangedShotActive() || !Target)
 	{
 		return EStateTreeRunStatus::Failed;
+	}
+	// The rest of the old target's hold, possibly none after it took cover, would loose the shot on the new target
+	// before it could read the draw turning to it.
+	if (InstanceData.HoldTarget.Get() != Target)
+	{
+		InstanceData.HoldTarget = Target;
+		InstanceData.HoldLeft = RandomInRange(InstanceData.AimHoldMin, InstanceData.AimHoldMax);
+		InstanceData.TimeOutOfLine = 0.0f;
 	}
 
 	AimRangedShot(*Controller, *AttackDriver, *Target);

@@ -10,7 +10,10 @@
 #include "Network/RpgCombatNetworkTestTypes.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/Combat/RpgAIAttackDriverComponent.h"
+#include "SurvivalRpg/Core/Character/RpgCharacter.h"
 #include "SurvivalRpg/Core/Character/RpgHealthComponent.h"
+#include "SurvivalRpg/Core/Character/RpgPawnData.h"
+#include "SurvivalRpg/Core/Player/RpgBasePlayerState.h"
 #include "TimerManager.h"
 
 namespace RpgAIAttackDriverTests
@@ -174,6 +177,70 @@ bool FRpgAIAttackDriverExternalControlTest::RunTest(const FString& Parameters)
 
 	Driver->EndExternalControl();
 	TestFalse(TEXT("Ending external control returns to the timers"), Driver->IsExternallyControlled());
+	return !HasAnyErrors();
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgAIAttackDriverPlayerInstigatorTest,
+	"SurvivalRpg.AI.AttackDriver.APlayersHitTargetsThePlayersPawn",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgAIAttackDriverPlayerInstigatorTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgAIAttackDriverTests;
+
+	FScopedTimerWorld TestWorld;
+	UWorld* World = TestWorld.GetWorld();
+	if (!TestNotNull(TEXT("Test world exists"), World))
+	{
+		return false;
+	}
+
+	ARpgCombatNetworkTargetFixture* Attacker = World->SpawnActor<ARpgCombatNetworkTargetFixture>();
+	ARpgCombatNetworkTargetFixture* FirstTarget = World->SpawnActor<ARpgCombatNetworkTargetFixture>(FVector(100.0, 0.0, 0.0), FRotator::ZeroRotator);
+	// A player fights with its pawn, but its abilities live on its player state, which a hit names as instigator.
+	ARpgBasePlayerState* PlayerState = World->SpawnActor<ARpgBasePlayerState>();
+	ARpgCharacter* PlayerPawn = World->SpawnActor<ARpgCharacter>(FVector(0.0, 100.0, 0.0), FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("Attacker exists"), Attacker) || !TestNotNull(TEXT("First target exists"), FirstTarget) ||
+		!TestNotNull(TEXT("Player state exists"), PlayerState) || !TestNotNull(TEXT("Player pawn exists"), PlayerPawn))
+	{
+		return false;
+	}
+	Attacker->SetGenericTeamId(FGenericTeamId(1));
+	URpgPawnData* PlayerPawnData = NewObject<URpgPawnData>(GetTransientPackage(), NAME_None, RF_Transient);
+	PlayerPawnData->TeamId = 2;
+	PlayerState->SetPawnData(PlayerPawnData);
+	PlayerPawn->SetPlayerState(PlayerState);
+	if (!TestEqual(TEXT("The player state names its pawn"), PlayerState->GetPawn(), static_cast<APawn*>(PlayerPawn)))
+	{
+		return false;
+	}
+
+	URpgAIAttackDriverComponent* Driver = NewObject<URpgAIAttackDriverComponent>(Attacker);
+	Driver->RegisterComponent();
+	TestWorld.Advance(0.0f);
+
+	// The StateTree's combat control: the last attacker wins once the switch cooldown passed.
+	Driver->BeginExternalControl(ERpgAICombatTargetPolicy::LastAttacker, 4.0f);
+	Driver->SetCombatTarget(FirstTarget);
+	for (int32 Frame = 0; Frame < 5 * 60; ++Frame)
+	{
+		TestWorld.Advance(1.0f / 60.0f);
+	}
+	ReportDamage(*Driver, Attacker->GetHealthComponent(), PlayerState);
+	TestEqual(TEXT("A player's hit makes the player's pawn the target"), Driver->GetCombatTarget(), static_cast<AActor*>(PlayerPawn));
+	TestNotEqual(TEXT("The player state never becomes the target"), Driver->GetCombatTarget(), static_cast<AActor*>(PlayerState));
+
+	// The driver's own timers retaliate against the pawn as well.
+	Driver->EndExternalControl();
+	Driver->SetCombatTarget(FirstTarget);
+	ReportDamage(*Driver, Attacker->GetHealthComponent(), PlayerState);
+	TestEqual(TEXT("Retaliation targets the player's pawn"), Driver->GetCombatTarget(), static_cast<AActor*>(PlayerPawn));
+
+	// A hit the owner instigates itself never makes it target itself.
+	Driver->SetCombatTarget(FirstTarget);
+	ReportDamage(*Driver, Attacker->GetHealthComponent(), Attacker);
+	TestEqual(TEXT("Its own hit keeps the target"), Driver->GetCombatTarget(), static_cast<AActor*>(FirstTarget));
 	return !HasAnyErrors();
 }
 

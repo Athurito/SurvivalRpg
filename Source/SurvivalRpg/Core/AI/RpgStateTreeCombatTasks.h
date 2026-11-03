@@ -200,7 +200,7 @@ struct SURVIVALRPG_API FRpgStateTreeRangedAttackTaskInstanceData
 
 	/**
 	 * Shortest and longest time in seconds the full draw is held before the release, so the target can read the shot
-	 * and dodge it. Designer tuning.
+	 * and dodge it. A new combat target during the draw gets a new hold. Designer tuning.
 	 */
 	UPROPERTY(EditAnywhere, Category = Parameter, meta = (ClampMin = "0.0", Units = "s"))
 	float AimHoldMin = 0.4f;
@@ -220,6 +220,8 @@ struct SURVIVALRPG_API FRpgStateTreeRangedAttackTaskInstanceData
 	float Timeout = 6.0f;
 
 	float HoldLeft = 0.0f;
+	/** The combat target HoldLeft was rolled for. */
+	TWeakObjectPtr<AActor> HoldTarget;
 	float TimeOutOfLine = 0.0f;
 	float TimeLeft = 0.0f;
 	bool bReleased = false;
@@ -227,7 +229,8 @@ struct SURVIVALRPG_API FRpgStateTreeRangedAttackTaskInstanceData
 
 /**
  * Stops, draws the main-hand ranged weapon's shot through the attack driver, holds the full draw for a readable moment
- * and releases while the combat target is in the line of fire. Meanwhile it points the controller's view at the
+ * and releases while the combat target is in the line of fire. When the combat target changes during the draw, such as
+ * to the next hostile after the old target died or to a player who hit the archer, the new target gets its own hold. Meanwhile it points the controller's view at the
  * ballistic aim above the target. Succeeds when the released shot's ability ends. Fails without a target or a line of
  * fire at the start, when the shot cannot start or is interrupted, after LineOfFireGrace without a line of fire, or on
  * timeout; an unreleased shot is lowered without cost.

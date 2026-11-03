@@ -17,7 +17,10 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRpgProjectileShotCancelled, ERpgPro
 /**
  * One held projectile shot of the owning ability's activation, such as a bow draw: nock, draw, release.
  *
- * The draw starts when the task activates. The locally controlled machine releases on the ability's input release (or
+ * The draw starts when the task activates. A shot of an ability tagged Ability.Type.RangedAim, such as the bow shot, draws
+ * only inside that activation's own aim stance: pressed in the air, its draw starts when the stance begins on landing,
+ * on owner and authority alike, and a release before that shoots nothing and costs nothing.
+ * The locally controlled machine releases on the ability's input release (or
  * Release Shot) and sends the draw time and camera aim with the activation. The server clamps the draw to the time it
  * observed, checks the aim and launch obstruction, then commits exactly once: deferred spawn, one ammunition item,
  * release stamina, finished spawn, or nothing at all. Releasing before the minimum nocking time cancels without cost.
@@ -102,6 +105,9 @@ private:
 	void HandleReleaseTargetData(const FGameplayAbilityTargetDataHandle& Data, FGameplayTag ApplicationTag);
 	void HandleNockTimer();
 	void HandleServerTimeout();
+	void HandleStanceBegan(const UGameplayAbility* StanceAbility);
+	/** Starts the draw time, the drawing presentation and the nock timer. */
+	void BeginDraw();
 	FRpgProjectileShotRelease MakeLocalRelease() const;
 	void ResolveRelease(const FRpgProjectileShotRelease& Release);
 	void PredictRelease(const FRpgProjectileShotRelease& Release);
@@ -110,7 +116,7 @@ private:
 	double GetElapsedSeconds() const;
 	bool MatchesActivation() const;
 	void ReleaseBindings();
-	/** Owner and authority: the draw presentation follows this shot from activation until it ends. */
+	/** Owner and authority: the draw presentation follows this shot from the start of its draw until it ends. */
 	void SetDrawingTag(bool bDrawing);
 
 	FRpgProjectileShotDefinition Definition;
@@ -123,6 +129,7 @@ private:
 	FPredictionKey CapturedActivationKey;
 	FDelegateHandle InputReleasedHandle;
 	FDelegateHandle TargetDataHandle;
+	FDelegateHandle StanceBeganHandle;
 	FTimerHandle NockTimerHandle;
 	FTimerHandle ServerTimeoutHandle;
 	double StartSeconds = 0.0;
@@ -131,5 +138,7 @@ private:
 	bool bResolved = false;
 	bool bDrawingTagApplied = false;
 	bool bNocked = false;
+	/** The activation's aim stance has not begun yet, so the draw has not started. */
+	bool bWaitingForStance = false;
 	ERpgProjectileShotResult Result = ERpgProjectileShotResult::Interrupted;
 };

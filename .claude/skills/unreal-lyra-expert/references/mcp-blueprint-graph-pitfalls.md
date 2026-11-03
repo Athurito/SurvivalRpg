@@ -48,6 +48,7 @@ Blueprints are designer-owned content: a person opens them in the editor and mus
 - `Audio|Components|Audio|FadeOut` binds `SynthComponent.FadeOut` and fails to connect an audio component. Create it with `create_node` and `declaring_class` `/Script/Engine.AudioComponent`, then wire `self`, exec and the values with `connect_pins` and `set_pin_value` (HRW-05c).
 - There is no `Class|Actor|GetRootComponent`, and `Variables|Transformation|GetRootComponent` reads only the Blueprint's own root. For another actor's component use `Actor|GetComponentbyClass :self actor :ComponentClass "..."` (HRW-05c).
 - `Class|InputMappingContext|GetMappings` reads the deprecated, empty `Mappings` array. Use `Utilities|Struct|BreakInputMappingContextMappingData (Class|InputMappingContext|GetDefaultKeyMappings ctx)`.
+- `Class|Text|SetText` is the TextBlock's property setter, with the pins `Text` and `self`. The function call `UTextBlock::SetText`, also for a CommonTextBlock, is `Widget|SetText(Text) :self tb :InText t` (RNG validation fixes).
 
 ## Arguments and pins
 

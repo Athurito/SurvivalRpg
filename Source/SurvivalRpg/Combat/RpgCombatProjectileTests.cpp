@@ -768,6 +768,79 @@ bool FRpgCombatProjectileRecoveryWorldImpactTest::RunTest(const FString& Paramet
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCombatProjectileRecoveryDropHostTest,
+	"SurvivalRpg.Combat.Projectile.Recovery.DropFollowsOnlyResolvableHosts",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCombatProjectileRecoveryDropHostTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCombatProjectileTests;
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this)) return false;
+
+	const auto MakeLocal = [](UBoxComponent* Block)
+	{
+		Block->GetOwner()->SetReplicates(false);
+		Block->SetIsReplicated(false);
+	};
+	const auto Shoot = [&Fixture](UBoxComponent* Block, const FVector& ImpactPoint, const FVector& Direction)
+	{
+		ARpgCombatProjectile* Projectile = Fixture.LaunchRecoverable(ImpactPoint - Direction * 300.0f, Direction, 0.3f, 1.0f);
+		if (!Projectile)
+		{
+			return static_cast<ARpgEmbeddedProjectilePickup*>(nullptr);
+		}
+		Projectile->ResolveImpactForTests(FFixture::MakeBlockHit(Block, ImpactPoint, Direction));
+		return Projectile->GetRecoveredPickup();
+	};
+
+	// An arrow coming down on a moving block no client can resolve cannot embed there and drops onto the same block
+	// behind the contact. Following that block would move the pickup on the server alone, so it stays where it fell.
+	UBoxComponent* LocalLift = Fixture.SpawnBlock(FVector(0.0f, 8000.0f, 0.0f), FVector(200.0f, 200.0f, 50.0f), EComponentMobility::Movable);
+	MakeLocal(LocalLift);
+	if (!TestFalse(TEXT("No client can resolve the local block"), ARpgEmbeddedProjectilePickup::CanEmbedIn(LocalLift))) return false;
+	ARpgEmbeddedProjectilePickup* OnLocalLift = Shoot(LocalLift, FVector(0.0f, 8000.0f, 50.0f), FVector(1.0f, 0.0f, -1.0f).GetSafeNormal());
+	if (!TestNotNull(TEXT("An arrow on an unresolvable moving block leaves a pickup"), OnLocalLift)) return false;
+	TestFalse(TEXT("It lies on the block"), OnLocalLift->IsEmbedded());
+	TestNull(TEXT("The unresolvable block does not host it"), OnLocalLift->GetHostComponent());
+	TestNull(TEXT("It attaches to nothing"), OnLocalLift->GetAttachParentActor());
+	const FVector Resting = OnLocalLift->GetActorLocation();
+	TestEqual(TEXT("It rests on the block's top"), Resting.Z, 51.0, 0.5);
+	LocalLift->GetOwner()->SetActorLocation(FVector(0.0f, 8500.0f, 0.0f));
+	TestTrue(TEXT("It stays where it fell when the block moves"), OnLocalLift->GetActorLocation().Equals(Resting, 0.1f));
+
+	// An arrow off an unresolvable moving door that stands on a resolvable moving lift drops onto the lift and rides it.
+	UBoxComponent* Lift = Fixture.SpawnBlock(FVector(0.0f, 12000.0f, 0.0f), FVector(300.0f, 300.0f, 50.0f), EComponentMobility::Movable);
+	UBoxComponent* LocalDoor = Fixture.SpawnBlock(FVector(100.0f, 12000.0f, 150.0f), FVector(10.0f, 100.0f, 100.0f), EComponentMobility::Movable);
+	MakeLocal(LocalDoor);
+	ARpgEmbeddedProjectilePickup* OnLift = Shoot(LocalDoor, FVector(90.0f, 12000.0f, 150.0f), FVector(1.0f, 0.0f, 0.0f));
+	if (!TestNotNull(TEXT("An arrow off the door leaves a pickup"), OnLift)) return false;
+	TestFalse(TEXT("It lies on the lift"), OnLift->IsEmbedded());
+	TestTrue(TEXT("The resolvable lift hosts it"), OnLift->GetHostComponent() == Lift);
+	TestTrue(TEXT("It attaches to the resolvable lift"), OnLift->GetAttachParentActor() == Lift->GetOwner());
+	const FVector OnLiftBefore = OnLift->GetActorLocation();
+	Lift->GetOwner()->SetActorLocation(FVector(0.0f, 12200.0f, 0.0f));
+	TestTrue(TEXT("It follows the lift"), OnLift->GetActorLocation().Equals(OnLiftBefore + FVector(0.0f, 200.0f, 0.0f), 0.1f));
+
+	// Ground that never moves hosts a dropped arrow for grouping, even without an owner actor, as level BSP has none.
+	UBoxComponent* LevelFloor = NewObject<UBoxComponent>(Fixture.World->PersistentLevel, NAME_None, RF_Transient);
+	LevelFloor->InitBoxExtent(FVector(300.0f, 300.0f, 50.0f));
+	LevelFloor->SetRelativeLocation(FVector(0.0f, 16000.0f, 0.0f));
+	LevelFloor->SetMobility(EComponentMobility::Static);
+	LevelFloor->SetCollisionObjectType(ECC_WorldStatic);
+	LevelFloor->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	LevelFloor->SetCollisionResponseToAllChannels(ECR_Block);
+	LevelFloor->RegisterComponentWithWorld(Fixture.World);
+	if (!TestNull(TEXT("The level floor has no owner actor"), LevelFloor->GetOwner())) return false;
+	ARpgEmbeddedProjectilePickup* OnLevelFloor = Shoot(LevelFloor, FVector(0.0f, 16000.0f, 50.0f), FVector(1.0f, 0.0f, -1.0f).GetSafeNormal());
+	if (!TestNotNull(TEXT("An arrow on the level floor leaves a pickup"), OnLevelFloor)) return false;
+	TestTrue(TEXT("The static level floor hosts it"), OnLevelFloor->GetHostComponent() == LevelFloor);
+	TestNull(TEXT("A static host needs no attachment"), OnLevelFloor->GetAttachParentActor());
+	LevelFloor->UnregisterComponent();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRpgCombatProjectileRecoveryBreakRollTest,
 	"SurvivalRpg.Combat.Projectile.Recovery.BreakRollAndSurfaces",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

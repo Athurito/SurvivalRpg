@@ -126,7 +126,8 @@ After RNG-04 only players could shoot. The AI attack driver accepted only melee 
 8. **Multiplayer:** listen server with two players. **Expected:**
    - both see the archer raise, draw and release the bow;
    - its arrow hits the player it targets and is seen by both;
-   - the second player can draw its attention by hitting it.
+   - the second player can draw its attention by hitting it, at most once every 4 s. Until the [validation fixes](ranged-acceptance.md#validation-fixes-2026-11-03) this failed: a player's hit names the player state as instigator, and the attack driver never resolved it to the pawn (F57, inherited from CMB-06);
+   - when its target dies or leaves its reach mid-draw and the other player stands within 30 m, it turns the draw to that player and holds it again for 0.4 to 0.8 s before it shoots.
 
 ## Limits
 
