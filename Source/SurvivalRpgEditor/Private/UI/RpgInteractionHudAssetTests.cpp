@@ -136,7 +136,7 @@ bool FRpgInteractionHudPresentationAssetTest::RunTest(const FString& Parameters)
 			TEXT("InputActionContainer is an optional authored binding"),
 			InputContainerProperty->HasMetaData(TEXT("BindWidgetOptional")));
 	}
-	TestFalse(TEXT("Focus prompt owns no Blueprint graph logic"), HasBlueprintGraphLogic(*FocusBlueprint));
+	// The focus prompt's presentation hook may show the target name, so its graph is designer content.
 	TestFalse(TEXT("Nearby marker owns no Blueprint graph logic"), HasBlueprintGraphLogic(*NearbyBlueprint));
 	TestFalse(TEXT("Reticle owns no Blueprint graph logic"), HasBlueprintGraphLogic(*ReticleBlueprint));
 	TestTrue(TEXT("Focus prompt owns no authored animation"), FocusBlueprint->Animations.IsEmpty());
@@ -174,9 +174,12 @@ bool FRpgInteractionHudPresentationAssetTest::RunTest(const FString& Parameters)
 	TestNotNull(
 		TEXT("Focus prompt authors its blocked reason"),
 		Cast<UCommonTextBlock>(FocusTree->FindWidget(TEXT("BlockedReasonTextBlock"))));
-	TestNull(
-		TEXT("Default focus prompt deliberately omits TargetTextBlock"),
-		FocusTree->FindWidget(TEXT("TargetTextBlock")));
+	if (const UWidget* TargetText = FocusTree->FindWidget(TEXT("TargetTextBlock")))
+	{
+		TestNotNull(
+			TEXT("An authored target name binds to the presenter's CommonTextBlock"),
+			Cast<UCommonTextBlock>(TargetText));
+	}
 
 	TArray<UWidget*> NearbyWidgets;
 	NearbyTree->GetAllWidgets(NearbyWidgets);

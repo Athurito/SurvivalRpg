@@ -821,6 +821,22 @@ bool FRpgCombatProjectileRecoveryDropHostTest::RunTest(const FString& Parameters
 	const FVector OnLiftBefore = OnLift->GetActorLocation();
 	Lift->GetOwner()->SetActorLocation(FVector(0.0f, 12200.0f, 0.0f));
 	TestTrue(TEXT("It follows the lift"), OnLift->GetActorLocation().Equals(OnLiftBefore + FVector(0.0f, 200.0f, 0.0f), 0.1f));
+
+	// Ground that never moves hosts a dropped arrow for grouping, even without an owner actor, as level BSP has none.
+	UBoxComponent* LevelFloor = NewObject<UBoxComponent>(Fixture.World->PersistentLevel, NAME_None, RF_Transient);
+	LevelFloor->InitBoxExtent(FVector(300.0f, 300.0f, 50.0f));
+	LevelFloor->SetRelativeLocation(FVector(0.0f, 16000.0f, 0.0f));
+	LevelFloor->SetMobility(EComponentMobility::Static);
+	LevelFloor->SetCollisionObjectType(ECC_WorldStatic);
+	LevelFloor->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	LevelFloor->SetCollisionResponseToAllChannels(ECR_Block);
+	LevelFloor->RegisterComponentWithWorld(Fixture.World);
+	if (!TestNull(TEXT("The level floor has no owner actor"), LevelFloor->GetOwner())) return false;
+	ARpgEmbeddedProjectilePickup* OnLevelFloor = Shoot(LevelFloor, FVector(0.0f, 16000.0f, 50.0f), FVector(1.0f, 0.0f, -1.0f).GetSafeNormal());
+	if (!TestNotNull(TEXT("An arrow on the level floor leaves a pickup"), OnLevelFloor)) return false;
+	TestTrue(TEXT("The static level floor hosts it"), OnLevelFloor->GetHostComponent() == LevelFloor);
+	TestNull(TEXT("A static host needs no attachment"), OnLevelFloor->GetAttachParentActor());
+	LevelFloor->UnregisterComponent();
 	return true;
 }
 

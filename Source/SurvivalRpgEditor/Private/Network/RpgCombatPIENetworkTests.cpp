@@ -3299,32 +3299,38 @@ NETWORK_TEST_CLASS(RangedEnemyPIE, "SurvivalRpg.Network")
 		using namespace RpgCombatPIENetworkTests;
 		QueueEncounter(false, true);
 		Network
-			.UntilServer(TEXT("The archer holds the full draw at the target"), [this](FNetworkState& State)
+			.UntilServer(TEXT("The archer holds the full draw at the target, and a wall covers the target at once"), [this](FNetworkState& State)
 				{
 					const URpgAIAttackDriverComponent* Driver = ArcherRef.IsValid() ? ArcherRef->FindComponentByClass<URpgAIAttackDriverComponent>() : nullptr;
-					return ArcherDraws() && Driver->GetCombatTarget() == FindPlayer(State.World, TargetId) && Driver->GetRangedDrawFraction() >= 1.0f;
-				},
-				NetworkTimeout())
-			.ThenServer(TEXT("A wall covers the target, so the archer keeps holding without a release"), [this](FNetworkState& State)
-				{
+					if (!ArcherDraws() || Driver->GetCombatTarget() != FindPlayer(State.World, TargetId) || Driver->GetRangedDrawFraction() < 1.0f)
+					{
+						return false;
+					}
 					FActorSpawnParameters Spawn;
 					Spawn.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 					Wall = State.World->SpawnActor<ARpgNetworkAutomationRecoveryWall>(FVector(500.0, 0.0, 300.0), FRotator::ZeroRotator, Spawn);
-					ASSERT_THAT(IsTrue(Wall.IsValid()));
+					(void)Assert.IsTrue(Wall.IsValid(), TEXT("The wall spawns"));
 					CoveredSinceSeconds = State.World->GetTimeSeconds();
-				})
-			// Longer than the longest hold (0.8 s) and shorter than the line-of-fire grace (1 s): the old hold is spent.
-			.UntilServer(TEXT("The covered hold outlasts the longest hold"), [this](FNetworkState& State)
+					return true;
+				},
+				NetworkTimeout())
+			// The hold counts from the full draw and the line-of-fire grace from the wall, both in that frame. Past the
+			// longest hold (0.8 s) and inside the grace (1 s), the target dies, so the old hold is spent at the switch.
+			.UntilServer(TEXT("The covered target dies once the longest hold has passed"), [this](FNetworkState& State)
 				{
 					// A failed check ends the wait with its error recorded.
 					if (!Assert.IsTrue(ArcherDraws(), TEXT("The covered archer keeps its draw")))
 					{
 						return true;
 					}
-					return State.World->GetTimeSeconds() - CoveredSinceSeconds >= 0.82;
+					if (State.World->GetTimeSeconds() - CoveredSinceSeconds < 0.81)
+					{
+						return false;
+					}
+					KillTarget(State.World);
+					return true;
 				},
 				NetworkTimeout())
-			.ThenServer(TEXT("The covered target dies mid-hold"), [this](FNetworkState& State) { KillTarget(State.World); })
 			.UntilServer(TEXT("The archer turns the full draw to the observer in reach and holds it again before the release"),
 				[this](FNetworkState& State)
 				{

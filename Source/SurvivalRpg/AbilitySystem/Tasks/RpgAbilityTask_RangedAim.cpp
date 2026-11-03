@@ -82,6 +82,12 @@ void URpgAbilityTask_RangedAim::BeginStance()
 {
 	URpgAbilitySystemComponent* ASC = CapturedASC.Get();
 	Token = ASC ? ASC->BeginRangedAim(Ability, MovementSpeedLimit, Definition.CameraMode) : 0;
+	// A shot that starts drawing on this stance may end the activation before the token is stored here.
+	if (Token && IsFinished())
+	{
+		ReleaseToken();
+		return;
+	}
 	if (!Token)
 	{
 		EndTask();
