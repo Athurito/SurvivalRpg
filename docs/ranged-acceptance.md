@@ -113,7 +113,7 @@ Four full-draw arrows down a fresh player with 100 health who stands still. From
 
 ## Validation fixes (2026-11-03)
 
-An independent validation of RNG-01 to RNG-06 on `fbf92894` rated the delivery "passed with restrictions": no high defects, five medium findings (F40, F57, F58, V1, F36), 45 low findings and the never-built predicted arrow. This follow-up, [PR #__PR__](https://github.com/Athurito/SurvivalRpg/pull/__PR__) on `master` `32d961cc` (with PR #373's bow grips), fixes the five medium findings, corrects the matrix rows that overclaimed (F02, F09, F11, F12, F79, F101) and the stale roadmap prose (F75), and records the predicted arrow as an open later extension. The low findings stay open unless a fix touched them.
+An independent validation of RNG-01 to RNG-06 on `fbf92894` rated the delivery "passed with restrictions": no high defects, five medium findings (F40, F57, F58, V1, F36), 45 low findings and the never-built predicted arrow. This follow-up, [PR #375](https://github.com/Athurito/SurvivalRpg/pull/375) on `master` `32d961cc` (with PR #373's bow grips), fixes the five medium findings, corrects the matrix rows that overclaimed (F02, F09, F11, F12, F79, F101) and the stale roadmap prose (F75), and records the predicted arrow as an open later extension. The low findings stay open unless a fix touched them.
 
 ### C++ boundary decision
 
