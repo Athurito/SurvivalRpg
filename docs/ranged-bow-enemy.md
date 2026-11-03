@@ -48,7 +48,7 @@ After RNG-04 only players could shoot. The AI attack driver accepted only melee 
 - **StateTree** (`ST_SkeletonArcher`):
   - **Idle** without a target.
   - **Recover** while staggered.
-  - **Evade** when a target comes within 4.5 m: run back toward 8 to 12 m for up to 2.5 s, then shoot from where it stands.
+  - **Evade** when a target comes within 4.5 m: walk back (about 165 cm/s) toward 8 to 12 m for up to 2.5 s, then shoot from where it stands. It walks so a sword fighter can stay on it; see [Follow-up: sword hits on the archer](#follow-up-sword-hits-on-the-archer-2026-11-03).
   - **Approach** beyond 16 m: run toward 13 m for up to 3 s, then shoot, so a target it cannot reach is still shot at.
   - **Engage**:
     - **Reposition** without a line of fire: strafe at 8 to 13 m for 1 to 2 s.
@@ -121,20 +121,42 @@ After RNG-04 only players could shoot. The AI attack driver accepted only melee 
 3. Sidestep during the hold. **Expected:** the arrow misses; standing still, it hits for about 30.
 4. Stay at range. **Expected:** between shots it walks sideways around you at 8 to 13 m, then shoots again.
 5. Put the low platform or a wall between you. **Expected:** it moves sideways until it sees you again instead of shooting into the cover.
-6. Run at it. **Expected:** closer than about 4.5 m it runs back, then shoots from where it stands.
-7. Kill it after it shot a few times. **Expected:** arrows that stayed intact lie in the world or in bodies as in RNG-03b/c. After five shots its arrows no longer leave anything.
-8. **Multiplayer:** listen server with two players. **Expected:**
+6. Run at it. **Expected:** closer than about 4.5 m it walks back, about 4 m in 2.5 s, then shoots from where it stands.
+7. Chase it with the sword. **Expected:** you catch up, and every swing that reaches it hits; a swing that starts beyond the blade's reach of about 2 m misses.
+8. Kill it after it shot a few times. **Expected:** arrows that stayed intact lie in the world or in bodies as in RNG-03b/c. After five shots its arrows no longer leave anything.
+9. **Multiplayer:** listen server with two players. **Expected:**
    - both see the archer raise, draw and release the bow;
    - its arrow hits the player it targets and is seen by both;
    - the second player can draw its attention by hitting it, at most once every 4 s. Until the [validation fixes](ranged-acceptance.md#validation-fixes-2026-11-03) this failed: a player's hit names the player state as instigator, and the attack driver never resolved it to the pawn (F57, inherited from CMB-06);
    - when its target dies or leaves its reach mid-draw and the other player stands within 30 m, it turns the draw to that player and holds it again for 0.4 to 0.8 s before it shoots.
+
+## Follow-up: sword hits on the archer (2026-11-03)
+
+- **Report:** after RNG-06, the playtest found that some sword swings on the archer passed through without damage.
+- **Finding:** the hits register. In PIE, every attack window that reached the archer damaged it, the same as the sword warrior:
+  - frozen;
+  - pinned in place while drawing;
+  - live while backing off.
+- **What happened instead:**
+  - Evade ran the archer back at about 375 cm/s for 2.5 s once a target came within 4.5 m. A chasing player who swings slows down during the attack, so the archer stayed at about 2.5 m, just beyond the blade's reach, and those swings whiffed.
+  - Its held bow has no collision, so a blade passing through the bow in front of the body hits nothing.
+- **Change:** Evade walks (`bWalk` in [combat-enemy-archer-statetree.json](assets/combat-enemy-archer-statetree.json), rebuilt into `ST_SkeletonArcher`), about 165 cm/s. Hits on held bows and shields stay as they are.
+- **Validation:**
+  - **Chase:** the player started 3.5 m from a live archer, chased it and swung within 2.5 m.
+    - The archer backed off at 165 cm/s.
+    - The two swings that started at 2.5 m whiffed.
+    - The next five windows each dealt damage (25, 15, 25, 25 and 10) and killed it.
+  - **Spacing:** with the player standing 3.5 m away, the archer walked back to 7.5 m in 2.5 s, shot from there, then circled at about 8 m and shot again. It still keeps its range against a player who does not chase.
+  - **Tests:**
+    - `ue.py test SurvivalRpg.AI SurvivalRpg.Combat.Ranged SurvivalRpg.Combat.ProjectileShot --null-rhi`: 33 / 33 passed.
+    - PIE `ue.py test SurvivalRpg.Network.RangedEnemyPIE SurvivalRpg.Network.CombatRemoteMeleePIE`: 7 / 7 passed.
 
 ## Limits
 
 - **Feel:** the enemy bow uses the player bow's draw, damage and speed curves. A full-draw arrow takes 30 health, so four arrows down a fresh player who stands still. Cadence, damage and hold time are starter values for RNG-06.
 - **Aim:**
   - The archer aims at the target's current position with ballistic elevation and never leads, so sidestepping during the hold dodges the arrow.
-  - Its view sits about 30 cm above the muzzle, so an arrow can land up to about 30 cm above the body center.
+  - Its view sits about 30 cm above the muzzle. Until the [arrow aim fix](ranged-arrow-aim-visibility.md) an arrow could land up to about 30 cm above the body center; the arc is now solved from the point where the shot leaves the view line.
 - **Inherited from the warrior:** `BP_RiftGrunt_Bow` is a child of `BP_RiftGrunt_Sword`. It keeps the warrior's body, reactions, defense profile, corpse loot and death. `ABP_Enemy_Archer` is a copy of `ABP_Enemy_SwordShield`, so a change to one does not reach the other, and the archer's legs use the sword-and-shield locomotion.
 - **Not tested automatically:**
   - repositioning movement, Evade and Approach (the PIE test map has no navmesh; they were only seen in the sandbox);
