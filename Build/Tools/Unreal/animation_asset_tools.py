@@ -177,6 +177,26 @@ class AnimationAssetTools(unreal.ToolsetDefinition):
 
     @toolset_registry.tool_call
     @staticmethod
+    def create_skeleton_from_static_mesh(static_mesh_path: str, skeleton_path: str, relative_root_json: str = '[0.5, 0.5, 0.0]') -> str:
+        """Create a project skeleton with one root bone for turning a static mesh into a skeletal mesh; does not save.
+
+        relative_root_json places the root in the mesh's bounding box, 0 to 1 per axis, as [x, y, z]; the default is
+        the bottom centre. Build the skeletal mesh from it with GeometryScript and add bones with SkeletonModifier.
+        Refuses an existing asset or a package outside the project.
+        """
+        _guard()
+        mesh = _asset(static_mesh_path, unreal.StaticMesh)
+        _package(skeleton_path)
+        root = json.loads(relative_root_json)
+        if not isinstance(root, list) or len(root) != 3:
+            raise RuntimeError('relative_root_json must be [x, y, z]')
+        skeleton = unreal.RpgAnimationAssetTools.create_skeleton_from_static_mesh(mesh, skeleton_path, unreal.Vector(*[float(v) for v in root]))
+        if not skeleton:
+            raise RuntimeError('Skeleton creation failed: ' + skeleton_path)
+        return skeleton.get_path_name()
+
+    @toolset_registry.tool_call
+    @staticmethod
     def register_animation_slot(skeleton_path: str, slot_name: str, group_name: str = '') -> bool:
         """Register a named slot on a project skeleton and mark it dirty; never changes bone retargeting.
 

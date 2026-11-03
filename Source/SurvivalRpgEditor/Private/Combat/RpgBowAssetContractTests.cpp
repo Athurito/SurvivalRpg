@@ -3,6 +3,11 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Animation/AnimBlueprintGeneratedClass.h"
+#include "Components/SkinnedMeshComponent.h"
+#include "Engine/BlueprintGeneratedClass.h"
+#include "Engine/SCS_Node.h"
+#include "Engine/SimpleConstructionScript.h"
+#include "Engine/SkinnedAsset.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "InputAction.h"
 #include "Misc/AutomationTest.h"
@@ -11,6 +16,7 @@
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
 #include "SurvivalRpg/Combat/RpgCombatProjectile.h"
 #include "SurvivalRpg/Combat/RpgEnemyCombatLoadout.h"
+#include "SurvivalRpg/Combat/RpgProjectileLaunchPresenter.h"
 #include "SurvivalRpg/Combat/RpgProjectileShot.h"
 #include "SurvivalRpg/Core/AI/RpgAICharacter.h"
 #include "SurvivalRpg/Core/AI/RpgAIController.h"
@@ -129,6 +135,23 @@ bool FRpgBowAssetContractTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("Aiming has its own camera"), Weapon->GetAimDefinition().CameraMode.Get());
 	const USkeleton* Manny = LoadObject<USkeleton>(nullptr, TEXT("/Game/SurvivalRpg/Characters/Mannequins/Meshes/SK_Mannequin.SK_Mannequin"));
 	TestNotNull(TEXT("The bow has a hold layer for the Manny skeleton"), Equipment->ResolveHoldLayer(Manny, ERpgEquipmentSlot::MainHand).Get());
+
+	// The bow actor pulls its string with the drawing hand and hands its nocked arrow to the launched projectile.
+	const UClass* BowActorClass = Equipment->ActorsToSpawn.Num() > 0 ? Equipment->ActorsToSpawn[0].ActorToSpawn.Get() : nullptr;
+	TestTrue(TEXT("The bow actor hands its nocked arrow to the projectile"),
+		BowActorClass && BowActorClass->ImplementsInterface(URpgProjectileLaunchPresenter::StaticClass()));
+	const UBlueprintGeneratedClass* BowActorBlueprint = Cast<UBlueprintGeneratedClass>(BowActorClass);
+	bool bHasStringBone = false;
+	if (BowActorBlueprint && BowActorBlueprint->SimpleConstructionScript)
+	{
+		for (const USCS_Node* Node : BowActorBlueprint->SimpleConstructionScript->GetAllNodes())
+		{
+			const USkinnedMeshComponent* Mesh = Node ? Cast<USkinnedMeshComponent>(Node->ComponentTemplate) : nullptr;
+			const USkinnedAsset* Asset = Mesh ? Mesh->GetSkinnedAsset() : nullptr;
+			bHasStringBone |= Asset && Asset->GetRefSkeleton().FindBoneIndex(TEXT("Bow_String")) != INDEX_NONE;
+		}
+	}
+	TestTrue(TEXT("The bow actor's mesh has the Bow_String bone its draw pulls"), bHasStringBone);
 	return true;
 }
 

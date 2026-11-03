@@ -3,7 +3,10 @@
 #include "Misc/AutomationTest.h"
 
 #include "Animation/AnimMontage.h"
+#include "Animation/Skeleton.h"
 #include "Blueprint/RpgAnimationAssetTools.h"
+#include "Engine/StaticMesh.h"
+#include "Misc/Guid.h"
 #include "UObject/Package.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -211,6 +214,38 @@ bool FRpgSetMontageClipRangesTest::RunTest(const FString& Parameters)
 			Montage->Notifies[Index].GetTime(), AnimFrames[Index], 1.0e-3f);
 	}
 	return !HasAnyErrors();
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCreateSkeletonFromStaticMeshTest,
+	"SurvivalRpg.Animation.CreateSkeletonFromStaticMesh.PlacesOneRootBoneInTheBounds",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCreateSkeletonFromStaticMeshTest::RunTest(const FString& Parameters)
+{
+	UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (!TestNotNull(TEXT("The engine cube loads"), Cube)) return false;
+	const FString PackageName = TEXT("/Game/__RpgAutomation/SKEL_Cube_") + FGuid::NewGuid().ToString(EGuidFormats::Digits);
+
+	TestNull(TEXT("A missing mesh is refused"), URpgAnimationAssetTools::CreateSkeletonFromStaticMesh(nullptr, PackageName, FVector(0.5, 0.5, 0.0)));
+	TestNull(TEXT("A package outside the project is refused"),
+		URpgAnimationAssetTools::CreateSkeletonFromStaticMesh(Cube, TEXT("/Engine/__RpgAutomation/SKEL_Cube"), FVector(0.5, 0.5, 0.0)));
+
+	USkeleton* Skeleton = URpgAnimationAssetTools::CreateSkeletonFromStaticMesh(Cube, PackageName, FVector(0.5, 0.5, 0.0));
+	if (!TestNotNull(TEXT("A project package gets the skeleton"), Skeleton)) return false;
+	const FReferenceSkeleton& Bones = Skeleton->GetReferenceSkeleton();
+	TestEqual(TEXT("It has one bone"), Bones.GetNum(), 1);
+	const FBox Bounds = Cube->GetBoundingBox();
+	TestTrue(TEXT("The root sits at the bottom centre of the mesh"),
+		Bones.GetNum() == 1 && Bones.GetRefBonePose()[0].GetLocation().Equals(FVector(Bounds.GetCenter().X, Bounds.GetCenter().Y, Bounds.Min.Z), 0.01));
+	TestNull(TEXT("An existing package is refused"), URpgAnimationAssetTools::CreateSkeletonFromStaticMesh(Cube, PackageName, FVector(0.5, 0.5, 0.0)));
+
+	UPackage* Package = Skeleton->GetOutermost();
+	Skeleton->ClearFlags(RF_Public | RF_Standalone);
+	Skeleton->MarkAsGarbage();
+	Package->SetDirtyFlag(false);
+	Package->MarkAsGarbage();
+	return true;
 }
 
 #endif

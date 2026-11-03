@@ -56,6 +56,7 @@ public class SurvivalRpgEditor : ModuleRules
 			"PhysicsCore",
 			"PropertyBindingUtils",
 			"Projects",
+			"SkeletalMeshUtilitiesCommon",
 			"SlateCore",
 			"StateTreeEditorModule",
 			"UIExtension",

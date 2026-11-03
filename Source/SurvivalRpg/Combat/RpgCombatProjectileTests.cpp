@@ -13,6 +13,7 @@
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/ProjectileMovementComponent.h"
 #include "GameplayCueManager.h"
 #include "GameplayEffect.h"
 #include "Misc/AutomationTest.h"
@@ -1481,6 +1482,58 @@ bool FRpgCombatProjectileRecoverySaveTest::RunTest(const FString& Parameters)
 	Mode->CaptureWorldContainers();
 	TestEqual(TEXT("The world save captures only the chest"), Mode->WorldContainerSaveDataMap.Num(), 1);
 	TestTrue(TEXT("The captured container is the chest"), Mode->WorldContainerSaveDataMap.Contains(ChestId));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCombatProjectileVisualHandOffTest,
+	"SurvivalRpg.Combat.Projectile.VisualLaunchHandOff",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCombatProjectileVisualHandOffTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCombatProjectileTests;
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this)) return false;
+	// The hand-off is an interface event, and actors process events only once their world initialized them.
+	Fixture.World->InitializeActorsForPlay(FURL());
+
+	// The shooter's bow shows a nocked arrow beside and above the launch point.
+	ARpgProjectileLaunchPresenterAutomationActor* Bow = Fixture.World->SpawnActor<ARpgProjectileLaunchPresenterAutomationActor>();
+	if (!TestNotNull(TEXT("The bow exists"), Bow)) return false;
+	Bow->AttachToActor(Fixture.Shooter.Pawn, FAttachmentTransformRules::KeepWorldTransform);
+	const FVector Origin(-900.0f, 0.0f, 0.0f);
+	const FVector Direction(0.0f, 1.0f, 0.0f);
+	Bow->VisualStart = Origin + FVector(-40.0f, -60.0f, 30.0f);
+
+	// This world never began play, so each projectile's BeginPlay, where the hand-off happens, runs here.
+	ARpgCombatProjectile* Projectile = Fixture.Launch(Origin, Direction);
+	if (!TestNotNull(TEXT("The projectile launches"), Projectile)) return false;
+	Projectile->DispatchBeginPlay();
+	TestEqual(TEXT("The bow hands its arrow over once"), Bow->HandOffCount, 1);
+	TestTrue(TEXT("to this projectile"), Bow->LastProjectile.Get() == Projectile);
+	TestTrue(TEXT("The collision keeps the launched path"), Projectile->GetActorLocation().Equals(Origin, 0.1f));
+	TestTrue(TEXT("The visuals start at the nocked arrow"), Projectile->GetVisualRootForTests()->GetComponentLocation().Equals(Bow->VisualStart, 0.5f));
+
+	// The visuals catch up with the flight within a few frames.
+	for (int32 Frame = 0; Frame < 30; ++Frame)
+	{
+		Projectile->GetProjectileMovement()->TickComponent(1.0f / 60.0f, LEVELTICK_All, nullptr);
+	}
+	TestTrue(TEXT("The visuals join the flight"),
+		Projectile->GetVisualRootForTests()->GetComponentLocation().Equals(Projectile->GetActorLocation(), 1.0f));
+
+	// Ammunition shown too far away, or none at all, leaves the visuals on the flight.
+	Bow->VisualStart = Origin + FVector(0.0f, 0.0f, Projectile->GetVisualHandOffMaxDistanceForTests() + 100.0f);
+	ARpgCombatProjectile* Far = Fixture.Launch(Origin, Direction);
+	if (Far) Far->DispatchBeginPlay();
+	TestTrue(TEXT("A distant nocked arrow is not a visual start"),
+		Far && Far->GetVisualRootForTests()->GetComponentLocation().Equals(Origin, 0.1f));
+	Bow->bShowsAmmunition = false;
+	ARpgCombatProjectile* Plain = Fixture.Launch(Origin, Direction);
+	if (Plain) Plain->DispatchBeginPlay();
+	TestTrue(TEXT("Without shown ammunition the visuals start at the launch"),
+		Plain && Plain->GetVisualRootForTests()->GetComponentLocation().Equals(Origin, 0.1f));
 	return true;
 }
 

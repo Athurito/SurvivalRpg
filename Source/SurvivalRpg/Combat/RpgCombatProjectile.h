@@ -334,6 +334,8 @@ public:
 	int32 GetCharacterRecordId() const { return CharacterRecordId; }
 
 	UProjectileMovementComponent* GetProjectileMovement() const { return ProjectileMovement; }
+	USceneComponent* GetVisualRootForTests() const { return VisualRoot; }
+	float GetVisualHandOffMaxDistanceForTests() const { return VisualHandOffMaxDistance; }
 	TSubclassOf<UGameplayEffect> GetDamageEffectClass() const { return DamageEffectClass; }
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -422,6 +424,15 @@ protected:
 	TArray<TObjectPtr<USoundBase>> LaunchSounds;
 
 	/**
+	 * Largest distance in cm from its launch origin at which a projectile arriving on a machine still starts its visuals at
+	 * the ammunition its shooter shows, such as a nocked arrow (IRpgProjectileLaunchPresenter), and the largest gap it closes
+	 * that way. The collision keeps the launched path; the visuals catch up within about a tenth of a second. 0 turns the
+	 * hand-off off. Cosmetic designer data.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Presentation", meta = (ClampMin = "0.0", Units = "Centimeters"))
+	float VisualHandOffMaxDistance = 450.0f;
+
+	/**
 	 * Cue the server executes at every impact through the GameState ability system, so it plays on every machine even
 	 * after the shooter died. Location and Normal are the impact point and surface normal. Designer data.
 	 */
@@ -462,6 +473,9 @@ private:
 	void ExpireFlight();
 	void FinishFlight(ERpgProjectileImpactResult Result, const FVector& Location, const FVector& Normal);
 	void StopFlightPresentation();
+
+	/** Starts the visuals at the ammunition the instigator's attached actors show, if one hands it off; see VisualHandOffMaxDistance. */
+	void HandOffVisualLaunch();
 
 	UFUNCTION()
 	void OnRep_ImpactState();

@@ -25,6 +25,7 @@
 #include "SurvivalRpg/Combat/RpgCombatImpact.h"
 #include "SurvivalRpg/Combat/RpgEmbeddedProjectileHostComponent.h"
 #include "SurvivalRpg/Combat/RpgEmbeddedProjectilePickup.h"
+#include "SurvivalRpg/Combat/RpgProjectileLaunchPresenter.h"
 #include "SurvivalRpg/Core/RpgWorldCollectable.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
 #include "SurvivalRpg/Factions/RpgFactionSubsystem.h"
@@ -309,6 +310,8 @@ void ARpgCombatProjectile::BeginPlay()
 		return;
 	}
 
+	HandOffVisualLaunch();
+
 	// A machine that receives the projectile well into its flight, such as a late joiner, hears no launch.
 	const float Speed = ProjectileMovement->Velocity.Size();
 	const float FlightAgeSeconds = Speed > UE_KINDA_SMALL_NUMBER ? FVector::Dist(GetActorLocation(), LaunchOrigin) / Speed : 0.0f;
@@ -318,6 +321,44 @@ void ARpgCombatProjectile::BeginPlay()
 		{
 			UGameplayStatics::PlaySoundAtLocation(this, LaunchSound, LaunchOrigin);
 		}
+	}
+}
+
+void ARpgCombatProjectile::HandOffVisualLaunch()
+{
+	APawn* Shooter = GetInstigator();
+	const FVector FlightLocation = GetActorLocation();
+	if (!Shooter || GetNetMode() == NM_DedicatedServer || VisualHandOffMaxDistance <= 0.0f
+		|| FVector::DistSquared(FlightLocation, LaunchOrigin) > FMath::Square(VisualHandOffMaxDistance))
+	{
+		return;
+	}
+
+	TArray<AActor*> AttachedActors;
+	Shooter->GetAttachedActors(AttachedActors, true, true);
+	for (AActor* Attached : AttachedActors)
+	{
+		FVector VisualStart;
+		if (!Attached || !Attached->Implements<URpgProjectileLaunchPresenter>()
+			|| !IRpgProjectileLaunchPresenter::Execute_HandOffProjectileLaunch(Attached, this, VisualStart))
+		{
+			continue;
+		}
+		const float Gap = FVector::Dist(VisualStart, FlightLocation);
+		if (Gap > VisualHandOffMaxDistance)
+		{
+			return;
+		}
+
+		// Place everything at the shown ammunition, then move only the collision back: the movement keeps the visuals
+		// there and lets them catch up, as it smooths a correction from the server.
+		ProjectileMovement->bInterpMovement = true;
+		ProjectileMovement->SetInterpolatedComponent(VisualRoot);
+		ProjectileMovement->InterpLocationMaxLagDistance = FMath::Max(ProjectileMovement->InterpLocationMaxLagDistance, Gap + 1.0f);
+		ProjectileMovement->InterpLocationSnapToTargetDistance = FMath::Max(ProjectileMovement->InterpLocationSnapToTargetDistance, Gap + 1.0f);
+		SetActorLocation(VisualStart, false, nullptr, ETeleportType::TeleportPhysics);
+		ProjectileMovement->MoveInterpolationTarget(FlightLocation, GetActorRotation());
+		return;
 	}
 }
 
