@@ -3345,9 +3345,9 @@ NETWORK_TEST_CLASS(RangedEnemyPIE, "SurvivalRpg.Network")
 						SwitchSeconds = Now;
 						ObserverHealthBeforeShot = PlayerHealthNow(State.World, ObserverId);
 						// The old hold is spent, so without a new hold the shot would leave at once.
-						if (!Assert.IsTrue(Driver->IsRangedShotActive() && Driver->GetRangedDrawFraction() >= 1.0f,
-								TEXT("The full draw carries over to the new target"))
-							|| !Assert.IsFalse(Driver->WasRangedShotReleased(), TEXT("The switch does not release the spent hold")))
+						if (!Assert.IsFalse(Driver->WasRangedShotReleased(), TEXT("The switch does not release the spent hold at once"))
+							|| !Assert.IsTrue(Driver->IsRangedShotActive() && Driver->GetRangedDrawFraction() >= 1.0f,
+								TEXT("The full draw carries over to the new target")))
 						{
 							return true;
 						}
