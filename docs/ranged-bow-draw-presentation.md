@@ -1,6 +1,6 @@
 # Bow draw presentation: string pull and nocked arrow (playtest request)
 
-After RNG-06 the playtest asked for a real draw: the arrow was only shot. Now the bow's string follows the drawing hand back, and a nocked arrow lies on the bow and moves with the string. At the release the string snaps back, the nocked arrow disappears, and the flying arrow starts at its place and joins the aimed flight. Player and enemy bows share it, on every machine.
+[PR #377](https://github.com/Athurito/SurvivalRpg/pull/377). After RNG-06 the playtest asked for a real draw: the arrow was only shot. Now the bow's string follows the drawing hand back, and a nocked arrow lies on the bow and moves with the string. At the release the string snaps back, the nocked arrow disappears, and the flying arrow starts at its place and joins the aimed flight. Player and enemy bows share it, on every machine.
 
 ## C++ boundary decision
 
