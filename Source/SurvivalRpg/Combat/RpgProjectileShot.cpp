@@ -38,6 +38,12 @@ namespace RpgProjectileShot
 	/** An aim point closer than this to the launch point keeps the camera's direction instead. */
 	constexpr float MinAimPointDistance = 50.0f;
 
+	/**
+	 * Largest distance in cm between the shooter's body and a launch point on the aim line. Beyond it, such as a camera
+	 * far off to the side, the shot leaves from the muzzle instead.
+	 */
+	constexpr float MaxAimLineLaunchOffset = 150.0f;
+
 	bool IsStaminaChangeEffect(const UGameplayEffect* Effect)
 	{
 		if (!Effect || Effect->DurationPolicy != EGameplayEffectDurationType::Instant
@@ -204,6 +210,14 @@ namespace RpgProjectileShot
 		return ShooterLocation + FRotator(0.0f, AimYawDegrees, 0.0f).RotateVector(Definition.MuzzleOffset);
 	}
 
+	FVector GetAimLineLaunchPoint(
+		const FRpgProjectileShotDefinition& Definition, const FVector& ShooterLocation, const FVector& AimOrigin, const FVector& AimDirection)
+	{
+		const FVector Direction = AimDirection.GetSafeNormal();
+		const FVector Muzzle = GetMuzzleLocation(Definition, ShooterLocation, Direction.Rotation().Yaw);
+		return AimOrigin + Direction * ((Muzzle - AimOrigin) | Direction);
+	}
+
 	bool SolveLaunchDirection(const FVector& Origin, const FVector& Target, const float Speed, const float Gravity, FVector& OutDirection)
 	{
 		const FVector Offset = Target - Origin;
@@ -252,12 +266,26 @@ namespace RpgProjectileShot
 		Shooter->GetAttachedActors(AttachedActors, true, true);
 		QueryParams.AddIgnoredActors(AttachedActors);
 
-		// The camera only gives intent: the shot leaves from the weapon, and the body-to-muzzle segment must be clear.
 		const FVector Muzzle = GetMuzzleLocation(Definition, ShooterLocation, CameraDirection.Rotation().Yaw);
 		const FVector Body = ShooterLocation + FVector(0.0f, 0.0f, Definition.MuzzleOffset.Z);
 		OutGeometry.Origin = Muzzle;
 		OutGeometry.bObstructed = false;
 		FHitResult Hit;
+
+		// The shot flies along the crosshair: it leaves from the aim line at the muzzle's depth, so it never drifts off
+		// the camera ray, whatever the distance and whether the ray hits anything. Only gravity takes it below. The
+		// start must lie near the body with a clear way to it; otherwise the shot leaves from the muzzle as below.
+		const FVector OnAimLine = GetAimLineLaunchPoint(Definition, ShooterLocation, AimOrigin, CameraDirection);
+		if (((OnAimLine - AimOrigin) | CameraDirection) > 0.0f
+			&& FVector::DistSquared(OnAimLine, Body) <= FMath::Square(MaxAimLineLaunchOffset)
+			&& !World->LineTraceSingleByChannel(Hit, Body, OnAimLine, Rpg_TraceChannel_Projectile, QueryParams))
+		{
+			OutGeometry.Origin = OnAimLine;
+			OutGeometry.Direction = CameraDirection;
+			return true;
+		}
+
+		// The muzzle: the body-to-muzzle segment must be clear, and the shot flies toward the camera trace's first hit.
 		if (World->LineTraceSingleByChannel(Hit, Body, Muzzle, Rpg_TraceChannel_Projectile, QueryParams))
 		{
 			OutGeometry.bObstructed = true;
