@@ -1,6 +1,6 @@
 # Arrow aim and visibility (playtest fix)
 
-The playtest after RNG-06 reported two problems: a shot arrow had an offset and did not stay in the crosshair, and the arrow was too small to follow in flight. This fix keeps the arrow on the crosshair at every distance, makes it 1.4 times larger and gives it a subtle flight trail. It tunes neither the arrow's speed nor its gravity: the measured gravity drop and two tuning options are listed below for a decision.
+[PR #374](https://github.com/Athurito/SurvivalRpg/pull/374). The playtest after RNG-06 reported two problems: a shot arrow had an offset and did not stay in the crosshair, and the arrow was too small to follow in flight. This fix keeps the arrow on the crosshair at every distance, makes it 1.4 times larger and gives it a subtle flight trail. It tunes neither the arrow's speed nor its gravity: the measured gravity drop and two tuning options are listed below for a decision.
 
 ## C++ boundary decision
 
