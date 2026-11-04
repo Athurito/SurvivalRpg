@@ -62,7 +62,7 @@ Probe in standalone PIE on `Lvl_CombatSandbox`:
 
 Either option keeps the arrow ballistic. The speed option also shortens the flight time, from 0.29 s to 0.22 s at 20 m. NPC archers solve their arc with the projectile's gravity and the full-draw speed, so they follow either change.
 
-## Follow-up: flat near range (2026-11-04)
+## Follow-up: flat near range (2026-11-04, [PR #380](https://github.com/Athurito/SurvivalRpg/pull/380))
 
 The user rejected half gravity: „halbe schwerkraft dropped viel zu krass am anfang“. The early drop they saw was not the full-draw ballistics.
 
