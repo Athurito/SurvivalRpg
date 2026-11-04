@@ -1534,6 +1534,18 @@ bool FRpgCombatProjectileVisualHandOffTest::RunTest(const FString& Parameters)
 	if (Plain) Plain->DispatchBeginPlay();
 	TestTrue(TEXT("Without shown ammunition the visuals start at the launch"),
 		Plain && Plain->GetVisualRootForTests()->GetComponentLocation().Equals(Origin, 0.1f));
+
+	// A machine that receives the projectile farther along than the limit, such as a late joiner, never takes an arrow.
+	Bow->bShowsAmmunition = true;
+	Bow->VisualStart = Origin + FVector(-40.0f, -60.0f, 30.0f);
+	const int32 HandOffsBefore = Bow->HandOffCount;
+	ARpgCombatProjectile* Received = Fixture.Launch(Origin, Direction);
+	if (!TestNotNull(TEXT("A later projectile launches"), Received)) return false;
+	const FVector ReceivedAt = Origin + Direction * (Received->GetVisualHandOffMaxDistanceForTests() + 50.0f);
+	Received->SetActorLocation(ReceivedAt);
+	Received->DispatchBeginPlay();
+	TestEqual(TEXT("A projectile received beyond the limit from its launch asks no presenter"), Bow->HandOffCount, HandOffsBefore);
+	TestTrue(TEXT("and shows where it was received"), Received->GetVisualRootForTests()->GetComponentLocation().Equals(ReceivedAt, 0.1f));
 	return true;
 }
 

@@ -46,6 +46,45 @@ namespace RpgBowAssetContractTests
 	{
 		return Definition ? Cast<FragmentType>(Definition->FindFragmentByClass(FragmentType::StaticClass())) : nullptr;
 	}
+
+	/**
+	 * The bow's spawned actor pulls a string bone with the drawing hand and hands its nocked arrow over: it implements the
+	 * presenter in its own graph, and the projectile its ammunition launches is one it takes over.
+	 */
+	void TestBowActorPresentsLaunches(FAutomationTestBase& Test, const TCHAR* BowName, const URpgEquipmentDefinition& Equipment,
+		const FRpgProjectileShotDefinition& Shot)
+	{
+		const UClass* BowActorClass = Equipment.ActorsToSpawn.Num() > 0 ? Equipment.ActorsToSpawn[0].ActorToSpawn.Get() : nullptr;
+		Test.TestTrue(FString::Printf(TEXT("%s: its actor hands its nocked arrow to the projectile"), BowName),
+			BowActorClass && BowActorClass->ImplementsInterface(URpgProjectileLaunchPresenter::StaticClass()));
+		// Without its own implementation the interface event answers false, and no arrow is ever handed over.
+		const UFunction* HandOff = BowActorClass
+			? BowActorClass->FindFunctionByName(GET_FUNCTION_NAME_CHECKED(IRpgProjectileLaunchPresenter, HandOffProjectileLaunch))
+			: nullptr;
+		Test.TestTrue(FString::Printf(TEXT("%s: its actor implements the hand-off"), BowName),
+			HandOff && HandOff->GetOwnerClass() && HandOff->GetOwnerClass()->IsChildOf(AActor::StaticClass()));
+
+		const FClassProperty* HandOffClassProperty = BowActorClass ? FindFProperty<FClassProperty>(BowActorClass, TEXT("HandOffProjectileClass")) : nullptr;
+		const UClass* HandOffClass = HandOffClassProperty
+			? Cast<UClass>(HandOffClassProperty->GetObjectPropertyValue_InContainer(BowActorClass->GetDefaultObject()))
+			: nullptr;
+		const UClass* AmmunitionProjectile = URpgInventoryFragment_Ammunition::FindProjectileClass(Shot.AmmunitionItemDefinition).Get();
+		Test.TestTrue(FString::Printf(TEXT("%s: the projectile its ammunition launches takes over the nocked arrow"), BowName),
+			HandOffClass && AmmunitionProjectile && AmmunitionProjectile->IsChildOf(HandOffClass));
+
+		const UBlueprintGeneratedClass* BowActorBlueprint = Cast<UBlueprintGeneratedClass>(BowActorClass);
+		bool bHasStringBone = false;
+		if (BowActorBlueprint && BowActorBlueprint->SimpleConstructionScript)
+		{
+			for (const USCS_Node* Node : BowActorBlueprint->SimpleConstructionScript->GetAllNodes())
+			{
+				const USkinnedMeshComponent* Mesh = Node ? Cast<USkinnedMeshComponent>(Node->ComponentTemplate) : nullptr;
+				const USkinnedAsset* Asset = Mesh ? Mesh->GetSkinnedAsset() : nullptr;
+				bHasStringBone |= Asset && Asset->GetRefSkeleton().FindBoneIndex(TEXT("Bow_String")) != INDEX_NONE;
+			}
+		}
+		Test.TestTrue(FString::Printf(TEXT("%s: its actor's mesh has the Bow_String bone its draw pulls"), BowName), bHasStringBone);
+	}
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -137,21 +176,7 @@ bool FRpgBowAssetContractTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("The bow has a hold layer for the Manny skeleton"), Equipment->ResolveHoldLayer(Manny, ERpgEquipmentSlot::MainHand).Get());
 
 	// The bow actor pulls its string with the drawing hand and hands its nocked arrow to the launched projectile.
-	const UClass* BowActorClass = Equipment->ActorsToSpawn.Num() > 0 ? Equipment->ActorsToSpawn[0].ActorToSpawn.Get() : nullptr;
-	TestTrue(TEXT("The bow actor hands its nocked arrow to the projectile"),
-		BowActorClass && BowActorClass->ImplementsInterface(URpgProjectileLaunchPresenter::StaticClass()));
-	const UBlueprintGeneratedClass* BowActorBlueprint = Cast<UBlueprintGeneratedClass>(BowActorClass);
-	bool bHasStringBone = false;
-	if (BowActorBlueprint && BowActorBlueprint->SimpleConstructionScript)
-	{
-		for (const USCS_Node* Node : BowActorBlueprint->SimpleConstructionScript->GetAllNodes())
-		{
-			const USkinnedMeshComponent* Mesh = Node ? Cast<USkinnedMeshComponent>(Node->ComponentTemplate) : nullptr;
-			const USkinnedAsset* Asset = Mesh ? Mesh->GetSkinnedAsset() : nullptr;
-			bHasStringBone |= Asset && Asset->GetRefSkeleton().FindBoneIndex(TEXT("Bow_String")) != INDEX_NONE;
-		}
-	}
-	TestTrue(TEXT("The bow actor's mesh has the Bow_String bone its draw pulls"), bHasStringBone);
+	TestBowActorPresentsLaunches(*this, TEXT("Player bow"), *Equipment, Weapon->GetShotDefinition());
 	return true;
 }
 
@@ -209,6 +234,7 @@ bool FRpgEnemyBowAssetContractTest::RunTest(const FString& Parameters)
 		&& ProjectileClass->GetDefaultObject<ARpgCombatProjectile>()->GetImpactRecovery() == ERpgProjectileImpactRecovery::Recoverable);
 	const USkeleton* Manny = LoadObject<USkeleton>(nullptr, TEXT("/Game/SurvivalRpg/Characters/Mannequins/Meshes/SK_Mannequin.SK_Mannequin"));
 	TestNotNull(TEXT("The enemy bow has a hold layer for the Manny skeleton"), EnemyBow->ResolveHoldLayer(Manny, ERpgEquipmentSlot::MainHand).Get());
+	TestBowActorPresentsLaunches(*this, TEXT("Enemy bow"), *EnemyBow, EnemyShot);
 
 	// The bow enemy: its archetype's loadout equips the enemy bow, its AnimBP hosts the hold layer, its tree shoots.
 	const UClass* ArcherClass = LoadClass<ARpgAICharacter>(nullptr, ArcherPath);

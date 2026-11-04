@@ -209,6 +209,7 @@ Observed while rigging the bow's string (bow draw presentation):
 - `get_all_vertex_positions` returns a tuple of the mesh, a `GeometryScriptVectorList` and a flag. Python has no `GeometryScript_ListUtilities`; call the list's own `convert_vector_list_to_array()`.
 - The material's `used_with_skeletal_mesh` flag is set automatically on first use, which dirties the material. Save it with the skeletal mesh, or the cooked game renders the default material.
 - Drive one bone from gameplay presentation with a `PoseableMeshComponent` (`SetBoneLocationByName` in component space), set from the owner's tick in `TG_PostUpdateWork` so the character's pose for that frame is final (`BP_BowActor`).
+  - `SetBoneLocationByName` only marks the pose dirty; the component applies it in its own tick, `TG_PrePhysics` by default, so the bone renders one frame behind components the same tick moves at once. Give the component `TG_PostUpdateWork` with the owner as tick prerequisite (`SetTickGroup`, `AddTickPrerequisiteActor` in BeginPlay). Before that fix the bow's string trailed its nocked arrow by one frame, up to 74 cm in a 17 fps PIE (bow draw review).
 
 ### PCG graphs
 
