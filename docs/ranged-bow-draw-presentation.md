@@ -87,7 +87,7 @@
 
 ## Review follow-up (2026-11-04)
 
-PR #377 was merged without the independent review the master chat asks for. Two review agents, one for mechanism and replication and one for content and tests, read the diff, the exported `BP_BowActor` graphs and the engine sources. Each finding was checked against the code and in listen-server PIE probes (two players and the bow enemy in one process). The fix follows in the follow-up PR.
+PR #377 was merged without the independent review the master chat asks for. Two review agents, one for mechanism and replication and one for content and tests, read the diff, the exported `BP_BowActor` graphs and the engine sources. Each finding was checked against the code and in listen-server PIE probes (two players and the bow enemy in one process). The fixes are in [PR #379](https://github.com/Athurito/SurvivalRpg/pull/379).
 
 ### Confirmed and fixed
 
