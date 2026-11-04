@@ -12,7 +12,7 @@
   - **`URpgAnimationAssetTools::CreateSkeletonFromStaticMesh`:** a capability gap. The engine's static-to-skeletal converter is reachable only from C++, and its factories crash when created from Python without their hidden inputs.
 - **New native classes:** one interface, `URpgProjectileLaunchPresenter`.
 - **Content:**
-  - The string and arrow logic is Blueprint: `BP_BowActor`'s `GetDrawPull`, `UpdateString` and `HandOffProjectileLaunch`.
+  - The string and arrow logic is Blueprint: `BP_BowActor`'s `GetDrawPull`, `UpdateString`, `TrackDrawState`, `HandOffProjectileLaunch` with `TakeNockedArrow` and `TakeReleasedArrow`, and `ConfigureStringTick`.
   - The rig is assets: `SK_Skeleton_Archer_Bow` and `SKEL_Skeleton_Archer_Bow`.
 - **Asset work:** editor Python and Unreal MCP (GeometryScript, `SkeletonModifier`, `SubobjectDataSubsystem`, `BlueprintTools.write_graph_dsl`, `arrange_nodes`, variable tooltips).
 
@@ -32,12 +32,16 @@
   - The root static mesh is empty.
   - `BowMesh` is a `PoseableMeshComponent` with the rigged bow and the same transform as before, so the grip offsets of #373 hold.
   - `NockedArrow` uses the arrow mesh at 1.4 scale and lies along the draw axis toward the riser. It is hidden by default.
-- **Each frame (`TG_PostUpdateWork`, after the characters' animation):**
+- **Each frame (`TG_PostUpdateWork`, after the characters' animation; `BowMesh` ticks right after the actor, so the string renders in the same frame as the nocked arrow):**
   - **Pull target:** while the shooter draws, the target is the drawing hand's (`DrawHandSocket`, `hand_r`) depth behind the string's rest along the bow's draw axis, from 0 to `MaxStringPull` (75 cm). The hand must lie within `MaxHandOffset` (30 cm) of the bow's centre line; otherwise, such as while the arms still blend into the draw, the target stays 0.
   - **String:** it eases toward the target (`StringPullSpeed` 25), so it follows the hand and snaps back within about a tenth of a second at the release.
   - **Nocked arrow:** its nock sits on the string, and it shows while drawing until a projectile takes it over.
 - **Draw state source:** the owner's local prediction on its own machine, the replicated tag elsewhere. Simulated proxies and late joiners show the same from the replicated tag and their local hand pose; nothing new replicates.
-- **Hand-off (`HandOffProjectileLaunch`):** within `HandOffWindowSeconds` (0.5 s) of the last drawn frame, the bow hands its nocked arrow to the projectile and returns the arrow tip's world location. The arrow then stays hidden until the next draw.
+- **Hand-off (`HandOffProjectileLaunch`):** only a projectile of `HandOffProjectileClass` (`BP_Projectile_Arrow` and its children) takes an arrow; another projectile of the same shooter, such as a spell, starts where it was launched. The bow returns the arrow tip's world location:
+  - **Current draw:** a projectile launched on this machine as authority (host, server, bow enemy) takes the drawn arrow, which then stays hidden until the next draw.
+  - **Released arrow:** a draw that ends without a hand-off keeps its arrow's tip for `HandOffWindowSeconds` (0.5 s) (`TrackDrawState`). A projectile that a client receives later takes that one: the shooting client's own shot arrives about a round trip after its predicted release, often while the next draw already shows its arrow.
+  - **Observers:** a projectile that reaches an observer before the replicated release takes the drawn arrow of that simulated proxy.
+- **Idle:** without a draw and with the string at rest, the bow skips the string and arrow updates. It never ticks on a dedicated server, which shows nothing and asks no presenter.
 
 ### Projectile
 
@@ -74,6 +78,8 @@
 
 - **String depth follows the hand, not the draw strength:** the string follows the hand pose, which the hold layer blends to full draw in 0.35 s. It shows a full pull before the shot reaches full strength at 1 s.
 - **Rigid limbs:** the string bends into a V, but the limbs do not flex.
-- **Hand-off depends on arrival distance:** a machine that receives a projectile farther than 450 cm from its launch, for example a client shooter on a high-latency connection, shows it where it arrives, as before. The same holds when the bow has no recent draw.
+- **Hand-off windows:** a client receives the projectile where the server last sent it, about 140 cm into its flight at full draw, whatever the latency; only a late joiner or a lost update exceeds the 450 cm limit. Latency instead delays the arrival: on the shooting client no arrow shows between the release and the projectile's arrival, about one round trip, and beyond 0.5 s the projectile appears on the aim line without a hand-off.
+- **Visual start not traced:** the visuals start at the bow and catch up with the aim line without a collision check, so a bow tip behind a wall corner can show the arrow crossing that corner for about 0.1 s. The collision is unaffected.
+- **Orientation at the hand-off:** the flying arrow starts with its tip at the nocked tip but along the flight direction, not along the bow's draw axis; its tail sits a few centimetres off for that frame.
 - **Collision runs ahead of the visuals:** for about the first tenth of a second the visual arrow trails the collision path by up to the hand-off gap. A hit within the first few metres can therefore show the arrow arriving slightly beside the hit point.
 - **No graph comments:** the 5.8 `BlueprintTools` cannot add comment boxes. Function, variable and tooltip names carry the explanation (see the Blueprint graph pitfalls reference).

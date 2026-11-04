@@ -4,6 +4,7 @@
 
 #include "Animation/AnimMontage.h"
 #include "Animation/Skeleton.h"
+#include "AssetRegistry/AssetRegistryModule.h"
 #include "Blueprint/RpgAnimationAssetTools.h"
 #include "Engine/StaticMesh.h"
 #include "Misc/Guid.h"
@@ -240,7 +241,9 @@ bool FRpgCreateSkeletonFromStaticMeshTest::RunTest(const FString& Parameters)
 		Bones.GetNum() == 1 && Bones.GetRefBonePose()[0].GetLocation().Equals(FVector(Bounds.GetCenter().X, Bounds.GetCenter().Y, Bounds.Min.Z), 0.01));
 	TestNull(TEXT("An existing package is refused"), URpgAnimationAssetTools::CreateSkeletonFromStaticMesh(Cube, PackageName, FVector(0.5, 0.5, 0.0)));
 
+	// The tool registered the skeleton; unregister it, or a long-running editor keeps listing the deleted test asset.
 	UPackage* Package = Skeleton->GetOutermost();
+	FAssetRegistryModule::AssetDeleted(Skeleton);
 	Skeleton->ClearFlags(RF_Public | RF_Standalone);
 	Skeleton->MarkAsGarbage();
 	Package->SetDirtyFlag(false);
