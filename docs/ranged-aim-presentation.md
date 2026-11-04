@@ -110,7 +110,7 @@ Runs in the task worktree on `master` `499ba982` plus this branch:
 
 ## Follow-up: presses during a stagger (2026-11-04)
 
-User report from a single-player playtest on `Lvl_CombatSandbox` (`master` `0db9a9e6`), with the sword warrior and the archer active: „wenn ich links gedrückt halte fürs schießen bricht er random mal ab also er schießt nicht“. The bow sometimes stopped while the left mouse button was held, and no arrow came.
+User report from a single-player playtest on `Lvl_CombatSandbox` (`master` `0db9a9e6`), with the sword warrior and the archer active: „wenn ich links gedrückt halte fürs schießen bricht er random mal ab also er schießt nicht“. The bow sometimes stopped while the left mouse button was held, and no arrow came. Fix: [PR #381](https://github.com/Athurito/SurvivalRpg/pull/381).
 
 ### C++ boundary decision
 
