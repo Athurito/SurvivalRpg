@@ -220,10 +220,14 @@ An independent validation of RNG-01 to RNG-06 on `fbf92894` rated the delivery "
 
 ## Playtest: the user's check
 
-Use `GF_Dev_Sandbox/Maps/Lvl_CombatSandbox` with PIE in standalone, and in the console:
-- `Rpg.Inventory.GrantItem /Game/SurvivalRpg/Inventory/Items/Test/ID_TestBackpack.ID_TestBackpack_C 1 equip`
-- `Rpg.Inventory.GrantItem /GF_Combat_Ranged/Items/ID_Bow.ID_Bow_C 1 equip`
-- `Rpg.Inventory.GrantItem /GF_Combat_Ranged/Items/ID_Arrow_Standard.ID_Arrow_Standard_C 20`
+Use `GF_Dev_Sandbox/Maps/Lvl_CombatSandbox` with PIE in standalone.
+- **Pickups:** behind each of the three player starts, about 5 m back from where you spawn (turn around), a set lies on the floor in folder `BowTestPickups`, from left to right: an arrow (40 standard arrows), the bow and a grey cube for the test backpack. Walk up, look at each and press F. Take the backpack first, so the bow fits. The pickups are the sandbox's own `GF_Dev_Sandbox/Pickups/BP_DevPickup_*` world collectables; each disappears once taken until PIE restarts.
+  - The bow goes to the main hand when it is free; when it is not, for example with a sword kept from an earlier session, open the inventory (Tab) and equip it.
+  - The ammunition counter then reads 40 instead of the 20 below.
+- **Console fallback:**
+  - `Rpg.Inventory.GrantItem /Game/SurvivalRpg/Inventory/Items/Test/ID_TestBackpack.ID_TestBackpack_C 1 equip`
+  - `Rpg.Inventory.GrantItem /GF_Combat_Ranged/Items/ID_Bow.ID_Bow_C 1 equip`
+  - `Rpg.Inventory.GrantItem /GF_Combat_Ranged/Items/ID_Arrow_Standard.ID_Arrow_Standard_C 20`
 
 1. **Aim and HUD (RNG-03, RNG-04):** hold the right mouse button. **Expected:**
    - the camera moves over the shoulder and you walk slower;
@@ -249,7 +253,7 @@ Use `GF_Dev_Sandbox/Maps/Lvl_CombatSandbox` with PIE in standalone, and in the c
    - between shots it circles; behind cover it repositions; when you rush it, it runs back and then shoots.
 7. **Archer arrows:** dodge its arrows. **Expected:** of its first five released arrows, those that miss you can embed or drop and be picked up; from the sixth on, none leave anything. Arrows that hit you never leave anything.
 8. **Melee and shields:** sword combo, block, perfect block and dodge against the warrior, as before. With a sword and shield, block the archer's arrows. **Expected:** an intact blocked arrow drops to the ground, a broken one vanishes.
-9. **Multiplayer:** listen server with two players. `Rpg.Inventory.GrantItem` gives items only to the host. As in RNG-02, the host drops bow and arrows from the inventory (Tab), and the client picks them up with F and equips the bow. Both players then repeat steps 2 to 7. **Expected:**
+9. **Multiplayer:** listen server with two players. Each player collects a pickup set behind the player starts (there are three sets, one per start). `Rpg.Inventory.GrantItem` gives items only to the host; without the pickups, the host drops bow and arrows from the inventory (Tab) for the client, as in RNG-02. Both players then repeat steps 2 to 7. **Expected:**
    - each sees the other player's aim pose, draw and release, and the same arrows fly, land and stick on both screens;
    - only one player can take each arrow;
    - arrows in an enemy stay on its body parts on both screens, also in the ragdoll;
