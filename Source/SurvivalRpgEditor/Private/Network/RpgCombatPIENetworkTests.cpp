@@ -2897,6 +2897,104 @@ NETWORK_TEST_CLASS(RangedAimPIE, "SurvivalRpg.Network")
 			NetworkTimeout());
 		QueueArcherInput(TEXT("The archer lowers the bow"), AimInput, false);
 	}
+
+	/** Long enough that the archer's next press reaches the server while the stagger still lasts. */
+	static constexpr float StaggerSeconds = 2.0f;
+	bool bDrewDuringStagger = false;
+
+	/** The server staggers the archer through its real stagger ability, as a broken stagger meter does. */
+	void QueueServerStagger(const TCHAR* Description)
+	{
+		Network.ThenServer(Description,
+			[this](FNetworkState& State)
+			{
+				URpgAbilitySystemComponent* AbilitySystem = ArcherAbilitySystem(State);
+				UClass* StaggerClass = LoadClass<UGameplayAbility>(nullptr, TEXT("/GF_Combat_Core/GAS/Abilities/GA_Combat_Stagger.GA_Combat_Stagger_C"));
+				ASSERT_THAT(IsTrue(AbilitySystem && StaggerClass));
+				bool bHasDefense = false;
+				AbilitySystem->GetGameplayAttributeValue(URpgDefenseSet::GetStaggerDurationAttribute(), bHasDefense);
+				ASSERT_THAT(IsTrue(bHasDefense));
+				AbilitySystem->SetNumericAttributeBase(URpgDefenseSet::GetStaggerDurationAttribute(), StaggerSeconds);
+				AbilitySystem->RemoveTimedLooseGameplayTag(Tag(TEXT("State.StaggerImmune")), EGameplayTagReplicationState::TagAndCountToAll);
+				ASSERT_THAT(IsTrue(AbilitySystem->TryActivateAbilityByClass(StaggerClass)));
+				ASSERT_THAT(IsTrue(ArcherHas(State, TEXT("State.Staggered"))));
+			});
+	}
+
+	TEST_METHOD(AShotPressedDuringTheServersStaggerDrawsWhenItEnds)
+	{
+		using namespace RpgCombatPIENetworkTests;
+		const FGameplayTag ShotInput = Tag(TEXT("InputTag.Weapon.Primary"));
+		bDrewDuringStagger = false;
+		QueueArcherReady();
+
+		// The server refuses a press while it staggers the archer; the held press draws when the stagger ends.
+		QueueServerStagger(TEXT("The server staggers the archer"));
+		Network.UntilClient(TEXT("The archer knows it is staggered"), 0, [this](FNetworkState& State) { return ArcherHas(State, TEXT("State.Staggered")); },
+			NetworkTimeout());
+		QueueArcherInput(TEXT("The archer presses the shot during the stagger and holds it"), ShotInput, true);
+		Network
+			.UntilServer(TEXT("The stagger ends on the server"),
+				[this](FNetworkState& State)
+				{
+					if (!ArcherHas(State, TEXT("State.Staggered")))
+					{
+						return true;
+					}
+					bDrewDuringStagger |= ArcherHas(State, TEXT("State.Ranged.Drawing"));
+					return false;
+				},
+				NetworkTimeout())
+			.ThenServer(TEXT("Nothing drew or launched during the stagger"),
+				[this](FNetworkState& State)
+				{
+					ASSERT_THAT(IsTrue(!bDrewDuringStagger));
+					ASSERT_THAT(AreEqual(0, CountArrowProjectiles(State.World)));
+				})
+			.UntilServer(TEXT("The held press draws after the stagger"),
+				[this](FNetworkState& State) { return ArcherHas(State, TEXT("State.Ranged.Drawing")); },
+				NetworkTimeout())
+			.ThenClient(TEXT("The archer's draw starts"), 0, [this](FNetworkState& State) { PhaseStartWorldSeconds = State.World->GetTimeSeconds(); })
+			.UntilClient(TEXT("The archer holds a full draw"), 0,
+				[this](FNetworkState& State) { return State.World->GetTimeSeconds() - PhaseStartWorldSeconds >= 1.2; },
+				NetworkTimeout());
+		QueueArcherInput(TEXT("The archer releases"), ShotInput, false);
+		Network.UntilServer(TEXT("The server launches one arrow"),
+			[this](FNetworkState& State) { return CountArrowProjectiles(State.World) == 1 && ArcherArrows(State) == StartingArrows - 1; },
+			NetworkTimeout());
+
+		// A stagger during the draw lowers the bow; a fresh press made while it lasts draws once it ends.
+		QueueArcherInput(TEXT("The archer draws again"), ShotInput, true);
+		Network.UntilServer(TEXT("The server sees the second draw"), [this](FNetworkState& State) { return ArcherHas(State, TEXT("State.Ranged.Drawing")); },
+			NetworkTimeout());
+		QueueServerStagger(TEXT("The server staggers the drawing archer"));
+		Network.UntilClient(TEXT("The archer's bow lowers with the stagger"), 0,
+			[this](FNetworkState& State)
+			{
+				const URpgAbilitySystemComponent* AbilitySystem = ArcherAbilitySystem(State);
+				return AbilitySystem && !AbilitySystem->IsRangedDrawingForPresentation() && !AbilitySystem->IsRangedAimActive()
+					&& ArcherHas(State, TEXT("State.Staggered"));
+			},
+			NetworkTimeout());
+		QueueArcherInput(TEXT("The archer lets go"), ShotInput, false);
+		QueueArcherInput(TEXT("The archer presses again while still staggered"), ShotInput, true);
+		Network
+			.ThenServer(TEXT("The stagger still lasts"), [this](FNetworkState& State) { ASSERT_THAT(IsTrue(ArcherHas(State, TEXT("State.Staggered")))); })
+			.UntilServer(TEXT("The fresh press draws after the stagger"),
+				[this](FNetworkState& State) { return !ArcherHas(State, TEXT("State.Staggered")) && ArcherHas(State, TEXT("State.Ranged.Drawing")); },
+				NetworkTimeout())
+			.ThenServer(TEXT("The interrupted draw launched nothing and cost nothing"),
+				[this](FNetworkState& State) { ASSERT_THAT(AreEqual(StartingArrows - 1, ArcherArrows(State))); })
+			.ThenClient(TEXT("The archer's third draw starts"), 0, [this](FNetworkState& State) { PhaseStartWorldSeconds = State.World->GetTimeSeconds(); })
+			.UntilClient(TEXT("The archer holds the third draw"), 0,
+				[this](FNetworkState& State) { return State.World->GetTimeSeconds() - PhaseStartWorldSeconds >= 1.2; },
+				NetworkTimeout());
+		QueueArcherInput(TEXT("The archer releases again"), ShotInput, false);
+		// The first arrow may have landed and become a pickup by now; the spent arrow proves the launch.
+		Network.UntilServer(TEXT("The server launches the second arrow"),
+			[this](FNetworkState& State) { return ArcherArrows(State) == StartingArrows - 2 && !ArcherHas(State, TEXT("State.Ranged.Drawing")); },
+			NetworkTimeout());
+	}
 };
 
 NETWORK_TEST_CLASS(RangedEnemyPIE, "SurvivalRpg.Network")

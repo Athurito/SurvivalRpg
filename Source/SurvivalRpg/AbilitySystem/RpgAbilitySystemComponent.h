@@ -56,6 +56,8 @@ public:
 	void ClearAbilityInput();
 	/** Opt-in local cancellation policy: ignores this spec's held/Triggered input until a real release, without sending a release event. */
 	void SuppressAbilityInputUntilRelease(FGameplayAbilitySpecHandle Handle);
+	/** Whether a refused, still held press of this ranged aim ability waits to activate (local input policy). */
+	bool IsHeldRangedPressWaiting(FGameplayAbilitySpecHandle Handle) const;
 
 	/** Acquires movement policy for this exact local-predicted/authority activation. Limit is cm/s; zero adds no speed cap. */
 	uint32 BeginBlockMovement(UGameplayAbility* Ability, float MovementSpeedLimit = 0.f);
@@ -238,6 +240,33 @@ protected:
 	// Local input policy only. A cancelled hold cannot reactivate while interruption tags are still in transit.
 	// Temporary input blocking preserves this set; physical release, spec removal or avatar replacement retires it.
 	TSet<FGameplayAbilitySpecHandle> InputSuppressedUntilReleaseSpecHandles;
+
+	/** A refused, still held ranged aim press: when it may try again and how often the server refused it. */
+	struct FHeldRangedPress
+	{
+		double NextTrySeconds = 0.0;
+		int32 ServerRefusals = 0;
+	};
+
+	// Local input policy only: held presses of ranged aim abilities (Ability.Type.RangedAim, activated on input trigger,
+	// such as the bow shot) that were refused, locally or by the server. While the input stays held they activate once
+	// nothing blocks them, so a press during a stagger draws when the stagger ends instead of being lost. Release,
+	// suppression, spec removal or avatar replacement retires an entry; the server still validates every activation.
+	TMap<FGameplayAbilitySpecHandle, FHeldRangedPress> HeldRangedPressRetries;
+
+	// Avoids a refused-activation log line per frame for an ability whose held input keeps retrying.
+	TWeakObjectPtr<const UGameplayAbility> LastLoggedRangedFailureAbility;
+	double LastLoggedRangedFailureSeconds = -1.0;
+
+	/**
+	 * Keeps Handle's press waiting while it is a held ranged aim press; bServerRefused delays the next try. Returns whether
+	 * it waits.
+	 */
+	bool QueueHeldRangedPress(FGameplayAbilitySpecHandle Handle, bool bServerRefused);
+	/** The replicated stagger or guard-break state, during which held ranged presses wait. */
+	bool IsStaggerBlockingRangedPresses() const;
+	/** Activates waiting held ranged presses that nothing blocks any more, without failure notifications while blocked. */
+	void RetryHeldRangedPresses();
 
 	// Number of abilities running in each activation group.
 	int32 ActivationGroupCounts[static_cast<uint8>(ERpgAbilityActivationGroup::MAX)];

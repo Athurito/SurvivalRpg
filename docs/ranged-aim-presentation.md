@@ -93,7 +93,7 @@ Runs in the task worktree on `master` `499ba982` plus this branch:
 2. In the console: `Rpg.Inventory.GrantItem /Game/SurvivalRpg/Inventory/Items/Test/ID_TestBackpack.ID_TestBackpack_C 1 equip`, then `Rpg.Inventory.GrantItem /GF_Combat_Ranged/Items/ID_Bow.ID_Bow_C 1 equip` and `Rpg.Inventory.GrantItem /GF_Combat_Ranged/Items/ID_Arrow_Standard.ID_Arrow_Standard_C 20`. The backpack comes first; without it the bow does not fit.
 3. Expected: the bow hangs lowered in the left hand. Hold the right mouse button: the camera moves closer over the shoulder, the character turns with the camera and walks slowly, and the bow comes up ready. Hold the left mouse button: the character draws; looking up and down tilts the draw. Release: one arrow flies through the screen center and the release plays. Release the right mouse button: the bow lowers and the normal camera and speed return.
 4. Hold only the left mouse button: the same stance and draw; releasing shoots and lowers the bow.
-5. Interruptions: during a draw, dodge, jump, or start a sprint. The draw ends without a shot or arrow cost; while the buttons stay held nothing restarts. Release and press again to aim. Press aim during a dodge or jump: the stance begins when it ends.
+5. Interruptions: during a draw, dodge, jump, or start a sprint. The draw ends without a shot or arrow cost; while the buttons stay held nothing restarts. Release and press again to aim. Press aim during a dodge or jump: the stance begins when it ends. A stagger from enemy hits ends the draw the same way, and a press made during the stagger draws when it ends (see [presses during a stagger](#follow-up-presses-during-a-stagger-2026-11-04)).
 6. Multiplayer: Play As Listen Server with two players. Equip the bow on one player as above. On the other player, watch the archer aim, draw (by pitch) and release, and see the bow lower when the archer lets go.
 
 ## Limits
@@ -107,3 +107,84 @@ Runs in the task worktree on `master` `499ba982` plus this branch:
 - **Combined native run crash:** see Validation.
 - **Starter tuning:** the aim cap, camera offsets, blend times and the release presentation time (a native default of 0.5 s) are starting points for RNG-06.
 - **No user check yet:** the user validates the whole ranged roadmap at the end (RNG-06).
+
+## Follow-up: presses during a stagger (2026-11-04)
+
+User report from a single-player playtest on `Lvl_CombatSandbox` (`master` `0db9a9e6`), with the sword warrior and the archer active: „wenn ich links gedrückt halte fürs schießen bricht er random mal ab also er schießt nicht“. The bow sometimes stopped while the left mouse button was held, and no arrow came.
+
+### C++ boundary decision
+
+- **Classification:** a fix in the native input policy of the ability system (`URpgAbilitySystemComponent`), plus logging in the shot and aim tasks. No new class, asset or replicated field.
+- **Native, and why:** which press activates which ability, and when the owner predicts, are owner-local input and prediction rules of the ability system. The server keeps validating every activation; no authority rule changes.
+
+### Cause
+
+Reproduced in single-player PIE on `Lvl_CombatSandbox` with scripted inputs and the new log lines:
+
+- **Ruled out:**
+  - Walking and strafing over the 20 cm step and the 40 cm platform while drawing: no falling frame, every draw shot.
+  - Drawing with the primary button alone: every draw shot.
+  - Repeated draws while the warrior attacked: every draw that started also shot.
+  - The release hand-off and speed curve of PR #379 and PR #380: every release launched an arrow.
+- **Found:** one press in a fight run did nothing. Staggers forced through the real `GA_Combat_Stagger` showed why:
+  - Hits from the warrior and the archer's arrows fill the player's stagger meter (100 by default). When it breaks, the server-only `GA_Combat_Stagger` cancels the running exclusive abilities. That ends the drawing `GA_BowShot`, which is in `Exclusive_Replaceable`. The stagger then holds `Exclusive_Blocking` for its duration (0.7 s by default).
+  - During that time every bow press was refused with `Ability.ActivateFail.ActivationGroup`. `GA_BowShot` activates on the press only, so the held button never tried again.
+    - A press held for 3 s, far past the stagger, drew nothing, and its release shot nothing.
+    - After a stagger that interrupted a draw, the quick second press fell into the stagger as well. Only a third press drew.
+  - The player's pawn data `DA_PawnData_GaspCMC` has no combat reaction profile, so the player's stagger plays no montage. Only the stagger cue's light camera shake marks it. A stagger looks like any other hit, so the bow seemed to lower at random.
+  - None of this reached the log: the shot logged its cancel reasons at Verbose, and nothing logged a refused press or a cancel through an activation group.
+
+### Change
+
+- **A held press waits:**
+  - `URpgAbilitySystemComponent` keeps a refused, still held press of an ability that is tagged `Ability.Type.RangedAim` and activates on input trigger, which is the bow shot.
+  - The press activates as soon as nothing blocks it:
+    - **Authority:** when `CanActivateAbility` passes again. It is checked without failure notifications, so a blocked press waits quietly.
+    - **Remote owner:** it never runs the server's stagger, so it also waits for the replicated `State.Staggered` and `State.GuardBroken` to clear. While they are set, it does not predict a draw that the server would refuse.
+    - **Server refusals:** a press that the server refuses anyway waits 0.2 s before its next try. It stops waiting after three server refusals.
+  - Releasing the button, a cancelled hold's suppression, removing the ability or a new avatar ends the wait. The server validates each activation as before.
+- **Unchanged rules:**
+  - A stagger, dodge, jump, sprint or attack still ends a running draw without cost. The stance, the draw pose and the shoulder camera end, so the bow visibly lowers.
+  - The button held through the interruption still never restarts the draw: release and press again. That fresh press now draws as soon as the stagger ends, also when it was made during the stagger.
+  - Melee presses are still dropped during a stagger.
+- **Logging:** every ranged line goes to `LogRpgAbilitySystem` at `Log` verbosity and starts with "Ranged". The next report can be read straight from the editor log:
+
+  | Line | When |
+  | --- | --- |
+  | `Ranged shot of <ability> on <avatar> (<machine>) released after <s> s at draw <fraction> (<projectile>)` | A shot released; the machine is authority owner, server or owning client |
+  | `Ranged shot ... cancelled without a projectile: <reason> after <s> s drawn` | The shot ended with a reason such as `EarlyRelease`, `InsufficientStamina`, `NoAmmunition` or `TimedOut` |
+  | `Ranged shot ... ended with its ability before the release, after <s> s drawn` | Its ability was cancelled, for example by a stagger, a dodge or the aim stance |
+  | `Ranged aim of ... interrupted: <reason>` | The stance ended for `Airborne`, `Sprint`, `ExclusiveAbility (<ability>)` or `AvatarChanged` |
+  | `Ranged aim of ... cancelled; its held input waits for a release` | The stance's ability was cancelled while its button was held |
+  | `Ranged ability ... cancelled by <ability>, which takes its activation group` | An exclusive ability, such as the stagger, cancelled it |
+  | `Ranged ability ... could not activate: <failure tags>; active exclusive: <abilities>` | A press was refused; at most once a second per ability |
+  | `Ranged ability ... keeps its held press waiting: <why>` and `... activates from its held press, which was refused before` | A held press waits, then activates |
+
+### Validation
+
+- **Build:** `python Build/Tools/Unreal/ue.py build` passed, 0 errors, 0 warnings.
+- **New native test** `SurvivalRpg.Combat.ProjectileShot.BowPressHeldThroughAStaggerDrawsWhenItEnds`: the real `GA_BowShot` from `AS_Bow` with a test ability that does what the stagger does (cancel the exclusive replaceable group, then hold the blocking group).
+  - A press during it is refused but waits; it neither aims nor draws while the block lasts, and starts aim and draw at its end with draw progress 0. The release launches one arrow.
+  - A block during a draw lowers the bow without cost; the button held through it does not restart the draw. A fresh press during the next block draws at its end and shoots.
+  - With only the replicated `State.Staggered` set, as a remote owner sees the server's stagger, a press predicts no draw, waits, and draws when the tag clears.
+  - A press released while it waits starts nothing.
+  - **Mutation check:** with the retry call removed, the test fails at "The held press starts the shot when the stagger ends"; restored, it passes.
+- **New PIE test** `SurvivalRpg.Network.RangedAimPIE.AShotPressedDuringTheServersStaggerDrawsWhenItEnds` (listen server, two clients, 60 ms lag, the real `GA_Combat_Stagger` on the server with a 2 s duration):
+  - the remote archer presses during its stagger and holds; the server never draws during the stagger, draws after it and launches one arrow on the release;
+  - a stagger during the second draw lowers the bow on the client; its release and a fresh press during the stagger draw after the stagger and launch the second arrow.
+- **Native suites:** `ue.py test SurvivalRpg.Combat.Projectile SurvivalRpg.Combat.ProjectileShot SurvivalRpg.Combat.Ranged SurvivalRpg.AI SurvivalRpg.UI.RangedCombat SurvivalRpg.AbilitySystem SurvivalRpg.Input --null-rhi`, 75/75.
+- **PIE suites:** `ue.py test SurvivalRpg.Network.RangedAimPIE SurvivalRpg.Network.CombatProjectilePIE SurvivalRpg.Network.RangedEnemyPIE SurvivalRpg.Network.CombatImpactCuesPIE`, 14/14. The warnings are the known baseline: `LogNetPackageMap`, `AdvancedFriendsInterfaceLog`, the late-join arrow body's socket lookups and one teardown `SpawnActor failed`.
+  - A first run failed only in the new test's last step, which counted two flying arrows when the first had already landed and become a pickup. The step now checks the spent arrows.
+- **Two-player listen-server PIE** on `Lvl_CombatSandbox`, own editor, real GASP pawns, enemies removed, the host as archer and the client watching:
+  - **Press during a stagger:** the host's press waited (`keeps its held press waiting: staggered`), activated after the stagger and launched one arrow, seen on server and client.
+  - **Stagger during a draw:** the host's bow lowered at once and on the client one frame later. A fresh press drew again on both and launched one arrow on both.
+  - The remote archer's own stagger is covered by the PIE test above. `Rpg.Inventory.GrantItem` equips only the host.
+- **Skills:** `python Build/Tools/AgentSkills/sync.py --check` passed.
+
+### Limits
+
+- **The player's stagger stays invisible.** It has no montage; only the lowered bow and the stagger cue's light camera shake show it. A stagger reaction for the player, such as a combat reaction profile on `DA_PawnData_GaspCMC`, is combat content outside this fix.
+- **Only ranged aim presses wait.** A melee press during a stagger is still dropped.
+- **Other server-only blocks on a remote owner.** The owner waits for the replicated stagger state only. Any other block that only the server sees is found through the server's refusal: up to three tries 0.2 s apart, each showing the draw for about one round trip, after which the press stops waiting and needs a fresh press. No current content has such a block.
+- **A button held through an interruption** still needs a release and a fresh press, as the RNG-03 rule says.
+- **Not covered by a test:** the real warrior's hits breaking the meter. The tests stagger through the stagger ability or a blocking test ability. The same wait now also covers a press during a dodge's blocking recovery, which the native test covers only through its generic blocking ability.

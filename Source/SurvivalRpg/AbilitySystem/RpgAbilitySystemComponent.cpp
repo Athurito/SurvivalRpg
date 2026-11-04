@@ -22,6 +22,14 @@
 #include "SurvivalRpg/System/RpgGameData.h"
 #include "SurvivalRpg/Traversal/RpgTraversalQueryComponent.h"
 
+namespace RpgRangedPressInput
+{
+	/** Seconds a held ranged press waits after the server refused it before it tries again. */
+	constexpr double ServerRefusedRetrySeconds = 0.2;
+	/** Server refusals of one held press after which it stops waiting, when the server refuses for a reason the owner cannot see. */
+	constexpr int32 MaxServerRefusals = 3;
+}
+
 UE_DEFINE_GAMEPLAY_TAG(TAG_Gameplay_AbilityInputBlocked, "Gameplay.AbilityInputBlocked");
 
 namespace
@@ -81,6 +89,7 @@ void URpgAbilitySystemComponent::EndPlay(const EEndPlayReason::Type EndPlayReaso
 	}
 	Super::EndPlay(EndPlayReason);
 	InputSuppressedUntilReleaseSpecHandles.Reset();
+	HeldRangedPressRetries.Reset();
 }
 
 void URpgAbilitySystemComponent::InitAbilityActorInfo(AActor* InOwnerActor, AActor* InAvatarActor)
@@ -100,6 +109,7 @@ void URpgAbilitySystemComponent::InitAbilityActorInfo(AActor* InOwnerActor, AAct
 		ResetRangedAim();
 		ResetFacingCommitment();
 		InputSuppressedUntilReleaseSpecHandles.Reset();
+		HeldRangedPressRetries.Reset();
 	}
 	if (ActorInfo->AvatarActor.IsValid() && ActorInfo->AvatarActor.Get() != InAvatarActor)
 	{
@@ -221,6 +231,7 @@ void URpgAbilitySystemComponent::ReinvokeActiveGameplayCuesForNewAvatar()
 void URpgAbilitySystemComponent::ClearActorInfo()
 {
 	InputSuppressedUntilReleaseSpecHandles.Reset();
+	HeldRangedPressRetries.Reset();
 	ResetSprintMovement();
 	ResetBlockMovement();
 	ResetRangedAim();
@@ -1057,6 +1068,7 @@ void URpgAbilitySystemComponent::AbilityInputTagReleased(const FGameplayTag& Inp
 				InputReleasedSpecHandles.AddUnique(AbilitySpec.Handle);
 				InputHeldSpecHandles.Remove(AbilitySpec.Handle);
 				InputSuppressedUntilReleaseSpecHandles.Remove(AbilitySpec.Handle);
+				HeldRangedPressRetries.Remove(AbilitySpec.Handle);
 			}
 		}
 	}
@@ -1136,11 +1148,23 @@ void URpgAbilitySystemComponent::ProcessAbilityInput(float DeltaTime, bool bGame
 	for (const FGameplayAbilitySpecHandle& AbilitySpecHandle : AbilitiesToActivate)
 	{
 		// Cancellation can occur after this handle was collected, while another input is processed.
-		if (!InputSuppressedUntilReleaseSpecHandles.Contains(AbilitySpecHandle))
+		if (InputSuppressedUntilReleaseSpecHandles.Contains(AbilitySpecHandle))
 		{
-			TryActivateAbility(AbilitySpecHandle);
+			continue;
+		}
+		// During a stagger a held bow press waits without predicting a draw the server would refuse.
+		if (IsStaggerBlockingRangedPresses() && QueueHeldRangedPress(AbilitySpecHandle, false))
+		{
+			continue;
+		}
+		if (!TryActivateAbility(AbilitySpecHandle))
+		{
+			QueueHeldRangedPress(AbilitySpecHandle, false);
 		}
 	}
+
+	// A held bow press that a stagger or another exclusive ability refused draws once that ends.
+	RetryHeldRangedPresses();
 
 	//
 	// Process all abilities that had their input released this frame.
@@ -1184,6 +1208,7 @@ void URpgAbilitySystemComponent::SuppressAbilityInputUntilRelease(FGameplayAbili
 	}
 	InputPressedSpecHandles.Remove(Handle);
 	InputHeldSpecHandles.Remove(Handle);
+	HeldRangedPressRetries.Remove(Handle);
 	// A real release may already be queued in this frame. Do not require a second release in that case.
 	if (!InputReleasedSpecHandles.Contains(Handle))
 	{
@@ -1198,6 +1223,7 @@ void URpgAbilitySystemComponent::OnRemoveAbility(FGameplayAbilitySpec& AbilitySp
 	Super::OnRemoveAbility(AbilitySpec);
 	// Super may cancel the active instance; retire suppression after its cancellation callback.
 	InputSuppressedUntilReleaseSpecHandles.Remove(Handle);
+	HeldRangedPressRetries.Remove(Handle);
 }
 
 void URpgAbilitySystemComponent::NotifyAbilityActivated(const FGameplayAbilitySpecHandle Handle,
@@ -1214,6 +1240,29 @@ void URpgAbilitySystemComponent::NotifyAbilityFailed(const FGameplayAbilitySpecH
 	const FGameplayTagContainer& FailureReason)
 {
 	Super::NotifyAbilityFailed(Handle, Ability, FailureReason);
+
+	// A refused bow press is otherwise silent: name the reason and any exclusive ability that holds the activation group.
+	if (Ability && Ability->GetAssetTags().HasTag(RpgGameplayTags::Ability_Type_RangedAim))
+	{
+		FString Holders;
+		for (const FGameplayAbilitySpec& Spec : ActivatableAbilities.Items)
+		{
+			const URpgGameplayAbility* Active = Spec.IsActive() ? Cast<URpgGameplayAbility>(Spec.GetPrimaryInstance()) : nullptr;
+			if (Active && Active->GetActivationGroup() != ERpgAbilityActivationGroup::Independent)
+			{
+				Holders += Holders.IsEmpty() ? TEXT("; active exclusive: ") : TEXT(", ");
+				Holders += Active->GetName();
+			}
+		}
+		const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+		if (LastLoggedRangedFailureAbility.Get() != Ability || Now - LastLoggedRangedFailureSeconds > 1.0)
+		{
+			LastLoggedRangedFailureAbility = Ability;
+			LastLoggedRangedFailureSeconds = Now;
+			UE_LOG(LogRpgAbilitySystem, Log, TEXT("Ranged ability %s on %s could not activate: %s%s."), *GetNameSafe(Ability),
+				*GetNameSafe(GetAvatarActor()), *FailureReason.ToStringSimple(), *Holders);
+		}
+	}
 
 	AActor* AbilityAvatarActor = GetAvatarActor();
 	if (AbilityAvatarActor && AbilityAvatarActor->HasAuthority())
@@ -1262,6 +1311,109 @@ void URpgAbilitySystemComponent::NotifyAbilityEnded(FGameplayAbilitySpecHandle H
 	if (URpgGameplayAbility* RpgAbility = Cast<URpgGameplayAbility>(Ability))
 	{
 		RemoveAbilityFromActivationGroup(RpgAbility->GetActivationGroup(), RpgAbility);
+	}
+
+	// The server refused a predicted press, for example during its stagger, which a remote owner cannot predict.
+	if (Ability && Ability->GetCurrentActivationInfo().ActivationMode == EGameplayAbilityActivationMode::Rejected)
+	{
+		QueueHeldRangedPress(Handle, true);
+	}
+}
+
+bool URpgAbilitySystemComponent::IsStaggerBlockingRangedPresses() const
+{
+	// Replicated, so a remote owner sees the stagger that only the server runs.
+	return HasMatchingGameplayTag(RpgGameplayTags::State_Staggered) || HasMatchingGameplayTag(RpgGameplayTags::State_GuardBroken);
+}
+
+bool URpgAbilitySystemComponent::QueueHeldRangedPress(const FGameplayAbilitySpecHandle Handle, const bool bServerRefused)
+{
+	const FGameplayAbilitySpec* Spec = FindAbilitySpecFromHandle(Handle);
+	const URpgGameplayAbility* RpgAbility = Spec ? Cast<URpgGameplayAbility>(Spec->Ability) : nullptr;
+	const UWorld* World = GetWorld();
+	if (!World || !RpgAbility || !AbilityActorInfo.IsValid() || !AbilityActorInfo->IsLocallyControlled()
+		|| RpgAbility->GetActivationPolicy() != ERpgAbilityActivationPolicy::OnInputTriggered
+		|| !RpgAbility->GetAssetTags().HasTag(RpgGameplayTags::Ability_Type_RangedAim)
+		|| !InputHeldSpecHandles.Contains(Handle) || InputSuppressedUntilReleaseSpecHandles.Contains(Handle))
+	{
+		return false;
+	}
+	if (!HeldRangedPressRetries.Contains(Handle))
+	{
+		UE_LOG(LogRpgAbilitySystem, Log, TEXT("Ranged ability %s on %s keeps its held press waiting: %s."), *GetNameSafe(RpgAbility->GetClass()),
+			*GetNameSafe(GetAvatarActor()), bServerRefused ? TEXT("the server refused it")
+				: IsStaggerBlockingRangedPresses() ? TEXT("staggered") : TEXT("it could not activate"));
+	}
+	// The local checks see every local block. A refusal they did not predict waits a moment before the next try, and a
+	// press the server keeps refusing for a reason this machine cannot see stops waiting.
+	FHeldRangedPress& Press = HeldRangedPressRetries.FindOrAdd(Handle);
+	Press.NextTrySeconds = World->GetTimeSeconds() + (bServerRefused ? RpgRangedPressInput::ServerRefusedRetrySeconds : 0.0);
+	if (bServerRefused && ++Press.ServerRefusals > RpgRangedPressInput::MaxServerRefusals)
+	{
+		HeldRangedPressRetries.Remove(Handle);
+		UE_LOG(LogRpgAbilitySystem, Log, TEXT("Ranged ability %s on %s stops waiting: the server refused its held press %d times."),
+			*GetNameSafe(RpgAbility->GetClass()), *GetNameSafe(GetAvatarActor()), RpgRangedPressInput::MaxServerRefusals + 1);
+		return false;
+	}
+	return true;
+}
+
+bool URpgAbilitySystemComponent::IsHeldRangedPressWaiting(const FGameplayAbilitySpecHandle Handle) const
+{
+	const FHeldRangedPress* Press = HeldRangedPressRetries.Find(Handle);
+	return Press && Press->NextTrySeconds < TNumericLimits<double>::Max();
+}
+
+void URpgAbilitySystemComponent::RetryHeldRangedPresses()
+{
+	const UWorld* World = GetWorld();
+	if (HeldRangedPressRetries.IsEmpty() || !World)
+	{
+		return;
+	}
+	const double Now = World->GetTimeSeconds();
+	TArray<FGameplayAbilitySpecHandle> Ready;
+	for (auto It = HeldRangedPressRetries.CreateIterator(); It; ++It)
+	{
+		const FGameplayAbilitySpec* Spec = FindAbilitySpecFromHandle(It.Key());
+		if (!Spec || !Spec->Ability || !InputHeldSpecHandles.Contains(It.Key()) || InputSuppressedUntilReleaseSpecHandles.Contains(It.Key()))
+		{
+			It.RemoveCurrent();
+			continue;
+		}
+		// A remote owner never runs the server's stagger, but its replicated state tells when it ends.
+		if (Spec->IsActive() || Now < It.Value().NextTrySeconds || IsStaggerBlockingRangedPresses())
+		{
+			continue;
+		}
+		// Checked without a failure notification, so a blocked press waits quietly.
+		const UGameplayAbility* Source = Spec->GetPrimaryInstance() ? Spec->GetPrimaryInstance() : Spec->Ability.Get();
+		if (Source->CanActivateAbility(Spec->Handle, AbilityActorInfo.Get()))
+		{
+			Ready.Add(It.Key());
+		}
+	}
+	for (const FGameplayAbilitySpecHandle& Handle : Ready)
+	{
+		const FGameplayAbilitySpec* Spec = FindAbilitySpecFromHandle(Handle);
+		UE_LOG(LogRpgAbilitySystem, Log, TEXT("Ranged ability %s on %s activates from its held press, which was refused before."),
+			Spec && Spec->Ability ? *GetNameSafe(Spec->Ability->GetClass()) : TEXT("None"), *GetNameSafe(GetAvatarActor()));
+		// The entry keeps its server refusals until the activation sticks, so a refusal of this try still counts.
+		if (TryActivateAbility(Handle))
+		{
+			if (FHeldRangedPress* Press = HeldRangedPressRetries.Find(Handle); Press && !AbilityActorInfo->IsNetAuthority())
+			{
+				Press->NextTrySeconds = TNumericLimits<double>::Max();
+			}
+			else
+			{
+				HeldRangedPressRetries.Remove(Handle);
+			}
+		}
+		else
+		{
+			QueueHeldRangedPress(Handle, true);
+		}
 	}
 }
 
@@ -1385,7 +1537,13 @@ void URpgAbilitySystemComponent::CancelActivationGroupAbilities(ERpgAbilityActiv
 {
 	auto ShouldCancelFunc = [this, Group, IgnoreRpgAbility](const URpgGameplayAbility* RpgAbility, FGameplayAbilitySpecHandle Handle)
 	{
-		return ((RpgAbility->GetActivationGroup() == Group) && (RpgAbility != IgnoreRpgAbility));
+		const bool bCancel = (RpgAbility->GetActivationGroup() == Group) && (RpgAbility != IgnoreRpgAbility);
+		if (bCancel && RpgAbility->IsActive() && RpgAbility->GetAssetTags().HasTag(RpgGameplayTags::Ability_Type_RangedAim))
+		{
+			UE_LOG(LogRpgAbilitySystem, Log, TEXT("Ranged ability %s on %s cancelled by %s, which takes its activation group."),
+				*GetNameSafe(RpgAbility), *GetNameSafe(GetAvatarActor()), *GetNameSafe(IgnoreRpgAbility));
+		}
+		return bCancel;
 	};
 
 	CancelAbilitiesByFunc(ShouldCancelFunc, bReplicateCancelAbility);
