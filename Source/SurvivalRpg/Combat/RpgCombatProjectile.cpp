@@ -280,7 +280,7 @@ void ARpgCombatProjectile::OnConstruction(const FTransform& Transform)
 	Super::OnConstruction(Transform);
 
 	CollisionSphere->SetSphereRadius(CollisionRadius, false);
-	ProjectileMovement->ProjectileGravityScale = GravityScale;
+	ProjectileMovement->ProjectileGravityScale = GravityDelayDistance > 0.0f ? 0.0f : GravityScale;
 }
 
 void ARpgCombatProjectile::BeginPlay()
@@ -311,6 +311,12 @@ void ARpgCombatProjectile::BeginPlay()
 	}
 
 	HandOffVisualLaunch();
+
+	// Every machine flies straight until the same distance from the launch origin; clients tick only until then.
+	if (!UpdateFlightGravity() && !HasAuthority())
+	{
+		SetActorTickEnabled(true);
+	}
 
 	// A machine that receives the projectile well into its flight, such as a late joiner, hears no launch.
 	const float Speed = ProjectileMovement->Velocity.Size();
@@ -356,20 +362,38 @@ void ARpgCombatProjectile::HandOffVisualLaunch()
 		ProjectileMovement->SetInterpolatedComponent(VisualRoot);
 		ProjectileMovement->InterpLocationMaxLagDistance = FMath::Max(ProjectileMovement->InterpLocationMaxLagDistance, Gap + 1.0f);
 		ProjectileMovement->InterpLocationSnapToTargetDistance = FMath::Max(ProjectileMovement->InterpLocationSnapToTargetDistance, Gap + 1.0f);
+		ProjectileMovement->InterpLocationTime = VisualHandOffCatchUpSeconds;
 		SetActorLocation(VisualStart, false, nullptr, ETeleportType::TeleportPhysics);
 		ProjectileMovement->MoveInterpolationTarget(FlightLocation, GetActorRotation());
 		return;
 	}
 }
 
+bool ARpgCombatProjectile::UpdateFlightGravity()
+{
+	const bool bGravity = GravityDelayDistance <= 0.0f
+		|| FVector::DistSquared(GetActorLocation(), LaunchOrigin) >= FMath::Square(GravityDelayDistance);
+	ProjectileMovement->ProjectileGravityScale = bGravity ? GravityScale : 0.0f;
+	return bGravity;
+}
+
 void ARpgCombatProjectile::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
-	if (!HasAuthority() || ImpactState.HasStopped())
+	if (ImpactState.HasStopped())
 	{
 		return;
 	}
+	if (!HasAuthority())
+	{
+		if (UpdateFlightGravity())
+		{
+			SetActorTickEnabled(false);
+		}
+		return;
+	}
+	UpdateFlightGravity();
 
 	const FVector CurrentLocation = GetActorLocation();
 	FHitResult Hit;

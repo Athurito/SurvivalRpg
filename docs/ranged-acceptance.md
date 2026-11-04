@@ -236,8 +236,8 @@ Use `GF_Dev_Sandbox/Maps/Lvl_CombatSandbox` with PIE in standalone.
 2. **Draw and release (RNG-02 to RNG-04):** hold the left button. **Expected:** the bow draws and the strength bar fills for about a second. A tap shorter than about 0.3 s shoots nothing and costs nothing. A release shoots one arrow, costs 8 stamina and lowers the counter by one.
    - Jump and press the left button in the air. **Expected:** nothing draws while you fly; released before the landing, nothing flies and nothing is paid. Held through the landing, the stance and the draw begin when you land.
 3. **Arrow feel:** shoot at different draws. **Expected:**
-   - a full draw flies flat and fast;
-   - a short draw drops sooner and hits weaker; the damage curve runs from 8 to 30, and the shortest shot leaves at the 0.3 s nock, already above the curve's start;
+   - every arrow flies straight along the crosshair for its first 10 m and only then starts to drop, about 7 cm at 20 m and 1 m at 40 m;
+   - a draw that looks full, from about 0.4 s on, already flies at full speed. Damage still grows from 8 to 30 over the full second, and a shot released at the 0.3 s nock flies a little slower;
    - there is no flight line, arc or impact marker anywhere.
 4. **Recovery in the world (RNG-03b):** shoot walls and the floor. **Expected:**
    - about seven in ten arrows stay embedded where they hit, and the rest break;

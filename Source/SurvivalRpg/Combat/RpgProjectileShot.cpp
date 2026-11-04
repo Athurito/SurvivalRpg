@@ -218,7 +218,8 @@ namespace RpgProjectileShot
 		return AimOrigin + Direction * ((Muzzle - AimOrigin) | Direction);
 	}
 
-	bool SolveLaunchDirection(const FVector& Origin, const FVector& Target, const float Speed, const float Gravity, FVector& OutDirection)
+	bool SolveLaunchDirection(
+		const FVector& Origin, const FVector& Target, const float Speed, const float Gravity, FVector& OutDirection, const float GravityDelayDistance)
 	{
 		const FVector Offset = Target - Origin;
 		OutDirection = Offset.GetSafeNormal();
@@ -239,7 +240,32 @@ namespace RpgProjectileShot
 		{
 			return false;
 		}
-		const double Elevation = FMath::Atan((SpeedSquared - FMath::Sqrt(Discriminant)) / (Gravity * Horizontal));
+		double Elevation = FMath::Atan((SpeedSquared - FMath::Sqrt(Discriminant)) / (Gravity * Horizontal));
+		if (GravityDelayDistance > 0.0f)
+		{
+			// The flight runs straight for the delay, then falls: it passes the target's distance at least as high as the
+			// plain arc, so the elevation lies between the straight line and that arc. Bisect the height there.
+			const auto HeightAtTarget = [&](const double Angle)
+			{
+				const double Cos = FMath::Cos(Angle);
+				const double Sin = FMath::Sin(Angle);
+				const double StraightHorizontal = GravityDelayDistance * Cos;
+				if (Horizontal <= StraightHorizontal)
+				{
+					return Horizontal * Sin / Cos;
+				}
+				const double Seconds = (Horizontal - StraightHorizontal) / (Speed * Cos);
+				return GravityDelayDistance * Sin + Speed * Sin * Seconds - 0.5 * Gravity * FMath::Square(Seconds);
+			};
+			double Low = FMath::Atan2(Offset.Z, Horizontal);
+			double High = Elevation;
+			for (int32 Step = 0; Step < 40; ++Step)
+			{
+				const double Middle = 0.5 * (Low + High);
+				(HeightAtTarget(Middle) < Offset.Z ? Low : High) = Middle;
+			}
+			Elevation = 0.5 * (Low + High);
+		}
 		const FVector Flat = FVector(Offset.X, Offset.Y, 0.0).GetSafeNormal();
 		OutDirection = Flat * FMath::Cos(Elevation) + FVector::UpVector * FMath::Sin(Elevation);
 		return true;

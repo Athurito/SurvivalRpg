@@ -62,6 +62,62 @@ Probe in standalone PIE on `Lvl_CombatSandbox`:
 
 Either option keeps the arrow ballistic. The speed option also shortens the flight time, from 0.29 s to 0.22 s at 20 m. NPC archers solve their arc with the projectile's gravity and the full-draw speed, so they follow either change.
 
+## Follow-up: flat near range (2026-11-04)
+
+The user rejected half gravity: „halbe schwerkraft dropped viel zu krass am anfang“. The early drop they saw was not the full-draw ballistics.
+
+### Findings
+
+Measured in PIE on `Lvl_CombatSandbox`, as offset (right, up) from the crosshair ray where the arrow crosses the plane at that distance from the camera:
+
+- **Partial draw that looks full:** the hold layer shows the full draw after about 0.35 s, but `CF_Bow_LaunchSpeedByDraw` rose linearly from 2000 to 6000 cm/s over the full second. A release at 0.4 s launched at 3589 cm/s and fell 20 cm at 10 m and 114 cm at 20 m. This was the strong drop "am Anfang".
+- **Visual hand-off (#377, #379):** the visuals start at the nocked arrow, 40 to 50 cm below and left of the crosshair ray, and caught up over more than 10 m (still 20 cm low at 10 m at full draw). From the shooter's camera this reads as an early dip.
+- **Full-draw ballistics:** 7 cm at 10 m and 40 cm at 20 m.
+
+### Change
+
+- **Speed by draw:** `CF_Bow_LaunchSpeedByDraw` now rises from 4000 cm/s to 6000 cm/s by draw fraction 0.4 and stays there. A draw that looks full is a full-speed shot, and a release at the 0.3 s nock flies at 5500 cm/s. Damage keeps its 8 to 30 curve over the full second. The enemy bow shares the curve and shoots at full draw, so it is unchanged.
+- **Gravity delay:** the new `ARpgCombatProjectile::GravityDelayDistance` (cm, designer data, default 0) keeps gravity off until the projectile is that far from its replicated launch origin, then applies `GravityScale`.
+  - Server and clients switch at the same distance, a late receiver at once.
+  - `BP_Projectile_Arrow` uses 1000 cm.
+  - `RpgProjectileShot::SolveLaunchDirection` takes the delay into account, so the bow enemy's arcs still meet their targets.
+- **Hand-off catch-up:** the new `ARpgCombatProjectile::VisualHandOffCatchUpSeconds` (default 0.05 s, previously the movement's 0.1 s) is the visuals' interpolation time after a hand-off.
+
+### Drop before and after
+
+Offsets in cm (right, up) from the crosshair ray. Distances are measured from the camera; the arrow starts about 2.8 m in front of it, so its straight part ends about 12.8 m from the camera.
+
+| Shot | Path | 5 m | 10 m | 15 m | 20 m | 40 m |
+| --- | --- | --- | --- | --- | --- | --- |
+| Before, full draw (6000 cm/s) | collision | 0, -0.6 | 0, -7.1 | 0, -20.3 | 0, -40.4 | 0, -189.5 |
+| Before, full draw | visuals | -38.5, -33.2 | -15.4, -20.0 | -6.2, -25.5 | -2.5, -42.5 | -0.1, -189.5 |
+| Before, release at 0.4 s (3589 cm/s) | collision | 0, -1.9 | 0, -19.9 | 0, -57.1 | 0, -113.6 | hit the floor first |
+| Before, release at 0.4 s | visuals | -29.3, -26.5 | -6.2, -25.1 | -1.3, -58.2 | -0.3, -113.8 | — |
+| After, full draw (6000 cm/s) | collision | 0, 0.0 | 0, 0.1 | 0, -0.6 | 0, -6.9 | 0, -100.3 |
+| After, full draw | visuals | -24.8, -20.8 | -3.4, -2.8 | -0.5, -1.0 | -0.1, -6.9 | 0, -100.3 |
+| After, release at 0.4 s (5955 cm/s) | collision | 0, 0.0 | 0, 0.0 | 0, -0.6 | 0, -6.7 | 0, -100.7 |
+| After, release at 0.4 s | visuals | -24.3, -20.6 | -3.1, -2.7 | -0.4, -0.9 | 0, -6.7 | 0, -100.7 |
+
+The tuning options above, 8000 cm/s or half gravity, are superseded.
+
+### Validation (2026-11-04)
+
+- **Build:** `ue.py build` passed (0 errors, 0 warnings).
+- **Native tests:** `ue.py test SurvivalRpg.Combat.Projectile SurvivalRpg.Combat.ProjectileShot SurvivalRpg.Combat.Ranged SurvivalRpg.AI --null-rhi`: 56 / 56 passed, with the final assets.
+  - New `Projectile.GravityDelay`: a 500 cm delay keeps the flight level for 500 cm, then the class's gravity applies, and a projectile received past the delay falls at once.
+  - `ProjectileShot.LaunchDirectionArcsOntoTheTarget` now also solves arcs with a 1000 cm delay, inside and beyond the straight part, within 1 cm and no higher than the plain arc.
+- **PIE network tests:** `ue.py test SurvivalRpg.Network.CombatProjectilePIE SurvivalRpg.Network.RangedAimPIE SurvivalRpg.Network.RangedEnemyPIE SurvivalRpg.Network.CombatImpactCuesPIE` (listen server, two clients): 13 / 13 passed, with the suites' usual warnings. The bow enemy still hits the player with its delayed arcs.
+- **Two-player listen server:** the host shot at 3° up while both worlds recorded the arrow. The client's arrow stayed within 0.4 cm of the server's over 115 m: level along its line for the first 10 m, then the same arc.
+- **Capture:** the shooter's view 0.16 s after a full-draw release shows the arrow on the crosshair at about 10 m, with its trail coming from the bow. Editor window only.
+
+### Limits
+
+- **Visuals still start at the bow:** they are about 21 cm below and 25 cm left of the crosshair at 5 m and on it by about 10 m. That is the nocked arrow's place, not a drop.
+- **Gravity onset:** it switches on the first frame past the delay, so up to one frame of straight flight more than 1000 cm; that is about 1 m at 60 fps and 6000 cm/s. The server's switch decides the hit; clients follow it within the measured 0.4 cm.
+- **Not a ballistic arc:** the path is straight for 10 m, then curves. The onset is smooth in velocity, but the arc now starts later than a real arrow's.
+- **Partial draws:** damage still needs the full second, while flight speed is full from 0.4. The strength bar keeps showing the damage build-up.
+- **Curve import record:** `CF_Bow_LaunchSpeedByDraw` was rewritten through a CSV re-import, because its keys cannot be written from Python. It now records that temporary CSV as its import source; edit the keys in the curve editor, not by reimport.
+
 ## Validation (2026-11-03)
 
 - **Build:** `ue.py build` passed (0 errors, 0 warnings), before and after the NPC aim change.

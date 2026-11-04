@@ -260,10 +260,12 @@ namespace RpgProjectileShot
 
 	/**
 	 * The direction to launch a projectile at Speed (cm/s) from Origin so that it passes Target on its low arc under
-	 * Gravity (cm/s², positive pulls down). False when Target is out of reach or the input is degenerate; OutDirection
-	 * then points straight at Target.
+	 * Gravity (cm/s², positive pulls down). GravityDelayDistance (cm) is the projectile's straight flight before gravity
+	 * applies (ARpgCombatProjectile::GravityDelayDistance). False when Target is out of reach or the input is degenerate;
+	 * OutDirection then points straight at Target.
 	 */
-	SURVIVALRPG_API bool SolveLaunchDirection(const FVector& Origin, const FVector& Target, float Speed, float Gravity, FVector& OutDirection);
+	SURVIVALRPG_API bool SolveLaunchDirection(
+		const FVector& Origin, const FVector& Target, float Speed, float Gravity, FVector& OutDirection, float GravityDelayDistance = 0.0f);
 
 	/** The inventory of the PlayerState that owns AbilitySystem, or null for any other owner such as an NPC pawn. */
 	SURVIVALRPG_API URpgInventoryManagerComponent* FindShooterInventory(const UAbilitySystemComponent* AbilitySystem);

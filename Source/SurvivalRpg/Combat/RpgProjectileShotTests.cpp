@@ -988,6 +988,33 @@ bool FRpgProjectileShotLaunchDirectionTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Without gravity the target is in reach"), RpgProjectileShot::SolveLaunchDirection(Origin, Far, Speed, 0.0f, Direction));
 	TestTrue(TEXT("and aimed at directly"), Direction.Equals((Far - Origin).GetSafeNormal(), 1.0e-4f));
 	TestFalse(TEXT("A target straight above has no arc"), RpgProjectileShot::SolveLaunchDirection(Origin, Origin + FVector(0.0f, 0.0f, 500.0f), Speed, Gravity, Direction));
+
+	// A projectile that flies 1000 cm straight before gravity applies: the arc still passes the target, and aims lower.
+	constexpr float Delay = 1000.0f;
+	const auto MissWithDelay = [&Origin](const FVector& Target, const FVector& Launch)
+	{
+		const double Horizontal = (Target - Origin).Size2D();
+		const double Cos = Launch.Size2D();
+		const double Sin = Launch.Z;
+		const double StraightHorizontal = Delay * Cos;
+		if (Horizontal <= StraightHorizontal)
+		{
+			return Origin.Z + Horizontal * Sin / Cos - Target.Z;
+		}
+		const double Seconds = (Horizontal - StraightHorizontal) / (Speed * Cos);
+		return Origin.Z + Delay * Sin + Speed * Sin * Seconds - 0.5 * Gravity * FMath::Square(Seconds) - Target.Z;
+	};
+	for (const FVector& Target : { FVector(800.0f, 0.0f, 150.0f), FVector(2500.0f, 0.0f, 100.0f), FVector(0.0f, -3500.0f, -200.0f) })
+	{
+		FVector Plain;
+		FVector Delayed;
+		RpgProjectileShot::SolveLaunchDirection(Origin, Target, Speed, Gravity, Plain);
+		TestTrue(FString::Printf(TEXT("A target at %s is in reach of the delayed arc"), *Target.ToString()),
+			RpgProjectileShot::SolveLaunchDirection(Origin, Target, Speed, Gravity, Delayed, Delay));
+		TestTrue(TEXT("The delayed direction is a unit vector"), Delayed.IsNormalized());
+		TestEqual(TEXT("The delayed arc passes the target"), MissWithDelay(Target, Delayed), 0.0, 1.0);
+		TestTrue(TEXT("It aims no higher than the plain arc"), Delayed.Z <= Plain.Z + 1.0e-4f);
+	}
 	return true;
 }
 
