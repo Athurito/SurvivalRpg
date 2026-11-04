@@ -62,8 +62,8 @@ protected:
 	virtual void OnDestroy(bool bInOwnerFinished) override;
 
 private:
-	/** Why the stance must end now, or None. */
-	FName FindInterruption() const;
+	/** Why the stance must end now, or None. OutDetail receives a log suffix, such as the interrupting ability's name. */
+	FName FindInterruption(FString* OutDetail = nullptr) const;
 	void HandleAbilityCancelled();
 	void BeginStance();
 	void ReleaseToken();

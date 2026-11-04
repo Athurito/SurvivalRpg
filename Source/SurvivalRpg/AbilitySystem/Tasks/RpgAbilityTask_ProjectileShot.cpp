@@ -21,6 +21,12 @@ namespace RpgProjectileShotTask
 {
 	/** Shot identities this process hands out; they only need to be distinct per shooter. */
 	int32 NextShotId = 0;
+
+	/** Which machine logs a shot line, so a standalone, listen-server or client log reads the same. */
+	const TCHAR* DescribeMachine(const bool bAuthority, const bool bLocallyControlled)
+	{
+		return bAuthority ? (bLocallyControlled ? TEXT("authority owner") : TEXT("server")) : TEXT("owning client");
+	}
 }
 
 URpgAbilityTask_ProjectileShot::URpgAbilityTask_ProjectileShot(const FObjectInitializer& ObjectInitializer)
@@ -415,8 +421,9 @@ void URpgAbilityTask_ProjectileShot::FinishReleased(const float DrawFraction, AR
 				EGameplayTagReplicationState::TagAndCountToAll);
 		}
 	}
-	UE_LOG(LogRpgAbilitySystem, Verbose, TEXT("Projectile shot of %s released at draw %.2f (%s)."),
-		*GetNameSafe(Ability), DrawFraction, Projectile ? *Projectile->GetName() : TEXT("predicted"));
+	UE_LOG(LogRpgAbilitySystem, Log, TEXT("Ranged shot of %s on %s (%s) released after %.2f s at draw %.2f (%s)."),
+		*GetNameSafe(Ability), *GetNameSafe(GetAvatarActor()), RpgProjectileShotTask::DescribeMachine(bAuthority, bLocallyControlled),
+		GetElapsedSeconds(), DrawFraction, Projectile ? *Projectile->GetName() : TEXT("predicted"));
 	if (ShouldBroadcastAbilityTaskDelegates())
 	{
 		OnReleased.Broadcast(DrawFraction, Projectile);
@@ -430,8 +437,9 @@ void URpgAbilityTask_ProjectileShot::FinishCancelled(const ERpgProjectileShotRes
 	Result = Reason;
 	ReleaseBindings();
 	SetDrawingTag(false);
-	UE_LOG(LogRpgAbilitySystem, Verbose, TEXT("Projectile shot of %s ended without a projectile: %s."),
-		*GetNameSafe(Ability), *UEnum::GetValueAsString(Reason));
+	UE_LOG(LogRpgAbilitySystem, Log, TEXT("Ranged shot of %s on %s (%s) cancelled without a projectile: %s after %.2f s drawn%s."),
+		*GetNameSafe(Ability), *GetNameSafe(GetAvatarActor()), RpgProjectileShotTask::DescribeMachine(bAuthority, bLocallyControlled),
+		*UEnum::GetValueAsString(Reason), GetElapsedSeconds(), bWaitingForStance ? TEXT(", before its aim stance began") : TEXT(""));
 	if (ShouldBroadcastAbilityTaskDelegates())
 	{
 		OnCancelled.Broadcast(Reason);
@@ -494,6 +502,12 @@ void URpgAbilityTask_ProjectileShot::ReleaseBindings()
 void URpgAbilityTask_ProjectileShot::OnDestroy(const bool bInOwnerFinished)
 {
 	// An activation that ends before its release, through a dodge, a stagger or the weapon's removal, pays nothing.
+	if (!bResolved && CapturedASC.IsValid())
+	{
+		UE_LOG(LogRpgAbilitySystem, Log, TEXT("Ranged shot of %s on %s (%s) ended with its ability before the release, after %.2f s drawn%s."),
+			*GetNameSafe(Ability), *GetNameSafe(GetAvatarActor()), RpgProjectileShotTask::DescribeMachine(bAuthority, bLocallyControlled),
+			GetElapsedSeconds(), bWaitingForStance ? TEXT(", before its aim stance began") : TEXT(""));
+	}
 	bResolved = true;
 	ReleaseBindings();
 	SetDrawingTag(false);

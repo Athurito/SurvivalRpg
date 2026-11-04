@@ -126,13 +126,15 @@ void URpgAbilityTask_RangedAim::TickTask(const float DeltaTime)
 	{
 		bSprintAtStart = false;
 	}
-	const FName Reason = FindInterruption();
+	FString InterruptionDetail;
+	const FName Reason = FindInterruption(&InterruptionDetail);
 	if (Reason.IsNone())
 	{
 		return;
 	}
 	bInterrupting = true;
-	UE_LOG(LogRpgAbilitySystem, Verbose, TEXT("Ranged aim of %s interrupted: %s."), *GetNameSafe(Ability), *Reason.ToString());
+	UE_LOG(LogRpgAbilitySystem, Log, TEXT("Ranged aim of %s on %s interrupted: %s%s."), *GetNameSafe(Ability),
+		*GetNameSafe(CapturedAvatar.Get()), *Reason.ToString(), *InterruptionDetail);
 	if (ShouldBroadcastAbilityTaskDelegates())
 	{
 		OnInterrupted.Broadcast(Reason);
@@ -143,7 +145,7 @@ void URpgAbilityTask_RangedAim::TickTask(const float DeltaTime)
 	}
 }
 
-FName URpgAbilityTask_RangedAim::FindInterruption() const
+FName URpgAbilityTask_RangedAim::FindInterruption(FString* OutDetail) const
 {
 	const URpgAbilitySystemComponent* ASC = CapturedASC.Get();
 	const AActor* Avatar = CapturedAvatar.Get();
@@ -176,6 +178,10 @@ FName URpgAbilityTask_RangedAim::FindInterruption() const
 		if (Other && Other->GetActivationGroup() != ERpgAbilityActivationGroup::Independent
 			&& !Other->GetAssetTags().HasTag(RpgGameplayTags::Ability_Type_RangedAim))
 		{
+			if (OutDetail)
+			{
+				*OutDetail = FString::Printf(TEXT(" (%s)"), *GetNameSafe(Other));
+			}
 			return RpgRangedAimTask::ExclusiveAbility;
 		}
 	}
@@ -187,7 +193,10 @@ void URpgAbilityTask_RangedAim::HandleAbilityCancelled()
 	// A dodge, stagger or traversal ended the stance while its button is still down: the button must be pressed again.
 	URpgAbilitySystemComponent* ASC = CapturedASC.Get();
 	const FGameplayAbilitySpec* Spec = ASC ? ASC->FindAbilitySpecFromHandle(CapturedSpec) : nullptr;
-	if (Spec && Spec->InputPressed && ASC->AbilityActorInfo.IsValid() && ASC->AbilityActorInfo->IsLocallyControlled())
+	const bool bSuppress = Spec && Spec->InputPressed && ASC->AbilityActorInfo.IsValid() && ASC->AbilityActorInfo->IsLocallyControlled();
+	UE_LOG(LogRpgAbilitySystem, Log, TEXT("Ranged aim of %s on %s cancelled%s%s."), *GetNameSafe(Ability), *GetNameSafe(CapturedAvatar.Get()),
+		Token ? TEXT("") : TEXT(" before its stance began"), bSuppress ? TEXT("; its held input waits for a release") : TEXT(""));
+	if (bSuppress)
 	{
 		ASC->SuppressAbilityInputUntilRelease(CapturedSpec);
 	}

@@ -23,6 +23,7 @@
 #include "SurvivalRpg/Combat/RpgCombatProjectile.h"
 #include "SurvivalRpg/Combat/RpgEmbeddedProjectilePickup.h"
 #include "SurvivalRpg/Combat/RpgProjectileShotAutomationTestTypes.h"
+#include "SurvivalRpg/Combat/RpgRangedAimAutomationTestTypes.h"
 #include "SurvivalRpg/Equipment/RpgRangedWeaponInstance.h"
 #include "SurvivalRpg/GameplayTags/RpgGameplayTags.h"
 #include "SurvivalRpg/Inventory/RpgInventoryAutomationTestTypes.h"
@@ -871,6 +872,138 @@ bool FRpgProjectileShotAirbornePressTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("The landed draw launches one arrow"), Fixture.CountLiveProjectiles(), 1);
 	TestEqual(TEXT("It consumes one arrow"), Fixture.GetArrows(ArrowClass), 3);
 	TestEqual(TEXT("It pays the release cost once"), Fixture.GetStamina(), StartingStamina - Shot.ReleaseStaminaCost, 0.01f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgProjectileShotHeldPressThroughStaggerTest,
+	"SurvivalRpg.Combat.ProjectileShot.BowPressHeldThroughAStaggerDrawsWhenItEnds",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgProjectileShotHeldPressThroughStaggerTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgProjectileShotTests;
+	UClass* ShotClass = LoadClass<UGameplayAbility>(nullptr, TEXT("/GF_Combat_Ranged/GAS/Abilities/GA_BowShot.GA_BowShot_C"));
+	UClass* BowClass = LoadClass<URpgRangedWeaponInstance>(nullptr,
+		TEXT("/GF_Combat_Ranged/Equipment/Bow/BP_WeaponInstance_Bow.BP_WeaponInstance_Bow_C"));
+	UClass* ArrowClass = LoadClass<URpgInventoryItemDefinition>(nullptr, TEXT("/GF_Combat_Ranged/Items/ID_Arrow_Standard.ID_Arrow_Standard_C"));
+	const URpgAbilitySet* BowAbilities = LoadObject<URpgAbilitySet>(nullptr, TEXT("/GF_Combat_Ranged/GAS/AbilitySets/AS_Bow.AS_Bow"));
+	if (!TestTrue(TEXT("The bow content loads"), ShotClass && BowClass && ArrowClass && BowAbilities)) return false;
+
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this, true, true) || !Fixture.AddArrows(4, ArrowClass)) return false;
+	URpgRangedWeaponInstance* Bow = NewObject<URpgRangedWeaponInstance>(Fixture.Pawn, BowClass);
+	BowAbilities->GiveToAbilitySystem(Fixture.ASC, nullptr, Bow);
+	const FGameplayAbilitySpec* Granted = Fixture.ASC->FindAbilitySpecFromClass(ShotClass);
+	if (!TestNotNull(TEXT("The bow's ability set grants the shot"), Granted)) return false;
+	Fixture.Handle = Granted->Handle;
+	const FRpgProjectileShotDefinition& Shot = Bow->GetShotDefinition();
+	const FGameplayAbilitySpecHandle Stagger = Fixture.ASC->GiveAbility(FGameplayAbilitySpec(URpgRangedAimAutomationSwitchingAbility::StaticClass(), 1));
+	const auto Process = [&Fixture]() { Fixture.ASC->ProcessAbilityInput(0.0f, false); };
+	const auto Press = [&Fixture]()
+	{
+		Fixture.ASC->AbilityInputTagPressed(RpgGameplayTags::InputTag_Weapon_Primary);
+		Fixture.ASC->ProcessAbilityInput(0.0f, false);
+	};
+	const auto Release = [&Fixture]()
+	{
+		Fixture.ASC->AbilityInputTagReleased(RpgGameplayTags::InputTag_Weapon_Primary);
+		Fixture.ASC->ProcessAbilityInput(0.0f, false);
+	};
+	const auto IsDrawing = [&Fixture]()
+	{
+		return Fixture.ASC->HasMatchingGameplayTag(RpgGameplayTags::State_Ranged_Drawing) || Fixture.ASC->IsRangedDrawingForPresentation();
+	};
+	// As GA_Combat_Stagger does on the server: it ends the exclusive abilities that run, then holds the blocking group.
+	const auto BeginStagger = [&Fixture, Stagger]()
+	{
+		const FGameplayAbilitySpec* Spec = Fixture.ASC->FindAbilitySpecFromHandle(Stagger);
+		URpgGameplayAbility* Instance = Spec ? Cast<URpgGameplayAbility>(Spec->GetPrimaryInstance()) : nullptr;
+		if (!Instance || !Fixture.ASC->TryActivateAbility(Stagger))
+		{
+			return false;
+		}
+		Fixture.ASC->CancelActivationGroupAbilities(ERpgAbilityActivationGroup::Exclusive_Replaceable, Instance, true);
+		return Instance->ChangeActivationGroup(ERpgAbilityActivationGroup::Exclusive_Blocking);
+	};
+	const auto EndStagger = [&Fixture, Stagger]() { Fixture.ASC->CancelAbilityHandle(Stagger); };
+
+	// A press during the stagger is refused, as the blocking group requires, but it is not lost while it stays held.
+	if (!TestTrue(TEXT("The stagger holds the blocking group"), BeginStagger())) return false;
+	Press();
+	TestFalse(TEXT("The stagger refuses the bow press"), Fixture.IsActive());
+	TestTrue(TEXT("The held press waits"), Fixture.ASC->IsHeldRangedPressWaiting(Fixture.Handle));
+	Fixture.Advance(0.5f);
+	Process();
+	Fixture.TickTasks();
+	TestFalse(TEXT("It neither aims nor draws while the stagger lasts"), Fixture.IsActive() || IsDrawing());
+	EndStagger();
+	Process();
+	Fixture.TickTasks();
+	TestTrue(TEXT("The held press starts the shot when the stagger ends"), Fixture.IsActive());
+	TestTrue(TEXT("The shot aims"), Fixture.ASC->IsRangedAimActive());
+	TestTrue(TEXT("The shot draws"), IsDrawing());
+	float DrawProgress = -1.0f;
+	float NockProgress = -1.0f;
+	TestTrue(TEXT("The owner knows how far it drew"), Fixture.ASC->GetLocalRangedDrawProgress(DrawProgress, NockProgress));
+	TestEqual(TEXT("The stagger's time is no draw time"), DrawProgress, 0.0f, 0.001f);
+	Fixture.Advance(Shot.FullDrawSeconds + 0.5f);
+	Release();
+	TestEqual(TEXT("The release launches one arrow"), Fixture.CountLiveProjectiles(), 1);
+	TestEqual(TEXT("It consumes one arrow"), Fixture.GetArrows(ArrowClass), 3);
+
+	// A stagger during the draw lowers the bow without cost. The button held through it never restarts the draw, but a
+	// fresh press made while the stagger still lasts draws once it ends.
+	Press();
+	Fixture.Advance(0.6f);
+	Fixture.TickTasks();
+	TestTrue(TEXT("The second shot draws"), IsDrawing());
+	if (!TestTrue(TEXT("A second stagger begins"), BeginStagger())) return false;
+	TestFalse(TEXT("The stagger ends the draw"), Fixture.IsActive());
+	TestFalse(TEXT("The bow lowers"), IsDrawing() || Fixture.ASC->IsRangedAimActive());
+	Process();
+	EndStagger();
+	Process();
+	Fixture.TickTasks();
+	TestFalse(TEXT("The button held through the stagger does not restart the draw"), Fixture.IsActive());
+	Release();
+	TestEqual(TEXT("The interrupted draw launches nothing"), Fixture.CountLiveProjectiles(), 1);
+	TestEqual(TEXT("It costs no arrow"), Fixture.GetArrows(ArrowClass), 3);
+	if (!TestTrue(TEXT("A third stagger begins"), BeginStagger())) return false;
+	Press();
+	TestFalse(TEXT("The fresh press during the stagger is refused"), Fixture.IsActive());
+	EndStagger();
+	Process();
+	Fixture.TickTasks();
+	TestTrue(TEXT("It draws once the stagger ends"), Fixture.IsActive() && IsDrawing());
+	Fixture.Advance(Shot.FullDrawSeconds + 0.5f);
+	Release();
+	TestEqual(TEXT("That press launches the second arrow"), Fixture.CountLiveProjectiles(), 2);
+	TestEqual(TEXT("It consumes one arrow"), Fixture.GetArrows(ArrowClass), 2);
+
+	// A remote owner sees the server's stagger only as its replicated state: a press then waits without predicting a draw
+	// that the server would refuse, and draws when the state ends.
+	Fixture.ASC->SetLooseGameplayTagCount(RpgGameplayTags::State_Staggered, 1);
+	Press();
+	TestFalse(TEXT("A press in the stagger state predicts no draw"), Fixture.IsActive());
+	TestTrue(TEXT("It waits"), Fixture.ASC->IsHeldRangedPressWaiting(Fixture.Handle));
+	Fixture.ASC->SetLooseGameplayTagCount(RpgGameplayTags::State_Staggered, 0);
+	Process();
+	Fixture.TickTasks();
+	TestTrue(TEXT("It draws when the stagger state ends"), Fixture.IsActive() && IsDrawing());
+	Fixture.Advance(Shot.FullDrawSeconds + 0.5f);
+	Release();
+	TestEqual(TEXT("That press launches the third arrow"), Fixture.CountLiveProjectiles(), 3);
+
+	// A press released while it waits is gone: the stagger's end starts nothing.
+	if (!TestTrue(TEXT("A fourth stagger begins"), BeginStagger())) return false;
+	Press();
+	Release();
+	TestFalse(TEXT("The release ends the waiting press"), Fixture.ASC->IsHeldRangedPressWaiting(Fixture.Handle));
+	EndStagger();
+	Process();
+	TestFalse(TEXT("Nothing draws after the stagger"), Fixture.IsActive());
+	TestEqual(TEXT("Nothing launches"), Fixture.CountLiveProjectiles(), 3);
 	return true;
 }
 
