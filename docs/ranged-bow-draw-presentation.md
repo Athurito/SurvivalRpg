@@ -73,6 +73,7 @@
 4. Lower the bow without shooting (release the right button during the draw or dodge). **Expected:** the string returns and the arrow disappears; the next draw shows a new one.
 5. Let the skeleton archer draw at you. **Expected:** its string comes back and an arrow lies on its bow; its shot leaves from the bow.
 6. **Multiplayer:** on a listen server, player B watches player A draw and shoot from the side. **Expected:** B sees A's string pull back with A's hand and the nocked arrow, and after the release the string snaps back and the arrow flies from A's bow.
+7. **Fast shots as the client:** on the client of a listen server with some lag (for example `Net PktLag=100` in both windows), keep the right button held and shoot several times in quick succession. **Expected:** every draw shows its nocked arrow until its own release, and every flying arrow leaves from the bow.
 
 ## Limits
 
@@ -83,3 +84,60 @@
 - **Orientation at the hand-off:** the flying arrow starts with its tip at the nocked tip but along the flight direction, not along the bow's draw axis; its tail sits a few centimetres off for that frame.
 - **Collision runs ahead of the visuals:** for about the first tenth of a second the visual arrow trails the collision path by up to the hand-off gap. A hit within the first few metres can therefore show the arrow arriving slightly beside the hit point.
 - **No graph comments:** the 5.8 `BlueprintTools` cannot add comment boxes. Function, variable and tooltip names carry the explanation (see the Blueprint graph pitfalls reference).
+
+## Review follow-up (2026-11-04)
+
+PR #377 was merged without the independent review the master chat asks for. Two review agents, one for mechanism and replication and one for content and tests, read the diff, the exported `BP_BowActor` graphs and the engine sources. Each finding was checked against the code and in listen-server PIE probes (two players and the bow enemy in one process). The fix follows in the follow-up PR.
+
+### Confirmed and fixed
+
+1. **The hand-off was not tied to a shot (medium):**
+   - **Defect:** `HandOffProjectileLaunch` ignored its projectile and re-armed only when the next draw began.
+   - **Reproduced** with `Net PktLag=100` and fast shots: on the shooting client, draws 2 to 4 lost their nocked arrow at about 68 cm pull, when the previous shot's projectile arrived. The last projectile then appeared on the aim line without a hand-off.
+   - **Contract violation:** any projectile of the shooter took the arrow too, against the interface's own contract.
+   - **Fix:** see "Hand-off" under Behavior.
+2. **The string rendered a frame behind the nocked arrow (low):**
+   - **Cause:** `BowMesh` applied the bone in its own `TG_PrePhysics` tick.
+   - **Fix:** `ConfigureStringTick` moves it after the actor.
+3. **Idle work on every machine (low):** every bow updated its string each frame, also without a draw and on a dedicated server.
+4. **Test gaps (low):**
+   - The enemy bow's presenter was never checked.
+   - The interface check passed without the Blueprint's own hand-off.
+   - The arrival-distance gate was untested.
+   - The skeleton test left an asset registry entry behind.
+5. **Documentation (low):** the latency limit above was wrong, and two skill-reference notes were wrong.
+
+### Plausible, kept as limits
+
+- The visual start is not traced against walls.
+- The hand-off frame keeps the flight orientation.
+
+Both are under Limits.
+
+### Checked and found correct
+
+- **Presentation only:**
+  - Nothing new has authority or replicates.
+  - The collision path, sweeps, launch sound and replicated movement are unchanged.
+  - The teleport inside `BeginPlay` cannot overlap anything, because the projectile's actor collision is off.
+- **Threads:** all new work runs on the game thread, after parallel animation evaluation.
+- **Simulated proxies and late joiners:** they draw from the replicated tag and the local hand pose.
+- **Grips from #373:** they survive, because the equipment definitions are unchanged and `BowMesh` sits at identity under the root that rendered the mesh before.
+- **Third-party notices:** the derived skeletal mesh and skeleton are listed.
+- **Start window:** a hand-off right after the world start is impossible, because `LastDrawnSeconds` starts at -100.
+- **Empty quiver:** a draw without arrows is refused before any presentation.
+
+### Validation of the follow-up
+
+- **Build:** `ue.py build` passed (0 errors, 0 warnings).
+- **Native tests:** `ue.py test SurvivalRpg.Combat.Ranged SurvivalRpg.Combat.Projectile SurvivalRpg.Combat.ProjectileShot SurvivalRpg.Animation SurvivalRpg.AI --null-rhi` passed 63 / 63.
+  - **Red check:** on the #377 `BP_BowActor`, `BowAssetContract` and `EnemyBowAssetContract` fail at "the projectile its ammunition launches takes over the nocked arrow".
+- **PIE network tests:** `ue.py test SurvivalRpg.Network.CombatProjectilePIE SurvivalRpg.Network.RangedAimPIE SurvivalRpg.Network.RangedEnemyPIE SurvivalRpg.Network.CombatImpactCuesPIE` (listen server, two clients, `CommandTimeout.Network=90`) passed 13 / 13, with the suites' usual `LogNetPackageMap` warnings.
+- **PIE probes on `Lvl_CombatSandbox`:** per frame, in the server and the client world.
+  - **Host shot, client shot, bow enemy:** the arrow hides in the frame its projectile starts at the bow, and no double arrow appears.
+  - **Client fast fire with 100 ms lag:** every draw keeps its arrow, and all four projectiles start at their released arrow.
+  - **Dev fireball while drawing:** the fireball takes no arrow, and the following arrow shot still does.
+  - **String against the nocked arrow:** 0.0 cm in every run. With `BowMesh` back on `TG_PrePhysics` it was up to 74 cm in the frame the string jumps (17 fps PIE), with a mean of 4.5 cm.
+- **Two-player listen server with 100 ms lag:** the client fires fast while the host watches from beside it. Time is frozen in the second draw, after the first projectile reached the client, and `HighResShot` captures the game viewports only.
+  - **Client's own view:** the second draw shows its nocked arrow from the hand to past the grip, and the first arrow flies far ahead on the aim line.
+  - **Host's view:** the client draws again, and the first arrow's trail starts at the client's bow.
