@@ -870,8 +870,8 @@ bool URpgAIAttackDriverComponent::GetRangedAimPoint(const AActor* Target, FVecto
 	const ARpgCombatProjectile* ProjectileDefaults = ProjectileClass ? ProjectileClass->GetDefaultObject<ARpgCombatProjectile>() : nullptr;
 	const float Gravity = ProjectileDefaults ? -World->GetGravityZ() * ProjectileDefaults->GetGravityScale() : 0.0f;
 	FVector Direction;
-	const bool bInReach = RpgProjectileShot::SolveLaunchDirection(
-		Launch, TargetPoint, RpgProjectileShot::GetLaunchSpeed(Definition, 1.0f), Gravity, Direction);
+	const bool bInReach = RpgProjectileShot::SolveLaunchDirection(Launch, TargetPoint, RpgProjectileShot::GetLaunchSpeed(Definition, 1.0f),
+		Gravity, Direction, ProjectileDefaults ? ProjectileDefaults->GetGravityDelayDistance() : 0.0f);
 
 	// The shot aims from the view through the focus and launches from that ray at the muzzle's depth, along it. The arc
 	// is solved from the point on the straight line to the target; the launch direction tilts that point by a few cm.

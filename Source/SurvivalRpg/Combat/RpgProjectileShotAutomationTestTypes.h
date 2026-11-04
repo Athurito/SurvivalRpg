@@ -41,6 +41,16 @@ public:
 	virtual bool HandOffProjectileLaunch_Implementation(ARpgCombatProjectile* Projectile, FVector& OutVisualStart) override;
 };
 
+/** Editor-only projectile that flies 500 cm straight before world gravity applies. */
+UCLASS(NotBlueprintable, Transient)
+class ARpgGravityDelayAutomationProjectile final : public ARpgCombatProjectile
+{
+	GENERATED_BODY()
+
+public:
+	explicit ARpgGravityDelayAutomationProjectile(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+};
+
 /** Editor-only recoverable projectile that destroys itself in BeginPlay, so a shot's finished spawn fails. */
 UCLASS(NotBlueprintable, Transient)
 class ARpgProjectileShotAutomationFailingProjectile final : public ARpgProjectileShotAutomationTestProjectile

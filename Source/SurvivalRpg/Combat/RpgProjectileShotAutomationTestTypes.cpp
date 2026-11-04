@@ -50,6 +50,13 @@ bool ARpgProjectileLaunchPresenterAutomationActor::HandOffProjectileLaunch_Imple
 	return true;
 }
 
+ARpgGravityDelayAutomationProjectile::ARpgGravityDelayAutomationProjectile(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	GravityScale = 1.0f;
+	GravityDelayDistance = 500.0f;
+}
+
 ARpgProjectileShotAutomationTestProjectile::ARpgProjectileShotAutomationTestProjectile(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {

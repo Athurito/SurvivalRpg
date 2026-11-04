@@ -167,6 +167,14 @@ A `GameplayCueNotify_Burst` `OnBurst` override is const, so it cannot call the B
 - A new DataAsset takes a complete array of structs in one call (MST-03b: a skill tree's `Nodes` with nested tunings). Use the camelCase member keys `get_properties` prints, tags as `{"tagName": ...}`, and `FText` members as `NSLOCTEXT(...)` strings. A `TMap` such as `TaggedSkillConfigs` is replaced as a whole too: read it, add the entry, and send the full map back.
 - Float curves (`UCurveFloat`), such as a level curve a DataAsset references: no engine toolset creates them or edits their keys, and `set_properties` rejects their key data. Create or replace them with `AssetContractTools.import_float_curve`, then assign the curve with `set_properties` and read the keys back with `export_asset`.
 
+### Curves and Blueprint class defaults
+
+- `CurveFloat` keys are not reachable from Python or `ToolsetLibrary.set_object_properties`: `FloatCurve` has no editable flags, so reading it returns `{}` and writing it fails.
+  - Rewrite a curve's keys by re-importing a CSV: an `AssetImportTask` with `CSVImportFactory`, `automated_import_settings.import_type` `ECSV_CURVE_FLOAT`, `replace_existing` and `automated`.
+  - Every row is a key, so leave out a header row; a header `---,Value` became an extra key at (0, 0).
+  - The asset then records that CSV as its import source (flat near range follow-up).
+- A Blueprint class default set from Python (`get_default_object(...).set_editor_property`) reaches newly spawned instances only after `compile_blueprint`. Before that the instances keep the native default, because they copy only the properties that differed when the class was linked (flat near range follow-up). Compile before a PIE check, then save.
+
 ### Niagara systems
 
 - Shared FX building blocks, Effect Types and templates live in `Content/SurvivalRpg/FX`; feature effects belong to their GameFeature. `docs/vfx-roadmap.md` holds the rules and `docs/vfx-foundation.md` the inventory.

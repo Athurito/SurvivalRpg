@@ -326,6 +326,8 @@ public:
 
 	/** Multiplier of world gravity on this class's flight, such as for an NPC's ballistic aim. Designer data. */
 	float GetGravityScale() const { return GravityScale; }
+	/** Straight distance in cm before gravity applies; see GravityDelayDistance. */
+	float GetGravityDelayDistance() const { return GravityDelayDistance; }
 
 	/** Server: the intact projectile's pickup, or null when the impact left none or it is gone. */
 	ARpgEmbeddedProjectilePickup* GetRecoveredPickup() const { return RecoveredPickup.Get(); }
@@ -400,6 +402,15 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Flight", meta = (ClampMin = "0.0"))
 	float GravityScale = 1.0f;
 
+	/**
+	 * Distance in cm from the launch origin the projectile flies straight, without gravity, before GravityScale applies, so
+	 * a shot reads flat near the shooter and drops only at range. Every machine switches at this distance from the
+	 * replicated launch origin, also a late receiver; the switch lands on the first frame past it. 0 applies gravity from
+	 * the launch. NPC aim solves its arcs with it. Designer data.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Flight", meta = (ClampMin = "0.0", Units = "Centimeters"))
+	float GravityDelayDistance = 0.0f;
+
 	/** Radius in cm of the server's collision sweep. Designer data. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Flight", meta = (ClampMin = "0.0", Units = "Centimeters"))
 	float CollisionRadius = 2.0f;
@@ -431,6 +442,14 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Presentation", meta = (ClampMin = "0.0", Units = "Centimeters"))
 	float VisualHandOffMaxDistance = 450.0f;
+
+	/**
+	 * Rough time in seconds the visuals take to catch up with the flight after a hand-off: the movement's interpolation time
+	 * from then on, which also smooths a client's later server corrections. Lower reads straighter near the shooter.
+	 * Cosmetic designer data.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Presentation", meta = (ClampMin = "0.01", Units = "Seconds"))
+	float VisualHandOffCatchUpSeconds = 0.05f;
 
 	/**
 	 * Cue the server executes at every impact through the GameState ability system, so it plays on every machine even
@@ -476,6 +495,9 @@ private:
 
 	/** Starts the visuals at the ammunition the instigator's attached actors show, if one hands it off; see VisualHandOffMaxDistance. */
 	void HandOffVisualLaunch();
+
+	/** Applies GravityScale once the flight is GravityDelayDistance from its launch origin; true once it applies. */
+	bool UpdateFlightGravity();
 
 	UFUNCTION()
 	void OnRep_ImpactState();

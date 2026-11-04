@@ -1549,4 +1549,57 @@ bool FRpgCombatProjectileVisualHandOffTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgCombatProjectileGravityDelayTest,
+	"SurvivalRpg.Combat.Projectile.GravityDelay",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgCombatProjectileGravityDelayTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgCombatProjectileTests;
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this)) return false;
+	// Spawned components activate, so the movement simulates, only once the world initialized its actors.
+	Fixture.World->InitializeActorsForPlay(FURL());
+
+	// A 4000 cm/s launch along Y, away from the target: straight for 500 cm, then falling.
+	FGameplayEffectContextHandle Context = Fixture.Shooter.ASC->MakeEffectContext();
+	const FGameplayEffectSpecHandle Spec(new FGameplayEffectSpec(Fixture.DamageEffect.Get(), Context, 1.0f));
+	FRpgProjectileLaunchParams Params;
+	Params.Origin = FVector(-900.0f, 0.0f, 500.0f);
+	Params.Direction = FVector(0.0f, 1.0f, 0.0f);
+	Params.Speed = 4000.0f;
+	ARpgCombatProjectile* Projectile = ARpgCombatProjectile::LaunchWithDamageSpec(
+		Fixture.World, ARpgGravityDelayAutomationProjectile::StaticClass(), Params, Spec, Fixture.Shooter.Pawn);
+	if (!TestNotNull(TEXT("The projectile launches"), Projectile)) return false;
+	Projectile->DispatchBeginPlay();
+	UProjectileMovementComponent* Movement = Projectile->GetProjectileMovement();
+	TestEqual(TEXT("It starts without gravity"), Movement->ProjectileGravityScale, 0.0f);
+
+	// Step the flight as the world would: the movement first, then the projectile.
+	constexpr float Step = 1.0f / 60.0f;
+	float StraightDrop = 0.0f;
+	for (int32 Frame = 0; Frame < 60 && Projectile->GetImpactResult() == ERpgProjectileImpactResult::None; ++Frame)
+	{
+		Movement->TickComponent(Step, LEVELTICK_All, nullptr);
+		Projectile->Tick(Step);
+		if (FVector::Dist(Projectile->GetActorLocation(), Params.Origin) < 500.0f)
+		{
+			StraightDrop = FMath::Max(StraightDrop, Params.Origin.Z - Projectile->GetActorLocation().Z);
+		}
+	}
+	TestEqual(TEXT("It keeps its height for the first 500 cm"), StraightDrop, 0.0f, 0.01f);
+	TestEqual(TEXT("Past them, the class's gravity applies"), Movement->ProjectileGravityScale, 1.0f);
+	TestTrue(TEXT("and it falls"), Projectile->GetActorLocation().Z < Params.Origin.Z - 50.0f);
+
+	// A machine that receives the projectile already past the delay applies gravity at once.
+	ARpgCombatProjectile* Late = ARpgCombatProjectile::LaunchWithDamageSpec(
+		Fixture.World, ARpgGravityDelayAutomationProjectile::StaticClass(), Params, Spec, Fixture.Shooter.Pawn);
+	if (!TestNotNull(TEXT("A second projectile launches"), Late)) return false;
+	Late->SetActorLocation(Params.Origin + FVector(0.0f, 800.0f, 0.0f));
+	Late->DispatchBeginPlay();
+	TestEqual(TEXT("A projectile received past the delay falls at once"), Late->GetProjectileMovement()->ProjectileGravityScale, 1.0f);
+	return true;
+}
+
 #endif
