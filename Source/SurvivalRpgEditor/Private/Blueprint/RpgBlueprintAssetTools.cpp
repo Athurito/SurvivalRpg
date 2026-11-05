@@ -4,6 +4,9 @@
 #include "Animation/AnimNotifies/AnimNotify.h"
 #include "Animation/AnimNotifies/AnimNotifyState.h"
 #include "Components/ActorComponent.h"
+#include "Components/SceneComponent.h"
+#include "EdGraph/EdGraph.h"
+#include "EdGraphNode_Comment.h"
 #include "EdGraphSchema_K2.h"
 #include "Editor.h"
 #include "Engine/Blueprint.h"
@@ -11,6 +14,7 @@
 #include "Engine/Engine.h"
 #include "Engine/SCS_Node.h"
 #include "Engine/SimpleConstructionScript.h"
+#include "K2Node_FunctionEntry.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "ScopedTransaction.h"
 #include "Serialization/ArchiveReplaceObjectRef.h"
@@ -748,4 +752,163 @@ int32 URpgBlueprintAssetTools::RemapAnimationNotifyClasses(UAnimSequenceBase* An
 	}
 	Animation->MarkPackageDirty();
 	return Originals.Num();
+}
+
+namespace
+{
+	/** Width and height a node will roughly have in the graph editor, which alone measures nodes; a comment's own size is kept. */
+	FVector2D EstimateGraphNodeSize(const UEdGraphNode& Node)
+	{
+		if (Node.NodeWidth > 0 && Node.NodeHeight > 0)
+		{
+			return FVector2D(Node.NodeWidth, Node.NodeHeight);
+		}
+		int32 Inputs = 0;
+		int32 Outputs = 0;
+		int32 LongestInput = 0;
+		int32 LongestOutput = 0;
+		for (const UEdGraphPin* Pin : Node.Pins)
+		{
+			if (!Pin || Pin->bHidden)
+			{
+				continue;
+			}
+			// An unlinked input shows an edit box for its default value beside its name.
+			const int32 Length = Pin->GetDisplayName().ToString().Len() + (Pin->Direction == EGPD_Input && Pin->LinkedTo.IsEmpty() ? 8 : 0);
+			int32& Count = Pin->Direction == EGPD_Input ? Inputs : Outputs;
+			int32& Longest = Pin->Direction == EGPD_Input ? LongestInput : LongestOutput;
+			++Count;
+			Longest = FMath::Max(Longest, Length);
+		}
+		TArray<FString> TitleLines;
+		Node.GetNodeTitle(ENodeTitleType::FullTitle).ToString().ParseIntoArrayLines(TitleLines);
+		int32 LongestTitle = 0;
+		for (const FString& Line : TitleLines)
+		{
+			LongestTitle = FMath::Max(LongestTitle, Line.Len());
+		}
+		const float Width = FMath::Max3(110.0f, 50.0f + 7.5f * LongestTitle, 60.0f + 7.5f * (LongestInput + LongestOutput));
+		const float Height = 22.0f + 16.0f * FMath::Max(1, TitleLines.Num()) + 24.0f * FMath::Max(Inputs, Outputs);
+		return FVector2D(Width, Height);
+	}
+}
+
+bool URpgBlueprintAssetTools::SetOwnSCSComponentParentSocket(UBlueprint* Blueprint, const FName ComponentVariableName, const FName SocketName)
+{
+	USimpleConstructionScript* SCS = IsValid(Blueprint) ? Blueprint->SimpleConstructionScript.Get() : nullptr;
+	USCS_Node* Node = SCS && !ComponentVariableName.IsNone() ? SCS->FindSCSNode(ComponentVariableName) : nullptr;
+	// Only a scene component below a parent of this SCS has a socket to name.
+	if (!Node || Node->GetOuter() != SCS || !Cast<USceneComponent>(Node->ComponentTemplate) || !SCS->FindParentNode(Node))
+	{
+		return false;
+	}
+	if (Node->AttachToName == SocketName)
+	{
+		return true;
+	}
+	const FScopedTransaction Transaction(NSLOCTEXT("RpgBlueprintAssetTools", "SetParentSocket", "Set Blueprint Component Parent Socket"));
+	Blueprint->Modify();
+	Node->Modify();
+	Node->AttachToName = SocketName;
+	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+	return true;
+}
+
+bool URpgBlueprintAssetTools::DescribeLocalFunction(UBlueprint* Blueprint, const FName FunctionName, const FString& Tooltip, const bool bPure)
+{
+	if (!IsValid(Blueprint) || Tooltip.IsEmpty())
+	{
+		return false;
+	}
+	const TObjectPtr<UEdGraph>* Graph = Blueprint->FunctionGraphs.FindByPredicate(
+		[FunctionName](const UEdGraph* Candidate) { return Candidate && Candidate->GetFName() == FunctionName; });
+	TArray<UK2Node_FunctionEntry*> Entries;
+	if (Graph && (*Graph)->GetOuter() == Blueprint)
+	{
+		(*Graph)->GetNodesOfClass(Entries);
+	}
+	if (Entries.Num() != 1)
+	{
+		return false;
+	}
+
+	UK2Node_FunctionEntry* Entry = Entries[0];
+	const FScopedTransaction Transaction(NSLOCTEXT("RpgBlueprintAssetTools", "DescribeLocalFunction", "Describe Blueprint Function"));
+	Blueprint->Modify();
+	Entry->Modify();
+	Entry->MetaData.ToolTip = FText::FromString(Tooltip);
+	if (bPure)
+	{
+		Entry->AddExtraFlags(FUNC_BlueprintPure);
+	}
+	else
+	{
+		Entry->ClearExtraFlags(FUNC_BlueprintPure);
+	}
+	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+	return true;
+}
+
+UEdGraphNode_Comment* URpgBlueprintAssetTools::AddGraphComment(UEdGraph* Graph, const TArray<UEdGraphNode*>& Nodes, const FString& Text)
+{
+	if (!IsValid(Graph) || Nodes.IsEmpty() || Text.IsEmpty())
+	{
+		return nullptr;
+	}
+	FBox2D Bounds(ForceInit);
+	for (const UEdGraphNode* Node : Nodes)
+	{
+		if (!IsValid(Node) || Node->GetGraph() != Graph)
+		{
+			return nullptr;
+		}
+		const FVector2D Position(Node->NodePosX, Node->NodePosY);
+		Bounds += Position;
+		Bounds += Position + EstimateGraphNodeSize(*Node);
+	}
+
+	const FScopedTransaction Transaction(NSLOCTEXT("RpgBlueprintAssetTools", "AddGraphComment", "Add Graph Comment"));
+	Graph->Modify();
+	FGraphNodeCreator<UEdGraphNode_Comment> Creator(*Graph);
+	UEdGraphNode_Comment* Comment = Creator.CreateNode(false);
+	constexpr float Padding = 30.0f;
+	constexpr float TitleHeight = 36.0f;
+	Comment->NodePosX = FMath::FloorToInt(Bounds.Min.X - Padding);
+	Comment->NodePosY = FMath::FloorToInt(Bounds.Min.Y - Padding - TitleHeight);
+	Comment->NodeWidth = FMath::CeilToInt(Bounds.GetSize().X + 2.0f * Padding);
+	Comment->NodeHeight = FMath::CeilToInt(Bounds.GetSize().Y + 2.0f * Padding + TitleHeight);
+	Creator.Finalize();
+	// Placing a comment gives it the default text, so the text follows the placement.
+	Comment->NodeComment = Text;
+	if (UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForGraph(Graph))
+	{
+		FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+	}
+	return Comment;
+}
+
+int32 URpgBlueprintAssetTools::RemoveGraphComments(UEdGraph* Graph)
+{
+	if (!IsValid(Graph))
+	{
+		return -1;
+	}
+	TArray<UEdGraphNode_Comment*> Comments;
+	Graph->GetNodesOfClass(Comments);
+	if (Comments.IsEmpty())
+	{
+		return 0;
+	}
+	const FScopedTransaction Transaction(NSLOCTEXT("RpgBlueprintAssetTools", "RemoveGraphComments", "Remove Graph Comments"));
+	Graph->Modify();
+	for (UEdGraphNode_Comment* Comment : Comments)
+	{
+		Comment->Modify();
+		Graph->RemoveNode(Comment);
+	}
+	if (UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForGraph(Graph))
+	{
+		FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+	}
+	return Comments.Num();
 }

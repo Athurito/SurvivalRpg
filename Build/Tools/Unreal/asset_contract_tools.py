@@ -28,6 +28,16 @@ def _asset(path):
     return value
 
 
+def _project_blueprint(path):
+    package = path.split('.', 1)[0] if isinstance(path, str) else ''
+    if not package or not unreal.RpgAnimationAssetTools.is_project_content_package(package):
+        raise RuntimeError('Expected a Blueprint inside this project or its plugins')
+    blueprint = _asset(package)
+    if not isinstance(blueprint, unreal.Blueprint):
+        raise ValueError('Expected a Blueprint')
+    return blueprint
+
+
 def _status():
     return {'pid': os.getpid(),
             'project': unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir()),
@@ -85,6 +95,75 @@ class AssetContractTools(unreal.ToolsetDefinition):
         if not unreal.RpgBlueprintAssetTools.ensure_event_graph(blueprint):
             raise RuntimeError('Could not add an EventGraph to this Blueprint')
         return True
+
+    @toolset_registry.tool_call
+    @staticmethod
+    def describe_blueprint_function(blueprint_path: str, function_name: str, tooltip: str, pure: bool) -> bool:
+        """Set the tooltip of a function declared in a project Blueprint, and whether it is pure.
+
+        The tooltip shows on call nodes and in My Blueprint. Set pure before writing callers:
+        call nodes of a function that turns pure lose their exec links when they refresh.
+        Compile and save the Blueprint afterwards.
+        """
+        _guard()
+        blueprint = _project_blueprint(blueprint_path)
+        if not isinstance(tooltip, str) or not tooltip.strip():
+            raise ValueError('Expected a nonempty tooltip')
+        if not unreal.RpgBlueprintAssetTools.describe_local_function(blueprint, function_name, tooltip, bool(pure)):
+            raise RuntimeError('Expected a function declared in this Blueprint with one entry: ' + function_name)
+        return True
+
+    @toolset_registry.tool_call
+    @staticmethod
+    def set_blueprint_component_socket(blueprint_path: str, component_name: str, socket_name: str) -> bool:
+        """Attach a component of a project Blueprint's own construction script to a socket or bone of its parent.
+
+        An empty socket_name attaches to the parent itself. The relative transform then counts
+        from the socket. The socket is not checked against the parent's mesh. Compile and save
+        the Blueprint afterwards.
+        """
+        _guard()
+        blueprint = _project_blueprint(blueprint_path)
+        if not unreal.RpgBlueprintAssetTools.set_own_scs_component_parent_socket(blueprint, component_name, socket_name or 'None'):
+            raise RuntimeError('Expected a child scene component declared in this Blueprint: ' + component_name)
+        return True
+
+    @toolset_registry.tool_call
+    @staticmethod
+    def add_graph_comment(graph_path: str, node_paths_json: str, text: str) -> str:
+        """Add a comment box with text behind the given nodes of one project Blueprint graph; returns its path.
+
+        node_paths_json is a JSON array of node object paths, as find_nodes returns them. The box
+        size is estimated from node positions, titles and pins; arrange the nodes first and check
+        the picture in the graph editor. Save the Blueprint afterwards.
+        """
+        _guard()
+        graph = unreal.find_object(None, graph_path)
+        if not isinstance(graph, unreal.EdGraph):
+            raise ValueError('Expected an existing graph: ' + graph_path)
+        _project_blueprint(graph.get_outermost().get_name())
+        paths = json.loads(node_paths_json)
+        nodes = [unreal.find_object(None, path) for path in paths] if isinstance(paths, list) else []
+        if not nodes or any(not isinstance(node, unreal.EdGraphNode) for node in nodes):
+            raise ValueError('Expected a nonempty JSON array of existing graph node paths')
+        comment = unreal.RpgBlueprintAssetTools.add_graph_comment(graph, nodes, text)
+        if not comment:
+            raise RuntimeError('Expected a nonempty text and nodes of this graph')
+        return comment.get_path_name()
+
+    @toolset_registry.tool_call
+    @staticmethod
+    def remove_graph_comments(graph_path: str) -> int:
+        """Remove every comment box of a project Blueprint graph and return how many; BlueprintTools.delete_node refuses them.
+
+        Use it to lay comments out again after nodes moved. Save the Blueprint afterwards.
+        """
+        _guard()
+        graph = unreal.find_object(None, graph_path)
+        if not isinstance(graph, unreal.EdGraph):
+            raise ValueError('Expected an existing graph: ' + graph_path)
+        _project_blueprint(graph.get_outermost().get_name())
+        return unreal.RpgBlueprintAssetTools.remove_graph_comments(graph)
 
     @toolset_registry.tool_call
     @staticmethod
