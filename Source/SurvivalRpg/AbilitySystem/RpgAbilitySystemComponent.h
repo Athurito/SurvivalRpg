@@ -139,7 +139,10 @@ public:
 	void ReturnRangedRecoveryToken();
 	/** Server: ranged recovery tokens the current avatar's life has used. */
 	int32 GetRangedRecoveryTokensUsed() const;
-	/** Presentation read model: the locally controlled owner's prediction, the authority's replicated tag elsewhere. */
+	/**
+	 * Presentation read model: the locally controlled owner's prediction, the authority's replicated tag elsewhere. Each
+	 * change is also sent on this machine as Rpg.Combat.Message.RangedDrawingChanged (FRpgRangedDrawingMessage).
+	 */
 	UFUNCTION(BlueprintPure, Category = "Rpg|Ranged")
 	bool IsRangedDrawingForPresentation() const;
 	/** Presentation read model of a recent release, like IsRangedDrawingForPresentation. */
@@ -408,6 +411,16 @@ private:
 	/** Drops tokens whose activation ended and mirrors the remaining stance into State.Ranged.Aiming on owner and authority. */
 	void RefreshRangedAim();
 	void ResetRangedAim();
+	/**
+	 * Sends Rpg.Combat.Message.RangedDrawingChanged on this machine when IsRangedDrawingForPresentation or the avatar
+	 * changed since the last message. Presentation only; nothing here replicates.
+	 */
+	void BroadcastRangedDrawingChange();
+	void HandleRangedDrawingTagChanged(FGameplayTag Tag, int32 NewCount);
+	// The avatar and draw state of the last RangedDrawingChanged message, so each change is sent once.
+	TWeakObjectPtr<AActor> RangedDrawingMessageAvatar;
+	bool bRangedDrawingMessageDrawing = false;
+	FDelegateHandle RangedDrawingTagHandle;
 	// Local ownership tokens are never network authority; movement records the sampled cap in its own history.
 	TArray<FRangedAimToken, TInlineAllocator<2>> RangedAimTokens;
 	uint32 LastRangedAimToken = 0;

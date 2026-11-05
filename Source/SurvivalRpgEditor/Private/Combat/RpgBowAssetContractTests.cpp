@@ -14,6 +14,7 @@
 #include "StateTree.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
+#include "SurvivalRpg/Animation/RpgWieldedItemAnimInstance.h"
 #include "SurvivalRpg/Combat/RpgCombatProjectile.h"
 #include "SurvivalRpg/Combat/RpgEnemyCombatLoadout.h"
 #include "SurvivalRpg/Combat/RpgProjectileLaunchPresenter.h"
@@ -49,7 +50,8 @@ namespace RpgBowAssetContractTests
 
 	/**
 	 * The bow's spawned actor pulls a string bone with the drawing hand and hands its nocked arrow over: it implements the
-	 * presenter in its own graph, and the projectile its ammunition launches is one it takes over.
+	 * presenter in its own graph, the projectile its ammunition launches is one it takes over, and an AnimBP on the
+	 * wielded item base animates the string from the hand.
 	 */
 	void TestBowActorPresentsLaunches(FAutomationTestBase& Test, const TCHAR* BowName, const URpgEquipmentDefinition& Equipment,
 		const FRpgProjectileShotDefinition& Shot)
@@ -73,17 +75,39 @@ namespace RpgBowAssetContractTests
 			HandOffClass && AmmunitionProjectile && AmmunitionProjectile->IsChildOf(HandOffClass));
 
 		const UBlueprintGeneratedClass* BowActorBlueprint = Cast<UBlueprintGeneratedClass>(BowActorClass);
-		bool bHasStringBone = false;
+		const USkeletalMeshComponent* StringMesh = nullptr;
 		if (BowActorBlueprint && BowActorBlueprint->SimpleConstructionScript)
 		{
 			for (const USCS_Node* Node : BowActorBlueprint->SimpleConstructionScript->GetAllNodes())
 			{
-				const USkinnedMeshComponent* Mesh = Node ? Cast<USkinnedMeshComponent>(Node->ComponentTemplate) : nullptr;
+				const USkeletalMeshComponent* Mesh = Node ? Cast<USkeletalMeshComponent>(Node->ComponentTemplate) : nullptr;
 				const USkinnedAsset* Asset = Mesh ? Mesh->GetSkinnedAsset() : nullptr;
-				bHasStringBone |= Asset && Asset->GetRefSkeleton().FindBoneIndex(TEXT("Bow_String")) != INDEX_NONE;
+				StringMesh = Asset && Asset->GetRefSkeleton().FindBoneIndex(TEXT("Bow_String")) != INDEX_NONE ? Mesh : StringMesh;
 			}
 		}
-		Test.TestTrue(FString::Printf(TEXT("%s: its actor's mesh has the Bow_String bone its draw pulls"), BowName), bHasStringBone);
+		if (!Test.TestNotNull(FString::Printf(TEXT("%s: its actor's skeletal mesh has the Bow_String bone its draw pulls"), BowName), StringMesh))
+		{
+			return;
+		}
+
+		// The string is animated: an AnimBP on the wielded item base reads the drawing hand after the wielder's pose is final.
+		const UClass* StringAnimClass = StringMesh->AnimClass.Get();
+		const URpgWieldedItemAnimInstance* StringAnim = StringAnimClass ? Cast<URpgWieldedItemAnimInstance>(StringAnimClass->GetDefaultObject()) : nullptr;
+		Test.TestTrue(FString::Printf(TEXT("%s: an AnimBP on the wielded item base drives the string"), BowName),
+			StringMesh->GetAnimationMode() == EAnimationMode::AnimationBlueprint && StringAnim);
+		const auto ReadName = [StringAnim](const TCHAR* Name)
+		{
+			const FNameProperty* Property = StringAnim ? FindFProperty<FNameProperty>(StringAnim->GetClass(), Name) : nullptr;
+			return Property ? Property->GetPropertyValue_InContainer(StringAnim) : FName();
+		};
+		const USkeleton* Manny = LoadObject<USkeleton>(nullptr, TEXT("/Game/SurvivalRpg/Characters/Mannequins/Meshes/SK_Mannequin.SK_Mannequin"));
+		const FName DrawHand = ReadName(TEXT("WielderBone"));
+		Test.TestTrue(FString::Printf(TEXT("%s: the string follows a bone of the Manny skeleton"), BowName),
+			Manny && !DrawHand.IsNone() && Manny->GetReferenceSkeleton().FindBoneIndex(DrawHand) != INDEX_NONE);
+		Test.TestEqual(FString::Printf(TEXT("%s: the hand is measured from the string at rest"), BowName),
+			ReadName(TEXT("LocalFrameBone")), FName(TEXT("Bow_String")));
+		Test.TestTrue(FString::Printf(TEXT("%s: the string updates after the wielder's animation"), BowName),
+			StringMesh->PrimaryComponentTick.TickGroup >= TG_PostUpdateWork);
 	}
 }
 

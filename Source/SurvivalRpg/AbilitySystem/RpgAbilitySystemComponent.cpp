@@ -12,7 +12,9 @@
 #include "SurvivalRpg/Combat/RpgCombatDeveloperSettings.h"
 #include "SurvivalRpg/SurvivalRpg.h"
 #include "SurvivalRpg/Animation/RpgAnimInstance.h"
+#include "GameFramework/GameplayMessageSubsystem.h"
 #include "SurvivalRpg/Camera/RpgCameraMode.h"
+#include "SurvivalRpg/Combat/RpgCombatMessages.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterMoverComponent.h"
 #include "SurvivalRpg/Core/Character/RpgCharacterMovementComponent.h"
 #include "SurvivalRpg/Core/Character/RpgMoverRagdollComponent.h"
@@ -205,6 +207,20 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 			Mover->RefreshTraversalPresentation(this);
 		}
 	}
+	// Other machines learn of a draw from the replicated tag. Its event also fires when replication writes the tag
+	// container directly, which OnTagUpdated does not see on clients.
+	if (!RangedDrawingTagHandle.IsValid())
+	{
+		RangedDrawingTagHandle = RegisterGameplayTagEvent(RpgGameplayTags::State_Ranged_Drawing, EGameplayTagEventType::NewOrRemoved)
+			.AddUObject(this, &ThisClass::HandleRangedDrawingTagChanged);
+	}
+	// A late joiner's or relevant-again pawn may already draw; its equipment shows that draw from this message.
+	BroadcastRangedDrawingChange();
+}
+
+void URpgAbilitySystemComponent::HandleRangedDrawingTagChanged(const FGameplayTag Tag, const int32 NewCount)
+{
+	BroadcastRangedDrawingChange();
 }
 
 void URpgAbilitySystemComponent::ReinvokeActiveGameplayCuesForNewAvatar()
@@ -351,6 +367,27 @@ void URpgAbilitySystemComponent::RefreshRangedAim()
 void URpgAbilitySystemComponent::SetLocalRangedDrawing(const bool bDrawing)
 {
 	bLocalRangedDrawing = bDrawing;
+	BroadcastRangedDrawingChange();
+}
+
+void URpgAbilitySystemComponent::BroadcastRangedDrawingChange()
+{
+	AActor* Avatar = GetAvatarActor_Direct();
+	const bool bDrawing = Avatar && IsRangedDrawingForPresentation();
+	const bool bSameAvatar = Avatar == RangedDrawingMessageAvatar.Get();
+	const bool bChanged = bSameAvatar ? bDrawing != bRangedDrawingMessageDrawing : bDrawing;
+	RangedDrawingMessageAvatar = Avatar;
+	bRangedDrawingMessageDrawing = bDrawing;
+	// A new avatar that does not draw has nothing to show. Bare test worlds and a world in teardown have no message
+	// router, and nobody there presents the draw.
+	UWorld* World = GetWorld();
+	if (bChanged && Avatar && World && UGameplayMessageSubsystem::HasInstance(World))
+	{
+		FRpgRangedDrawingMessage Message;
+		Message.Avatar = Avatar;
+		Message.bDrawing = bDrawing;
+		UGameplayMessageSubsystem::Get(World).BroadcastMessage(RpgGameplayTags::Rpg_Combat_Message_RangedDrawingChanged, Message);
+	}
 }
 
 void URpgAbilitySystemComponent::NoteLocalRangedRelease(const float Seconds)

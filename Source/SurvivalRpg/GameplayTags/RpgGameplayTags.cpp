@@ -147,6 +147,7 @@ namespace RpgGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Behavior_SurvivesDeath, "Ability.Behavior.SurvivesDeath", "An ability with this type tag should not be canceled due to death.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Effect_Behavior_ClearOnRespawn, "Effect.Behavior.ClearOnRespawn", "GameplayEffects with this tag are removed when the owner respawns.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Combat_Message_ActorKilled, "Rpg.Combat.Message.ActorKilled", "Gameplay message sent by combat when an actor is killed.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_Combat_Message_RangedDrawingChanged, "Rpg.Combat.Message.RangedDrawingChanged", "Local presentation message (FRpgRangedDrawingMessage): an avatar's ranged shot started or stopped showing as nocked or drawn on this machine.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_ActionBar_Message_SlotsChanged, "Rpg.ActionBar.Message.SlotsChanged", "Gameplay message sent when a controller-owned general action bar slot changes.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_WeaponAbilityLoadout_Message_SlotsChanged, "Rpg.WeaponAbilityLoadout.Message.SlotsChanged", "Gameplay message sent when a controller-owned weapon ability binding changes.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Rpg_WeaponAbilityLoadout_DefaultSlot_1, "Rpg.WeaponAbilityLoadout.DefaultSlot.1", "Spec-source marker: the granting ability set declares this ability as the default occupant of weapon ability slot 1.");
