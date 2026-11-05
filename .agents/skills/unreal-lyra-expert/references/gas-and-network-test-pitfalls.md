@@ -60,6 +60,8 @@ Behavior observed in this project's automation tests and PIE sessions on UE 5.8.
 
 ## GameplayCues and prediction
 
+- UE 5.8 replicates `GameplayTagCountContainer` itself. On clients its `NetDeltaSerialize` updates the counts and fires the `RegisterGameplayTagEvent` delegates, but never `UAbilitySystemComponent::OnTagUpdated`, which runs only for local changes. React to a replicated tag through `RegisterGameplayTagEvent`; an `OnTagUpdated` override worked on the server and missed every observer (bow draw message).
+
 - A cue the server adds (`AddGameplayCue`) or executes (`ExecuteGameplayCue`) while still inside a client's predicted activation carries that client's prediction key. The owning client assumes it predicted the cue and never plays it, while every other machine does. This covers server code called synchronously from `ActivateAbility` and message handlers that run inside the killer's activation. Wrap the call in `FScopedPredictionWindow(ASC, FPredictionKey(), false)`, as `URpgGameFeatureAction_AwardKillXP` and `URpgGameplayAbility_Harvest` do; the tests `SurvivalRpg.Network.KillXPCuePIE` and `SurvivalRpg.Network.HarvestCuePIE` prove it.
 - A test can read the key from `UAbilitySystemComponent::ActiveGameplayCues` by reflection after `InternalTryActivateAbility(Handle, FPredictionKey::CreateNewPredictionKey(ASC))`.
 - `GameplayCueFunctionLibrary.ExecuteGameplayCueOnActor` on an actor with an ability system fires only on authority and replicates through the ASC; on a client it does nothing. Actors without an ASC play it locally.
