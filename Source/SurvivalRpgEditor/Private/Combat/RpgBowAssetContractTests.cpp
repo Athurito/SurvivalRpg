@@ -2,15 +2,19 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-#include "Animation/AnimBlueprintGeneratedClass.h"
-#include "Components/SkinnedMeshComponent.h"
-#include "Engine/BlueprintGeneratedClass.h"
-#include "Engine/SCS_Node.h"
-#include "Engine/SimpleConstructionScript.h"
-#include "Engine/SkinnedAsset.h"
+#include "Animation/AnimInstance.h"
+#include "AssetRegistry/AssetRegistryModule.h"
+#include "AssetRegistry/IAssetRegistry.h"
+#include "Blueprint/BlueprintSupport.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/Blueprint.h"
+#include "Engine/SkinnedAsset.h"
 #include "InputAction.h"
+#include "Interfaces/IPluginManager.h"
 #include "Misc/AutomationTest.h"
+#include "Misc/PackageName.h"
+#include "Modules/ModuleManager.h"
 #include "StateTree.h"
 #include "SurvivalRpg/AbilitySystem/Abilities/RpgGameplayAbility.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
@@ -41,6 +45,9 @@ namespace RpgBowAssetContractTests
 	const TCHAR* CombatInputConfigPath = TEXT("/GF_Combat_Core/Input/DA_InputConfig_Combat.DA_InputConfig_Combat");
 	const TCHAR* EnemyBowPath = TEXT("/GF_Combat_Ranged/AI/EnemyWeapons/ID_EnemyBow.ID_EnemyBow_C");
 	const TCHAR* ArcherPath = TEXT("/GF_AI_RiftMonsters/AI/Characters/BP_RiftGrunt_Bow.BP_RiftGrunt_Bow_C");
+	const TCHAR* BowActorBasePath = TEXT("/GF_Combat_Ranged/Equipment/Bow/BP_BowActor.BP_BowActor_C");
+	const TCHAR* BowAnimBlueprintPath = TEXT("/GF_Combat_Ranged/Equipment/Bow/ABP_Bow.ABP_Bow_C");
+	const TCHAR* BowSkeletonPath = TEXT("/GF_Combat_Ranged/Equipment/Bow/SKEL_Bow.SKEL_Bow");
 
 	template <typename FragmentType>
 	const FragmentType* FindFragment(const URpgInventoryItemDefinition* Definition)
@@ -49,9 +56,8 @@ namespace RpgBowAssetContractTests
 	}
 
 	/**
-	 * The bow's spawned actor pulls a string bone with the drawing hand and hands its nocked arrow over: it implements the
-	 * presenter in its own graph, the projectile its ammunition launches is one it takes over, and an AnimBP on the
-	 * wielded item base animates the string from the hand.
+	 * The bow's spawned actor hands its nocked arrow over: it implements the presenter in its own graph, and the projectile
+	 * its ammunition launches is one it takes over.
 	 */
 	void TestBowActorPresentsLaunches(FAutomationTestBase& Test, const TCHAR* BowName, const URpgEquipmentDefinition& Equipment,
 		const FRpgProjectileShotDefinition& Shot)
@@ -73,28 +79,59 @@ namespace RpgBowAssetContractTests
 		const UClass* AmmunitionProjectile = URpgInventoryFragment_Ammunition::FindProjectileClass(Shot.AmmunitionItemDefinition).Get();
 		Test.TestTrue(FString::Printf(TEXT("%s: the projectile its ammunition launches takes over the nocked arrow"), BowName),
 			HandOffClass && AmmunitionProjectile && AmmunitionProjectile->IsChildOf(HandOffClass));
+	}
 
-		const UBlueprintGeneratedClass* BowActorBlueprint = Cast<UBlueprintGeneratedClass>(BowActorClass);
-		const USkeletalMeshComponent* StringMesh = nullptr;
-		if (BowActorBlueprint && BowActorBlueprint->SimpleConstructionScript)
-		{
-			for (const USCS_Node* Node : BowActorBlueprint->SimpleConstructionScript->GetAllNodes())
-			{
-				const USkeletalMeshComponent* Mesh = Node ? Cast<USkeletalMeshComponent>(Node->ComponentTemplate) : nullptr;
-				const USkinnedAsset* Asset = Mesh ? Mesh->GetSkinnedAsset() : nullptr;
-				StringMesh = Asset && Asset->GetRefSkeleton().FindBoneIndex(TEXT("Bow_String")) != INDEX_NONE ? Mesh : StringMesh;
-			}
-		}
-		if (!Test.TestNotNull(FString::Printf(TEXT("%s: its actor's skeletal mesh has the Bow_String bone its draw pulls"), BowName), StringMesh))
+	/** Class default of one of the bow actor's floating-point tuning variables; 0 when the variable is missing. */
+	double ReadBowTuning(const UClass& BowActorClass, const TCHAR* Name)
+	{
+		const FNumericProperty* Property = FindFProperty<FNumericProperty>(&BowActorClass, Name);
+		return Property && Property->IsFloatingPoint()
+			? Property->GetFloatingPointPropertyValue(Property->ContainerPtrToValuePtr<void>(BowActorClass.GetDefaultObject()))
+			: 0.0;
+	}
+
+	/**
+	 * Every bow is content on one shared foundation, as Lyra's weapons are on B_Weapon: its actor is a spawnable child of
+	 * the bow actor base, its mesh uses the shared bow skeleton with the Bow_String bone, the shared bow AnimBP family pulls
+	 * that bone from the drawing hand after the wielder's pose is final, and the bow sets its own tuning and nocked arrow.
+	 */
+	void TestBowActorUsesBowFamily(FAutomationTestBase& Test, const FString& BowName, const UClass* BowActorClass)
+	{
+		const UClass* BowActorBase = LoadClass<AActor>(nullptr, BowActorBasePath);
+		if (!Test.TestTrue(FString::Printf(TEXT("%s: its actor is a spawnable child of the shared bow actor"), *BowName),
+			BowActorClass && BowActorBase && BowActorClass->IsChildOf(BowActorBase) && !BowActorClass->HasAnyClassFlags(CLASS_Abstract)))
 		{
 			return;
 		}
 
-		// The string is animated: an AnimBP on the wielded item base reads the drawing hand after the wielder's pose is final.
-		const UClass* StringAnimClass = StringMesh->AnimClass.Get();
+		const USkeleton* BowSkeleton = LoadObject<USkeleton>(nullptr, BowSkeletonPath);
+		const USkeletalMeshComponent* BowMesh = nullptr;
+		bool bHasNockedArrowMesh = false;
+		// Class defaults include a child Blueprint's overrides of inherited components.
+		AActor::ForEachComponentOfActorClassDefault<UMeshComponent>(const_cast<UClass*>(BowActorClass), [&](const UMeshComponent* Component)
+		{
+			const USkeletalMeshComponent* Skeletal = Cast<USkeletalMeshComponent>(Component);
+			const USkinnedAsset* Asset = Skeletal ? Skeletal->GetSkinnedAsset() : nullptr;
+			BowMesh = Asset && BowSkeleton && Asset->GetSkeleton() == BowSkeleton ? Skeletal : BowMesh;
+			const UStaticMeshComponent* Static = Cast<UStaticMeshComponent>(Component);
+			bHasNockedArrowMesh |= Static && Static->GetStaticMesh();
+			return true;
+		});
+		if (!Test.TestNotNull(FString::Printf(TEXT("%s: its bow mesh uses the shared bow skeleton"), *BowName), BowMesh))
+		{
+			return;
+		}
+		Test.TestTrue(FString::Printf(TEXT("%s: its bow mesh has the Bow_String bone the draw pulls"), *BowName),
+			BowMesh->GetSkinnedAsset()->GetRefSkeleton().FindBoneIndex(TEXT("Bow_String")) != INDEX_NONE);
+		Test.TestTrue(FString::Printf(TEXT("%s: it shows a nocked arrow mesh"), *BowName), bHasNockedArrowMesh);
+
+		// The string is animated: the shared AnimBP on the wielded item base reads the drawing hand after the wielder's pose.
+		const UClass* BowAnimBlueprint = LoadClass<UAnimInstance>(nullptr, BowAnimBlueprintPath);
+		const UClass* StringAnimClass = BowMesh->AnimClass.Get();
 		const URpgWieldedItemAnimInstance* StringAnim = StringAnimClass ? Cast<URpgWieldedItemAnimInstance>(StringAnimClass->GetDefaultObject()) : nullptr;
-		Test.TestTrue(FString::Printf(TEXT("%s: an AnimBP on the wielded item base drives the string"), BowName),
-			StringMesh->GetAnimationMode() == EAnimationMode::AnimationBlueprint && StringAnim);
+		Test.TestTrue(FString::Printf(TEXT("%s: the shared bow AnimBP family drives the string"), *BowName),
+			BowMesh->GetAnimationMode() == EAnimationMode::AnimationBlueprint && StringAnim && BowAnimBlueprint
+			&& StringAnimClass->IsChildOf(BowAnimBlueprint));
 		const auto ReadName = [StringAnim](const TCHAR* Name)
 		{
 			const FNameProperty* Property = StringAnim ? FindFProperty<FNameProperty>(StringAnim->GetClass(), Name) : nullptr;
@@ -102,12 +139,18 @@ namespace RpgBowAssetContractTests
 		};
 		const USkeleton* Manny = LoadObject<USkeleton>(nullptr, TEXT("/Game/SurvivalRpg/Characters/Mannequins/Meshes/SK_Mannequin.SK_Mannequin"));
 		const FName DrawHand = ReadName(TEXT("WielderBone"));
-		Test.TestTrue(FString::Printf(TEXT("%s: the string follows a bone of the Manny skeleton"), BowName),
+		Test.TestTrue(FString::Printf(TEXT("%s: the string follows a bone of the Manny skeleton"), *BowName),
 			Manny && !DrawHand.IsNone() && Manny->GetReferenceSkeleton().FindBoneIndex(DrawHand) != INDEX_NONE);
-		Test.TestEqual(FString::Printf(TEXT("%s: the hand is measured from the string at rest"), BowName),
+		Test.TestEqual(FString::Printf(TEXT("%s: the hand is measured from the string at rest"), *BowName),
 			ReadName(TEXT("LocalFrameBone")), FName(TEXT("Bow_String")));
-		Test.TestTrue(FString::Printf(TEXT("%s: the string updates after the wielder's animation"), BowName),
-			StringMesh->PrimaryComponentTick.TickGroup >= TG_PostUpdateWork);
+		Test.TestTrue(FString::Printf(TEXT("%s: the string updates after the wielder's animation"), *BowName),
+			BowMesh->PrimaryComponentTick.TickGroup >= TG_PostUpdateWork);
+
+		// Per-bow data the AnimBP and the hand-off read: a bow that forgets one draws no string or nocks no arrow.
+		for (const TCHAR* Tuning : { TEXT("MaxStringPull"), TEXT("MaxHandOffset"), TEXT("StringPullSpeed"), TEXT("ArrowTipOffset") })
+		{
+			Test.TestTrue(FString::Printf(TEXT("%s: it sets a positive %s"), *BowName, Tuning), ReadBowTuning(*BowActorClass, Tuning) > 0.0);
+		}
 	}
 }
 
@@ -349,6 +392,70 @@ bool FRpgPrimaryInputHoldContractTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("The primary attack presses once per click"), Primary->bPressOnStartOnly);
 	TestTrue(TEXT("The primary attack has no trigger that ends a held press early"), Primary->InputAction->Triggers.IsEmpty());
 	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FRpgBowFamilyContractTest,
+	"SurvivalRpg.Combat.Ranged.BowFamilyContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRpgBowFamilyContractTest::RunTest(const FString& Parameters)
+{
+	using namespace RpgBowAssetContractTests;
+
+	// Every equipment definition of the bow family, found in the registry, so a new bow is covered without a new test.
+	IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
+	Registry.WaitForCompletion();
+	TSet<FTopLevelAssetPath> DefinitionClassPaths;
+	Registry.GetDerivedClassNames({ URpgEquipmentDefinition::StaticClass()->GetClassPathName() }, {}, DefinitionClassPaths);
+
+	FARFilter Filter;
+	Filter.ClassPaths.Add(UBlueprint::StaticClass()->GetClassPathName());
+	Filter.bRecursiveClasses = true;
+	Filter.bRecursivePaths = true;
+	Filter.PackagePaths.Add(TEXT("/Game"));
+	for (const TSharedRef<IPlugin>& Plugin : IPluginManager::Get().GetEnabledPluginsWithContent())
+	{
+		if (Plugin->IsMounted() && Plugin->GetType() == EPluginType::Project)
+		{
+			FString Root = Plugin->GetMountedAssetPath();
+			Root.RemoveFromEnd(TEXT("/"));
+			Filter.PackagePaths.AddUnique(FName(*Root));
+		}
+	}
+	TArray<FAssetData> Blueprints;
+	Registry.GetAssets(Filter, Blueprints);
+
+	const FGameplayTag BowFamily = FGameplayTag::RequestGameplayTag(TEXT("Weapon.Family.Bow"));
+	int32 Bows = 0;
+	for (const FAssetData& Asset : Blueprints)
+	{
+		// Inspect the generated class tag first so unrelated Blueprints stay unloaded.
+		const FTopLevelAssetPath ClassPath(FPackageName::ExportTextPathToObjectPath(Asset.GetTagValueRef<FString>(FBlueprintTags::GeneratedClassPath)));
+		if (!DefinitionClassPaths.Contains(ClassPath))
+		{
+			continue;
+		}
+		const UClass* DefinitionClass = LoadObject<UClass>(nullptr, *ClassPath.ToString());
+		const URpgEquipmentDefinition* Equipment = DefinitionClass ? Cast<URpgEquipmentDefinition>(DefinitionClass->GetDefaultObject()) : nullptr;
+		const URpgRangedWeaponInstance* Weapon = Equipment && Equipment->InstanceType
+			? Cast<URpgRangedWeaponInstance>(Equipment->InstanceType->GetDefaultObject())
+			: nullptr;
+		if (!Weapon || Weapon->GetWeaponFamilyTag() != BowFamily)
+		{
+			continue;
+		}
+
+		++Bows;
+		const FString BowName = Asset.AssetName.ToString();
+		if (TestEqual(FString::Printf(TEXT("%s: the bow spawns one actor"), *BowName), Equipment->ActorsToSpawn.Num(), 1))
+		{
+			TestBowActorUsesBowFamily(*this, BowName, Equipment->ActorsToSpawn[0].ActorToSpawn.Get());
+		}
+	}
+	TestTrue(TEXT("The registry finds the player bow and the enemy bow"), Bows >= 2);
+	AddInfo(FString::Printf(TEXT("Checked %d bows."), Bows));
+	return !HasAnyErrors();
 }
 
 #endif
