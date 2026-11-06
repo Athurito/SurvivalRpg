@@ -116,7 +116,7 @@ RNG-03 gave the bow an aim stance and a shoulder camera, but the HUD showed only
 
 ## Follow-up: smaller crosshair (2026-11-06)
 
-User feedback after the bow presentation rebuild (#382): „crosshair wäre noch ein ding, es ist zu groß und müsste kleiner werden das man genauer aimen kann“.
+User feedback after the bow presentation rebuild (#382): „crosshair wäre noch ein ding, es ist zu groß und müsste kleiner werden das man genauer aimen kann“. Fix: [PR #383](https://github.com/Athurito/SurvivalRpg/pull/383).
 
 ### Change
 
