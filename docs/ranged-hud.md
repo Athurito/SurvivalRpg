@@ -44,8 +44,9 @@ RNG-03 gave the bow an aim stance and a shoulder camera, but the HUD showed only
   - Remote machines never read it: the HUD is local only.
 - **Crosshair (`CUI_RangedCrosshair`):**
   - four bone-coloured ticks around the free centre while aiming, so the interaction dot stays visible in the middle;
-  - a 64 × 6 bar below while drawing, `Percent` = `DrawFraction`;
+  - a bar below while drawing, `Percent` = `DrawFraction`;
   - a diamond at full draw.
+  - Sizes and distances are the variables in its "Crosshair Shape" category since the [smaller crosshair](#follow-up-smaller-crosshair-2026-11-06); the first sizes were 12 × 2 ticks 34 units from the centre, a 64 × 6 bar 88 below it and a 10-unit diamond 112 below it.
   - It is registered in `UI.HUD.Slot.Crosshair`.
 - **Ammunition counter (`CUI_AmmunitionCounter`):**
   - a 64-unit gear slot with the ammunition icon, the count bottom right, and the forbidden glyph when empty;
@@ -112,3 +113,41 @@ RNG-03 gave the bow an aim stance and a shoulder camera, but the HUD showed only
 - **Nock point:** the crosshair does not mark the nock on the bar; `NockFraction` and `bNocked` are there for styling in RNG-06.
 - **Mover maps:** the HUD appears only in Experiences that activate `GF_Combat_Ranged`, so not on the Mover maps, which have no bow presentation either.
 - **Tuning:** sizes, colours and the bar fill are starter styling for RNG-06.
+
+## Follow-up: smaller crosshair (2026-11-06)
+
+User feedback after the bow presentation rebuild (#382): „crosshair wäre noch ein ding, es ist zu groß und müsste kleiner werden das man genauer aimen kann“.
+
+### Change
+
+- **Tighter shape** (HUD units, pixels at 1080p; the UI scale multiplies them, 1.333 at 1440p):
+
+  | Variable | Before | Now |
+  | --- | --- | --- |
+  | `StrokeLength` | 12 | 6 |
+  | `StrokeThickness` | 2 | 2 |
+  | `CenterGap` (aim point to the inner stroke end) | 34 | 5 |
+  | `OutlineWidth` (dark outline, new) | none | 1 |
+  | `DrawBarSize` | 64 × 6 | 40 × 4 |
+  | `DrawBarOffset` (aim point to bar centre) | 88 | 24 |
+  | `FullDrawMarkSize` | 10 | 10 |
+  | `FullDrawMarkOffset` | 112 | 36 |
+
+  The crosshair spans 24 units instead of 92.
+- **Outline:** each stroke has a dark outline image behind it (black, 60 % opacity), so the thin strokes read over the bright sky and the grid floor.
+- **Centre point:** the persistent interaction reticle, a 4-unit white dot with a dark rim, stays the aim point. It is registered after the bow crosshair in `UI.HUD.Slot.Crosshair`, so it draws on top; a second dot in the bow crosshair would sit hidden below it.
+- **Tunable without the layout:** the values are instance-editable variables in the "Crosshair Shape" category with tooltips. `Event Pre Construct` calls `F_ApplyCrosshairShape`, which runs `F_PlaceStrokes`, `F_PlaceDrawBar` and `F_PlaceFullDrawMark`; `F_PlaceMark` sizes a stroke and its outline and moves both by slot padding. The designer preview follows the values. The view bindings (visibility of the crosshair, the bar and the diamond, the bar's fill) are unchanged.
+- **No native change.**
+
+### Validation
+
+- **Centre:** in PIE on `Lvl_CombatSandbox`, the projected camera aim point and the viewport centre agree exactly, and the stroke frame and the reticle dot measure centred on it to within the half pixel of the editor viewport's odd width.
+- **Captures** (editor window only, kept in the task worktree's ignored `Saved/RangedCrosshair/`): aiming, full draw, full draw against the sky and against the floor, each before and after, at the 1080p and 1440p UI scales. The editor plays in its level viewport (2525 × 1116), so `ApplicationScale` set the UI scale to 1.0 and 1.333.
+- **Tests:** `ue.py test SurvivalRpg.UI.RangedCombat SurvivalRpg.Interaction.HudAssets SurvivalRpg.UI --null-rhi`, 67 / 67; the one warning is the known `CUI_RespawnScreen` tick note.
+
+### Limits
+
+- **UI-scale emulation:** the 1440p captures use the 1440p UI scale in a 1116-pixel-high viewport, not a 2560 × 1440 window; the HUD pixels match, the surrounding scene shows less.
+- **Fractional sizes at 1440p:** 2 × 1.333 units snap to 2 or 3 pixels, so opposite strokes can differ by a pixel.
+- **The reticle's dot size** lives in `CUI_InteractionReticle` and is shared with the interaction HUD; it was not changed.
+
