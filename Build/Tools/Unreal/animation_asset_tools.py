@@ -41,6 +41,21 @@ def _class(path, expected_type):
     return value
 
 
+def _vector(text, name):
+    value = json.loads(text)
+    if not isinstance(value, list) or len(value) != 3:
+        raise RuntimeError(name + ' must be [x, y, z]')
+    return unreal.Vector(*[float(v) for v in value])
+
+
+def _string_weight(position, start, axis, length, radius):
+    """Bowstring weight of one vertex: 1 at the string's centre, falling to 0 at its ends, 0 off the string."""
+    along = (position - start).dot(axis)
+    if along < 0.0 or along > length or (position - (start + axis * along)).length() > radius:
+        return 0.0
+    return max(0.0, 1.0 - abs(2.0 * along / length - 1.0))
+
+
 def _create(path, asset_class, factory):
     _package(path)
     if unreal.EditorAssetLibrary.does_asset_exist(path):
@@ -194,6 +209,89 @@ class AnimationAssetTools(unreal.ToolsetDefinition):
         if not skeleton:
             raise RuntimeError('Skeleton creation failed: ' + skeleton_path)
         return skeleton.get_path_name()
+
+    @toolset_registry.tool_call
+    @staticmethod
+    def rig_bow_mesh(static_mesh_path: str, skeletal_mesh_path: str, skeleton_path: str, string_bone: str,
+                     string_start_json: str, string_end_json: str, draw_direction_json: str = '[0, 0, 1]',
+                     string_radius: float = 1.0) -> str:
+        """Create a skeletal bow mesh on a shared bow skeleton from a static bow mesh; does not save.
+
+        The skeleton needs a root bone and string_bone as its child, as the shared bow skeleton has. Every vertex
+        follows the root, except the string: vertices within string_radius cm of the segment between
+        string_start_json and string_end_json (the string's two ends in mesh space, cm, as [x, y, z]) follow
+        string_bone with a weight that falls from 1 at the centre to 0 at the ends, so a pull bends the string
+        into a V and the limbs stay rigid. string_bone rests at the segment's centre with X along the string and
+        Z along draw_direction_json (mesh space, toward the archer); the bow AnimBP pulls along that Z. Only this
+        mesh's reference pose moves the bone; the shared skeleton stays unchanged. Returns JSON with the mesh
+        path and the number of string vertices. Refuses an existing asset, a package outside the project, and a
+        segment that catches no vertex. Save the mesh afterwards, and its materials, which their first skeletal
+        use marks dirty.
+        """
+        _guard()
+        static_mesh = _asset(static_mesh_path, unreal.StaticMesh)
+        skeleton = _asset(skeleton_path, unreal.Skeleton)
+        _package(skeletal_mesh_path)
+        if unreal.EditorAssetLibrary.does_asset_exist(skeletal_mesh_path):
+            raise RuntimeError('Creation never overwrites an existing asset: ' + skeletal_mesh_path)
+        start = _vector(string_start_json, 'string_start_json')
+        end = _vector(string_end_json, 'string_end_json')
+        draw = _vector(draw_direction_json, 'draw_direction_json')
+        length = (end - start).length()
+        if length < 1.0 or string_radius <= 0.0:
+            raise RuntimeError('The string needs two ends at least 1 cm apart and a positive radius')
+        axis = (end - start) * (1.0 / length)
+        draw = draw - axis * draw.dot(axis)
+        if draw.length() < 0.01:
+            raise RuntimeError('draw_direction_json must not run along the string')
+
+        mesh = unreal.DynamicMesh()
+        mesh, outcome = unreal.GeometryScript_AssetUtils.copy_mesh_from_static_mesh_v2(
+            static_mesh, mesh, unreal.GeometryScriptCopyMeshFromAssetOptions(), unreal.GeometryScriptMeshReadLOD(), False)
+        if outcome != unreal.GeometryScriptOutcomePins.SUCCESS:
+            raise RuntimeError('Could not read the static mesh: ' + static_mesh_path)
+        mesh = unreal.GeometryScript_BoneWeights.copy_bones_from_skeleton(skeleton, mesh)
+        bones = unreal.GeometryScript_BoneWeights.get_all_bones_info(mesh)[1]
+        root = [b for b in bones if b.get_editor_property('parent_index') == -1]
+        string = [b for b in bones if str(b.get_editor_property('name')) == string_bone]
+        if len(root) != 1 or not string or string[0].get_editor_property('parent_index') != root[0].get_editor_property('index'):
+            raise RuntimeError('The skeleton needs one root bone with ' + string_bone + ' as its child')
+        root_index = root[0].get_editor_property('index')
+        string_index = string[0].get_editor_property('index')
+
+        unreal.GeometryScript_BoneWeights.mesh_create_bone_weights(mesh, True)
+        unreal.GeometryScript_BoneWeights.set_all_vertex_bone_weights(
+            mesh, [unreal.GeometryScriptBoneWeight(bone_index=root_index, weight=1.0)])
+        string_vertices = 0
+        positions = unreal.GeometryScript_MeshQueries.get_all_vertex_positions(mesh, False)[1].convert_vector_list_to_array()
+        for vertex, position in enumerate(positions):
+            weight = _string_weight(position, start, axis, length, string_radius)
+            if weight > 0.0 and unreal.GeometryScript_MeshQueries.is_valid_vertex_id(mesh, vertex):
+                string_vertices += 1
+                unreal.GeometryScript_BoneWeights.set_vertex_bone_weights(mesh, vertex, [
+                    unreal.GeometryScriptBoneWeight(bone_index=string_index, weight=weight),
+                    unreal.GeometryScriptBoneWeight(bone_index=root_index, weight=1.0 - weight)])
+        if string_vertices == 0:
+            raise RuntimeError('No vertex lies within string_radius of the string segment')
+
+        materials, slots = unreal.GeometryScript_AssetUtils.get_material_list_from_static_mesh(static_mesh)
+        options = unreal.GeometryScriptCreateNewSkeletalMeshAssetOptions()
+        options.set_editor_property('materials', unreal.GeometryScript_AssetUtils.convert_material_list_to_material_map(materials, slots))
+        skeletal_mesh, outcome = unreal.GeometryScript_NewAssetUtils.create_new_skeletal_mesh_asset_from_mesh(
+            mesh, skeleton, skeletal_mesh_path, options)
+        if outcome != unreal.GeometryScriptOutcomePins.SUCCESS or not skeletal_mesh:
+            raise RuntimeError('Skeletal mesh creation failed: ' + skeletal_mesh_path)
+
+        modifier = unreal.SkeletonModifier()
+        modifier.set_skeletal_mesh(skeletal_mesh)
+        root_name = modifier.get_parent_name(string_bone)
+        rest = unreal.Transform(location=(start + end) * 0.5,
+                                rotation=unreal.MathLibrary.make_rot_from_xz(axis, draw.normal()))
+        local = unreal.MathLibrary.compose_transforms(rest, unreal.MathLibrary.invert_transform(modifier.get_bone_transform(root_name, True)))
+        if not local.is_near_equal(modifier.get_bone_transform(string_bone, False)):
+            if not modifier.set_bone_transform(string_bone, local, False) or not modifier.commit_skeleton_to_skeletal_mesh():
+                raise RuntimeError('Could not place ' + string_bone + ' on ' + skeletal_mesh_path)
+        return json.dumps({'mesh': skeletal_mesh.get_path_name(), 'string_vertices': string_vertices})
 
     @toolset_registry.tool_call
     @staticmethod

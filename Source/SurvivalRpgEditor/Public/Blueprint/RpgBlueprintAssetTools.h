@@ -7,6 +7,9 @@
 class UBlueprint;
 class UAnimSequenceBase;
 class UActorComponent;
+class UEdGraph;
+class UEdGraphNode;
+class UEdGraphNode_Comment;
 
 /** Reusable editor operations for authoring Blueprint contracts through Unreal MCP/Python. */
 UCLASS()
@@ -41,6 +44,15 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Blueprint|Editor")
 	static bool ChangeOwnSCSComponentClass(UBlueprint* Blueprint, FName ComponentVariableName, TSubclassOf<UActorComponent> NewComponentClass);
+
+	/**
+	 * Sets the parent socket of a scene component declared in this Blueprint's own SCS, such as an arrow that rides a
+	 * bowstring bone; None attaches to the parent itself. Its relative transform then counts from that socket. The socket
+	 * is not validated against the parent's mesh. Records undo; compile and save the Blueprint afterwards. False for a
+	 * missing, inherited or root component.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Blueprint|Editor")
+	static bool SetOwnSCSComponentParentSocket(UBlueprint* Blueprint, FName ComponentVariableName, FName SocketName);
 
 	/**
 	 * Remaps serialized object references only in this asset and its nested Outer-owned objects.
@@ -82,4 +94,29 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rpg|Animation|Editor")
 	static int32 RemapAnimationNotifyClasses(UAnimSequenceBase* Animation, const TMap<UClass*, UClass*>& Replacements,
 		const TMap<UObject*, UObject*>& TypeReplacements, const TMap<UObject*, UObject*>& ObjectReplacements);
+
+	/**
+	 * Documents a function declared in this Blueprint: the tooltip shows on its call nodes and in My Blueprint. bPure
+	 * makes callers show it without exec pins; set it before writing callers, because refreshed call nodes of a function
+	 * that turns pure lose their exec links. Records undo; compile and save afterwards. False for an inherited or missing
+	 * function, or an empty tooltip.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Blueprint|Editor")
+	static bool DescribeLocalFunction(UBlueprint* Blueprint, FName FunctionName, const FString& Tooltip, bool bPure);
+
+	/**
+	 * Adds a comment box behind Nodes, which must all belong to Graph. The box is sized from the nodes' positions and an
+	 * estimate of each node's size from its title and pins, because node sizes exist only in an open graph editor; check
+	 * the picture there. Records undo; save afterwards. Returns the comment node, or null for no nodes, nodes of another
+	 * graph or an empty text.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Blueprint|Editor")
+	static UEdGraphNode_Comment* AddGraphComment(UEdGraph* Graph, const TArray<UEdGraphNode*>& Nodes, const FString& Text);
+
+	/**
+	 * Removes every comment box of a Blueprint graph, so they can be added again after its nodes moved; the engine's node
+	 * deletion accepts no comments. Records undo; save afterwards. Returns the number removed, or -1 for no graph.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rpg|Blueprint|Editor")
+	static int32 RemoveGraphComments(UEdGraph* Graph);
 };

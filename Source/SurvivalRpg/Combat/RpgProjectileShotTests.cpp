@@ -14,12 +14,15 @@
 #include "GameFramework/PlayerState.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "GameFramework/WorldSettings.h"
+#include "GameFramework/GameplayMessageSubsystem.h"
 #include "Misc/AutomationTest.h"
+#include "Misc/ScopeExit.h"
 #include "SurvivalRpg/AbilitySystem/Attributes/RpgStaminaSet.h"
 #include "SurvivalRpg/AbilitySystem/Effects/RpgAbilityTuningEffectComponent.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySet.h"
 #include "SurvivalRpg/AbilitySystem/RpgAbilitySystemComponent.h"
 #include "SurvivalRpg/AbilitySystem/Tasks/RpgAbilityTask_ProjectileShot.h"
+#include "SurvivalRpg/Combat/RpgCombatMessages.h"
 #include "SurvivalRpg/Combat/RpgCombatProjectile.h"
 #include "SurvivalRpg/Combat/RpgEmbeddedProjectilePickup.h"
 #include "SurvivalRpg/Combat/RpgProjectileShotAutomationTestTypes.h"
@@ -272,10 +275,31 @@ bool FRpgProjectileShotPresentationTagsTest::RunTest(const FString& Parameters)
 	if (!Fixture.Initialize(*this) || !Fixture.AddArrows(StartingArrows) || !Fixture.Grant(MakeDefinition())) return false;
 	const auto HasTag = [&Fixture](const FGameplayTag Tag) { return Fixture.ASC->HasMatchingGameplayTag(Tag); };
 
+	// Equipment such as a bow presents each change of the draw from a local message, without polling.
+	TArray<FRpgRangedDrawingMessage> DrawMessages;
+	UGameplayMessageSubsystem& MessageSubsystem = UGameplayMessageSubsystem::Get(Fixture.World);
+	const FGameplayMessageListenerHandle DrawListener = MessageSubsystem.RegisterListener<FRpgRangedDrawingMessage>(
+		RpgGameplayTags::Rpg_Combat_Message_RangedDrawingChanged,
+		[&DrawMessages](FGameplayTag, const FRpgRangedDrawingMessage& Message) { DrawMessages.Add(Message); });
+	ON_SCOPE_EXIT { MessageSubsystem.UnregisterListener(DrawListener); };
+	const auto TestDrawMessages = [this, &DrawMessages, &Fixture](const TCHAR* What, std::initializer_list<bool> Expected)
+	{
+		bool bMatches = DrawMessages.Num() == static_cast<int32>(Expected.size());
+		int32 Index = 0;
+		for (const bool bDrawing : Expected)
+		{
+			bMatches = bMatches && DrawMessages[Index].Avatar == Fixture.Pawn && DrawMessages[Index].bDrawing == bDrawing;
+			++Index;
+		}
+		TestTrue(What, bMatches);
+		DrawMessages.Reset();
+	};
+
 	// The drawn shot shows as drawing on every machine; a cancel ends it without a release.
 	if (!TestTrue(TEXT("The shot activates"), Fixture.Activate())) return false;
 	TestTrue(TEXT("A drawn shot is drawing"), HasTag(RpgGameplayTags::State_Ranged_Drawing));
 	TestTrue(TEXT("The owner presents its own draw"), Fixture.ASC->IsRangedDrawingForPresentation());
+	TestDrawMessages(TEXT("The owner's draw sends one drawing message for its pawn, not another for the tag"), { true });
 	Fixture.Advance(0.1f);
 	float DrawProgress = -1.0f;
 	float NockProgress = -1.0f;
@@ -285,9 +309,11 @@ bool FRpgProjectileShotPresentationTagsTest::RunTest(const FString& Parameters)
 	Fixture.Release();
 	TestFalse(TEXT("An early release stops drawing"), HasTag(RpgGameplayTags::State_Ranged_Drawing));
 	TestFalse(TEXT("An early release shows no release"), HasTag(RpgGameplayTags::State_Ranged_Releasing));
+	TestDrawMessages(TEXT("A cancelled draw sends one message that it stopped"), { false });
 
 	// A release stops drawing and shows the release for its presentation time.
 	TestEqual(TEXT("A full draw releases"), Fixture.Shoot(1.0f), ERpgProjectileShotResult::Released);
+	TestDrawMessages(TEXT("A released shot sends its draw and its end once each"), { true, false });
 	TestFalse(TEXT("The released shot stops drawing"), HasTag(RpgGameplayTags::State_Ranged_Drawing));
 	TestTrue(TEXT("The release shows"), HasTag(RpgGameplayTags::State_Ranged_Releasing));
 	TestTrue(TEXT("The owner presents its own release"), Fixture.ASC->IsRangedReleasingForPresentation());

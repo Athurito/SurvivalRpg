@@ -61,9 +61,9 @@ The bow and arrows existed only as sandbox placeholders (`ID_Placeholder_Bow`, `
 | --- | --- |
 | `GF_Combat_Ranged` (GameFeature) | Depends on `GameplayAbilities` and `GF_Combat_Core`; registered by default and enabled in `SurvivalRpg.uproject`. Active in the Experiences `RpgBaseline`, `RpgGaspCMC`, `RpgGaspMantle`, `RpgInventoryStorage` and `RpgPrototype`; `GF_Dev_Sandbox` lists it as a plugin dependency. The Mover Experiences stay unchanged. |
 | `Items/ID_Bow` | Weapon, not stackable, never dropped on death, 1 x 3 cells, `T_UI_Item_Bow` icon; equips through `ED_Bow`. No combat skill tree. |
-| `Equipment/Bow/ED_Bow` | `BP_WeaponInstance_Bow`, main hand only, both hands, load 0; grants `AS_Bow` in the main hand; spawns `BP_BowActor` at `Grip_Shield_L` (placeholder grip until RNG-03). |
+| `Equipment/Bow/ED_Bow` | `BP_WeaponInstance_Bow`, main hand only, both hands, load 0; grants `AS_Bow` in the main hand; spawned `BP_BowActor` at `Grip_Shield_L` (placeholder grip until RNG-03; now `BP_Bow_SkeletonArmy` at `Grip_Bow_L`, see [bow draw presentation](ranged-bow-draw-presentation.md#bow-foundation)). |
 | `Equipment/Bow/BP_WeaponInstance_Bow` | Parent `URpgRangedWeaponInstance`, `Weapon.Family.Bow`, cannot block. Shot: `ID_Arrow_Standard`, nock 0.3 s, full draw 1.0 s, `CF_Bow_DamageByDraw` (8 to 30) and `CF_Bow_LaunchSpeedByDraw` (2000 to 6000 cm/s), stagger 15, release cost 8 stamina, no hold drain, `GE_RpgGasp_StaminaDelta`, muzzle (60, 0, 50) cm, aim 100 m, server wait 60 s. These are starter values for playtesting. |
-| `Equipment/Bow/BP_BowActor` | The bow mesh in the hand. |
+| `Equipment/Bow/BP_BowActor` | The bow mesh in the hand; now the abstract base of every bow ([bow foundation](ranged-bow-draw-presentation.md#bow-foundation)). |
 | `GAS/Abilities/GA_BowShot` | Instanced per actor, locally predicted, on input triggered. Runs `Start Projectile Shot From Weapon` with the shooter's inventory and ends on release or cancel. |
 | `GAS/AbilitySets/AS_Bow` | `GA_BowShot` on `InputTag.Weapon.Primary` with the ability id `Ability.Ranged.BowShot`. |
 | `Items/ID_Arrow_Standard` | Stackable to 99, not a material, 1 x 1 cell, `T_UI_Item_Arrows` icon; the ammunition fragment launches `BP_Projectile_Arrow`. |

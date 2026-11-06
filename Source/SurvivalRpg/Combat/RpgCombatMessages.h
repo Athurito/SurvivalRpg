@@ -36,3 +36,24 @@ struct SURVIVALRPG_API FRpgCombatActorKilledMessage
 	UPROPERTY(BlueprintReadOnly, Category = "Combat")
 	TSubclassOf<UGameplayEffect> DamageEffect;
 };
+
+/**
+ * Presentation message on Rpg.Combat.Message.RangedDrawingChanged, local to each machine: the avatar's ranged shot
+ * started or stopped showing as nocked or drawn there (URpgAbilitySystemComponent::IsRangedDrawingForPresentation). It
+ * follows the owner's own prediction on its machine and the replicated State.Ranged.Drawing everywhere else, and it
+ * repeats the current draw when an avatar initializes, so a late joiner shows a draw that began before it arrived.
+ * Cosmetic: listeners such as a bow's nocked arrow present it; never use it for gameplay.
+ */
+USTRUCT(BlueprintType)
+struct SURVIVALRPG_API FRpgRangedDrawingMessage
+{
+	GENERATED_BODY()
+
+	/** The pawn whose draw changed, the avatar of the sending ability system. Match it against an equipment actor's owner. */
+	UPROPERTY(BlueprintReadOnly, Category = "Combat|Ranged")
+	TObjectPtr<AActor> Avatar = nullptr;
+
+	/** True while the shot shows as nocked or drawn; false once it was released or cancelled. */
+	UPROPERTY(BlueprintReadOnly, Category = "Combat|Ranged")
+	bool bDrawing = false;
+};

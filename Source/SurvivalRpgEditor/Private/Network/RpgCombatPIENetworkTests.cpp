@@ -40,6 +40,8 @@
 #include "Animation/AnimInstance.h"
 #include "SurvivalRpg/Combat/RpgAIAttackDriverComponent.h"
 #include "SurvivalRpg/Combat/RpgCombatDeveloperSettings.h"
+#include "SurvivalRpg/Combat/RpgCombatMessages.h"
+#include "GameFramework/GameplayMessageSubsystem.h"
 #include "SurvivalRpg/Combat/RpgCombatImpact.h"
 #include "SurvivalRpg/Combat/RpgCombatProjectile.h"
 #include "SurvivalRpg/Inventory/RpgInventoryItemDefinition.h"
@@ -2568,6 +2570,37 @@ NETWORK_TEST_CLASS(RangedAimPIE, "SurvivalRpg.Network")
 		return Ui ? Ui->GetRangedCombatViewModel() : nullptr;
 	}
 
+	/** Per client: the archer's draw messages that client received, as equipment such as its bow presents them. */
+	TArray<bool> ArcherDrawMessages[ClientCount];
+
+	/** Each client records the archer's RangedDrawingChanged messages from here on. */
+	void QueueDrawMessageListeners()
+	{
+		for (int32 Index = 0; Index < ClientCount; ++Index)
+		{
+			Network.ThenClient(Describe(FString::Printf(TEXT("Client %d listens for the archer's draw messages"), Index)), Index,
+				[this, Index](FNetworkState& State)
+				{
+					ArcherDrawMessages[Index].Reset();
+					UWorld* World = State.World;
+					UGameplayMessageSubsystem::Get(World).RegisterListener<FRpgRangedDrawingMessage>(Tag(TEXT("Rpg.Combat.Message.RangedDrawingChanged")),
+						[this, Index, World](FGameplayTag, const FRpgRangedDrawingMessage& Message)
+						{
+							if (Message.Avatar && Message.Avatar == RpgCombatPIENetworkTests::FindCharacterByPlayerId(World, ArcherId))
+							{
+								ArcherDrawMessages[Index].Add(Message.bDrawing);
+							}
+						});
+				});
+		}
+	}
+
+	/** Whether a client received exactly these draw messages of the archer, in this order. */
+	bool HasArcherDrawMessages(const int32 Index, std::initializer_list<bool> Expected) const
+	{
+		return ArcherDrawMessages[Index] == TArray<bool>(Expected);
+	}
+
 	int32 ArcherArrows(const FNetworkState& State) const
 	{
 		ARpgCharacter* Archer = RpgCombatPIENetworkTests::FindCharacterByPlayerId(State.World, ArcherId);
@@ -2769,12 +2802,18 @@ NETWORK_TEST_CLASS(RangedAimPIE, "SurvivalRpg.Network")
 					return AbilitySystem && AbilitySystem->IsRangedAimActive();
 				},
 				NetworkTimeout());
+		QueueDrawMessageListeners();
 		QueueArcherInput(TEXT("The archer draws"), ShotInput, true);
 		Network
 			.UntilServer(TEXT("The server sees the draw"), [this](FNetworkState& State) { return ArcherHas(State, TEXT("State.Ranged.Drawing")); },
 				NetworkTimeout())
 			.UntilClient(TEXT("The observer sees the draw"), 1, [this](FNetworkState& State) { return ArcherHas(State, TEXT("State.Ranged.Drawing")); },
 				NetworkTimeout())
+			// The observer learns of the draw from the replicated tag, the archer from its own prediction; neither twice.
+			.UntilClient(TEXT("The observer's equipment hears of the draw once"), 1, [this](FNetworkState&) { return HasArcherDrawMessages(1, { true }); },
+				NetworkTimeout())
+			.ThenClient(TEXT("The archer's equipment heard of its own draw once"), 0,
+				[this](FNetworkState&) { ASSERT_THAT(IsTrue(HasArcherDrawMessages(0, { true }))); })
 			.UntilClient(TEXT("The archer holds a full draw"), 0,
 				[this](FNetworkState& State) { return State.World->GetTimeSeconds() - PhaseStartWorldSeconds >= 1.2; },
 				NetworkTimeout())
@@ -2797,6 +2836,10 @@ NETWORK_TEST_CLASS(RangedAimPIE, "SurvivalRpg.Network")
 			.UntilClient(TEXT("The observer sees the release"), 1,
 				[this](FNetworkState& State) { return ArcherHas(State, TEXT("State.Ranged.Releasing")) && !ArcherHas(State, TEXT("State.Ranged.Drawing")); },
 				NetworkTimeout())
+			.UntilClient(TEXT("The observer's equipment hears that the draw ended"), 1,
+				[this](FNetworkState&) { return HasArcherDrawMessages(1, { true, false }); }, NetworkTimeout())
+			.ThenClient(TEXT("The archer's equipment heard that its draw ended, once"), 0,
+				[this](FNetworkState&) { ASSERT_THAT(IsTrue(HasArcherDrawMessages(0, { true, false }))); })
 			.UntilClient(TEXT("The archer's HUD counts the spent arrow and ends the draw"), 0,
 				[](FNetworkState& State)
 				{

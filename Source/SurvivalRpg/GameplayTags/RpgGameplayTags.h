@@ -170,6 +170,7 @@ namespace RpgGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Behavior_SurvivesDeath);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_Behavior_ClearOnRespawn);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Combat_Message_ActorKilled);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_Combat_Message_RangedDrawingChanged);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_ActionBar_Message_SlotsChanged);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_WeaponAbilityLoadout_Message_SlotsChanged);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rpg_WeaponAbilityLoadout_DefaultSlot_1);
