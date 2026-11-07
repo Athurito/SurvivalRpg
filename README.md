@@ -27,6 +27,7 @@ architecture.
 | [Mastery map](docs/mastery-map-roadmap.md) (MST) | Complete; runes are redesigned in HRW-05 |
 | [Harvesting](docs/harvesting-roadmap.md) (HARV) | Complete, partly superseded by HRW |
 | [Inventory refactor](docs/inventory-refactor-plan.md) | Complete |
+| [Polish backlog](docs/polish-backlog.md) (POL) | Open items, no order |
 
 ## System contracts
 
