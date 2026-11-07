@@ -4,6 +4,9 @@ This roadmap moves the game's screens and HUD to one shared dark-fantasy style.
 It records the accepted decisions and the task sequence. The style itself
 (tokens, assets, rules) is in [ui-style-guide.md](ui-style-guide.md).
 
+Status: **Complete** (user, 2026-11-07). UI-01 to UI-07 are done. UI-08, the
+Diablo 3 inventory layout, was dropped. New UI work starts its own roadmap.
+
 ## Problem
 
 - **No shared style:** every screen typed its own colours and fonts into its
@@ -56,25 +59,6 @@ It records the accepted decisions and the task sequence. The style itself
 | UI-05 | HUD after the user's concept: vitals and XP, quickbar and Q/E/R, menu key hints, enemy health bar, context fading, mana attribute set | Done: [#206](https://github.com/Athurito/SurvivalRpg/pull/206), vitals cleanup [#208](https://github.com/Athurito/SurvivalRpg/pull/208) |
 | UI-06 | Item interactions after the user's concept: tooltip with Shift compare, item action menu, split dialog, pickup notifications, feedback toasts with icons, key caps, item-only highlight; no drop confirmation | Done: [#213](https://github.com/Athurito/SurvivalRpg/pull/213) |
 | UI-07 | Menus (game menu tabs, main menu, settings with the controller glyph choice Xbox / PlayStation, respawn), then remove KnightsQuest | Done: settings menu [#216](https://github.com/Athurito/SurvivalRpg/pull/216), game menu, pause menu and respawn [#217](https://github.com/Athurito/SurvivalRpg/pull/217), main menu, load page and font removal [#219](https://github.com/Athurito/SurvivalRpg/pull/219) |
-| UI-08 | Inventory layout after Diablo 3: character values left of the equipment, containers below, fewer pocket cells | Planned |
-
-## Noted for later tasks
-
-- **Inventory layout after Diablo 3 (UI-08):** the user's request from
-  2026-10-08, with a Diablo 3 inventory as reference.
-  - The character values sit directly left of the equipment instead of in a
-    third column on the right, where they look out of place. They become more
-    compact.
-  - The containers move below the equipment.
-  - The pockets get fewer cells. Today they are 6 × 6 in
-    `DA_PlayerInventoryLayout_Default`; the target size is still open.
-  - Open before starting: the pocket size, and what happens to saves. A saved
-    item outside the new pocket grid fails the player graph check on load, so
-    the world does not load and disk writes stay blocked. Options are
-    clearing the pockets in game before the change, starting a new world, or
-    a save migration.
-  - Storage and crafting host the same pane without the values, so their
-    layouts are checked too.
 
 ## Open findings outside UI
 

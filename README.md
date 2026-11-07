@@ -20,8 +20,8 @@ architecture.
 | --- | --- |
 | [Harvesting rework](docs/harvesting-rework-roadmap.md) (HRW) | Stopped after HRW-05c (user, 2026-11-01); 05d, 05e and 05f dropped |
 | [VFX](docs/vfx-roadmap.md) | Planned tasks |
-| [UI](docs/ui-roadmap.md) | Planned tasks |
-| [Ranged combat](docs/ranged-combat-roadmap.md) | Deferred |
+| [UI](docs/ui-roadmap.md) | Complete; UI-08 dropped (user, 2026-11-07) |
+| [Ranged combat](docs/ranged-combat-roadmap.md) (RNG) | Complete; user playtest passed |
 | [GASP integration](docs/gasp-integration-roadmap.md) with its [handoff](docs/gasp-integration-handoff.md) | No task ready; holds the accepted movement state |
 | [Combat](docs/combat-roadmap.md) (CMB) | Complete |
 | [Mastery map](docs/mastery-map-roadmap.md) (MST) | Complete; runes are redesigned in HRW-05 |
