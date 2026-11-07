@@ -7,7 +7,7 @@ Juli/August 2026 umgesetzt. Diese Fassung behält die verbindlichen
 Leitplanken, das Addendum zum Player-Inventory-Pane und die Abschlussauswertung
 mit Editor-Checkliste. Das vollständige Fortschrittsprotokoll der Phasen 0
 bis 8 liegt in der [Git-Historie](https://github.com/Athurito/SurvivalRpg/blob/dcc0d5cb12556da7dee58fbc4ddf04fd976af160/docs/inventory-refactor-plan.md). Spätere Layout-Änderungen stehen
-in der [UI-Roadmap](ui-roadmap.md) (UI-02, UI-08).
+in der [UI-Roadmap](ui-roadmap.md) (UI-02).
 
 ## Architektur-Leitplanken
 
